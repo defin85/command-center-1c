@@ -52,15 +52,13 @@ TBD - created by archiving change add-ui-action-catalog-editor. Update Purpose a
 - **AND** UI исключает параметры, относящиеся к connection (которые должны приходить из профиля базы), чтобы не вводить оператора в заблуждение
 
 ### Requirement: Save с серверной валидацией и отображением ошибок
-Система ДОЛЖНА (SHALL) сохранять изменения через backend и показывать ошибки валидации пользователю.
+Система ДОЛЖНА (SHALL) сохранять изменения через backend и показывать ошибки валидации пользователю; UI НЕ ДОЛЖЕН (SHALL NOT) вводить дополнительные ограничения, которые не требуются backend (например, блокировать дубли reserved capability), если backend допускает такие конфигурации.
 
-#### Scenario: Ошибка валидации отображается с путём
-- **WHEN** staff сохраняет невалидный action catalog
-- **THEN** UI показывает список ошибок, включая пути вида `extensions.actions[i]...`, чтобы пользователь мог исправить конфигурацию
-
-#### Scenario: Успешное сохранение
-- **WHEN** staff сохраняет валидный action catalog
-- **THEN** UI подтверждает успешное сохранение и отображает актуальную сохранённую версию
+#### Scenario: UI не блокирует сохранение из-за duplicate reserved capability
+- **GIVEN** staff добавляет второй action с `capability="extensions.set_flags"`
+- **WHEN** staff нажимает Save
+- **THEN** UI отправляет payload на backend и показывает результат
+- **AND** если backend вернул ошибки, UI показывает их с путями вида `extensions.actions[i]...`
 
 ### Requirement: Preview execution plan в редакторе action catalog
 Система ДОЛЖНА (SHALL) предоставить в staff-only редакторе `ui.action_catalog` возможность сделать preview для выбранного action и увидеть:

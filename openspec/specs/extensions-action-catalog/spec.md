@@ -99,12 +99,13 @@ TBD - created by archiving change add-extensions-action-catalog-runtime-setting.
 - **THEN** система трактует его как `extensions.list` (для plan/apply и snapshot-marking), независимо от `id`
 
 ### Requirement: Зарезервированные capability валидируются fail-closed
-Система ДОЛЖНА (SHALL) обеспечивать детерминизм для capability, которые backend понимает и использует для особой семантики (plan/apply, snapshot-marking).
+Система ДОЛЖНА (SHALL) обеспечивать детерминизм для reserved capability, которые backend понимает и использует для особой семантики (plan/apply, snapshot-marking), но НЕ ДОЛЖНА (SHALL NOT) требовать уникальности `capability` на уровне update-time валидации `ui.action_catalog`.
 
-#### Scenario: capability для применения флагов детерминирован и уникален
-- **GIVEN** payload `ui.action_catalog` содержит два actions с `capability="extensions.set_flags"`
-- **WHEN** staff пытается сохранить/обновить `ui.action_catalog`
-- **THEN** система возвращает ошибку валидации (fail-closed) и не сохраняет payload
+#### Scenario: Дубликаты reserved capability допускаются, но требуют детерминизма на запуске
+- **GIVEN** в `ui.action_catalog` есть два actions с `capability="extensions.set_flags"`
+- **WHEN** UI/клиент вызывает reserved endpoint без `action_id` (только по `capability`)
+- **THEN** backend возвращает ошибку ambiguity и не выполняет действие
+- **AND** error message содержит список candidate `action.id`
 
 ### Requirement: Actions для управления флагами расширений через capability
 Система ДОЛЖНА (SHALL) поддерживать зарезервированный capability `extensions.set_flags` для применения policy флагов расширений к списку баз (bulk).
@@ -122,4 +123,13 @@ TBD - created by archiving change add-extensions-action-catalog-runtime-setting.
 - **WHEN** оператор запускает selective apply (не все флаги выбраны)
 - **THEN** backend применяет mask, удаляя невыбранные флаги из `executor.params`
 - **AND** если executor не поддерживает params-based режим (например, использует только `additional_args`), backend возвращает ошибку конфигурации (fail-closed)
+
+### Requirement: Presets для `extensions.set_flags` через `executor.fixed.apply_mask`
+Система ДОЛЖНА (SHALL) поддерживать presets selective apply для `extensions.set_flags` на уровне action catalog через `executor.fixed.apply_mask`.
+
+#### Scenario: apply_mask берётся из action preset по умолчанию
+- **GIVEN** action с `capability="extensions.set_flags"` содержит `executor.fixed.apply_mask`, выбирающий только один флаг (например `active=true`, остальные `false`)
+- **WHEN** UI вызывает plan без `apply_mask`, но с `action_id` этого action
+- **THEN** backend использует `executor.fixed.apply_mask` как effective mask
+- **AND** apply изменяет только выбранный флаг
 
