@@ -295,21 +295,15 @@ export function ActionCatalogEditorModal({
 
   const handleGuidedParamChange = (name: string, nextValue: unknown) => {
     setParamsTouched(true)
-    if (nextValue === undefined) {
-      const schema = commandParams.find((p) => p.name === name)?.schema
-      const targetGroup = schema?.required ? 'required' : 'optional'
-      setGuidedParamsGroupsOpen((current) => (
-        current.includes(targetGroup) ? current : [...current, targetGroup]
-      ))
-    } else {
-      setGuidedParamsGroupsOpen((current) => (
-        current.includes('filled') ? current : [...current, 'filled']
-      ))
-    }
+    setGuidedParamsGroupsOpen((current) => (
+      current.includes('filled') ? current : [...current, 'filled']
+    ))
     setParamsObject((current) => {
       const next: Record<string, unknown> = { ...current }
       if (nextValue === undefined) {
-        delete next[name]
+        // Keep the key in paramsObject to avoid UI "jump" between groups when user clears a field via allowClear.
+        // JSON.stringify omits undefined values, so params_json stays clean.
+        next[name] = undefined
       } else {
         next[name] = nextValue
       }
