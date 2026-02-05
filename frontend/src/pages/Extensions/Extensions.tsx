@@ -256,9 +256,10 @@ export const Extensions = () => {
   const openDrawer = (row: ExtensionsOverviewRow) => {
     setSelectedExtension(row.name)
     setDrawerOpen(true)
-    setDrawerStatus(undefined)
-    setDrawerVersion('')
-    setDrawerDatabaseId(undefined)
+    // Propagate current page-level filters into drawer by default so drilldown/apply works on the same slice.
+    setDrawerStatus(status)
+    setDrawerVersion(version)
+    setDrawerDatabaseId(databaseId)
     setDrawerPage(1)
     setDrawerPageSize(50)
     resetApplyFormFromPolicy(row.flags ? {
