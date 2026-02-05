@@ -6,12 +6,12 @@
 ### Requirement: Обзор расширений по всем базам
 Система ДОЛЖНА (SHALL) предоставить экран `/extensions`, который показывает агрегированную таблицу расширений по доступным пользователю базам.
 
-#### Scenario: UI показывает policy-флаги и унифицированные агрегаты
-- **WHEN** пользователь открывает `/extensions`
-- **THEN** UI отображает список расширений с:
-  - агрегатами по базам (`installed/missing/unknown`, версия/дата snapshot),
-  - **policy** флагами `active/safe_mode/unsafe_action_protection` как булевыми полями,
-  - унифицированными индикаторами состояния/дрейфа для каждого флага (например `mixed`/`unknown` и `drift_count`).
+#### Scenario: UI позволяет selective apply flags policy
+- **WHEN** пользователь открывает drawer расширения `X` на `/extensions` и нажимает `Apply flags policy`
+- **THEN** UI отображает форму из 3 строк (`active`, `safe_mode`, `unsafe_action_protection`), где каждая строка имеет:
+  - checkbox “Apply this flag”
+  - switch “Value” (disabled, если checkbox выключен)
+- **AND** пользователь может подтвердить apply, выбрав подмножество флагов
 
 ### Requirement: Нормализованный список расширений в snapshot
 Система ДОЛЖНА (SHALL) сохранять в snapshot расширений нормализованный структурированный список расширений, пригодный для табличного отображения и канонизации.
