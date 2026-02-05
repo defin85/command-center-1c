@@ -49,6 +49,17 @@ _ACTION_EXECUTOR_KINDS: list[str] = [
     "workflow",
 ]
 
+_EXTENSIONS_SET_FLAGS_APPLY_MASK_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["active", "safe_mode", "unsafe_action_protection"],
+    "properties": {
+        "active": {"type": "boolean"},
+        "safe_mode": {"type": "boolean"},
+        "unsafe_action_protection": {"type": "boolean"},
+    },
+}
+
 
 ACTION_CATALOG_SCHEMA_V1: dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -103,6 +114,7 @@ ACTION_CATALOG_SCHEMA_V1: dict[str, Any] = {
                                         "properties": {
                                             "confirm_dangerous": {"type": "boolean"},
                                             "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 3600},
+                                            "apply_mask": _EXTENSIONS_SET_FLAGS_APPLY_MASK_SCHEMA,
                                         },
                                     },
                                 },
@@ -350,50 +362,6 @@ def get_reserved_action_capability(action: dict[str, Any]) -> str | None:
         return cap if cap in RESERVED_ACTION_CAPABILITIES else None
     action_id = _normalize_str(action.get("id"))
     return LEGACY_RESERVED_ACTION_IDS.get(action_id)
-
-
-def validate_action_catalog_reserved_capabilities(payload: Any) -> list[ActionCatalogValidationError]:
-    """
-    Fail-closed validation for backend-understood reserved capabilities.
-
-    Ensures at most one action per reserved capability (including legacy id fallback).
-    Intended for update-time validation in staff-only runtime setting update flow.
-    """
-    if not isinstance(payload, dict):
-        return []
-    extensions = payload.get("extensions")
-    if not isinstance(extensions, dict):
-        return []
-    actions = extensions.get("actions")
-    if not isinstance(actions, list):
-        return []
-
-    errors: list[ActionCatalogValidationError] = []
-    seen: dict[str, int] = {}
-
-    for idx, action in enumerate(actions):
-        if not isinstance(action, dict):
-            continue
-        reserved_capability = get_reserved_action_capability(action)
-        if not reserved_capability:
-            continue
-        prev_idx = seen.get(reserved_capability)
-        if prev_idx is None:
-            seen[reserved_capability] = idx
-            continue
-
-        if _get_action_capability(action):
-            path = f"extensions.actions[{idx}].capability"
-        else:
-            path = f"extensions.actions[{idx}].id"
-        errors.append(
-            ActionCatalogValidationError(
-                path=path,
-                message=f"duplicate reserved capability: {reserved_capability} (already defined at extensions.actions[{prev_idx}])",
-            )
-        )
-
-    return errors
 
 
 def compute_ibcmd_cli_snapshot_marker_from_action_catalog(catalog: Any, command_id: str) -> dict[str, Any]:

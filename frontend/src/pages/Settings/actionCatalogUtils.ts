@@ -149,6 +149,12 @@ export const deriveActionFormValues = (action: PlainObject | null): ActionFormVa
   const fixed = isPlainObject(executorRaw.fixed) ? executorRaw.fixed as PlainObject : {}
   const confirmDangerous = fixed.confirm_dangerous === true
   const timeoutSeconds = typeof fixed.timeout_seconds === 'number' ? fixed.timeout_seconds : undefined
+  const applyMaskRaw = isPlainObject(fixed.apply_mask) ? fixed.apply_mask as PlainObject : null
+  const applyMask = applyMaskRaw ? {
+    active: typeof applyMaskRaw.active === 'boolean' ? applyMaskRaw.active : undefined,
+    safe_mode: typeof applyMaskRaw.safe_mode === 'boolean' ? applyMaskRaw.safe_mode : undefined,
+    unsafe_action_protection: typeof applyMaskRaw.unsafe_action_protection === 'boolean' ? applyMaskRaw.unsafe_action_protection : undefined,
+  } : undefined
 
   return {
     id,
@@ -167,6 +173,7 @@ export const deriveActionFormValues = (action: PlainObject | null): ActionFormVa
       fixed: {
         confirm_dangerous: confirmDangerous,
         timeout_seconds: timeoutSeconds,
+        apply_mask: applyMask,
       },
     },
   }
@@ -241,6 +248,25 @@ export const buildActionFromForm = (base: PlainObject | null, values: ActionForm
   }
   if (typeof fixedForm?.timeout_seconds === 'number' && Number.isFinite(fixedForm.timeout_seconds)) {
     fixedNext.timeout_seconds = fixedForm.timeout_seconds
+  }
+  const applyMaskForm = fixedForm?.apply_mask
+  const hasAnyApplyMaskKey = Boolean(
+    applyMaskForm
+    && (
+      typeof applyMaskForm.active === 'boolean'
+      || typeof applyMaskForm.safe_mode === 'boolean'
+      || typeof applyMaskForm.unsafe_action_protection === 'boolean'
+    )
+  )
+  if (hasAnyApplyMaskKey) {
+    const mask = {
+      active: applyMaskForm?.active === true,
+      safe_mode: applyMaskForm?.safe_mode === true,
+      unsafe_action_protection: applyMaskForm?.unsafe_action_protection === true,
+    }
+    if (mask.active || mask.safe_mode || mask.unsafe_action_protection) {
+      fixedNext.apply_mask = mask
+    }
   }
   if (Object.keys(fixedNext).length) {
     executor.fixed = fixedNext

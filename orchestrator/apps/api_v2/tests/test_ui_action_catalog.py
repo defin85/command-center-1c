@@ -268,7 +268,7 @@ def test_update_runtime_setting_ui_action_catalog_accepts_valid_references(staff
 
 
 @pytest.mark.django_db
-def test_update_runtime_setting_ui_action_catalog_rejects_duplicate_reserved_capability(staff_client, monkeypatch):
+def test_update_runtime_setting_ui_action_catalog_allows_duplicate_reserved_capability(staff_client, monkeypatch):
     base_catalog = {
         "catalog_version": 2,
         "driver": "ibcmd",
@@ -319,12 +319,66 @@ def test_update_runtime_setting_ui_action_catalog_rejects_duplicate_reserved_cap
         },
         format="json",
     )
-    assert resp.status_code == 400
-    payload = resp.json()
-    assert payload["success"] is False
-    assert payload["error"]["code"] == "VALIDATION_ERROR"
-    assert any("duplicate reserved capability" in msg for msg in payload["error"]["message"])
-    assert any("extensions.list" in msg for msg in payload["error"]["message"])
+    assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+def test_update_runtime_setting_ui_action_catalog_accepts_fixed_apply_mask(staff_client, monkeypatch):
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "commands_by_id": {
+            "infobase.extension.update": {
+                "label": "update extension",
+                "description": "Update extension",
+                "argv": ["infobase", "extension", "update"],
+                "scope": "per_database",
+                "risk_level": "safe",
+                "params_by_name": {},
+            },
+        },
+    }
+    _seed_ibcmd_catalog(
+        monkeypatch,
+        base_catalog=base_catalog,
+        overrides_catalog={"catalog_version": 2, "driver": "ibcmd", "overrides": {}},
+    )
+
+    resp = staff_client.patch(
+        "/api/v2/settings/runtime/ui.action_catalog/",
+        data={
+            "value": {
+                "catalog_version": 1,
+                "extensions": {
+                    "actions": [
+                        {
+                            "id": "SetFlagsActiveOnly",
+                            "capability": "extensions.set_flags",
+                            "label": "Set flags: active only",
+                            "contexts": ["bulk_page"],
+                            "executor": {
+                                "kind": "ibcmd_cli",
+                                "driver": "ibcmd",
+                                "command_id": "infobase.extension.update",
+                                "fixed": {
+                                    "apply_mask": {
+                                        "active": True,
+                                        "safe_mode": False,
+                                        "unsafe_action_protection": False,
+                                    }
+                                },
+                            },
+                        }
+                    ]
+                },
+            }
+        },
+        format="json",
+    )
+    assert resp.status_code == 200
 
 
 @pytest.mark.django_db

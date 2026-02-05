@@ -14,7 +14,6 @@ from apps.runtime_settings.registry import RUNTIME_SETTINGS
 from apps.runtime_settings.action_catalog import (
     UI_ACTION_CATALOG_KEY,
     validate_action_catalog_references,
-    validate_action_catalog_reserved_capabilities,
     validate_action_catalog_v1,
 )
 from apps.runtime_settings.effective import get_effective_runtime_setting
@@ -260,19 +259,6 @@ def update_runtime_setting_override(request, key: str):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        capability_errors = validate_action_catalog_reserved_capabilities(value)
-        if capability_errors:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": "VALIDATION_ERROR",
-                        "message": [err.to_text() for err in capability_errors],
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         ref_errors = validate_action_catalog_references(value)
         if ref_errors:
             return Response(
@@ -360,19 +346,6 @@ def update_runtime_setting(request, key: str):
                     "error": {
                         "code": "VALIDATION_ERROR",
                         "message": [err.to_text() for err in schema_errors],
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        capability_errors = validate_action_catalog_reserved_capabilities(value)
-        if capability_errors:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": "VALIDATION_ERROR",
-                        "message": [err.to_text() for err in capability_errors],
                     },
                 },
                 status=status.HTTP_400_BAD_REQUEST,

@@ -68,8 +68,10 @@ export function ActionCatalogEditorModal({
   const [rawParamsError, setRawParamsError] = useState<string | null>(null)
 
   const editorKind = (Form.useWatch(['executor', 'kind'], form) as ExecutorKind | undefined) ?? 'ibcmd_cli'
+  const editorCapability = (Form.useWatch(['capability'], form) as string | undefined) ?? ''
   const editorDriver = Form.useWatch(['executor', 'driver'], form) as DriverName | undefined
   const editorCommandId = Form.useWatch(['executor', 'command_id'], form) as string | undefined
+  const isSetFlagsCapability = editorCapability.trim() === 'extensions.set_flags'
   const commandsDriver: DriverName = (editorDriver === 'cli' || editorDriver === 'ibcmd')
     ? editorDriver
     : (editorKind === 'designer_cli' ? 'cli' : 'ibcmd')
@@ -682,6 +684,48 @@ export function ActionCatalogEditorModal({
                 />
               </Form.Item>
             </Space>
+
+            {isSetFlagsCapability && (
+              <div style={{ marginTop: 8 }}>
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text strong>fixed.apply_mask (preset)</Text>
+                    <Button
+                      size="small"
+                      onClick={() => form.setFieldValue(['executor', 'fixed', 'apply_mask'], undefined)}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                  <Text type="secondary">
+                    Optional preset mask for <Text code>extensions.set_flags</Text>. If omitted, caller provides apply_mask or system applies all flags.
+                  </Text>
+                  <Space size="middle" wrap>
+                    <Form.Item
+                      label="active"
+                      name={['executor', 'fixed', 'apply_mask', 'active']}
+                      valuePropName="checked"
+                    >
+                      <Switch />
+                    </Form.Item>
+                    <Form.Item
+                      label="safe_mode"
+                      name={['executor', 'fixed', 'apply_mask', 'safe_mode']}
+                      valuePropName="checked"
+                    >
+                      <Switch />
+                    </Form.Item>
+                    <Form.Item
+                      label="unsafe_action_protection"
+                      name={['executor', 'fixed', 'apply_mask', 'unsafe_action_protection']}
+                      valuePropName="checked"
+                    >
+                      <Switch />
+                    </Form.Item>
+                  </Space>
+                </Space>
+              </div>
+            )}
           </Space>
         </Card>
 

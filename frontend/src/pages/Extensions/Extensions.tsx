@@ -8,6 +8,7 @@ import { getV2 } from '../../api/generated'
 import { useClusters } from '../../api/queries/clusters'
 import { useDatabases } from '../../api/queries/databases'
 import { useMe } from '../../api/queries/me'
+import { useActionCatalog } from '../../api/queries/ui'
 import type { ExtensionsFlagAggregate } from '../../api/generated/model/extensionsFlagAggregate'
 import {
   useExtensionsOverview,
@@ -15,6 +16,7 @@ import {
   type ExtensionsOverviewDatabaseRow,
   type ExtensionsOverviewRow,
 } from '../../api/queries/extensions'
+import type { ActionCatalogAction } from '../../api/types/actionCatalog'
 import { tryShowIbcmdCliUiError } from '../../components/ibcmd/ibcmdCliUiErrors'
 
 const { Title, Text } = Typography
@@ -182,6 +184,33 @@ export const Extensions = () => {
   const [applyUnsafeActionProtectionEnabled, setApplyUnsafeActionProtectionEnabled] = useState(false)
   const [applyUnsafeActionProtectionValue, setApplyUnsafeActionProtectionValue] = useState(false)
 
+  const actionCatalogQuery = useActionCatalog()
+  const extensionsActionsRaw = (actionCatalogQuery.data as unknown as { extensions?: { actions?: unknown } } | null)?.extensions?.actions
+  const extensionsActions: ActionCatalogAction[] = useMemo(
+    () => (Array.isArray(extensionsActionsRaw) ? (extensionsActionsRaw as ActionCatalogAction[]) : []),
+    [extensionsActionsRaw],
+  )
+  const setFlagsActions = useMemo(
+    () => extensionsActions.filter((a) => (a.capability ?? '').trim() === 'extensions.set_flags'),
+    [extensionsActions],
+  )
+  const setFlagsActionOptions = useMemo(
+    () => setFlagsActions.map((a) => ({ value: a.id, label: `${a.label} (${a.id})` })),
+    [setFlagsActions],
+  )
+  const [setFlagsActionId, setSetFlagsActionId] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    if (!drawerOpen) return
+    if (setFlagsActions.length === 0) {
+      setSetFlagsActionId(undefined)
+      return
+    }
+    const exists = setFlagsActionId && setFlagsActions.some((a) => a.id === setFlagsActionId)
+    if (!exists) {
+      setSetFlagsActionId(setFlagsActions[0].id)
+    }
+  }, [drawerOpen, setFlagsActions, setFlagsActionId])
+
   useEffect(() => {
     setDatabaseId(undefined)
     setDrawerDatabaseId(undefined)
@@ -291,6 +320,11 @@ export const Extensions = () => {
     if (mutatingDisabled) return
     if (planPending || applyPending) return
 
+    if (actionCatalogQuery.isSuccess && setFlagsActions.length === 0) {
+      message.error('extensions.set_flags action is not configured in Action Catalog')
+      return
+    }
+
     const applyMask = {
       active: applyActiveEnabled,
       safe_mode: applySafeModeEnabled,
@@ -360,6 +394,7 @@ export const Extensions = () => {
       const plan = await api.postExtensionsPlan({
         database_ids: databaseIds,
         capability: 'extensions.set_flags',
+        action_id: setFlagsActionId || undefined,
         extension_name: selectedExtension,
         apply_mask: applyMask,
       })
@@ -455,8 +490,15 @@ export const Extensions = () => {
         },
       })
     } catch (e: unknown) {
-      const maybe = e as { response?: { data?: any } } | null
-      const code = maybe?.response?.data?.error?.code
+      const maybe = e as { response?: { data?: unknown } } | null
+      const extractErrorCode = (data: unknown): string | null => {
+        if (!data || typeof data !== 'object') return null
+        const err = (data as Record<string, unknown>).error
+        if (!err || typeof err !== 'object') return null
+        const code = (err as Record<string, unknown>).code
+        return typeof code === 'string' ? code : null
+      }
+      const code = extractErrorCode(maybe?.response?.data)
       if (code === 'CONFIGURATION_ERROR') {
         message.error('Selective apply is not supported by current action catalog configuration')
         return
@@ -755,6 +797,20 @@ export const Extensions = () => {
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
             <Text strong>Apply flags policy</Text>
             <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <Space align="center" wrap>
+                <Text type="secondary">Action</Text>
+                <Select
+                  data-testid="extensions-apply-action"
+                  value={setFlagsActionId}
+                  onChange={(v) => setSetFlagsActionId(v)}
+                  options={setFlagsActionOptions}
+                  placeholder={actionCatalogQuery.isLoading ? 'Loading…' : 'Select action'}
+                  loading={actionCatalogQuery.isLoading}
+                  allowClear
+                  style={{ minWidth: 360 }}
+                  disabled={setFlagsActionOptions.length === 0}
+                />
+              </Space>
               <Space align="center" wrap>
                 <Checkbox
                   data-testid="extensions-apply-flag-active-enabled"

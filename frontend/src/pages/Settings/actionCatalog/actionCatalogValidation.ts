@@ -2,7 +2,6 @@ import type { PlainObject } from '../actionCatalogTypes'
 import { isPlainObject, isValidUuid, normalizeActionId } from '../actionCatalogUtils'
 
 const CAPABILITY_RE = /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/
-const RESERVED_CAPABILITIES = new Set(['extensions.list', 'extensions.sync', 'extensions.set_flags'])
 
 export type ActionCatalogValidationResult = {
   ok: boolean
@@ -56,7 +55,6 @@ export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogV
   }
 
   const seenIds = new Set<string>()
-  const seenReserved = new Map<string, number>()
 
   for (let idx = 0; idx < actions.length; idx += 1) {
     const action = actions[idx]
@@ -160,24 +158,37 @@ export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogV
         errors.push(`extensions.actions[${idx}].executor.fixed: must be an object`)
       } else {
         for (const key of Object.keys(fixed)) {
-          if (key !== 'confirm_dangerous' && key !== 'timeout_seconds') {
+          if (key !== 'confirm_dangerous' && key !== 'timeout_seconds' && key !== 'apply_mask') {
             errors.push(`extensions.actions[${idx}].executor.fixed: unknown key: ${key}`)
           }
         }
-      }
-    }
 
-    const effectiveReserved = (() => {
-      if (capability && RESERVED_CAPABILITIES.has(capability)) return { field: 'capability', value: capability }
-      if (!capability && id && RESERVED_CAPABILITIES.has(id)) return { field: 'id', value: id }
-      return null
-    })()
-    if (effectiveReserved) {
-      const prev = seenReserved.get(effectiveReserved.value)
-      if (prev === undefined) {
-        seenReserved.set(effectiveReserved.value, idx)
-      } else {
-        errors.push(`extensions.actions[${idx}].${effectiveReserved.field}: duplicate reserved capability (${effectiveReserved.value})`)
+        if (fixed.apply_mask !== undefined) {
+          const mask = isPlainObject(fixed.apply_mask) ? fixed.apply_mask as PlainObject : null
+          if (!mask) {
+            errors.push(`extensions.actions[${idx}].executor.fixed.apply_mask: must be an object`)
+          } else {
+            const allowed = ['active', 'safe_mode', 'unsafe_action_protection'] as const
+            const allowedSet = new Set<string>(allowed)
+            for (const key of Object.keys(mask)) {
+              if (!allowedSet.has(key)) {
+                errors.push(`extensions.actions[${idx}].executor.fixed.apply_mask: unknown key: ${key}`)
+              }
+            }
+            let anySelected = false
+            for (const key of allowed) {
+              const v = mask[key]
+              if (typeof v !== 'boolean') {
+                errors.push(`extensions.actions[${idx}].executor.fixed.apply_mask.${key}: must be a boolean`)
+              } else if (v) {
+                anySelected = true
+              }
+            }
+            if (!anySelected) {
+              errors.push(`extensions.actions[${idx}].executor.fixed.apply_mask: must select at least one flag`)
+            }
+          }
+        }
       }
     }
   }

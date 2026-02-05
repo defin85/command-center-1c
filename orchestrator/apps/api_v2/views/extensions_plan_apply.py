@@ -31,6 +31,77 @@ from .ui.preview import _preview_ibcmd_cli
 from .operations.execute_ibcmd_cli_impl import _execute_ibcmd_cli_validated
 
 
+def _normalize_action_id(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _iter_extensions_actions(catalog: dict[str, Any]) -> list[dict[str, Any]]:
+    extensions = catalog.get("extensions")
+    if not isinstance(extensions, dict):
+        return []
+    actions = extensions.get("actions")
+    if not isinstance(actions, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for action in actions:
+        if isinstance(action, dict):
+            out.append(action)
+    return out
+
+
+def _match_extensions_action_capability(action: dict[str, Any], capability: str) -> bool:
+    action_capability = action.get("capability")
+    if isinstance(action_capability, str) and action_capability.strip():
+        return action_capability.strip() == capability
+    # Legacy fallback: reserved capabilities were stored in `action.id`.
+    return _normalize_action_id(action.get("id")) == capability
+
+
+def _resolve_extensions_action_from_catalog(
+    *,
+    catalog: dict[str, Any],
+    capability: str | None,
+    action_id: str | None,
+) -> tuple[dict[str, Any] | None, Response | None]:
+    actions = _iter_extensions_actions(catalog)
+
+    normalized_action_id = _normalize_action_id(action_id)
+    normalized_capability = str(capability or "").strip()
+
+    if normalized_action_id:
+        for action in actions:
+            if _normalize_action_id(action.get("id")) == normalized_action_id:
+                return action, None
+        return None, Response(
+            {"success": False, "error": {"code": "MISSING_ACTION", "message": f"Action not found: {normalized_action_id}"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not normalized_capability:
+        normalized_capability = "extensions.sync"
+
+    matched = [a for a in actions if _match_extensions_action_capability(a, normalized_capability)]
+    if not matched:
+        return None, Response(
+            {"success": False, "error": {"code": "MISSING_ACTION", "message": f"{normalized_capability} is not configured"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if len(matched) > 1:
+        candidates = sorted([_normalize_action_id(a.get("id")) for a in matched if _normalize_action_id(a.get("id"))])
+        return None, Response(
+            {
+                "success": False,
+                "error": {
+                    "code": "AMBIGUOUS_ACTION",
+                    "message": f"Multiple actions match capability: {normalized_capability}. Specify action_id.",
+                    "candidates": candidates,
+                },
+            },
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    return matched[0], None
+
+
 def _permission_denied(message: str):
     return Response(
         {"success": False, "error": {"code": "PERMISSION_DENIED", "message": message}},
@@ -109,36 +180,20 @@ def _compute_extensions_snapshot_precondition(db: Database) -> dict[str, Any]:
 
 
 def _get_extensions_action_from_catalog(catalog: dict[str, Any], capability: str) -> dict[str, Any] | None:
-    extensions = catalog.get("extensions")
-    if not isinstance(extensions, dict):
-        return None
-    actions = extensions.get("actions")
-    if not isinstance(actions, list):
-        return None
-    for action in actions:
-        if not isinstance(action, dict):
-            continue
-        action_capability = action.get("capability")
-        if isinstance(action_capability, str) and action_capability.strip():
-            if action_capability.strip() != capability:
-                continue
-        else:
-            # Legacy fallback: reserved capabilities were stored in `action.id`.
-            if str(action.get("id") or "").strip() != capability:
-                continue
-        return action
+    # Backward-compatible helper for legacy call sites (prefer _resolve_extensions_action_from_catalog).
+    actions = _iter_extensions_actions(catalog)
+    matched = [a for a in actions if _match_extensions_action_capability(a, capability)]
+    if len(matched) == 1:
+        return matched[0]
     return None
 
 
 def _get_sync_executor_or_error(*, request, tenant_id: str) -> tuple[dict[str, Any] | None, Response | None]:
     raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
     catalog, _errors = ensure_valid_action_catalog(raw_catalog)
-    action = _get_extensions_action_from_catalog(catalog, "extensions.sync")
-    if action is None:
-        return None, Response(
-            {"success": False, "error": {"code": "MISSING_ACTION", "message": "extensions.sync is not configured"}},
-            status=http_status.HTTP_400_BAD_REQUEST,
-        )
+    action, err = _resolve_extensions_action_from_catalog(catalog=catalog, capability="extensions.sync", action_id=None)
+    if err:
+        return None, err
     executor = action.get("executor") if isinstance(action.get("executor"), dict) else None
     if not isinstance(executor, dict):
         return None, Response(
@@ -167,6 +222,7 @@ def _get_sync_executor_or_error(*, request, tenant_id: str) -> tuple[dict[str, A
 class ExtensionsPlanRequestSerializer(serializers.Serializer):
     database_ids = serializers.ListField(child=serializers.UUIDField(format="hex_verbose"), min_length=1, max_length=500)
     capability = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    action_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     extension_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     # NOTE: apply_mask is only supported for capability `extensions.set_flags`.
     apply_mask = serializers.DictField(required=False)
@@ -228,17 +284,19 @@ def extensions_plan(request):
     serializer = ExtensionsPlanRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     database_ids = [str(x) for x in serializer.validated_data["database_ids"]]
-    capability = str(serializer.validated_data.get("capability") or "extensions.sync").strip()
+    capability_raw = str(serializer.validated_data.get("capability") or "").strip()
+    action_id = _normalize_action_id(serializer.validated_data.get("action_id"))
     extension_name = str(serializer.validated_data.get("extension_name") or "").strip()
     apply_mask_raw = serializer.validated_data.get("apply_mask")
 
-    if capability not in {"extensions.sync", "extensions.set_flags"}:
+    # NOTE: capability can be omitted when action_id is provided.
+    if capability_raw and capability_raw not in {"extensions.sync", "extensions.set_flags"}:
         return Response(
-            {"success": False, "error": {"code": "INVALID_PARAMETER", "message": f"Unsupported capability: {capability}"}},
+            {"success": False, "error": {"code": "INVALID_PARAMETER", "message": f"Unsupported capability: {capability_raw}"}},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    if capability == "extensions.set_flags":
+    if capability_raw == "extensions.set_flags":
         denied = _require_manage_permission(request)
         if denied:
             return denied
@@ -261,12 +319,43 @@ def extensions_plan(request):
 
     raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
     catalog, _errors = ensure_valid_action_catalog(raw_catalog)
-    action = _get_extensions_action_from_catalog(catalog, capability)
-    if action is None:
+    action, err = _resolve_extensions_action_from_catalog(
+        catalog=catalog,
+        capability=capability_raw or None,
+        action_id=action_id or None,
+    )
+    if err:
+        return err
+
+    capability = str(action.get("capability") or "").strip()
+    if not capability:
+        # Legacy reserved actions used `id == capability`.
+        if capability_raw:
+            capability = capability_raw
+        elif not action_id:
+            capability = "extensions.sync"
+    if capability_raw and capability != capability_raw:
         return Response(
-            {"success": False, "error": {"code": "MISSING_ACTION", "message": f"{capability} is not configured"}},
+            {
+                "success": False,
+                "error": {"code": "INVALID_PARAMETER", "message": f"capability mismatch for action_id: {capability_raw} != {capability}"},
+            },
             status=http_status.HTTP_400_BAD_REQUEST,
         )
+    if capability not in {"extensions.sync", "extensions.set_flags"}:
+        return Response(
+            {"success": False, "error": {"code": "CONFIGURATION_ERROR", "message": f"Unsupported action capability: {capability}"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    if capability == "extensions.set_flags" and capability_raw != "extensions.set_flags":
+        denied = _require_manage_permission(request)
+        if denied:
+            return denied
+        denied = _require_tenant_header_for_staff_mutating(request)
+        if denied:
+            return denied
+
     executor = action.get("executor") if isinstance(action.get("executor"), dict) else None
     if not isinstance(executor, dict):
         return Response(
@@ -288,7 +377,14 @@ def extensions_plan(request):
     executor_for_plan = dict(executor)
 
     if capability == "extensions.set_flags":
-        apply_mask, mask_err = _normalize_set_flags_apply_mask(apply_mask_raw)
+        effective_apply_mask_raw = apply_mask_raw
+        if effective_apply_mask_raw is None:
+            fixed = executor.get("fixed") if isinstance(executor.get("fixed"), dict) else {}
+            preset = fixed.get("apply_mask") if isinstance(fixed, dict) else None
+            if preset is not None:
+                effective_apply_mask_raw = preset
+
+        apply_mask, mask_err = _normalize_set_flags_apply_mask(effective_apply_mask_raw)
         if mask_err:
             return Response(
                 {"success": False, "error": {"code": "VALIDATION_ERROR", "message": mask_err}},
@@ -522,12 +618,9 @@ def extensions_apply(request):
         catalog, _errors = ensure_valid_action_catalog(raw_catalog)
 
     if strict:
-        list_action = _get_extensions_action_from_catalog(catalog, "extensions.list")
-        if list_action is None:
-            return Response(
-                {"success": False, "error": {"code": "MISSING_ACTION", "message": "extensions.list is not configured"}},
-                status=http_status.HTTP_400_BAD_REQUEST,
-            )
+        list_action, list_err = _resolve_extensions_action_from_catalog(catalog=catalog, capability="extensions.list", action_id=None)
+        if list_err:
+            return list_err
         list_executor = list_action.get("executor") if isinstance(list_action.get("executor"), dict) else None
         if not isinstance(list_executor, dict) or list_executor.get("kind") != "ibcmd_cli":
             return Response(

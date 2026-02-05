@@ -51,6 +51,11 @@ export type ActionFormValues = {
     fixed?: {
       confirm_dangerous?: boolean
       timeout_seconds?: number
+      apply_mask?: {
+        active?: boolean
+        safe_mode?: boolean
+        unsafe_action_protection?: boolean
+      }
     }
   }
 }
