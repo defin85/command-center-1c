@@ -40,8 +40,10 @@ const CAPABILITY_OPTIONS: { value: string; label: string }[] = [
 ]
 
 const CAPABILITY_RE = /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/
+const GUIDED_PARAMS_RENDER_BATCH = 60
 
 type ParamsEditorMode = 'guided' | 'raw'
+type GuidedGroupKey = 'filled' | 'required' | 'optional'
 
 export type ActionCatalogEditorModalProps = {
   open: boolean
@@ -69,7 +71,13 @@ export function ActionCatalogEditorModal({
   const [paramsObject, setParamsObject] = useState<Record<string, unknown>>({})
   const [rawParamsError, setRawParamsError] = useState<string | null>(null)
   const [paramsSearch, setParamsSearch] = useState('')
+  const [activeTabKey, setActiveTabKey] = useState('basics')
   const [guidedParamsGroupsOpen, setGuidedParamsGroupsOpen] = useState<string[]>(['filled', 'required'])
+  const [guidedRenderLimitByGroup, setGuidedRenderLimitByGroup] = useState<Record<GuidedGroupKey, number>>({
+    filled: GUIDED_PARAMS_RENDER_BATCH,
+    required: GUIDED_PARAMS_RENDER_BATCH,
+    optional: GUIDED_PARAMS_RENDER_BATCH,
+  })
 
   const editorKind = (Form.useWatch(['executor', 'kind'], form) as ExecutorKind | undefined) ?? 'ibcmd_cli'
   const editorCapability = (Form.useWatch(['capability'], form) as string | undefined) ?? ''
@@ -159,23 +167,34 @@ export function ActionCatalogEditorModal({
     return { ok: true, value: parsed }
   }
 
-  useEffect(() => {
-    if (!open) return
-    autoFilledCommandIdsRef.current.clear()
-    setParamsTouched(false)
-    setGuidedParamsGroupsOpen(['filled', 'required'])
-
-    const current = form.getFieldValue(['executor', 'params_json']) ?? initialValues?.executor?.params_json
-    const parsed = parseParamsJsonToObject(current)
+  const syncParamsEditorFromValue = (value: unknown) => {
+    const parsed = parseParamsJsonToObject(value)
     if (parsed.ok) {
       setParamsObject(parsed.value)
       setRawParamsError(null)
       setParamsEditorMode('guided')
-    } else {
-      setParamsObject({})
-      setRawParamsError(parsed.error)
-      setParamsEditorMode('raw')
+      return
     }
+    setParamsObject({})
+    setRawParamsError(parsed.error)
+    setParamsEditorMode('raw')
+  }
+
+  useEffect(() => {
+    if (!open) return
+    autoFilledCommandIdsRef.current.clear()
+    setParamsTouched(false)
+    setActiveTabKey('basics')
+    setParamsSearch('')
+    setGuidedParamsGroupsOpen(['filled', 'required'])
+    setGuidedRenderLimitByGroup({
+      filled: GUIDED_PARAMS_RENDER_BATCH,
+      required: GUIDED_PARAMS_RENDER_BATCH,
+      optional: GUIDED_PARAMS_RENDER_BATCH,
+    })
+
+    const current = form.getFieldValue(['executor', 'params_json']) ?? initialValues?.executor?.params_json
+    syncParamsEditorFromValue(current)
   }, [form, initialValues?.executor?.params_json, open])
 
   useEffect(() => {
@@ -354,6 +373,23 @@ export function ActionCatalogEditorModal({
     return { filled, required, optional }
   }, [filteredCommandParams, paramsObject])
 
+  const visibleGroupedCommandParams = useMemo(() => ({
+    filled: groupedCommandParams.filled.slice(0, guidedRenderLimitByGroup.filled),
+    required: groupedCommandParams.required.slice(0, guidedRenderLimitByGroup.required),
+    optional: groupedCommandParams.optional.slice(0, guidedRenderLimitByGroup.optional),
+  }), [groupedCommandParams, guidedRenderLimitByGroup])
+
+  const hasMoreInGroup = (group: GuidedGroupKey): boolean => (
+    groupedCommandParams[group].length > visibleGroupedCommandParams[group].length
+  )
+
+  const handleShowMoreGroupItems = (group: GuidedGroupKey) => {
+    setGuidedRenderLimitByGroup((current) => ({
+      ...current,
+      [group]: current[group] + GUIDED_PARAMS_RENDER_BATCH,
+    }))
+  }
+
   const handleCopyPreviewJson = async () => {
     try {
       const raw = JSON.stringify(form.getFieldsValue(true), null, 2)
@@ -364,17 +400,42 @@ export function ActionCatalogEditorModal({
     }
   }
 
+  const handleOpenPreviewTab = () => {
+    setActiveTabKey('preview')
+  }
+
+  const handleResetForm = () => {
+    form.resetFields()
+    setParamsTouched(false)
+    setParamsSearch('')
+    setGuidedParamsGroupsOpen(['filled', 'required'])
+    setGuidedRenderLimitByGroup({
+      filled: GUIDED_PARAMS_RENDER_BATCH,
+      required: GUIDED_PARAMS_RENDER_BATCH,
+      optional: GUIDED_PARAMS_RENDER_BATCH,
+    })
+    const current = form.getFieldValue(['executor', 'params_json']) ?? initialValues?.executor?.params_json
+    syncParamsEditorFromValue(current)
+    setActiveTabKey('basics')
+  }
+
   const footer = (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <Space>
+        <Button size="small" onClick={handleOpenPreviewTab} data-testid="action-catalog-editor-open-preview-tab">
+          Preview
+        </Button>
         <Button size="small" onClick={handleCopyPreviewJson} data-testid="action-catalog-editor-copy-json">
           Copy JSON
+        </Button>
+        <Button size="small" onClick={handleResetForm} data-testid="action-catalog-editor-reset-form">
+          Reset
         </Button>
       </Space>
       <Space>
         <Button onClick={onCancel}>Cancel</Button>
         <Button type="primary" onClick={onApply} data-testid="action-catalog-editor-apply">
-          Apply
+          Save
         </Button>
       </Space>
     </div>
@@ -387,6 +448,7 @@ export function ActionCatalogEditorModal({
       onCancel={onCancel}
       footer={footer}
       destroyOnClose
+      styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
     >
       <Form<ActionFormValues>
         form={form}
@@ -395,12 +457,14 @@ export function ActionCatalogEditorModal({
         initialValues={initialValues ?? undefined}
       >
         <Tabs
-          defaultActiveKey="basics"
+          activeKey={activeTabKey}
+          onChange={(next) => setActiveTabKey(next)}
           destroyInactiveTabPane={false}
           items={[
             {
               key: 'basics',
               label: 'Basics',
+              forceRender: true,
               children: (
                 <Space direction="vertical" style={{ width: '100%' }}>
                   <Form.Item
@@ -605,6 +669,7 @@ export function ActionCatalogEditorModal({
             {
               key: 'executor',
               label: 'Executor',
+              forceRender: true,
               children: (
                 <Space direction="vertical" style={{ width: '100%' }}>
                   {(editorKind === 'ibcmd_cli' || editorKind === 'designer_cli') && (
@@ -643,6 +708,7 @@ export function ActionCatalogEditorModal({
             {
               key: 'params',
               label: 'Params',
+              forceRender: true,
               children: (
                 <Space direction="vertical" style={{ width: '100%' }}>
                   <Form.Item
@@ -761,7 +827,7 @@ export function ActionCatalogEditorModal({
                                 <Text type="secondary">No filled params.</Text>
                               ) : (
                                 <div>
-                                  {groupedCommandParams.filled.map(({ name, schema }) => (
+                                  {visibleGroupedCommandParams.filled.map(({ name, schema }) => (
                                     <ParamField
                                       key={name}
                                       name={name}
@@ -770,6 +836,15 @@ export function ActionCatalogEditorModal({
                                       onChange={(next) => handleGuidedParamChange(name, next)}
                                     />
                                   ))}
+                                  {hasMoreInGroup('filled') && (
+                                    <Button
+                                      size="small"
+                                      onClick={() => handleShowMoreGroupItems('filled')}
+                                      data-testid="action-catalog-editor-params-show-more-filled"
+                                    >
+                                      Show more
+                                    </Button>
+                                  )}
                                 </div>
                               ),
                             },
@@ -782,7 +857,7 @@ export function ActionCatalogEditorModal({
                                 <Text type="secondary">No required params.</Text>
                               ) : (
                                 <div>
-                                  {groupedCommandParams.required.map(({ name, schema }) => (
+                                  {visibleGroupedCommandParams.required.map(({ name, schema }) => (
                                     <ParamField
                                       key={name}
                                       name={name}
@@ -791,6 +866,15 @@ export function ActionCatalogEditorModal({
                                       onChange={(next) => handleGuidedParamChange(name, next)}
                                     />
                                   ))}
+                                  {hasMoreInGroup('required') && (
+                                    <Button
+                                      size="small"
+                                      onClick={() => handleShowMoreGroupItems('required')}
+                                      data-testid="action-catalog-editor-params-show-more-required"
+                                    >
+                                      Show more
+                                    </Button>
+                                  )}
                                 </div>
                               ),
                             },
@@ -803,7 +887,7 @@ export function ActionCatalogEditorModal({
                                 <Text type="secondary">No optional params.</Text>
                               ) : (
                                 <div>
-                                  {groupedCommandParams.optional.map(({ name, schema }) => (
+                                  {visibleGroupedCommandParams.optional.map(({ name, schema }) => (
                                     <ParamField
                                       key={name}
                                       name={name}
@@ -812,6 +896,15 @@ export function ActionCatalogEditorModal({
                                       onChange={(next) => handleGuidedParamChange(name, next)}
                                     />
                                   ))}
+                                  {hasMoreInGroup('optional') && (
+                                    <Button
+                                      size="small"
+                                      onClick={() => handleShowMoreGroupItems('optional')}
+                                      data-testid="action-catalog-editor-params-show-more-optional"
+                                    >
+                                      Show more
+                                    </Button>
+                                  )}
                                 </div>
                               ),
                             },
@@ -826,6 +919,7 @@ export function ActionCatalogEditorModal({
             {
               key: 'safety',
               label: 'Safety & Fixed',
+              forceRender: true,
               children: (
                 <Space direction="vertical" style={{ width: '100%' }}>
                   <Space size="middle" wrap>
@@ -871,11 +965,13 @@ export function ActionCatalogEditorModal({
             {
               key: 'preview',
               label: 'Preview',
+              forceRender: true,
               children: (
                 <Input.TextArea
                   rows={10}
                   value={JSON.stringify(form.getFieldsValue(true), null, 2)}
                   readOnly
+                  data-testid="action-catalog-editor-preview-json"
                 />
               ),
             },

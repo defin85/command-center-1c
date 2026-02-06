@@ -119,6 +119,44 @@ export const buildDefaultAction = (): PlainObject => ({
   },
 })
 
+const cleanupJsonValue = (value: unknown): unknown => {
+  if (value === undefined) return undefined
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => cleanupJsonValue(item))
+      .filter((item) => item !== undefined)
+  }
+  if (isPlainObject(value)) {
+    const out: PlainObject = {}
+    for (const [key, nested] of Object.entries(value)) {
+      const cleaned = cleanupJsonValue(nested)
+      if (cleaned !== undefined) out[key] = cleaned
+    }
+    return out
+  }
+  return value
+}
+
+const toFixedFormValue = (value: unknown): ActionFormValues['executor']['fixed'] => {
+  if (!isPlainObject(value)) return undefined
+  const next = deepCopy(value as PlainObject)
+  if (!isPlainObject(next)) return undefined
+
+  if (next.confirm_dangerous !== undefined && typeof next.confirm_dangerous !== 'boolean') {
+    delete next.confirm_dangerous
+  }
+  if (next.timeout_seconds !== undefined) {
+    if (typeof next.timeout_seconds !== 'number' || !Number.isFinite(next.timeout_seconds)) {
+      delete next.timeout_seconds
+    }
+  }
+
+  const cleaned = cleanupJsonValue(next)
+  if (!isPlainObject(cleaned)) return undefined
+  if (Object.keys(cleaned).length === 0) return undefined
+  return cleaned as ActionFormValues['executor']['fixed']
+}
+
 export const deriveActionFormValues = (action: PlainObject | null): ActionFormValues => {
   const source = action ?? buildDefaultAction()
 
@@ -146,15 +184,7 @@ export const deriveActionFormValues = (action: PlainObject | null): ActionFormVa
     : []
   const stdin = typeof executorRaw.stdin === 'string' ? executorRaw.stdin : ''
 
-  const fixed = isPlainObject(executorRaw.fixed) ? executorRaw.fixed as PlainObject : {}
-  const confirmDangerous = fixed.confirm_dangerous === true
-  const timeoutSeconds = typeof fixed.timeout_seconds === 'number' ? fixed.timeout_seconds : undefined
-  const applyMaskRaw = isPlainObject(fixed.apply_mask) ? fixed.apply_mask as PlainObject : null
-  const applyMask = applyMaskRaw ? {
-    active: typeof applyMaskRaw.active === 'boolean' ? applyMaskRaw.active : undefined,
-    safe_mode: typeof applyMaskRaw.safe_mode === 'boolean' ? applyMaskRaw.safe_mode : undefined,
-    unsafe_action_protection: typeof applyMaskRaw.unsafe_action_protection === 'boolean' ? applyMaskRaw.unsafe_action_protection : undefined,
-  } : undefined
+  const fixed = toFixedFormValue(executorRaw.fixed)
 
   return {
     id,
@@ -170,11 +200,7 @@ export const deriveActionFormValues = (action: PlainObject | null): ActionFormVa
       params_json: paramsJson,
       additional_args: additionalArgs,
       stdin,
-      fixed: {
-        confirm_dangerous: confirmDangerous,
-        timeout_seconds: timeoutSeconds,
-        apply_mask: applyMask,
-      },
+      fixed,
     },
   }
 }
@@ -241,34 +267,8 @@ export const buildActionFromForm = (base: PlainObject | null, values: ActionForm
     delete executor.params
   }
 
-  const fixedNext: PlainObject = {}
-  const fixedForm = values.executor.fixed
-  if (fixedForm?.confirm_dangerous === true) {
-    fixedNext.confirm_dangerous = true
-  }
-  if (typeof fixedForm?.timeout_seconds === 'number' && Number.isFinite(fixedForm.timeout_seconds)) {
-    fixedNext.timeout_seconds = fixedForm.timeout_seconds
-  }
-  const applyMaskForm = fixedForm?.apply_mask
-  const hasAnyApplyMaskKey = Boolean(
-    applyMaskForm
-    && (
-      typeof applyMaskForm.active === 'boolean'
-      || typeof applyMaskForm.safe_mode === 'boolean'
-      || typeof applyMaskForm.unsafe_action_protection === 'boolean'
-    )
-  )
-  if (hasAnyApplyMaskKey) {
-    const mask = {
-      active: applyMaskForm?.active === true,
-      safe_mode: applyMaskForm?.safe_mode === true,
-      unsafe_action_protection: applyMaskForm?.unsafe_action_protection === true,
-    }
-    if (mask.active || mask.safe_mode || mask.unsafe_action_protection) {
-      fixedNext.apply_mask = mask
-    }
-  }
-  if (Object.keys(fixedNext).length) {
+  const fixedNext = toFixedFormValue(values.executor.fixed)
+  if (fixedNext) {
     executor.fixed = fixedNext
   } else {
     delete executor.fixed

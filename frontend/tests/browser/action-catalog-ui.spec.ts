@@ -34,6 +34,7 @@ async function setupApiMocks(
     runtimeSettings: AnyRecord[]
     patchFailCount?: number
     patchFailMessages?: string[]
+    editorHints?: AnyRecord
   }
 ) {
   await page.route('**/api/v2/**', async (route) => {
@@ -171,9 +172,9 @@ async function setupApiMocks(
       return fulfillJson(route, { key, value: updatedValue, status })
     }
 
-	    if (method === 'GET' && path === '/api/v2/operations/driver-commands/') {
-	      const driver = String(url.searchParams.get('driver') || 'ibcmd')
-	      return fulfillJson(route, {
+    if (method === 'GET' && path === '/api/v2/operations/driver-commands/') {
+      const driver = String(url.searchParams.get('driver') || 'ibcmd')
+      return fulfillJson(route, {
 	        driver,
         base_version: 'v1',
         overrides_version: null,
@@ -213,8 +214,47 @@ async function setupApiMocks(
 	            },
 	          },
 	        },
-	      })
-	    }
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/ui/action-catalog/editor-hints/') {
+      return fulfillJson(route, state.editorHints ?? {
+        hints_version: 1,
+        capabilities: {
+          'extensions.set_flags': {
+            fixed_schema: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                apply_mask: {
+                  type: 'object',
+                  title: 'apply_mask (preset)',
+                  description: 'Optional preset mask for extensions.set_flags.',
+                  additionalProperties: false,
+                  required: ['active', 'safe_mode', 'unsafe_action_protection'],
+                  properties: {
+                    active: { type: 'boolean', title: 'active', default: false },
+                    safe_mode: { type: 'boolean', title: 'safe_mode', default: false },
+                    unsafe_action_protection: { type: 'boolean', title: 'unsafe_action_protection', default: false },
+                  },
+                },
+              },
+            },
+            fixed_ui_schema: {
+              apply_mask: {
+                active: { 'ui:widget': 'switch' },
+                safe_mode: { 'ui:widget': 'switch' },
+                unsafe_action_protection: { 'ui:widget': 'switch' },
+              },
+            },
+            help: {
+              title: 'Set flags presets',
+              description: 'Capability-specific fixed fields for extensions.set_flags.',
+            },
+          },
+        },
+      })
+    }
 
     if (method === 'POST' && path === '/api/v2/ui/execution-plan/preview/') {
       return fulfillJson(route, {
@@ -275,10 +315,12 @@ test('Action Catalog: loads ui.action_catalog and switches modes (smoke)', async
   const listRow = page.locator('tr', { has: page.getByText('extensions.list', { exact: true }) })
   await listRow.getByRole('button', { name: 'Preview', exact: true }).click()
   await expect(page.getByText('Preview: extensions.list')).toBeVisible()
-  await page.getByTestId('action-catalog-preview-database-ids').click()
-  await page.keyboard.type('db1')
-  await page.keyboard.press('Enter')
-  await page.getByLabel('Preview: extensions.list').getByRole('button', { name: 'Preview', exact: true }).click()
+  const previewDatabasesInput = page.getByTestId('action-catalog-preview-database-ids').locator('input').first()
+  await previewDatabasesInput.fill('db1')
+  await previewDatabasesInput.press('Enter')
+  const previewRunButton = page.getByLabel('Preview: extensions.list').getByRole('button', { name: 'Preview', exact: true })
+  await expect(previewRunButton).toBeEnabled()
+  await previewRunButton.click()
   await expect(page.getByText('execution_plan', { exact: false })).toBeVisible()
   await page.locator('.ant-modal-footer').getByRole('button', { name: 'Close', exact: true }).click()
 
@@ -391,6 +433,7 @@ test('Action Catalog: auto-fills params template from command schema and confirm
   await page.keyboard.type('infobase.extension.list')
   await page.keyboard.press('Enter')
 
+  await page.getByRole('tab', { name: 'Params', exact: true }).click()
   await expect(page.getByTestId('action-catalog-editor-params-guided')).toBeVisible()
   await page.getByTestId('action-catalog-editor-params-mode').getByText('Raw JSON', { exact: true }).click()
 
@@ -435,13 +478,15 @@ test('Action Catalog editor: params default Guided and schema panel is collapsed
   await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
 
   await page.getByTestId('action-catalog-add').click()
-  await expect(page.getByTestId('action-catalog-editor-params-guided')).toBeVisible()
-  await expect(page.getByTestId('action-catalog-editor-params-mode')).toBeVisible()
-
   await page.getByTestId('action-catalog-editor-command-id').click()
   await page.keyboard.type('infobase.extension.list')
   await page.keyboard.press('Enter')
 
+  await page.getByRole('tab', { name: 'Params', exact: true }).click()
+  await expect(page.getByTestId('action-catalog-editor-params-guided')).toBeVisible()
+  await expect(page.getByTestId('action-catalog-editor-params-mode')).toBeVisible()
+
+  await page.getByRole('tab', { name: 'Basics', exact: true }).click()
   const schemaPanel = page.getByTestId('action-catalog-editor-schema-panel')
   await expect(schemaPanel).toBeVisible()
   await expect(schemaPanel.locator('.ant-collapse-item-active')).toHaveCount(0)
@@ -473,12 +518,14 @@ test('Action Catalog editor: preserves unknown keys when editing schema params i
   await page.keyboard.type('infobase.extension.list')
   await page.keyboard.press('Enter')
 
+  await page.getByRole('tab', { name: 'Params', exact: true }).click()
   await page.getByTestId('action-catalog-editor-params-mode').getByText('Raw JSON', { exact: true }).click()
   await page.getByTestId('action-catalog-editor-params').fill('{\"custom\": 1}')
 
   await page.getByTestId('action-catalog-editor-params-mode').getByText('Guided', { exact: true }).click()
   const guided = page.getByTestId('action-catalog-editor-params-guided')
   await expect(guided).toBeVisible()
+  await guided.getByText('Optional', { exact: false }).click()
   await guided.locator('.ant-form-item', { hasText: 'limit' }).locator('input').fill('5')
 
   await page.getByTestId('action-catalog-editor-apply').click()
@@ -486,6 +533,7 @@ test('Action Catalog editor: preserves unknown keys when editing schema params i
 
   const row = page.locator('tr', { has: page.getByText('extensions.unknown', { exact: true }) })
   await row.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByRole('tab', { name: 'Params', exact: true }).click()
   await page.getByTestId('action-catalog-editor-params-mode').getByText('Raw JSON', { exact: true }).click()
 
   const params = page.getByTestId('action-catalog-editor-params')
@@ -519,6 +567,7 @@ test('Action Catalog editor: blocks Guided on invalid Raw JSON and does not auto
   await page.keyboard.type('infobase.extension.list')
   await page.keyboard.press('Enter')
 
+  await page.getByRole('tab', { name: 'Params', exact: true }).click()
   await page.getByTestId('action-catalog-editor-params-mode').getByText('Raw JSON', { exact: true }).click()
   const params = page.getByTestId('action-catalog-editor-params')
   await params.fill('{')
@@ -529,10 +578,107 @@ test('Action Catalog editor: blocks Guided on invalid Raw JSON and does not auto
   await expect(params).toBeVisible()
 
   await params.fill('{}')
+  await page.getByRole('tab', { name: 'Basics', exact: true }).click()
   await page.getByTestId('action-catalog-editor-command-id').click()
   await page.keyboard.type('infobase.extension.update')
   await page.keyboard.press('Enter')
 
   await expect(params).toHaveValue('{}')
   await expect(params).not.toHaveValue(/force/)
+})
+
+test('Action Catalog editor: footer quick actions Preview and Reset', async ({ page }) => {
+  await setupAuth(page)
+  await setupApiMocks(page, {
+    runtimeSettings: [
+      {
+        key: 'ui.action_catalog',
+        value_type: 'json',
+        description: 'UI action catalog bindings (v1).',
+        min_value: null,
+        max_value: null,
+        default: { catalog_version: 1, extensions: { actions: [] } },
+        value: { catalog_version: 1, extensions: { actions: [] } },
+      },
+    ],
+  })
+
+  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
+
+  await page.getByTestId('action-catalog-add').click()
+  await page.getByTestId('action-catalog-editor-id').fill('extensions.quick')
+  await page.getByTestId('action-catalog-editor-label').fill('Quick actions')
+
+  await page.getByTestId('action-catalog-editor-open-preview-tab').click()
+  const previewJson = page.getByTestId('action-catalog-editor-preview-json')
+  await expect(previewJson).toBeVisible()
+  await expect(previewJson).toHaveValue(/"id": "extensions\.quick"/)
+
+  await page.getByTestId('action-catalog-editor-reset-form').click()
+  await expect(page.getByTestId('action-catalog-editor-id')).toHaveValue('')
+  await expect(page.getByTestId('action-catalog-editor-label')).toHaveValue('')
+})
+
+test('Action Catalog editor: capability fixed section follows uiSchema widgets', async ({ page }) => {
+  await setupAuth(page)
+  await setupApiMocks(page, {
+    runtimeSettings: [
+      {
+        key: 'ui.action_catalog',
+        value_type: 'json',
+        description: 'UI action catalog bindings (v1).',
+        min_value: null,
+        max_value: null,
+        default: { catalog_version: 1, extensions: { actions: [] } },
+        value: { catalog_version: 1, extensions: { actions: [] } },
+      },
+    ],
+    editorHints: {
+      hints_version: 1,
+      capabilities: {
+        'extensions.set_flags': {
+          fixed_schema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              apply_mask: {
+                type: 'object',
+                title: 'apply_mask',
+                additionalProperties: false,
+                required: ['active', 'safe_mode', 'unsafe_action_protection'],
+                properties: {
+                  active: { type: 'boolean', title: 'active' },
+                  safe_mode: { type: 'boolean', title: 'safe_mode' },
+                  unsafe_action_protection: { type: 'boolean', title: 'unsafe_action_protection' },
+                },
+              },
+            },
+          },
+          fixed_ui_schema: {
+            apply_mask: {
+              active: { 'ui:widget': 'checkbox' },
+              safe_mode: { 'ui:widget': 'hidden' },
+              unsafe_action_protection: { 'ui:widget': 'switch' },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
+
+  await page.getByTestId('action-catalog-add').click()
+  await page.getByTestId('action-catalog-editor-capability').click()
+  await page.keyboard.type('extensions.set_flags')
+  await page.keyboard.press('Enter')
+
+  await page.getByRole('tab', { name: 'Safety & Fixed', exact: true }).click()
+  await page.getByTestId('action-catalog-editor-fixed-apply_mask-enable').click()
+
+  await expect(page.getByTestId('action-catalog-editor-fixed-apply_mask-active-checkbox')).toBeVisible()
+  await expect(page.getByText('unsafe_action_protection', { exact: true })).toBeVisible()
+  await expect(page.getByText('safe_mode', { exact: true })).toHaveCount(0)
 })

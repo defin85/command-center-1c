@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Form, Space, Spin, Tag, Typography } from 'antd'
 
 import { useMe } from '../../api/queries/me'
+import { useActionCatalogEditorHints } from '../../api/queries/ui'
 import { getEffectiveRuntimeSettings, updateRuntimeSettingOverride } from '../../api/runtimeSettings'
 import type { ActionCatalogMode, ActionFormValues, PlainObject } from './actionCatalogTypes'
 import {
@@ -35,6 +36,7 @@ const DISABLED_ACTIONS_STORAGE_KEY = 'action-catalog.disabled-actions.v1'
 export function ActionCatalogPage() {
   const meQuery = useMe()
   const isStaff = Boolean(meQuery.data?.is_staff)
+  const hintsQuery = useActionCatalogEditorHints(isStaff)
 
   const [mode, setMode] = useState<ActionCatalogMode>('guided')
   const [loading, setLoading] = useState(false)
@@ -127,7 +129,9 @@ export function ActionCatalogPage() {
   const draftIsValidJson = draftParsed !== null
   const actionRows = useMemo(() => buildActionRows(draftParsed), [draftParsed])
 
-  const rawValidation = useMemo(() => validateActionCatalogDraft(draftParsed), [draftParsed])
+  const rawValidation = useMemo(() => (
+    validateActionCatalogDraft(draftParsed, { editorHints: hintsQuery.data })
+  ), [draftParsed, hintsQuery.data])
 
   const saveErrorHints = useMemo(() => {
     return saveErrors.map((msg) => parseSaveErrorHint(msg, saveErrorsDraftActionIds))

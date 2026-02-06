@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from 'react'
-import { Button, Space, Switch, Typography } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { Button, Checkbox, Space, Switch, Typography } from 'antd'
 import type { FormInstance } from 'antd'
 
 import type { ActionCatalogEditorHintsResponse } from '../../../api/generated/model/actionCatalogEditorHintsResponse'
@@ -30,6 +30,10 @@ const getSchemaRequired = (schema: JsonObject): string[] => {
 }
 
 const getSchemaDefault = (schema: JsonObject): unknown => schema.default
+const getSchemaBoolean = (schema: JsonObject, key: string): boolean | null => {
+  const raw = schema[key]
+  return typeof raw === 'boolean' ? raw : null
+}
 
 function buildDefaultsFromSchema(schema: JsonObject): JsonObject {
   const out: JsonObject = {}
@@ -64,6 +68,7 @@ export function ActionCatalogCapabilityFixedSection({
 }) {
   const { Text } = Typography
   const anyForm = form as unknown as FormInstance<any>
+  const [enabledByGroup, setEnabledByGroup] = useState<Record<string, boolean>>({})
 
   const capabilityHints = useMemo(() => {
     const key = capability.trim()
@@ -76,11 +81,25 @@ export function ActionCatalogCapabilityFixedSection({
   const fixedSchema = useMemo(() => (
     getSchemaObject(capabilityHints?.fixed_schema) ?? null
   ), [capabilityHints?.fixed_schema])
+  const fixedUiSchema = useMemo(() => (
+    getSchemaObject(capabilityHints?.fixed_ui_schema) ?? null
+  ), [capabilityHints?.fixed_ui_schema])
 
   const fixedHelp = capabilityHints?.help
   const fixedProps = useMemo(() => (
     fixedSchema ? getSchemaProperties(fixedSchema) : null
   ), [fixedSchema])
+
+  useEffect(() => {
+    setEnabledByGroup({})
+  }, [fixedSchema])
+
+  const getFieldUiSchema = (propKey: string, fieldKey: string): JsonObject | null => {
+    if (!fixedUiSchema) return null
+    const groupUiSchema = getSchemaObject(fixedUiSchema[propKey])
+    if (!groupUiSchema) return null
+    return getSchemaObject(groupUiSchema[fieldKey])
+  }
 
   useEffect(() => {
     if (!fixedProps) return
@@ -143,7 +162,7 @@ export function ActionCatalogCapabilityFixedSection({
         const description = getSchemaString(propSchema, 'description')
         const groupPath = ['executor', 'fixed', propKey]
         const groupValue = anyForm.getFieldValue(groupPath)
-        const enabled = isObject(groupValue)
+        const enabled = isObject(groupValue) || enabledByGroup[propKey] === true
 
         const groupDefaults = buildDefaultsFromSchema(propSchema)
         const nestedProps = getSchemaProperties(propSchema)
@@ -162,6 +181,7 @@ export function ActionCatalogCapabilityFixedSection({
                     <Button
                       size="small"
                       onClick={() => {
+                        setEnabledByGroup((current) => ({ ...current, [propKey]: true }))
                         anyForm.setFieldValue(groupPath, groupDefaults)
                       }}
                       data-testid={`action-catalog-editor-fixed-${propKey}-enable`}
@@ -172,7 +192,10 @@ export function ActionCatalogCapabilityFixedSection({
                   {enabled && (
                     <Button
                       size="small"
-                      onClick={() => anyForm.setFieldValue(groupPath, undefined)}
+                      onClick={() => {
+                        setEnabledByGroup((current) => ({ ...current, [propKey]: false }))
+                        anyForm.setFieldValue(groupPath, undefined)
+                      }}
                       data-testid={`action-catalog-editor-fixed-${propKey}-clear`}
                     >
                       Clear
@@ -195,8 +218,21 @@ export function ActionCatalogCapabilityFixedSection({
                     const fieldType = getSchemaString(fieldSchema, 'type')
                     if (fieldType !== 'boolean') return null
 
-                    const fieldLabel = getSchemaString(fieldSchema, 'title') ?? fieldKey
-                    const fieldHelp = getSchemaString(fieldSchema, 'description')
+                    const fieldUiSchema = getFieldUiSchema(propKey, fieldKey)
+                    const widget = fieldUiSchema ? getSchemaString(fieldUiSchema, 'ui:widget') : null
+                    if (widget === 'hidden') return null
+
+                    const fieldLabel = (
+                      fieldUiSchema
+                        ? getSchemaString(fieldUiSchema, 'ui:title')
+                        : null
+                    ) ?? getSchemaString(fieldSchema, 'title') ?? fieldKey
+                    const fieldHelp = (
+                      fieldUiSchema
+                        ? getSchemaString(fieldUiSchema, 'ui:help')
+                        : null
+                    ) ?? getSchemaString(fieldSchema, 'description')
+                    const disabledByUi = fieldUiSchema ? getSchemaBoolean(fieldUiSchema, 'ui:disabled') === true : false
 
                     return (
                       <div key={fieldKey} style={{ minWidth: 180 }}>
@@ -207,12 +243,27 @@ export function ActionCatalogCapabilityFixedSection({
                           </div>
                         )}
                         <div style={{ marginTop: 4 }}>
-                          <Switch
-                            checked={anyForm.getFieldValue(['executor', 'fixed', propKey, fieldKey]) === true}
-                            onChange={(checked) => {
-                              anyForm.setFieldValue(['executor', 'fixed', propKey, fieldKey], checked)
-                            }}
-                          />
+                          {widget === 'checkbox' ? (
+                            <Checkbox
+                              checked={anyForm.getFieldValue(['executor', 'fixed', propKey, fieldKey]) === true}
+                              disabled={disabledByUi}
+                              data-testid={`action-catalog-editor-fixed-${propKey}-${fieldKey}-checkbox`}
+                              onChange={(event) => {
+                                anyForm.setFieldValue(['executor', 'fixed', propKey, fieldKey], event.target.checked)
+                              }}
+                            >
+                              Enabled
+                            </Checkbox>
+                          ) : (
+                            <Switch
+                              checked={anyForm.getFieldValue(['executor', 'fixed', propKey, fieldKey]) === true}
+                              disabled={disabledByUi}
+                              data-testid={`action-catalog-editor-fixed-${propKey}-${fieldKey}-switch`}
+                              onChange={(checked) => {
+                                anyForm.setFieldValue(['executor', 'fixed', propKey, fieldKey], checked)
+                              }}
+                            />
+                          )}
                         </div>
                       </div>
                     )

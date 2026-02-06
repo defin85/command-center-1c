@@ -31,6 +31,12 @@ def client(user):
 
 
 @pytest.mark.django_db
+def test_action_catalog_editor_hints_requires_auth():
+    resp = APIClient().get("/api/v2/ui/action-catalog/editor-hints/")
+    assert resp.status_code == 401
+
+
+@pytest.mark.django_db
 def test_action_catalog_editor_hints_staff_only(client):
     resp = client.get("/api/v2/ui/action-catalog/editor-hints/")
     assert resp.status_code == 403
@@ -54,3 +60,8 @@ def test_action_catalog_editor_hints_contains_extensions_set_flags(staff_client)
     assert isinstance(props, dict)
     assert "apply_mask" in props
 
+    fixed_ui_schema = hints.get("fixed_ui_schema")
+    assert isinstance(fixed_ui_schema, dict)
+    apply_mask_ui = fixed_ui_schema.get("apply_mask")
+    assert isinstance(apply_mask_ui, dict)
+    assert apply_mask_ui.get("active", {}).get("ui:widget") == "switch"

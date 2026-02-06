@@ -3,6 +3,16 @@ import { isPlainObject, isValidUuid, normalizeActionId } from '../actionCatalogU
 
 const CAPABILITY_RE = /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/
 
+type JsonObject = Record<string, unknown>
+
+type ActionCatalogEditorCapabilityHints = {
+  fixed_schema?: unknown
+}
+
+export type ActionCatalogEditorHintsLike = {
+  capabilities?: Record<string, ActionCatalogEditorCapabilityHints> | unknown
+}
+
 export type ActionCatalogValidationResult = {
   ok: boolean
   errors: string[]
@@ -10,7 +20,115 @@ export type ActionCatalogValidationResult = {
   actionsCount: number
 }
 
-export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogValidationResult => {
+type ActionCatalogValidationOptions = {
+  editorHints?: ActionCatalogEditorHintsLike | null
+}
+
+const getObject = (value: unknown): JsonObject | null => (
+  isPlainObject(value) ? value as JsonObject : null
+)
+
+const getString = (value: unknown): string | null => (
+  typeof value === 'string' ? value.trim() || null : null
+)
+
+const getArrayOfStrings = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+}
+
+const schemaAdditionalPropsAllowed = (schema: JsonObject): boolean => {
+  const raw = schema.additionalProperties
+  if (raw === false) return false
+  return true
+}
+
+const schemaProperties = (schema: JsonObject): Record<string, JsonObject> => {
+  const raw = getObject(schema.properties)
+  if (!raw) return {}
+  const out: Record<string, JsonObject> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    const parsed = getObject(value)
+    if (parsed) out[key] = parsed
+  }
+  return out
+}
+
+const validateBySchema = (
+  value: unknown,
+  schema: JsonObject,
+  path: string,
+  errors: string[]
+) => {
+  const schemaType = getString(schema.type)
+  if (!schemaType) return
+
+  if (schemaType === 'boolean') {
+    if (typeof value !== 'boolean') errors.push(`${path}: must be a boolean`)
+    return
+  }
+
+  if (schemaType === 'string') {
+    if (typeof value !== 'string') errors.push(`${path}: must be a string`)
+    return
+  }
+
+  if (schemaType === 'number') {
+    if (typeof value !== 'number' || !Number.isFinite(value)) errors.push(`${path}: must be a number`)
+    return
+  }
+
+  if (schemaType === 'integer') {
+    if (typeof value !== 'number' || !Number.isInteger(value)) errors.push(`${path}: must be an integer`)
+    return
+  }
+
+  if (schemaType !== 'object') return
+
+  const objectValue = getObject(value)
+  if (!objectValue) {
+    errors.push(`${path}: must be an object`)
+    return
+  }
+
+  const props = schemaProperties(schema)
+  const knownKeys = new Set(Object.keys(props))
+  if (!schemaAdditionalPropsAllowed(schema)) {
+    for (const key of Object.keys(objectValue)) {
+      if (!knownKeys.has(key)) errors.push(`${path}: unknown key: ${key}`)
+    }
+  }
+
+  const required = getArrayOfStrings(schema.required)
+  for (const requiredKey of required) {
+    if (objectValue[requiredKey] === undefined) {
+      errors.push(`${path}.${requiredKey}: is required`)
+    }
+  }
+
+  for (const [key, propSchema] of Object.entries(props)) {
+    const nextValue = objectValue[key]
+    if (nextValue === undefined) continue
+    validateBySchema(nextValue, propSchema, `${path}.${key}`, errors)
+  }
+}
+
+const getCapabilityFixedSchema = (
+  capability: string | null,
+  options: ActionCatalogValidationOptions
+): JsonObject | null => {
+  if (!capability) return null
+  const capabilities = getObject(options.editorHints?.capabilities)
+  if (!capabilities) return null
+  const capabilityHints = getObject(capabilities[capability])
+  if (!capabilityHints) return null
+  return getObject(capabilityHints.fixed_schema)
+}
+
+export const validateActionCatalogDraft = (
+  draftParsed: unknown,
+  options: ActionCatalogValidationOptions = {}
+): ActionCatalogValidationResult => {
   const errors: string[] = []
   const warnings: string[] = []
 
@@ -108,21 +226,21 @@ export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogV
       continue
     }
 
-	    for (const key of Object.keys(executor)) {
-	      if (
-	        key !== 'kind'
-	        && key !== 'driver'
-	        && key !== 'command_id'
-	        && key !== 'workflow_id'
-	        && key !== 'mode'
-	        && key !== 'params'
-	        && key !== 'additional_args'
-	        && key !== 'stdin'
-	        && key !== 'fixed'
-	      ) {
-	        errors.push(`extensions.actions[${idx}].executor: unknown key: ${key}`)
-	      }
-	    }
+    for (const key of Object.keys(executor)) {
+      if (
+        key !== 'kind'
+        && key !== 'driver'
+        && key !== 'command_id'
+        && key !== 'workflow_id'
+        && key !== 'mode'
+        && key !== 'params'
+        && key !== 'additional_args'
+        && key !== 'stdin'
+        && key !== 'fixed'
+      ) {
+        errors.push(`extensions.actions[${idx}].executor: unknown key: ${key}`)
+      }
+    }
 
     const kind = normalizeActionId(executor.kind)
     if (kind !== 'ibcmd_cli' && kind !== 'designer_cli' && kind !== 'workflow') {
@@ -130,9 +248,9 @@ export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogV
       continue
     }
 
-	    if (executor.connection !== undefined) {
-	      errors.push(`extensions.actions[${idx}].executor.connection: is not supported (configure per-database ibcmd connection profile instead)`)
-	    }
+    if (executor.connection !== undefined) {
+      errors.push(`extensions.actions[${idx}].executor.connection: is not supported (configure per-database ibcmd connection profile instead)`)
+    }
 
     if (kind === 'workflow') {
       const workflowId = normalizeActionId(executor.workflow_id)
@@ -157,37 +275,19 @@ export const validateActionCatalogDraft = (draftParsed: unknown): ActionCatalogV
       if (!fixed) {
         errors.push(`extensions.actions[${idx}].executor.fixed: must be an object`)
       } else {
-        for (const key of Object.keys(fixed)) {
-          if (key !== 'confirm_dangerous' && key !== 'timeout_seconds' && key !== 'apply_mask') {
-            errors.push(`extensions.actions[${idx}].executor.fixed: unknown key: ${key}`)
+        if (fixed.confirm_dangerous !== undefined && typeof fixed.confirm_dangerous !== 'boolean') {
+          errors.push(`extensions.actions[${idx}].executor.fixed.confirm_dangerous: must be a boolean`)
+        }
+        if (fixed.timeout_seconds !== undefined) {
+          const timeout = fixed.timeout_seconds
+          if (typeof timeout !== 'number' || !Number.isInteger(timeout) || timeout <= 0) {
+            errors.push(`extensions.actions[${idx}].executor.fixed.timeout_seconds: must be a positive integer`)
           }
         }
 
-        if (fixed.apply_mask !== undefined) {
-          const mask = isPlainObject(fixed.apply_mask) ? fixed.apply_mask as PlainObject : null
-          if (!mask) {
-            errors.push(`extensions.actions[${idx}].executor.fixed.apply_mask: must be an object`)
-          } else {
-            const allowed = ['active', 'safe_mode', 'unsafe_action_protection'] as const
-            const allowedSet = new Set<string>(allowed)
-            for (const key of Object.keys(mask)) {
-              if (!allowedSet.has(key)) {
-                errors.push(`extensions.actions[${idx}].executor.fixed.apply_mask: unknown key: ${key}`)
-              }
-            }
-            let anySelected = false
-            for (const key of allowed) {
-              const v = mask[key]
-              if (typeof v !== 'boolean') {
-                errors.push(`extensions.actions[${idx}].executor.fixed.apply_mask.${key}: must be a boolean`)
-              } else if (v) {
-                anySelected = true
-              }
-            }
-            if (!anySelected) {
-              errors.push(`extensions.actions[${idx}].executor.fixed.apply_mask: must select at least one flag`)
-            }
-          }
+        const fixedSchema = getCapabilityFixedSchema(capability, options)
+        if (fixedSchema) {
+          validateBySchema(fixed, fixedSchema, `extensions.actions[${idx}].executor.fixed`, errors)
         }
       }
     }
