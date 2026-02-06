@@ -145,3 +145,57 @@ For full workflow details: `bd prime`
   - `git update-index --skip-worktree .beads/issues.jsonl .beads/interactions.jsonl .beads/config.yaml .beads/metadata.json`
 - Откатить (если нужно снова видеть изменения):
   - `git update-index --no-skip-worktree .beads/issues.jsonl .beads/interactions.jsonl .beads/config.yaml .beads/metadata.json`
+
+## Семантический поиск (claude-context)
+
+При поиске по коду использовать следующий порядок:
+
+1. `mcp__claude-context__search_code` (семантический поиск, основной путь)
+2. `rg` (точечная верификация по найденным путям)
+
+Чек-лист для эффективного поиска:
+
+1. Формулировать запрос как `объект + действие + контекст` (например: `action catalog fixed schema save payload`).
+2. Первый проход делать с `limit: 6-10`.
+3. Сразу задавать `extensionFilter` под задачу:
+   - backend: `.py`
+   - frontend: `.ts`, `.tsx`
+4. Если в топе много шума, переформулировать запрос через конкретные сущности (`ActionCatalogEditorModal`, `get_action_catalog_editor_hints`, `executor.fixed`).
+5. После семантического поиска подтверждать факт в коде через `rg`/чтение файлов.
+6. Проверять минимум 2-3 источника: код + тест + контракт/spec.
+7. Не считать checklist/status доказательством реализации без проверки исходников.
+8. Для API-контрактов в `contracts/**/*.yaml` сначала пробовать семпоиск, но при пустой/шумной выдаче сразу переходить к `rg` по endpoint/schema.
+
+## Индексация (уменьшение шума)
+
+При ручной переиндексации использовать `force=true` и `ignorePatterns` ниже.
+
+Рекомендуемый профиль `ignorePatterns`:
+
+- `.git/**`
+- `.venv/**`
+- `.beads/**`
+- `.agent-browser/**`
+- `.ruff_cache/**`
+- `frontend/node_modules/**`
+- `frontend/dist/**`
+- `frontend/test-results/**`
+- `orchestrator/.pytest_cache/**`
+- `orchestrator/__pycache__/**`
+- `orchestrator/htmlcov/**`
+- `logs/**`
+- `pids/**`
+- `bin/**`
+- `openspec/changes/**`
+- `docs/archive/**`
+- `frontend/src/api/generated/**`
+- `generated/**`
+- `com._1c.v8.ibis.admin-1.6.7/**`
+
+Важно не игнорировать:
+
+- `frontend/src/**`
+- `orchestrator/apps/**`
+- `contracts/**`
+- `frontend/tests/**`
+- `openspec/specs/**`
