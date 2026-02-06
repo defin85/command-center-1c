@@ -22,34 +22,12 @@ TBD - created by archiving change add-ui-action-catalog-editor. Update Purpose a
 - **THEN** изменения сохраняются в рамках текущей сессии редактирования и не теряются без явного Save
 
 ### Requirement: Поддержка executor kinds
-Система ДОЛЖНА (SHALL) поддерживать в редакторе executor kinds `ibcmd_cli`, `designer_cli` и `workflow`.
+Система ДОЛЖНА (SHALL) поддерживать в редакторе executor kinds `ibcmd_cli`, `designer_cli` и `workflow`, а capability‑специфичные поля НЕ ДОЛЖНЫ (SHALL NOT) масштабироваться через хардкод условных веток в UI.
 
-#### Scenario: ibcmd_cli выбирается из driver catalog и не содержит connection на уровне action
-- **WHEN** staff создаёт/редактирует действие с executor `ibcmd_cli`
-- **THEN** UI позволяет выбрать `driver` и `command_id` из доступного driver catalog и сохранить конфигурацию
-- **AND** UI НЕ позволяет задавать `executor.connection` в action (connection резолвится из профиля базы при запуске)
-
-#### Scenario: workflow выбирается из списка workflow templates
-- **WHEN** staff создаёт/редактирует действие с executor `workflow`
-- **THEN** UI позволяет выбрать `workflow_id` из списка доступных workflow templates и сохранить конфигурацию
-
-#### Scenario: designer_cli редактируется как CLI command
-- **WHEN** staff создаёт/редактирует действие с executor `designer_cli`
-- **THEN** UI позволяет задать команду/аргументы и сохранить конфигурацию
-
-#### Scenario: UI предлагает params template из command schema при создании action
-- **GIVEN** staff открывает modal создания нового action в guided editor
-- **AND** выбран `executor.kind` из `{ibcmd_cli, designer_cli}`
-- **WHEN** staff выбирает `driver` и `command_id` из driver catalog
-- **THEN** UI показывает список параметров команды из schema (`params_by_name`) с признаками required/default
-- **AND** UI предлагает “Insert params template” для заполнения `executor.params` объектом-шаблоном (ключи из `params_by_name`)
-- **AND** auto-fill НЕ должен затирать уже введённый JSON в `params` без явного подтверждения пользователя
-
-#### Scenario: params template не включает disabled и ibcmd connection params
-- **GIVEN** выбран `driver=ibcmd` и `command_id`
-- **WHEN** UI строит список параметров и template для `executor.params`
-- **THEN** UI исключает параметры, помеченные как `disabled`
-- **AND** UI исключает параметры, относящиеся к connection (которые должны приходить из профиля базы), чтобы не вводить оператора в заблуждение
+#### Scenario: Capability fixed UI определяется backend hints
+- **GIVEN** staff редактирует action с `capability="extensions.set_flags"`
+- **WHEN** UI отображает секцию fixed/presets
+- **THEN** UI строит поля на основе backend-provided hints (schema/uiSchema), а не через `if capability === ...`
 
 ### Requirement: Save с серверной валидацией и отображением ошибок
 Система ДОЛЖНА (SHALL) сохранять изменения через backend и показывать ошибки валидации пользователю; UI НЕ ДОЛЖЕН (SHALL NOT) вводить дополнительные ограничения, которые не требуются backend (например, блокировать дубли reserved capability), если backend допускает такие конфигурации.
@@ -149,4 +127,15 @@ TBD - created by archiving change add-ui-action-catalog-editor. Update Purpose a
 #### Scenario: Layout выбора команды не схлопывается
 - **WHEN** staff выбирает `driver` и `command_id`
 - **THEN** UI обеспечивает стабильную ширину Select (без схлопывания до “узкого” состояния), достаточную для чтения `command_id`
+
+### Requirement: Staff-only endpoint для Action Catalog editor hints
+Система ДОЛЖНА (SHALL) предоставить staff-only endpoint, который возвращает UI hints для capability (минимум: `executor.fixed.*`) в виде JSON Schema + uiSchema.
+
+#### Scenario: Hints endpoint доступен только staff
+- **WHEN** non-staff вызывает hints endpoint
+- **THEN** доступ запрещён (403)
+
+#### Scenario: Hints содержат fixed schema для extensions.set_flags
+- **WHEN** staff вызывает hints endpoint
+- **THEN** ответ содержит capability `extensions.set_flags` с описанием `fixed.apply_mask`
 
