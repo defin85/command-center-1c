@@ -335,7 +335,7 @@ def list_templates(request):
         if apply_sort_error:
             return Response({"success": False, "error": apply_sort_error}, status=400)
     else:
-        qs = qs.order_by('name')
+        qs = qs.order_by('label')
 
     if not request.user.is_staff:
         allowed_templates_qs = TemplatePermissionService.filter_accessible_operation_templates(

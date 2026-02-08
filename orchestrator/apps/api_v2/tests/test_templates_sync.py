@@ -2,7 +2,7 @@ import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
-from apps.templates.models import OperationTemplate
+from apps.templates.models import OperationExposure, OperationTemplate
 from apps.templates.registry import get_registry
 from apps.templates.registry.types import BackendType, OperationType, TargetEntity
 
@@ -108,9 +108,28 @@ def test_sync_from_registry_updates_existing_template(staff_client, isolated_reg
     resp = staff_client.post("/api/v2/templates/sync-from-registry/", {}, format="json")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["updated"] == 1
+    # Unified flow treats legacy-only OperationTemplate as missing exposure and creates it.
+    assert data["created"] == 1
+    assert data["updated"] == 0
 
     tpl = OperationTemplate.objects.get(id=template_id)
     assert tpl.name == "Registry Name"
     assert tpl.is_active is True
+    assert OperationExposure.objects.filter(
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias=template_id,
+        tenant__isnull=True,
+    ).exists()
 
+
+@pytest.mark.django_db
+def test_list_templates_with_default_sort_returns_200(staff_client, isolated_registry):
+    register_test_operation(isolated_registry, op_id="test_op_list", name="List Name")
+    sync_resp = staff_client.post("/api/v2/templates/sync-from-registry/", {"dry_run": False}, format="json")
+    assert sync_resp.status_code == 200
+
+    resp = staff_client.get("/api/v2/templates/list-templates/?search=&limit=50&offset=0")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 1
+    assert data["templates"][0]["id"] == "tpl-test-op-list"
