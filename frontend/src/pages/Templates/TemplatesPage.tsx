@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Alert, App, Button, Form, Input, Modal, Popconfirm, Space, Switch, Tabs, Typography } from 'antd'
+import { Alert, App, Button, Form, Popconfirm, Space, Switch, Tabs, Typography } from 'antd'
 import type { TabsProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
@@ -14,13 +14,13 @@ import {
 } from '../../api/queries/templates'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
-import { DriverCommandBuilder, type DriverCommandOperationConfig } from '../../components/driverCommands/DriverCommandBuilder'
 import { useMe } from '../../api/queries/me'
-import { driverCommandConfigToTemplateData, templateDataToDriverCommandConfig } from '../../lib/commandConfigAdapter'
 import { ActionCatalogPage } from '../Settings/ActionCatalogPage'
+import type { ActionFormValues } from '../Settings/actionCatalogTypes'
+import { OperationExposureEditorModal } from '../Settings/actionCatalog/OperationExposureEditorModal'
+import { buildTemplateEditorValues, buildTemplateWritePayloadFromEditor } from './templateEditorAdapter'
 
 const { Title, Text } = Typography
-const { TextArea } = Input
 
 type SurfaceTabKey = 'template' | 'action_catalog'
 
@@ -29,8 +29,8 @@ function OperationTemplatesSurface({ isStaff }: { isStaff: boolean }) {
   const [dryRun, setDryRun] = useState<boolean>(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<OperationTemplate | null>(null)
-  const [cliConfig, setCliConfig] = useState<DriverCommandOperationConfig>({ driver: 'cli', mode: 'guided', params: {} })
-  const [form] = Form.useForm<{ name: string; description?: string; is_active?: boolean }>()
+  const [editorValues, setEditorValues] = useState<ActionFormValues | null>(null)
+  const [form] = Form.useForm<ActionFormValues>()
   const fallbackColumnConfigs = useMemo(() => [
     { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
     { key: 'operation_type', label: 'Operation Type', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
@@ -47,50 +47,39 @@ function OperationTemplatesSurface({ isStaff }: { isStaff: boolean }) {
 
   const openCreateModal = useCallback(() => {
     setEditingTemplate(null)
-    setCliConfig({
-      driver: 'cli',
-      mode: 'guided',
-      params: {},
-      args_text: '',
-      cli_options: {
-        disable_startup_messages: true,
-        disable_startup_dialogs: true,
-      },
-    })
-    form.setFieldsValue({ name: '', description: '', is_active: true })
+    const nextValues = buildTemplateEditorValues(null)
+    setEditorValues(nextValues)
+    form.resetFields()
+    form.setFieldsValue(nextValues)
     setModalOpen(true)
   }, [form])
 
   const openEditModal = useCallback((template: OperationTemplate) => {
     setEditingTemplate(template)
-    setCliConfig(templateDataToDriverCommandConfig(template.template_data))
-    form.setFieldsValue({
-      name: template.name,
-      description: template.description || '',
-      is_active: template.is_active,
-    })
+    const nextValues = buildTemplateEditorValues(template)
+    setEditorValues(nextValues)
+    form.resetFields()
+    form.setFieldsValue(nextValues)
     setModalOpen(true)
+  }, [form])
+
+  const closeModal = useCallback(() => {
+    setModalOpen(false)
+    setEditingTemplate(null)
+    setEditorValues(null)
+    form.resetFields()
   }, [form])
 
   const handleSaveTemplate = useCallback(async () => {
     try {
+      if (createMutation.isPending || updateMutation.isPending) return
       const values = await form.validateFields()
-      const command = typeof cliConfig.command_id === 'string' ? cliConfig.command_id.trim() : ''
-      if (!command) {
-        message.error('Command is required')
+      const built = buildTemplateWritePayloadFromEditor(values, { existingId: editingTemplate?.id })
+      if (!built.ok) {
+        message.error(built.error)
         return
       }
-      const templateData = driverCommandConfigToTemplateData(cliConfig)
-
-      const payload = {
-        id: editingTemplate?.id,
-        name: values.name,
-        description: values.description || '',
-        operation_type: 'designer_cli',
-        target_entity: 'infobase',
-        template_data: templateData,
-        is_active: values.is_active !== false,
-      }
+      const payload = built.payload
 
       if (editingTemplate) {
         await updateMutation.mutateAsync(payload)
@@ -99,13 +88,13 @@ function OperationTemplatesSurface({ isStaff }: { isStaff: boolean }) {
         await createMutation.mutateAsync(payload)
         message.success('Template created')
       }
-      setModalOpen(false)
+      closeModal()
     } catch (err) {
       if (err instanceof Error) {
         message.error(err.message)
       }
     }
-  }, [cliConfig, createMutation, editingTemplate, form, message, updateMutation])
+  }, [closeModal, createMutation, editingTemplate, form, message, updateMutation])
 
   const handleDeleteTemplate = useCallback(async (template: OperationTemplate) => {
     try {
@@ -267,37 +256,16 @@ function OperationTemplatesSurface({ isStaff }: { isStaff: boolean }) {
         searchPlaceholder="Search templates"
       />
 
-      <Modal
-        title={editingTemplate ? 'Edit CLI Template' : 'New CLI Template'}
+      <OperationExposureEditorModal
         open={modalOpen}
-        onCancel={() => setModalOpen(false)}
-        onOk={handleSaveTemplate}
-        okText={editingTemplate ? 'Save' : 'Create'}
-        confirmLoading={createMutation.isPending || updateMutation.isPending}
-        width={720}
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item
-            label="Name"
-            name="name"
-            rules={[{ required: true, message: 'Name is required' }]}
-          >
-            <Input placeholder="Template name" />
-          </Form.Item>
-          <Form.Item label="Description" name="description">
-            <TextArea rows={2} placeholder="Optional description" />
-          </Form.Item>
-          <Form.Item label="Active" name="is_active" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-        </Form>
-
-        <DriverCommandBuilder
-          driver="cli"
-          config={cliConfig}
-          onChange={(updates) => setCliConfig((prev) => ({ ...prev, ...updates }))}
-        />
-      </Modal>
+        title={editingTemplate ? 'Edit CLI Template' : 'New CLI Template'}
+        surface="template"
+        executorKindOptions={['designer_cli']}
+        form={form}
+        initialValues={editorValues}
+        onCancel={closeModal}
+        onApply={() => void handleSaveTemplate()}
+      />
     </Space>
   )
 }

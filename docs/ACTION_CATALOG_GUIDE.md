@@ -35,7 +35,7 @@ Action Catalog управляется через unified persistent контра
 #### `ibcmd_cli`
 Исполнение через driver catalog `ibcmd`:
 
-- `driver`: обычно `ibcmd`
+- `driver` в UI вручную не выбирается; для `ibcmd_cli` он canonical и всегда `ibcmd`
 - `command_id`: выбирается из списка команд драйвера
 - Дополнительно (advanced):
   - `mode`: `guided` или `manual` (для ibcmd)
@@ -48,7 +48,7 @@ Action Catalog управляется через unified persistent контра
 #### `designer_cli`
 Исполнение через CLI driver catalog (обычно `cli`):
 
-- `driver`: обычно `cli`
+- `driver` в UI вручную не выбирается; для `designer_cli` он canonical и всегда `cli`
 - `command_id`: выбирается из списка команд драйвера
 - Дополнительно (advanced): `params`, `additional_args`, `stdin`, `fixed.*`
 
@@ -96,7 +96,7 @@ Action Catalog управляется через unified persistent контра
 - Проверь, что в корне объекта стоит `"catalog_version": 1`.
 
 ### `extensions.actions[...]...: unknown command_id ...`
-- Значит, `executor.command_id` не найден в driver catalog для выбранного `driver`.
+- Значит, `executor.command_id` не найден в driver catalog для выбранного `executor.kind` (driver выводится автоматически).
 - Проверь каталоги команд в UI: `/settings/command-schemas` (driver `ibcmd` или `cli`).
 
 ### `extensions.actions[...]...: workflow not found ...`

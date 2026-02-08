@@ -82,6 +82,7 @@ async function setupApiMocks(
   page: Page,
   state: {
     runtimeSettings: AnyRecord[]
+    templates?: AnyRecord[]
     patchFailCount?: number
     patchFailMessages?: string[]
     editorHints?: AnyRecord
@@ -94,8 +95,12 @@ async function setupApiMocks(
 ) {
   const definitions: AnyRecord[] = []
   const exposures: AnyRecord[] = []
+  const templates: AnyRecord[] = Array.isArray(state.templates)
+    ? state.templates.map((item) => deepClone(item))
+    : []
   let definitionSeq = 1
   let exposureSeq = 10_000
+  let templateSeq = 1
 
   const createDefinition = (payload: {
     tenant_scope?: string
@@ -156,6 +161,32 @@ async function setupApiMocks(
     exposureSeq += 1
     exposures.push(exposure)
     return exposure
+  }
+
+  const createTemplate = (payload: {
+    id?: string
+    name: string
+    description?: string
+    operation_type?: string
+    target_entity?: string
+    template_data?: AnyRecord
+    is_active?: boolean
+  }): AnyRecord => {
+    const id = payload.id && payload.id.trim() ? payload.id.trim() : `tpl-custom-${templateSeq}`
+    templateSeq += 1
+    const row: AnyRecord = {
+      id,
+      name: payload.name,
+      description: payload.description ?? '',
+      operation_type: payload.operation_type ?? 'designer_cli',
+      target_entity: payload.target_entity ?? 'infobase',
+      template_data: isPlainObject(payload.template_data) ? deepClone(payload.template_data) : {},
+      is_active: payload.is_active !== false,
+      created_at: MOCK_TIMESTAMP,
+      updated_at: MOCK_TIMESTAMP,
+    }
+    templates.push(row)
+    return row
   }
 
   const splitExecutorPayload = (executorRaw: unknown): { definition_payload: AnyRecord; capability_config: AnyRecord } => {
@@ -266,6 +297,73 @@ async function setupApiMocks(
 
     if (method === 'GET' && (path === '/api/v2/settings/runtime/' || path === '/api/v2/settings/runtime-effective/')) {
       return fulfillJson(route, { settings: state.runtimeSettings })
+    }
+
+    if (method === 'GET' && path === '/api/v2/templates/list-templates/') {
+      const search = (url.searchParams.get('search') || '').trim().toLowerCase()
+      const limit = parseIntParam(url.searchParams.get('limit'), 50, 1, 1000)
+      const offset = parseIntParam(url.searchParams.get('offset'), 0, 0, 100000)
+      let rows = templates.slice()
+      if (search) {
+        rows = rows.filter((row) => (
+          String(row.name || '').toLowerCase().includes(search)
+          || String(row.description || '').toLowerCase().includes(search)
+          || String(row.id || '').toLowerCase().includes(search)
+        ))
+      }
+      const total = rows.length
+      const paged = rows.slice(offset, offset + limit)
+      return fulfillJson(route, { templates: paged, count: paged.length, total })
+    }
+
+    if (method === 'POST' && path === '/api/v2/templates/create-template/') {
+      const payload = parseJsonBody(request.postData())
+      const name = typeof payload.name === 'string' ? payload.name.trim() : ''
+      if (!name) {
+        return fulfillJson(route, { success: false, error: { code: 'VALIDATION_ERROR', message: 'name is required' } }, 400)
+      }
+      const created = createTemplate({
+        id: typeof payload.id === 'string' ? payload.id : undefined,
+        name,
+        description: typeof payload.description === 'string' ? payload.description : '',
+        operation_type: typeof payload.operation_type === 'string' ? payload.operation_type : 'designer_cli',
+        target_entity: typeof payload.target_entity === 'string' ? payload.target_entity : 'infobase',
+        template_data: isPlainObject(payload.template_data) ? payload.template_data : {},
+        is_active: payload.is_active !== false,
+      })
+      return fulfillJson(route, { template: created })
+    }
+
+    if (method === 'POST' && path === '/api/v2/templates/update-template/') {
+      const payload = parseJsonBody(request.postData())
+      const templateId = typeof payload.id === 'string' ? payload.id.trim() : ''
+      const row = templates.find((item) => String(item.id) === templateId)
+      if (!row) {
+        return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND', message: 'Template not found' } }, 404)
+      }
+      row.name = typeof payload.name === 'string' ? payload.name : row.name
+      row.description = typeof payload.description === 'string' ? payload.description : row.description
+      row.operation_type = typeof payload.operation_type === 'string' ? payload.operation_type : row.operation_type
+      row.target_entity = typeof payload.target_entity === 'string' ? payload.target_entity : row.target_entity
+      row.template_data = isPlainObject(payload.template_data) ? deepClone(payload.template_data) : row.template_data
+      row.is_active = payload.is_active !== false
+      row.updated_at = MOCK_TIMESTAMP
+      return fulfillJson(route, { template: row })
+    }
+
+    if (method === 'POST' && path === '/api/v2/templates/delete-template/') {
+      const payload = parseJsonBody(request.postData())
+      const templateId = typeof payload.template_id === 'string' ? payload.template_id.trim() : ''
+      const idx = templates.findIndex((item) => String(item.id) === templateId)
+      if (idx < 0) {
+        return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND', message: 'Template not found' } }, 404)
+      }
+      const [deleted] = templates.splice(idx, 1)
+      return fulfillJson(route, { template: deleted })
+    }
+
+    if (method === 'POST' && path === '/api/v2/templates/sync-from-registry/') {
+      return fulfillJson(route, { created: 0, updated: 0, unchanged: templates.length, message: 'Sync completed' })
     }
 
     if (method === 'GET' && path === '/api/v2/operation-catalog/definitions/') {
@@ -1030,6 +1128,34 @@ test('Action Catalog editor: capability fixed section follows uiSchema widgets',
   await expect(page.getByTestId('action-catalog-editor-fixed-apply_mask-active-checkbox')).toBeVisible()
   await expect(page.getByText('unsafe_action_protection', { exact: true })).toBeVisible()
   await expect(page.getByText('safe_mode', { exact: true })).toHaveCount(0)
+})
+
+test('Templates editor: uses unified tabbed modal and no manual driver selector', async ({ page }) => {
+  await setupAuth(page)
+  await setupApiMocks(page, {
+    runtimeSettings: [],
+    templates: [],
+  })
+
+  await page.goto('/templates', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'New CLI Template', exact: true }).click()
+  await expect(page.getByRole('tab', { name: 'Basics', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Executor', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Params', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Safety & Fixed', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Preview', exact: true })).toBeVisible()
+
+  await expect(page.getByTestId('action-catalog-editor-driver')).toHaveCount(0)
+
+  await page.getByTestId('operation-exposure-editor-name').fill('Template via unified modal')
+  await page.getByTestId('action-catalog-editor-command-id').click()
+  await page.keyboard.type('infobase.extension.list')
+  await page.keyboard.press('Enter')
+  await page.getByTestId('action-catalog-editor-apply').click()
+
+  await expect(page.getByText('Template via unified modal', { exact: true })).toBeVisible()
 })
 
 test('Templates: non-staff cannot open action-catalog surface or load management endpoints', async ({ page }) => {

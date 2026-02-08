@@ -27,12 +27,27 @@ TBD - created by archiving change add-ui-action-catalog-editor. Update Purpose a
 - **THEN** изменения сохраняются в рамках текущей сессии редактирования и не теряются без явного Save
 
 ### Requirement: Поддержка executor kinds
-Система ДОЛЖНА (SHALL) поддерживать в редакторе executor kinds `ibcmd_cli`, `designer_cli` и `workflow`, а capability‑специфичные поля НЕ ДОЛЖНЫ (SHALL NOT) масштабироваться через хардкод условных веток в UI.
+Система ДОЛЖНА (SHALL) поддерживать в editor-е executor kinds `ibcmd_cli`, `designer_cli` и `workflow`, а capability-специфичные поля НЕ ДОЛЖНЫ (SHALL NOT) масштабироваться через хардкод условных веток в UI.
 
-#### Scenario: Capability fixed UI определяется backend hints
-- **GIVEN** staff редактирует action с `capability="extensions.set_flags"`
-- **WHEN** UI отображает секцию fixed/presets
-- **THEN** UI строит поля на основе backend-provided hints (schema/uiSchema), а не через `if capability === ...`
+Для canonical kinds UI НЕ ДОЛЖЕН (SHALL NOT) требовать отдельный ручной выбор `driver`; `driver` ДОЛЖЕН (SHALL) определяться из `executor.kind`:
+- `ibcmd_cli -> ibcmd`
+- `designer_cli -> cli`
+- `workflow -> driver не применяется`
+
+#### Scenario: `ibcmd_cli` использует ibcmd catalog без отдельного driver select
+- **WHEN** staff выбирает `executor.kind=ibcmd_cli`
+- **THEN** editor показывает команды из `ibcmd` catalog
+- **AND** UI не показывает отдельное обязательное поле `driver`
+
+#### Scenario: `designer_cli` использует cli catalog без отдельного driver select
+- **WHEN** staff выбирает `executor.kind=designer_cli`
+- **THEN** editor показывает команды из `cli` catalog
+- **AND** UI не показывает отдельное обязательное поле `driver`
+
+#### Scenario: `workflow` скрывает command fields
+- **WHEN** staff выбирает `executor.kind=workflow`
+- **THEN** editor показывает `workflow_id`
+- **AND** поля `driver/command_id` не используются и не сериализуются как обязательные
 
 ### Requirement: Save с серверной валидацией и отображением ошибок
 Система ДОЛЖНА (SHALL) сохранять изменения через backend и показывать ошибки валидации пользователю; UI НЕ ДОЛЖЕН (SHALL NOT) вводить дополнительные ограничения, которые не требуются backend (например, блокировать дубли reserved capability), если backend допускает такие конфигурации.
@@ -154,10 +169,16 @@ TBD - created by archiving change add-ui-action-catalog-editor. Update Purpose a
 - **AND** изменения доступны в runtime только через unified storage path
 
 ### Requirement: Editor MUST использовать shared command-config contract с Templates UI
-Система ДОЛЖНА (SHALL) использовать единый frontend editor pipeline (adapter + serializer + validation mapping) для surfaces `template` и `action_catalog` в одном UI, чтобы исключить дублирование логики.
+Система ДОЛЖНА (SHALL) использовать единый frontend editor pipeline (shared component + adapter + serializer + validation mapping) для surfaces `template` и `action_catalog` в одном UI, чтобы исключить дублирование логики и расхождения UX.
+
+#### Scenario: Единый modal editor используется в двух surfaces
+- **GIVEN** staff открывает `/templates`
+- **WHEN** создаёт/редактирует exposure в `template` и в `action_catalog`
+- **THEN** используется один и тот же modal editor shell и одна state-модель формы
+- **AND** различаются только surface-specific поля/ограничения
 
 #### Scenario: Одинаковая command-конфигурация сериализуется одинаково в двух surfaces
-- **GIVEN** оператор задаёт одинаковые `command_id`, `params`, `additional_args`, `stdin`, safety-поля
+- **GIVEN** оператор задаёт одинаковые `executor.kind`, `command_id`, `params`, `additional_args`, `stdin`, safety-поля
 - **WHEN** сохраняет exposure как `template` и как `action_catalog`
 - **THEN** serialized execution payload в unified definition совпадает по контракту
 - **AND** не возникает surface-specific расхождения executor shape

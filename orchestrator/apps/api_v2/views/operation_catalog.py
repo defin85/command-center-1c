@@ -13,6 +13,7 @@ from apps.templates.models import OperationDefinition, OperationExposure
 from apps.templates.operation_catalog_service import (
     filter_exposures_queryset,
     list_migration_issues_queryset,
+    normalize_executor_payload,
     resolve_definition,
     resolve_exposure,
     validate_exposure_payload,
@@ -284,10 +285,16 @@ def _coerce_definition_payload(raw: Any) -> tuple[dict[str, Any], list[dict[str,
     executor_payload = raw.get("executor_payload")
     if not isinstance(executor_payload, dict):
         return {}, [{"path": "definition.executor_payload", "code": "REQUIRED", "message": "executor_payload is required"}]
+    normalized_kind, normalized_payload, normalize_errors = normalize_executor_payload(
+        executor_kind=raw.get("executor_kind"),
+        executor_payload=executor_payload,
+    )
+    if normalize_errors:
+        return {}, normalize_errors
     return {
         "tenant_scope": str(raw.get("tenant_scope") or "global").strip() or "global",
-        "executor_kind": str(raw.get("executor_kind") or "").strip(),
-        "executor_payload": executor_payload,
+        "executor_kind": normalized_kind,
+        "executor_payload": normalized_payload,
         "contract_version": int(raw.get("contract_version") or 1),
     }, []
 
@@ -371,6 +378,7 @@ def _upsert_operation_exposure_impl(request):
             )
 
     errors = validate_exposure_payload(
+        executor_kind=definition_obj.executor_kind if definition_obj is not None else definition_payload.get("executor_kind", ""),
         definition_payload=definition_payload or {},
         capability=exposure_payload.get("capability", ""),
         capability_config=exposure_payload.get("capability_config", {}),
@@ -428,6 +436,7 @@ def publish_operation_exposure(request, exposure_id: str):
     definition_payload = exposure.definition.executor_payload if isinstance(exposure.definition.executor_payload, dict) else {}
     capability_config = exposure.capability_config if isinstance(exposure.capability_config, dict) else {}
     errors = validate_exposure_payload(
+        executor_kind=exposure.definition.executor_kind,
         definition_payload=definition_payload,
         capability=exposure.capability,
         capability_config=capability_config,
@@ -471,6 +480,7 @@ def validate_operation_exposure(request):
         return Response({"valid": False, "errors": definition_errors})
 
     errors = validate_exposure_payload(
+        executor_kind=definition_payload["executor_kind"],
         definition_payload=definition_payload["executor_payload"],
         capability=exposure_payload.get("capability", ""),
         capability_config=exposure_payload.get("capability_config", {}),

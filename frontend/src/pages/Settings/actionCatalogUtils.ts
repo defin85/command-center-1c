@@ -1,5 +1,9 @@
 import type { ActionFormValues, ActionRow, DiffItem, PlainObject, SaveErrorHint } from './actionCatalogTypes'
-import { driverCommandConfigToExecutor, executorToDriverCommandConfig } from '../../lib/commandConfigAdapter'
+import {
+  canonicalDriverForExecutorKind,
+  driverCommandConfigToExecutor,
+  executorToDriverCommandConfig,
+} from '../../lib/commandConfigAdapter'
 
 export const isPlainObject = (value: unknown): value is PlainObject => (
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -242,10 +246,13 @@ export const buildActionFromForm = (base: PlainObject | null, values: ActionForm
       ? values.executor.additional_args.filter((item) => typeof item === 'string' && item.trim()) as string[]
       : []
     const commandMode: 'guided' | 'manual' = values.executor.mode === 'manual' ? 'manual' : 'guided'
+    const canonicalDriver = canonicalDriverForExecutorKind(values.executor.kind)
     const commandConfig = {
-      driver: values.executor.driver === 'cli' || values.executor.driver === 'ibcmd'
-        ? values.executor.driver
-        : (values.executor.kind === 'designer_cli' ? 'cli' : 'ibcmd'),
+      driver: canonicalDriver ?? (
+        values.executor.driver === 'cli' || values.executor.driver === 'ibcmd'
+          ? values.executor.driver
+          : 'ibcmd'
+      ),
       mode: commandMode,
       command_id: (values.executor.command_id ?? '').trim(),
       params: normalizedParams,
@@ -425,7 +432,9 @@ export const buildActionRows = (value: unknown): ActionRow[] => {
       ? executor as Record<string, unknown>
       : null
     const kind = executorObj && typeof executorObj.kind === 'string' ? executorObj.kind : ''
-    const driver = executorObj && typeof executorObj.driver === 'string' ? executorObj.driver : undefined
+    const driver = executorObj && typeof executorObj.driver === 'string'
+      ? executorObj.driver
+      : canonicalDriverForExecutorKind(kind) ?? undefined
     const commandId = executorObj && typeof executorObj.command_id === 'string' ? executorObj.command_id : undefined
     const workflowId = executorObj && typeof executorObj.workflow_id === 'string' ? executorObj.workflow_id : undefined
 

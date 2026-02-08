@@ -21,6 +21,13 @@ const normalizeDriver = (raw: unknown, fallback: DriverName): DriverName => {
   return fallback
 }
 
+export const canonicalDriverForExecutorKind = (kind: unknown): DriverName | null => {
+  const value = typeof kind === 'string' ? kind.trim() : ''
+  if (value === 'ibcmd_cli') return 'ibcmd'
+  if (value === 'designer_cli') return 'cli'
+  return null
+}
+
 export const templateDataToDriverCommandConfig = (raw: unknown): DriverCommandOperationConfig => {
   const data = isObject(raw) ? raw : {}
   const options = isObject(data.options) ? data.options : {}
@@ -84,8 +91,9 @@ export const driverCommandConfigToTemplateData = (config: DriverCommandOperation
 
 export const executorToDriverCommandConfig = (raw: unknown): DriverCommandOperationConfig => {
   const executor = isObject(raw) ? raw : {}
+  const fallbackDriver = canonicalDriverForExecutorKind(executor.kind) ?? 'ibcmd'
   return {
-    driver: normalizeDriver(executor.driver, 'ibcmd'),
+    driver: normalizeDriver(executor.driver, fallbackDriver),
     mode: executor.mode === 'manual' ? 'manual' : 'guided',
     command_id: typeof executor.command_id === 'string' ? executor.command_id : undefined,
     params: isObject(executor.params) ? executor.params : {},

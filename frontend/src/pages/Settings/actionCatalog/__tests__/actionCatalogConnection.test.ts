@@ -342,3 +342,52 @@ describe('Action Catalog: target_binding hints', () => {
     expect(validRes.ok).toBe(true)
   })
 })
+
+describe('Action Catalog: canonical kind/driver mapping', () => {
+  it('allows omitting driver for canonical executor kinds', () => {
+    const draft: any = {
+      catalog_version: 1,
+      extensions: {
+        actions: [
+          {
+            id: 'extensions.list.no-driver',
+            label: 'List extensions',
+            contexts: ['database_card'],
+            executor: {
+              kind: 'ibcmd_cli',
+              command_id: 'infobase.extension.list',
+            },
+          },
+        ],
+      },
+    }
+
+    const result = validateActionCatalogDraft(draft)
+    expect(result.ok).toBe(true)
+    expect(result.errors).toEqual([])
+  })
+
+  it('fails closed on conflicting kind/driver pairs', () => {
+    const draft: any = {
+      catalog_version: 1,
+      extensions: {
+        actions: [
+          {
+            id: 'extensions.bad-driver',
+            label: 'Bad driver',
+            contexts: ['database_card'],
+            executor: {
+              kind: 'ibcmd_cli',
+              driver: 'cli',
+              command_id: 'infobase.extension.list',
+            },
+          },
+        ],
+      },
+    }
+
+    const result = validateActionCatalogDraft(draft)
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toMatch(/executor\.driver: mismatch/i)
+  })
+})

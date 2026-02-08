@@ -27,6 +27,10 @@ _SUPPORTED_EXECUTOR_KINDS = {
     OperationDefinition.EXECUTOR_DESIGNER_CLI,
     OperationDefinition.EXECUTOR_WORKFLOW,
 }
+_CANONICAL_DRIVER_BY_KIND = {
+    OperationDefinition.EXECUTOR_IBCMD_CLI: "ibcmd",
+    OperationDefinition.EXECUTOR_DESIGNER_CLI: "cli",
+}
 _RESERVED_ACTION_CAPABILITIES = {
     "extensions.list",
     "extensions.sync",
@@ -72,6 +76,57 @@ def normalize_executor_kind(raw_kind: Any) -> str:
     return OperationDefinition.EXECUTOR_WORKFLOW
 
 
+def canonical_driver_for_executor_kind(raw_kind: Any) -> str | None:
+    return _CANONICAL_DRIVER_BY_KIND.get(normalize_executor_kind(raw_kind))
+
+
+def normalize_executor_payload(
+    *,
+    executor_kind: Any,
+    executor_payload: dict[str, Any],
+) -> tuple[str, dict[str, Any], list[dict[str, str]]]:
+    normalized_kind = normalize_executor_kind(executor_kind)
+    normalized_payload = _clean_json(executor_payload if isinstance(executor_payload, dict) else {})
+    errors: list[dict[str, str]] = []
+
+    payload_kind = str(normalized_payload.get("kind") or "").strip().lower()
+    if payload_kind and payload_kind != normalized_kind:
+        errors.append(
+            {
+                "path": "definition.executor_payload.kind",
+                "code": "KIND_MISMATCH",
+                "message": f"executor_payload.kind={payload_kind} conflicts with executor_kind={normalized_kind}",
+            }
+        )
+
+    normalized_payload["kind"] = normalized_kind
+    expected_driver = canonical_driver_for_executor_kind(normalized_kind)
+    payload_driver = str(normalized_payload.get("driver") or "").strip().lower()
+
+    if expected_driver is None:
+        if payload_driver:
+            errors.append(
+                {
+                    "path": "definition.executor_payload.driver",
+                    "code": "DRIVER_NOT_ALLOWED",
+                    "message": f"driver is not allowed for executor kind: {normalized_kind}",
+                }
+            )
+        normalized_payload.pop("driver", None)
+    else:
+        if payload_driver and payload_driver != expected_driver:
+            errors.append(
+                {
+                    "path": "definition.executor_payload.driver",
+                    "code": "DRIVER_KIND_MISMATCH",
+                    "message": f"driver={payload_driver} conflicts with executor kind {normalized_kind} (expected {expected_driver})",
+                }
+            )
+        normalized_payload["driver"] = expected_driver
+
+    return normalized_kind, normalized_payload, errors
+
+
 def build_template_definition_payload(*, operation_type: str, target_entity: str, template_data: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     payload = {
         "operation_type": str(operation_type or "").strip(),
@@ -88,13 +143,16 @@ def resolve_definition(
     executor_payload: dict[str, Any],
     contract_version: int = 1,
 ) -> tuple[OperationDefinition, bool]:
-    normalized_payload = _clean_json(executor_payload)
+    normalized_kind, normalized_payload, _errors = normalize_executor_payload(
+        executor_kind=executor_kind,
+        executor_payload=executor_payload,
+    )
     fp = _fingerprint(normalized_payload)
     definition, created = OperationDefinition.objects.get_or_create(
         tenant_scope=tenant_scope,
         fingerprint=fp,
         defaults={
-            "executor_kind": normalize_executor_kind(executor_kind),
+            "executor_kind": normalized_kind,
             "executor_payload": normalized_payload,
             "contract_version": max(1, int(contract_version or 1)),
             "status": OperationDefinition.STATUS_ACTIVE,
@@ -102,7 +160,7 @@ def resolve_definition(
     )
     if not created:
         changed = False
-        desired_kind = normalize_executor_kind(executor_kind)
+        desired_kind = normalized_kind
         if definition.executor_kind != desired_kind:
             definition.executor_kind = desired_kind
             changed = True
@@ -205,6 +263,7 @@ def _commands_by_driver(driver: str, cache: dict[str, dict[str, Any] | None]) ->
 
 def validate_set_flags_binding(
     *,
+    executor_kind: str | None,
     definition_payload: dict[str, Any],
     capability_config: dict[str, Any],
     commands_cache: dict[str, dict[str, Any] | None] | None = None,
@@ -228,7 +287,10 @@ def validate_set_flags_binding(
         )
         return errors
 
+    resolved_kind = normalize_executor_kind(definition_payload.get("kind") or executor_kind)
     driver = str(definition_payload.get("driver") or "").strip().lower()
+    if not driver:
+        driver = canonical_driver_for_executor_kind(resolved_kind) or ""
     command_id = str(definition_payload.get("command_id") or "").strip()
     if not driver or not command_id:
         errors.append(
@@ -276,14 +338,22 @@ def validate_set_flags_binding(
 
 def validate_exposure_payload(
     *,
+    executor_kind: str | None,
     definition_payload: dict[str, Any],
     capability: str,
     capability_config: dict[str, Any],
     commands_cache: dict[str, dict[str, Any] | None] | None = None,
 ) -> list[dict[str, str]]:
+    _normalized_kind, _normalized_payload, contract_errors = normalize_executor_payload(
+        executor_kind=executor_kind,
+        executor_payload=definition_payload,
+    )
+    if contract_errors:
+        return contract_errors
     if str(capability or "").strip() != _SET_FLAGS_CAPABILITY:
         return []
     return validate_set_flags_binding(
+        executor_kind=executor_kind,
         definition_payload=definition_payload,
         capability_config=capability_config,
         commands_cache=commands_cache,

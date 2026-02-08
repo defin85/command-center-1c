@@ -36,6 +36,9 @@ export type SaveErrorHint = {
 
 export type ActionFormValues = {
   id: string
+  name?: string
+  description?: string
+  is_active?: boolean
   capability?: string
   label: string
   contexts: ActionContext[]

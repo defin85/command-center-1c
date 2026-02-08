@@ -25,11 +25,14 @@
 ### Templates (`/templates`)
 - Просмотр шаблонов операций.
 - **Sync from registry** (staff-only): синхронизация шаблонов из in-code registry.
+- Create/Edit для custom CLI templates выполняется через тот же tabbed editor, что и Action Catalog (`Basics / Executor / Params / Safety & Fixed / Preview`).
+- В editor больше нет ручного выбора `driver`: для `executor.kind=designer_cli` используется canonical `driver=cli`.
 
 ### Action Catalog (`/templates?surface=action_catalog`)
 - Управление actions выполняется на едином экране `/templates` во вкладке `Action Catalog` (staff-only).
 - Source of truth: `operation_exposure(surface=\"action_catalog\")` + `operation_definition` (без runtime setting `ui.action_catalog`).
 - Guided + Raw JSON, diff/preview и Save через unified operation-catalog API.
+- `driver` не выбирается вручную: backend/UI используют canonical mapping `ibcmd_cli->ibcmd`, `designer_cli->cli`, `workflow->driver not applicable`.
 - Подробная инструкция: [ACTION_CATALOG_GUIDE.md](./ACTION_CATALOG_GUIDE.md)
 
 ### Command Schemas (`/settings/command-schemas`)

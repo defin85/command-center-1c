@@ -161,6 +161,109 @@ def test_operation_catalog_endpoints_upsert_list_publish_validate(staff_client):
 
 
 @pytest.mark.django_db
+def test_operation_catalog_upsert_rejects_kind_driver_mismatch(staff_client):
+    resp = staff_client.post(
+        "/api/v2/operation-catalog/exposures/",
+        data={
+            "definition": {
+                "tenant_scope": "global",
+                "executor_kind": "ibcmd_cli",
+                "executor_payload": {
+                    "kind": "ibcmd_cli",
+                    "driver": "cli",
+                    "command_id": "infobase.extension.list",
+                },
+                "contract_version": 1,
+            },
+            "exposure": {
+                "surface": "action_catalog",
+                "alias": "extensions.list.mismatch",
+                "name": "List extensions",
+                "description": "",
+                "is_active": True,
+                "capability": "extensions.list",
+                "contexts": ["database_card"],
+                "display_order": 0,
+                "capability_config": {},
+                "status": "draft",
+            },
+        },
+        format="json",
+    )
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["error"]["code"] == "VALIDATION_ERROR"
+    assert any(item["code"] == "DRIVER_KIND_MISMATCH" for item in payload["error"]["message"])
+
+
+@pytest.mark.django_db
+def test_operation_catalog_dedup_ignores_redundant_driver(staff_client):
+    first_resp = staff_client.post(
+        "/api/v2/operation-catalog/exposures/",
+        data={
+            "definition": {
+                "tenant_scope": "global",
+                "executor_kind": "ibcmd_cli",
+                "executor_payload": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "infobase.extension.list",
+                    "params": {},
+                },
+                "contract_version": 1,
+            },
+            "exposure": {
+                "surface": "action_catalog",
+                "alias": "extensions.list.with-driver",
+                "name": "List with driver",
+                "description": "",
+                "is_active": True,
+                "capability": "extensions.list",
+                "contexts": ["database_card"],
+                "display_order": 0,
+                "capability_config": {},
+                "status": "draft",
+            },
+        },
+        format="json",
+    )
+    assert first_resp.status_code == 200
+    first_definition_id = first_resp.json()["definition"]["id"]
+
+    second_resp = staff_client.post(
+        "/api/v2/operation-catalog/exposures/",
+        data={
+            "definition": {
+                "tenant_scope": "global",
+                "executor_kind": "ibcmd_cli",
+                "executor_payload": {
+                    "kind": "ibcmd_cli",
+                    "command_id": "infobase.extension.list",
+                    "params": {},
+                },
+                "contract_version": 1,
+            },
+            "exposure": {
+                "surface": "action_catalog",
+                "alias": "extensions.list.no-driver",
+                "name": "List no driver",
+                "description": "",
+                "is_active": True,
+                "capability": "extensions.list",
+                "contexts": ["database_card"],
+                "display_order": 1,
+                "capability_config": {},
+                "status": "draft",
+            },
+        },
+        format="json",
+    )
+    assert second_resp.status_code == 200
+    second_definition_id = second_resp.json()["definition"]["id"]
+    assert second_definition_id == first_definition_id
+
+
+@pytest.mark.django_db
 def test_operation_catalog_migration_issues_list_returns_unified_diagnostics(staff_client):
     tenant = Tenant.objects.create(slug="tenant-migration-issues", name="Tenant Migration Issues")
     issue = OperationMigrationIssue.objects.create(

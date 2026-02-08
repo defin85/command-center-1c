@@ -267,6 +267,10 @@ export const validateActionCatalogDraft = (
     }
 
     if (kind === 'workflow') {
+      const workflowDriver = normalizeActionId(executor.driver)
+      if (workflowDriver) {
+        errors.push(`extensions.actions[${idx}].executor.driver: must be omitted for workflow executor`)
+      }
       const workflowId = normalizeActionId(executor.workflow_id)
       if (!workflowId) {
         errors.push(`extensions.actions[${idx}].executor.workflow_id: must be a non-empty string`)
@@ -274,9 +278,10 @@ export const validateActionCatalogDraft = (
         warnings.push(`extensions.actions[${idx}].executor.workflow_id: not a UUID (${workflowId})`)
       }
     } else {
+      const expectedDriver = kind === 'designer_cli' ? 'cli' : 'ibcmd'
       const driver = normalizeActionId(executor.driver)
-      if (driver !== 'ibcmd' && driver !== 'cli') {
-        errors.push(`extensions.actions[${idx}].executor.driver: must be ibcmd or cli`)
+      if (driver && driver !== expectedDriver) {
+        errors.push(`extensions.actions[${idx}].executor.driver: mismatch for kind=${kind} (expected ${expectedDriver})`)
       }
       const commandId = normalizeActionId(executor.command_id)
       if (!commandId) {
