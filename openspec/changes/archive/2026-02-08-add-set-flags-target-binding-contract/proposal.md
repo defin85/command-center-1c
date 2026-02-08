@@ -1,5 +1,8 @@
 # Change: Добавить явный target binding для `extensions.set_flags`
 
+> Status: Superseded by `add-unified-templates-action-catalog-contract`.
+> Отдельно не реализуется; требования перенесены в unified change.
+
 ## Why
 Сейчас `extensions.set_flags` получает бизнес-таргет (`extension_name`) через plan/apply API, но не имеет явного контракта, как этот таргет должен маппиться в обязательные параметры конкретной driver-команды (`name`, `extension` и т.д.).
 

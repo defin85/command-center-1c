@@ -1,3 +1,6 @@
+> Status: Superseded by `add-unified-templates-action-catalog-contract`.
+> Эти задачи не выполняются отдельно, чтобы не дублировать реализацию.
+
 ## 1. Spec & Contracts
 - [ ] 1.1 Обновить OpenSpec deltas для `extensions-action-catalog`, `extensions-plan-apply`, `ui-action-catalog-editor`.
 - [ ] 1.2 Уточнить OpenAPI/сериализаторы для нового поля `executor.target_binding.extension_name_param` (только для `extensions.set_flags`).
