@@ -4,7 +4,7 @@ import type { FormInstance } from 'antd'
 
 import { useDriverCommands } from '../../../api/queries/driverCommands'
 import type { DriverCommandParamV2, DriverCommandV2 } from '../../../api/driverCommands'
-import { useActionCatalogEditorHints } from '../../../api/queries/ui'
+import { useOperationExposureEditorHints } from '../../../api/queries/ui'
 import { useWorkflowTemplates } from '../../../api/queries/workflowTemplates'
 import type { ActionContext, ActionFormValues, ExecutorKind } from '../actionCatalogTypes'
 import { isPlainObject, parseJson, safeText } from '../actionCatalogUtils'
@@ -117,7 +117,7 @@ export function OperationExposureEditorModal({
     open && (editorKind === 'ibcmd_cli' || editorKind === 'designer_cli')
   )
 
-  const hintsQuery = useActionCatalogEditorHints(open)
+  const hintsQuery = useOperationExposureEditorHints(open)
   const capabilityHints = useMemo(() => {
     const key = editorCapability.trim()
     if (!key) return null

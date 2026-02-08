@@ -50,7 +50,7 @@ urlpatterns = [
     # ========================================================================
     path('ui/table-metadata/', ui.get_table_metadata, name='ui-table-metadata'),
     path('ui/action-catalog/', ui.get_action_catalog, name='ui-action-catalog'),
-    path('ui/action-catalog/editor-hints/', ui.get_action_catalog_editor_hints, name='ui-action-catalog-editor-hints'),
+    path('ui/operation-exposures/editor-hints/', ui.get_operation_exposure_editor_hints, name='ui-operation-exposure-editor-hints'),
     path('ui/execution-plan/preview/', ui.preview_execution_plan, name='ui-execution-plan-preview'),
 
     # ========================================================================
@@ -251,11 +251,7 @@ urlpatterns = [
     # ========================================================================
     # Templates
     # ========================================================================
-    path('templates/list-templates/', templates.list_templates, name='list-templates'),
     path('templates/sync-from-registry/', templates.sync_from_registry, name='sync-from-registry'),
-    path('templates/create-template/', templates.create_template, name='create-template'),
-    path('templates/update-template/', templates.update_template, name='update-template'),
-    path('templates/delete-template/', templates.delete_template, name='delete-template'),
 
     # ========================================================================
     # Unified Operation Catalog
@@ -263,6 +259,7 @@ urlpatterns = [
     path('operation-catalog/definitions/', operation_catalog.list_operation_definitions, name='operation-catalog-definitions'),
     path('operation-catalog/definitions/<uuid:definition_id>/', operation_catalog.get_operation_definition, name='operation-catalog-definition-detail'),
     path('operation-catalog/exposures/', operation_catalog.list_operation_exposures, name='operation-catalog-exposures'),
+    path('operation-catalog/exposures/<uuid:exposure_id>/', operation_catalog.delete_operation_exposure, name='operation-catalog-exposure-delete'),
     path('operation-catalog/exposures/<uuid:exposure_id>/publish/', operation_catalog.publish_operation_exposure, name='operation-catalog-exposure-publish'),
     path('operation-catalog/validate/', operation_catalog.validate_operation_exposure, name='operation-catalog-validate'),
     path('operation-catalog/migration-issues/', operation_catalog.list_operation_catalog_migration_issues, name='operation-catalog-migration-issues'),

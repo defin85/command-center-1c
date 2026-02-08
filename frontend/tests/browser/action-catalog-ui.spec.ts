@@ -89,6 +89,7 @@ async function setupApiMocks(
     me?: { id: number; username: string; is_staff: boolean }
     callCounters?: {
       operationCatalogExposuresGets?: number
+      operationCatalogActionExposuresGets?: number
       actionCatalogEditorHintsGets?: number
     }
   }
@@ -399,6 +400,9 @@ async function setupApiMocks(
       state.callCounters = state.callCounters ?? {}
       state.callCounters.operationCatalogExposuresGets = (state.callCounters.operationCatalogExposuresGets ?? 0) + 1
       const surface = url.searchParams.get('surface')
+      if (surface === 'action_catalog') {
+        state.callCounters.operationCatalogActionExposuresGets = (state.callCounters.operationCatalogActionExposuresGets ?? 0) + 1
+      }
       const tenantId = url.searchParams.get('tenant_id')
       const capability = url.searchParams.get('capability')
       const status = url.searchParams.get('status')
@@ -538,6 +542,28 @@ async function setupApiMocks(
       return fulfillJson(route, { published: true, exposure, validation_errors: [] })
     }
 
+    if (method === 'DELETE' && /^\/api\/v2\/operation-catalog\/exposures\/[^/]+\/$/.test(path)) {
+      const exposureId = decodeURIComponent(path.split('/').filter(Boolean)[4] ?? '')
+      const idx = exposures.findIndex((row) => String(row.id) === exposureId)
+      if (idx < 0) {
+        return fulfillJson(route, {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Exposure not found' },
+        }, 404)
+      }
+
+      const [deleted] = exposures.splice(idx, 1)
+      const definitionId = String(deleted.definition_id)
+      const hasLinked = exposures.some((row) => String(row.definition_id) === definitionId)
+      if (!hasLinked) {
+        const defIdx = definitions.findIndex((row) => String(row.id) === definitionId)
+        if (defIdx >= 0) {
+          definitions.splice(defIdx, 1)
+        }
+      }
+      return fulfillJson(route, { deleted: true, exposure: deleted })
+    }
+
     if (method === 'PATCH' && path.startsWith('/api/v2/settings/runtime/')) {
       const key = decodeURIComponent(path.split('/').filter(Boolean).slice(-1)[0] ?? '')
       const existing = state.runtimeSettings.find((item) => item.key === key)
@@ -662,7 +688,7 @@ async function setupApiMocks(
       })
     }
 
-    if (method === 'GET' && path === '/api/v2/ui/action-catalog/editor-hints/') {
+    if (method === 'GET' && path === '/api/v2/ui/operation-exposures/editor-hints/') {
       state.callCounters = state.callCounters ?? {}
       state.callCounters.actionCatalogEditorHintsGets = (state.callCounters.actionCatalogEditorHintsGets ?? 0) + 1
       return fulfillJson(route, state.editorHints ?? {
@@ -1158,9 +1184,33 @@ test('Templates editor: uses unified tabbed modal and no manual driver selector'
   await expect(page.getByText('Template via unified modal', { exact: true })).toBeVisible()
 })
 
+test('Templates: staff switches surface filter and URL reflects selected surface', async ({ page }) => {
+  await setupAuth(page)
+  await setupApiMocks(page, {
+    runtimeSettings: [],
+    templates: [],
+  })
+
+  await page.goto('/templates', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
+  await expect(page.getByText('Surface', { exact: true })).toBeVisible()
+
+  await page.locator('.ant-segmented').getByText('Action Catalog', { exact: true }).click()
+  await expect(page).toHaveURL(/\/templates\?surface=action_catalog$/)
+  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
+
+  await page.locator('.ant-segmented').getByText('Templates', { exact: true }).click()
+  await expect(page).toHaveURL(/\/templates$/)
+  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
+})
+
 test('Templates: non-staff cannot open action-catalog surface or load management endpoints', async ({ page }) => {
   await setupAuth(page)
-  const callCounters: { operationCatalogExposuresGets?: number; actionCatalogEditorHintsGets?: number } = {}
+  const callCounters: {
+    operationCatalogExposuresGets?: number
+    operationCatalogActionExposuresGets?: number
+    actionCatalogEditorHintsGets?: number
+  } = {}
   await setupApiMocks(page, {
     runtimeSettings: [],
     me: { id: 2, username: 'operator', is_staff: false },
@@ -1169,15 +1219,19 @@ test('Templates: non-staff cannot open action-catalog surface or load management
 
   await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
-  await expect(page.getByRole('tab', { name: 'Action Catalog', exact: true })).toHaveCount(0)
+  await expect(page.getByText('Surface', { exact: true })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toHaveCount(0)
-  expect(callCounters.operationCatalogExposuresGets ?? 0).toBe(0)
+  expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
   expect(callCounters.actionCatalogEditorHintsGets ?? 0).toBe(0)
 })
 
 test('Legacy route /settings/action-catalog does not render action-catalog editor flow', async ({ page }) => {
   await setupAuth(page)
-  const callCounters: { operationCatalogExposuresGets?: number; actionCatalogEditorHintsGets?: number } = {}
+  const callCounters: {
+    operationCatalogExposuresGets?: number
+    operationCatalogActionExposuresGets?: number
+    actionCatalogEditorHintsGets?: number
+  } = {}
   await setupApiMocks(page, {
     runtimeSettings: [],
     callCounters,
@@ -1186,6 +1240,6 @@ test('Legacy route /settings/action-catalog does not render action-catalog edito
   await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toHaveCount(0)
   await expect(page.locator('.ant-layout')).toHaveCount(0)
-  expect(callCounters.operationCatalogExposuresGets ?? 0).toBe(0)
+  expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
   expect(callCounters.actionCatalogEditorHintsGets ?? 0).toBe(0)
 })

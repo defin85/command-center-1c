@@ -4,13 +4,21 @@
 TBD - created by archiving change add-unified-templates-action-catalog-contract. Update Purpose after archive.
 ## Requirements
 ### Requirement: Templates API MUST использовать unified persistent store
-Система ДОЛЖНА (SHALL) обслуживать `/api/v2/templates/*` через `operation_exposure(surface="template")` и связанный `operation_definition`, а не через отдельный изолированный источник данных.
+Система ДОЛЖНА (SHALL) управлять template exposures через unified management API `operation-catalog` (с `surface="template"`), а не через отдельный legacy template CRUD/list API-контур.
 
-#### Scenario: List templates возвращает unified exposures
-- **GIVEN** в unified store есть опубликованные template exposures
-- **WHEN** пользователь вызывает `/api/v2/templates/list-templates/`
-- **THEN** API возвращает шаблоны, материализованные из unified exposures
-- **AND** response shape определяется unified templates контрактом
+Legacy endpoints `/api/v2/templates/list-templates/`, `/api/v2/templates/create-template/`, `/api/v2/templates/update-template/`, `/api/v2/templates/delete-template/` НЕ ДОЛЖНЫ (SHALL NOT) оставаться поддерживаемым контрактом управления templates.
+
+#### Scenario: Template list/read идёт через unified exposure API
+- **GIVEN** пользователь имеет права просмотра templates
+- **WHEN** UI/клиент запрашивает `operation-catalog` exposures с `surface=template`
+- **THEN** API возвращает template exposures из unified store
+- **AND** ответ покрывает поля, необходимые для template management UI
+
+#### Scenario: Template create/update/delete идёт через unified exposure API
+- **GIVEN** пользователь имеет права управления templates
+- **WHEN** UI/клиент выполняет upsert/publish для `surface=template`
+- **THEN** изменения фиксируются в unified store
+- **AND** отдельные template CRUD endpoints не используются
 
 ### Requirement: Templates write-path MUST поддерживать dedup execution definitions
 Система ДОЛЖНА (SHALL) при create/update template переиспользовать существующий `operation_definition`, если execution payload идентичен (fingerprint match).
@@ -31,25 +39,25 @@ TBD - created by archiving change add-unified-templates-action-catalog-contract.
 - **AND** unified persistent store не изменяется
 
 ### Requirement: `/templates` MUST быть единым UI управления template и action exposures
-Система ДОЛЖНА (SHALL) использовать `/templates` как единственный операторский экран управления `operation_exposure` для surfaces `template` и `action_catalog`, и ДОЛЖНА (SHALL) предоставлять единый modal editor shell для обоих surfaces.
+Система ДОЛЖНА (SHALL) использовать `/templates` как единый management-экран для `operation_exposure` с surfaces `template` и `action_catalog`, показывая один список exposure и единый modal editor.
 
-Отдельный экран `/settings/action-catalog` НЕ ДОЛЖЕН (SHALL NOT) оставаться поддерживаемой точкой редактирования.
+Переключение между surfaces ДОЛЖНО (SHALL) выполняться через `surface` filter (синхронизированный с query-параметром URL), а не через отдельные вкладки/страницы.
 
-#### Scenario: Staff редактирует template/action в одном editor shell
-- **GIVEN** staff пользователь открывает `/templates`
-- **WHEN** переключается между surfaces `template` и `action_catalog`
-- **THEN** create/edit выполняется через единый tabbed modal editor (`Basics`, `Executor`, `Params`, `Safety & Fixed`, `Preview`)
-- **AND** surface-specific поля отображаются внутри того же editor shell без отдельной ветки legacy modal
+#### Scenario: Staff переключает surface в одном list shell
+- **GIVEN** staff пользователь открыл `/templates`
+- **WHEN** выбирает `surface=action_catalog`
+- **THEN** UI показывает action exposures в том же list shell
+- **AND** create/edit выполняется тем же modal editor, что и для `surface=template`
 
-#### Scenario: Template surface использует тот же pipeline, что и action surface
-- **GIVEN** staff редактирует template exposure
-- **WHEN** сохраняет изменения
-- **THEN** UI использует тот же adapter/serializer/validation pipeline, что и для action exposure
-- **AND** execution payload materialize-ится в unified contract без surface-specific расхождений формы executor
+#### Scenario: Non-staff запрашивает action surface
+- **GIVEN** non-staff пользователь открывает `/templates?surface=action_catalog`
+- **WHEN** UI применяет RBAC для surfaces
+- **THEN** выбранный surface принудительно становится `template`
+- **AND** action-catalog management запросы не отправляются
 
-#### Scenario: Editor не требует ручной выбор driver для canonical executor kinds
-- **GIVEN** staff редактирует exposure в `/templates`
-- **WHEN** выбирает `executor.kind` из `ibcmd_cli`, `designer_cli`, `workflow`
-- **THEN** UI не запрашивает отдельный manual выбор `driver` для canonical kinds
-- **AND** выбор `executor.kind` однозначно определяет runtime driver mapping в сохранённом контракте
+#### Scenario: Deep-link сохраняет выбранный surface
+- **GIVEN** staff пользователь переключил фильтр на `action_catalog`
+- **WHEN** обновляет страницу или делится ссылкой
+- **THEN** `/templates?surface=action_catalog` открывается с тем же выбранным surface
+- **AND** список и toolbar соответствуют выбранному surface
 

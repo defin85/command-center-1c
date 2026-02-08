@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import pytest
+from django.contrib.auth.models import Permission
+from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
+from apps.core import permission_codes as perms
+from apps.databases.models import PermissionLevel
 from apps.runtime_settings.models import TenantRuntimeSettingOverride
 from apps.tenancy.models import Tenant
-from apps.templates.models import OperationMigrationIssue
+from apps.templates.models import OperationMigrationIssue, OperationTemplate, OperationTemplatePermission
+from apps.templates.operation_catalog_service import upsert_template_exposure
 
 
 @pytest.fixture
@@ -14,6 +19,22 @@ def staff_client(db):
     user = User.objects.create_user(username="operation_catalog_staff", password="pass")
     user.is_staff = True
     user.save(update_fields=["is_staff"])
+    client = APIClient()
+    client.force_authenticate(user=user)
+    return client
+
+
+def _grant_template_capability(user: User, codename: str) -> None:
+    ct = ContentType.objects.get(app_label="templates", model="operationtemplate")
+    perm = Permission.objects.get(content_type=ct, codename=codename)
+    user.user_permissions.add(perm)
+
+
+@pytest.fixture
+def template_manager_client(db):
+    user = User.objects.create_user(username="template_manager_non_staff", password="pass", is_staff=False)
+    _grant_template_capability(user, "view_operationtemplate")
+    _grant_template_capability(user, "manage_operation_template")
     client = APIClient()
     client.force_authenticate(user=user)
     return client
@@ -261,6 +282,110 @@ def test_operation_catalog_dedup_ignores_redundant_driver(staff_client):
     assert second_resp.status_code == 200
     second_definition_id = second_resp.json()["definition"]["id"]
     assert second_definition_id == first_definition_id
+
+
+@pytest.mark.django_db
+def test_operation_catalog_template_surface_allows_non_staff_with_view_scope(template_manager_client):
+    user = User.objects.get(username="template_manager_non_staff")
+    exposure, _ = upsert_template_exposure(
+        template_id="tpl-perm-view",
+        name="Template view",
+        description="",
+        operation_type="designer_cli",
+        target_entity="infobase",
+        template_data={"kind": "designer_cli", "driver": "cli", "command_id": "infobase.extension.list"},
+        is_active=True,
+    )
+    template = OperationTemplate.objects.get(id=exposure.alias)
+    OperationTemplatePermission.objects.update_or_create(
+        user=user,
+        template=template,
+        defaults={"level": PermissionLevel.VIEW, "notes": ""},
+    )
+
+    resp_template = template_manager_client.get("/api/v2/operation-catalog/exposures/?surface=template")
+    assert resp_template.status_code == 200
+    aliases = {row["alias"] for row in resp_template.json()["exposures"]}
+    assert "tpl-perm-view" in aliases
+
+    resp_action = template_manager_client.get("/api/v2/operation-catalog/exposures/?surface=action_catalog")
+    assert resp_action.status_code == 403
+
+
+@pytest.mark.django_db
+def test_operation_catalog_template_surface_upsert_publish_and_delete_for_non_staff_manager(template_manager_client):
+    user = User.objects.get(username="template_manager_non_staff")
+    exposure, _ = upsert_template_exposure(
+        template_id="tpl-perm-manage",
+        name="Template manage",
+        description="before",
+        operation_type="designer_cli",
+        target_entity="infobase",
+        template_data={"kind": "designer_cli", "driver": "cli", "command_id": "infobase.extension.list"},
+        is_active=True,
+    )
+    template = OperationTemplate.objects.get(id=exposure.alias)
+    OperationTemplatePermission.objects.update_or_create(
+        user=user,
+        template=template,
+        defaults={"level": PermissionLevel.MANAGE, "notes": ""},
+    )
+
+    upsert_resp = template_manager_client.post(
+        "/api/v2/operation-catalog/exposures/",
+        data={
+            "definition": {
+                "tenant_scope": "global",
+                "executor_kind": "designer_cli",
+                "executor_payload": {
+                    "operation_type": "designer_cli",
+                    "target_entity": "infobase",
+                    "template_data": {
+                        "kind": "designer_cli",
+                        "driver": "cli",
+                        "command_id": "infobase.extension.update",
+                    },
+                },
+                "contract_version": 1,
+            },
+            "exposure": {
+                "surface": "template",
+                "alias": "tpl-perm-manage",
+                "name": "Template manage updated",
+                "description": "after",
+                "is_active": True,
+                "capability": "",
+                "contexts": [],
+                "display_order": 0,
+                "capability_config": {},
+                "status": "draft",
+            },
+        },
+        format="json",
+    )
+    assert upsert_resp.status_code == 200
+    exposure_id = upsert_resp.json()["exposure"]["id"]
+
+    publish_resp = template_manager_client.post(
+        f"/api/v2/operation-catalog/exposures/{exposure_id}/publish/",
+        data={},
+        format="json",
+    )
+    assert publish_resp.status_code == 200
+    assert publish_resp.json()["published"] is True
+
+    delete_resp = template_manager_client.delete(f"/api/v2/operation-catalog/exposures/{exposure_id}/")
+    assert delete_resp.status_code == 200
+    assert delete_resp.json()["deleted"] is True
+    assert not OperationTemplate.objects.filter(id="tpl-perm-manage").exists()
+
+
+@pytest.mark.django_db
+def test_legacy_templates_crud_routes_are_removed(staff_client):
+    assert staff_client.get("/api/v2/templates/list-templates/").status_code == 404
+    assert staff_client.post("/api/v2/templates/create-template/", data={}, format="json").status_code == 404
+    assert staff_client.post("/api/v2/templates/update-template/", data={}, format="json").status_code == 404
+    assert staff_client.post("/api/v2/templates/delete-template/", data={}, format="json").status_code == 404
 
 
 @pytest.mark.django_db

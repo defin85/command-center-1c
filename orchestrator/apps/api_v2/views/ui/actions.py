@@ -124,8 +124,8 @@ def _build_extensions_set_flags_hints() -> dict:
 
 @extend_schema(
     tags=["v2"],
-    summary="Get action catalog editor hints (capability UI hints)",
-    description="Returns capability-driven UI hints for Action Catalog editor (staff-only).",
+    summary="Get operation exposure editor hints (capability UI hints)",
+    description="Returns capability-driven UI hints for unified operation exposure editor (staff-only).",
     responses={
         200: ActionCatalogEditorHintsResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
@@ -134,7 +134,7 @@ def _build_extensions_set_flags_hints() -> dict:
 )
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-def get_action_catalog_editor_hints(request):
+def get_operation_exposure_editor_hints(request):
     if not getattr(request.user, "is_staff", False):
         return Response(
             {"success": False, "error": {"code": "FORBIDDEN", "message": "Staff only"}},

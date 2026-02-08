@@ -26,6 +26,9 @@ export type OperationCatalogExposure = {
   display_order?: number
   capability_config?: Record<string, unknown>
   status: 'draft' | 'published' | 'invalid' | string
+  operation_type?: string
+  target_entity?: string
+  template_data?: Record<string, unknown>
   created_at?: string
   updated_at?: string
 }
@@ -87,6 +90,11 @@ export type OperationCatalogExposurePublishResponse = {
   validation_errors: OperationCatalogValidationError[]
 }
 
+export type OperationCatalogExposureDeleteResponse = {
+  deleted: boolean
+  exposure: OperationCatalogExposure
+}
+
 export async function listOperationCatalogDefinitions(params?: {
   tenant_scope?: string
   executor_kind?: string
@@ -135,6 +143,16 @@ export async function publishOperationCatalogExposure(
   const response = await apiClient.post<OperationCatalogExposurePublishResponse>(
     `/api/v2/operation-catalog/exposures/${encodeURIComponent(exposureId)}/publish/`,
     {},
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function deleteOperationCatalogExposure(
+  exposureId: string
+): Promise<OperationCatalogExposureDeleteResponse> {
+  const response = await apiClient.delete<OperationCatalogExposureDeleteResponse>(
+    `/api/v2/operation-catalog/exposures/${encodeURIComponent(exposureId)}/`,
     { skipGlobalError: true }
   )
   return response.data

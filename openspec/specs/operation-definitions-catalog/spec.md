@@ -33,17 +33,30 @@ TBD - created by archiving change add-unified-templates-action-catalog-contract.
 - **AND** соответствующий exposure НЕ публикуется в effective read model
 
 ### Requirement: Unified contract MUST иметь явный API для definitions/exposures
-Система ДОЛЖНА (SHALL) предоставить явный API-контур для работы с unified persistent моделью:
-- list/get definitions,
-- list/upsert/publish exposures,
-- dry-run validate,
-- list migration issues.
+Система ДОЛЖНА (SHALL) использовать `operation-catalog` API как основной management-контур для обеих surfaces:
+- `template`,
+- `action_catalog`.
 
-#### Scenario: Staff получает валидацию exposure до публикации
-- **GIVEN** staff готовит новый action/template exposure
-- **WHEN** вызывается endpoint dry-run validate
-- **THEN** API возвращает детальные ошибки с путями полей
-- **AND** exposure не публикуется автоматически без явного publish шага
+API ДОЛЖЕН (SHALL) применять surface-aware RBAC:
+- `template` surface: доступ по template permissions (view/manage, включая object-level),
+- `action_catalog` surface: staff-only.
+
+#### Scenario: Пользователь с template view видит только template exposures
+- **GIVEN** пользователь не staff, но имеет право просмотра templates
+- **WHEN** вызывает list exposures для `surface=template`
+- **THEN** API возвращает доступные template exposures
+- **AND** не раскрывает `action_catalog` exposures
+
+#### Scenario: Non-staff не может управлять action_catalog surface
+- **WHEN** non-staff вызывает upsert/publish/list для `surface=action_catalog`
+- **THEN** API возвращает `403 Forbidden`
+- **AND** состояние action exposures не изменяется
+
+#### Scenario: Пользователь с template manage может изменить template exposure
+- **GIVEN** пользователь имеет `templates.manage_operation_template`
+- **WHEN** вызывает upsert/publish для `surface=template`
+- **THEN** API применяет изменение в unified store
+- **AND** валидация выполняется по unified exposure contract
 
 ### Requirement: Unified contract MUST canonicalize mapping между `executor_kind` и runtime driver
 Система ДОЛЖНА (SHALL) использовать canonical mapping между `operation_definition.executor_kind` и runtime driver для canonical executors:

@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import {
+  deleteOperationCatalogExposure,
+  listOperationCatalogExposures,
+  upsertOperationCatalogExposure,
+  type OperationCatalogExposure,
+} from '../operationCatalog'
 import { apiClient } from '../client'
 
 import { queryKeys } from './queryKeys'
@@ -14,6 +20,8 @@ export interface OperationTemplate {
   is_active: boolean
   created_at: string
   updated_at: string
+  exposure_id?: string
+  definition_id?: string
 }
 
 export interface OperationTemplateListResponse {
@@ -62,26 +70,195 @@ export interface OperationTemplateFilters {
   sort?: { key: string; order: 'asc' | 'desc' } | string
 }
 
-async function fetchOperationTemplates(params?: OperationTemplateFilters): Promise<OperationTemplateListResponse> {
-  const filtersParam = params?.filters
-    ? (typeof params.filters === 'string' ? params.filters : JSON.stringify(params.filters))
-    : undefined
-  const sortParam = params?.sort
-    ? (typeof params.sort === 'string' ? params.sort : JSON.stringify(params.sort))
-    : undefined
+const isPlainObject = (value: unknown): value is Record<string, unknown> => (
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+)
 
-  const response = await apiClient.get<OperationTemplateListResponse>(
-    '/api/v2/templates/list-templates/',
-    {
-      params: {
-        ...params,
-        filters: filtersParam,
-        sort: sortParam,
-      },
-      skipGlobalError: true,
+const deepClone = <T,>(value: T): T => {
+  try {
+    return JSON.parse(JSON.stringify(value)) as T
+  } catch (_err) {
+    return value
+  }
+}
+
+const parseFiltersParam = (raw: OperationTemplateFilters['filters']): Record<string, unknown> => {
+  if (!raw) return {}
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      return isPlainObject(parsed) ? parsed : {}
+    } catch (_err) {
+      return {}
     }
-  )
-  return response.data
+  }
+  return isPlainObject(raw) ? raw : {}
+}
+
+const parseSortParam = (raw: OperationTemplateFilters['sort']): { key: string; order: 'asc' | 'desc' } | null => {
+  if (!raw) return null
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      if (!isPlainObject(parsed)) return null
+      const key = typeof parsed.key === 'string' ? parsed.key : ''
+      const order = parsed.order === 'desc' ? 'desc' : parsed.order === 'asc' ? 'asc' : null
+      if (!key || !order) return null
+      return { key, order }
+    } catch (_err) {
+      return null
+    }
+  }
+  if (!isPlainObject(raw)) return null
+  const key = typeof raw.key === 'string' ? raw.key : ''
+  const order = raw.order === 'desc' ? 'desc' : raw.order === 'asc' ? 'asc' : null
+  if (!key || !order) return null
+  return { key, order }
+}
+
+const canonicalDriverForOperationType = (operationType: string): string | null => {
+  if (operationType === 'designer_cli') return 'cli'
+  if (operationType === 'ibcmd_cli') return 'ibcmd'
+  return null
+}
+
+const toOperationTemplate = (exposure: OperationCatalogExposure): OperationTemplate => {
+  const templateData = isPlainObject(exposure.template_data) ? deepClone(exposure.template_data) : {}
+  const operationType = String(exposure.operation_type || '').trim() || 'designer_cli'
+  const targetEntity = String(exposure.target_entity || '').trim() || 'infobase'
+  return {
+    id: exposure.alias,
+    name: exposure.name,
+    description: exposure.description ?? '',
+    operation_type: operationType,
+    target_entity: targetEntity,
+    template_data: templateData,
+    is_active: exposure.is_active !== false,
+    created_at: String(exposure.created_at || ''),
+    updated_at: String(exposure.updated_at || ''),
+    exposure_id: exposure.id,
+    definition_id: exposure.definition_id,
+  }
+}
+
+const applyOperationTypeFilter = (rows: OperationTemplate[], value: unknown): OperationTemplate[] => {
+  const next = String(value ?? '').trim()
+  if (!next) return rows
+  return rows.filter((row) => row.operation_type === next)
+}
+
+const applyTargetEntityFilter = (rows: OperationTemplate[], value: unknown): OperationTemplate[] => {
+  const next = String(value ?? '').trim()
+  if (!next) return rows
+  return rows.filter((row) => row.target_entity === next)
+}
+
+const applyIsActiveFilter = (rows: OperationTemplate[], value: unknown): OperationTemplate[] => {
+  if (typeof value === 'boolean') return rows.filter((row) => row.is_active === value)
+  const text = String(value ?? '').trim().toLowerCase()
+  if (text === 'true' || text === '1' || text === 'yes') return rows.filter((row) => row.is_active)
+  if (text === 'false' || text === '0' || text === 'no') return rows.filter((row) => !row.is_active)
+  return rows
+}
+
+const applySearch = (rows: OperationTemplate[], search: string | undefined): OperationTemplate[] => {
+  const q = String(search || '').trim().toLowerCase()
+  if (!q) return rows
+  return rows.filter((row) => (
+    row.id.toLowerCase().includes(q)
+    || row.name.toLowerCase().includes(q)
+    || String(row.description || '').toLowerCase().includes(q)
+  ))
+}
+
+const applySort = (rows: OperationTemplate[], sort: { key: string; order: 'asc' | 'desc' } | null): OperationTemplate[] => {
+  if (!sort) return rows
+  const next = rows.slice()
+  next.sort((a, b) => {
+    const key = sort.key
+    const av = (a as Record<string, unknown>)[key]
+    const bv = (b as Record<string, unknown>)[key]
+    const aText = typeof av === 'string' ? av : String(av ?? '')
+    const bText = typeof bv === 'string' ? bv : String(bv ?? '')
+    const result = aText.localeCompare(bText)
+    return sort.order === 'desc' ? -result : result
+  })
+  return next
+}
+
+async function fetchOperationTemplates(params?: OperationTemplateFilters): Promise<OperationTemplateListResponse> {
+  const exposuresResponse = await listOperationCatalogExposures({
+    surface: 'template',
+    limit: 1000,
+    offset: 0,
+  })
+
+  let rows = (exposuresResponse.exposures ?? [])
+    .filter((item) => item.surface === 'template')
+    .map((item) => toOperationTemplate(item))
+
+  if (params?.operation_type) rows = applyOperationTypeFilter(rows, params.operation_type)
+  if (params?.target_entity) rows = applyTargetEntityFilter(rows, params.target_entity)
+  if (params?.is_active !== undefined) rows = applyIsActiveFilter(rows, params.is_active)
+  rows = applySearch(rows, params?.search)
+
+  const filters = parseFiltersParam(params?.filters)
+  if (isPlainObject(filters.operation_type) && 'value' in filters.operation_type) {
+    rows = applyOperationTypeFilter(rows, (filters.operation_type as { value?: unknown }).value)
+  }
+  if (isPlainObject(filters.target_entity) && 'value' in filters.target_entity) {
+    rows = applyTargetEntityFilter(rows, (filters.target_entity as { value?: unknown }).value)
+  }
+  if (isPlainObject(filters.is_active) && 'value' in filters.is_active) {
+    rows = applyIsActiveFilter(rows, (filters.is_active as { value?: unknown }).value)
+  }
+
+  rows = applySort(rows, parseSortParam(params?.sort))
+
+  const total = rows.length
+  const offset = Math.max(0, Number(params?.offset ?? 0))
+  const limit = Math.max(1, Math.min(1000, Number(params?.limit ?? 50)))
+  const paged = rows.slice(offset, offset + limit)
+
+  return { templates: paged, count: paged.length, total }
+}
+
+const buildTemplateUpsertPayload = (request: OperationTemplateWrite) => {
+  const operationType = String(request.operation_type || '').trim() || 'designer_cli'
+  const targetEntity = String(request.target_entity || '').trim() || 'infobase'
+  const templateData = isPlainObject(request.template_data) ? deepClone(request.template_data) : {}
+  const executorPayload: Record<string, unknown> = {
+    operation_type: operationType,
+    target_entity: targetEntity,
+    template_data: templateData,
+    kind: operationType,
+  }
+  const canonicalDriver = canonicalDriverForOperationType(operationType)
+  if (canonicalDriver) {
+    executorPayload.driver = canonicalDriver
+  }
+
+  return {
+    definition: {
+      tenant_scope: 'global',
+      executor_kind: operationType,
+      executor_payload: executorPayload,
+      contract_version: 1,
+    },
+    exposure: {
+      surface: 'template' as const,
+      alias: String(request.id || '').trim(),
+      tenant_id: null,
+      name: String(request.name || '').trim(),
+      description: String(request.description || ''),
+      is_active: request.is_active !== false,
+      capability: `templates.${operationType || 'legacy'}`,
+      contexts: [],
+      display_order: 0,
+      capability_config: {},
+      status: request.is_active === false ? 'draft' as const : 'published' as const,
+    },
+  }
 }
 
 export function useOperationTemplates(params?: OperationTemplateFilters) {
@@ -114,12 +291,9 @@ export function useCreateTemplate() {
 
   return useMutation({
     mutationFn: async (request: OperationTemplateWrite): Promise<OperationTemplateDetailResponse> => {
-      const response = await apiClient.post<OperationTemplateDetailResponse>(
-        '/api/v2/templates/create-template/',
-        request,
-        { skipGlobalError: true }
-      )
-      return response.data
+      const payload = buildTemplateUpsertPayload(request)
+      const response = await upsertOperationCatalogExposure(payload)
+      return { template: toOperationTemplate(response.exposure) }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.templates.all })
@@ -132,12 +306,9 @@ export function useUpdateTemplate() {
 
   return useMutation({
     mutationFn: async (request: OperationTemplateWrite): Promise<OperationTemplateDetailResponse> => {
-      const response = await apiClient.post<OperationTemplateDetailResponse>(
-        '/api/v2/templates/update-template/',
-        request,
-        { skipGlobalError: true }
-      )
-      return response.data
+      const payload = buildTemplateUpsertPayload(request)
+      const response = await upsertOperationCatalogExposure(payload)
+      return { template: toOperationTemplate(response.exposure) }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.templates.all })
@@ -149,13 +320,20 @@ export function useDeleteTemplate() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (request: OperationTemplateId): Promise<OperationTemplateDetailResponse> => {
-      const response = await apiClient.post<OperationTemplateDetailResponse>(
-        '/api/v2/templates/delete-template/',
-        request,
-        { skipGlobalError: true }
-      )
-      return response.data
+    mutationFn: async (request: OperationTemplateId): Promise<void> => {
+      const alias = String(request.template_id || '').trim()
+      if (!alias) throw new Error('template_id is required')
+      const response = await listOperationCatalogExposures({
+        surface: 'template',
+        alias,
+        limit: 1,
+        offset: 0,
+      })
+      const exposure = (response.exposures ?? []).find((item) => item.surface === 'template' && item.alias === alias)
+      if (!exposure || typeof exposure.id !== 'string') {
+        throw new Error('Template not found')
+      }
+      await deleteOperationCatalogExposure(exposure.id)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.templates.all })

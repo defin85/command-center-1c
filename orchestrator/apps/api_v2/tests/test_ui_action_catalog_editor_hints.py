@@ -32,19 +32,19 @@ def client(user):
 
 @pytest.mark.django_db
 def test_action_catalog_editor_hints_requires_auth():
-    resp = APIClient().get("/api/v2/ui/action-catalog/editor-hints/")
+    resp = APIClient().get("/api/v2/ui/operation-exposures/editor-hints/")
     assert resp.status_code == 401
 
 
 @pytest.mark.django_db
 def test_action_catalog_editor_hints_staff_only(client):
-    resp = client.get("/api/v2/ui/action-catalog/editor-hints/")
+    resp = client.get("/api/v2/ui/operation-exposures/editor-hints/")
     assert resp.status_code == 403
 
 
 @pytest.mark.django_db
 def test_action_catalog_editor_hints_contains_extensions_set_flags(staff_client):
-    resp = staff_client.get("/api/v2/ui/action-catalog/editor-hints/")
+    resp = staff_client.get("/api/v2/ui/operation-exposures/editor-hints/")
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["hints_version"] == 1
@@ -70,3 +70,9 @@ def test_action_catalog_editor_hints_contains_extensions_set_flags(staff_client)
     assert isinstance(target_binding_schema, dict)
     assert target_binding_schema.get("type") == "object"
     assert "extension_name_param" in (target_binding_schema.get("properties") or {})
+
+
+@pytest.mark.django_db
+def test_legacy_action_catalog_editor_hints_endpoint_is_removed(staff_client):
+    resp = staff_client.get("/api/v2/ui/action-catalog/editor-hints/")
+    assert resp.status_code == 404

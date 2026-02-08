@@ -12,7 +12,7 @@ import {
   upsertOperationCatalogExposure,
 } from '../../api/operationCatalog'
 import { useMe } from '../../api/queries/me'
-import { useActionCatalogEditorHints } from '../../api/queries/ui'
+import { useOperationExposureEditorHints } from '../../api/queries/ui'
 import type { ActionCatalogMode, ActionFormValues, PlainObject } from './actionCatalogTypes'
 import {
   buildActionFromForm,
@@ -50,7 +50,7 @@ const DISABLED_ACTIONS_STORAGE_KEY = 'action-catalog.disabled-actions.v1'
 export function ActionCatalogPage() {
   const meQuery = useMe()
   const isStaff = Boolean(meQuery.data?.is_staff)
-  const hintsQuery = useActionCatalogEditorHints(isStaff)
+  const hintsQuery = useOperationExposureEditorHints(isStaff)
 
   const [mode, setMode] = useState<ActionCatalogMode>('guided')
   const [loading, setLoading] = useState(false)

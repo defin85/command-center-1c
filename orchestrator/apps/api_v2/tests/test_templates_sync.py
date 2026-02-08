@@ -128,8 +128,8 @@ def test_list_templates_with_default_sort_returns_200(staff_client, isolated_reg
     sync_resp = staff_client.post("/api/v2/templates/sync-from-registry/", {"dry_run": False}, format="json")
     assert sync_resp.status_code == 200
 
-    resp = staff_client.get("/api/v2/templates/list-templates/?search=&limit=50&offset=0")
+    resp = staff_client.get("/api/v2/operation-catalog/exposures/?surface=template&limit=50&offset=0")
     assert resp.status_code == 200
     data = resp.json()
     assert data["count"] == 1
-    assert data["templates"][0]["id"] == "tpl-test-op-list"
+    assert data["exposures"][0]["alias"] == "tpl-test-op-list"

@@ -3438,9 +3438,21 @@ paths:
           cross-tenant results on some endpoints.
     post:
       operationId: v2_operation_catalog_exposures_create
-      summary: List operation exposures
+      summary: Upsert operation exposure
       tags:
       - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationCatalogExposureUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OperationCatalogExposureUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OperationCatalogExposureUpsertRequest'
+        required: true
       security:
       - bearerAuth: []
       responses:
@@ -3448,8 +3460,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OperationCatalogExposureListResponse'
+                $ref: '#/components/schemas/OperationCatalogExposureDetailResponse'
           description: ''
+        '400':
+          description: Validation error
         '401':
           description: Unauthorized
         '403':
@@ -3464,6 +3478,43 @@ paths:
         description: Optional tenant context selector. If omitted, tenant is resolved
           via user preference or first membership. For staff users, omission may return
           cross-tenant results on some endpoints.
+  /api/v2/operation-catalog/exposures/{exposure_id}/:
+    delete:
+      operationId: v2_operation_catalog_exposures_destroy
+      summary: Delete operation exposure
+      parameters:
+      - in: path
+        name: exposure_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogExposureDeleteResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
   /api/v2/operation-catalog/exposures/{exposure_id}/publish/:
     post:
       operationId: v2_operation_catalog_exposures_publish_create
@@ -7958,177 +8009,6 @@ paths:
         description: Optional tenant context selector. If omitted, tenant is resolved
           via user preference or first membership. For staff users, omission may return
           cross-tenant results on some endpoints.
-  /api/v2/templates/create-template/:
-    post:
-      operationId: v2_templates_create_template_create
-      description: Create a custom operation template. Requires templates.manage_operation_template.
-      summary: Create operation template
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OperationTemplateWrite'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/OperationTemplateWrite'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/OperationTemplateWrite'
-        required: true
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationTemplateDetailResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-      parameters:
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-  /api/v2/templates/delete-template/:
-    post:
-      operationId: v2_templates_delete_template_create
-      description: Delete an operation template. Requires templates.manage_operation_template.
-      summary: Delete operation template
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OperationTemplateId'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/OperationTemplateId'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/OperationTemplateId'
-        required: true
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationTemplateDetailResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-      parameters:
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-  /api/v2/templates/list-templates/:
-    get:
-      operationId: v2_templates_list_templates_retrieve
-      description: List all operation templates with optional filtering by type, target
-        entity, and active status.
-      summary: List operation templates
-      parameters:
-      - in: query
-        name: filters
-        schema:
-          type: string
-        description: JSON object with filter conditions
-      - in: query
-        name: is_active
-        schema:
-          type: boolean
-        description: Filter by active status (true/false)
-      - in: query
-        name: limit
-        schema:
-          type: integer
-        description: 'Maximum results (default: 50, max: 1000)'
-      - in: query
-        name: offset
-        schema:
-          type: integer
-        description: 'Pagination offset (default: 0)'
-      - in: query
-        name: operation_type
-        schema:
-          type: string
-        description: Filter by operation type
-      - in: query
-        name: search
-        schema:
-          type: string
-        description: Search by name or description
-      - in: query
-        name: sort
-        schema:
-          type: string
-        description: JSON object with sort configuration
-      - in: query
-        name: target_entity
-        schema:
-          type: string
-        description: Filter by target entity
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationTemplateListResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
   /api/v2/templates/sync-from-registry/:
     post:
       operationId: v2_templates_sync_from_registry_create
@@ -8156,54 +8036,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperationTemplateSyncResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-      parameters:
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-  /api/v2/templates/update-template/:
-    post:
-      operationId: v2_templates_update_template_create
-      description: Update an existing operation template. Requires templates.manage_operation_template.
-      summary: Update operation template
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OperationTemplateWrite'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/OperationTemplateWrite'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/OperationTemplateWrite'
-        required: true
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationTemplateDetailResponse'
           description: ''
         '400':
           content:
@@ -8326,36 +8158,6 @@ paths:
         description: Optional tenant context selector. If omitted, tenant is resolved
           via user preference or first membership. For staff users, omission may return
           cross-tenant results on some endpoints.
-  /api/v2/ui/action-catalog/editor-hints/:
-    get:
-      operationId: v2_ui_action_catalog_editor_hints_retrieve
-      description: Returns capability-driven UI hints for Action Catalog editor (staff-only).
-      summary: Get action catalog editor hints (capability UI hints)
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionCatalogEditorHintsResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-      parameters:
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
   /api/v2/ui/execution-plan/preview/:
     post:
       operationId: v2_ui_execution_plan_preview_create
@@ -8389,6 +8191,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/ui/operation-exposures/editor-hints/:
+    get:
+      operationId: v2_ui_operation_exposures_editor_hints_retrieve
+      description: Returns capability-driven UI hints for unified operation exposure
+        editor (staff-only).
+      summary: Get operation exposure editor hints (capability UI hints)
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionCatalogEditorHintsResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -14294,6 +14127,11 @@ components:
         capability_config: {}
         status:
           type: string
+        operation_type:
+          type: string
+        target_entity:
+          type: string
+        template_data: {}
         created_at:
           type: string
           format: date-time
@@ -14308,6 +14146,26 @@ components:
       - name
       - status
       - surface
+    OperationCatalogExposureDeleteResponse:
+      type: object
+      properties:
+        deleted:
+          type: boolean
+        exposure:
+          $ref: '#/components/schemas/OperationCatalogExposure'
+      required:
+      - deleted
+      - exposure
+    OperationCatalogExposureDetailResponse:
+      type: object
+      properties:
+        exposure:
+          $ref: '#/components/schemas/OperationCatalogExposure'
+        definition:
+          $ref: '#/components/schemas/OperationCatalogDefinition'
+      required:
+      - definition
+      - exposure
     OperationCatalogExposureListResponse:
       type: object
       properties:
@@ -14338,6 +14196,20 @@ components:
       - exposure
       - published
       - validation_errors
+    OperationCatalogExposureUpsertRequest:
+      type: object
+      properties:
+        exposure_id:
+          type: string
+          format: uuid
+        definition_id:
+          type: string
+          format: uuid
+          nullable: true
+        definition: {}
+        exposure: {}
+      required:
+      - exposure
     OperationCatalogItem:
       type: object
       description: Operation catalog entry for Operations Center.
@@ -14652,46 +14524,6 @@ components:
       required:
       - active_streams
       - max_streams
-    OperationTemplate:
-      type: object
-      description: Serializer for template exposure materialized from unified operation
-        catalog.
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        description:
-          type: string
-        operation_type:
-          type: string
-        target_entity:
-          type: string
-        template_data: {}
-        is_active:
-          type: boolean
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-      required:
-      - created_at
-      - id
-      - is_active
-      - name
-      - operation_type
-      - target_entity
-      - template_data
-      - updated_at
-    OperationTemplateDetailResponse:
-      type: object
-      properties:
-        template:
-          $ref: '#/components/schemas/OperationTemplate'
-      required:
-      - template
     OperationTemplateGroupPermission:
       type: object
       properties:
@@ -14741,32 +14573,6 @@ components:
       required:
       - created
       - permission
-    OperationTemplateId:
-      type: object
-      properties:
-        template_id:
-          type: string
-      required:
-      - template_id
-    OperationTemplateListResponse:
-      type: object
-      description: Response for list_templates endpoint.
-      properties:
-        templates:
-          type: array
-          items:
-            $ref: '#/components/schemas/OperationTemplate'
-          description: List of operation templates
-        count:
-          type: integer
-          description: Number of templates in current page
-        total:
-          type: integer
-          description: Total number of templates matching filters
-      required:
-      - count
-      - templates
-      - total
     OperationTemplatePermission:
       type: object
       properties:
@@ -14848,28 +14654,6 @@ components:
       - message
       - unchanged
       - updated
-    OperationTemplateWrite:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        description:
-          type: string
-        operation_type:
-          type: string
-        target_entity:
-          type: string
-        template_data: {}
-        is_active:
-          type: boolean
-          default: true
-      required:
-      - name
-      - operation_type
-      - target_entity
-      - template_data
     ParallelConfig:
       type: object
       description: Serializer for ParallelConfig Pydantic model.

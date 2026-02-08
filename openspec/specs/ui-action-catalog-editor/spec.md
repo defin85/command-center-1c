@@ -4,20 +4,20 @@
 TBD - created by archiving change add-ui-action-catalog-editor. Update Purpose after archive.
 ## Requirements
 ### Requirement: Staff-only UI редактор каталога действий
-Система ДОЛЖНА (SHALL) предоставлять staff-only редактирование action exposures только внутри единого экрана `/templates` (surface `action_catalog`), а не через отдельный legacy UI route.
+Система ДОЛЖНА (SHALL) предоставлять staff-only редактирование action exposures внутри `/templates` через тот же list+editor flow, что и template surface.
 
-#### Scenario: Non-staff не имеет доступа к action surface
+Отдельные page-level tabs/pages для action catalog НЕ ДОЛЖНЫ (SHALL NOT) использоваться как самостоятельный editor flow.
+
+#### Scenario: Staff редактирует action exposure из общего списка
+- **GIVEN** staff пользователь открыл `/templates` и выбрал `surface=action_catalog`
+- **WHEN** открывает create/edit для action exposure
+- **THEN** UI использует единый `OperationExposureEditorModal`
+- **AND** применяет action-specific поля/валидацию внутри этого же editor shell
+
+#### Scenario: Non-staff не получает action editing flow
 - **WHEN** non-staff пользователь открывает `/templates`
-- **THEN** action-catalog surface недоступен
-- **AND** данные action exposures не раскрываются
-
-#### Scenario: Staff видит текущую конфигурацию action exposures
-- **WHEN** staff пользователь открывает `/templates` и выбирает surface `action_catalog`
-- **THEN** UI загружает текущие action exposures из unified store и отображает actions
-
-#### Scenario: Отдельный route action-catalog не используется как editor
-- **WHEN** пользователь пытается открыть `/settings/action-catalog`
-- **THEN** приложение не предоставляет legacy editor flow для управления action exposures
+- **THEN** action surface недоступен для выбора
+- **AND** редактор action exposure не открывается
 
 ### Requirement: Guided editor + Raw JSON toggle
 Система ДОЛЖНА (SHALL) поддерживать два режима редактирования: guided UI и Raw JSON, с возможностью переключения.
@@ -149,15 +149,20 @@ TBD - created by archiving change add-ui-action-catalog-editor. Update Purpose a
 - **THEN** UI обеспечивает стабильную ширину Select (без схлопывания до “узкого” состояния), достаточную для чтения `command_id`
 
 ### Requirement: Staff-only endpoint для Action Catalog editor hints
-Система ДОЛЖНА (SHALL) предоставить staff-only endpoint, который возвращает UI hints для capability (минимум: `executor.fixed.*`) в виде JSON Schema + uiSchema.
+Система ДОЛЖНА (SHALL) предоставлять capability-driven editor hints через generic endpoint:
+- `GET /api/v2/ui/operation-exposures/editor-hints/` (staff-only).
 
-#### Scenario: Hints endpoint доступен только staff
-- **WHEN** non-staff вызывает hints endpoint
-- **THEN** доступ запрещён (403)
+Endpoint `/api/v2/ui/action-catalog/editor-hints/` НЕ ДОЛЖЕН (SHALL NOT) оставаться поддерживаемым контрактом.
 
-#### Scenario: Hints содержат fixed schema для extensions.set_flags
-- **WHEN** staff вызывает hints endpoint
-- **THEN** ответ содержит capability `extensions.set_flags` с описанием `fixed.apply_mask`
+#### Scenario: Generic hints endpoint доступен только staff
+- **WHEN** non-staff вызывает `/api/v2/ui/operation-exposures/editor-hints/`
+- **THEN** API возвращает `403 Forbidden`
+- **AND** hints не раскрываются
+
+#### Scenario: Staff получает capability hints через generic endpoint
+- **WHEN** staff вызывает `/api/v2/ui/operation-exposures/editor-hints/`
+- **THEN** API возвращает `capabilities` (включая `extensions.set_flags`)
+- **AND** структура hints пригодна для unified editor в surfaces `template` и `action_catalog`
 
 ### Requirement: Editor MUST записывать action exposures в unified persistent store
 Система ДОЛЖНА (SHALL) сохранять изменения editor-а в unified exposure-модель (`surface="action_catalog"`), а не в isolated legacy JSON источник.

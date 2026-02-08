@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Alert, App, Button, Form, Popconfirm, Space, Switch, Tabs, Typography } from 'antd'
-import type { TabsProps } from 'antd'
+import { Alert, App, Button, Form, Popconfirm, Segmented, Space, Switch, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import {
@@ -280,15 +279,20 @@ export function TemplatesPage() {
     ? 'action_catalog'
     : 'template'
 
-  const [activeTab, setActiveTab] = useState<SurfaceTabKey>(normalizedSurface)
+  const [activeSurface, setActiveSurface] = useState<SurfaceTabKey>(normalizedSurface)
 
   useEffect(() => {
-    setActiveTab(normalizedSurface)
+    setActiveSurface(normalizedSurface)
   }, [normalizedSurface])
 
-  const handleTabChange = useCallback((next: string) => {
+  const handleSurfaceChange = useCallback((next: string | number) => {
+    const nextKey = String(next)
     const resolved: SurfaceTabKey = (next === 'action_catalog' && isStaff) ? 'action_catalog' : 'template'
-    setActiveTab(resolved)
+    if (nextKey !== 'action_catalog') {
+      setActiveSurface('template')
+    } else {
+      setActiveSurface(resolved)
+    }
     const nextParams = new URLSearchParams(searchParams)
     if (resolved === 'action_catalog') {
       nextParams.set('surface', 'action_catalog')
@@ -298,30 +302,33 @@ export function TemplatesPage() {
     setSearchParams(nextParams, { replace: true })
   }, [isStaff, searchParams, setSearchParams])
 
-  const tabItems: TabsProps['items'] = useMemo(() => {
-    const items: TabsProps['items'] = [
-      {
-        key: 'template',
-        label: 'Templates',
-        children: <OperationTemplatesSurface isStaff={isStaff} />,
-      },
+  const surfaceOptions = useMemo(() => {
+    const items: Array<{ value: SurfaceTabKey; label: string }> = [
+      { value: 'template', label: 'Templates' },
     ]
     if (isStaff) {
-      items.push({
-        key: 'action_catalog',
-        label: 'Action Catalog',
-        children: <ActionCatalogPage />,
-      })
+      items.push({ value: 'action_catalog', label: 'Action Catalog' })
     }
     return items
   }, [isStaff])
 
   return (
-    <Tabs
-      activeKey={activeTab}
-      onChange={handleTabChange}
-      items={tabItems}
-      destroyInactiveTabPane={false}
-    />
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      {isStaff && (
+        <Space direction="vertical" size="small">
+          <Text type="secondary">Surface</Text>
+          <Segmented
+            value={activeSurface}
+            onChange={handleSurfaceChange}
+            options={surfaceOptions}
+          />
+        </Space>
+      )}
+      {activeSurface === 'action_catalog' ? (
+        <ActionCatalogPage />
+      ) : (
+        <OperationTemplatesSurface isStaff={isStaff} />
+      )}
+    </Space>
   )
 }
