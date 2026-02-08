@@ -1,8 +1,32 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '../client'
 import { queryKeys } from '.'
-import type { ExtensionsFlagsAggregate } from '../generated/model/extensionsFlagsAggregate'
-import type { ExtensionsObservedFlagValues } from '../generated/model/extensionsObservedFlagValues'
+
+export type ExtensionsFlagAggregateObserved = {
+  state?: 'on' | 'off' | 'mixed' | 'unknown'
+  true_count?: number
+  false_count?: number
+  unknown_count?: number
+}
+
+export type ExtensionsFlagAggregate = {
+  policy?: boolean | null
+  observed?: ExtensionsFlagAggregateObserved | null
+  drift_count?: number
+  unknown_drift_count?: number
+}
+
+export type ExtensionsFlagsAggregate = {
+  active?: ExtensionsFlagAggregate
+  safe_mode?: ExtensionsFlagAggregate
+  unsafe_action_protection?: ExtensionsFlagAggregate
+}
+
+export type ExtensionsObservedFlagValues = {
+  active?: boolean | null
+  safe_mode?: boolean | null
+  unsafe_action_protection?: boolean | null
+}
 
 export type ExtensionsOverviewVersionCount = {
   version: string | null

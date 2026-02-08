@@ -11,7 +11,8 @@ from apps.artifacts.models import Artifact, ArtifactAlias, ArtifactKind, Artifac
 from apps.artifacts.storage import ArtifactStorageClient
 from apps.databases.models import Database, DatabaseExtensionsSnapshot, DatabasePermission, PermissionLevel
 from apps.runtime_settings.models import RuntimeSetting
-from apps.templates.models import WorkflowTemplatePermission
+from apps.templates.models import OperationExposure, WorkflowTemplatePermission
+from apps.templates.operation_catalog_service import resolve_definition, resolve_exposure
 from apps.templates.workflow.models import WorkflowTemplate, WorkflowType
 
 
@@ -36,7 +37,6 @@ def _seed_ibcmd_catalog(monkeypatch, *, base_catalog: dict, overrides_catalog: d
     )
     ArtifactAlias.objects.create(artifact=base, alias="approved", version=base_version)
 
-    overrides_version = None
     storage_map = {
         base_version.storage_key: json.dumps(base_catalog).encode("utf-8"),
     }
@@ -65,7 +65,32 @@ def _seed_ibcmd_catalog(monkeypatch, *, base_catalog: dict, overrides_catalog: d
         return io.BytesIO(storage_map[storage_key])
 
     monkeypatch.setattr(ArtifactStorageClient, "get_object", fake_get_object)
-    return base_version, overrides_version
+
+
+def _seed_action_catalog_exposures(*, actions: list[dict], tenant_id: str | None = None):
+    tenant_scope = f"tenant:{tenant_id}" if tenant_id else "global"
+    for index, action in enumerate(actions):
+        executor = dict(action.get("executor") or {})
+        definition, _ = resolve_definition(
+            tenant_scope=tenant_scope,
+            executor_kind=str(executor.get("kind") or "").strip(),
+            executor_payload=executor,
+            contract_version=1,
+        )
+        resolve_exposure(
+            definition=definition,
+            surface=OperationExposure.SURFACE_ACTION_CATALOG,
+            alias=str(action.get("id") or "").strip(),
+            tenant_id=tenant_id,
+            label=str(action.get("label") or action.get("id") or "").strip(),
+            description=str(action.get("description") or ""),
+            is_active=bool(action.get("is_active", True)),
+            capability=str(action.get("capability") or "").strip(),
+            contexts=[str(v) for v in (action.get("contexts") or []) if isinstance(v, str)],
+            display_order=index,
+            capability_config={},
+            status=OperationExposure.STATUS_PUBLISHED,
+        )
 
 
 @pytest.fixture
@@ -96,339 +121,6 @@ def client(user):
 
 
 @pytest.mark.django_db
-def test_update_runtime_setting_ui_action_catalog_rejects_invalid_schema(staff_client):
-    resp = staff_client.patch(
-        "/api/v2/settings/runtime/ui.action_catalog/",
-        data={"value": {"catalog_version": 1}},
-        format="json",
-    )
-    assert resp.status_code == 400
-    payload = resp.json()
-    assert payload["success"] is False
-    assert payload["error"]["code"] == "VALIDATION_ERROR"
-    assert isinstance(payload["error"]["message"], list)
-    assert payload["error"]["message"]
-
-
-@pytest.mark.django_db
-def test_update_runtime_setting_ui_action_catalog_rejects_unknown_command_reference(staff_client, monkeypatch):
-    base_catalog = {
-        "catalog_version": 2,
-        "driver": "ibcmd",
-        "platform_version": "8.3.27",
-        "source": {"type": "test"},
-        "generated_at": "2026-01-01T00:00:00Z",
-        "commands_by_id": {
-            "infobase.extension.list": {
-                "label": "list extensions",
-                "description": "List extensions",
-                "argv": ["infobase", "extension", "list"],
-                "scope": "per_database",
-                "risk_level": "safe",
-                "params_by_name": {},
-            },
-        },
-    }
-    _seed_ibcmd_catalog(
-        monkeypatch,
-        base_catalog=base_catalog,
-        overrides_catalog={"catalog_version": 2, "driver": "ibcmd", "overrides": {}},
-    )
-
-    resp = staff_client.patch(
-        "/api/v2/settings/runtime/ui.action_catalog/",
-        data={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "extensions.unknown",
-                            "label": "Unknown command",
-                            "contexts": ["database_card"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "unknown.command"},
-                        }
-                    ]
-                },
-            }
-        },
-        format="json",
-    )
-
-    assert resp.status_code == 400
-    payload = resp.json()
-    assert payload["success"] is False
-    assert payload["error"]["code"] == "VALIDATION_ERROR"
-    assert isinstance(payload["error"]["message"], list)
-    assert any("unknown command_id" in msg for msg in payload["error"]["message"])
-    assert any("extensions.actions[0]" in msg for msg in payload["error"]["message"])
-    assert any("executor.command_id" in msg for msg in payload["error"]["message"])
-
-
-@pytest.mark.django_db
-def test_update_runtime_setting_ui_action_catalog_rejects_unknown_workflow_reference(staff_client):
-    missing_workflow_id = str(uuid.uuid4())
-    resp = staff_client.patch(
-        "/api/v2/settings/runtime/ui.action_catalog/",
-        data={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "extensions.workflow",
-                            "label": "Workflow",
-                            "contexts": ["database_card"],
-                            "executor": {"kind": "workflow", "workflow_id": missing_workflow_id},
-                        }
-                    ]
-                },
-            }
-        },
-        format="json",
-    )
-
-    assert resp.status_code == 400
-    payload = resp.json()
-    assert payload["success"] is False
-    assert payload["error"]["code"] == "VALIDATION_ERROR"
-    assert isinstance(payload["error"]["message"], list)
-    assert any("workflow not found" in msg for msg in payload["error"]["message"])
-    assert any("extensions.actions[0]" in msg for msg in payload["error"]["message"])
-    assert any("executor.workflow_id" in msg for msg in payload["error"]["message"])
-
-
-@pytest.mark.django_db
-def test_update_runtime_setting_ui_action_catalog_accepts_valid_references(staff_client, staff_user, monkeypatch):
-    base_catalog = {
-        "catalog_version": 2,
-        "driver": "ibcmd",
-        "platform_version": "8.3.27",
-        "source": {"type": "test"},
-        "generated_at": "2026-01-01T00:00:00Z",
-        "commands_by_id": {
-            "infobase.extension.list": {
-                "label": "list extensions",
-                "description": "List extensions",
-                "argv": ["infobase", "extension", "list"],
-                "scope": "per_database",
-                "risk_level": "safe",
-                "params_by_name": {},
-            },
-        },
-    }
-    _seed_ibcmd_catalog(
-        monkeypatch,
-        base_catalog=base_catalog,
-        overrides_catalog={"catalog_version": 2, "driver": "ibcmd", "overrides": {}},
-    )
-
-    workflow = WorkflowTemplate.objects.create(
-        name="Test Workflow",
-        description="",
-        workflow_type=WorkflowType.SEQUENTIAL,
-        dag_structure={
-            "nodes": [
-                {"id": "n1", "name": "Node 1", "type": "operation", "template_id": "tpl-test"},
-            ],
-            "edges": [],
-        },
-        is_valid=True,
-        is_active=True,
-        created_by=staff_user,
-    )
-
-    resp = staff_client.patch(
-        "/api/v2/settings/runtime/ui.action_catalog/",
-        data={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "extensions.list",
-                            "label": "List extensions",
-                            "contexts": ["database_card"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "infobase.extension.list"},
-                        },
-                        {
-                            "id": "extensions.workflow",
-                            "label": "Workflow",
-                            "contexts": ["database_card"],
-                            "executor": {"kind": "workflow", "workflow_id": str(workflow.id)},
-                        },
-                    ]
-                },
-            }
-        },
-        format="json",
-    )
-
-    assert resp.status_code == 200
-
-
-@pytest.mark.django_db
-def test_update_runtime_setting_ui_action_catalog_allows_duplicate_reserved_capability(staff_client, monkeypatch):
-    base_catalog = {
-        "catalog_version": 2,
-        "driver": "ibcmd",
-        "platform_version": "8.3.27",
-        "source": {"type": "test"},
-        "generated_at": "2026-01-01T00:00:00Z",
-        "commands_by_id": {
-            "infobase.extension.list": {
-                "label": "list extensions",
-                "description": "List extensions",
-                "argv": ["infobase", "extension", "list"],
-                "scope": "per_database",
-                "risk_level": "safe",
-                "params_by_name": {},
-            },
-        },
-    }
-    _seed_ibcmd_catalog(
-        monkeypatch,
-        base_catalog=base_catalog,
-        overrides_catalog={"catalog_version": 2, "driver": "ibcmd", "overrides": {}},
-    )
-
-    resp = staff_client.patch(
-        "/api/v2/settings/runtime/ui.action_catalog/",
-        data={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "ListExtension1",
-                            "capability": "extensions.list",
-                            "label": "List extensions 1",
-                            "contexts": ["database_card"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "infobase.extension.list"},
-                        },
-                        {
-                            "id": "ListExtension2",
-                            "capability": "extensions.list",
-                            "label": "List extensions 2",
-                            "contexts": ["database_card"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "infobase.extension.list"},
-                        },
-                    ]
-                },
-            }
-        },
-        format="json",
-    )
-    assert resp.status_code == 200
-
-
-@pytest.mark.django_db
-def test_update_runtime_setting_ui_action_catalog_accepts_fixed_apply_mask(staff_client, monkeypatch):
-    base_catalog = {
-        "catalog_version": 2,
-        "driver": "ibcmd",
-        "platform_version": "8.3.27",
-        "source": {"type": "test"},
-        "generated_at": "2026-01-01T00:00:00Z",
-        "commands_by_id": {
-            "infobase.extension.update": {
-                "label": "update extension",
-                "description": "Update extension",
-                "argv": ["infobase", "extension", "update"],
-                "scope": "per_database",
-                "risk_level": "safe",
-                "params_by_name": {},
-            },
-        },
-    }
-    _seed_ibcmd_catalog(
-        monkeypatch,
-        base_catalog=base_catalog,
-        overrides_catalog={"catalog_version": 2, "driver": "ibcmd", "overrides": {}},
-    )
-
-    resp = staff_client.patch(
-        "/api/v2/settings/runtime/ui.action_catalog/",
-        data={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "SetFlagsActiveOnly",
-                            "capability": "extensions.set_flags",
-                            "label": "Set flags: active only",
-                            "contexts": ["bulk_page"],
-                            "executor": {
-                                "kind": "ibcmd_cli",
-                                "driver": "ibcmd",
-                                "command_id": "infobase.extension.update",
-                                "fixed": {
-                                    "apply_mask": {
-                                        "active": True,
-                                        "safe_mode": False,
-                                        "unsafe_action_protection": False,
-                                    }
-                                },
-                            },
-                        }
-                    ]
-                },
-            }
-        },
-        format="json",
-    )
-    assert resp.status_code == 200
-
-
-@pytest.mark.django_db
-def test_update_runtime_setting_ui_action_catalog_accepts_unknown_capability(staff_client, monkeypatch):
-    base_catalog = {
-        "catalog_version": 2,
-        "driver": "ibcmd",
-        "platform_version": "8.3.27",
-        "source": {"type": "test"},
-        "generated_at": "2026-01-01T00:00:00Z",
-        "commands_by_id": {
-            "infobase.extension.list": {
-                "label": "list extensions",
-                "description": "List extensions",
-                "argv": ["infobase", "extension", "list"],
-                "scope": "per_database",
-                "risk_level": "safe",
-                "params_by_name": {},
-            },
-        },
-    }
-    _seed_ibcmd_catalog(
-        monkeypatch,
-        base_catalog=base_catalog,
-        overrides_catalog={"catalog_version": 2, "driver": "ibcmd", "overrides": {}},
-    )
-
-    resp2 = staff_client.patch(
-        "/api/v2/settings/runtime/ui.action_catalog/",
-        data={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "CustomList",
-                            "capability": "custom.extensions.list",
-                            "label": "Custom list",
-                            "contexts": ["database_card"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "infobase.extension.list"},
-                        },
-                    ]
-                },
-            }
-        },
-        format="json",
-    )
-    assert resp2.status_code == 200
-
-@pytest.mark.django_db
 def test_ui_action_catalog_filters_unknown_and_dangerous_for_non_staff(client, monkeypatch):
     base_catalog = {
         "catalog_version": 2,
@@ -456,36 +148,30 @@ def test_ui_action_catalog_filters_unknown_and_dangerous_for_non_staff(client, m
         },
     }
     _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog={"catalog_version": 2, "driver": "ibcmd", "overrides": {}})
-
-    RuntimeSetting.objects.update_or_create(
-        key="ui.action_catalog",
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "extensions.list",
-                            "label": "List extensions",
-                            "contexts": ["database_card"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": " infobase.extension.list "},
-                        },
-                        {
-                            "id": "extensions.drop",
-                            "label": "Drop config",
-                            "contexts": ["database_card"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "server.config.drop"},
-                        },
-                        {
-                            "id": "extensions.unknown",
-                            "label": "Unknown",
-                            "contexts": ["database_card"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "unknown.command"},
-                        },
-                    ]
-                },
-            }
-        },
+    _seed_action_catalog_exposures(
+        actions=[
+            {
+                "id": "extensions.list",
+                "label": "List extensions",
+                "contexts": ["database_card"],
+                "capability": "extensions.list",
+                "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": " infobase.extension.list "},
+            },
+            {
+                "id": "extensions.drop",
+                "label": "Drop config",
+                "contexts": ["database_card"],
+                "capability": "extensions.drop",
+                "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "server.config.drop"},
+            },
+            {
+                "id": "extensions.unknown",
+                "label": "Unknown",
+                "contexts": ["database_card"],
+                "capability": "extensions.unknown",
+                "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "unknown.command"},
+            },
+        ]
     )
 
     resp = client.get("/api/v2/ui/action-catalog/")
@@ -517,24 +203,16 @@ def test_ui_action_catalog_filters_workflow_without_permission(client, user):
         is_active=True,
         created_by=user,
     )
-
-    RuntimeSetting.objects.update_or_create(
-        key="ui.action_catalog",
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "extensions.workflow",
-                            "label": "Workflow",
-                            "contexts": ["database_card"],
-                            "executor": {"kind": "workflow", "workflow_id": f" {workflow.id} "},
-                        },
-                    ]
-                },
-            }
-        },
+    _seed_action_catalog_exposures(
+        actions=[
+            {
+                "id": "extensions.workflow",
+                "label": "Workflow",
+                "contexts": ["database_card"],
+                "capability": "extensions.workflow",
+                "executor": {"kind": "workflow", "workflow_id": f" {workflow.id} "},
+            },
+        ]
     )
 
     resp = client.get("/api/v2/ui/action-catalog/")
@@ -553,6 +231,32 @@ def test_ui_action_catalog_filters_workflow_without_permission(client, user):
     assert resp2.status_code == 200
     actions = resp2.json()["extensions"]["actions"]
     assert {item["id"] for item in actions} == {"extensions.workflow"}
+
+
+@pytest.mark.django_db
+def test_ui_action_catalog_ignores_legacy_runtime_setting_payload(staff_client):
+    RuntimeSetting.objects.update_or_create(
+        key="ui.action_catalog",
+        defaults={
+            "value": {
+                "catalog_version": 1,
+                "extensions": {
+                    "actions": [
+                        {
+                            "id": "legacy.extensions.list",
+                            "label": "Legacy list",
+                            "contexts": ["database_card"],
+                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "infobase.extension.list"},
+                        }
+                    ]
+                },
+            }
+        },
+    )
+
+    resp = staff_client.get("/api/v2/ui/action-catalog/")
+    assert resp.status_code == 200
+    assert resp.json()["extensions"]["actions"] == []
 
 
 @pytest.mark.django_db
@@ -618,46 +322,43 @@ def test_get_extensions_snapshot_preserves_full_extensions_fields(client, user):
                 "parse_error": None,
                 "extensions": [
                     {
-                        "name": "EF_10236744_4",
+                        "name": "ExtA",
+                        "purpose": "Accounting",
                         "is_active": True,
-                        "purpose": "patch",
                         "safe_mode": False,
-                        "security_profile_name": None,
+                        "unsafe_action_protection": True,
+                    },
+                    {
+                        "name": "ExtB",
+                        "purpose": "",
+                        "is_active": False,
+                        "safe_mode": True,
                         "unsafe_action_protection": False,
-                        "used_in_distributed_infobase": True,
-                        "scope": "infobase",
-                        "hash_sum": "56pD01LTf43r4q+f7HKWxkeqJwE=",
-                    }
+                    },
                 ],
             },
-            "source_operation_id": "op-1",
+            "source_operation_id": "op-2",
         },
     )
 
     resp = client.get("/api/v2/databases/get-extensions-snapshot/", {"database_id": str(db.id)})
     assert resp.status_code == 200
     snapshot = resp.json()["snapshot"]
-
     assert snapshot["parse_error"] is None
+    assert snapshot["raw"] == {"stdout": "ok", "exit_code": 0}
     assert snapshot["extensions"] == [
         {
-            "name": "EF_10236744_4",
+            "name": "ExtA",
+            "purpose": "Accounting",
             "is_active": True,
-            "purpose": "patch",
             "safe_mode": False,
-            "security_profile_name": None,
-            "unsafe_action_protection": False,
-            "used_in_distributed_infobase": True,
-            "scope": "infobase",
-            "hash_sum": "56pD01LTf43r4q+f7HKWxkeqJwE=",
-        }
-    ]
-    assert snapshot["extensions_canonical"] == [
+            "unsafe_action_protection": True,
+        },
         {
-            "name": "EF_10236744_4",
-            "purpose": "patch",
-            "is_active": True,
-            "safe_mode": False,
+            "name": "ExtB",
+            "purpose": "",
+            "is_active": False,
+            "safe_mode": True,
             "unsafe_action_protection": False,
-        }
+        },
     ]

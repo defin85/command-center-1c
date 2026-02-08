@@ -1,5 +1,7 @@
-import { useCallback, useMemo, useState } from 'react'
-import { Alert, App, Button, Form, Input, Modal, Popconfirm, Space, Switch, Typography } from 'antd'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Alert, App, Button, Form, Input, Modal, Popconfirm, Space, Switch, Tabs, Typography } from 'antd'
+import type { TabsProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import {
@@ -15,13 +17,15 @@ import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { DriverCommandBuilder, type DriverCommandOperationConfig } from '../../components/driverCommands/DriverCommandBuilder'
 import { useMe } from '../../api/queries/me'
 import { driverCommandConfigToTemplateData, templateDataToDriverCommandConfig } from '../../lib/commandConfigAdapter'
+import { ActionCatalogPage } from '../Settings/ActionCatalogPage'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
 
-export function TemplatesPage() {
+type SurfaceTabKey = 'template' | 'action_catalog'
+
+function OperationTemplatesSurface({ isStaff }: { isStaff: boolean }) {
   const { message } = App.useApp()
-  const meQuery = useMe()
   const [dryRun, setDryRun] = useState<boolean>(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<OperationTemplate | null>(null)
@@ -40,8 +44,6 @@ export function TemplatesPage() {
   const createMutation = useCreateTemplate()
   const updateMutation = useUpdateTemplate()
   const deleteMutation = useDeleteTemplate()
-
-  const isStaff = Boolean(meQuery.data?.is_staff)
 
   const openCreateModal = useCallback(() => {
     setEditingTemplate(null)
@@ -297,5 +299,61 @@ export function TemplatesPage() {
         />
       </Modal>
     </Space>
+  )
+}
+
+export function TemplatesPage() {
+  const meQuery = useMe()
+  const isStaff = Boolean(meQuery.data?.is_staff)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const requestedSurface = searchParams.get('surface')
+  const normalizedSurface: SurfaceTabKey = (requestedSurface === 'action_catalog' && isStaff)
+    ? 'action_catalog'
+    : 'template'
+
+  const [activeTab, setActiveTab] = useState<SurfaceTabKey>(normalizedSurface)
+
+  useEffect(() => {
+    setActiveTab(normalizedSurface)
+  }, [normalizedSurface])
+
+  const handleTabChange = useCallback((next: string) => {
+    const resolved: SurfaceTabKey = (next === 'action_catalog' && isStaff) ? 'action_catalog' : 'template'
+    setActiveTab(resolved)
+    const nextParams = new URLSearchParams(searchParams)
+    if (resolved === 'action_catalog') {
+      nextParams.set('surface', 'action_catalog')
+    } else {
+      nextParams.delete('surface')
+    }
+    setSearchParams(nextParams, { replace: true })
+  }, [isStaff, searchParams, setSearchParams])
+
+  const tabItems: TabsProps['items'] = useMemo(() => {
+    const items: TabsProps['items'] = [
+      {
+        key: 'template',
+        label: 'Templates',
+        children: <OperationTemplatesSurface isStaff={isStaff} />,
+      },
+    ]
+    if (isStaff) {
+      items.push({
+        key: 'action_catalog',
+        label: 'Action Catalog',
+        children: <ActionCatalogPage />,
+      })
+    }
+    return items
+  }, [isStaff])
+
+  return (
+    <Tabs
+      activeKey={activeTab}
+      onChange={handleTabChange}
+      items={tabItems}
+      destroyInactiveTabPane={false}
+    />
   )
 }

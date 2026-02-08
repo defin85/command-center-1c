@@ -28,6 +28,56 @@ async function setupAuth(page: Page) {
   })
 }
 
+const UI_ACTION_CATALOG_KEY = 'ui.action_catalog'
+const MOCK_TIMESTAMP = '2026-01-01T00:00:00Z'
+
+const isPlainObject = (value: unknown): value is AnyRecord => (
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+)
+
+const deepClone = <T,>(value: T): T => {
+  try {
+    return JSON.parse(JSON.stringify(value)) as T
+  } catch (_err) {
+    return value
+  }
+}
+
+const buildMockUuid = (seq: number): string => `00000000-0000-4000-8000-${String(seq).padStart(12, '0')}`
+
+const parseIntParam = (raw: string | null, fallback: number, min: number, max: number): number => {
+  const parsed = Number.parseInt(String(raw ?? ''), 10)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.min(max, Math.max(min, parsed))
+}
+
+const buildValidationErrors = (messages: string[] | undefined): AnyRecord[] => {
+  const source = Array.isArray(messages) && messages.length > 0
+    ? messages
+    : ['extensions.actions[0].executor.command_id: unknown command_id']
+  return source.map((message) => {
+    const text = String(message)
+    const withPath = /^extensions\.actions\[\d+\]\.([^:]+):\s*(.+)$/.exec(text)
+    if (withPath) {
+      return { path: withPath[1], code: 'VALIDATION_ERROR', message: withPath[2] }
+    }
+    const noPath = /^extensions\.actions\[\d+\]:\s*(.+)$/.exec(text)
+    if (noPath) {
+      return { path: '', code: 'VALIDATION_ERROR', message: noPath[1] }
+    }
+    return { path: '', code: 'VALIDATION_ERROR', message: text }
+  })
+}
+
+const parseJsonBody = (raw: string | null): AnyRecord => {
+  try {
+    const parsed = JSON.parse(raw || '{}') as unknown
+    return isPlainObject(parsed) ? parsed : {}
+  } catch (_err) {
+    return {}
+  }
+}
+
 async function setupApiMocks(
   page: Page,
   state: {
@@ -37,6 +87,136 @@ async function setupApiMocks(
     editorHints?: AnyRecord
   }
 ) {
+  const definitions: AnyRecord[] = []
+  const exposures: AnyRecord[] = []
+  let definitionSeq = 1
+  let exposureSeq = 10_000
+
+  const createDefinition = (payload: {
+    tenant_scope?: string
+    executor_kind?: string
+    executor_payload?: AnyRecord
+    contract_version?: number
+    status?: string
+  }): AnyRecord => {
+    const id = buildMockUuid(definitionSeq)
+    definitionSeq += 1
+    const definition: AnyRecord = {
+      id,
+      tenant_scope: typeof payload.tenant_scope === 'string' && payload.tenant_scope ? payload.tenant_scope : 'global',
+      executor_kind: typeof payload.executor_kind === 'string' && payload.executor_kind ? payload.executor_kind : 'ibcmd_cli',
+      executor_payload: isPlainObject(payload.executor_payload) ? deepClone(payload.executor_payload) : {},
+      contract_version: typeof payload.contract_version === 'number' ? payload.contract_version : 1,
+      fingerprint: `mock-def-${id}`,
+      status: typeof payload.status === 'string' && payload.status ? payload.status : 'active',
+      created_at: MOCK_TIMESTAMP,
+      updated_at: MOCK_TIMESTAMP,
+    }
+    definitions.push(definition)
+    return definition
+  }
+
+  const createExposure = (payload: {
+    id?: string
+    definition_id: string
+    surface: string
+    alias: string
+    tenant_id?: string | null
+    name: string
+    description?: string
+    is_active?: boolean
+    capability?: string
+    contexts?: string[]
+    display_order?: number
+    capability_config?: AnyRecord
+    status?: string
+  }): AnyRecord => {
+    const exposure: AnyRecord = {
+      id: payload.id ?? buildMockUuid(exposureSeq),
+      definition_id: payload.definition_id,
+      surface: payload.surface,
+      alias: payload.alias,
+      tenant_id: payload.tenant_id ?? null,
+      name: payload.name,
+      description: payload.description ?? '',
+      is_active: payload.is_active !== false,
+      capability: payload.capability ?? '',
+      contexts: Array.isArray(payload.contexts) ? payload.contexts : [],
+      display_order: typeof payload.display_order === 'number' ? payload.display_order : 0,
+      capability_config: isPlainObject(payload.capability_config) ? deepClone(payload.capability_config) : {},
+      status: payload.status ?? 'draft',
+      created_at: MOCK_TIMESTAMP,
+      updated_at: MOCK_TIMESTAMP,
+    }
+    exposureSeq += 1
+    exposures.push(exposure)
+    return exposure
+  }
+
+  const splitExecutorPayload = (executorRaw: unknown): { definition_payload: AnyRecord; capability_config: AnyRecord } => {
+    const executor = isPlainObject(executorRaw) ? deepClone(executorRaw) : {}
+    const capabilityConfig: AnyRecord = {}
+    const fixed = isPlainObject(executor.fixed) ? deepClone(executor.fixed) : null
+    if (fixed && isPlainObject(fixed)) {
+      const restFixed: AnyRecord = {}
+      for (const [key, value] of Object.entries(fixed)) {
+        if (key === 'apply_mask') {
+          capabilityConfig.apply_mask = value
+        } else {
+          restFixed[key] = value
+        }
+      }
+      if (Object.keys(restFixed).length > 0) capabilityConfig.fixed = restFixed
+    }
+    if (isPlainObject(executor.target_binding)) {
+      capabilityConfig.target_binding = deepClone(executor.target_binding)
+    }
+    delete executor.fixed
+    delete executor.target_binding
+    return { definition_payload: executor, capability_config: capabilityConfig }
+  }
+
+  const runtimeSetting = state.runtimeSettings.find((item) => item.key === UI_ACTION_CATALOG_KEY)
+  const runtimeValue = isPlainObject(runtimeSetting?.value) ? runtimeSetting.value : {}
+  const runtimeExtensions = isPlainObject(runtimeValue.extensions) ? runtimeValue.extensions : {}
+  const runtimeActions = Array.isArray(runtimeExtensions.actions) ? runtimeExtensions.actions : []
+
+  for (let idx = 0; idx < runtimeActions.length; idx += 1) {
+    const action = runtimeActions[idx]
+    if (!isPlainObject(action)) continue
+    const alias = typeof action.id === 'string' && action.id.trim() ? action.id.trim() : `action.${idx + 1}`
+    const label = typeof action.label === 'string' && action.label.trim() ? action.label.trim() : alias
+    const contexts = Array.isArray(action.contexts)
+      ? action.contexts.filter((item): item is string => typeof item === 'string')
+      : ['database_card']
+    const { definition_payload, capability_config } = splitExecutorPayload(action.executor)
+    const definitionKind = typeof definition_payload.kind === 'string' && definition_payload.kind
+      ? definition_payload.kind
+      : 'ibcmd_cli'
+    const definition = createDefinition({
+      tenant_scope: 'global',
+      executor_kind: definitionKind,
+      executor_payload: definition_payload,
+      contract_version: 1,
+      status: 'active',
+    })
+
+    createExposure({
+      definition_id: String(definition.id),
+      surface: 'action_catalog',
+      alias,
+      tenant_id: null,
+      name: label,
+      description: typeof action.description === 'string' ? action.description : '',
+      is_active: true,
+      capability: typeof action.capability === 'string' ? action.capability : '',
+      contexts,
+      display_order: idx,
+      capability_config,
+      status: 'published',
+    })
+  }
+
   await page.route('**/api/v2/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -83,16 +263,181 @@ async function setupApiMocks(
       return fulfillJson(route, { settings: state.runtimeSettings })
     }
 
+    if (method === 'GET' && path === '/api/v2/operation-catalog/definitions/') {
+      const tenantScope = url.searchParams.get('tenant_scope')
+      const executorKind = url.searchParams.get('executor_kind')
+      const status = url.searchParams.get('status')
+      const q = (url.searchParams.get('q') || '').trim().toLowerCase()
+      const limit = parseIntParam(url.searchParams.get('limit'), 50, 1, 1000)
+      const offset = parseIntParam(url.searchParams.get('offset'), 0, 0, 100000)
+
+      let rows = definitions.slice()
+      if (tenantScope) rows = rows.filter((row) => row.tenant_scope === tenantScope)
+      if (executorKind) rows = rows.filter((row) => row.executor_kind === executorKind)
+      if (status) rows = rows.filter((row) => row.status === status)
+      if (q) {
+        const matchedDefinitionIds = new Set(
+          exposures
+            .filter((row) => (
+              String(row.alias || '').toLowerCase().includes(q)
+              || String(row.name || '').toLowerCase().includes(q)
+              || String(row.capability || '').toLowerCase().includes(q)
+            ))
+            .map((row) => String(row.definition_id))
+        )
+        rows = rows.filter((row) => matchedDefinitionIds.has(String(row.id)))
+      }
+      const total = rows.length
+      const paged = rows.slice(offset, offset + limit)
+      return fulfillJson(route, { definitions: paged, count: paged.length, total })
+    }
+
+    if (method === 'GET' && path === '/api/v2/operation-catalog/exposures/') {
+      const surface = url.searchParams.get('surface')
+      const tenantId = url.searchParams.get('tenant_id')
+      const capability = url.searchParams.get('capability')
+      const status = url.searchParams.get('status')
+      const alias = url.searchParams.get('alias')
+      const limit = parseIntParam(url.searchParams.get('limit'), 50, 1, 1000)
+      const offset = parseIntParam(url.searchParams.get('offset'), 0, 0, 100000)
+
+      let rows = exposures.slice()
+      if (surface) rows = rows.filter((row) => row.surface === surface)
+      if (tenantId) rows = rows.filter((row) => row.tenant_id === tenantId || row.tenant_id === null)
+      if (capability) rows = rows.filter((row) => row.capability === capability)
+      if (status) rows = rows.filter((row) => row.status === status)
+      if (alias) rows = rows.filter((row) => row.alias === alias)
+      rows.sort((a, b) => {
+        const bySurface = String(a.surface || '').localeCompare(String(b.surface || ''))
+        if (bySurface !== 0) return bySurface
+        const byOrder = Number(a.display_order ?? 0) - Number(b.display_order ?? 0)
+        if (byOrder !== 0) return byOrder
+        return String(a.name || '').localeCompare(String(b.name || ''))
+      })
+
+      const total = rows.length
+      const paged = rows.slice(offset, offset + limit)
+      return fulfillJson(route, { exposures: paged, count: paged.length, total })
+    }
+
+    if (method === 'POST' && path === '/api/v2/operation-catalog/exposures/') {
+      if ((state.patchFailCount ?? 0) > 0) {
+        state.patchFailCount = (state.patchFailCount ?? 0) - 1
+        return fulfillJson(route, { validation_errors: buildValidationErrors(state.patchFailMessages) }, 400)
+      }
+
+      const payload = parseJsonBody(request.postData())
+      const exposurePayload = isPlainObject(payload.exposure) ? payload.exposure : null
+      if (!exposurePayload) {
+        return fulfillJson(route, { validation_errors: [{ path: 'exposure', code: 'REQUIRED', message: 'exposure is required' }] }, 400)
+      }
+
+      const rawDefinitionId = typeof payload.definition_id === 'string' ? payload.definition_id : null
+      let definition: AnyRecord | undefined
+      if (rawDefinitionId) {
+        definition = definitions.find((row) => String(row.id) === rawDefinitionId)
+      }
+      if (!definition) {
+        const definitionPayload = isPlainObject(payload.definition) ? payload.definition : {}
+        const definitionExecutorPayload = isPlainObject(definitionPayload.executor_payload)
+          ? definitionPayload.executor_payload
+          : {}
+        const definitionExecutorKind = typeof definitionPayload.executor_kind === 'string' && definitionPayload.executor_kind
+          ? definitionPayload.executor_kind
+          : (typeof definitionExecutorPayload.kind === 'string' && definitionExecutorPayload.kind
+            ? definitionExecutorPayload.kind
+            : 'ibcmd_cli')
+        definition = createDefinition({
+          tenant_scope: typeof definitionPayload.tenant_scope === 'string' && definitionPayload.tenant_scope
+            ? definitionPayload.tenant_scope
+            : 'global',
+          executor_kind: definitionExecutorKind,
+          executor_payload: definitionExecutorPayload,
+          contract_version: typeof definitionPayload.contract_version === 'number'
+            ? definitionPayload.contract_version
+            : 1,
+          status: 'active',
+        })
+      }
+
+      const rawExposureId = typeof payload.exposure_id === 'string' ? payload.exposure_id : null
+      const existing = rawExposureId
+        ? exposures.find((row) => String(row.id) === rawExposureId)
+        : undefined
+      const nextAlias = typeof exposurePayload.alias === 'string' && exposurePayload.alias.trim()
+        ? exposurePayload.alias.trim()
+        : (existing ? String(existing.alias) : `action.${exposures.length + 1}`)
+      const nextName = typeof exposurePayload.name === 'string' && exposurePayload.name.trim()
+        ? exposurePayload.name.trim()
+        : nextAlias
+      const nextContexts = Array.isArray(exposurePayload.contexts)
+        ? exposurePayload.contexts.filter((item): item is string => typeof item === 'string')
+        : []
+      const nextCapabilityConfig = isPlainObject(exposurePayload.capability_config)
+        ? deepClone(exposurePayload.capability_config)
+        : {}
+
+      const updatedExposure: AnyRecord = existing ?? createExposure({
+        id: rawExposureId ?? undefined,
+        definition_id: String(definition.id),
+        surface: typeof exposurePayload.surface === 'string' && exposurePayload.surface
+          ? exposurePayload.surface
+          : 'action_catalog',
+        alias: nextAlias,
+        tenant_id: typeof exposurePayload.tenant_id === 'string' ? exposurePayload.tenant_id : null,
+        name: nextName,
+        description: typeof exposurePayload.description === 'string' ? exposurePayload.description : '',
+        is_active: exposurePayload.is_active !== false,
+        capability: typeof exposurePayload.capability === 'string' ? exposurePayload.capability : '',
+        contexts: nextContexts,
+        display_order: typeof exposurePayload.display_order === 'number' ? exposurePayload.display_order : 0,
+        capability_config: nextCapabilityConfig,
+        status: typeof exposurePayload.status === 'string' ? exposurePayload.status : 'draft',
+      })
+
+      updatedExposure.definition_id = String(definition.id)
+      updatedExposure.surface = typeof exposurePayload.surface === 'string' && exposurePayload.surface
+        ? exposurePayload.surface
+        : updatedExposure.surface
+      updatedExposure.alias = nextAlias
+      updatedExposure.name = nextName
+      updatedExposure.description = typeof exposurePayload.description === 'string'
+        ? exposurePayload.description
+        : (updatedExposure.description ?? '')
+      updatedExposure.is_active = exposurePayload.is_active !== false
+      updatedExposure.capability = typeof exposurePayload.capability === 'string'
+        ? exposurePayload.capability
+        : (updatedExposure.capability ?? '')
+      updatedExposure.contexts = nextContexts
+      updatedExposure.display_order = typeof exposurePayload.display_order === 'number'
+        ? exposurePayload.display_order
+        : Number(updatedExposure.display_order ?? 0)
+      updatedExposure.capability_config = nextCapabilityConfig
+      updatedExposure.status = typeof exposurePayload.status === 'string' ? exposurePayload.status : 'draft'
+      updatedExposure.updated_at = MOCK_TIMESTAMP
+
+      return fulfillJson(route, { exposure: updatedExposure, definition })
+    }
+
+    if (method === 'POST' && /^\/api\/v2\/operation-catalog\/exposures\/[^/]+\/publish\/$/.test(path)) {
+      const exposureId = decodeURIComponent(path.split('/').filter(Boolean)[4] ?? '')
+      const exposure = exposures.find((row) => String(row.id) === exposureId)
+      if (!exposure) {
+        return fulfillJson(route, {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Exposure not found' },
+        }, 404)
+      }
+      exposure.status = 'published'
+      exposure.updated_at = MOCK_TIMESTAMP
+      return fulfillJson(route, { published: true, exposure, validation_errors: [] })
+    }
+
     if (method === 'PATCH' && path.startsWith('/api/v2/settings/runtime/')) {
       const key = decodeURIComponent(path.split('/').filter(Boolean).slice(-1)[0] ?? '')
       const existing = state.runtimeSettings.find((item) => item.key === key)
 
-      let payload: AnyRecord = {}
-      try {
-        payload = JSON.parse(request.postData() || '{}') as AnyRecord
-      } catch (_err) {
-        payload = {}
-      }
+      const payload = parseJsonBody(request.postData())
 
       if ((state.patchFailCount ?? 0) > 0) {
         state.patchFailCount = (state.patchFailCount ?? 0) - 1
@@ -130,12 +475,7 @@ async function setupApiMocks(
       const key = decodeURIComponent(path.split('/').filter(Boolean).slice(-1)[0] ?? '')
       const existing = state.runtimeSettings.find((item) => item.key === key)
 
-      let payload: AnyRecord = {}
-      try {
-        payload = JSON.parse(request.postData() || '{}') as AnyRecord
-      } catch (_err) {
-        payload = {}
-      }
+      const payload = parseJsonBody(request.postData())
 
       if ((state.patchFailCount ?? 0) > 0) {
         state.patchFailCount = (state.patchFailCount ?? 0) - 1
@@ -306,7 +646,7 @@ test('Action Catalog: loads ui.action_catalog and switches modes (smoke)', async
     ],
   })
 
-  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
 
   await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
   await expect(page.getByTestId('action-catalog-actions-count')).toHaveText('2')
@@ -382,7 +722,7 @@ test('Action Catalog: shows backend validation errors on save', async ({ page })
     ],
   })
 
-  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
 
   await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
   await expect(page.getByTestId('action-catalog-save')).toBeDisabled()
@@ -423,7 +763,7 @@ test('Action Catalog: auto-fills params template from command schema and confirm
     ],
   })
 
-  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
 
   await page.getByTestId('action-catalog-add').click()
@@ -444,11 +784,11 @@ test('Action Catalog: auto-fills params template from command schema and confirm
   await expect(params).not.toHaveValue(/remote/)
   await expect(params).not.toHaveValue(/legacy/)
 
-  await params.fill('{\"custom\": 1}')
+  await params.fill('{"custom": 1}')
   await page.getByTestId('action-catalog-editor-insert-params-template').click()
   await expect(page.getByRole('button', { name: 'Keep current', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Keep current', exact: true }).click()
-  await expect(params).toHaveValue('{\"custom\": 1}')
+  await expect(params).toHaveValue('{"custom": 1}')
 
   await page.getByTestId('action-catalog-editor-insert-params-template').click()
   await page.getByRole('button', { name: 'Overwrite', exact: true }).click()
@@ -474,7 +814,7 @@ test('Action Catalog editor: params default Guided and schema panel is collapsed
     ],
   })
 
-  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
 
   await page.getByTestId('action-catalog-add').click()
@@ -508,7 +848,7 @@ test('Action Catalog editor: preserves unknown keys when editing schema params i
     ],
   })
 
-  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
 
   await page.getByTestId('action-catalog-add').click()
@@ -520,7 +860,7 @@ test('Action Catalog editor: preserves unknown keys when editing schema params i
 
   await page.getByRole('tab', { name: 'Params', exact: true }).click()
   await page.getByTestId('action-catalog-editor-params-mode').getByText('Raw JSON', { exact: true }).click()
-  await page.getByTestId('action-catalog-editor-params').fill('{\"custom\": 1}')
+  await page.getByTestId('action-catalog-editor-params').fill('{"custom": 1}')
 
   await page.getByTestId('action-catalog-editor-params-mode').getByText('Guided', { exact: true }).click()
   const guided = page.getByTestId('action-catalog-editor-params-guided')
@@ -557,7 +897,7 @@ test('Action Catalog editor: blocks Guided on invalid Raw JSON and does not auto
     ],
   })
 
-  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
 
   await page.getByTestId('action-catalog-add').click()
@@ -603,7 +943,7 @@ test('Action Catalog editor: footer quick actions Preview and Reset', async ({ p
     ],
   })
 
-  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
 
   await page.getByTestId('action-catalog-add').click()
@@ -667,7 +1007,7 @@ test('Action Catalog editor: capability fixed section follows uiSchema widgets',
     },
   })
 
-  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
 
   await page.getByTestId('action-catalog-add').click()

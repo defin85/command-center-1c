@@ -11,9 +11,6 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 
 from apps.runtime_settings.models import RuntimeSetting
 from apps.runtime_settings.registry import RUNTIME_SETTINGS
-from apps.runtime_settings.action_catalog import (
-    UI_ACTION_CATALOG_KEY,
-)
 from apps.runtime_settings.effective import get_effective_runtime_setting
 from apps.runtime_settings.models import TenantRuntimeSettingOverride
 from apps.tenancy.authentication import TENANT_HEADER
@@ -147,10 +144,8 @@ def list_effective_runtime_settings(request):
 
     tenant_id = _resolve_request_tenant_id(request)
 
-    settings_map = {setting.key: setting for setting in RuntimeSetting.objects.all()}
     payload = []
     for definition in RUNTIME_SETTINGS.values():
-        setting = settings_map.get(definition.key)
         effective = get_effective_runtime_setting(definition.key, tenant_id)
         payload.append({
             "key": definition.key,
@@ -219,7 +214,6 @@ def list_runtime_setting_overrides(request):
         401: OpenApiResponse(description='Unauthorized'),
         403: OpenApiResponse(description='Forbidden'),
         404: OpenApiResponse(description='Not found'),
-        409: OpenApiResponse(description='Legacy write path disabled'),
     }
 )
 @api_view(['PATCH'])
@@ -244,17 +238,6 @@ def update_runtime_setting_override(request, key: str):
         return Response(
             {'success': False, 'error': {'code': 'NOT_FOUND', 'message': 'Setting not found'}},
             status=status.HTTP_404_NOT_FOUND
-        )
-    if definition.key == UI_ACTION_CATALOG_KEY:
-        return Response(
-            {
-                "success": False,
-                "error": {
-                    "code": "LEGACY_WRITE_DISABLED",
-                    "message": "ui.action_catalog write path is disabled after unified cutover; use /api/v2/operation-catalog/exposures/.",
-                },
-            },
-            status=status.HTTP_409_CONFLICT,
         )
 
     serializer = RuntimeSettingOverrideUpdateSerializer(data=request.data)
@@ -308,7 +291,6 @@ def update_runtime_setting_override(request, key: str):
         401: OpenApiResponse(description='Unauthorized'),
         403: OpenApiResponse(description='Forbidden'),
         404: OpenApiResponse(description='Not found'),
-        409: OpenApiResponse(description='Legacy write path disabled'),
     }
 )
 @api_view(['PATCH'])
@@ -325,17 +307,6 @@ def update_runtime_setting(request, key: str):
         return Response(
             {'success': False, 'error': {'code': 'NOT_FOUND', 'message': 'Setting not found'}},
             status=status.HTTP_404_NOT_FOUND
-        )
-    if definition.key == UI_ACTION_CATALOG_KEY:
-        return Response(
-            {
-                "success": False,
-                "error": {
-                    "code": "LEGACY_WRITE_DISABLED",
-                    "message": "ui.action_catalog write path is disabled after unified cutover; use /api/v2/operation-catalog/exposures/.",
-                },
-            },
-            status=status.HTTP_409_CONFLICT,
         )
 
     serializer = RuntimeSettingUpdateSerializer(data=request.data)

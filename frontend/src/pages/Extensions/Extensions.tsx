@@ -9,8 +9,8 @@ import { useClusters } from '../../api/queries/clusters'
 import { useDatabases } from '../../api/queries/databases'
 import { useMe } from '../../api/queries/me'
 import { useActionCatalog } from '../../api/queries/ui'
-import type { ExtensionsFlagAggregate } from '../../api/generated/model/extensionsFlagAggregate'
 import {
+  type ExtensionsFlagAggregate,
   useExtensionsOverview,
   useExtensionsOverviewDatabases,
   type ExtensionsOverviewDatabaseRow,
@@ -431,9 +431,9 @@ export const Extensions = () => {
             </Space>
             {selectedRow?.flags ? (
               <Space size={8} wrap style={{ marginBottom: 8 }}>
-                <div>Active: {boolTag(selectedRow.flags.active.policy)}</div>
-                <div>Safe mode: {boolTag(selectedRow.flags.safe_mode.policy)}</div>
-                <div>Unsafe action protection: {boolTag(selectedRow.flags.unsafe_action_protection.policy)}</div>
+                <div>Active: {boolTag(selectedRow.flags.active?.policy)}</div>
+                <div>Safe mode: {boolTag(selectedRow.flags.safe_mode?.policy)}</div>
+                <div>Unsafe action protection: {boolTag(selectedRow.flags.unsafe_action_protection?.policy)}</div>
               </Space>
             ) : null}
             {previewText ? (

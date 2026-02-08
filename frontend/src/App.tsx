@@ -36,9 +36,6 @@ const CommandSchemasPage = lazy(loadCommandSchemasPage)
 const loadDLQPage = () => import('./pages/DLQ/DLQPage').then((m) => ({ default: m.DLQPage }))
 const DLQPage = lazy(loadDLQPage)
 
-const loadActionCatalogPage = () => import('./pages/Settings/ActionCatalogPage').then((m) => ({ default: m.ActionCatalogPage }))
-const ActionCatalogPage = lazy(loadActionCatalogPage)
-
 const loadRuntimeSettingsPage = () => import('./pages/Settings/RuntimeSettingsPage').then((m) => ({ default: m.RuntimeSettingsPage }))
 const RuntimeSettingsPage = lazy(loadRuntimeSettingsPage)
 
@@ -338,13 +335,6 @@ function App() {
                     <StaffRoute authToken={authToken} preload={loadRuntimeSettingsPage}>
                       <MainLayout>
                         <LazyBoundary><RuntimeSettingsPage /></LazyBoundary>
-                      </MainLayout>
-                    </StaffRoute>
-                  } />
-                  <Route path="/settings/action-catalog" element={
-                    <StaffRoute authToken={authToken} preload={loadActionCatalogPage}>
-                      <MainLayout>
-                        <LazyBoundary><ActionCatalogPage /></LazyBoundary>
                       </MainLayout>
                     </StaffRoute>
                   } />

@@ -164,11 +164,6 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
           icon: <SettingOutlined />,
           label: 'Runtime Settings',
         },
-        {
-          key: '/settings/action-catalog',
-          icon: <SettingOutlined />,
-          label: 'Action Catalog',
-        },
         ...(canManageDriverCatalogs
           ? [
             {

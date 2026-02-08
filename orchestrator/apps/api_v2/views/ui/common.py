@@ -4,34 +4,7 @@ UI metadata endpoints for API v2.
 Provides server-driven table metadata for dynamic UI configuration.
 """
 
-import logging
-import uuid
-
-from rest_framework import serializers, status as http_status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
-
-from apps.api_v2.serializers.common import ErrorResponseSerializer, ExecutionPlanWithBindingsSerializer
-from apps.core import permission_codes as perms
-from apps.operations.ibcmd_cli_builder import (
-    build_ibcmd_cli_argv,
-    build_ibcmd_cli_argv_manual,
-    build_ibcmd_connection_args,
-    detect_connection_option_conflicts,
-    flatten_connection_params,
-)
-from apps.operations.driver_catalog_effective import (
-    filter_catalog_for_user,
-    get_effective_driver_catalog,
-    resolve_driver_catalog_versions,
-)
-from apps.runtime_settings.action_catalog import UI_ACTION_CATALOG_KEY, ensure_valid_action_catalog
-from apps.runtime_settings.models import RuntimeSetting
-from apps.templates.workflow.models import WorkflowTemplate
-
-logger = logging.getLogger(__name__)
+from rest_framework import serializers
 
 _SENSITIVE_KEYS: set[str] = {
     "db_password",
@@ -116,6 +89,3 @@ class TableMetadataResponseSerializer(serializers.Serializer):
     table_id = serializers.CharField()
     version = serializers.CharField()
     columns = TableColumnMetadataSerializer(many=True)
-
-
-

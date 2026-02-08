@@ -70,22 +70,28 @@ export function ActionCatalogCapabilityFixedSection({
   const anyForm = form as unknown as FormInstance<any>
   const [enabledByGroup, setEnabledByGroup] = useState<Record<string, boolean>>({})
 
-  const capabilityHints = useMemo(() => {
+  const capabilityHints = useMemo<JsonObject | null>(() => {
     const key = capability.trim()
     if (!key) return null
-    const caps = hints?.capabilities
+    const caps = getSchemaObject(hints?.capabilities)
     if (!caps) return null
-    return caps[key] ?? null
+    return getSchemaObject(caps[key])
   }, [capability, hints?.capabilities])
 
   const fixedSchema = useMemo(() => (
     getSchemaObject(capabilityHints?.fixed_schema) ?? null
-  ), [capabilityHints?.fixed_schema])
+  ), [capabilityHints])
   const fixedUiSchema = useMemo(() => (
     getSchemaObject(capabilityHints?.fixed_ui_schema) ?? null
-  ), [capabilityHints?.fixed_ui_schema])
-
-  const fixedHelp = capabilityHints?.help
+  ), [capabilityHints])
+  const fixedHelp = useMemo(() => {
+    const node = getSchemaObject(capabilityHints?.help)
+    if (!node) return null
+    const title = getSchemaString(node, 'title')
+    const description = getSchemaString(node, 'description')
+    if (!title && !description) return null
+    return { title, description }
+  }, [capabilityHints])
   const fixedProps = useMemo(() => (
     fixedSchema ? getSchemaProperties(fixedSchema) : null
   ), [fixedSchema])

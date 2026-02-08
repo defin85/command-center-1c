@@ -19,7 +19,7 @@ def staff_client(db):
 
 
 @pytest.mark.django_db
-def test_ui_action_catalog_legacy_write_path_is_disabled(staff_client):
+def test_ui_action_catalog_runtime_setting_is_removed(staff_client):
     payload = {
         "value": {
             "catalog_version": 1,
@@ -28,8 +28,8 @@ def test_ui_action_catalog_legacy_write_path_is_disabled(staff_client):
     }
 
     resp_global = staff_client.patch("/api/v2/settings/runtime/ui.action_catalog/", data=payload, format="json")
-    assert resp_global.status_code == 409
-    assert resp_global.json()["error"]["code"] == "LEGACY_WRITE_DISABLED"
+    assert resp_global.status_code == 404
+    assert resp_global.json()["error"]["code"] == "NOT_FOUND"
 
     tenant = Tenant.objects.create(slug="tenant-cutover", name="Tenant Cutover")
     resp_override = staff_client.patch(
@@ -38,8 +38,8 @@ def test_ui_action_catalog_legacy_write_path_is_disabled(staff_client):
         format="json",
         HTTP_X_CC1C_TENANT_ID=str(tenant.id),
     )
-    assert resp_override.status_code == 409
-    assert resp_override.json()["error"]["code"] == "LEGACY_WRITE_DISABLED"
+    assert resp_override.status_code == 404
+    assert resp_override.json()["error"]["code"] == "NOT_FOUND"
 
 
 @pytest.mark.django_db

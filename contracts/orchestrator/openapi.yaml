@@ -2720,6 +2720,179 @@ paths:
         description: Optional tenant context selector. If omitted, tenant is resolved
           via user preference or first membership. For staff users, omission may return
           cross-tenant results on some endpoints.
+  /api/v2/extensions/flags-policy/:
+    get:
+      operationId: v2_extensions_flags_policy_retrieve
+      description: List extensions flags policy for current tenant context.
+      summary: Extensions flags policy list
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionsFlagsPolicyListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/extensions/flags-policy/{extension_name}/:
+    put:
+      operationId: v2_extensions_flags_policy_update
+      description: Upsert flags policy for a single extension name.
+      summary: Extensions flags policy upsert
+      parameters:
+      - in: path
+        name: extension_name
+        schema:
+          type: string
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionsFlagsPolicy'
+          description: ''
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+    patch:
+      operationId: v2_extensions_flags_policy_partial_update
+      description: Upsert flags policy for a single extension name.
+      summary: Extensions flags policy upsert
+      parameters:
+      - in: path
+        name: extension_name
+        schema:
+          type: string
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedExtensionsFlagsPolicyUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedExtensionsFlagsPolicyUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedExtensionsFlagsPolicyUpsertRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionsFlagsPolicy'
+          description: ''
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/extensions/flags-policy/adopt/:
+    post:
+      operationId: v2_extensions_flags_policy_adopt_create
+      description: Adopt flags policy for a single extension name from a database
+        observed snapshot.
+      summary: Extensions flags policy adopt
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyAdoptRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyAdoptRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExtensionsFlagsPolicyAdoptRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionsFlagsPolicy'
+          description: ''
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
   /api/v2/extensions/overview/:
     get:
       operationId: v2_extensions_overview_retrieve
@@ -2853,187 +3026,11 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
-  /api/v2/extensions/flags-policy/:
-    get:
-      operationId: v2_extensions_flags_policy_list
-      description: List extensions flags policy for current tenant context (staff may see cross-tenant data depending on tenant selection).
-      summary: Extensions flags policy list
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExtensionsFlagsPolicyListResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-      parameters:
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-  /api/v2/extensions/flags-policy/{extension_name}/:
-    put:
-      operationId: v2_extensions_flags_policy_update
-      description: Upsert flags policy for a single extension name. Staff mutating without explicit tenant context MUST fail closed.
-      summary: Extensions flags policy upsert
-      parameters:
-      - in: path
-        name: extension_name
-        schema:
-          type: string
-        description: Extension name (exact match)
-        required: true
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExtensionsFlagsPolicy'
-          description: ''
-        '400':
-          description: Validation error
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-    patch:
-      operationId: v2_extensions_flags_policy_partial_update
-      description: Patch flags policy for a single extension name. Staff mutating without explicit tenant context MUST fail closed.
-      summary: Extensions flags policy patch
-      parameters:
-      - in: path
-        name: extension_name
-        schema:
-          type: string
-        description: Extension name (exact match)
-        required: true
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ExtensionsFlagsPolicyUpsertRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExtensionsFlagsPolicy'
-          description: ''
-        '400':
-          description: Validation error
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-  /api/v2/extensions/flags-policy/adopt/:
-    post:
-      operationId: v2_extensions_flags_policy_adopt_create
-      description: Adopt flags policy for a single extension name from a database observed snapshot. Staff mutating without explicit tenant context MUST fail closed.
-      summary: Extensions flags policy adopt
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ExtensionsFlagsPolicyAdoptRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ExtensionsFlagsPolicyAdoptRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ExtensionsFlagsPolicyAdoptRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExtensionsFlagsPolicy'
-          description: ''
-        '400':
-          description: Validation error
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          description: Not found
-      parameters:
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
   /api/v2/extensions/plan/:
     post:
       operationId: v2_extensions_plan_create
-      description: |
-        Build plan for extensions apply (captures base snapshot hashes per database).
-        Supports reserved capabilities: `extensions.sync` (default) and `extensions.set_flags`.
+      description: Build plan for extensions apply (captures base snapshot hashes
+        per database).
       summary: Extensions plan
       tags:
       - v2
@@ -3330,6 +3327,236 @@ paths:
           description: ''
         '400':
           description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/operation-catalog/definitions/:
+    get:
+      operationId: v2_operation_catalog_definitions_retrieve
+      summary: List operation definitions
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogDefinitionListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/operation-catalog/definitions/{definition_id}/:
+    get:
+      operationId: v2_operation_catalog_definitions_retrieve_2
+      summary: Get operation definition
+      parameters:
+      - in: path
+        name: definition_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogDefinitionDetailResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+  /api/v2/operation-catalog/exposures/:
+    get:
+      operationId: v2_operation_catalog_exposures_retrieve
+      summary: List operation exposures
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogExposureListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+    post:
+      operationId: v2_operation_catalog_exposures_create
+      summary: List operation exposures
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogExposureListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/operation-catalog/exposures/{exposure_id}/publish/:
+    post:
+      operationId: v2_operation_catalog_exposures_publish_create
+      summary: Publish operation exposure
+      parameters:
+      - in: path
+        name: exposure_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogExposurePublishResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+  /api/v2/operation-catalog/migration-issues/:
+    get:
+      operationId: v2_operation_catalog_migration_issues_retrieve
+      summary: List operation catalog migration issues
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogMigrationIssuesResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/operation-catalog/validate/:
+    post:
+      operationId: v2_operation_catalog_validate_create
+      summary: Validate operation exposure
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationCatalogValidateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OperationCatalogValidateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OperationCatalogValidateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogValidateResponse'
+          description: ''
         '401':
           description: Unauthorized
         '403':
@@ -7505,8 +7732,6 @@ paths:
           description: Forbidden
         '404':
           description: Not found
-        '409':
-          description: Legacy write path disabled
   /api/v2/settings/runtime/{key}/:
     patch:
       operationId: v2_settings_runtime_partial_update
@@ -7563,8 +7788,6 @@ paths:
           description: Forbidden
         '404':
           description: Not found
-        '409':
-          description: Legacy write path disabled
   /api/v2/snapshots/get/:
     get:
       operationId: v2_snapshots_get_retrieve
@@ -7738,8 +7961,7 @@ paths:
   /api/v2/templates/create-template/:
     post:
       operationId: v2_templates_create_template_create
-      description: Create a template exposure in unified operation catalog. Requires
-        templates.manage_operation_template.
+      description: Create a custom operation template. Requires templates.manage_operation_template.
       summary: Create operation template
       tags:
       - v2
@@ -7787,8 +8009,7 @@ paths:
   /api/v2/templates/delete-template/:
     post:
       operationId: v2_templates_delete_template_create
-      description: Delete a template exposure from unified operation catalog. Requires
-        templates.manage_operation_template.
+      description: Delete an operation template. Requires templates.manage_operation_template.
       summary: Delete operation template
       tags:
       - v2
@@ -7836,8 +8057,8 @@ paths:
   /api/v2/templates/list-templates/:
     get:
       operationId: v2_templates_list_templates_retrieve
-      description: List template exposures from unified operation catalog with optional
-        filtering.
+      description: List all operation templates with optional filtering by type, target
+        entity, and active status.
       summary: List operation templates
       parameters:
       - in: query
@@ -7911,8 +8132,8 @@ paths:
   /api/v2/templates/sync-from-registry/:
     post:
       operationId: v2_templates_sync_from_registry_create
-      description: Synchronize template exposures in unified operation catalog with
-        in-code operation registry. Requires templates.manage_operation_template.
+      description: Synchronize OperationTemplate records with the in-code operation
+        registry. Requires templates.manage_operation_template.
       summary: Sync templates from registry
       tags:
       - v2
@@ -7959,8 +8180,7 @@ paths:
   /api/v2/templates/update-template/:
     post:
       operationId: v2_templates_update_template_create
-      description: Update a template exposure in unified operation catalog. Requires
-        templates.manage_operation_template.
+      description: Update an existing operation template. Requires templates.manage_operation_template.
       summary: Update operation template
       tags:
       - v2
@@ -7990,347 +8210,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-      parameters:
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-  /api/v2/operation-catalog/definitions/:
-    get:
-      operationId: v2_operation_catalog_definitions_list
-      description: List canonical operation definitions from unified persistent store.
-      summary: List operation definitions
-      parameters:
-      - in: query
-        name: tenant_scope
-        schema:
-          type: string
-        description: Filter by tenant scope (global|tenant:<id>)
-      - in: query
-        name: executor_kind
-        schema:
-          type: string
-          enum:
-          - ibcmd_cli
-          - designer_cli
-          - workflow
-        description: Filter by executor kind
-      - in: query
-        name: status
-        schema:
-          type: string
-          enum:
-          - active
-          - archived
-        description: Filter by definition status
-      - in: query
-        name: q
-        schema:
-          type: string
-        description: Free-text filter by alias/description/capability
-      - in: query
-        name: limit
-        schema:
-          type: integer
-        description: Maximum results (default 50, max 1000)
-      - in: query
-        name: offset
-        schema:
-          type: integer
-        description: Pagination offset (default 0)
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationCatalogDefinitionListResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-  /api/v2/operation-catalog/definitions/{definition_id}/:
-    get:
-      operationId: v2_operation_catalog_definition_detail_retrieve
-      description: Get canonical operation definition by id.
-      summary: Get operation definition
-      parameters:
-      - in: path
-        name: definition_id
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationCatalogDefinitionDetailResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          description: Not found
-  /api/v2/operation-catalog/exposures/:
-    get:
-      operationId: v2_operation_catalog_exposures_list
-      description: List published/draft exposures bound to operation definitions.
-      summary: List operation exposures
-      parameters:
-      - in: query
-        name: surface
-        schema:
-          type: string
-          enum:
-          - template
-          - action_catalog
-        description: Filter by target surface
-      - in: query
-        name: tenant_id
-        schema:
-          type: string
-          format: uuid
-        description: Filter by tenant override scope
-      - in: query
-        name: capability
-        schema:
-          type: string
-        description: Filter by capability
-      - in: query
-        name: status
-        schema:
-          type: string
-          enum:
-          - draft
-          - published
-          - invalid
-        description: Filter by exposure status
-      - in: query
-        name: alias
-        schema:
-          type: string
-        description: Filter by external alias
-      - in: query
-        name: limit
-        schema:
-          type: integer
-        description: Maximum results (default 50, max 1000)
-      - in: query
-        name: offset
-        schema:
-          type: integer
-        description: Pagination offset (default 0)
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationCatalogExposureListResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-    post:
-      operationId: v2_operation_catalog_exposures_upsert
-      description: Upsert exposure and bind it to canonical definition in unified store.
-      summary: Upsert operation exposure
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OperationCatalogExposureUpsertRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/OperationCatalogExposureUpsertRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/OperationCatalogExposureUpsertRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationCatalogExposureDetailResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-      parameters:
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-  /api/v2/operation-catalog/exposures/{exposure_id}/publish/:
-    post:
-      operationId: v2_operation_catalog_exposures_publish
-      description: Publish exposure after strict validation (fail-closed for invalid binding).
-      summary: Publish operation exposure
-      parameters:
-      - in: path
-        name: exposure_id
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationCatalogExposurePublishResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-        '404':
-          description: Not found
-  /api/v2/operation-catalog/validate/:
-    post:
-      operationId: v2_operation_catalog_validate_create
-      description: Dry-run validate definition + exposure payload before publish.
-      summary: Validate operation exposure
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OperationCatalogValidateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/OperationCatalogValidateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/OperationCatalogValidateRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationCatalogValidateResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-      parameters:
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-  /api/v2/operation-catalog/migration-issues/:
-    get:
-      operationId: v2_operation_catalog_migration_issues_list
-      description: List migration/backfill issues for unified operation catalog.
-      summary: List operation catalog migration issues
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationCatalogMigrationIssuesResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -8421,7 +8300,8 @@ paths:
   /api/v2/ui/action-catalog/:
     get:
       operationId: v2_ui_action_catalog_retrieve
-      description: Returns effective action catalog from unified published exposures.
+      description: Returns effective action catalog for the current user (RBAC + driver
+        catalogs + workflows).
       summary: Get effective action catalog
       tags:
       - v2
@@ -8449,8 +8329,7 @@ paths:
   /api/v2/ui/action-catalog/editor-hints/:
     get:
       operationId: v2_ui_action_catalog_editor_hints_retrieve
-      description: Returns capability-driven UI hints (including target_binding schema)
-        for Action Catalog editor.
+      description: Returns capability-driven UI hints for Action Catalog editor (staff-only).
       summary: Get action catalog editor hints (capability UI hints)
       tags:
       - v2
@@ -9665,6 +9544,17 @@ paths:
           description: Stream already active
 components:
   schemas:
+    ActionCatalogEditorHintsResponse:
+      type: object
+      properties:
+        hints_version:
+          type: integer
+        capabilities:
+          type: object
+          additionalProperties: {}
+      required:
+      - capabilities
+      - hints_version
     ActionCatalogExtensions:
       type: object
       properties:
@@ -9683,429 +9573,6 @@ components:
       required:
       - catalog_version
       - extensions
-    ActionCatalogEditorHintHelp:
-      type: object
-      properties:
-        title:
-          type: string
-        description:
-          type: string
-    ActionCatalogEditorCapabilityHints:
-      type: object
-      properties:
-        fixed_schema:
-          type: object
-          additionalProperties: {}
-        fixed_ui_schema:
-          type: object
-          additionalProperties: {}
-        target_binding_schema:
-          type: object
-          additionalProperties: {}
-        help:
-          $ref: '#/components/schemas/ActionCatalogEditorHintHelp'
-    ActionCatalogEditorHintsResponse:
-      type: object
-      properties:
-        hints_version:
-          type: integer
-        capabilities:
-          type: object
-          additionalProperties:
-            $ref: '#/components/schemas/ActionCatalogEditorCapabilityHints'
-      required:
-      - hints_version
-      - capabilities
-    OperationCatalogDefinition:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        tenant_scope:
-          type: string
-        executor_kind:
-          enum:
-          - ibcmd_cli
-          - designer_cli
-          - workflow
-          type: string
-          description: |-
-            * `ibcmd_cli` - ibcmd_cli
-            * `designer_cli` - designer_cli
-            * `workflow` - workflow
-        executor_payload:
-          type: object
-          additionalProperties: {}
-        contract_version:
-          type: integer
-        fingerprint:
-          type: string
-        status:
-          enum:
-          - active
-          - archived
-          type: string
-          description: |-
-            * `active` - active
-            * `archived` - archived
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-      required:
-      - contract_version
-      - executor_kind
-      - executor_payload
-      - fingerprint
-      - id
-      - status
-      - tenant_scope
-    OperationCatalogDefinitionInput:
-      type: object
-      properties:
-        tenant_scope:
-          type: string
-        executor_kind:
-          enum:
-          - ibcmd_cli
-          - designer_cli
-          - workflow
-          type: string
-          description: |-
-            * `ibcmd_cli` - ibcmd_cli
-            * `designer_cli` - designer_cli
-            * `workflow` - workflow
-        executor_payload:
-          type: object
-          additionalProperties: {}
-        contract_version:
-          type: integer
-          default: 1
-      required:
-      - executor_kind
-      - executor_payload
-    OperationCatalogExposure:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        definition_id:
-          type: string
-          format: uuid
-        surface:
-          enum:
-          - template
-          - action_catalog
-          type: string
-          description: |-
-            * `template` - template
-            * `action_catalog` - action_catalog
-        alias:
-          type: string
-        tenant_id:
-          type: string
-          format: uuid
-          nullable: true
-        name:
-          type: string
-        description:
-          type: string
-          nullable: true
-        is_active:
-          type: boolean
-        capability:
-          type: string
-        contexts:
-          type: array
-          items:
-            type: string
-        display_order:
-          type: integer
-        capability_config:
-          type: object
-          additionalProperties: {}
-        status:
-          enum:
-          - draft
-          - published
-          - invalid
-          type: string
-          description: |-
-            * `draft` - draft
-            * `published` - published
-            * `invalid` - invalid
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-      required:
-      - alias
-      - capability
-      - capability_config
-      - definition_id
-      - id
-      - is_active
-      - name
-      - status
-      - surface
-    OperationCatalogExposureInput:
-      type: object
-      properties:
-        surface:
-          enum:
-          - template
-          - action_catalog
-          type: string
-          description: |-
-            * `template` - template
-            * `action_catalog` - action_catalog
-        alias:
-          type: string
-          maxLength: 128
-        tenant_id:
-          type: string
-          format: uuid
-          nullable: true
-        name:
-          type: string
-          maxLength: 255
-        description:
-          type: string
-          nullable: true
-        is_active:
-          type: boolean
-          default: true
-        capability:
-          type: string
-          maxLength: 128
-        contexts:
-          type: array
-          items:
-            type: string
-        display_order:
-          type: integer
-          default: 0
-        capability_config:
-          type: object
-          additionalProperties: {}
-      required:
-      - alias
-      - capability
-      - name
-      - surface
-    OperationCatalogExposureReference:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        surface:
-          enum:
-          - template
-          - action_catalog
-          type: string
-          description: |-
-            * `template` - template
-            * `action_catalog` - action_catalog
-        alias:
-          type: string
-        status:
-          enum:
-          - draft
-          - published
-          - invalid
-          type: string
-          description: |-
-            * `draft` - draft
-            * `published` - published
-            * `invalid` - invalid
-      required:
-      - alias
-      - id
-      - status
-      - surface
-    OperationCatalogDefinitionListResponse:
-      type: object
-      properties:
-        definitions:
-          type: array
-          items:
-            $ref: '#/components/schemas/OperationCatalogDefinition'
-        count:
-          type: integer
-        total:
-          type: integer
-      required:
-      - count
-      - definitions
-      - total
-    OperationCatalogDefinitionDetailResponse:
-      type: object
-      properties:
-        definition:
-          $ref: '#/components/schemas/OperationCatalogDefinition'
-        exposures:
-          type: array
-          items:
-            $ref: '#/components/schemas/OperationCatalogExposureReference'
-      required:
-      - definition
-      - exposures
-    OperationCatalogExposureListResponse:
-      type: object
-      properties:
-        exposures:
-          type: array
-          items:
-            $ref: '#/components/schemas/OperationCatalogExposure'
-        count:
-          type: integer
-        total:
-          type: integer
-      required:
-      - count
-      - exposures
-      - total
-    OperationCatalogExposureDetailResponse:
-      type: object
-      properties:
-        exposure:
-          $ref: '#/components/schemas/OperationCatalogExposure'
-        definition:
-          $ref: '#/components/schemas/OperationCatalogDefinition'
-      required:
-      - definition
-      - exposure
-    OperationCatalogExposureUpsertRequest:
-      type: object
-      properties:
-        exposure_id:
-          type: string
-          format: uuid
-        definition_id:
-          type: string
-          format: uuid
-          nullable: true
-        definition:
-          $ref: '#/components/schemas/OperationCatalogDefinitionInput'
-        exposure:
-          $ref: '#/components/schemas/OperationCatalogExposureInput'
-      required:
-      - exposure
-    OperationCatalogValidationError:
-      type: object
-      properties:
-        path:
-          type: string
-        code:
-          type: string
-        message:
-          type: string
-      required:
-      - code
-      - message
-      - path
-    OperationCatalogExposurePublishResponse:
-      type: object
-      properties:
-        published:
-          type: boolean
-        exposure:
-          $ref: '#/components/schemas/OperationCatalogExposure'
-        validation_errors:
-          type: array
-          items:
-            $ref: '#/components/schemas/OperationCatalogValidationError'
-      required:
-      - exposure
-      - published
-      - validation_errors
-    OperationCatalogValidateRequest:
-      type: object
-      properties:
-        definition:
-          $ref: '#/components/schemas/OperationCatalogDefinitionInput'
-        exposure:
-          $ref: '#/components/schemas/OperationCatalogExposureInput'
-      required:
-      - exposure
-    OperationCatalogValidateResponse:
-      type: object
-      properties:
-        valid:
-          type: boolean
-        errors:
-          type: array
-          items:
-            $ref: '#/components/schemas/OperationCatalogValidationError'
-      required:
-      - errors
-      - valid
-    OperationCatalogMigrationIssue:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        source_type:
-          type: string
-        source_id:
-          type: string
-        tenant_id:
-          type: string
-          format: uuid
-          nullable: true
-        exposure_id:
-          type: string
-          format: uuid
-          nullable: true
-        severity:
-          enum:
-          - warning
-          - error
-          type: string
-          description: |-
-            * `warning` - warning
-            * `error` - error
-        code:
-          type: string
-        message:
-          type: string
-        details:
-          type: object
-          additionalProperties: {}
-        created_at:
-          type: string
-          format: date-time
-      required:
-      - code
-      - created_at
-      - id
-      - message
-      - severity
-      - source_id
-      - source_type
-    OperationCatalogMigrationIssuesResponse:
-      type: object
-      properties:
-        issues:
-          type: array
-          items:
-            $ref: '#/components/schemas/OperationCatalogMigrationIssue'
-        count:
-          type: integer
-        total:
-          type: integer
-      required:
-      - count
-      - issues
-      - total
     AdminAuditLogItem:
       type: object
       properties:
@@ -13823,6 +13290,72 @@ components:
           default: 120
       required:
       - plan_id
+    ExtensionsFlagsPolicy:
+      type: object
+      properties:
+        extension_name:
+          type: string
+        active:
+          type: boolean
+          nullable: true
+        safe_mode:
+          type: boolean
+          nullable: true
+        unsafe_action_protection:
+          type: boolean
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - active
+      - extension_name
+      - safe_mode
+      - unsafe_action_protection
+      - updated_at
+    ExtensionsFlagsPolicyAdoptRequest:
+      type: object
+      properties:
+        database_id:
+          type: string
+          format: uuid
+        extension_name:
+          type: string
+        reason:
+          type: string
+          nullable: true
+      required:
+      - database_id
+      - extension_name
+    ExtensionsFlagsPolicyListResponse:
+      type: object
+      properties:
+        policies:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtensionsFlagsPolicy'
+      required:
+      - policies
+    ExtensionsFlagsPolicyUpsertRequest:
+      type: object
+      properties:
+        active:
+          type: boolean
+          nullable: true
+        safe_mode:
+          type: boolean
+          nullable: true
+        unsafe_action_protection:
+          type: boolean
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+      required:
+      - active
+      - safe_mode
+      - unsafe_action_protection
     ExtensionsOverviewDatabaseRow:
       type: object
       properties:
@@ -13846,8 +13379,7 @@ components:
           type: string
           format: date-time
           nullable: true
-        flags:
-          $ref: '#/components/schemas/ExtensionsObservedFlagValues'
+        flags: {}
       required:
       - database_id
       - database_name
@@ -13899,8 +13431,7 @@ components:
         unsafe_action_protection:
           type: boolean
           nullable: true
-        flags:
-          $ref: '#/components/schemas/ExtensionsFlagsAggregate'
+        flags: {}
         installed_count:
           type: integer
         active_count:
@@ -13931,31 +13462,6 @@ components:
     ExtensionsPlanRequest:
       type: object
       properties:
-        capability:
-          enum:
-          - extensions.sync
-          - extensions.set_flags
-          type: string
-          default: extensions.sync
-          description: |-
-            Reserved capability to plan/apply.
-
-            - `extensions.sync` (default) - refresh extensions snapshots (existing behaviour)
-            - `extensions.set_flags` - apply flags policy (requires `extension_name`)
-        action_id:
-          type: string
-          maxLength: 128
-          description: |-
-            Optional deterministic action selector (matches unified `operation_exposure.alias` for `surface="action_catalog"`).
-
-            If provided, backend uses this action directly. If omitted and multiple actions match the requested
-            `capability`, backend fails closed with `AMBIGUOUS_ACTION`.
-        extension_name:
-          type: string
-          description: Extension name (exact match). Required for capability `extensions.set_flags`.
-        apply_mask:
-          $ref: '#/components/schemas/ExtensionsFlagsApplyMask'
-        # NOTE: apply_mask is only supported for capability `extensions.set_flags`.
         database_ids:
           type: array
           items:
@@ -13963,155 +13469,20 @@ components:
             format: uuid
           maxItems: 500
           minItems: 1
+        capability:
+          type: string
+          nullable: true
+        action_id:
+          type: string
+          nullable: true
+        extension_name:
+          type: string
+          nullable: true
+        apply_mask:
+          type: object
+          additionalProperties: {}
       required:
       - database_ids
-    ExtensionsFlagsApplyMask:
-      type: object
-      additionalProperties: false
-      properties:
-        active:
-          type: boolean
-        safe_mode:
-          type: boolean
-        unsafe_action_protection:
-          type: boolean
-      required:
-      - active
-      - safe_mode
-      - unsafe_action_protection
-    ExtensionsFlagObserved:
-      type: object
-      properties:
-        true_count:
-          type: integer
-        false_count:
-          type: integer
-        unknown_count:
-          type: integer
-        state:
-          enum:
-          - on
-          - off
-          - mixed
-          - unknown
-          type: string
-      required:
-      - false_count
-      - state
-      - true_count
-      - unknown_count
-    ExtensionsFlagAggregate:
-      type: object
-      properties:
-        policy:
-          type: boolean
-          nullable: true
-        observed:
-          $ref: '#/components/schemas/ExtensionsFlagObserved'
-        drift_count:
-          type: integer
-        unknown_drift_count:
-          type: integer
-      required:
-      - drift_count
-      - observed
-      - policy
-      - unknown_drift_count
-    ExtensionsFlagsAggregate:
-      type: object
-      properties:
-        active:
-          $ref: '#/components/schemas/ExtensionsFlagAggregate'
-        safe_mode:
-          $ref: '#/components/schemas/ExtensionsFlagAggregate'
-        unsafe_action_protection:
-          $ref: '#/components/schemas/ExtensionsFlagAggregate'
-      required:
-      - active
-      - safe_mode
-      - unsafe_action_protection
-    ExtensionsObservedFlagValues:
-      type: object
-      properties:
-        active:
-          type: boolean
-          nullable: true
-        safe_mode:
-          type: boolean
-          nullable: true
-        unsafe_action_protection:
-          type: boolean
-          nullable: true
-      required:
-      - active
-      - safe_mode
-      - unsafe_action_protection
-    ExtensionsFlagsPolicy:
-      type: object
-      properties:
-        extension_name:
-          type: string
-        active:
-          type: boolean
-          nullable: true
-        safe_mode:
-          type: boolean
-          nullable: true
-        unsafe_action_protection:
-          type: boolean
-          nullable: true
-        updated_at:
-          type: string
-          format: date-time
-          nullable: true
-      required:
-      - active
-      - extension_name
-      - safe_mode
-      - unsafe_action_protection
-      - updated_at
-    ExtensionsFlagsPolicyUpsertRequest:
-      type: object
-      properties:
-        active:
-          type: boolean
-          nullable: true
-        safe_mode:
-          type: boolean
-          nullable: true
-        unsafe_action_protection:
-          type: boolean
-          nullable: true
-        reason:
-          type: string
-          nullable: true
-      required:
-      - active
-      - safe_mode
-      - unsafe_action_protection
-    ExtensionsFlagsPolicyListResponse:
-      type: object
-      properties:
-        policies:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExtensionsFlagsPolicy'
-      required:
-      - policies
-    ExtensionsFlagsPolicyAdoptRequest:
-      type: object
-      properties:
-        database_id:
-          type: string
-          format: uuid
-        extension_name:
-          type: string
-        reason:
-          type: string
-          nullable: true
-      required:
-      - database_id
-      - extension_name
     ExtensionsPlanResponse:
       type: object
       properties:
@@ -14831,6 +14202,142 @@ components:
       - cancelled
       - message
       - operation_id
+    OperationCatalogDefinition:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_scope:
+          type: string
+        executor_kind:
+          type: string
+        executor_payload: {}
+        contract_version:
+          type: integer
+        fingerprint:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - contract_version
+      - executor_kind
+      - executor_payload
+      - fingerprint
+      - id
+      - status
+      - tenant_scope
+    OperationCatalogDefinitionDetailResponse:
+      type: object
+      properties:
+        definition:
+          $ref: '#/components/schemas/OperationCatalogDefinition'
+        exposures:
+          type: array
+          items: {}
+      required:
+      - definition
+      - exposures
+    OperationCatalogDefinitionListResponse:
+      type: object
+      properties:
+        definitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationCatalogDefinition'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - definitions
+      - total
+    OperationCatalogExposure:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        definition_id:
+          type: string
+          format: uuid
+        surface:
+          type: string
+        alias:
+          type: string
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        capability:
+          type: string
+        contexts:
+          type: array
+          items:
+            type: string
+        display_order:
+          type: integer
+        capability_config: {}
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - alias
+      - definition_id
+      - id
+      - is_active
+      - name
+      - status
+      - surface
+    OperationCatalogExposureListResponse:
+      type: object
+      properties:
+        exposures:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationCatalogExposure'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - exposures
+      - total
+    OperationCatalogExposurePublishResponse:
+      type: object
+      properties:
+        published:
+          type: boolean
+        exposure:
+          $ref: '#/components/schemas/OperationCatalogExposure'
+        validation_errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationCatalogValidationError'
+      required:
+      - exposure
+      - published
+      - validation_errors
     OperationCatalogItem:
       type: object
       description: Operation catalog entry for Operations Center.
@@ -14888,6 +14395,58 @@ components:
       - kind
       - label
       - requires_config
+    OperationCatalogMigrationIssue:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        source_type:
+          type: string
+        source_id:
+          type: string
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        exposure_id:
+          type: string
+          format: uuid
+          nullable: true
+        severity:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+        details: {}
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - code
+      - created_at
+      - details
+      - id
+      - message
+      - severity
+      - source_id
+      - source_type
+    OperationCatalogMigrationIssuesResponse:
+      type: object
+      properties:
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationCatalogMigrationIssue'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - issues
+      - total
     OperationCatalogResponse:
       type: object
       description: Response for operation catalog endpoint.
@@ -14901,6 +14460,38 @@ components:
       required:
       - count
       - items
+    OperationCatalogValidateRequest:
+      type: object
+      properties:
+        definition: {}
+        exposure: {}
+      required:
+      - exposure
+    OperationCatalogValidateResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationCatalogValidationError'
+      required:
+      - errors
+      - valid
+    OperationCatalogValidationError:
+      type: object
+      properties:
+        path:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+      required:
+      - code
+      - message
+      - path
     OperationDetailResponse:
       type: object
       description: Response for get_operation endpoint.
@@ -15063,75 +14654,36 @@ components:
       - max_streams
     OperationTemplate:
       type: object
-      description: Template exposure materialized from unified operation catalog.
+      description: Serializer for template exposure materialized from unified operation
+        catalog.
       properties:
         id:
           type: string
-          format: uuid
-        alias:
-          type: string
-          maxLength: 128
         name:
           type: string
-          maxLength: 255
         description:
           type: string
-          nullable: true
-        surface:
-          enum:
-          - template
+        operation_type:
           type: string
-          description: |-
-            * `template` - template
-        definition_id:
+        target_entity:
           type: string
-          format: uuid
-        definition:
-          $ref: '#/components/schemas/OperationCatalogDefinition'
-        capability:
-          type: string
-          maxLength: 128
-        contexts:
-          type: array
-          items:
-            type: string
-        display_order:
-          type: integer
-        capability_config:
-          type: object
-          additionalProperties: {}
+        template_data: {}
         is_active:
           type: boolean
-        status:
-          enum:
-          - draft
-          - published
-          - invalid
-          type: string
-          description: |-
-            * `draft` - draft
-            * `published` - published
-            * `invalid` - invalid
         created_at:
           type: string
           format: date-time
-          readOnly: true
         updated_at:
           type: string
           format: date-time
-          readOnly: true
       required:
-      - alias
-      - capability
-      - capability_config
       - created_at
-      - definition
-      - definition_id
       - id
       - is_active
       - name
-      - status
-      - surface
+      - operation_type
+      - target_entity
+      - template_data
       - updated_at
     OperationTemplateDetailResponse:
       type: object
@@ -15198,13 +14750,13 @@ components:
       - template_id
     OperationTemplateListResponse:
       type: object
-      description: Response for list_templates endpoint backed by unified exposures.
+      description: Response for list_templates endpoint.
       properties:
         templates:
           type: array
           items:
             $ref: '#/components/schemas/OperationTemplate'
-          description: List of template exposures
+          description: List of operation templates
         count:
           type: integer
           description: Number of templates in current page
@@ -15301,42 +14853,23 @@ components:
       properties:
         id:
           type: string
-          format: uuid
-        alias:
-          type: string
-          maxLength: 128
         name:
           type: string
-          maxLength: 255
         description:
           type: string
-          nullable: true
-        capability:
+        operation_type:
           type: string
-          maxLength: 128
-        contexts:
-          type: array
-          items:
-            type: string
-        display_order:
-          type: integer
-          default: 0
-        capability_config:
-          type: object
-          additionalProperties: {}
+        target_entity:
+          type: string
+        template_data: {}
         is_active:
           type: boolean
           default: true
-        definition_id:
-          type: string
-          format: uuid
-          nullable: true
-        definition:
-          $ref: '#/components/schemas/OperationCatalogDefinitionInput'
       required:
-      - alias
-      - capability
       - name
+      - operation_type
+      - target_entity
+      - template_data
     ParallelConfig:
       type: object
       description: Serializer for ParallelConfig Pydantic model.
@@ -15359,6 +14892,21 @@ components:
           default: 300
       required:
       - parallel_nodes
+    PatchedExtensionsFlagsPolicyUpsertRequest:
+      type: object
+      properties:
+        active:
+          type: boolean
+          nullable: true
+        safe_mode:
+          type: boolean
+          nullable: true
+        unsafe_action_protection:
+          type: boolean
+          nullable: true
+        reason:
+          type: string
+          nullable: true
     PatchedRuntimeSettingOverrideUpdate:
       type: object
       properties:

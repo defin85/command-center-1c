@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 
 from apps.databases.models import Database, DatabaseExtensionsSnapshot, DatabasePermission, ExtensionFlagsPolicy, PermissionLevel
 from apps.operations.models import BatchOperation, CommandResultSnapshot
-from apps.runtime_settings.models import RuntimeSetting, TenantRuntimeSettingOverride
+from apps.runtime_settings.models import TenantRuntimeSettingOverride
 from apps.templates.models import OperationExposure
 from apps.templates.operation_catalog_service import resolve_definition, resolve_exposure
 from apps.tenancy.models import Tenant, TenantMember
@@ -354,16 +354,17 @@ def test_runtime_effective_uses_tenant_override(client, staff_user):
 
     TenantRuntimeSettingOverride.objects.update_or_create(
         tenant=default,
-        key="ui.action_catalog",
-        defaults={"status": TenantRuntimeSettingOverride.STATUS_PUBLISHED, "value": {"catalog_version": 1, "extensions": {"actions": []}}},
+        key="ui.operations.max_live_streams",
+        defaults={"status": TenantRuntimeSettingOverride.STATUS_PUBLISHED, "value": 17},
     )
 
     resp = client.get("/api/v2/settings/runtime-effective/")
     assert resp.status_code == 200
     settings = resp.json()["settings"]
-    entry = next((s for s in settings if s["key"] == "ui.action_catalog"), None)
+    entry = next((s for s in settings if s["key"] == "ui.operations.max_live_streams"), None)
     assert entry is not None
     assert entry["source"] == "tenant_override"
+    assert entry["value"] == 17
 
 
 @pytest.mark.django_db
@@ -1306,8 +1307,8 @@ def test_tenant_preference_is_used_when_header_missing(client):
 
     TenantRuntimeSettingOverride.objects.update_or_create(
         tenant=other,
-        key="ui.action_catalog",
-        defaults={"status": TenantRuntimeSettingOverride.STATUS_PUBLISHED, "value": {"catalog_version": 99, "extensions": {"actions": []}}},
+        key="ui.operations.max_live_streams",
+        defaults={"status": TenantRuntimeSettingOverride.STATUS_PUBLISHED, "value": 23},
     )
 
     _jwt_login(client, username=u.username, password="pass")
@@ -1320,9 +1321,10 @@ def test_tenant_preference_is_used_when_header_missing(client):
     resp3 = client.get("/api/v2/settings/runtime-effective/")
     assert resp3.status_code == 200
     settings = resp3.json()["settings"]
-    entry = next((s for s in settings if s["key"] == "ui.action_catalog"), None)
+    entry = next((s for s in settings if s["key"] == "ui.operations.max_live_streams"), None)
     assert entry is not None
     assert entry["source"] == "tenant_override"
+    assert entry["value"] == 23
 
 
 @pytest.mark.django_db

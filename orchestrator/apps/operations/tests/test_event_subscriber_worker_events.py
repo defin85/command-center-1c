@@ -6,8 +6,6 @@ from unittest.mock import patch
 from apps.databases.models import Database, DatabaseExtensionsSnapshot
 from apps.operations.event_subscriber import EventSubscriber
 from apps.operations.models import BatchOperation, Task
-from apps.runtime_settings.action_catalog import UI_ACTION_CATALOG_KEY
-from apps.runtime_settings.models import RuntimeSetting, TenantRuntimeSettingOverride
 from apps.tenancy.models import Tenant
 
 from ._event_subscriber_test_base import EventSubscriberBaseTestCase
@@ -308,60 +306,6 @@ class EventSubscriberWorkerEventsTest(EventSubscriberBaseTestCase):
 
         tenant = Tenant.objects.filter(slug="default").first()
         self.assertIsNotNone(tenant, "default tenant must exist for tests")
-
-        RuntimeSetting.objects.update_or_create(
-            key=UI_ACTION_CATALOG_KEY,
-            defaults={
-                "value": {
-                    "catalog_version": 1,
-                    "extensions": {
-                        "actions": [
-                            {
-                                "id": "ListExtension",
-                                "capability": "extensions.list",
-                                "label": "List extension",
-                                "contexts": ["database_card"],
-                                "executor": {
-                                    "kind": "ibcmd_cli",
-                                    "driver": "ibcmd",
-                                    "command_id": "infobase.extension.list",
-                                    "mode": "guided",
-                                    "params": {},
-                                },
-                            }
-                        ]
-                    },
-                }
-            },
-        )
-
-        TenantRuntimeSettingOverride.objects.update_or_create(
-            tenant=tenant,
-            key=UI_ACTION_CATALOG_KEY,
-            defaults={
-                "status": TenantRuntimeSettingOverride.STATUS_PUBLISHED,
-                "value": {
-                    "catalog_version": 1,
-                    "extensions": {
-                        "actions": [
-                            {
-                                "id": "RenamedListAction",
-                                "capability": "extensions.list",
-                                "label": "Renamed list action",
-                                "contexts": ["database_card"],
-                                "executor": {
-                                    "kind": "ibcmd_cli",
-                                    "driver": "ibcmd",
-                                    "command_id": "some.other.command",
-                                    "mode": "guided",
-                                    "params": {},
-                                },
-                            }
-                        ]
-                    },
-                },
-            },
-        )
 
         op = BatchOperation.objects.create(
             id=str(uuid.uuid4()),

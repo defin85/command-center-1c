@@ -1,8 +1,4 @@
-# runtime-settings-overrides Specification
-
-## Purpose
-TBD - created by archiving change add-tenancy-extensions-plan-apply. Update Purpose after archive.
-## Requirements
+## MODIFIED Requirements
 ### Requirement: Runtime settings имеют tenant overrides
 Система ДОЛЖНА (SHALL) поддерживать overrides runtime settings per-tenant для поддерживаемых runtime keys, сохраняя глобальные значения как baseline.
 
@@ -18,4 +14,3 @@ Decommissioned key `ui.action_catalog` НЕ ДОЛЖЕН (SHALL NOT) подде�
 - **WHEN** клиент пытается прочитать или изменить override для `ui.action_catalog`
 - **THEN** API возвращает ошибку unsupported/decommissioned key
 - **AND** значение key не попадает в effective runtime settings
-
