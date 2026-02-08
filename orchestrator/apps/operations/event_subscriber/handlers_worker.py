@@ -350,36 +350,20 @@ class WorkerEventHandlersMixin:
 
             exec_cfg = metadata.get("post_completion_extensions_sync_executor")
             if not isinstance(exec_cfg, dict):
-                from apps.runtime_settings.action_catalog import (
-                    UI_ACTION_CATALOG_KEY,
-                    ensure_valid_action_catalog,
-                    get_reserved_action_capability,
+                from apps.templates.operation_catalog_service import (
+                    resolve_reserved_action_executor_from_unified_catalog,
                 )
-                from apps.runtime_settings.effective import get_effective_runtime_setting
 
-                raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id_str).value
-                catalog, _errors = ensure_valid_action_catalog(raw_catalog)
-
-                extensions = catalog.get("extensions")
-                actions = extensions.get("actions") if isinstance(extensions, dict) else None
-                if not isinstance(actions, list):
-                    return
-
-                sync_action = None
-                for action in actions:
-                    if not isinstance(action, dict):
-                        continue
-                    if get_reserved_action_capability(action) == "extensions.sync":
-                        sync_action = action
-                        break
-                if not isinstance(sync_action, dict):
+                exec_cfg = resolve_reserved_action_executor_from_unified_catalog(
+                    tenant_id=tenant_id_str,
+                    capability="extensions.sync",
+                )
+                if not isinstance(exec_cfg, dict):
                     runtime.logger.warning(
                         "post_completion_extensions_sync: extensions.sync is not configured (tenant=%s)",
                         tenant_id_str,
                     )
                     return
-
-                exec_cfg = sync_action.get("executor") if isinstance(sync_action.get("executor"), dict) else None
 
             if not isinstance(exec_cfg, dict) or exec_cfg.get("kind") != "ibcmd_cli":
                 runtime.logger.warning(

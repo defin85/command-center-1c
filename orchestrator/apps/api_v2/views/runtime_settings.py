@@ -219,6 +219,7 @@ def list_runtime_setting_overrides(request):
         401: OpenApiResponse(description='Unauthorized'),
         403: OpenApiResponse(description='Forbidden'),
         404: OpenApiResponse(description='Not found'),
+        409: OpenApiResponse(description='Legacy write path disabled'),
     }
 )
 @api_view(['PATCH'])
@@ -307,6 +308,7 @@ def update_runtime_setting_override(request, key: str):
         401: OpenApiResponse(description='Unauthorized'),
         403: OpenApiResponse(description='Forbidden'),
         404: OpenApiResponse(description='Not found'),
+        409: OpenApiResponse(description='Legacy write path disabled'),
     }
 )
 @api_view(['PATCH'])

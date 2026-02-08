@@ -10,8 +10,9 @@ from apps.databases.models import Database
 from apps.operations.models import BatchOperation
 from apps.operations.redis_client import redis_client
 from apps.operations.services import EnqueueResult, OperationsService
-from apps.runtime_settings.models import RuntimeSetting
 from apps.tenancy.models import Tenant, TenantMember
+from apps.templates.models import OperationExposure
+from apps.templates.operation_catalog_service import resolve_definition, resolve_exposure
 
 from . import _execute_ibcmd_cli_support as support
 
@@ -54,24 +55,29 @@ def test_execute_ibcmd_cli_sets_extensions_snapshot_marker_when_catalog_binds_ca
         password="p",
     )
 
-    RuntimeSetting.objects.update_or_create(
-        key="ui.action_catalog",
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "ListExtension",
-                            "capability": "extensions.list",
-                            "label": "List extensions",
-                            "contexts": ["database_card"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "infobase.extension.list"},
-                        }
-                    ]
-                },
-            }
+    definition, _ = resolve_definition(
+        tenant_scope="global",
+        executor_kind="ibcmd_cli",
+        executor_payload={
+            "kind": "ibcmd_cli",
+            "driver": "ibcmd",
+            "command_id": "infobase.extension.list",
         },
+        contract_version=1,
+    )
+    resolve_exposure(
+        definition=definition,
+        surface=OperationExposure.SURFACE_ACTION_CATALOG,
+        alias="ListExtension",
+        tenant_id=None,
+        label="List extensions",
+        description="",
+        is_active=True,
+        capability="extensions.list",
+        contexts=["database_card"],
+        display_order=0,
+        capability_config={},
+        status=OperationExposure.STATUS_PUBLISHED,
     )
 
     client = APIClient()
@@ -103,3 +109,4 @@ def test_execute_ibcmd_cli_sets_extensions_snapshot_marker_when_catalog_binds_ca
     op_id = resp.json()["operation_id"]
     op = BatchOperation.objects.get(id=op_id)
     assert (op.metadata or {}).get("snapshot_kinds") == ["extensions"]
+    assert (op.metadata or {}).get("snapshot_source") == "operation_catalog"

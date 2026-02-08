@@ -32,6 +32,9 @@ from apps.operations.ibcmd_cli_builder import (
 )
 from apps.operations.prometheus_metrics import record_driver_command_denied
 from apps.operations.services import OperationsService
+from apps.templates.operation_catalog_service import (
+    compute_ibcmd_cli_snapshot_marker_from_unified_catalog,
+)
 
 from .utils import _is_sensitive_key
 
@@ -765,18 +768,14 @@ def _execute_ibcmd_cli_validated(
     }
 
     try:
-        tenant_id = str(getattr(request, "tenant_id", "") or "").strip()
+        tenant_id = str(getattr(request, "tenant_id", "") or "").strip() or None
         if tenant_id:
-            from apps.runtime_settings.action_catalog import (
-                UI_ACTION_CATALOG_KEY,
-                compute_ibcmd_cli_snapshot_marker_from_action_catalog,
-                ensure_valid_action_catalog,
+            metadata.update(
+                compute_ibcmd_cli_snapshot_marker_from_unified_catalog(
+                    tenant_id=tenant_id,
+                    command_id=command_id,
+                )
             )
-            from apps.runtime_settings.effective import get_effective_runtime_setting
-
-            raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
-            catalog, _errors = ensure_valid_action_catalog(raw_catalog)
-            metadata.update(compute_ibcmd_cli_snapshot_marker_from_action_catalog(catalog, command_id))
     except Exception:
         pass
 

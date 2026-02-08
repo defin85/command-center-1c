@@ -12,6 +12,9 @@ from django.db import transaction
 from apps.databases.models import Database
 from apps.operations.models import BatchOperation, Task
 from apps.templates.models import OperationTemplate
+from apps.templates.operation_catalog_service import (
+    compute_ibcmd_cli_snapshot_marker_from_unified_catalog,
+)
 from apps.templates.tracing import get_current_trace_id
 
 logger = logging.getLogger(__name__)
@@ -212,16 +215,12 @@ class BatchOperationFactory:
                     }
                     if len(tenant_ids) == 1:
                         tenant_id = next(iter(tenant_ids))
-                        from apps.runtime_settings.action_catalog import (
-                            UI_ACTION_CATALOG_KEY,
-                            compute_ibcmd_cli_snapshot_marker_from_action_catalog,
-                            ensure_valid_action_catalog,
+                        metadata.update(
+                            compute_ibcmd_cli_snapshot_marker_from_unified_catalog(
+                                tenant_id=tenant_id,
+                                command_id=command_id,
+                            )
                         )
-                        from apps.runtime_settings.effective import get_effective_runtime_setting
-
-                        raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
-                        catalog, _errors = ensure_valid_action_catalog(raw_catalog)
-                        metadata.update(compute_ibcmd_cli_snapshot_marker_from_action_catalog(catalog, command_id))
             except Exception:
                 pass
 

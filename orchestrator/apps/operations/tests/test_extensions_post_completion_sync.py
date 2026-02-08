@@ -6,8 +6,9 @@ from apps.operations.event_subscriber.handlers_worker import WorkerEventHandlers
 from apps.operations.models import BatchOperation, Task
 from apps.operations.services.operations_service import OperationsService
 from apps.operations.services.operations_service.types import EnqueueResult
-from apps.runtime_settings.models import RuntimeSetting
 from apps.tenancy.models import Tenant
+from apps.templates.models import OperationExposure
+from apps.templates.operation_catalog_service import resolve_definition, resolve_exposure
 
 from apps.api_v2.tests import _execute_ibcmd_cli_support as support
 
@@ -49,24 +50,29 @@ def test_post_completion_extensions_sync_enqueues_follow_up(monkeypatch):
         password="p",
     )
 
-    RuntimeSetting.objects.update_or_create(
-        key="ui.action_catalog",
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "SyncAction",
-                            "capability": "extensions.sync",
-                            "label": "Sync",
-                            "contexts": ["bulk_page"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "infobase.extension.list"},
-                        },
-                    ]
-                },
-            }
+    definition, _ = resolve_definition(
+        tenant_scope="global",
+        executor_kind="ibcmd_cli",
+        executor_payload={
+            "kind": "ibcmd_cli",
+            "driver": "ibcmd",
+            "command_id": "infobase.extension.list",
         },
+        contract_version=1,
+    )
+    resolve_exposure(
+        definition=definition,
+        surface=OperationExposure.SURFACE_ACTION_CATALOG,
+        alias="SyncAction",
+        tenant_id=None,
+        label="Sync",
+        description="",
+        is_active=True,
+        capability="extensions.sync",
+        contexts=["bulk_page"],
+        display_order=0,
+        capability_config={},
+        status=OperationExposure.STATUS_PUBLISHED,
     )
 
     def _fake_enqueue(op_id: str) -> EnqueueResult:
@@ -149,8 +155,7 @@ def test_post_completion_extensions_sync_uses_executor_from_metadata_when_catalo
         password="p",
     )
 
-    # Ensure catalog is missing (or invalid) for this test.
-    RuntimeSetting.objects.filter(key="ui.action_catalog").delete()
+    # Keep catalog missing in unified store for this test.
 
     def _fake_enqueue(op_id: str) -> EnqueueResult:
         BatchOperation.objects.filter(id=op_id).update(status=BatchOperation.STATUS_QUEUED)

@@ -7505,6 +7505,8 @@ paths:
           description: Forbidden
         '404':
           description: Not found
+        '409':
+          description: Legacy write path disabled
   /api/v2/settings/runtime/{key}/:
     patch:
       operationId: v2_settings_runtime_partial_update
@@ -7561,6 +7563,8 @@ paths:
           description: Forbidden
         '404':
           description: Not found
+        '409':
+          description: Legacy write path disabled
   /api/v2/snapshots/get/:
     get:
       operationId: v2_snapshots_get_retrieve
@@ -9661,26 +9665,24 @@ paths:
           description: Stream already active
 components:
   schemas:
+    ActionCatalogExtensions:
+      type: object
+      properties:
+        actions:
+          type: array
+          items: {}
+      required:
+      - actions
     ActionCatalogResponse:
       type: object
       properties:
         catalog_version:
           type: integer
-        surface:
-          type: string
-          enum:
-          - action_catalog
-        exposures:
-          type: array
-          items:
-            $ref: '#/components/schemas/OperationCatalogExposure'
-        count:
-          type: integer
+        extensions:
+          $ref: '#/components/schemas/ActionCatalogExtensions'
       required:
       - catalog_version
-      - count
-      - exposures
-      - surface
+      - extensions
     ActionCatalogEditorHintHelp:
       type: object
       properties:

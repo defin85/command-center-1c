@@ -5,6 +5,7 @@ from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
 from apps.tenancy.models import Tenant
+from apps.templates.models import OperationMigrationIssue
 
 
 @pytest.fixture
@@ -124,3 +125,44 @@ def test_operation_catalog_endpoints_upsert_list_publish_validate(staff_client):
     validate_payload = validate_resp.json()
     assert validate_payload["valid"] is False
     assert validate_payload["errors"]
+
+
+@pytest.mark.django_db
+def test_operation_catalog_migration_issues_list_returns_unified_diagnostics(staff_client):
+    tenant = Tenant.objects.create(slug="tenant-migration-issues", name="Tenant Migration Issues")
+    issue = OperationMigrationIssue.objects.create(
+        source_type="runtime_setting",
+        source_id="ui.action_catalog",
+        tenant=tenant,
+        severity=OperationMigrationIssue.SEVERITY_ERROR,
+        code="INVALID_BINDING",
+        message="target_binding.extension_name_param is required",
+        details={"path": "capability_config.target_binding.extension_name_param"},
+    )
+
+    resp = staff_client.get("/api/v2/operation-catalog/migration-issues/")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["count"] == 1
+    assert payload["total"] == 1
+    row = payload["issues"][0]
+    assert row["id"] == str(issue.id)
+    assert row["source_type"] == "runtime_setting"
+    assert row["source_id"] == "ui.action_catalog"
+    assert row["tenant_id"] == str(tenant.id)
+    assert row["severity"] == OperationMigrationIssue.SEVERITY_ERROR
+    assert row["code"] == "INVALID_BINDING"
+    assert row["details"]["path"] == "capability_config.target_binding.extension_name_param"
+
+
+@pytest.mark.django_db
+def test_operation_catalog_migration_issues_staff_only():
+    user = User.objects.create_user(username="operation_catalog_non_staff", password="pass", is_staff=False)
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    resp = client.get("/api/v2/operation-catalog/migration-issues/")
+    assert resp.status_code == 403
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "FORBIDDEN"

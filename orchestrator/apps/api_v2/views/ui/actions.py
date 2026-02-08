@@ -24,9 +24,13 @@ from apps.templates.workflow.models import WorkflowTemplate
 logger = logging.getLogger(__name__)
 
 
+class ActionCatalogExtensionsSerializer(serializers.Serializer):
+    actions = serializers.ListField(child=serializers.JSONField())
+
+
 class ActionCatalogResponseSerializer(serializers.Serializer):
     catalog_version = serializers.IntegerField()
-    extensions = serializers.DictField()
+    extensions = ActionCatalogExtensionsSerializer()
 
 
 class ActionCatalogEditorHintHelpSerializer(serializers.Serializer):
