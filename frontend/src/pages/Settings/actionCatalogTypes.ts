@@ -18,6 +18,7 @@ export type ActionContext = 'database_card' | 'bulk_page'
 export type ExecutorKind = 'ibcmd_cli' | 'designer_cli' | 'workflow'
 
 export type PlainObject = Record<string, unknown>
+type ActionFixedValue = string | number | boolean | PlainObject | unknown[] | undefined
 
 export type DiffKind = 'added' | 'removed' | 'changed'
 
@@ -55,7 +56,7 @@ export type ActionFormValues = {
     fixed?: {
       confirm_dangerous?: boolean
       timeout_seconds?: number
-      [key: string]: {} | undefined
+      [key: string]: ActionFixedValue
     }
   }
 }

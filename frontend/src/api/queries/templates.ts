@@ -174,13 +174,22 @@ const applySearch = (rows: OperationTemplate[], search: string | undefined): Ope
 const applySort = (rows: OperationTemplate[], sort: { key: string; order: 'asc' | 'desc' } | null): OperationTemplate[] => {
   if (!sort) return rows
   const next = rows.slice()
+  const toComparable = (row: OperationTemplate, key: string): string | number => {
+    if (key === 'is_active') return row.is_active ? 1 : 0
+    if (key === 'created_at') return row.created_at
+    if (key === 'updated_at') return row.updated_at
+    if (key === 'operation_type') return row.operation_type
+    if (key === 'target_entity') return row.target_entity
+    if (key === 'name') return row.name
+    if (key === 'id') return row.id
+    return ''
+  }
   next.sort((a, b) => {
-    const key = sort.key
-    const av = (a as Record<string, unknown>)[key]
-    const bv = (b as Record<string, unknown>)[key]
-    const aText = typeof av === 'string' ? av : String(av ?? '')
-    const bText = typeof bv === 'string' ? bv : String(bv ?? '')
-    const result = aText.localeCompare(bText)
+    const av = toComparable(a, sort.key)
+    const bv = toComparable(b, sort.key)
+    const result = typeof av === 'number' && typeof bv === 'number'
+      ? av - bv
+      : String(av).localeCompare(String(bv))
     return sort.order === 'desc' ? -result : result
   })
   return next

@@ -46,6 +46,7 @@ import type {
 
 // Generated API
 import { getV2 } from '../../api/generated/v2/v2'
+import { listOperationCatalogExposures } from '../../api/operationCatalog'
 
 // Transform utilities for API <-> UI type conversion
 import {
@@ -133,24 +134,25 @@ const WorkflowDesigner = () => {
   useEffect(() => {
     const loadOperationTemplates = async () => {
       try {
-        const response = await api.getTemplatesListTemplates({ limit: 1000 })
-        const templates = response.templates.map((raw) => {
-          const t = raw as unknown as Record<string, unknown>
-          const definition = (t.definition && typeof t.definition === 'object')
-            ? t.definition as Record<string, unknown>
-            : null
-          const executorPayload = (definition?.executor_payload && typeof definition.executor_payload === 'object')
-            ? definition.executor_payload as Record<string, unknown>
-            : null
-          const operationType = typeof t.operation_type === 'string'
-            ? t.operation_type
-            : (typeof executorPayload?.operation_type === 'string' ? executorPayload.operation_type : 'designer_cli')
-          return {
-            id: String(t.id ?? ''),
-            name: String(t.name ?? ''),
-            operation_type: operationType,
-          }
+        const response = await listOperationCatalogExposures({
+          surface: 'template',
+          limit: 1000,
+          offset: 0,
         })
+        const templates = response.exposures
+          .filter((row) => row.surface === 'template')
+          .map((row) => {
+            const operationType = typeof row.operation_type === 'string' && row.operation_type
+              ? row.operation_type
+              : 'designer_cli'
+            return {
+              id: String(row.alias ?? ''),
+              name: String(row.name ?? ''),
+              operation_type: operationType,
+            }
+          })
+          .filter((row) => row.id && row.name)
+          .sort((left, right) => left.name.localeCompare(right.name))
         setState((prev) => ({
           ...prev,
           operationTemplates: templates,
