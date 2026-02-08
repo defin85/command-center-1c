@@ -85,6 +85,11 @@ async function setupApiMocks(
     patchFailCount?: number
     patchFailMessages?: string[]
     editorHints?: AnyRecord
+    me?: { id: number; username: string; is_staff: boolean }
+    callCounters?: {
+      operationCatalogExposuresGets?: number
+      actionCatalogEditorHintsGets?: number
+    }
   }
 ) {
   const definitions: AnyRecord[] = []
@@ -224,7 +229,7 @@ async function setupApiMocks(
     const method = request.method()
 
     if (method === 'GET' && path === '/api/v2/system/me/') {
-      return fulfillJson(route, { id: 1, username: 'admin', is_staff: true })
+      return fulfillJson(route, state.me ?? { id: 1, username: 'admin', is_staff: true })
     }
 
     if (method === 'GET' && path === '/api/v2/rbac/get-effective-access/') {
@@ -293,6 +298,8 @@ async function setupApiMocks(
     }
 
     if (method === 'GET' && path === '/api/v2/operation-catalog/exposures/') {
+      state.callCounters = state.callCounters ?? {}
+      state.callCounters.operationCatalogExposuresGets = (state.callCounters.operationCatalogExposuresGets ?? 0) + 1
       const surface = url.searchParams.get('surface')
       const tenantId = url.searchParams.get('tenant_id')
       const capability = url.searchParams.get('capability')
@@ -558,6 +565,8 @@ async function setupApiMocks(
     }
 
     if (method === 'GET' && path === '/api/v2/ui/action-catalog/editor-hints/') {
+      state.callCounters = state.callCounters ?? {}
+      state.callCounters.actionCatalogEditorHintsGets = (state.callCounters.actionCatalogEditorHintsGets ?? 0) + 1
       return fulfillJson(route, state.editorHints ?? {
         hints_version: 1,
         capabilities: {
@@ -1021,4 +1030,36 @@ test('Action Catalog editor: capability fixed section follows uiSchema widgets',
   await expect(page.getByTestId('action-catalog-editor-fixed-apply_mask-active-checkbox')).toBeVisible()
   await expect(page.getByText('unsafe_action_protection', { exact: true })).toBeVisible()
   await expect(page.getByText('safe_mode', { exact: true })).toHaveCount(0)
+})
+
+test('Templates: non-staff cannot open action-catalog surface or load management endpoints', async ({ page }) => {
+  await setupAuth(page)
+  const callCounters: { operationCatalogExposuresGets?: number; actionCatalogEditorHintsGets?: number } = {}
+  await setupApiMocks(page, {
+    runtimeSettings: [],
+    me: { id: 2, username: 'operator', is_staff: false },
+    callCounters,
+  })
+
+  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Action Catalog', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toHaveCount(0)
+  expect(callCounters.operationCatalogExposuresGets ?? 0).toBe(0)
+  expect(callCounters.actionCatalogEditorHintsGets ?? 0).toBe(0)
+})
+
+test('Legacy route /settings/action-catalog does not render action-catalog editor flow', async ({ page }) => {
+  await setupAuth(page)
+  const callCounters: { operationCatalogExposuresGets?: number; actionCatalogEditorHintsGets?: number } = {}
+  await setupApiMocks(page, {
+    runtimeSettings: [],
+    callCounters,
+  })
+
+  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toHaveCount(0)
+  await expect(page.locator('.ant-layout')).toHaveCount(0)
+  expect(callCounters.operationCatalogExposuresGets ?? 0).toBe(0)
+  expect(callCounters.actionCatalogEditorHintsGets ?? 0).toBe(0)
 })

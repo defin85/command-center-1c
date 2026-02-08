@@ -199,7 +199,13 @@ def list_runtime_setting_overrides(request):
             status=status.HTTP_403_FORBIDDEN
         )
 
-    rows = TenantRuntimeSettingOverride.objects.filter(tenant_id=tenant_id).values("key", "value", "status").order_by("key")
+    supported_keys = list(RUNTIME_SETTINGS.keys())
+    rows = (
+        TenantRuntimeSettingOverride.objects
+        .filter(tenant_id=tenant_id, key__in=supported_keys)
+        .values("key", "value", "status")
+        .order_by("key")
+    )
     return Response(list(rows))
 
 

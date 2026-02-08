@@ -34,9 +34,9 @@ Binding Provenance MUST содержать список биндингов, гд
 - **WHEN** staff открывает drawer запуска действия и запрашивает preview
 - **THEN** UI получает plan+bindings и отображает их до запуска
 
-#### Scenario: Preview доступен из редактора ui.action_catalog
+#### Scenario: Preview доступен из редактора Action Catalog в `/templates`
 - **GIVEN** пользователь является staff
-- **WHEN** staff в `/settings/action-catalog` выбирает действие и запрашивает preview
+- **WHEN** staff в `/templates?surface=action_catalog` выбирает действие и запрашивает preview
 - **THEN** UI получает plan+bindings и отображает их
 
 ### Requirement: Persisted plan/provenance доступен в details
@@ -93,4 +93,3 @@ Binding Provenance MUST содержать список биндингов, гд
 - **THEN** bindings содержат записи со `source_ref` вида `target_db.metadata.*` (или эквивалентно)
 - **AND** bindings содержат запись `credentials.db_user_mapping` (или эквивалентно) для DBMS creds
 - **AND** такие bindings имеют `sensitive=true` и не содержат raw значений секретов
-

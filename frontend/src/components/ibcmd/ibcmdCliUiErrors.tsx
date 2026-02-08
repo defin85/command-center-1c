@@ -87,7 +87,7 @@ export const parseIbcmdCliUiError = (error: unknown): IbcmdCliUiError | null => 
             хотя бы один параметр (<Text code>remote</Text>/<Text code>pid</Text>/<Text code>offline.*</Text>).
           </Text>
           <Text type="secondary">
-            Задайте параметры в настройках соединения (например в editor `ui.action_catalog`) или в Configure при создании операции.
+            Задайте параметры в профиле подключения базы или в Configure при создании операции.
           </Text>
         </Space>
       ),

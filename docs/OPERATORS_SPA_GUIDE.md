@@ -26,9 +26,10 @@
 - Просмотр шаблонов операций.
 - **Sync from registry** (staff-only): синхронизация шаблонов из in-code registry.
 
-### Action Catalog (`/settings/action-catalog`)
-- Настройка `ui.action_catalog` через staff-only UI: какие действия по расширениям показывать в `/databases` и как их исполнять (ibcmd/CLI/workflow).
-- Guided + Raw JSON, diff/preview и Save с серверной валидацией.
+### Action Catalog (`/templates?surface=action_catalog`)
+- Управление actions выполняется на едином экране `/templates` во вкладке `Action Catalog` (staff-only).
+- Source of truth: `operation_exposure(surface=\"action_catalog\")` + `operation_definition` (без runtime setting `ui.action_catalog`).
+- Guided + Raw JSON, diff/preview и Save через unified operation-catalog API.
 - Подробная инструкция: [ACTION_CATALOG_GUIDE.md](./ACTION_CATALOG_GUIDE.md)
 
 ### Command Schemas (`/settings/command-schemas`)

@@ -1,6 +1,6 @@
-# Action Catalog (ui.action_catalog) — инструкция для операторов
+# Action Catalog (unified operation exposures) — инструкция для операторов
 
-`ui.action_catalog` — runtime-настройка, которая описывает, какие действия по расширениям показывать в UI и как их исполнять (через ibcmd/CLI или workflow).
+Action Catalog управляется через unified persistent контракт (`operation_exposure(surface=\"action_catalog\")` + `operation_definition`) и описывает, какие действия по расширениям показывать в UI и как их исполнять (через ibcmd/CLI или workflow).
 
 ## Доступ
 
@@ -9,8 +9,8 @@
 
 ## Где находится в UI
 
-- Settings → **Action Catalog**
-- Route: `/settings/action-catalog`
+- Templates → вкладка **Action Catalog**
+- Route: `/templates?surface=action_catalog`
 
 ## Основные понятия
 
@@ -80,7 +80,9 @@
 
 ## Сохранение (Save)
 
-- **Save** делает `PATCH /api/v2/settings/runtime/ui.action_catalog/`.
+- **Save** делает upsert/publish через unified API:
+  - `POST /api/v2/operation-catalog/exposures/`
+  - `POST /api/v2/operation-catalog/exposures/{exposure_id}/publish/`
 - Кнопка Save активна только при:
   - наличии изменений (dirty),
   - валидном JSON,
@@ -126,7 +128,7 @@
 Иногда важно понять “что именно будет выполнено” и “откуда система берёт значения”, не раскрывая секреты.
 Для этого UI показывает **Execution Plan** и **Binding Provenance** (только для staff):
 
-- **/settings/action-catalog**: кнопка **Preview** у действия показывает план выполнения и provenance (в JSON).
+- **/templates?surface=action_catalog**: кнопка **Preview** у действия показывает план выполнения и provenance (в JSON).
 - **/databases**:
   - Для staff перед запуском действия расширений показывается подтверждение с preview (например `argv_masked`).
 - **/operations** (details):

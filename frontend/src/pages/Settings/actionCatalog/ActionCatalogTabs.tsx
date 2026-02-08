@@ -188,7 +188,7 @@ export function ActionCatalogTabs({
             readOnly={false}
             enableFormat
             enableCopy
-            path="ui.action_catalog"
+            path={actionCatalogKey}
           />
 
           {serverRaw !== null && (
@@ -201,7 +201,7 @@ export function ActionCatalogTabs({
               readOnly
               enableFormat={false}
               enableCopy
-              path="ui.action_catalog.server"
+              path={`${actionCatalogKey}.server`}
             />
           )}
         </Space>
@@ -234,4 +234,3 @@ export function ActionCatalogTabs({
     />
   )
 }
-

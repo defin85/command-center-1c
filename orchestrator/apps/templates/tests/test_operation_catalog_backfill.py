@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
-from apps.runtime_settings.action_catalog import UI_ACTION_CATALOG_KEY
 from apps.runtime_settings.models import RuntimeSetting, TenantRuntimeSettingOverride
 from apps.templates.models import (
     OperationDefinition,
@@ -43,31 +40,24 @@ def test_backfill_templates_creates_unified_definition_and_exposure():
 
 
 @pytest.mark.django_db
-def test_backfill_action_catalog_deduplicates_definitions_per_scope():
+def test_backfill_ignores_legacy_ui_action_catalog_payloads():
     OperationTemplate.objects.all().delete()
     OperationDefinition.objects.all().delete()
     OperationExposure.objects.all().delete()
     OperationMigrationIssue.objects.all().delete()
 
     RuntimeSetting.objects.update_or_create(
-        key=UI_ACTION_CATALOG_KEY,
+        key="ui.action_catalog",
         defaults={
             "value": {
                 "catalog_version": 1,
                 "extensions": {
                     "actions": [
                         {
-                            "id": "extensions.list.1",
+                            "id": "extensions.list.legacy",
                             "capability": "extensions.list",
-                            "label": "List 1",
+                            "label": "Legacy list",
                             "contexts": ["database_card"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "infobase.extension.list"},
-                        },
-                        {
-                            "id": "extensions.list.2",
-                            "capability": "extensions.list",
-                            "label": "List 2",
-                            "contexts": ["bulk_page"],
                             "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "infobase.extension.list"},
                         },
                     ]
@@ -79,7 +69,7 @@ def test_backfill_action_catalog_deduplicates_definitions_per_scope():
     tenant = Tenant.objects.create(slug="tenant-backfill", name="Tenant Backfill")
     TenantRuntimeSettingOverride.objects.update_or_create(
         tenant=tenant,
-        key=UI_ACTION_CATALOG_KEY,
+        key="ui.action_catalog",
         defaults={
             "status": TenantRuntimeSettingOverride.STATUS_PUBLISHED,
             "value": {
@@ -87,11 +77,11 @@ def test_backfill_action_catalog_deduplicates_definitions_per_scope():
                 "extensions": {
                     "actions": [
                         {
-                            "id": "extensions.list.tenant",
-                            "capability": "extensions.list",
-                            "label": "Tenant List",
-                            "contexts": ["database_card"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "infobase.extension.list"},
+                            "id": "extensions.sync.legacy",
+                            "capability": "extensions.sync",
+                            "label": "Legacy sync",
+                            "contexts": ["bulk_page"],
+                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "infobase.extension.update"},
                         },
                     ]
                 },
@@ -101,66 +91,6 @@ def test_backfill_action_catalog_deduplicates_definitions_per_scope():
 
     stats = run_unified_operation_catalog_backfill()
 
-    assert stats.actions_processed == 3
-    assert OperationExposure.objects.filter(surface=OperationExposure.SURFACE_ACTION_CATALOG).count() == 3
-    # Global actions share one definition; tenant override keeps isolated scope definition.
-    assert OperationDefinition.objects.filter(tenant_scope="global").count() == 1
-    assert OperationDefinition.objects.filter(tenant_scope=f"tenant:{tenant.id}").count() == 1
-
-
-@pytest.mark.django_db
-def test_backfill_set_flags_invalid_binding_marked_invalid(monkeypatch):
-    OperationTemplate.objects.all().delete()
-    OperationDefinition.objects.all().delete()
-    OperationExposure.objects.all().delete()
-    OperationMigrationIssue.objects.all().delete()
-
-    RuntimeSetting.objects.update_or_create(
-        key=UI_ACTION_CATALOG_KEY,
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "extensions.set_flags.bad",
-                            "capability": "extensions.set_flags",
-                            "label": "Set flags bad",
-                            "contexts": ["database_card"],
-                            "executor": {
-                                "kind": "ibcmd_cli",
-                                "driver": "ibcmd",
-                                "command_id": "infobase.extension.update",
-                            },
-                        },
-                    ]
-                },
-            }
-        },
-    )
-
-    monkeypatch.setattr(
-        "apps.templates.operation_catalog_backfill.resolve_driver_catalog_versions",
-        lambda _driver: SimpleNamespace(base_version=1, overrides_version=1),
-    )
-    monkeypatch.setattr(
-        "apps.templates.operation_catalog_backfill.get_effective_driver_catalog",
-        lambda **_kwargs: SimpleNamespace(
-            catalog={
-                "commands_by_id": {
-                    "infobase.extension.update": {
-                        "params_by_name": {
-                            "name": {"type": "string"},
-                        }
-                    }
-                }
-            }
-        ),
-    )
-
-    run_unified_operation_catalog_backfill()
-
-    exposure = OperationExposure.objects.get(alias="extensions.set_flags.bad")
-    assert exposure.status == OperationExposure.STATUS_INVALID
-    issue = OperationMigrationIssue.objects.get(exposure=exposure)
-    assert issue.code == "INVALID_SET_FLAGS_TARGET_BINDING"
+    assert stats.actions_processed == 0
+    assert stats.issues_created == 0
+    assert OperationExposure.objects.filter(surface=OperationExposure.SURFACE_ACTION_CATALOG).count() == 0

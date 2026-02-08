@@ -4,6 +4,7 @@ import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
+from apps.runtime_settings.models import TenantRuntimeSettingOverride
 from apps.tenancy.models import Tenant
 from apps.templates.models import OperationMigrationIssue
 
@@ -40,6 +41,38 @@ def test_ui_action_catalog_runtime_setting_is_removed(staff_client):
     )
     assert resp_override.status_code == 404
     assert resp_override.json()["error"]["code"] == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+def test_runtime_overrides_list_excludes_decommissioned_keys(staff_client):
+    tenant = Tenant.objects.create(slug="tenant-runtime-overrides", name="Tenant Runtime Overrides")
+
+    TenantRuntimeSettingOverride.objects.update_or_create(
+        tenant=tenant,
+        key="ui.operations.max_live_streams",
+        defaults={
+            "status": TenantRuntimeSettingOverride.STATUS_PUBLISHED,
+            "value": 17,
+        },
+    )
+    TenantRuntimeSettingOverride.objects.update_or_create(
+        tenant=tenant,
+        key="ui.action_catalog",
+        defaults={
+            "status": TenantRuntimeSettingOverride.STATUS_PUBLISHED,
+            "value": {"catalog_version": 1, "extensions": {"actions": []}},
+        },
+    )
+
+    resp = staff_client.get(
+        "/api/v2/settings/runtime-overrides/",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    keys = [row["key"] for row in payload]
+    assert "ui.operations.max_live_streams" in keys
+    assert "ui.action_catalog" not in keys
 
 
 @pytest.mark.django_db

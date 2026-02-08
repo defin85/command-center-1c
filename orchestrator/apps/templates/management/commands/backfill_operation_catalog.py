@@ -8,7 +8,7 @@ from apps.templates.operation_catalog_backfill import run_unified_operation_cata
 
 
 class Command(BaseCommand):
-    help = "Backfill unified operation catalog from OperationTemplate and ui.action_catalog sources."
+    help = "Backfill unified operation catalog from OperationTemplate projection."
 
     def add_arguments(self, parser):
         parser.add_argument(
