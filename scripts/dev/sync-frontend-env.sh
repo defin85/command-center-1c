@@ -23,7 +23,7 @@ BASE_HOST="${CC1C_BASE_HOST:-localhost}"
 extra_lines=""
 if [[ -f "$FRONTEND_ENV" ]]; then
     # Keep any user-provided overrides (e.g., VITE_API_URL) intact.
-    extra_lines=$(grep -v -E '^(VITE_BASE_HOST)=' "$FRONTEND_ENV" || true)
+    extra_lines=$(tr -d '\000' < "$FRONTEND_ENV" | grep -a -v -E '^(VITE_BASE_HOST)=' || true)
 fi
 
 cat > "$FRONTEND_ENV" <<EOF

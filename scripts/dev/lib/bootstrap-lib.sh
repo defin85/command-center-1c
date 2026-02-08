@@ -908,7 +908,20 @@ run_django_migrations() {
 
         if [[ $migrate_result -eq 0 ]]; then
             # Собрать статические файлы (требуется для Daphne/ASGI с whitenoise)
-            python manage.py collectstatic --noinput -v 0
+            local manifest_file="$PROJECT_ROOT/orchestrator/staticfiles/staticfiles.json"
+            if [[ -f "$manifest_file" && ! -s "$manifest_file" ]]; then
+                log_warning "Найден пустой staticfiles manifest, удаляю перед collectstatic..."
+                rm -f "$manifest_file"
+            fi
+            if ! python manage.py collectstatic --noinput -v 0; then
+                if [[ -f "$manifest_file" ]]; then
+                    log_warning "collectstatic не прошел, удаляю поврежденный manifest и повторяю..."
+                    rm -f "$manifest_file"
+                    python manage.py collectstatic --noinput -v 0
+                else
+                    exit 1
+                fi
+            fi
             migrate_result=$?
         fi
 

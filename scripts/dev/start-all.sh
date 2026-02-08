@@ -154,10 +154,23 @@ set -a
 source "$PROJECT_ROOT/.env.local"
 set +a
 
+# Sync frontend/.env.local for standalone runs (keeps VITE_* consistent)
+# Do this before loading frontend env to auto-heal malformed files.
+if [[ -x "$PROJECT_ROOT/scripts/dev/sync-frontend-env.sh" ]]; then
+    "$PROJECT_ROOT/scripts/dev/sync-frontend-env.sh" >/dev/null 2>&1 || true
+fi
+
 # Загрузить frontend env (доп. VITE_* переменные, например Jaeger)
 if [ -f "$PROJECT_ROOT/frontend/.env.local" ]; then
     set -a
-    source "$PROJECT_ROOT/frontend/.env.local"
+    if ! source <(
+        tr -d '\000' < "$PROJECT_ROOT/frontend/.env.local" \
+        | grep -a -v '^#' \
+        | grep -a -v '^[[:space:]]*$' \
+        | sed 's/\r$//'
+    ); then
+        echo -e "${YELLOW}⚠️  Не удалось загрузить frontend/.env.local, продолжаю без frontend overrides${NC}"
+    fi
     set +a
 fi
 
@@ -173,11 +186,6 @@ if [[ -n "${CC1C_BASE_HOST:-}" ]]; then
     fi
     # Default: same-origin (dev via Vite proxy, prod via reverse proxy).
     # Keep VITE_API_URL / VITE_WS_HOST unset unless explicitly provided to enable prod-like mode.
-fi
-
-# Sync frontend/.env.local for standalone runs (keeps VITE_* consistent)
-if [[ -x "$PROJECT_ROOT/scripts/dev/sync-frontend-env.sh" ]]; then
-    "$PROJECT_ROOT/scripts/dev/sync-frontend-env.sh" >/dev/null 2>&1 || true
 fi
 
 ##############################################################################
@@ -479,7 +487,20 @@ fi
 
 # Собрать статические файлы (требуется для Daphne/ASGI с whitenoise)
 echo -e "${CYAN}   Сборка статических файлов...${NC}"
-python manage.py collectstatic --noinput -v 0
+manifest_file="$PROJECT_ROOT/orchestrator/staticfiles/staticfiles.json"
+if [[ -f "$manifest_file" && ! -s "$manifest_file" ]]; then
+    echo -e "${YELLOW}⚠️  Найден пустой staticfiles manifest, удаляю перед collectstatic...${NC}"
+    rm -f "$manifest_file"
+fi
+if ! python manage.py collectstatic --noinput -v 0; then
+    if [[ -f "$manifest_file" ]]; then
+        echo -e "${YELLOW}⚠️  collectstatic не прошел, удаляю поврежденный manifest и пробую повторно...${NC}"
+        rm -f "$manifest_file"
+        python manage.py collectstatic --noinput -v 0
+    else
+        exit 1
+    fi
+fi
 echo -e "${GREEN}✓ Статика собрана${NC}"
 echo ""
 
