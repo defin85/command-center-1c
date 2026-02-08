@@ -1,12 +1,92 @@
-import { test, expect, type Page, type Route } from '@playwright/test'
+import { expect, test, type Page, type Route } from '@playwright/test'
 
 type AnyRecord = Record<string, unknown>
+
+type MockCounters = {
+  operationCatalogExposuresGets?: number
+  operationCatalogActionExposuresGets?: number
+  operationCatalogDefinitionsGets?: number
+  operationExposureHintsGets?: number
+  upsertCalls?: number
+  publishCalls?: number
+  deleteCalls?: number
+  legacyTemplateCalls?: number
+  legacyActionHintsCalls?: number
+}
+
+type MockUser = {
+  id: number
+  username: string
+  is_staff: boolean
+}
+
+type MockState = {
+  me?: MockUser
+  templates?: Array<{
+    id?: string
+    name: string
+    description?: string
+    is_active?: boolean
+    command_id?: string
+  }>
+  actions?: Array<{
+    id: string
+    label: string
+    description?: string
+    capability?: string
+    contexts?: string[]
+    is_active?: boolean
+    status?: string
+    command_id?: string
+  }>
+  callCounters?: MockCounters
+}
 
 declare global {
   interface Window {
     __CC1C_ENV__?: Record<string, string>
   }
 }
+
+const MOCK_TIMESTAMP = '2026-01-01T00:00:00Z'
+
+const isPlainObject = (value: unknown): value is AnyRecord => (
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+)
+
+const deepClone = <T,>(value: T): T => {
+  try {
+    return JSON.parse(JSON.stringify(value)) as T
+  } catch (_err) {
+    return value
+  }
+}
+
+const parseIntParam = (raw: string | null, fallback: number, min: number, max: number): number => {
+  const parsed = Number.parseInt(String(raw ?? ''), 10)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.min(max, Math.max(min, parsed))
+}
+
+const parseJsonBody = (raw: string | null): AnyRecord => {
+  try {
+    const parsed = JSON.parse(raw || '{}') as unknown
+    return isPlainObject(parsed) ? parsed : {}
+  } catch (_err) {
+    return {}
+  }
+}
+
+const slugify = (value: string): string => {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return normalized || 'template'
+}
+
+const buildMockUuid = (seq: number): string => `00000000-0000-4000-8000-${String(seq).padStart(12, '0')}`
 
 async function fulfillJson(route: Route, data: unknown, status = 200) {
   await route.fulfill({
@@ -28,80 +108,18 @@ async function setupAuth(page: Page) {
   })
 }
 
-const UI_ACTION_CATALOG_KEY = 'ui.action_catalog'
-const MOCK_TIMESTAMP = '2026-01-01T00:00:00Z'
-
-const isPlainObject = (value: unknown): value is AnyRecord => (
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-)
-
-const deepClone = <T,>(value: T): T => {
-  try {
-    return JSON.parse(JSON.stringify(value)) as T
-  } catch (_err) {
-    return value
-  }
+async function clickSurfaceFilter(page: Page, label: 'Templates' | 'Action Catalog') {
+  await page.locator('.ant-segmented').first().getByText(label, { exact: true }).click()
 }
 
-const buildMockUuid = (seq: number): string => `00000000-0000-4000-8000-${String(seq).padStart(12, '0')}`
+async function setupApiMocks(page: Page, state: MockState) {
+  const counters: MockCounters = state.callCounters ?? {}
+  state.callCounters = counters
 
-const parseIntParam = (raw: string | null, fallback: number, min: number, max: number): number => {
-  const parsed = Number.parseInt(String(raw ?? ''), 10)
-  if (!Number.isFinite(parsed)) return fallback
-  return Math.min(max, Math.max(min, parsed))
-}
-
-const buildValidationErrors = (messages: string[] | undefined): AnyRecord[] => {
-  const source = Array.isArray(messages) && messages.length > 0
-    ? messages
-    : ['extensions.actions[0].executor.command_id: unknown command_id']
-  return source.map((message) => {
-    const text = String(message)
-    const withPath = /^extensions\.actions\[\d+\]\.([^:]+):\s*(.+)$/.exec(text)
-    if (withPath) {
-      return { path: withPath[1], code: 'VALIDATION_ERROR', message: withPath[2] }
-    }
-    const noPath = /^extensions\.actions\[\d+\]:\s*(.+)$/.exec(text)
-    if (noPath) {
-      return { path: '', code: 'VALIDATION_ERROR', message: noPath[1] }
-    }
-    return { path: '', code: 'VALIDATION_ERROR', message: text }
-  })
-}
-
-const parseJsonBody = (raw: string | null): AnyRecord => {
-  try {
-    const parsed = JSON.parse(raw || '{}') as unknown
-    return isPlainObject(parsed) ? parsed : {}
-  } catch (_err) {
-    return {}
-  }
-}
-
-async function setupApiMocks(
-  page: Page,
-  state: {
-    runtimeSettings: AnyRecord[]
-    templates?: AnyRecord[]
-    patchFailCount?: number
-    patchFailMessages?: string[]
-    editorHints?: AnyRecord
-    me?: { id: number; username: string; is_staff: boolean }
-    callCounters?: {
-      operationCatalogExposuresGets?: number
-      operationCatalogActionExposuresGets?: number
-      actionCatalogEditorHintsGets?: number
-    }
-  }
-) {
   const definitions: AnyRecord[] = []
   const exposures: AnyRecord[] = []
-  const templates: AnyRecord[] = Array.isArray(state.templates)
-    ? state.templates.map((item) => deepClone(item))
-    : []
   let definitionSeq = 1
   let exposureSeq = 10_000
-  let templateSeq = 1
 
   const createDefinition = (payload: {
     tenant_scope?: string
@@ -130,24 +148,26 @@ async function setupApiMocks(
   const createExposure = (payload: {
     id?: string
     definition_id: string
-    surface: string
+    surface: 'template' | 'action_catalog' | string
     alias: string
-    tenant_id?: string | null
     name: string
     description?: string
-    is_active?: boolean
     capability?: string
     contexts?: string[]
+    is_active?: boolean
     display_order?: number
     capability_config?: AnyRecord
     status?: string
+    operation_type?: string
+    target_entity?: string
+    template_data?: AnyRecord
   }): AnyRecord => {
     const exposure: AnyRecord = {
       id: payload.id ?? buildMockUuid(exposureSeq),
       definition_id: payload.definition_id,
       surface: payload.surface,
       alias: payload.alias,
-      tenant_id: payload.tenant_id ?? null,
+      tenant_id: null,
       name: payload.name,
       description: payload.description ?? '',
       is_active: payload.is_active !== false,
@@ -156,6 +176,9 @@ async function setupApiMocks(
       display_order: typeof payload.display_order === 'number' ? payload.display_order : 0,
       capability_config: isPlainObject(payload.capability_config) ? deepClone(payload.capability_config) : {},
       status: payload.status ?? 'draft',
+      operation_type: typeof payload.operation_type === 'string' ? payload.operation_type : undefined,
+      target_entity: typeof payload.target_entity === 'string' ? payload.target_entity : undefined,
+      template_data: isPlainObject(payload.template_data) ? deepClone(payload.template_data) : undefined,
       created_at: MOCK_TIMESTAMP,
       updated_at: MOCK_TIMESTAMP,
     }
@@ -164,94 +187,98 @@ async function setupApiMocks(
     return exposure
   }
 
-  const createTemplate = (payload: {
+  const seedTemplateExposure = (template: {
     id?: string
     name: string
     description?: string
-    operation_type?: string
-    target_entity?: string
-    template_data?: AnyRecord
     is_active?: boolean
-  }): AnyRecord => {
-    const id = payload.id && payload.id.trim() ? payload.id.trim() : `tpl-custom-${templateSeq}`
-    templateSeq += 1
-    const row: AnyRecord = {
-      id,
-      name: payload.name,
-      description: payload.description ?? '',
-      operation_type: payload.operation_type ?? 'designer_cli',
-      target_entity: payload.target_entity ?? 'infobase',
-      template_data: isPlainObject(payload.template_data) ? deepClone(payload.template_data) : {},
-      is_active: payload.is_active !== false,
-      created_at: MOCK_TIMESTAMP,
-      updated_at: MOCK_TIMESTAMP,
+    command_id?: string
+  }) => {
+    const alias = typeof template.id === 'string' && template.id.trim()
+      ? template.id.trim()
+      : `tpl-${slugify(template.name)}`
+    const templateData: AnyRecord = {
+      kind: 'designer_cli',
+      driver: 'cli',
+      mode: 'guided',
+      command_id: template.command_id ?? 'infobase.extension.list',
+      params: {},
+      resolved_args: [],
+      stdin: '',
     }
-    templates.push(row)
-    return row
-  }
-
-  const splitExecutorPayload = (executorRaw: unknown): { definition_payload: AnyRecord; capability_config: AnyRecord } => {
-    const executor = isPlainObject(executorRaw) ? deepClone(executorRaw) : {}
-    const capabilityConfig: AnyRecord = {}
-    const fixed = isPlainObject(executor.fixed) ? deepClone(executor.fixed) : null
-    if (fixed && isPlainObject(fixed)) {
-      const restFixed: AnyRecord = {}
-      for (const [key, value] of Object.entries(fixed)) {
-        if (key === 'apply_mask') {
-          capabilityConfig.apply_mask = value
-        } else {
-          restFixed[key] = value
-        }
-      }
-      if (Object.keys(restFixed).length > 0) capabilityConfig.fixed = restFixed
-    }
-    if (isPlainObject(executor.target_binding)) {
-      capabilityConfig.target_binding = deepClone(executor.target_binding)
-    }
-    delete executor.fixed
-    delete executor.target_binding
-    return { definition_payload: executor, capability_config: capabilityConfig }
-  }
-
-  const runtimeSetting = state.runtimeSettings.find((item) => item.key === UI_ACTION_CATALOG_KEY)
-  const runtimeValue = isPlainObject(runtimeSetting?.value) ? runtimeSetting.value : {}
-  const runtimeExtensions = isPlainObject(runtimeValue.extensions) ? runtimeValue.extensions : {}
-  const runtimeActions = Array.isArray(runtimeExtensions.actions) ? runtimeExtensions.actions : []
-
-  for (let idx = 0; idx < runtimeActions.length; idx += 1) {
-    const action = runtimeActions[idx]
-    if (!isPlainObject(action)) continue
-    const alias = typeof action.id === 'string' && action.id.trim() ? action.id.trim() : `action.${idx + 1}`
-    const label = typeof action.label === 'string' && action.label.trim() ? action.label.trim() : alias
-    const contexts = Array.isArray(action.contexts)
-      ? action.contexts.filter((item): item is string => typeof item === 'string')
-      : ['database_card']
-    const { definition_payload, capability_config } = splitExecutorPayload(action.executor)
-    const definitionKind = typeof definition_payload.kind === 'string' && definition_payload.kind
-      ? definition_payload.kind
-      : 'ibcmd_cli'
     const definition = createDefinition({
       tenant_scope: 'global',
-      executor_kind: definitionKind,
-      executor_payload: definition_payload,
+      executor_kind: 'designer_cli',
+      executor_payload: {
+        kind: 'designer_cli',
+        driver: 'cli',
+        operation_type: 'designer_cli',
+        target_entity: 'infobase',
+        template_data: deepClone(templateData),
+      },
       contract_version: 1,
       status: 'active',
     })
+    createExposure({
+      definition_id: String(definition.id),
+      surface: 'template',
+      alias,
+      name: template.name,
+      description: template.description ?? '',
+      is_active: template.is_active !== false,
+      capability: 'templates.designer_cli',
+      contexts: [],
+      display_order: 0,
+      status: template.is_active === false ? 'draft' : 'published',
+      operation_type: 'designer_cli',
+      target_entity: 'infobase',
+      template_data: templateData,
+    })
+  }
 
+  const seedActionExposure = (action: {
+    id: string
+    label: string
+    description?: string
+    capability?: string
+    contexts?: string[]
+    is_active?: boolean
+    status?: string
+    command_id?: string
+  }) => {
+    const definition = createDefinition({
+      tenant_scope: 'global',
+      executor_kind: 'ibcmd_cli',
+      executor_payload: {
+        kind: 'ibcmd_cli',
+        driver: 'ibcmd',
+        command_id: action.command_id ?? 'infobase.extension.list',
+        params: {},
+      },
+      contract_version: 1,
+      status: 'active',
+    })
     createExposure({
       definition_id: String(definition.id),
       surface: 'action_catalog',
-      alias,
-      tenant_id: null,
-      name: label,
-      description: typeof action.description === 'string' ? action.description : '',
-      is_active: true,
-      capability: typeof action.capability === 'string' ? action.capability : '',
-      contexts,
-      display_order: idx,
-      capability_config,
-      status: 'published',
+      alias: action.id,
+      name: action.label,
+      description: action.description ?? '',
+      capability: action.capability ?? '',
+      contexts: Array.isArray(action.contexts) && action.contexts.length > 0
+        ? action.contexts
+        : ['database_card'],
+      is_active: action.is_active !== false,
+      display_order: 0,
+      status: action.status ?? 'published',
     })
+  }
+
+  for (const template of state.templates ?? []) {
+    seedTemplateExposure(template)
+  }
+  for (const action of state.actions ?? []) {
+    seedActionExposure(action)
   }
 
   await page.route('**/api/v2/**', async (route) => {
@@ -259,6 +286,21 @@ async function setupApiMocks(
     const url = new URL(request.url())
     const path = url.pathname
     const method = request.method()
+
+    if (
+      path === '/api/v2/templates/list-templates/'
+      || path === '/api/v2/templates/create-template/'
+      || path === '/api/v2/templates/update-template/'
+      || path === '/api/v2/templates/delete-template/'
+    ) {
+      counters.legacyTemplateCalls = (counters.legacyTemplateCalls ?? 0) + 1
+      return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND', message: 'Not found' } }, 404)
+    }
+
+    if (path === '/api/v2/ui/action-catalog/editor-hints/') {
+      counters.legacyActionHintsCalls = (counters.legacyActionHintsCalls ?? 0) + 1
+      return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND', message: 'Not found' } }, 404)
+    }
 
     if (method === 'GET' && path === '/api/v2/system/me/') {
       return fulfillJson(route, state.me ?? { id: 1, username: 'admin', is_staff: true })
@@ -275,21 +317,12 @@ async function setupApiMocks(
     if (method === 'GET' && path === '/api/v2/tenants/list-my-tenants/') {
       return fulfillJson(route, {
         active_tenant_id: null,
-        tenants: [
-          { id: 't1', slug: 't1', name: 'Tenant 1', role: 'owner' },
-        ],
+        tenants: [{ id: 'tenant-1', slug: 'tenant-1', name: 'Tenant 1', role: 'owner' }],
       })
     }
 
     if (method === 'POST' && path === '/api/v2/tenants/set-active/') {
-      let payload: AnyRecord = {}
-      try {
-        payload = JSON.parse(request.postData() || '{}') as AnyRecord
-      } catch (_err) {
-        payload = {}
-      }
-      const tenantId = typeof payload.tenant_id === 'string' ? payload.tenant_id : 't1'
-      return fulfillJson(route, { active_tenant_id: tenantId })
+      return fulfillJson(route, { active_tenant_id: 'tenant-1' })
     }
 
     if (method === 'GET' && path === '/api/v2/settings/command-schemas/audit/') {
@@ -297,155 +330,81 @@ async function setupApiMocks(
     }
 
     if (method === 'GET' && (path === '/api/v2/settings/runtime/' || path === '/api/v2/settings/runtime-effective/')) {
-      return fulfillJson(route, { settings: state.runtimeSettings })
-    }
-
-    if (method === 'GET' && path === '/api/v2/templates/list-templates/') {
-      const search = (url.searchParams.get('search') || '').trim().toLowerCase()
-      const limit = parseIntParam(url.searchParams.get('limit'), 50, 1, 1000)
-      const offset = parseIntParam(url.searchParams.get('offset'), 0, 0, 100000)
-      let rows = templates.slice()
-      if (search) {
-        rows = rows.filter((row) => (
-          String(row.name || '').toLowerCase().includes(search)
-          || String(row.description || '').toLowerCase().includes(search)
-          || String(row.id || '').toLowerCase().includes(search)
-        ))
-      }
-      const total = rows.length
-      const paged = rows.slice(offset, offset + limit)
-      return fulfillJson(route, { templates: paged, count: paged.length, total })
-    }
-
-    if (method === 'POST' && path === '/api/v2/templates/create-template/') {
-      const payload = parseJsonBody(request.postData())
-      const name = typeof payload.name === 'string' ? payload.name.trim() : ''
-      if (!name) {
-        return fulfillJson(route, { success: false, error: { code: 'VALIDATION_ERROR', message: 'name is required' } }, 400)
-      }
-      const created = createTemplate({
-        id: typeof payload.id === 'string' ? payload.id : undefined,
-        name,
-        description: typeof payload.description === 'string' ? payload.description : '',
-        operation_type: typeof payload.operation_type === 'string' ? payload.operation_type : 'designer_cli',
-        target_entity: typeof payload.target_entity === 'string' ? payload.target_entity : 'infobase',
-        template_data: isPlainObject(payload.template_data) ? payload.template_data : {},
-        is_active: payload.is_active !== false,
-      })
-      return fulfillJson(route, { template: created })
-    }
-
-    if (method === 'POST' && path === '/api/v2/templates/update-template/') {
-      const payload = parseJsonBody(request.postData())
-      const templateId = typeof payload.id === 'string' ? payload.id.trim() : ''
-      const row = templates.find((item) => String(item.id) === templateId)
-      if (!row) {
-        return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND', message: 'Template not found' } }, 404)
-      }
-      row.name = typeof payload.name === 'string' ? payload.name : row.name
-      row.description = typeof payload.description === 'string' ? payload.description : row.description
-      row.operation_type = typeof payload.operation_type === 'string' ? payload.operation_type : row.operation_type
-      row.target_entity = typeof payload.target_entity === 'string' ? payload.target_entity : row.target_entity
-      row.template_data = isPlainObject(payload.template_data) ? deepClone(payload.template_data) : row.template_data
-      row.is_active = payload.is_active !== false
-      row.updated_at = MOCK_TIMESTAMP
-      return fulfillJson(route, { template: row })
-    }
-
-    if (method === 'POST' && path === '/api/v2/templates/delete-template/') {
-      const payload = parseJsonBody(request.postData())
-      const templateId = typeof payload.template_id === 'string' ? payload.template_id.trim() : ''
-      const idx = templates.findIndex((item) => String(item.id) === templateId)
-      if (idx < 0) {
-        return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND', message: 'Template not found' } }, 404)
-      }
-      const [deleted] = templates.splice(idx, 1)
-      return fulfillJson(route, { template: deleted })
+      return fulfillJson(route, { settings: [] })
     }
 
     if (method === 'POST' && path === '/api/v2/templates/sync-from-registry/') {
-      return fulfillJson(route, { created: 0, updated: 0, unchanged: templates.length, message: 'Sync completed' })
-    }
-
-    if (method === 'GET' && path === '/api/v2/operation-catalog/definitions/') {
-      const tenantScope = url.searchParams.get('tenant_scope')
-      const executorKind = url.searchParams.get('executor_kind')
-      const status = url.searchParams.get('status')
-      const q = (url.searchParams.get('q') || '').trim().toLowerCase()
-      const limit = parseIntParam(url.searchParams.get('limit'), 50, 1, 1000)
-      const offset = parseIntParam(url.searchParams.get('offset'), 0, 0, 100000)
-
-      let rows = definitions.slice()
-      if (tenantScope) rows = rows.filter((row) => row.tenant_scope === tenantScope)
-      if (executorKind) rows = rows.filter((row) => row.executor_kind === executorKind)
-      if (status) rows = rows.filter((row) => row.status === status)
-      if (q) {
-        const matchedDefinitionIds = new Set(
-          exposures
-            .filter((row) => (
-              String(row.alias || '').toLowerCase().includes(q)
-              || String(row.name || '').toLowerCase().includes(q)
-              || String(row.capability || '').toLowerCase().includes(q)
-            ))
-            .map((row) => String(row.definition_id))
-        )
-        rows = rows.filter((row) => matchedDefinitionIds.has(String(row.id)))
-      }
-      const total = rows.length
-      const paged = rows.slice(offset, offset + limit)
-      return fulfillJson(route, { definitions: paged, count: paged.length, total })
+      const templateCount = exposures.filter((row) => row.surface === 'template').length
+      return fulfillJson(route, {
+        created: 0,
+        updated: 0,
+        unchanged: templateCount,
+        message: 'Sync completed',
+      })
     }
 
     if (method === 'GET' && path === '/api/v2/operation-catalog/exposures/') {
-      state.callCounters = state.callCounters ?? {}
-      state.callCounters.operationCatalogExposuresGets = (state.callCounters.operationCatalogExposuresGets ?? 0) + 1
+      counters.operationCatalogExposuresGets = (counters.operationCatalogExposuresGets ?? 0) + 1
       const surface = url.searchParams.get('surface')
       if (surface === 'action_catalog') {
-        state.callCounters.operationCatalogActionExposuresGets = (state.callCounters.operationCatalogActionExposuresGets ?? 0) + 1
+        counters.operationCatalogActionExposuresGets = (counters.operationCatalogActionExposuresGets ?? 0) + 1
       }
-      const tenantId = url.searchParams.get('tenant_id')
-      const capability = url.searchParams.get('capability')
-      const status = url.searchParams.get('status')
       const alias = url.searchParams.get('alias')
+      const status = url.searchParams.get('status')
+      const capability = url.searchParams.get('capability')
       const limit = parseIntParam(url.searchParams.get('limit'), 50, 1, 1000)
-      const offset = parseIntParam(url.searchParams.get('offset'), 0, 0, 100000)
+      const offset = parseIntParam(url.searchParams.get('offset'), 0, 0, 100_000)
 
       let rows = exposures.slice()
-      if (surface) rows = rows.filter((row) => row.surface === surface)
-      if (tenantId) rows = rows.filter((row) => row.tenant_id === tenantId || row.tenant_id === null)
-      if (capability) rows = rows.filter((row) => row.capability === capability)
-      if (status) rows = rows.filter((row) => row.status === status)
-      if (alias) rows = rows.filter((row) => row.alias === alias)
-      rows.sort((a, b) => {
-        const bySurface = String(a.surface || '').localeCompare(String(b.surface || ''))
+      if (surface) rows = rows.filter((row) => String(row.surface) === surface)
+      if (alias) rows = rows.filter((row) => String(row.alias) === alias)
+      if (status) rows = rows.filter((row) => String(row.status) === status)
+      if (capability) rows = rows.filter((row) => String(row.capability) === capability)
+
+      rows.sort((left, right) => {
+        const bySurface = String(left.surface).localeCompare(String(right.surface))
         if (bySurface !== 0) return bySurface
-        const byOrder = Number(a.display_order ?? 0) - Number(b.display_order ?? 0)
+        const byOrder = Number(left.display_order ?? 0) - Number(right.display_order ?? 0)
         if (byOrder !== 0) return byOrder
-        return String(a.name || '').localeCompare(String(b.name || ''))
+        return String(left.alias).localeCompare(String(right.alias))
       })
 
       const total = rows.length
-      const paged = rows.slice(offset, offset + limit)
+      const paged = rows.slice(offset, offset + limit).map((item) => deepClone(item))
       return fulfillJson(route, { exposures: paged, count: paged.length, total })
     }
 
-    if (method === 'POST' && path === '/api/v2/operation-catalog/exposures/') {
-      if ((state.patchFailCount ?? 0) > 0) {
-        state.patchFailCount = (state.patchFailCount ?? 0) - 1
-        return fulfillJson(route, { validation_errors: buildValidationErrors(state.patchFailMessages) }, 400)
-      }
+    if (method === 'GET' && path === '/api/v2/operation-catalog/definitions/') {
+      counters.operationCatalogDefinitionsGets = (counters.operationCatalogDefinitionsGets ?? 0) + 1
+      const limit = parseIntParam(url.searchParams.get('limit'), 50, 1, 1000)
+      const offset = parseIntParam(url.searchParams.get('offset'), 0, 0, 100_000)
+      const total = definitions.length
+      const paged = definitions.slice(offset, offset + limit).map((item) => deepClone(item))
+      return fulfillJson(route, { definitions: paged, count: paged.length, total })
+    }
 
+    if (method === 'POST' && path === '/api/v2/operation-catalog/exposures/') {
+      counters.upsertCalls = (counters.upsertCalls ?? 0) + 1
       const payload = parseJsonBody(request.postData())
-      const exposurePayload = isPlainObject(payload.exposure) ? payload.exposure : null
-      if (!exposurePayload) {
-        return fulfillJson(route, { validation_errors: [{ path: 'exposure', code: 'REQUIRED', message: 'exposure is required' }] }, 400)
+      const exposurePayload = isPlainObject(payload.exposure) ? payload.exposure : {}
+      const surface = typeof exposurePayload.surface === 'string' && exposurePayload.surface
+        ? exposurePayload.surface
+        : 'action_catalog'
+      const name = typeof exposurePayload.name === 'string' ? exposurePayload.name.trim() : ''
+      const description = typeof exposurePayload.description === 'string' ? exposurePayload.description : ''
+      let alias = typeof exposurePayload.alias === 'string' ? exposurePayload.alias.trim() : ''
+      if (!alias && surface === 'template') {
+        alias = `tpl-custom-${slugify(name || `template-${exposures.length + 1}`)}`
+      }
+      if (!alias) {
+        alias = `action.${exposures.length + 1}`
       }
 
       const rawDefinitionId = typeof payload.definition_id === 'string' ? payload.definition_id : null
-      let definition: AnyRecord | undefined
-      if (rawDefinitionId) {
-        definition = definitions.find((row) => String(row.id) === rawDefinitionId)
-      }
+      let definition = rawDefinitionId
+        ? definitions.find((item) => String(item.id) === rawDefinitionId)
+        : undefined
+
       if (!definition) {
         const definitionPayload = isPlainObject(payload.definition) ? payload.definition : {}
         const definitionExecutorPayload = isPlainObject(definitionPayload.executor_payload)
@@ -456,242 +415,165 @@ async function setupApiMocks(
           : (typeof definitionExecutorPayload.kind === 'string' && definitionExecutorPayload.kind
             ? definitionExecutorPayload.kind
             : 'ibcmd_cli')
+
         definition = createDefinition({
           tenant_scope: typeof definitionPayload.tenant_scope === 'string' && definitionPayload.tenant_scope
             ? definitionPayload.tenant_scope
             : 'global',
           executor_kind: definitionExecutorKind,
           executor_payload: definitionExecutorPayload,
-          contract_version: typeof definitionPayload.contract_version === 'number'
-            ? definitionPayload.contract_version
-            : 1,
+          contract_version: typeof definitionPayload.contract_version === 'number' ? definitionPayload.contract_version : 1,
           status: 'active',
         })
       }
 
       const rawExposureId = typeof payload.exposure_id === 'string' ? payload.exposure_id : null
-      const existing = rawExposureId
-        ? exposures.find((row) => String(row.id) === rawExposureId)
+      let exposure = rawExposureId
+        ? exposures.find((item) => String(item.id) === rawExposureId)
         : undefined
-      const nextAlias = typeof exposurePayload.alias === 'string' && exposurePayload.alias.trim()
-        ? exposurePayload.alias.trim()
-        : (existing ? String(existing.alias) : `action.${exposures.length + 1}`)
-      const nextName = typeof exposurePayload.name === 'string' && exposurePayload.name.trim()
-        ? exposurePayload.name.trim()
-        : nextAlias
-      const nextContexts = Array.isArray(exposurePayload.contexts)
-        ? exposurePayload.contexts.filter((item): item is string => typeof item === 'string')
-        : []
-      const nextCapabilityConfig = isPlainObject(exposurePayload.capability_config)
-        ? deepClone(exposurePayload.capability_config)
+      if (!exposure) {
+        exposure = exposures.find((item) => item.surface === surface && String(item.alias) === alias)
+      }
+
+      const operationType = String((definition.executor_payload as AnyRecord).operation_type ?? definition.executor_kind ?? '').trim() || 'designer_cli'
+      const targetEntity = String((definition.executor_payload as AnyRecord).target_entity ?? 'infobase').trim() || 'infobase'
+      const templateData = isPlainObject((definition.executor_payload as AnyRecord).template_data)
+        ? deepClone((definition.executor_payload as AnyRecord).template_data)
         : {}
 
-      const updatedExposure: AnyRecord = existing ?? createExposure({
-        id: rawExposureId ?? undefined,
-        definition_id: String(definition.id),
-        surface: typeof exposurePayload.surface === 'string' && exposurePayload.surface
-          ? exposurePayload.surface
-          : 'action_catalog',
-        alias: nextAlias,
-        tenant_id: typeof exposurePayload.tenant_id === 'string' ? exposurePayload.tenant_id : null,
-        name: nextName,
-        description: typeof exposurePayload.description === 'string' ? exposurePayload.description : '',
-        is_active: exposurePayload.is_active !== false,
-        capability: typeof exposurePayload.capability === 'string' ? exposurePayload.capability : '',
-        contexts: nextContexts,
-        display_order: typeof exposurePayload.display_order === 'number' ? exposurePayload.display_order : 0,
-        capability_config: nextCapabilityConfig,
-        status: typeof exposurePayload.status === 'string' ? exposurePayload.status : 'draft',
-      })
+      if (!exposure) {
+        exposure = createExposure({
+          definition_id: String(definition.id),
+          surface,
+          alias,
+          name: name || alias,
+          description,
+          capability: typeof exposurePayload.capability === 'string' ? exposurePayload.capability : '',
+          contexts: Array.isArray(exposurePayload.contexts)
+            ? exposurePayload.contexts.filter((item): item is string => typeof item === 'string')
+            : [],
+          is_active: exposurePayload.is_active !== false,
+          display_order: typeof exposurePayload.display_order === 'number' ? exposurePayload.display_order : 0,
+          capability_config: isPlainObject(exposurePayload.capability_config) ? exposurePayload.capability_config : {},
+          status: typeof exposurePayload.status === 'string' ? exposurePayload.status : 'draft',
+          operation_type: surface === 'template' ? operationType : undefined,
+          target_entity: surface === 'template' ? targetEntity : undefined,
+          template_data: surface === 'template' ? templateData : undefined,
+        })
+      }
 
-      updatedExposure.definition_id = String(definition.id)
-      updatedExposure.surface = typeof exposurePayload.surface === 'string' && exposurePayload.surface
-        ? exposurePayload.surface
-        : updatedExposure.surface
-      updatedExposure.alias = nextAlias
-      updatedExposure.name = nextName
-      updatedExposure.description = typeof exposurePayload.description === 'string'
-        ? exposurePayload.description
-        : (updatedExposure.description ?? '')
-      updatedExposure.is_active = exposurePayload.is_active !== false
-      updatedExposure.capability = typeof exposurePayload.capability === 'string'
+      exposure.definition_id = String(definition.id)
+      exposure.surface = surface
+      exposure.alias = alias
+      exposure.name = name || exposure.name || alias
+      exposure.description = description
+      exposure.is_active = exposurePayload.is_active !== false
+      exposure.capability = typeof exposurePayload.capability === 'string'
         ? exposurePayload.capability
-        : (updatedExposure.capability ?? '')
-      updatedExposure.contexts = nextContexts
-      updatedExposure.display_order = typeof exposurePayload.display_order === 'number'
-        ? exposurePayload.display_order
-        : Number(updatedExposure.display_order ?? 0)
-      updatedExposure.capability_config = nextCapabilityConfig
-      updatedExposure.status = typeof exposurePayload.status === 'string' ? exposurePayload.status : 'draft'
-      updatedExposure.updated_at = MOCK_TIMESTAMP
+        : (surface === 'template' ? `templates.${operationType}` : (String(exposure.capability ?? '')))
+      exposure.contexts = surface === 'template'
+        ? []
+        : (Array.isArray(exposurePayload.contexts)
+          ? exposurePayload.contexts.filter((item): item is string => typeof item === 'string')
+          : (Array.isArray(exposure.contexts) ? exposure.contexts : []))
+      exposure.display_order = surface === 'template'
+        ? 0
+        : (typeof exposurePayload.display_order === 'number' ? exposurePayload.display_order : Number(exposure.display_order ?? 0))
+      exposure.capability_config = isPlainObject(exposurePayload.capability_config)
+        ? deepClone(exposurePayload.capability_config)
+        : (isPlainObject(exposure.capability_config) ? deepClone(exposure.capability_config) : {})
+      exposure.status = typeof exposurePayload.status === 'string'
+        ? exposurePayload.status
+        : (surface === 'template' ? (exposure.is_active ? 'published' : 'draft') : String(exposure.status || 'draft'))
+      exposure.updated_at = MOCK_TIMESTAMP
 
-      return fulfillJson(route, { exposure: updatedExposure, definition })
+      if (surface === 'template') {
+        exposure.operation_type = operationType
+        exposure.target_entity = targetEntity
+        exposure.template_data = templateData
+      }
+
+      return fulfillJson(route, { exposure: deepClone(exposure), definition: deepClone(definition) })
     }
 
     if (method === 'POST' && /^\/api\/v2\/operation-catalog\/exposures\/[^/]+\/publish\/$/.test(path)) {
+      counters.publishCalls = (counters.publishCalls ?? 0) + 1
       const exposureId = decodeURIComponent(path.split('/').filter(Boolean)[4] ?? '')
-      const exposure = exposures.find((row) => String(row.id) === exposureId)
+      const exposure = exposures.find((item) => String(item.id) === exposureId)
       if (!exposure) {
-        return fulfillJson(route, {
-          success: false,
-          error: { code: 'NOT_FOUND', message: 'Exposure not found' },
-        }, 404)
+        return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND', message: 'Exposure not found' } }, 404)
       }
       exposure.status = 'published'
       exposure.updated_at = MOCK_TIMESTAMP
-      return fulfillJson(route, { published: true, exposure, validation_errors: [] })
+      return fulfillJson(route, { published: true, exposure: deepClone(exposure), validation_errors: [] })
     }
 
     if (method === 'DELETE' && /^\/api\/v2\/operation-catalog\/exposures\/[^/]+\/$/.test(path)) {
+      counters.deleteCalls = (counters.deleteCalls ?? 0) + 1
       const exposureId = decodeURIComponent(path.split('/').filter(Boolean)[4] ?? '')
-      const idx = exposures.findIndex((row) => String(row.id) === exposureId)
+      const idx = exposures.findIndex((item) => String(item.id) === exposureId)
       if (idx < 0) {
-        return fulfillJson(route, {
-          success: false,
-          error: { code: 'NOT_FOUND', message: 'Exposure not found' },
-        }, 404)
+        return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND', message: 'Exposure not found' } }, 404)
       }
 
       const [deleted] = exposures.splice(idx, 1)
       const definitionId = String(deleted.definition_id)
-      const hasLinked = exposures.some((row) => String(row.definition_id) === definitionId)
+      const hasLinked = exposures.some((item) => String(item.definition_id) === definitionId)
       if (!hasLinked) {
-        const defIdx = definitions.findIndex((row) => String(row.id) === definitionId)
-        if (defIdx >= 0) {
-          definitions.splice(defIdx, 1)
+        const definitionIdx = definitions.findIndex((item) => String(item.id) === definitionId)
+        if (definitionIdx >= 0) {
+          definitions.splice(definitionIdx, 1)
         }
       }
-      return fulfillJson(route, { deleted: true, exposure: deleted })
-    }
 
-    if (method === 'PATCH' && path.startsWith('/api/v2/settings/runtime/')) {
-      const key = decodeURIComponent(path.split('/').filter(Boolean).slice(-1)[0] ?? '')
-      const existing = state.runtimeSettings.find((item) => item.key === key)
-
-      const payload = parseJsonBody(request.postData())
-
-      if ((state.patchFailCount ?? 0) > 0) {
-        state.patchFailCount = (state.patchFailCount ?? 0) - 1
-        return fulfillJson(route, {
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: state.patchFailMessages ?? ['extensions.actions[0].executor.command_id: unknown command_id'],
-          },
-        }, 400)
-      }
-
-      const updated: AnyRecord = existing
-        ? { ...existing, value: payload.value }
-        : {
-          key,
-          value_type: 'json',
-          description: '',
-          min_value: null,
-          max_value: null,
-          default: null,
-          value: payload.value,
-        }
-
-      if (existing) {
-        existing.value = payload.value
-      } else {
-        state.runtimeSettings.push(updated)
-      }
-
-      return fulfillJson(route, updated)
-    }
-
-    if (method === 'PATCH' && path.startsWith('/api/v2/settings/runtime-overrides/')) {
-      const key = decodeURIComponent(path.split('/').filter(Boolean).slice(-1)[0] ?? '')
-      const existing = state.runtimeSettings.find((item) => item.key === key)
-
-      const payload = parseJsonBody(request.postData())
-
-      if ((state.patchFailCount ?? 0) > 0) {
-        state.patchFailCount = (state.patchFailCount ?? 0) - 1
-        return fulfillJson(route, {
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: state.patchFailMessages ?? ['extensions.actions[0].executor.command_id: unknown command_id'],
-          },
-        }, 400)
-      }
-
-      const updatedValue = payload.value
-
-      const updated: AnyRecord = existing
-        ? { ...existing, value: updatedValue }
-        : {
-          key,
-          value_type: 'json',
-          description: '',
-          min_value: null,
-          max_value: null,
-          default: null,
-          value: updatedValue,
-        }
-
-      if (existing) {
-        existing.value = updatedValue
-      } else {
-        state.runtimeSettings.push(updated)
-      }
-
-      const status = typeof payload.status === 'string' ? payload.status : 'published'
-      return fulfillJson(route, { key, value: updatedValue, status })
+      return fulfillJson(route, { deleted: true, exposure: deepClone(deleted) })
     }
 
     if (method === 'GET' && path === '/api/v2/operations/driver-commands/') {
       const driver = String(url.searchParams.get('driver') || 'ibcmd')
       return fulfillJson(route, {
-	        driver,
+        driver,
         base_version: 'v1',
         overrides_version: null,
-        generated_at: '2026-01-01T00:00:00Z',
+        generated_at: MOCK_TIMESTAMP,
         catalog: {
           catalog_version: 2,
           driver,
           platform_version: '8.3.27',
           source: { type: 'test' },
-          generated_at: '2026-01-01T00:00:00Z',
-	          commands_by_id: {
-	            'infobase.extension.list': {
-	              label: 'list extensions',
-	              description: 'List extensions',
-	              argv: ['infobase', 'extension', 'list'],
-	              scope: 'per_database',
-	              risk_level: 'safe',
-	              params_by_name: {
-	                format: { kind: 'flag', required: false, expects_value: true, default: 'json', description: 'Output format.' },
-	                ids: { kind: 'flag', required: false, expects_value: true, repeatable: true, description: 'Extension IDs.' },
-	                limit: { kind: 'flag', required: false, expects_value: true, description: 'Limit results.' },
-	                remote: { kind: 'flag', required: false, expects_value: true, default: 'ssh://x:1545' },
-	                legacy: { kind: 'flag', required: false, expects_value: true, disabled: true },
-	              },
-	            },
-	            'infobase.extension.update': {
-	              label: 'update extension',
-	              description: 'Update extension',
-	              argv: ['infobase', 'extension', 'update'],
-	              scope: 'per_database',
-	              risk_level: 'dangerous',
-	              params_by_name: {
-	                ids: { kind: 'flag', required: true, expects_value: true, repeatable: true, description: 'Extension IDs.' },
-	                force: { kind: 'flag', required: false, expects_value: false, description: 'Force update.' },
-	                timeout: { kind: 'flag', required: false, expects_value: true, value_type: 'int', description: 'Timeout (seconds).' },
-	              },
-	            },
-	          },
-	        },
+          generated_at: MOCK_TIMESTAMP,
+          commands_by_id: {
+            'infobase.extension.list': {
+              label: 'list extensions',
+              description: 'List extensions',
+              argv: ['infobase', 'extension', 'list'],
+              scope: 'per_database',
+              risk_level: 'safe',
+              params_by_name: {
+                format: {
+                  kind: 'flag',
+                  required: false,
+                  expects_value: true,
+                  default: 'json',
+                  description: 'Output format.',
+                },
+              },
+            },
+          },
+        },
       })
     }
 
+    if (method === 'GET' && path === '/api/v2/workflows/list-templates/') {
+      return fulfillJson(route, { templates: [], count: 0, total: 0 })
+    }
+
     if (method === 'GET' && path === '/api/v2/ui/operation-exposures/editor-hints/') {
-      state.callCounters = state.callCounters ?? {}
-      state.callCounters.actionCatalogEditorHintsGets = (state.callCounters.actionCatalogEditorHintsGets ?? 0) + 1
-      return fulfillJson(route, state.editorHints ?? {
+      counters.operationExposureHintsGets = (counters.operationExposureHintsGets ?? 0) + 1
+      if (!state.me?.is_staff) {
+        return fulfillJson(route, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403)
+      }
+      return fulfillJson(route, {
         hints_version: 1,
         capabilities: {
           'extensions.set_flags': {
@@ -701,28 +583,15 @@ async function setupApiMocks(
               properties: {
                 apply_mask: {
                   type: 'object',
-                  title: 'apply_mask (preset)',
-                  description: 'Optional preset mask for extensions.set_flags.',
                   additionalProperties: false,
                   required: ['active', 'safe_mode', 'unsafe_action_protection'],
                   properties: {
-                    active: { type: 'boolean', title: 'active', default: false },
-                    safe_mode: { type: 'boolean', title: 'safe_mode', default: false },
-                    unsafe_action_protection: { type: 'boolean', title: 'unsafe_action_protection', default: false },
+                    active: { type: 'boolean', default: false },
+                    safe_mode: { type: 'boolean', default: false },
+                    unsafe_action_protection: { type: 'boolean', default: false },
                   },
                 },
               },
-            },
-            fixed_ui_schema: {
-              apply_mask: {
-                active: { 'ui:widget': 'switch' },
-                safe_mode: { 'ui:widget': 'switch' },
-                unsafe_action_protection: { 'ui:widget': 'switch' },
-              },
-            },
-            help: {
-              title: 'Set flags presets',
-              description: 'Capability-specific fixed fields for extensions.set_flags.',
             },
           },
         },
@@ -733,11 +602,9 @@ async function setupApiMocks(
       return fulfillJson(route, {
         execution_plan: {
           kind: 'ibcmd_cli',
-          argv_masked: ['infobase', 'config', 'extension', 'list', '--db-pwd=***'],
+          argv_masked: ['infobase', 'extension', 'list', '--db-pwd=***'],
         },
-        bindings: [
-          { target_ref: 'command_id', source_ref: 'request.executor.command_id', resolve_at: 'api', sensitive: false, status: 'applied' },
-        ],
+        bindings: [],
       })
     }
 
@@ -745,422 +612,70 @@ async function setupApiMocks(
   })
 }
 
-test('Action Catalog: loads ui.action_catalog and switches modes (smoke)', async ({ page }) => {
+test('Templates: staff переключает surface filter в одном list shell', async ({ page }) => {
   await setupAuth(page)
+  const callCounters: MockCounters = {}
   await setupApiMocks(page, {
-    runtimeSettings: [
-      {
-        key: 'ui.action_catalog',
-        value_type: 'json',
-        description: 'UI action catalog bindings (v1).',
-        min_value: null,
-        max_value: null,
-        default: { catalog_version: 1, extensions: { actions: [] } },
-        value: {
-          catalog_version: 1,
-          extensions: {
-            actions: [
-              {
-                id: 'extensions.list',
-                label: 'List extensions',
-                contexts: ['database_card'],
-                executor: { kind: 'ibcmd_cli', driver: 'ibcmd', command_id: 'infobase.extension.list' },
-              },
-              {
-                id: 'extensions.workflow',
-                label: 'Workflow',
-                contexts: ['database_card'],
-                executor: { kind: 'workflow', workflow_id: '11111111-1111-1111-1111-111111111111' },
-              },
-            ],
-          },
-        },
-      },
-    ],
+    me: { id: 1, username: 'admin', is_staff: true },
+    templates: [{ id: 'tpl-one', name: 'Template One', command_id: 'infobase.extension.list' }],
+    actions: [{ id: 'extensions.list', label: 'List extensions', capability: 'extensions.list' }],
+    callCounters,
   })
 
-  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
+  await page.goto('/templates', { waitUntil: 'domcontentloaded' })
 
+  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
+  await expect(page.getByRole('columnheader', { name: 'Operation Type' })).toBeVisible()
+  await expect(page.getByText('Template One', { exact: true })).toBeVisible()
+
+  await clickSurfaceFilter(page, 'Action Catalog')
+
+  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBe('action_catalog')
   await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
-  await expect(page.getByTestId('action-catalog-actions-count')).toHaveText('2')
   await expect(page.getByText('extensions.list', { exact: true })).toBeVisible()
 
-  const listRow = page.locator('tr', { has: page.getByText('extensions.list', { exact: true }) })
-  await listRow.getByRole('button', { name: 'Preview', exact: true }).click()
-  await expect(page.getByText('Preview: extensions.list')).toBeVisible()
-  const previewDatabasesInput = page.getByTestId('action-catalog-preview-database-ids').locator('input').first()
-  await previewDatabasesInput.fill('db1')
-  await previewDatabasesInput.press('Enter')
-  const previewRunButton = page.getByLabel('Preview: extensions.list').getByRole('button', { name: 'Preview', exact: true })
-  await expect(previewRunButton).toBeEnabled()
-  await previewRunButton.click()
-  await expect(page.getByText('execution_plan', { exact: false })).toBeVisible()
-  await page.locator('.ant-modal-footer').getByRole('button', { name: 'Close', exact: true }).click()
+  await clickSurfaceFilter(page, 'Templates')
 
-  await page.getByTestId('action-catalog-add').click()
-  await page.getByTestId('action-catalog-editor-id').fill('extensions.new')
-  await page.getByTestId('action-catalog-editor-label').fill('New action')
-  await page.getByTestId('action-catalog-editor-command-id').click()
-  await page.keyboard.type('infobase.extension.list')
-  await page.keyboard.press('Enter')
-  await page.getByTestId('action-catalog-editor-apply').click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
+  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
 
-  await expect(page.getByTestId('action-catalog-actions-count')).toHaveText('3')
-  await expect(page.getByTestId('action-catalog-dirty')).toBeVisible()
-  await expect(page.getByText('extensions.new', { exact: true })).toBeVisible()
-
-  const newRow = page.locator('tr', { has: page.getByText('extensions.new', { exact: true }) })
-  await newRow.getByRole('button', { name: 'Disable', exact: true }).click()
-  await expect(page.getByTestId('action-catalog-actions-count')).toHaveText('2')
-  await expect(page.getByTestId('action-catalog-disabled-count')).toContainText('Disabled: 1')
-
-  await page.getByTestId('action-catalog-restore-last').click()
-  await expect(page.getByTestId('action-catalog-actions-count')).toHaveText('3')
-  await expect(page.getByText('extensions.new', { exact: true })).toBeVisible()
-
-  await page.getByRole('tab', { name: 'Raw JSON', exact: true }).click()
-  await expect(page.getByTestId('action-catalog-dirty-raw')).toBeVisible()
-  await expect(page.getByTestId('action-catalog-diff-count')).toContainText('Changes: ')
-  await expect(page.getByTestId('action-catalog-diff-table')).toBeVisible()
-
-  await page.getByTestId('action-catalog-save').click()
-  await expect(page.getByText('Saved', { exact: true })).toBeVisible()
-  await expect(page.locator('[data-testid="action-catalog-dirty"]')).toHaveCount(0)
-  await expect(page.locator('[data-testid="action-catalog-dirty-raw"]')).toHaveCount(0)
-  await expect(page.locator('[data-testid="action-catalog-diff-table"]')).toHaveCount(0)
-  await expect(page.getByTestId('action-catalog-reload')).toBeEnabled()
-  await expect(page.getByTestId('action-catalog-save')).toBeDisabled()
-
-  await expect(page.getByRole('button', { name: 'Format', exact: true })).toBeVisible()
+  expect(callCounters.operationCatalogExposuresGets ?? 0).toBeGreaterThan(0)
+  expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBeGreaterThan(0)
+  expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBeGreaterThan(0)
+  expect(callCounters.legacyTemplateCalls ?? 0).toBe(0)
 })
 
-test('Action Catalog: shows backend validation errors on save', async ({ page }) => {
+test('Templates: non-staff deep-link на action surface откатывается в template', async ({ page }) => {
   await setupAuth(page)
+  const callCounters: MockCounters = {}
   await setupApiMocks(page, {
-    patchFailCount: 1,
-    patchFailMessages: [
-      'extensions.actions[0].executor.command_id: unknown command_id "unknown.command"',
-      'extensions.actions[0].id: must be unique',
-    ],
-    runtimeSettings: [
-      {
-        key: 'ui.action_catalog',
-        value_type: 'json',
-        description: 'UI action catalog bindings (v1).',
-        min_value: null,
-        max_value: null,
-        default: { catalog_version: 1, extensions: { actions: [] } },
-        value: { catalog_version: 1, extensions: { actions: [] } },
-      },
-    ],
+    me: { id: 2, username: 'viewer', is_staff: false },
+    templates: [{ id: 'tpl-view', name: 'Viewer Template' }],
+    actions: [{ id: 'extensions.hidden', label: 'Hidden Action', capability: 'extensions.hidden' }],
+    callCounters,
   })
 
   await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
 
-  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
-  await expect(page.getByTestId('action-catalog-save')).toBeDisabled()
+  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
+  await expect(page.getByText('Viewer Template', { exact: true })).toBeVisible()
+  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
 
-  await page.getByTestId('action-catalog-add').click()
-  await page.getByTestId('action-catalog-editor-id').fill('extensions.bad')
-  await page.getByTestId('action-catalog-editor-label').fill('Bad action')
-  await page.getByTestId('action-catalog-editor-command-id').click()
-  await page.keyboard.type('infobase.extension.list')
-  await page.keyboard.press('Enter')
-  await page.getByTestId('action-catalog-editor-apply').click()
-
-  await expect(page.getByTestId('action-catalog-dirty')).toBeVisible()
-  await expect(page.getByTestId('action-catalog-save')).toBeEnabled()
-
-  await page.getByTestId('action-catalog-save').click()
-  await expect(page.getByText('Save failed', { exact: true })).toBeVisible()
-  await expect(page.getByText('extensions.actions[0].executor.command_id: unknown command_id "unknown.command"', { exact: true })).toBeVisible()
-  await expect(page.getByText('extensions.actions[0].id: must be unique', { exact: true })).toBeVisible()
-
-  await expect(page.getByTestId('action-catalog-dirty')).toBeVisible()
-  await expect(page.getByTestId('action-catalog-save')).toBeEnabled()
+  expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
+  expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBe(0)
+  expect(callCounters.operationExposureHintsGets ?? 0).toBe(0)
+  expect(callCounters.legacyTemplateCalls ?? 0).toBe(0)
+  expect(callCounters.legacyActionHintsCalls ?? 0).toBe(0)
 })
 
-test('Action Catalog: auto-fills params template from command schema and confirms overwrite', async ({ page }) => {
+test('Templates: единый editor shell работает для template и action surface', async ({ page }) => {
   await setupAuth(page)
+  const callCounters: MockCounters = {}
   await setupApiMocks(page, {
-    runtimeSettings: [
-      {
-        key: 'ui.action_catalog',
-        value_type: 'json',
-        description: 'UI action catalog bindings (v1).',
-        min_value: null,
-        max_value: null,
-        default: { catalog_version: 1, extensions: { actions: [] } },
-        value: { catalog_version: 1, extensions: { actions: [] } },
-      },
-    ],
-  })
-
-  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
-
-  await page.getByTestId('action-catalog-add').click()
-  await page.getByTestId('action-catalog-editor-id').fill('extensions.template')
-  await page.getByTestId('action-catalog-editor-label').fill('Template action')
-  await page.getByTestId('action-catalog-editor-command-id').click()
-  await page.keyboard.type('infobase.extension.list')
-  await page.keyboard.press('Enter')
-
-  await page.getByRole('tab', { name: 'Params', exact: true }).click()
-  await expect(page.getByTestId('action-catalog-editor-params-guided')).toBeVisible()
-  await page.getByTestId('action-catalog-editor-params-mode').getByText('Raw JSON', { exact: true }).click()
-
-  const params = page.getByTestId('action-catalog-editor-params')
-  await expect(params).toHaveValue(/"format": "json"/)
-  await expect(params).toHaveValue(/"ids": \[\]/)
-  await expect(params).toHaveValue(/"limit": null/)
-  await expect(params).not.toHaveValue(/remote/)
-  await expect(params).not.toHaveValue(/legacy/)
-
-  await params.fill('{"custom": 1}')
-  await page.getByTestId('action-catalog-editor-insert-params-template').click()
-  await expect(page.getByRole('button', { name: 'Keep current', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Keep current', exact: true }).click()
-  await expect(params).toHaveValue('{"custom": 1}')
-
-  await page.getByTestId('action-catalog-editor-insert-params-template').click()
-  await page.getByRole('button', { name: 'Overwrite', exact: true }).click()
-  await expect(params).toHaveValue(/"format": "json"/)
-
-  await page.getByTestId('action-catalog-editor-apply').click()
-  await expect(page.getByText('extensions.template', { exact: true })).toBeVisible()
-})
-
-test('Action Catalog editor: params default Guided and schema panel is collapsed', async ({ page }) => {
-  await setupAuth(page)
-  await setupApiMocks(page, {
-    runtimeSettings: [
-      {
-        key: 'ui.action_catalog',
-        value_type: 'json',
-        description: 'UI action catalog bindings (v1).',
-        min_value: null,
-        max_value: null,
-        default: { catalog_version: 1, extensions: { actions: [] } },
-        value: { catalog_version: 1, extensions: { actions: [] } },
-      },
-    ],
-  })
-
-  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
-
-  await page.getByTestId('action-catalog-add').click()
-  await page.getByTestId('action-catalog-editor-command-id').click()
-  await page.keyboard.type('infobase.extension.list')
-  await page.keyboard.press('Enter')
-
-  await page.getByRole('tab', { name: 'Params', exact: true }).click()
-  await expect(page.getByTestId('action-catalog-editor-params-guided')).toBeVisible()
-  await expect(page.getByTestId('action-catalog-editor-params-mode')).toBeVisible()
-
-  await page.getByRole('tab', { name: 'Basics', exact: true }).click()
-  const schemaPanel = page.getByTestId('action-catalog-editor-schema-panel')
-  await expect(schemaPanel).toBeVisible()
-  await expect(schemaPanel.locator('.ant-collapse-item-active')).toHaveCount(0)
-})
-
-test('Action Catalog editor: preserves unknown keys when editing schema params in Guided', async ({ page }) => {
-  await setupAuth(page)
-  await setupApiMocks(page, {
-    runtimeSettings: [
-      {
-        key: 'ui.action_catalog',
-        value_type: 'json',
-        description: 'UI action catalog bindings (v1).',
-        min_value: null,
-        max_value: null,
-        default: { catalog_version: 1, extensions: { actions: [] } },
-        value: { catalog_version: 1, extensions: { actions: [] } },
-      },
-    ],
-  })
-
-  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
-
-  await page.getByTestId('action-catalog-add').click()
-  await page.getByTestId('action-catalog-editor-id').fill('extensions.unknown')
-  await page.getByTestId('action-catalog-editor-label').fill('Unknown keys')
-  await page.getByTestId('action-catalog-editor-command-id').click()
-  await page.keyboard.type('infobase.extension.list')
-  await page.keyboard.press('Enter')
-
-  await page.getByRole('tab', { name: 'Params', exact: true }).click()
-  await page.getByTestId('action-catalog-editor-params-mode').getByText('Raw JSON', { exact: true }).click()
-  await page.getByTestId('action-catalog-editor-params').fill('{"custom": 1}')
-
-  await page.getByTestId('action-catalog-editor-params-mode').getByText('Guided', { exact: true }).click()
-  const guided = page.getByTestId('action-catalog-editor-params-guided')
-  await expect(guided).toBeVisible()
-  await guided.getByText('Optional', { exact: false }).click()
-  await guided.locator('.ant-form-item', { hasText: 'limit' }).locator('input').fill('5')
-
-  await page.getByTestId('action-catalog-editor-apply').click()
-  await expect(page.getByText('extensions.unknown', { exact: true })).toBeVisible()
-
-  const row = page.locator('tr', { has: page.getByText('extensions.unknown', { exact: true }) })
-  await row.getByRole('button', { name: 'Edit', exact: true }).click()
-  await page.getByRole('tab', { name: 'Params', exact: true }).click()
-  await page.getByTestId('action-catalog-editor-params-mode').getByText('Raw JSON', { exact: true }).click()
-
-  const params = page.getByTestId('action-catalog-editor-params')
-  await expect(params).toHaveValue(/"custom": 1/)
-  await expect(params).toHaveValue(/"limit": "5"/)
-})
-
-test('Action Catalog editor: blocks Guided on invalid Raw JSON and does not auto-fill after touch', async ({ page }) => {
-  await setupAuth(page)
-  await setupApiMocks(page, {
-    runtimeSettings: [
-      {
-        key: 'ui.action_catalog',
-        value_type: 'json',
-        description: 'UI action catalog bindings (v1).',
-        min_value: null,
-        max_value: null,
-        default: { catalog_version: 1, extensions: { actions: [] } },
-        value: { catalog_version: 1, extensions: { actions: [] } },
-      },
-    ],
-  })
-
-  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
-
-  await page.getByTestId('action-catalog-add').click()
-  await page.getByTestId('action-catalog-editor-id').fill('extensions.touch')
-  await page.getByTestId('action-catalog-editor-label').fill('Touch action')
-  await page.getByTestId('action-catalog-editor-command-id').click()
-  await page.keyboard.type('infobase.extension.list')
-  await page.keyboard.press('Enter')
-
-  await page.getByRole('tab', { name: 'Params', exact: true }).click()
-  await page.getByTestId('action-catalog-editor-params-mode').getByText('Raw JSON', { exact: true }).click()
-  const params = page.getByTestId('action-catalog-editor-params')
-  await params.fill('{')
-
-  await page.getByTestId('action-catalog-editor-params-mode').getByText('Guided', { exact: true }).click()
-  await expect(page.locator('.ant-modal-confirm-title', { hasText: 'Fix params JSON' })).toBeVisible()
-  await page.getByRole('button', { name: 'OK', exact: true }).click()
-  await expect(params).toBeVisible()
-
-  await params.fill('{}')
-  await page.getByRole('tab', { name: 'Basics', exact: true }).click()
-  await page.getByTestId('action-catalog-editor-command-id').click()
-  await page.keyboard.type('infobase.extension.update')
-  await page.keyboard.press('Enter')
-
-  await expect(params).toHaveValue('{}')
-  await expect(params).not.toHaveValue(/force/)
-})
-
-test('Action Catalog editor: footer quick actions Preview and Reset', async ({ page }) => {
-  await setupAuth(page)
-  await setupApiMocks(page, {
-    runtimeSettings: [
-      {
-        key: 'ui.action_catalog',
-        value_type: 'json',
-        description: 'UI action catalog bindings (v1).',
-        min_value: null,
-        max_value: null,
-        default: { catalog_version: 1, extensions: { actions: [] } },
-        value: { catalog_version: 1, extensions: { actions: [] } },
-      },
-    ],
-  })
-
-  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
-
-  await page.getByTestId('action-catalog-add').click()
-  await page.getByTestId('action-catalog-editor-id').fill('extensions.quick')
-  await page.getByTestId('action-catalog-editor-label').fill('Quick actions')
-
-  await page.getByTestId('action-catalog-editor-open-preview-tab').click()
-  const previewJson = page.getByTestId('action-catalog-editor-preview-json')
-  await expect(previewJson).toBeVisible()
-  await expect(previewJson).toHaveValue(/"id": "extensions\.quick"/)
-
-  await page.getByTestId('action-catalog-editor-reset-form').click()
-  await expect(page.getByTestId('action-catalog-editor-id')).toHaveValue('')
-  await expect(page.getByTestId('action-catalog-editor-label')).toHaveValue('')
-})
-
-test('Action Catalog editor: capability fixed section follows uiSchema widgets', async ({ page }) => {
-  await setupAuth(page)
-  await setupApiMocks(page, {
-    runtimeSettings: [
-      {
-        key: 'ui.action_catalog',
-        value_type: 'json',
-        description: 'UI action catalog bindings (v1).',
-        min_value: null,
-        max_value: null,
-        default: { catalog_version: 1, extensions: { actions: [] } },
-        value: { catalog_version: 1, extensions: { actions: [] } },
-      },
-    ],
-    editorHints: {
-      hints_version: 1,
-      capabilities: {
-        'extensions.set_flags': {
-          fixed_schema: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              apply_mask: {
-                type: 'object',
-                title: 'apply_mask',
-                additionalProperties: false,
-                required: ['active', 'safe_mode', 'unsafe_action_protection'],
-                properties: {
-                  active: { type: 'boolean', title: 'active' },
-                  safe_mode: { type: 'boolean', title: 'safe_mode' },
-                  unsafe_action_protection: { type: 'boolean', title: 'unsafe_action_protection' },
-                },
-              },
-            },
-          },
-          fixed_ui_schema: {
-            apply_mask: {
-              active: { 'ui:widget': 'checkbox' },
-              safe_mode: { 'ui:widget': 'hidden' },
-              unsafe_action_protection: { 'ui:widget': 'switch' },
-            },
-          },
-        },
-      },
-    },
-  })
-
-  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
-
-  await page.getByTestId('action-catalog-add').click()
-  await page.getByTestId('action-catalog-editor-capability').click()
-  await page.keyboard.type('extensions.set_flags')
-  await page.keyboard.press('Enter')
-
-  await page.getByRole('tab', { name: 'Safety & Fixed', exact: true }).click()
-  await page.getByTestId('action-catalog-editor-fixed-apply_mask-enable').click()
-
-  await expect(page.getByTestId('action-catalog-editor-fixed-apply_mask-active-checkbox')).toBeVisible()
-  await expect(page.getByText('unsafe_action_protection', { exact: true })).toBeVisible()
-  await expect(page.getByText('safe_mode', { exact: true })).toHaveCount(0)
-})
-
-test('Templates editor: uses unified tabbed modal and no manual driver selector', async ({ page }) => {
-  await setupAuth(page)
-  await setupApiMocks(page, {
-    runtimeSettings: [],
+    me: { id: 3, username: 'staff', is_staff: true },
     templates: [],
+    actions: [],
+    callCounters,
   })
 
   await page.goto('/templates', { waitUntil: 'domcontentloaded' })
@@ -1173,8 +688,6 @@ test('Templates editor: uses unified tabbed modal and no manual driver selector'
   await expect(page.getByRole('tab', { name: 'Safety & Fixed', exact: true })).toBeVisible()
   await expect(page.getByRole('tab', { name: 'Preview', exact: true })).toBeVisible()
 
-  await expect(page.getByTestId('action-catalog-editor-driver')).toHaveCount(0)
-
   await page.getByTestId('operation-exposure-editor-name').fill('Template via unified modal')
   await page.getByTestId('action-catalog-editor-command-id').click()
   await page.keyboard.type('infobase.extension.list')
@@ -1182,64 +695,30 @@ test('Templates editor: uses unified tabbed modal and no manual driver selector'
   await page.getByTestId('action-catalog-editor-apply').click()
 
   await expect(page.getByText('Template via unified modal', { exact: true })).toBeVisible()
-})
 
-test('Templates: staff switches surface filter and URL reflects selected surface', async ({ page }) => {
-  await setupAuth(page)
-  await setupApiMocks(page, {
-    runtimeSettings: [],
-    templates: [],
-  })
-
-  await page.goto('/templates', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
-  await expect(page.getByText('Surface', { exact: true })).toBeVisible()
-
-  await page.locator('.ant-segmented').getByText('Action Catalog', { exact: true }).click()
-  await expect(page).toHaveURL(/\/templates\?surface=action_catalog$/)
+  await clickSurfaceFilter(page, 'Action Catalog')
   await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
 
-  await page.locator('.ant-segmented').getByText('Templates', { exact: true }).click()
-  await expect(page).toHaveURL(/\/templates$/)
-  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
-})
+  await page.getByTestId('action-catalog-add').click()
+  await expect(page.getByRole('tab', { name: 'Basics', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Executor', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Params', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Safety & Fixed', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Preview', exact: true })).toBeVisible()
 
-test('Templates: non-staff cannot open action-catalog surface or load management endpoints', async ({ page }) => {
-  await setupAuth(page)
-  const callCounters: {
-    operationCatalogExposuresGets?: number
-    operationCatalogActionExposuresGets?: number
-    actionCatalogEditorHintsGets?: number
-  } = {}
-  await setupApiMocks(page, {
-    runtimeSettings: [],
-    me: { id: 2, username: 'operator', is_staff: false },
-    callCounters,
-  })
+  await page.getByTestId('action-catalog-editor-id').fill('extensions.new')
+  await page.getByTestId('action-catalog-editor-label').fill('New Action')
+  await page.getByTestId('action-catalog-editor-capability').locator('input').fill('extensions.set_flags')
+  await page.keyboard.press('Enter')
+  await page.getByTestId('action-catalog-editor-command-id').click()
+  await page.keyboard.type('infobase.extension.list')
+  await page.keyboard.press('Enter')
+  await page.getByTestId('action-catalog-editor-apply').click()
 
-  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
-  await expect(page.getByText('Surface', { exact: true })).toHaveCount(0)
-  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toHaveCount(0)
-  expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
-  expect(callCounters.actionCatalogEditorHintsGets ?? 0).toBe(0)
-})
+  await expect(page.getByText('extensions.new', { exact: true })).toBeVisible()
 
-test('Legacy route /settings/action-catalog does not render action-catalog editor flow', async ({ page }) => {
-  await setupAuth(page)
-  const callCounters: {
-    operationCatalogExposuresGets?: number
-    operationCatalogActionExposuresGets?: number
-    actionCatalogEditorHintsGets?: number
-  } = {}
-  await setupApiMocks(page, {
-    runtimeSettings: [],
-    callCounters,
-  })
-
-  await page.goto('/settings/action-catalog', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toHaveCount(0)
-  await expect(page.locator('.ant-layout')).toHaveCount(0)
-  expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
-  expect(callCounters.actionCatalogEditorHintsGets ?? 0).toBe(0)
+  expect(callCounters.upsertCalls ?? 0).toBeGreaterThanOrEqual(2)
+  expect(callCounters.publishCalls ?? 0).toBeGreaterThanOrEqual(1)
+  expect(callCounters.operationExposureHintsGets ?? 0).toBeGreaterThanOrEqual(1)
+  expect(callCounters.legacyActionHintsCalls ?? 0).toBe(0)
 })
