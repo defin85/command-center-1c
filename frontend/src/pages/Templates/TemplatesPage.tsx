@@ -2,8 +2,8 @@ import { useCallback, useMemo, useState } from 'react'
 import { Alert, App, Button, Form, Input, Modal, Popconfirm, Space, Switch, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
-import type { OperationTemplate } from '../../api/generated/model/operationTemplate'
 import {
+  type OperationTemplate,
   useCreateTemplate,
   useDeleteTemplate,
   useOperationTemplates,
@@ -14,6 +14,7 @@ import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { DriverCommandBuilder, type DriverCommandOperationConfig } from '../../components/driverCommands/DriverCommandBuilder'
 import { useMe } from '../../api/queries/me'
+import { driverCommandConfigToTemplateData, templateDataToDriverCommandConfig } from '../../lib/commandConfigAdapter'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -42,14 +43,6 @@ export function TemplatesPage() {
 
   const isStaff = Boolean(meQuery.data?.is_staff)
 
-  const normalizeArgs = (value: unknown): string[] | undefined => {
-    if (!Array.isArray(value)) {
-      return undefined
-    }
-    const list = value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    return list.length > 0 ? list : undefined
-  }
-
   const openCreateModal = useCallback(() => {
     setEditingTemplate(null)
     setCliConfig({
@@ -68,39 +61,7 @@ export function TemplatesPage() {
 
   const openEditModal = useCallback((template: OperationTemplate) => {
     setEditingTemplate(template)
-    const data = (template.template_data as Record<string, unknown>) || {}
-    const options = (data.options as Record<string, unknown>) || {}
-    const args = Array.isArray(data.args) ? (data.args as unknown[]) : []
-    const argsList = args.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    const mode = (data.cli_mode as DriverCommandOperationConfig['mode']) || 'guided'
-    const rawParams = (data.cli_params as Record<string, unknown>) || {}
-    const params: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(rawParams)) {
-      if (typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') {
-        params[key] = value
-      }
-    }
-
-    setCliConfig({
-      driver: 'cli',
-      mode,
-      command_id: typeof data.command === 'string' ? data.command : undefined,
-      args_text: mode === 'manual' ? argsList.join('\n') : '',
-      params,
-      resolved_args: argsList.length > 0 ? argsList : undefined,
-      cli_options: {
-        disable_startup_messages: typeof options.disable_startup_messages === 'boolean'
-          ? (options.disable_startup_messages as boolean)
-          : typeof data.disable_startup_messages === 'boolean'
-            ? (data.disable_startup_messages as boolean)
-            : true,
-        disable_startup_dialogs: typeof options.disable_startup_dialogs === 'boolean'
-          ? (options.disable_startup_dialogs as boolean)
-          : typeof data.disable_startup_dialogs === 'boolean'
-            ? (data.disable_startup_dialogs as boolean)
-            : true,
-      },
-    })
+    setCliConfig(templateDataToDriverCommandConfig(template.template_data))
     form.setFieldsValue({
       name: template.name,
       description: template.description || '',
@@ -117,22 +78,7 @@ export function TemplatesPage() {
         message.error('Command is required')
         return
       }
-
-      const args = normalizeArgs(cliConfig.resolved_args) ?? []
-      const opt = cliConfig.cli_options ?? {}
-
-      const cliParams: Record<string, string | boolean> = {}
-      for (const [key, value] of Object.entries(cliConfig.params ?? {})) {
-        if (typeof value === 'boolean') {
-          cliParams[key] = value
-        } else if (typeof value === 'string') {
-          if (value.trim().length > 0) {
-            cliParams[key] = value
-          }
-        } else if (typeof value === 'number' && Number.isFinite(value)) {
-          cliParams[key] = String(value)
-        }
-      }
+      const templateData = driverCommandConfigToTemplateData(cliConfig)
 
       const payload = {
         id: editingTemplate?.id,
@@ -140,16 +86,7 @@ export function TemplatesPage() {
         description: values.description || '',
         operation_type: 'designer_cli',
         target_entity: 'infobase',
-        template_data: {
-          command,
-          args: args.length > 0 ? args : undefined,
-          options: {
-            disable_startup_messages: opt.disable_startup_messages !== false,
-            disable_startup_dialogs: opt.disable_startup_dialogs !== false,
-          },
-          cli_mode: cliConfig.mode || 'guided',
-          cli_params: cliParams,
-        },
+        template_data: templateData,
         is_active: values.is_active !== false,
       }
 

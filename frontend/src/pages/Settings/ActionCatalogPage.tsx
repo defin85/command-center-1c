@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Form, Space, Spin, Tag, Typography } from 'antd'
 
+import type {
+  OperationCatalogDefinition,
+  OperationCatalogValidationError,
+} from '../../api/operationCatalog'
+import {
+  listOperationCatalogDefinitions,
+  listOperationCatalogExposures,
+  publishOperationCatalogExposure,
+  upsertOperationCatalogExposure,
+} from '../../api/operationCatalog'
 import { useMe } from '../../api/queries/me'
 import { useActionCatalogEditorHints } from '../../api/queries/ui'
-import { getEffectiveRuntimeSettings, updateRuntimeSettingOverride } from '../../api/runtimeSettings'
 import type { ActionCatalogMode, ActionFormValues, PlainObject } from './actionCatalogTypes'
 import {
   buildActionFromForm,
@@ -12,7 +21,6 @@ import {
   deepCopy,
   deriveActionFormValues,
   ensureUniqueId,
-  extractBackendErrors,
   getCatalogActions,
   isPlainObject,
   normalizeActionId,
@@ -21,6 +29,12 @@ import {
   safeJsonStringify,
   upsertCatalogActions,
 } from './actionCatalogUtils'
+import {
+  buildCatalogFromOperationCatalogRecords,
+  buildOperationCatalogDisablePayload,
+  buildOperationCatalogUpsertFromAction,
+  type OperationCatalogActionRecord,
+} from './actionCatalog/operationCatalogAdapter'
 import { ActionCatalogEditorModal } from './actionCatalog/ActionCatalogEditorModal'
 import { ActionCatalogPreviewModal } from './actionCatalog/ActionCatalogPreviewModal'
 import { ActionCatalogTabs } from './actionCatalog/ActionCatalogTabs'
@@ -30,7 +44,7 @@ import { useActionCatalogPreview } from './actionCatalog/useActionCatalogPreview
 
 const { Title, Text } = Typography
 
-const ACTION_CATALOG_KEY = 'ui.action_catalog'
+const ACTION_CATALOG_KEY = 'operation-catalog.exposures[action_catalog]'
 const DISABLED_ACTIONS_STORAGE_KEY = 'action-catalog.disabled-actions.v1'
 
 export function ActionCatalogPage() {
@@ -44,6 +58,7 @@ export function ActionCatalogPage() {
 
   const [serverRaw, setServerRaw] = useState<string | null>(null)
   const [draftRaw, setDraftRaw] = useState<string>('{}')
+  const [serverRecords, setServerRecords] = useState<OperationCatalogActionRecord[]>([])
   const [settingDescription, setSettingDescription] = useState<string | null>(null)
   const [settingSource, setSettingSource] = useState<string | null>(null)
   const [disabledActions, setDisabledActions] = useState<PlainObject[]>([])
@@ -86,6 +101,67 @@ export function ActionCatalogPage() {
     }
   }, [disabledActions])
 
+  const extractCatalogValidationErrors = useCallback((error: unknown): OperationCatalogValidationError[] => {
+    const err = error as { response?: { data?: unknown }; message?: string } | null
+    const data = err?.response?.data
+    if (!data || typeof data !== 'object') {
+      if (err?.message) {
+        return [{ path: '', code: 'UNKNOWN_ERROR', message: err.message }]
+      }
+      return [{ path: '', code: 'UNKNOWN_ERROR', message: 'Unknown error' }]
+    }
+
+    const node = data as Record<string, unknown>
+    if (Array.isArray(node.validation_errors)) {
+      return node.validation_errors
+        .map((item) => {
+          if (!item || typeof item !== 'object') return null
+          const src = item as Record<string, unknown>
+          return {
+            path: typeof src.path === 'string' ? src.path : '',
+            code: typeof src.code === 'string' ? src.code : 'VALIDATION_ERROR',
+            message: typeof src.message === 'string' ? src.message : 'Validation error',
+          }
+        })
+        .filter((item): item is OperationCatalogValidationError => item !== null)
+    }
+
+    const nestedError = node.error
+    if (nestedError && typeof nestedError === 'object') {
+      const nestedMessage = (nestedError as Record<string, unknown>).message
+      if (Array.isArray(nestedMessage)) {
+        const items = nestedMessage
+          .map((item) => {
+            if (typeof item === 'string') {
+              return { path: '', code: 'VALIDATION_ERROR', message: item }
+            }
+            if (!item || typeof item !== 'object') return null
+            const src = item as Record<string, unknown>
+            return {
+              path: typeof src.path === 'string' ? src.path : '',
+              code: typeof src.code === 'string' ? src.code : 'VALIDATION_ERROR',
+              message: typeof src.message === 'string' ? src.message : String(src.message ?? 'Validation error'),
+            }
+          })
+          .filter((item): item is OperationCatalogValidationError => item !== null)
+        if (items.length > 0) return items
+      }
+      if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
+        return [{ path: '', code: 'VALIDATION_ERROR', message: nestedMessage }]
+      }
+    }
+
+    return [{ path: '', code: 'UNKNOWN_ERROR', message: err?.message ?? 'Unknown error' }]
+  }, [])
+
+  const formatActionValidationErrors = useCallback((index: number, errors: OperationCatalogValidationError[]): string[] => {
+    if (errors.length === 0) return []
+    return errors.map((item) => {
+      const path = item.path ? `.${item.path}` : ''
+      return `extensions.actions[${index}]${path}: ${item.message}`
+    })
+  }, [])
+
   const loadCatalog = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -93,23 +169,43 @@ export function ActionCatalogPage() {
     setSaveErrorsDraftActionIds(null)
     setSaveSuccess(false)
     try {
-      const settings = await getEffectiveRuntimeSettings()
-      const entry = settings.find((item) => item.key === ACTION_CATALOG_KEY)
-      if (!entry) {
-        setError(`RuntimeSetting ${ACTION_CATALOG_KEY} не найден`)
-        setServerRaw(null)
-        setDraftRaw('{}')
-        setSettingDescription(null)
-        setSettingSource(null)
-        return
+      const [exposuresResponse, definitionsResponse] = await Promise.all([
+        listOperationCatalogExposures({
+          surface: 'action_catalog',
+          limit: 1000,
+          offset: 0,
+        }),
+        listOperationCatalogDefinitions({
+          limit: 1000,
+          offset: 0,
+        }),
+      ])
+
+      const definitionsById = new Map<string, OperationCatalogDefinition>()
+      for (const definition of definitionsResponse.definitions ?? []) {
+        if (typeof definition.id === 'string') {
+          definitionsById.set(definition.id, definition)
+        }
       }
-      const raw = safeJsonStringify(entry.value)
+
+      const records: OperationCatalogActionRecord[] = []
+      for (const exposure of exposuresResponse.exposures ?? []) {
+        if (exposure.surface !== 'action_catalog') continue
+        if (exposure.tenant_id !== null && exposure.tenant_id !== undefined) continue
+        const definition = definitionsById.get(exposure.definition_id)
+        if (!definition) continue
+        records.push({ exposure, definition })
+      }
+
+      const catalog = buildCatalogFromOperationCatalogRecords(records)
+      const raw = safeJsonStringify(catalog)
+      setServerRecords(records)
       setServerRaw(raw)
       setDraftRaw(raw)
-      setSettingDescription(entry.description || null)
-      setSettingSource(entry.source || null)
+      setSettingDescription('Unified persistent catalog (global exposures).')
+      setSettingSource('unified')
     } catch (_err) {
-      setError('Не удалось загрузить ui.action_catalog')
+      setError('Не удалось загрузить operation-catalog exposures')
     } finally {
       setLoading(false)
     }
@@ -199,18 +295,76 @@ export function ActionCatalogPage() {
     setSaveErrorsDraftActionIds(actionIdsByPos)
     setSaving(true)
     try {
-      const updated = await updateRuntimeSettingOverride(ACTION_CATALOG_KEY, parsed, 'published')
-      const nextServerRaw = safeJsonStringify(updated.value)
-      setServerRaw(nextServerRaw)
-      setDraftRaw(nextServerRaw)
+      const nextActions = Array.isArray(actions) ? actions.filter(isPlainObject) as PlainObject[] : []
+      const existingByAlias = new Map<string, OperationCatalogActionRecord>()
+      for (const record of serverRecords) {
+        existingByAlias.set(record.exposure.alias, record)
+      }
+
+      const saveMessages: string[] = []
+      const processedAliases = new Set<string>()
+
+      for (let index = 0; index < nextActions.length; index += 1) {
+        const action = nextActions[index]
+        const alias = typeof action.id === 'string' ? action.id.trim() : ''
+        const existing = alias ? existingByAlias.get(alias) : undefined
+        const payload = buildOperationCatalogUpsertFromAction(action, {
+          existing,
+          displayOrder: index,
+        })
+        if (!payload) {
+          saveMessages.push(`extensions.actions[${index}].id: must be a non-empty string`)
+          continue
+        }
+
+        try {
+          const upserted = await upsertOperationCatalogExposure(payload)
+          processedAliases.add(upserted.exposure.alias)
+          const publishResult = await publishOperationCatalogExposure(upserted.exposure.id)
+          if (!publishResult.published || publishResult.validation_errors.length > 0) {
+            saveMessages.push(
+              ...formatActionValidationErrors(index, publishResult.validation_errors)
+            )
+          }
+        } catch (err) {
+          saveMessages.push(
+            ...formatActionValidationErrors(index, extractCatalogValidationErrors(err))
+          )
+        }
+      }
+
+      for (const [alias, record] of existingByAlias.entries()) {
+        if (processedAliases.has(alias)) continue
+        try {
+          await upsertOperationCatalogExposure(buildOperationCatalogDisablePayload(record))
+        } catch (err) {
+          const messages = extractCatalogValidationErrors(err).map((item) => item.message)
+          saveMessages.push(`extensions.actions: failed to disable ${alias}: ${messages.join('; ')}`)
+        }
+      }
+
+      if (saveMessages.length > 0) {
+        setSaveErrors(saveMessages)
+        return
+      }
+
+      await loadCatalog()
       setSaveSuccess(true)
       setSaveErrors([])
     } catch (err) {
-      setSaveErrors(extractBackendErrors(err))
+      const fallback = extractCatalogValidationErrors(err).map((item) => item.message)
+      setSaveErrors(fallback.length > 0 ? fallback : ['Unknown error'])
     } finally {
       setSaving(false)
     }
-  }, [draftRaw, saving])
+  }, [
+    draftRaw,
+    extractCatalogValidationErrors,
+    formatActionValidationErrors,
+    loadCatalog,
+    saving,
+    serverRecords,
+  ])
 
   const updateActions = useCallback((updater: (actions: PlainObject[]) => PlainObject[]) => {
     const parsed = parseJson(draftRaw)
@@ -397,12 +551,10 @@ export function ActionCatalogPage() {
         <Space size="middle" align="center" wrap>
           <Title level={2} style={{ marginBottom: 0 }}>Action Catalog</Title>
           <Text type="secondary">
-            RuntimeSetting <Text code>{ACTION_CATALOG_KEY}</Text>
+            Unified store <Text code>{ACTION_CATALOG_KEY}</Text>
           </Text>
           {dirty && <Tag color="orange">Draft</Tag>}
-          {settingSource === 'tenant_override' && <Tag color="blue">Tenant override</Tag>}
-          {settingSource === 'global' && <Tag>Global</Tag>}
-          {settingSource === 'default' && <Tag>Default</Tag>}
+          {settingSource === 'unified' && <Tag color="blue">Unified</Tag>}
         </Space>
         {settingDescription && (
           <Text type="secondary" style={{ display: 'block' }}>{settingDescription}</Text>

@@ -42,6 +42,10 @@ const CAPABILITY_OPTIONS: { value: string; label: string }[] = [
 const CAPABILITY_RE = /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/
 const GUIDED_PARAMS_RENDER_BATCH = 60
 
+const getSchemaObject = (value: unknown): Record<string, unknown> | null => (
+  isPlainObject(value) ? value as Record<string, unknown> : null
+)
+
 type ParamsEditorMode = 'guided' | 'raw'
 type GuidedGroupKey = 'filled' | 'required' | 'optional'
 
@@ -93,6 +97,35 @@ export function ActionCatalogEditorModal({
   )
 
   const hintsQuery = useActionCatalogEditorHints(open)
+  const capabilityHints = useMemo(() => {
+    const key = editorCapability.trim()
+    if (!key) return null
+    const capabilities = getSchemaObject(hintsQuery.data?.capabilities)
+    if (!capabilities) return null
+    return getSchemaObject(capabilities[key])
+  }, [editorCapability, hintsQuery.data?.capabilities])
+  const targetBindingSchema = useMemo(() => (
+    getSchemaObject(capabilityHints?.target_binding_schema) ?? null
+  ), [capabilityHints?.target_binding_schema])
+  const targetBindingPropertySchema = useMemo(() => {
+    const properties = getSchemaObject(targetBindingSchema?.properties)
+    if (!properties) return null
+    return getSchemaObject(properties.extension_name_param)
+  }, [targetBindingSchema?.properties])
+  const targetBindingRequired = useMemo(() => {
+    const required = targetBindingSchema?.required
+    if (!Array.isArray(required)) return false
+    return required.some((item) => item === 'extension_name_param')
+  }, [targetBindingSchema?.required])
+  const targetBindingLabel = typeof targetBindingPropertySchema?.title === 'string' && targetBindingPropertySchema.title.trim()
+    ? targetBindingPropertySchema.title
+    : 'target_binding.extension_name_param'
+  const targetBindingDescription = typeof targetBindingPropertySchema?.description === 'string'
+    ? targetBindingPropertySchema.description
+    : undefined
+  const targetBindingMinLength = typeof targetBindingPropertySchema?.minLength === 'number'
+    ? targetBindingPropertySchema.minLength
+    : undefined
 
   const workflowTemplatesQuery = useWorkflowTemplates(
     workflowSearch.trim() ? { search: workflowSearch.trim() } : undefined,
@@ -196,6 +229,12 @@ export function ActionCatalogEditorModal({
     const current = form.getFieldValue(['executor', 'params_json']) ?? initialValues?.executor?.params_json
     syncParamsEditorFromValue(current)
   }, [form, initialValues?.executor?.params_json, open])
+
+  useEffect(() => {
+    if (!open) return
+    if (targetBindingSchema) return
+    form.setFieldValue(['executor', 'target_binding_extension_name_param'], '')
+  }, [form, open, targetBindingSchema])
 
   useEffect(() => {
     if (!open) return
@@ -953,11 +992,40 @@ export function ActionCatalogEditorModal({
                   )}
 
                   {!hintsQuery.isError && (
-                    <ActionCatalogCapabilityFixedSection
-                      form={form}
-                      capability={editorCapability}
-                      hints={hintsQuery.data}
-                    />
+                    <Space direction="vertical" style={{ width: '100%' }}>
+                      {targetBindingSchema && (
+                        <Form.Item
+                          label={targetBindingLabel}
+                          name={['executor', 'target_binding_extension_name_param']}
+                          tooltip={targetBindingDescription}
+                          rules={[
+                            {
+                              required: targetBindingRequired,
+                              message: `${targetBindingLabel} is required`,
+                            },
+                            {
+                              validator: async (_rule, value) => {
+                                const raw = typeof value === 'string' ? value.trim() : ''
+                                if (!raw) return
+                                if (targetBindingMinLength && raw.length < targetBindingMinLength) {
+                                  throw new Error(`${targetBindingLabel} must be at least ${targetBindingMinLength} characters`)
+                                }
+                              },
+                            },
+                          ]}
+                        >
+                          <Input
+                            placeholder="e.g. extension_name"
+                            data-testid="action-catalog-editor-target-binding-extension-name-param"
+                          />
+                        </Form.Item>
+                      )}
+                      <ActionCatalogCapabilityFixedSection
+                        form={form}
+                        capability={editorCapability}
+                        hints={hintsQuery.data}
+                      />
+                    </Space>
                   )}
                 </Space>
               ),

@@ -7,6 +7,7 @@ type JsonObject = Record<string, unknown>
 
 type ActionCatalogEditorCapabilityHints = {
   fixed_schema?: unknown
+  target_binding_schema?: unknown
 }
 
 export type ActionCatalogEditorHintsLike = {
@@ -125,6 +126,18 @@ const getCapabilityFixedSchema = (
   return getObject(capabilityHints.fixed_schema)
 }
 
+const getCapabilityTargetBindingSchema = (
+  capability: string | null,
+  options: ActionCatalogValidationOptions
+): JsonObject | null => {
+  if (!capability) return null
+  const capabilities = getObject(options.editorHints?.capabilities)
+  if (!capabilities) return null
+  const capabilityHints = getObject(capabilities[capability])
+  if (!capabilityHints) return null
+  return getObject(capabilityHints.target_binding_schema)
+}
+
 export const validateActionCatalogDraft = (
   draftParsed: unknown,
   options: ActionCatalogValidationOptions = {}
@@ -237,6 +250,7 @@ export const validateActionCatalogDraft = (
         && key !== 'additional_args'
         && key !== 'stdin'
         && key !== 'fixed'
+        && key !== 'target_binding'
       ) {
         errors.push(`extensions.actions[${idx}].executor: unknown key: ${key}`)
       }
@@ -290,6 +304,18 @@ export const validateActionCatalogDraft = (
           validateBySchema(fixed, fixedSchema, `extensions.actions[${idx}].executor.fixed`, errors)
         }
       }
+    }
+
+    const targetBindingSchema = getCapabilityTargetBindingSchema(capability, options)
+    if (targetBindingSchema) {
+      const targetBinding = executor.target_binding
+      if (targetBinding === undefined) {
+        errors.push(`extensions.actions[${idx}].executor.target_binding: is required`)
+      } else {
+        validateBySchema(targetBinding, targetBindingSchema, `extensions.actions[${idx}].executor.target_binding`, errors)
+      }
+    } else if (executor.target_binding !== undefined && !isPlainObject(executor.target_binding)) {
+      errors.push(`extensions.actions[${idx}].executor.target_binding: must be an object`)
     }
   }
 

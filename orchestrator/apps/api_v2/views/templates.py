@@ -22,7 +22,13 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter
 from apps.api_v2.serializers.common import ErrorResponseSerializer
 from apps.core import permission_codes as perms
 from apps.databases.models import PermissionLevel
-from apps.templates.models import OperationTemplate
+from apps.templates.models import OperationExposure, OperationTemplate
+from apps.templates.operation_catalog_service import (
+    delete_template_exposure,
+    list_template_exposures_queryset,
+    serialize_template_exposure,
+    upsert_template_exposure,
+)
 from apps.templates.rbac import TemplatePermissionService
 from apps.templates.registry import get_registry
 from apps.operations.services.admin_action_audit import log_admin_action
@@ -37,23 +43,18 @@ def _permission_denied(message: str):
     )
 
 
-class OperationTemplateSerializer(serializers.ModelSerializer):
-    """Serializer for OperationTemplate model."""
+class OperationTemplateSerializer(serializers.Serializer):
+    """Serializer for template exposure materialized from unified operation catalog."""
 
-    class Meta:
-        model = OperationTemplate
-        fields = [
-            'id',
-            'name',
-            'description',
-            'operation_type',
-            'target_entity',
-            'template_data',
-            'is_active',
-            'created_at',
-            'updated_at',
-        ]
-        read_only_fields = ['created_at', 'updated_at']
+    id = serializers.CharField()
+    name = serializers.CharField()
+    description = serializers.CharField(allow_blank=True, required=False)
+    operation_type = serializers.CharField()
+    target_entity = serializers.CharField()
+    template_data = serializers.JSONField()
+    is_active = serializers.BooleanField()
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
 
 
 class OperationTemplateWriteSerializer(serializers.Serializer):
@@ -95,19 +96,19 @@ class OperationTemplateDetailResponseSerializer(serializers.Serializer):
 
 
 TEMPLATE_FILTER_FIELDS = {
-    "name": {"field": "name", "type": "text"},
+    "name": {"field": "label", "type": "text"},
     "description": {"field": "description", "type": "text"},
-    "operation_type": {"field": "operation_type", "type": "enum"},
-    "target_entity": {"field": "target_entity", "type": "enum"},
+    "operation_type": {"field": "definition__executor_payload__operation_type", "type": "enum"},
+    "target_entity": {"field": "definition__executor_payload__target_entity", "type": "enum"},
     "is_active": {"field": "is_active", "type": "bool"},
     "created_at": {"field": "created_at", "type": "datetime"},
     "updated_at": {"field": "updated_at", "type": "datetime"},
 }
 
 TEMPLATE_SORT_FIELDS = {
-    "name": "name",
-    "operation_type": "operation_type",
-    "target_entity": "target_entity",
+    "name": "label",
+    "operation_type": "definition__executor_payload__operation_type",
+    "target_entity": "definition__executor_payload__target_entity",
     "is_active": "is_active",
     "created_at": "created_at",
     "updated_at": "updated_at",
@@ -303,20 +304,20 @@ def list_templates(request):
     except (ValueError, TypeError):
         offset = 0
 
-    qs = OperationTemplate.objects.all()
+    qs = list_template_exposures_queryset()
 
     # Apply filters
     if operation_type:
-        qs = qs.filter(operation_type=operation_type)
+        qs = qs.filter(definition__executor_payload__operation_type=operation_type)
     if target_entity:
-        qs = qs.filter(target_entity=target_entity)
+        qs = qs.filter(definition__executor_payload__target_entity=target_entity)
     if is_active is not None:
         # Parse boolean from string
         is_active_bool = is_active.lower() in ('true', '1', 'yes')
         qs = qs.filter(is_active=is_active_bool)
 
     if search:
-        qs = qs.filter(Q(name__icontains=search) | Q(description__icontains=search))
+        qs = qs.filter(Q(label__icontains=search) | Q(description__icontains=search))
 
     filters_payload, filters_error = _parse_filters(raw_filters)
     if filters_error:
@@ -337,18 +338,21 @@ def list_templates(request):
         qs = qs.order_by('name')
 
     if not request.user.is_staff:
-        qs = TemplatePermissionService.filter_accessible_operation_templates(
+        allowed_templates_qs = TemplatePermissionService.filter_accessible_operation_templates(
             request.user,
-            qs,
+            OperationTemplate.objects.all(),
             min_level=PermissionLevel.VIEW,
         )
+        allowed_ids = list(allowed_templates_qs.values_list("id", flat=True))
+        qs = qs.filter(alias__in=allowed_ids)
 
     total = qs.count()
 
     # Apply pagination
     qs = qs[offset:offset + limit]
 
-    serializer = OperationTemplateSerializer(qs, many=True)
+    serialized_rows = [serialize_template_exposure(exposure) for exposure in qs]
+    serializer = OperationTemplateSerializer(serialized_rows, many=True)
 
     return Response({
         'templates': serializer.data,
@@ -362,10 +366,19 @@ def _generate_template_id(name: str) -> str:
     if not slug:
         slug = hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
     base = f"tpl-custom-{slug}"
-    if not OperationTemplate.objects.filter(id=base).exists():
+    exists_base = OperationExposure.objects.filter(
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias=base,
+        tenant__isnull=True,
+    ).exists()
+    if not exists_base:
         return base
     counter = 2
-    while OperationTemplate.objects.filter(id=f"{base}-{counter}").exists():
+    while OperationExposure.objects.filter(
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias=f"{base}-{counter}",
+        tenant__isnull=True,
+    ).exists():
         counter += 1
     return f"{base}-{counter}"
 
@@ -408,14 +421,18 @@ def create_template(request):
     if op_error:
         return Response({"success": False, "error": op_error}, status=400)
 
-    if OperationTemplate.objects.filter(id=template_id).exists():
+    if OperationExposure.objects.filter(
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias=template_id,
+        tenant__isnull=True,
+    ).exists():
         return Response({
             "success": False,
             "error": {"code": "TEMPLATE_EXISTS", "message": f"Template {template_id} already exists"},
         }, status=400)
 
-    template = OperationTemplate.objects.create(
-        id=template_id,
+    exposure, _created = upsert_template_exposure(
+        template_id=template_id,
         name=data["name"],
         description=data.get("description", ""),
         operation_type=data["operation_type"],
@@ -432,7 +449,7 @@ def create_template(request):
         metadata={"template_id": template_id},
     )
 
-    return Response({"template": OperationTemplateSerializer(template).data})
+    return Response({"template": OperationTemplateSerializer(serialize_template_exposure(exposure)).data})
 
 
 @extend_schema(
@@ -465,27 +482,48 @@ def update_template(request):
     if op_error:
         return Response({"success": False, "error": op_error}, status=400)
 
-    try:
-        template = OperationTemplate.objects.get(id=template_id)
-    except OperationTemplate.DoesNotExist:
+    exposure = (
+        OperationExposure.objects.select_related("definition")
+        .filter(
+            surface=OperationExposure.SURFACE_TEMPLATE,
+            alias=template_id,
+            tenant__isnull=True,
+        )
+        .first()
+    )
+    if exposure is None:
         return Response({
             "success": False,
             "error": {"code": "NOT_FOUND", "message": f"Template {template_id} not found"},
         }, status=404)
 
-    if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_OPERATION_TEMPLATE, template):
-        return _permission_denied("You do not have permission to manage this template.")
+    legacy_template = OperationTemplate.objects.filter(id=template_id).first()
+    if legacy_template is not None:
+        if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_OPERATION_TEMPLATE, legacy_template):
+            return _permission_denied("You do not have permission to manage this template.")
+    elif not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_OPERATION_TEMPLATE):
+        return _permission_denied("You do not have permission to manage templates.")
 
-    fields = ["name", "description", "operation_type", "target_entity", "template_data", "is_active"]
-    changed = []
-    for field in fields:
-        value = data.get(field)
-        if value is not None and getattr(template, field) != value:
-            setattr(template, field, value)
-            changed.append(field)
+    before = serialize_template_exposure(exposure)
+    desired = {
+        "name": data["name"],
+        "description": data.get("description", ""),
+        "operation_type": data["operation_type"],
+        "target_entity": data["target_entity"],
+        "template_data": data["template_data"],
+        "is_active": data.get("is_active", True),
+    }
+    changed = [field for field, value in desired.items() if before.get(field) != value]
 
-    if changed:
-        template.save(update_fields=changed + ["updated_at"])
+    updated_exposure, _created = upsert_template_exposure(
+        template_id=template_id,
+        name=desired["name"],
+        description=desired["description"],
+        operation_type=desired["operation_type"],
+        target_entity=desired["target_entity"],
+        template_data=desired["template_data"],
+        is_active=desired["is_active"],
+    )
 
     log_admin_action(
         request,
@@ -495,7 +533,7 @@ def update_template(request):
         metadata={"template_id": template_id, "changed_fields": changed},
     )
 
-    return Response({"template": OperationTemplateSerializer(template).data})
+    return Response({"template": OperationTemplateSerializer(serialize_template_exposure(updated_exposure)).data})
 
 
 @extend_schema(
@@ -518,18 +556,34 @@ def delete_template(request):
         return Response({"success": False, "error": serializer.errors}, status=400)
 
     template_id = serializer.validated_data["template_id"]
-    try:
-        template = OperationTemplate.objects.get(id=template_id)
-    except OperationTemplate.DoesNotExist:
+    exposure = (
+        OperationExposure.objects.select_related("definition")
+        .filter(
+            surface=OperationExposure.SURFACE_TEMPLATE,
+            alias=template_id,
+            tenant__isnull=True,
+        )
+        .first()
+    )
+    if exposure is None:
         return Response({
             "success": False,
             "error": {"code": "NOT_FOUND", "message": f"Template {template_id} not found"},
         }, status=404)
 
-    if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_OPERATION_TEMPLATE, template):
-        return _permission_denied("You do not have permission to manage this template.")
+    legacy_template = OperationTemplate.objects.filter(id=template_id).first()
+    if legacy_template is not None:
+        if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_OPERATION_TEMPLATE, legacy_template):
+            return _permission_denied("You do not have permission to manage this template.")
+    elif not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_OPERATION_TEMPLATE):
+        return _permission_denied("You do not have permission to manage templates.")
 
-    template.delete()
+    deleted_exposure = delete_template_exposure(template_id=template_id)
+    if deleted_exposure is None:
+        return Response({
+            "success": False,
+            "error": {"code": "NOT_FOUND", "message": f"Template {template_id} not found"},
+        }, status=404)
 
     log_admin_action(
         request,
@@ -539,7 +593,7 @@ def delete_template(request):
         metadata={"template_id": template_id},
     )
 
-    return Response({"template": OperationTemplateSerializer(template).data})
+    return Response({"template": OperationTemplateSerializer(serialize_template_exposure(deleted_exposure)).data})
 
 
 class OperationTemplateSyncRequestSerializer(serializers.Serializer):
@@ -628,24 +682,46 @@ def sync_from_registry(request):
                 'is_active': data.get('is_active', True),
             }
 
-            try:
-                template = OperationTemplate.objects.get(id=template_id)
-            except OperationTemplate.DoesNotExist:
+            exposure = (
+                OperationExposure.objects.select_related("definition")
+                .filter(
+                    surface=OperationExposure.SURFACE_TEMPLATE,
+                    alias=template_id,
+                    tenant__isnull=True,
+                )
+                .first()
+            )
+            if exposure is None:
                 created += 1
                 if not dry_run:
-                    OperationTemplate.objects.create(id=template_id, **defaults)
+                    upsert_template_exposure(
+                        template_id=template_id,
+                        name=defaults["name"],
+                        description=defaults["description"],
+                        operation_type=defaults["operation_type"],
+                        target_entity=defaults["target_entity"],
+                        template_data=defaults["template_data"],
+                        is_active=defaults["is_active"],
+                    )
                 continue
 
-            changed_fields = [key for key, value in defaults.items() if getattr(template, key) != value]
+            current = serialize_template_exposure(exposure)
+            changed_fields = [key for key, value in defaults.items() if current.get(key) != value]
             if not changed_fields:
                 unchanged += 1
                 continue
 
             updated += 1
             if not dry_run:
-                for key in changed_fields:
-                    setattr(template, key, defaults[key])
-                template.save(update_fields=changed_fields)
+                upsert_template_exposure(
+                    template_id=template_id,
+                    name=defaults["name"],
+                    description=defaults["description"],
+                    operation_type=defaults["operation_type"],
+                    target_entity=defaults["target_entity"],
+                    template_data=defaults["template_data"],
+                    is_active=defaults["is_active"],
+                )
 
     if dry_run:
         apply_sync()

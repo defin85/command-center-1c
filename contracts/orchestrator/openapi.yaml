@@ -7734,7 +7734,8 @@ paths:
   /api/v2/templates/create-template/:
     post:
       operationId: v2_templates_create_template_create
-      description: Create a custom operation template. Requires templates.manage_operation_template.
+      description: Create a template exposure in unified operation catalog. Requires
+        templates.manage_operation_template.
       summary: Create operation template
       tags:
       - v2
@@ -7782,7 +7783,8 @@ paths:
   /api/v2/templates/delete-template/:
     post:
       operationId: v2_templates_delete_template_create
-      description: Delete an operation template. Requires templates.manage_operation_template.
+      description: Delete a template exposure from unified operation catalog. Requires
+        templates.manage_operation_template.
       summary: Delete operation template
       tags:
       - v2
@@ -7830,8 +7832,8 @@ paths:
   /api/v2/templates/list-templates/:
     get:
       operationId: v2_templates_list_templates_retrieve
-      description: List all operation templates with optional filtering by type, target
-        entity, and active status.
+      description: List template exposures from unified operation catalog with optional
+        filtering.
       summary: List operation templates
       parameters:
       - in: query
@@ -7905,8 +7907,8 @@ paths:
   /api/v2/templates/sync-from-registry/:
     post:
       operationId: v2_templates_sync_from_registry_create
-      description: Synchronize OperationTemplate records with the in-code operation
-        registry. Requires templates.manage_operation_template.
+      description: Synchronize template exposures in unified operation catalog with
+        in-code operation registry. Requires templates.manage_operation_template.
       summary: Sync templates from registry
       tags:
       - v2
@@ -7953,7 +7955,8 @@ paths:
   /api/v2/templates/update-template/:
     post:
       operationId: v2_templates_update_template_create
-      description: Update an existing operation template. Requires templates.manage_operation_template.
+      description: Update a template exposure in unified operation catalog. Requires
+        templates.manage_operation_template.
       summary: Update operation template
       tags:
       - v2
@@ -7983,6 +7986,347 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/operation-catalog/definitions/:
+    get:
+      operationId: v2_operation_catalog_definitions_list
+      description: List canonical operation definitions from unified persistent store.
+      summary: List operation definitions
+      parameters:
+      - in: query
+        name: tenant_scope
+        schema:
+          type: string
+        description: Filter by tenant scope (global|tenant:<id>)
+      - in: query
+        name: executor_kind
+        schema:
+          type: string
+          enum:
+          - ibcmd_cli
+          - designer_cli
+          - workflow
+        description: Filter by executor kind
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - active
+          - archived
+        description: Filter by definition status
+      - in: query
+        name: q
+        schema:
+          type: string
+        description: Free-text filter by alias/description/capability
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Maximum results (default 50, max 1000)
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Pagination offset (default 0)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogDefinitionListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/operation-catalog/definitions/{definition_id}/:
+    get:
+      operationId: v2_operation_catalog_definition_detail_retrieve
+      description: Get canonical operation definition by id.
+      summary: Get operation definition
+      parameters:
+      - in: path
+        name: definition_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogDefinitionDetailResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+  /api/v2/operation-catalog/exposures/:
+    get:
+      operationId: v2_operation_catalog_exposures_list
+      description: List published/draft exposures bound to operation definitions.
+      summary: List operation exposures
+      parameters:
+      - in: query
+        name: surface
+        schema:
+          type: string
+          enum:
+          - template
+          - action_catalog
+        description: Filter by target surface
+      - in: query
+        name: tenant_id
+        schema:
+          type: string
+          format: uuid
+        description: Filter by tenant override scope
+      - in: query
+        name: capability
+        schema:
+          type: string
+        description: Filter by capability
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - draft
+          - published
+          - invalid
+        description: Filter by exposure status
+      - in: query
+        name: alias
+        schema:
+          type: string
+        description: Filter by external alias
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Maximum results (default 50, max 1000)
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Pagination offset (default 0)
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogExposureListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+    post:
+      operationId: v2_operation_catalog_exposures_upsert
+      description: Upsert exposure and bind it to canonical definition in unified store.
+      summary: Upsert operation exposure
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationCatalogExposureUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OperationCatalogExposureUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OperationCatalogExposureUpsertRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogExposureDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/operation-catalog/exposures/{exposure_id}/publish/:
+    post:
+      operationId: v2_operation_catalog_exposures_publish
+      description: Publish exposure after strict validation (fail-closed for invalid binding).
+      summary: Publish operation exposure
+      parameters:
+      - in: path
+        name: exposure_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogExposurePublishResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+  /api/v2/operation-catalog/validate/:
+    post:
+      operationId: v2_operation_catalog_validate_create
+      description: Dry-run validate definition + exposure payload before publish.
+      summary: Validate operation exposure
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationCatalogValidateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OperationCatalogValidateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OperationCatalogValidateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogValidateResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/operation-catalog/migration-issues/:
+    get:
+      operationId: v2_operation_catalog_migration_issues_list
+      description: List migration/backfill issues for unified operation catalog.
+      summary: List operation catalog migration issues
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogMigrationIssuesResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -8073,8 +8417,7 @@ paths:
   /api/v2/ui/action-catalog/:
     get:
       operationId: v2_ui_action_catalog_retrieve
-      description: Returns effective action catalog for the current user (RBAC + driver
-        catalogs + workflows).
+      description: Returns effective action catalog from unified published exposures.
       summary: Get effective action catalog
       tags:
       - v2
@@ -8102,7 +8445,8 @@ paths:
   /api/v2/ui/action-catalog/editor-hints/:
     get:
       operationId: v2_ui_action_catalog_editor_hints_retrieve
-      description: Returns capability-driven UI hints for Action Catalog editor (staff-only).
+      description: Returns capability-driven UI hints (including target_binding schema)
+        for Action Catalog editor.
       summary: Get action catalog editor hints (capability UI hints)
       tags:
       - v2
@@ -9322,12 +9666,21 @@ components:
       properties:
         catalog_version:
           type: integer
-        extensions:
-          type: object
-          additionalProperties: {}
+        surface:
+          type: string
+          enum:
+          - action_catalog
+        exposures:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationCatalogExposure'
+        count:
+          type: integer
       required:
       - catalog_version
-      - extensions
+      - count
+      - exposures
+      - surface
     ActionCatalogEditorHintHelp:
       type: object
       properties:
@@ -9344,6 +9697,9 @@ components:
         fixed_ui_schema:
           type: object
           additionalProperties: {}
+        target_binding_schema:
+          type: object
+          additionalProperties: {}
         help:
           $ref: '#/components/schemas/ActionCatalogEditorHintHelp'
     ActionCatalogEditorHintsResponse:
@@ -9358,6 +9714,396 @@ components:
       required:
       - hints_version
       - capabilities
+    OperationCatalogDefinition:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_scope:
+          type: string
+        executor_kind:
+          enum:
+          - ibcmd_cli
+          - designer_cli
+          - workflow
+          type: string
+          description: |-
+            * `ibcmd_cli` - ibcmd_cli
+            * `designer_cli` - designer_cli
+            * `workflow` - workflow
+        executor_payload:
+          type: object
+          additionalProperties: {}
+        contract_version:
+          type: integer
+        fingerprint:
+          type: string
+        status:
+          enum:
+          - active
+          - archived
+          type: string
+          description: |-
+            * `active` - active
+            * `archived` - archived
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - contract_version
+      - executor_kind
+      - executor_payload
+      - fingerprint
+      - id
+      - status
+      - tenant_scope
+    OperationCatalogDefinitionInput:
+      type: object
+      properties:
+        tenant_scope:
+          type: string
+        executor_kind:
+          enum:
+          - ibcmd_cli
+          - designer_cli
+          - workflow
+          type: string
+          description: |-
+            * `ibcmd_cli` - ibcmd_cli
+            * `designer_cli` - designer_cli
+            * `workflow` - workflow
+        executor_payload:
+          type: object
+          additionalProperties: {}
+        contract_version:
+          type: integer
+          default: 1
+      required:
+      - executor_kind
+      - executor_payload
+    OperationCatalogExposure:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        definition_id:
+          type: string
+          format: uuid
+        surface:
+          enum:
+          - template
+          - action_catalog
+          type: string
+          description: |-
+            * `template` - template
+            * `action_catalog` - action_catalog
+        alias:
+          type: string
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        capability:
+          type: string
+        contexts:
+          type: array
+          items:
+            type: string
+        display_order:
+          type: integer
+        capability_config:
+          type: object
+          additionalProperties: {}
+        status:
+          enum:
+          - draft
+          - published
+          - invalid
+          type: string
+          description: |-
+            * `draft` - draft
+            * `published` - published
+            * `invalid` - invalid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - alias
+      - capability
+      - capability_config
+      - definition_id
+      - id
+      - is_active
+      - name
+      - status
+      - surface
+    OperationCatalogExposureInput:
+      type: object
+      properties:
+        surface:
+          enum:
+          - template
+          - action_catalog
+          type: string
+          description: |-
+            * `template` - template
+            * `action_catalog` - action_catalog
+        alias:
+          type: string
+          maxLength: 128
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+          default: true
+        capability:
+          type: string
+          maxLength: 128
+        contexts:
+          type: array
+          items:
+            type: string
+        display_order:
+          type: integer
+          default: 0
+        capability_config:
+          type: object
+          additionalProperties: {}
+      required:
+      - alias
+      - capability
+      - name
+      - surface
+    OperationCatalogExposureReference:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        surface:
+          enum:
+          - template
+          - action_catalog
+          type: string
+          description: |-
+            * `template` - template
+            * `action_catalog` - action_catalog
+        alias:
+          type: string
+        status:
+          enum:
+          - draft
+          - published
+          - invalid
+          type: string
+          description: |-
+            * `draft` - draft
+            * `published` - published
+            * `invalid` - invalid
+      required:
+      - alias
+      - id
+      - status
+      - surface
+    OperationCatalogDefinitionListResponse:
+      type: object
+      properties:
+        definitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationCatalogDefinition'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - definitions
+      - total
+    OperationCatalogDefinitionDetailResponse:
+      type: object
+      properties:
+        definition:
+          $ref: '#/components/schemas/OperationCatalogDefinition'
+        exposures:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationCatalogExposureReference'
+      required:
+      - definition
+      - exposures
+    OperationCatalogExposureListResponse:
+      type: object
+      properties:
+        exposures:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationCatalogExposure'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - exposures
+      - total
+    OperationCatalogExposureDetailResponse:
+      type: object
+      properties:
+        exposure:
+          $ref: '#/components/schemas/OperationCatalogExposure'
+        definition:
+          $ref: '#/components/schemas/OperationCatalogDefinition'
+      required:
+      - definition
+      - exposure
+    OperationCatalogExposureUpsertRequest:
+      type: object
+      properties:
+        exposure_id:
+          type: string
+          format: uuid
+        definition_id:
+          type: string
+          format: uuid
+          nullable: true
+        definition:
+          $ref: '#/components/schemas/OperationCatalogDefinitionInput'
+        exposure:
+          $ref: '#/components/schemas/OperationCatalogExposureInput'
+      required:
+      - exposure
+    OperationCatalogValidationError:
+      type: object
+      properties:
+        path:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+      required:
+      - code
+      - message
+      - path
+    OperationCatalogExposurePublishResponse:
+      type: object
+      properties:
+        published:
+          type: boolean
+        exposure:
+          $ref: '#/components/schemas/OperationCatalogExposure'
+        validation_errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationCatalogValidationError'
+      required:
+      - exposure
+      - published
+      - validation_errors
+    OperationCatalogValidateRequest:
+      type: object
+      properties:
+        definition:
+          $ref: '#/components/schemas/OperationCatalogDefinitionInput'
+        exposure:
+          $ref: '#/components/schemas/OperationCatalogExposureInput'
+      required:
+      - exposure
+    OperationCatalogValidateResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationCatalogValidationError'
+      required:
+      - errors
+      - valid
+    OperationCatalogMigrationIssue:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        source_type:
+          type: string
+        source_id:
+          type: string
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        exposure_id:
+          type: string
+          format: uuid
+          nullable: true
+        severity:
+          enum:
+          - warning
+          - error
+          type: string
+          description: |-
+            * `warning` - warning
+            * `error` - error
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: {}
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - code
+      - created_at
+      - id
+      - message
+      - severity
+      - source_id
+      - source_type
+    OperationCatalogMigrationIssuesResponse:
+      type: object
+      properties:
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationCatalogMigrationIssue'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+      - count
+      - issues
+      - total
     AdminAuditLogItem:
       type: object
       properties:
@@ -13198,7 +13944,7 @@ components:
           type: string
           maxLength: 128
           description: |-
-            Optional deterministic action selector (matches `ui.action_catalog.extensions.actions[].id`).
+            Optional deterministic action selector (matches unified `operation_exposure.alias` for `surface="action_catalog"`).
 
             If provided, backend uses this action directly. If omitted and multiple actions match the requested
             `capability`, backend fails closed with `AMBIGUOUS_ACTION`.
@@ -14315,25 +15061,55 @@ components:
       - max_streams
     OperationTemplate:
       type: object
-      description: Serializer for OperationTemplate model.
+      description: Template exposure materialized from unified operation catalog.
       properties:
         id:
           type: string
-          maxLength: 64
+          format: uuid
+        alias:
+          type: string
+          maxLength: 128
         name:
           type: string
           maxLength: 255
         description:
           type: string
-        operation_type:
+          nullable: true
+        surface:
+          enum:
+          - template
           type: string
-          maxLength: 32
-        target_entity:
+          description: |-
+            * `template` - template
+        definition_id:
           type: string
-          maxLength: 255
-        template_data: {}
+          format: uuid
+        definition:
+          $ref: '#/components/schemas/OperationCatalogDefinition'
+        capability:
+          type: string
+          maxLength: 128
+        contexts:
+          type: array
+          items:
+            type: string
+        display_order:
+          type: integer
+        capability_config:
+          type: object
+          additionalProperties: {}
         is_active:
           type: boolean
+        status:
+          enum:
+          - draft
+          - published
+          - invalid
+          type: string
+          description: |-
+            * `draft` - draft
+            * `published` - published
+            * `invalid` - invalid
         created_at:
           type: string
           format: date-time
@@ -14343,11 +15119,17 @@ components:
           format: date-time
           readOnly: true
       required:
+      - alias
+      - capability
+      - capability_config
       - created_at
+      - definition
+      - definition_id
       - id
+      - is_active
       - name
-      - operation_type
-      - target_entity
+      - status
+      - surface
       - updated_at
     OperationTemplateDetailResponse:
       type: object
@@ -14414,13 +15196,13 @@ components:
       - template_id
     OperationTemplateListResponse:
       type: object
-      description: Response for list_templates endpoint.
+      description: Response for list_templates endpoint backed by unified exposures.
       properties:
         templates:
           type: array
           items:
             $ref: '#/components/schemas/OperationTemplate'
-          description: List of operation templates
+          description: List of template exposures
         count:
           type: integer
           description: Number of templates in current page
@@ -14517,23 +15299,42 @@ components:
       properties:
         id:
           type: string
+          format: uuid
+        alias:
+          type: string
+          maxLength: 128
         name:
           type: string
+          maxLength: 255
         description:
           type: string
-        operation_type:
+          nullable: true
+        capability:
           type: string
-        target_entity:
-          type: string
-        template_data: {}
+          maxLength: 128
+        contexts:
+          type: array
+          items:
+            type: string
+        display_order:
+          type: integer
+          default: 0
+        capability_config:
+          type: object
+          additionalProperties: {}
         is_active:
           type: boolean
           default: true
+        definition_id:
+          type: string
+          format: uuid
+          nullable: true
+        definition:
+          $ref: '#/components/schemas/OperationCatalogDefinitionInput'
       required:
+      - alias
+      - capability
       - name
-      - operation_type
-      - target_entity
-      - template_data
     ParallelConfig:
       type: object
       description: Serializer for ParallelConfig Pydantic model.

@@ -19,6 +19,7 @@ from . import (
     timeline,
     dlq,
     driver_catalogs,
+    operation_catalog,
 )
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     'timeline',
     'dlq',
     'driver_catalogs',
+    'operation_catalog',
 ]

@@ -1,4 +1,5 @@
 import type { ActionFormValues, ActionRow, DiffItem, PlainObject, SaveErrorHint } from './actionCatalogTypes'
+import { driverCommandConfigToExecutor, executorToDriverCommandConfig } from '../../lib/commandConfigAdapter'
 
 export const isPlainObject = (value: unknown): value is PlainObject => (
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -170,19 +171,20 @@ export const deriveActionFormValues = (action: PlainObject | null): ActionFormVa
   const kind = (executorRaw.kind === 'ibcmd_cli' || executorRaw.kind === 'designer_cli' || executorRaw.kind === 'workflow')
     ? executorRaw.kind
     : 'ibcmd_cli'
-  const driver = (executorRaw.driver === 'cli' || executorRaw.driver === 'ibcmd') ? executorRaw.driver : undefined
-  const commandId = typeof executorRaw.command_id === 'string' ? executorRaw.command_id : ''
+  const commandConfig = executorToDriverCommandConfig(executorRaw)
+  const driver = (commandConfig.driver === 'cli' || commandConfig.driver === 'ibcmd') ? commandConfig.driver : undefined
+  const commandId = typeof commandConfig.command_id === 'string' ? commandConfig.command_id : ''
   const workflowId = typeof executorRaw.workflow_id === 'string' ? executorRaw.workflow_id : ''
-
-  const mode = executorRaw.mode === 'manual' ? 'manual' : 'guided'
-
-  const params = isPlainObject(executorRaw.params) ? executorRaw.params : {}
-  const paramsJson = safeJsonStringify(params)
-
-  const additionalArgs = Array.isArray(executorRaw.additional_args)
-    ? executorRaw.additional_args.filter((item) => typeof item === 'string') as string[]
+  const mode = commandConfig.mode === 'manual' ? 'manual' : 'guided'
+  const paramsJson = safeJsonStringify(isPlainObject(commandConfig.params) ? commandConfig.params : {})
+  const additionalArgs = Array.isArray(commandConfig.resolved_args)
+    ? commandConfig.resolved_args.filter((item) => typeof item === 'string') as string[]
     : []
-  const stdin = typeof executorRaw.stdin === 'string' ? executorRaw.stdin : ''
+  const stdin = typeof commandConfig.stdin === 'string' ? commandConfig.stdin : ''
+  const targetBinding = isPlainObject(executorRaw.target_binding) ? executorRaw.target_binding : {}
+  const targetBindingExtensionNameParam = typeof targetBinding.extension_name_param === 'string'
+    ? targetBinding.extension_name_param
+    : ''
 
   const fixed = toFixedFormValue(executorRaw.fixed)
 
@@ -200,6 +202,7 @@ export const deriveActionFormValues = (action: PlainObject | null): ActionFormVa
       params_json: paramsJson,
       additional_args: additionalArgs,
       stdin,
+      target_binding_extension_name_param: targetBindingExtensionNameParam,
       fixed,
     },
   }
@@ -226,45 +229,61 @@ export const buildActionFromForm = (base: PlainObject | null, values: ActionForm
     executor.workflow_id = (values.executor.workflow_id ?? '').trim()
     delete executor.driver
     delete executor.command_id
-  } else {
-    executor.driver = (values.executor.driver ?? '').trim()
-    executor.command_id = (values.executor.command_id ?? '').trim()
-    delete executor.workflow_id
-  }
-
-  const mode = values.executor.mode === 'manual' ? 'manual' : (values.executor.mode === 'guided' ? 'guided' : undefined)
-  if (values.executor.kind === 'ibcmd_cli' && mode) {
-    executor.mode = mode
-  } else {
     delete executor.mode
-  }
-
-  const stdin = typeof values.executor.stdin === 'string' ? values.executor.stdin : ''
-  if (stdin.trim()) {
-    executor.stdin = stdin
-  } else {
-    delete executor.stdin
-  }
-
-  const additionalArgs = Array.isArray(values.executor.additional_args)
-    ? values.executor.additional_args.filter((item) => typeof item === 'string' && item.trim()) as string[]
-    : []
-  if (additionalArgs.length) {
-    executor.additional_args = additionalArgs
-  } else {
+    delete executor.params
     delete executor.additional_args
-  }
-
-  const paramsRaw = typeof values.executor.params_json === 'string' ? values.executor.params_json : ''
-  if (paramsRaw.trim()) {
-    const parsed = parseJson(paramsRaw)
-    if (isPlainObject(parsed)) {
-      executor.params = parsed
+    delete executor.stdin
+    delete executor.target_binding
+  } else {
+    const paramsRaw = typeof values.executor.params_json === 'string' ? values.executor.params_json : ''
+    const parsedParams = parseJson(paramsRaw)
+    const normalizedParams = isPlainObject(parsedParams) ? parsedParams : {}
+    const additionalArgs = Array.isArray(values.executor.additional_args)
+      ? values.executor.additional_args.filter((item) => typeof item === 'string' && item.trim()) as string[]
+      : []
+    const commandMode: 'guided' | 'manual' = values.executor.mode === 'manual' ? 'manual' : 'guided'
+    const commandConfig = {
+      driver: values.executor.driver === 'cli' || values.executor.driver === 'ibcmd'
+        ? values.executor.driver
+        : (values.executor.kind === 'designer_cli' ? 'cli' : 'ibcmd'),
+      mode: commandMode,
+      command_id: (values.executor.command_id ?? '').trim(),
+      params: normalizedParams,
+      resolved_args: additionalArgs,
+      stdin: typeof values.executor.stdin === 'string' ? values.executor.stdin : '',
+    }
+    const serialized = driverCommandConfigToExecutor(commandConfig, {
+      kind: values.executor.kind as 'ibcmd_cli' | 'designer_cli',
+    })
+    executor.driver = serialized.driver
+    executor.command_id = serialized.command_id
+    if (serialized.mode !== undefined) {
+      executor.mode = serialized.mode
+    } else {
+      delete executor.mode
+    }
+    if (serialized.params !== undefined) {
+      executor.params = serialized.params
     } else {
       delete executor.params
     }
+    if (serialized.additional_args !== undefined) {
+      executor.additional_args = serialized.additional_args
+    } else {
+      delete executor.additional_args
+    }
+    if (serialized.stdin !== undefined) {
+      executor.stdin = serialized.stdin
+    } else {
+      delete executor.stdin
+    }
+    delete executor.workflow_id
+  }
+  const targetBindingExtensionNameParam = (values.executor.target_binding_extension_name_param ?? '').trim()
+  if (targetBindingExtensionNameParam) {
+    executor.target_binding = { extension_name_param: targetBindingExtensionNameParam }
   } else {
-    delete executor.params
+    delete executor.target_binding
   }
 
   const fixedNext = toFixedFormValue(values.executor.fixed)

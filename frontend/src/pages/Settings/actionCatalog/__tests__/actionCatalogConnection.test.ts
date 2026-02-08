@@ -259,3 +259,86 @@ describe('Action Catalog: fixed schema hints', () => {
     expect(validRes.ok).toBe(true)
   })
 })
+
+describe('Action Catalog: target_binding hints', () => {
+  const hints = {
+    capabilities: {
+      'extensions.set_flags': {
+        target_binding_schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['extension_name_param'],
+          properties: {
+            extension_name_param: { type: 'string', minLength: 1 },
+          },
+        },
+      },
+    },
+  }
+
+  it('preserves target_binding on form round-trip', () => {
+    const base: any = {
+      id: 'flags.binding',
+      capability: 'extensions.set_flags',
+      label: 'Set flags binding',
+      contexts: ['bulk_page'],
+      executor: {
+        kind: 'ibcmd_cli',
+        driver: 'ibcmd',
+        command_id: 'infobase.extension.update',
+        target_binding: {
+          extension_name_param: 'extension_name',
+        },
+      },
+    }
+
+    const values = deriveActionFormValues(base)
+    expect(values.executor.target_binding_extension_name_param).toBe('extension_name')
+
+    const rebuilt = buildActionFromForm(base, values) as any
+    expect(rebuilt.executor.target_binding).toEqual({ extension_name_param: 'extension_name' })
+  })
+
+  it('validates required target_binding with backend hints schema', () => {
+    const invalidDraft: any = {
+      catalog_version: 1,
+      extensions: {
+        actions: [
+          {
+            id: 'flags.binding.invalid',
+            capability: 'extensions.set_flags',
+            label: 'Missing binding',
+            contexts: ['bulk_page'],
+            executor: {
+              kind: 'ibcmd_cli',
+              driver: 'ibcmd',
+              command_id: 'infobase.extension.update',
+            },
+          },
+        ],
+      },
+    }
+    const invalidRes = validateActionCatalogDraft(invalidDraft, { editorHints: hints })
+    expect(invalidRes.ok).toBe(false)
+    expect(invalidRes.errors.join('\n')).toMatch(/executor\.target_binding: is required/i)
+
+    const validDraft: any = {
+      ...invalidDraft,
+      extensions: {
+        actions: [
+          {
+            ...invalidDraft.extensions.actions[0],
+            executor: {
+              ...invalidDraft.extensions.actions[0].executor,
+              target_binding: {
+                extension_name_param: 'extension_name',
+              },
+            },
+          },
+        ],
+      },
+    }
+    const validRes = validateActionCatalogDraft(validDraft, { editorHints: hints })
+    expect(validRes.ok).toBe(true)
+  })
+})

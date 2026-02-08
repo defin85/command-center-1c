@@ -18,8 +18,7 @@ from apps.operations.driver_catalog_effective import (
     get_effective_driver_catalog,
     resolve_driver_catalog_versions,
 )
-from apps.runtime_settings.action_catalog import UI_ACTION_CATALOG_KEY, ensure_valid_action_catalog
-from apps.runtime_settings.effective import get_effective_runtime_setting
+from apps.templates.operation_catalog_service import build_effective_action_catalog_payload
 from apps.templates.workflow.models import WorkflowTemplate
 
 logger = logging.getLogger(__name__)
@@ -38,6 +37,7 @@ class ActionCatalogEditorHintHelpSerializer(serializers.Serializer):
 class ActionCatalogEditorCapabilityHintsSerializer(serializers.Serializer):
     fixed_schema = serializers.JSONField(required=False)
     fixed_ui_schema = serializers.JSONField(required=False)
+    target_binding_schema = serializers.JSONField(required=False)
     help = ActionCatalogEditorHintHelpSerializer(required=False)
 
 
@@ -93,12 +93,27 @@ def _build_extensions_set_flags_hints() -> dict:
         }
     }
 
+    target_binding_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["extension_name_param"],
+        "properties": {
+            "extension_name_param": {
+                "type": "string",
+                "title": "Target command param",
+                "description": "Command-level parameter name to bind runtime extension_name value.",
+                "minLength": 1,
+            }
+        },
+    }
+
     return {
         "fixed_schema": fixed_schema,
         "fixed_ui_schema": fixed_ui_schema,
+        "target_binding_schema": target_binding_schema,
         "help": {
             "title": "Set flags presets",
-            "description": "Capability-specific fixed fields for extensions.set_flags.",
+            "description": "Capability-specific fields for extensions.set_flags, including target binding.",
         },
     }
 
@@ -229,18 +244,8 @@ def _filter_extensions_actions_for_user(user, actions: list[dict]) -> list[dict]
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_action_catalog(request):
-    tenant_id = getattr(request, "tenant_id", None)
-    raw = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
-    catalog, errors = ensure_valid_action_catalog(raw)
-    if errors:
-        logger.warning(
-            "ui.action_catalog is invalid; failing closed",
-            extra={
-                "error_count": len(errors),
-                "errors": [err.to_text() for err in errors[:10]],
-            },
-        )
-
+    tenant_id = str(getattr(request, "tenant_id", "") or "").strip() or None
+    catalog = build_effective_action_catalog_payload(tenant_id=tenant_id)
     extensions = catalog.get("extensions")
     if not isinstance(extensions, dict):
         return Response({"catalog_version": 1, "extensions": {"actions": []}})

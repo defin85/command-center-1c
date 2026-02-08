@@ -13,11 +13,10 @@ from apps.runtime_settings.models import RuntimeSetting
 from apps.runtime_settings.registry import RUNTIME_SETTINGS
 from apps.runtime_settings.action_catalog import (
     UI_ACTION_CATALOG_KEY,
-    validate_action_catalog_references,
-    validate_action_catalog_v1,
 )
 from apps.runtime_settings.effective import get_effective_runtime_setting
 from apps.runtime_settings.models import TenantRuntimeSettingOverride
+from apps.tenancy.authentication import TENANT_HEADER
 from apps.tenancy.models import TenantMember
 
 logger = logging.getLogger(__name__)
@@ -74,6 +73,17 @@ def _validate_value(definition, value):
             raise serializers.ValidationError("value must be string")
         return value
     return value
+
+
+def _resolve_request_tenant_id(request) -> str | None:
+    tenant_id = str(getattr(request, "tenant_id", "") or "").strip()
+    if tenant_id:
+        return tenant_id
+    raw = request.META.get(TENANT_HEADER)
+    if raw is None and getattr(request, "_request", None) is not None:
+        raw = request._request.META.get(TENANT_HEADER)
+    raw_value = str(raw or "").strip()
+    return raw_value or None
 
 
 @extend_schema(
@@ -135,7 +145,7 @@ def list_effective_runtime_settings(request):
 
     _ensure_defaults()
 
-    tenant_id = str(request.tenant_id)
+    tenant_id = _resolve_request_tenant_id(request)
 
     settings_map = {setting.key: setting for setting in RuntimeSetting.objects.all()}
     payload = []
@@ -180,7 +190,12 @@ class RuntimeSettingOverrideUpdateSerializer(serializers.Serializer):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_runtime_setting_overrides(request):
-    tenant_id = str(request.tenant_id)
+    tenant_id = _resolve_request_tenant_id(request)
+    if not tenant_id:
+        return Response(
+            {'success': False, 'error': {'code': 'TENANT_CONTEXT_REQUIRED', 'message': 'X-CC1C-Tenant-ID is required'}},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     is_tenant_admin = TenantMember.objects.filter(user_id=request.user.id, tenant_id=tenant_id, role=TenantMember.ROLE_ADMIN).exists()
     if not (request.user.is_staff or is_tenant_admin):
@@ -209,7 +224,12 @@ def list_runtime_setting_overrides(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def update_runtime_setting_override(request, key: str):
-    tenant_id = str(request.tenant_id)
+    tenant_id = _resolve_request_tenant_id(request)
+    if not tenant_id:
+        return Response(
+            {'success': False, 'error': {'code': 'TENANT_CONTEXT_REQUIRED', 'message': 'X-CC1C-Tenant-ID is required'}},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     is_tenant_admin = TenantMember.objects.filter(user_id=request.user.id, tenant_id=tenant_id, role=TenantMember.ROLE_ADMIN).exists()
     if not (request.user.is_staff or is_tenant_admin):
@@ -223,6 +243,17 @@ def update_runtime_setting_override(request, key: str):
         return Response(
             {'success': False, 'error': {'code': 'NOT_FOUND', 'message': 'Setting not found'}},
             status=status.HTTP_404_NOT_FOUND
+        )
+    if definition.key == UI_ACTION_CATALOG_KEY:
+        return Response(
+            {
+                "success": False,
+                "error": {
+                    "code": "LEGACY_WRITE_DISABLED",
+                    "message": "ui.action_catalog write path is disabled after unified cutover; use /api/v2/operation-catalog/exposures/.",
+                },
+            },
+            status=status.HTTP_409_CONFLICT,
         )
 
     serializer = RuntimeSettingOverrideUpdateSerializer(data=request.data)
@@ -244,33 +275,6 @@ def update_runtime_setting_override(request, key: str):
     status_value = serializer.validated_data.get("status")
     if status_value is None:
         status_value = TenantRuntimeSettingOverride.STATUS_PUBLISHED
-
-    if definition.key == UI_ACTION_CATALOG_KEY:
-        schema_errors = validate_action_catalog_v1(value)
-        if schema_errors:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": "VALIDATION_ERROR",
-                        "message": [err.to_text() for err in schema_errors],
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        ref_errors = validate_action_catalog_references(value)
-        if ref_errors:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": "VALIDATION_ERROR",
-                        "message": [err.to_text() for err in ref_errors],
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
     override, _ = TenantRuntimeSettingOverride.objects.get_or_create(
         tenant_id=tenant_id,
@@ -320,6 +324,17 @@ def update_runtime_setting(request, key: str):
             {'success': False, 'error': {'code': 'NOT_FOUND', 'message': 'Setting not found'}},
             status=status.HTTP_404_NOT_FOUND
         )
+    if definition.key == UI_ACTION_CATALOG_KEY:
+        return Response(
+            {
+                "success": False,
+                "error": {
+                    "code": "LEGACY_WRITE_DISABLED",
+                    "message": "ui.action_catalog write path is disabled after unified cutover; use /api/v2/operation-catalog/exposures/.",
+                },
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
 
     serializer = RuntimeSettingUpdateSerializer(data=request.data)
     if not serializer.is_valid():
@@ -336,33 +351,6 @@ def update_runtime_setting(request, key: str):
             {'success': False, 'error': {'code': 'VALIDATION_ERROR', 'message': exc.detail}},
             status=status.HTTP_400_BAD_REQUEST
         )
-
-    if definition.key == UI_ACTION_CATALOG_KEY:
-        schema_errors = validate_action_catalog_v1(value)
-        if schema_errors:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": "VALIDATION_ERROR",
-                        "message": [err.to_text() for err in schema_errors],
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        ref_errors = validate_action_catalog_references(value)
-        if ref_errors:
-            return Response(
-                {
-                    "success": False,
-                    "error": {
-                        "code": "VALIDATION_ERROR",
-                        "message": [err.to_text() for err in ref_errors],
-                    },
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
     setting, _ = RuntimeSetting.objects.get_or_create(
         key=definition.key,

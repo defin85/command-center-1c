@@ -4,15 +4,15 @@
 TBD - created by archiving change add-extensions-action-catalog-runtime-setting. Update Purpose after archive.
 ## Requirements
 ### Requirement: RuntimeSetting для каталога действий расширений
-Система ДОЛЖНА (SHALL) хранить каталог действий расширений в ключе RuntimeSetting `ui.action_catalog`.
+Система ДОЛЖНА (SHALL) использовать unified persistent store как единственный source of truth для каталога действий расширений.
 
-#### Scenario: Нет каталога -> пустой результат
-- **WHEN** `ui.action_catalog` не настроен
-- **THEN** система возвращает пустой каталог действий расширений
+RuntimeSetting `ui.action_catalog` НЕ ДОЛЖЕН (SHALL NOT) использоваться как active storage/read path после cutover.
 
-#### Scenario: Валидный каталог доступен
-- **WHEN** в `ui.action_catalog` настроен валидный action catalog
-- **THEN** система возвращает настроенные actions для расширений и executor bindings
+#### Scenario: Effective action catalog строится из unified exposures
+- **GIVEN** в unified store есть published exposures с `surface="action_catalog"`
+- **WHEN** пользователь вызывает endpoint получения action catalog
+- **THEN** система возвращает effective catalog из unified exposures
+- **AND** runtime setting `ui.action_catalog` не читается в runtime
 
 ### Requirement: API для effective action catalog
 Система ДОЛЖНА (SHALL) предоставить API endpoint, который возвращает effective action catalog для текущего пользователя.
@@ -132,4 +132,24 @@ TBD - created by archiving change add-extensions-action-catalog-runtime-setting.
 - **WHEN** UI вызывает plan без `apply_mask`, но с `action_id` этого action
 - **THEN** backend использует `executor.fixed.apply_mask` как effective mask
 - **AND** apply изменяет только выбранный флаг
+
+### Requirement: Unified action exposure MUST хранить capability-specific binding contract
+Система ДОЛЖНА (SHALL) хранить capability-specific поля (`target_binding`, preset-поля и т.п.) на уровне exposure, с fail-closed валидацией для reserved capability.
+
+#### Scenario: `extensions.set_flags` exposure без target binding не публикуется
+- **GIVEN** exposure имеет `capability="extensions.set_flags"`
+- **AND** не содержит валидного `target_binding.extension_name_param`
+- **WHEN** exposure валидируется перед публикацией
+- **THEN** exposure получает статус `invalid`
+- **AND** не попадает в effective action catalog
+
+### Requirement: `extensions.set_flags` binding MUST валидироваться против схемы команды
+Система ДОЛЖНА (SHALL) для `capability="extensions.set_flags"` проверять, что `target_binding.extension_name_param` существует в `params_by_name` команды, привязанной к definition/exposure.
+
+#### Scenario: Binding указывает на неизвестный параметр команды
+- **GIVEN** exposure `extensions.set_flags` ссылается на command definition
+- **AND** `target_binding.extension_name_param` отсутствует в `params_by_name` этой команды
+- **WHEN** exposure проходит validate/publish
+- **THEN** система возвращает ошибку валидации по пути binding-поля
+- **AND** exposure остаётся в статусе `invalid`
 

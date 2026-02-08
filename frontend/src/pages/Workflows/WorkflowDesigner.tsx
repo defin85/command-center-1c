@@ -134,11 +134,23 @@ const WorkflowDesigner = () => {
     const loadOperationTemplates = async () => {
       try {
         const response = await api.getTemplatesListTemplates({ limit: 1000 })
-        const templates = response.templates.map((t) => ({
-          id: t.id,
-          name: t.name,
-          operation_type: t.operation_type,
-        }))
+        const templates = response.templates.map((raw) => {
+          const t = raw as unknown as Record<string, unknown>
+          const definition = (t.definition && typeof t.definition === 'object')
+            ? t.definition as Record<string, unknown>
+            : null
+          const executorPayload = (definition?.executor_payload && typeof definition.executor_payload === 'object')
+            ? definition.executor_payload as Record<string, unknown>
+            : null
+          const operationType = typeof t.operation_type === 'string'
+            ? t.operation_type
+            : (typeof executorPayload?.operation_type === 'string' ? executorPayload.operation_type : 'designer_cli')
+          return {
+            id: String(t.id ?? ''),
+            name: String(t.name ?? ''),
+            operation_type: operationType,
+          }
+        })
         setState((prev) => ({
           ...prev,
           operationTemplates: templates,

@@ -7,6 +7,8 @@ from rest_framework.test import APIClient
 from apps.databases.models import Database, DatabaseExtensionsSnapshot, DatabasePermission, ExtensionFlagsPolicy, PermissionLevel
 from apps.operations.models import BatchOperation, CommandResultSnapshot
 from apps.runtime_settings.models import RuntimeSetting, TenantRuntimeSettingOverride
+from apps.templates.models import OperationExposure
+from apps.templates.operation_catalog_service import resolve_definition, resolve_exposure
 from apps.tenancy.models import Tenant, TenantMember
 
 
@@ -27,6 +29,61 @@ def _grant_manage_database_permission(user: User) -> None:
     ct = ContentType.objects.get(app_label="databases", model="database")
     perm = Permission.objects.get(content_type=ct, codename="manage_database")
     user.user_permissions.add(perm)
+
+
+def _seed_action_catalog_exposures(*, tenant: Tenant, actions: list[dict], tenant_scoped: bool = False) -> None:
+    tenant_scope = f"tenant:{tenant.id}" if tenant_scoped else "global"
+    tenant_id = str(tenant.id) if tenant_scoped else None
+    for index, action in enumerate(actions):
+        executor = dict(action.get("executor") or {})
+        capability = str(action.get("capability") or "").strip()
+        fixed = executor.get("fixed")
+        target_binding = executor.get("target_binding")
+        capability_config: dict[str, object] = {}
+        if isinstance(fixed, dict):
+            fixed_payload = dict(fixed)
+            apply_mask = fixed_payload.pop("apply_mask", None)
+            if apply_mask is not None:
+                capability_config["apply_mask"] = apply_mask
+            if fixed_payload:
+                capability_config["fixed"] = fixed_payload
+        if isinstance(target_binding, dict):
+            capability_config["target_binding"] = dict(target_binding)
+
+        executor_payload = dict(executor)
+        executor_payload.pop("target_binding", None)
+        definition, _ = resolve_definition(
+            tenant_scope=tenant_scope,
+            executor_kind=str(executor_payload.get("kind") or "").strip(),
+            executor_payload=executor_payload,
+            contract_version=1,
+        )
+        resolve_exposure(
+            definition=definition,
+            surface=OperationExposure.SURFACE_ACTION_CATALOG,
+            alias=str(action.get("id") or "").strip(),
+            tenant_id=tenant_id,
+            label=str(action.get("label") or action.get("id") or "").strip(),
+            description=str(action.get("description") or ""),
+            is_active=bool(action.get("is_active", True)),
+            capability=capability,
+            contexts=[str(v) for v in (action.get("contexts") or []) if isinstance(v, str)],
+            display_order=index,
+            capability_config=capability_config,
+            status=OperationExposure.STATUS_PUBLISHED,
+        )
+
+
+def _mock_ibcmd_command_catalog(monkeypatch, commands: dict[str, list[str]]) -> None:
+    def _fake_commands(_driver: str, _cache):
+        return {
+            command_id: {
+                "params_by_name": {name: {"type": "string"} for name in params},
+            }
+            for command_id, params in commands.items()
+        }
+
+    monkeypatch.setattr("apps.templates.operation_catalog_service._commands_by_driver", _fake_commands)
 
 
 @pytest.fixture
@@ -410,31 +467,24 @@ def test_extensions_apply_detects_drift(client, staff_user, monkeypatch):
     default = Tenant.objects.get(slug="default")
     _jwt_login(client, username=staff_user.username, password="pass")
 
-    RuntimeSetting.objects.update_or_create(
-        key="ui.action_catalog",
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "ListAction",
-                            "capability": "extensions.list",
-                            "label": "List",
-                            "contexts": ["bulk_page"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy_list"},
-                        },
-                        {
-                            "id": "SyncAction",
-                            "capability": "extensions.sync",
-                            "label": "Sync",
-                            "contexts": ["bulk_page"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy"},
-                        }
-                    ]
-                },
-            }
-        },
+    _seed_action_catalog_exposures(
+        tenant=default,
+        actions=[
+            {
+                "id": "ListAction",
+                "capability": "extensions.list",
+                "label": "List",
+                "contexts": ["bulk_page"],
+                "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy_list"},
+            },
+            {
+                "id": "SyncAction",
+                "capability": "extensions.sync",
+                "label": "Sync",
+                "contexts": ["bulk_page"],
+                "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy"},
+            },
+        ],
     )
 
     monkeypatch.setattr(
@@ -483,31 +533,24 @@ def test_extensions_apply_success_enqueues_sync(client, staff_user, monkeypatch)
     default = Tenant.objects.get(slug="default")
     _jwt_login(client, username=staff_user.username, password="pass")
 
-    RuntimeSetting.objects.update_or_create(
-        key="ui.action_catalog",
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "ListAction",
-                            "capability": "extensions.list",
-                            "label": "List",
-                            "contexts": ["bulk_page"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy_list"},
-                        },
-                        {
-                            "id": "SyncAction",
-                            "capability": "extensions.sync",
-                            "label": "Sync",
-                            "contexts": ["bulk_page"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy_sync"},
-                        },
-                    ]
-                },
-            }
-        },
+    _seed_action_catalog_exposures(
+        tenant=default,
+        actions=[
+            {
+                "id": "ListAction",
+                "capability": "extensions.list",
+                "label": "List",
+                "contexts": ["bulk_page"],
+                "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy_list"},
+            },
+            {
+                "id": "SyncAction",
+                "capability": "extensions.sync",
+                "label": "Sync",
+                "contexts": ["bulk_page"],
+                "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy_sync"},
+            },
+        ],
     )
 
     monkeypatch.setattr(
@@ -566,40 +609,44 @@ def test_extensions_plan_apply_set_flags_resolves_policy_and_sets_post_completio
     _grant_manage_database_permission(staff_user)
     _jwt_login(client, username=staff_user.username, password="pass")
 
-    RuntimeSetting.objects.update_or_create(
-        key="ui.action_catalog",
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "SyncAction",
-                            "capability": "extensions.sync",
-                            "label": "Sync extensions",
-                            "contexts": ["bulk_page"],
-                            "executor": {
-                                "kind": "ibcmd_cli",
-                                "driver": "ibcmd",
-                                "command_id": "dummy_sync_extensions",
-                            },
-                        },
-                        {
-                            "id": "SetFlagsAction",
-                            "capability": "extensions.set_flags",
-                            "label": "Set flags",
-                            "contexts": ["bulk_page"],
-                            "executor": {
-                                "kind": "ibcmd_cli",
-                                "driver": "ibcmd",
-                                "command_id": "dummy_set_flags",
-                                "additional_args": ["--extension", "$extension_name", "--active", "$policy.active"],
-                            },
-                        },
-                    ]
-                },
-            }
+    _mock_ibcmd_command_catalog(
+        monkeypatch,
+        {
+            "dummy_set_flags": ["extension_name", "active", "safe_mode", "unsafe_action_protection"],
         },
+    )
+    _seed_action_catalog_exposures(
+        tenant=default,
+        actions=[
+            {
+                "id": "SyncAction",
+                "capability": "extensions.sync",
+                "label": "Sync extensions",
+                "contexts": ["bulk_page"],
+                "executor": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "dummy_sync_extensions",
+                },
+            },
+            {
+                "id": "SetFlagsAction",
+                "capability": "extensions.set_flags",
+                "label": "Set flags",
+                "contexts": ["bulk_page"],
+                "executor": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "dummy_set_flags",
+                    "params": {
+                        "active": "$policy.active",
+                        "safe_mode": "$policy.safe_mode",
+                        "unsafe_action_protection": "$policy.unsafe_action_protection",
+                    },
+                    "target_binding": {"extension_name_param": "extension_name"},
+                },
+            },
+        ],
     )
 
     db = Database.objects.create(
@@ -627,7 +674,13 @@ def test_extensions_plan_apply_set_flags_resolves_policy_and_sets_post_completio
 
     def _fake_preview(**kwargs):
         assert kwargs.get("command_id") == "dummy_set_flags"
-        assert kwargs.get("additional_args") == ["--extension", "ExtA", "--active", "True"]
+        assert kwargs.get("params") == {
+            "active": True,
+            "safe_mode": None,
+            "unsafe_action_protection": None,
+            "extension_name": "ExtA",
+        }
+        assert kwargs.get("additional_args") == []
         return ({"execution_plan": {"plan_version": 1}, "bindings": []}, None, None)
 
     monkeypatch.setattr("apps.api_v2.views.extensions_plan_apply._preview_ibcmd_cli", _fake_preview)
@@ -681,31 +734,34 @@ def test_extensions_plan_set_flags_requires_action_id_when_ambiguous(client, sta
         password="p",
     )
 
-    RuntimeSetting.objects.update_or_create(
-        key="ui.action_catalog",
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "SetFlags1",
-                            "capability": "extensions.set_flags",
-                            "label": "Set flags 1",
-                            "contexts": ["bulk_page"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy_set_flags"},
-                        },
-                        {
-                            "id": "SetFlags2",
-                            "capability": "extensions.set_flags",
-                            "label": "Set flags 2",
-                            "contexts": ["bulk_page"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy_set_flags"},
-                        },
-                    ]
+    _seed_action_catalog_exposures(
+        tenant=default,
+        actions=[
+            {
+                "id": "SetFlags1",
+                "capability": "extensions.set_flags",
+                "label": "Set flags 1",
+                "contexts": ["bulk_page"],
+                "executor": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "dummy_set_flags",
+                    "target_binding": {"extension_name_param": "extension_name"},
                 },
-            }
-        },
+            },
+            {
+                "id": "SetFlags2",
+                "capability": "extensions.set_flags",
+                "label": "Set flags 2",
+                "contexts": ["bulk_page"],
+                "executor": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "dummy_set_flags",
+                    "target_binding": {"extension_name_param": "extension_name"},
+                },
+            },
+        ],
     )
 
     resp = client.post(
@@ -727,51 +783,51 @@ def test_extensions_plan_set_flags_uses_preset_apply_mask_when_request_missing(c
     _grant_manage_database_permission(staff_user)
     _jwt_login(client, username=staff_user.username, password="pass")
 
-    RuntimeSetting.objects.update_or_create(
-        key="ui.action_catalog",
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "SyncAction",
-                            "capability": "extensions.sync",
-                            "label": "Sync extensions",
-                            "contexts": ["bulk_page"],
-                            "executor": {
-                                "kind": "ibcmd_cli",
-                                "driver": "ibcmd",
-                                "command_id": "dummy_sync_extensions",
-                            },
-                        },
-                        {
-                            "id": "SetFlagsActiveOnly",
-                            "capability": "extensions.set_flags",
-                            "label": "Set flags: active only",
-                            "contexts": ["bulk_page"],
-                            "executor": {
-                                "kind": "ibcmd_cli",
-                                "driver": "ibcmd",
-                                "command_id": "dummy_set_flags",
-                                "params": {
-                                    "active": "$policy.active",
-                                    "safe_mode": "$policy.safe_mode",
-                                    "unsafe_action_protection": "$policy.unsafe_action_protection",
-                                },
-                                "fixed": {
-                                    "apply_mask": {
-                                        "active": True,
-                                        "safe_mode": False,
-                                        "unsafe_action_protection": False,
-                                    }
-                                },
-                            },
-                        },
-                    ]
-                },
-            }
+    _mock_ibcmd_command_catalog(
+        monkeypatch,
+        {
+            "dummy_set_flags": ["extension_name", "active", "safe_mode", "unsafe_action_protection"],
         },
+    )
+    _seed_action_catalog_exposures(
+        tenant=default,
+        actions=[
+            {
+                "id": "SyncAction",
+                "capability": "extensions.sync",
+                "label": "Sync extensions",
+                "contexts": ["bulk_page"],
+                "executor": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "dummy_sync_extensions",
+                },
+            },
+            {
+                "id": "SetFlagsActiveOnly",
+                "capability": "extensions.set_flags",
+                "label": "Set flags: active only",
+                "contexts": ["bulk_page"],
+                "executor": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "dummy_set_flags",
+                    "params": {
+                        "active": "$policy.active",
+                        "safe_mode": "$policy.safe_mode",
+                        "unsafe_action_protection": "$policy.unsafe_action_protection",
+                    },
+                    "fixed": {
+                        "apply_mask": {
+                            "active": True,
+                            "safe_mode": False,
+                            "unsafe_action_protection": False,
+                        }
+                    },
+                    "target_binding": {"extension_name_param": "extension_name"},
+                },
+            },
+        ],
     )
 
     db = Database.objects.create(
@@ -799,7 +855,7 @@ def test_extensions_plan_set_flags_uses_preset_apply_mask_when_request_missing(c
 
     def _fake_preview(**kwargs):
         assert kwargs.get("command_id") == "dummy_set_flags"
-        assert kwargs.get("params") == {"active": True}
+        assert kwargs.get("params") == {"active": True, "extension_name": "ExtA"}
         assert kwargs.get("additional_args") == []
         return ({"execution_plan": {"plan_version": 1}, "bindings": []}, None, None)
 
@@ -807,7 +863,7 @@ def test_extensions_plan_set_flags_uses_preset_apply_mask_when_request_missing(c
 
     def _fake_execute(_request, validated_data, *, metadata_overrides=None, **_kwargs):
         assert validated_data.get("command_id") == "dummy_set_flags"
-        assert validated_data.get("params") == {"active": True}
+        assert validated_data.get("params") == {"active": True, "extension_name": "ExtA"}
         assert metadata_overrides is not None
         assert metadata_overrides.get("action_capability") == "extensions.set_flags"
         return Response({"operation_id": "op-set-flags", "status": "queued"}, status=202)
@@ -855,24 +911,22 @@ def test_extensions_plan_set_flags_rejects_apply_mask_all_false(client, staff_us
         password="p",
     )
 
-    RuntimeSetting.objects.update_or_create(
-        key="ui.action_catalog",
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "SetFlagsAction",
-                            "capability": "extensions.set_flags",
-                            "label": "Set flags",
-                            "contexts": ["bulk_page"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy_set_flags"},
-                        },
-                    ]
+    _seed_action_catalog_exposures(
+        tenant=default,
+        actions=[
+            {
+                "id": "SetFlagsAction",
+                "capability": "extensions.set_flags",
+                "label": "Set flags",
+                "contexts": ["bulk_page"],
+                "executor": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "dummy_set_flags",
+                    "target_binding": {"extension_name_param": "extension_name"},
                 },
-            }
-        },
+            },
+        ],
     )
 
     resp = client.post(
@@ -897,34 +951,34 @@ def test_extensions_plan_set_flags_selective_apply_fails_closed_when_additional_
     _grant_manage_database_permission(staff_user)
     _jwt_login(client, username=staff_user.username, password="pass")
 
-    RuntimeSetting.objects.update_or_create(
-        key="ui.action_catalog",
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "SetFlagsAction",
-                            "capability": "extensions.set_flags",
-                            "label": "Set flags",
-                            "contexts": ["bulk_page"],
-                            "executor": {
-                                "kind": "ibcmd_cli",
-                                "driver": "ibcmd",
-                                "command_id": "dummy_set_flags",
-                                "params": {
-                                    "active": "$policy.active",
-                                    "safe_mode": "$policy.safe_mode",
-                                    "unsafe_action_protection": "$policy.unsafe_action_protection",
-                                },
-                                "additional_args": ["--active", "$policy.active"],
-                            },
-                        },
-                    ]
-                },
-            }
+    _mock_ibcmd_command_catalog(
+        monkeypatch,
+        {
+            "dummy_set_flags": ["extension_name", "active", "safe_mode", "unsafe_action_protection"],
         },
+    )
+    _seed_action_catalog_exposures(
+        tenant=default,
+        actions=[
+            {
+                "id": "SetFlagsAction",
+                "capability": "extensions.set_flags",
+                "label": "Set flags",
+                "contexts": ["bulk_page"],
+                "executor": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "dummy_set_flags",
+                    "params": {
+                        "active": "$policy.active",
+                        "safe_mode": "$policy.safe_mode",
+                        "unsafe_action_protection": "$policy.unsafe_action_protection",
+                    },
+                    "additional_args": ["--active", "$policy.active"],
+                    "target_binding": {"extension_name_param": "extension_name"},
+                },
+            },
+        ],
     )
 
     db = Database.objects.create(
@@ -976,46 +1030,44 @@ def test_extensions_plan_apply_set_flags_selective_apply_masks_params(client, st
     _grant_manage_database_permission(staff_user)
     _jwt_login(client, username=staff_user.username, password="pass")
 
-    RuntimeSetting.objects.update_or_create(
-        key="ui.action_catalog",
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "SyncAction",
-                            "capability": "extensions.sync",
-                            "label": "Sync extensions",
-                            "contexts": ["bulk_page"],
-                            "executor": {
-                                "kind": "ibcmd_cli",
-                                "driver": "ibcmd",
-                                "command_id": "dummy_sync_extensions",
-                            },
-                        },
-                        {
-                            "id": "SetFlagsAction",
-                            "capability": "extensions.set_flags",
-                            "label": "Set flags",
-                            "contexts": ["bulk_page"],
-                            "executor": {
-                                "kind": "ibcmd_cli",
-                                "driver": "ibcmd",
-                                "command_id": "dummy_set_flags",
-                                "params": {
-                                    "extension_name": "$extension_name",
-                                    "active": "$policy.active",
-                                    "safe_mode": "$policy.safe_mode",
-                                    "unsafe_action_protection": "$policy.unsafe_action_protection",
-                                },
-                                "additional_args": ["--extension", "$extension_name"],
-                            },
-                        },
-                    ]
-                },
-            }
+    _mock_ibcmd_command_catalog(
+        monkeypatch,
+        {
+            "dummy_set_flags": ["extension_name", "active", "safe_mode", "unsafe_action_protection"],
         },
+    )
+    _seed_action_catalog_exposures(
+        tenant=default,
+        actions=[
+            {
+                "id": "SyncAction",
+                "capability": "extensions.sync",
+                "label": "Sync extensions",
+                "contexts": ["bulk_page"],
+                "executor": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "dummy_sync_extensions",
+                },
+            },
+            {
+                "id": "SetFlagsAction",
+                "capability": "extensions.set_flags",
+                "label": "Set flags",
+                "contexts": ["bulk_page"],
+                "executor": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "dummy_set_flags",
+                    "params": {
+                        "active": "$policy.active",
+                        "safe_mode": "$policy.safe_mode",
+                        "unsafe_action_protection": "$policy.unsafe_action_protection",
+                    },
+                    "target_binding": {"extension_name_param": "extension_name"},
+                },
+            },
+        ],
     )
 
     db = Database.objects.create(
@@ -1043,7 +1095,7 @@ def test_extensions_plan_apply_set_flags_selective_apply_masks_params(client, st
     def _fake_preview(**kwargs):
         assert kwargs.get("command_id") == "dummy_set_flags"
         assert kwargs.get("params") == {"extension_name": "ExtA", "active": True}
-        assert kwargs.get("additional_args") == ["--extension", "ExtA"]
+        assert kwargs.get("additional_args") == []
         return ({"execution_plan": {"plan_version": 1}, "bindings": []}, None, None)
 
     monkeypatch.setattr("apps.api_v2.views.extensions_plan_apply._preview_ibcmd_cli", _fake_preview)
@@ -1139,24 +1191,22 @@ def test_extensions_plan_set_flags_staff_requires_explicit_tenant_header(client,
         safe_mode=None,
         unsafe_action_protection=None,
     )
-    RuntimeSetting.objects.update_or_create(
-        key="ui.action_catalog",
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "SetFlagsAction",
-                            "capability": "extensions.set_flags",
-                            "label": "Set flags",
-                            "contexts": ["bulk_page"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy_set_flags"},
-                        },
-                    ]
+    _seed_action_catalog_exposures(
+        tenant=default,
+        actions=[
+            {
+                "id": "SetFlagsAction",
+                "capability": "extensions.set_flags",
+                "label": "Set flags",
+                "contexts": ["bulk_page"],
+                "executor": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "dummy_set_flags",
+                    "target_binding": {"extension_name_param": "extension_name"},
                 },
-            }
-        },
+            },
+        ],
     )
 
     resp = client.post(
@@ -1175,24 +1225,28 @@ def test_extensions_apply_set_flags_fails_closed_without_extensions_sync_configu
     _grant_manage_database_permission(staff_user)
     _jwt_login(client, username=staff_user.username, password="pass")
 
-    RuntimeSetting.objects.update_or_create(
-        key="ui.action_catalog",
-        defaults={
-            "value": {
-                "catalog_version": 1,
-                "extensions": {
-                    "actions": [
-                        {
-                            "id": "SetFlagsAction",
-                            "capability": "extensions.set_flags",
-                            "label": "Set flags",
-                            "contexts": ["bulk_page"],
-                            "executor": {"kind": "ibcmd_cli", "driver": "ibcmd", "command_id": "dummy_set_flags"},
-                        },
-                    ]
-                },
-            }
+    _mock_ibcmd_command_catalog(
+        monkeypatch,
+        {
+            "dummy_set_flags": ["extension_name", "active", "safe_mode", "unsafe_action_protection"],
         },
+    )
+    _seed_action_catalog_exposures(
+        tenant=default,
+        actions=[
+            {
+                "id": "SetFlagsAction",
+                "capability": "extensions.set_flags",
+                "label": "Set flags",
+                "contexts": ["bulk_page"],
+                "executor": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "dummy_set_flags",
+                    "target_binding": {"extension_name_param": "extension_name"},
+                },
+            },
+        ],
     )
 
     db = Database.objects.create(

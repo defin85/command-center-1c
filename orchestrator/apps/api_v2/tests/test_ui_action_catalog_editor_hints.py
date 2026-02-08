@@ -65,3 +65,8 @@ def test_action_catalog_editor_hints_contains_extensions_set_flags(staff_client)
     apply_mask_ui = fixed_ui_schema.get("apply_mask")
     assert isinstance(apply_mask_ui, dict)
     assert apply_mask_ui.get("active", {}).get("ui:widget") == "switch"
+
+    target_binding_schema = hints.get("target_binding_schema")
+    assert isinstance(target_binding_schema, dict)
+    assert target_binding_schema.get("type") == "object"
+    assert "extension_name_param" in (target_binding_schema.get("properties") or {})

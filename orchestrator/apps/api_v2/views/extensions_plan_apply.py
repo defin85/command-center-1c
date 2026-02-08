@@ -23,9 +23,11 @@ from apps.databases.models import ExtensionFlagsPolicy
 from apps.operations.models import ExtensionsPlan
 from apps.operations.waiter import OperationTimeoutError, ResultWaiter
 from apps.operations.snapshot_hash import canonical_json_hash
-from apps.runtime_settings.action_catalog import UI_ACTION_CATALOG_KEY, ensure_valid_action_catalog
-from apps.runtime_settings.effective import get_effective_runtime_setting
 from apps.tenancy.authentication import TENANT_HEADER
+from apps.templates.operation_catalog_service import (
+    build_effective_action_catalog_payload,
+    validate_set_flags_binding,
+)
 
 from .ui.preview import _preview_ibcmd_cli
 from .operations.execute_ibcmd_cli_impl import _execute_ibcmd_cli_validated
@@ -189,8 +191,7 @@ def _get_extensions_action_from_catalog(catalog: dict[str, Any], capability: str
 
 
 def _get_sync_executor_or_error(*, request, tenant_id: str) -> tuple[dict[str, Any] | None, Response | None]:
-    raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
-    catalog, _errors = ensure_valid_action_catalog(raw_catalog)
+    catalog = build_effective_action_catalog_payload(tenant_id=tenant_id)
     action, err = _resolve_extensions_action_from_catalog(catalog=catalog, capability="extensions.sync", action_id=None)
     if err:
         return None, err
@@ -317,8 +318,7 @@ def extensions_plan(request):
     for db_id, db in db_by_id.items():
         preconditions[db_id] = _compute_extensions_snapshot_precondition(db)
 
-    raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
-    catalog, _errors = ensure_valid_action_catalog(raw_catalog)
+    catalog = build_effective_action_catalog_payload(tenant_id=tenant_id)
     action, err = _resolve_extensions_action_from_catalog(
         catalog=catalog,
         capability=capability_raw or None,
@@ -399,6 +399,26 @@ def extensions_plan(request):
                 status=http_status.HTTP_400_BAD_REQUEST,
             )
 
+        target_binding = executor.get("target_binding") if isinstance(executor.get("target_binding"), dict) else {}
+        binding_errors = validate_set_flags_binding(
+            definition_payload=executor,
+            capability_config={"target_binding": target_binding},
+        )
+        if binding_errors:
+            return Response(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "CONFIGURATION_ERROR",
+                        "message": binding_errors[0]["message"],
+                        "details": binding_errors,
+                    },
+                },
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+
+        bound_param = str(target_binding.get("extension_name_param") or "").strip()
+
         policy = ExtensionFlagsPolicy.objects.filter(tenant_id=tenant_id, extension_name=extension_name).first()
         if policy is None:
             return Response(
@@ -447,13 +467,16 @@ def extensions_plan(request):
             for k in _SET_FLAGS_KEYS:
                 if not bool(apply_mask.get(k)):
                     params.pop(k, None)
+        else:
+            params = {}
+
+        # Explicit contract binding: extension_name is set only through bound command param.
+        params[bound_param] = extension_name
 
         def _sub(value):
             if not isinstance(value, str):
                 return value
             token = value.strip()
-            if token == "$extension_name":
-                return extension_name
             if token == "$policy.active":
                 return policy.active
             if token == "$policy.safe_mode":
@@ -614,8 +637,7 @@ def extensions_apply(request):
 
     catalog = None
     if strict or action_capability == "extensions.set_flags":
-        raw_catalog = get_effective_runtime_setting(UI_ACTION_CATALOG_KEY, tenant_id).value
-        catalog, _errors = ensure_valid_action_catalog(raw_catalog)
+        catalog = build_effective_action_catalog_payload(tenant_id=tenant_id)
 
     if strict:
         list_action, list_err = _resolve_extensions_action_from_catalog(catalog=catalog, capability="extensions.list", action_id=None)

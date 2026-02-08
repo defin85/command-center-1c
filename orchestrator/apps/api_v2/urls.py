@@ -32,6 +32,7 @@ from .views import (
     mappings,
     ui,
     driver_catalogs,
+    operation_catalog,
 )
 
 app_name = 'api_v2'
@@ -255,6 +256,16 @@ urlpatterns = [
     path('templates/create-template/', templates.create_template, name='create-template'),
     path('templates/update-template/', templates.update_template, name='update-template'),
     path('templates/delete-template/', templates.delete_template, name='delete-template'),
+
+    # ========================================================================
+    # Unified Operation Catalog
+    # ========================================================================
+    path('operation-catalog/definitions/', operation_catalog.list_operation_definitions, name='operation-catalog-definitions'),
+    path('operation-catalog/definitions/<uuid:definition_id>/', operation_catalog.get_operation_definition, name='operation-catalog-definition-detail'),
+    path('operation-catalog/exposures/', operation_catalog.list_operation_exposures, name='operation-catalog-exposures'),
+    path('operation-catalog/exposures/<uuid:exposure_id>/publish/', operation_catalog.publish_operation_exposure, name='operation-catalog-exposure-publish'),
+    path('operation-catalog/validate/', operation_catalog.validate_operation_exposure, name='operation-catalog-validate'),
+    path('operation-catalog/migration-issues/', operation_catalog.list_operation_catalog_migration_issues, name='operation-catalog-migration-issues'),
 
     # ========================================================================
     # Service Mesh

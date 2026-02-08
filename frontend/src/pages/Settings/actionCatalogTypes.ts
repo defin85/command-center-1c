@@ -48,6 +48,7 @@ export type ActionFormValues = {
     params_json?: string
     additional_args?: string[]
     stdin?: string
+    target_binding_extension_name_param?: string
     fixed?: {
       confirm_dangerous?: boolean
       timeout_seconds?: number
