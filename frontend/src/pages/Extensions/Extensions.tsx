@@ -198,7 +198,23 @@ export const Extensions = () => {
     () => setFlagsActions.map((a) => ({ value: a.id, label: `${a.label} (${a.id})` })),
     [setFlagsActions],
   )
+  const setFlagsActionsById = useMemo(() => {
+    const map = new Map<string, ActionCatalogAction>()
+    for (const action of setFlagsActions) {
+      if (typeof action.id === 'string' && action.id) {
+        map.set(action.id, action)
+      }
+    }
+    return map
+  }, [setFlagsActions])
   const [setFlagsActionId, setSetFlagsActionId] = useState<string | undefined>(undefined)
+  const selectedSetFlagsAction = useMemo(() => {
+    if (!setFlagsActionId) return null
+    return setFlagsActionsById.get(setFlagsActionId) ?? null
+  }, [setFlagsActionId, setFlagsActionsById])
+  const actionCatalogLoadFailed = actionCatalogQuery.isError
+  const actionCatalogConfigMissing = actionCatalogQuery.isSuccess && setFlagsActions.length === 0
+  const actionSelectionMissing = !actionCatalogQuery.isLoading && !actionCatalogConfigMissing && !setFlagsActionId
   useEffect(() => {
     if (!drawerOpen) return
     if (setFlagsActions.length === 0) {
@@ -321,8 +337,16 @@ export const Extensions = () => {
     if (mutatingDisabled) return
     if (planPending || applyPending) return
 
+    if (actionCatalogLoadFailed) {
+      message.error('Failed to load Action Catalog actions')
+      return
+    }
     if (actionCatalogQuery.isSuccess && setFlagsActions.length === 0) {
       message.error('extensions.set_flags action is not configured in Action Catalog')
+      return
+    }
+    if (!setFlagsActionId) {
+      message.error('Select action')
       return
     }
 
@@ -599,6 +623,10 @@ export const Extensions = () => {
     } finally {
       setPlanPending(false)
     }
+  }
+
+  const openActionCatalogManager = () => {
+    navigate('/templates?surface=action_catalog')
   }
 
   const overviewColumns: ColumnsType<ExtensionsOverviewRow> = [
@@ -895,7 +923,56 @@ export const Extensions = () => {
                   style={{ minWidth: 360 }}
                   disabled={setFlagsActionOptions.length === 0}
                 />
+                <Button
+                  size="small"
+                  onClick={openActionCatalogManager}
+                  data-testid="extensions-open-action-catalog"
+                >
+                  Open Action Catalog
+                </Button>
               </Space>
+              {actionCatalogLoadFailed && (
+                <Alert
+                  type="error"
+                  showIcon
+                  data-testid="extensions-apply-action-error"
+                  message="Action Catalog is unavailable"
+                  description="Cannot load actions for capability extensions.set_flags."
+                  action={(
+                    <Button size="small" onClick={() => void actionCatalogQuery.refetch()}>
+                      Retry
+                    </Button>
+                  )}
+                />
+              )}
+              {actionCatalogConfigMissing && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  data-testid="extensions-apply-action-missing"
+                  message="extensions.set_flags action is not configured"
+                  description={(
+                    <Space direction="vertical" size={2}>
+                      <Text>Configure one published action with capability <Text code>extensions.set_flags</Text>.</Text>
+                      <Text type="secondary">Use Templates → Action Catalog to create or publish it.</Text>
+                    </Space>
+                  )}
+                />
+              )}
+              {selectedSetFlagsAction && (
+                <Space
+                  size={8}
+                  wrap
+                  data-testid="extensions-apply-action-summary"
+                >
+                  <Tag color="blue">{selectedSetFlagsAction.label || selectedSetFlagsAction.id}</Tag>
+                  <Tag>{selectedSetFlagsAction.id}</Tag>
+                  <Tag>{selectedSetFlagsAction.capability || 'no capability'}</Tag>
+                  {selectedSetFlagsAction.executor?.command_id && (
+                    <Tag>{selectedSetFlagsAction.executor.command_id}</Tag>
+                  )}
+                </Space>
+              )}
               <Space align="center" wrap>
                 <Checkbox
                   data-testid="extensions-apply-flag-active-enabled"
@@ -950,12 +1027,24 @@ export const Extensions = () => {
                 style={{ maxWidth: 640 }}
               />
               <Space wrap>
-                <Tooltip title={mutatingDisabled ? 'Select a tenant to enable this action' : undefined}>
+                <Tooltip
+                  title={
+                    mutatingDisabled
+                      ? 'Select a tenant to enable this action'
+                      : actionCatalogLoadFailed
+                        ? 'Action Catalog is unavailable'
+                        : actionCatalogConfigMissing
+                          ? 'Configure extensions.set_flags action in Action Catalog'
+                          : actionSelectionMissing
+                            ? 'Select action'
+                            : undefined
+                  }
+                >
                   <Button
                     type="primary"
                     onClick={runApplyPolicy}
                     loading={planPending || applyPending}
-                    disabled={!selectedExtension || mutatingDisabled}
+                    disabled={!selectedExtension || mutatingDisabled || actionCatalogLoadFailed || actionCatalogConfigMissing || actionSelectionMissing}
                   >
                     Apply
                   </Button>

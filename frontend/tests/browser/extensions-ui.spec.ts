@@ -31,9 +31,29 @@ async function setupAuth(page: Page, opts?: { activeTenantId?: string }) {
   }, opts)
 }
 
+const defaultActionCatalogResponse = () => ({
+  catalog_version: 1,
+  extensions: {
+    actions: [
+      {
+        id: 'extensions.set_flags.default',
+        capability: 'extensions.set_flags',
+        label: 'Set flags',
+        contexts: ['bulk_page'],
+        executor: {
+          kind: 'ibcmd_cli',
+          driver: 'ibcmd',
+          command_id: 'infobase.extension.update',
+        },
+      },
+    ],
+  },
+})
+
 async function setupApiMocks(page: Page, state: {
   me?: AnyRecord
   myTenants?: AnyRecord
+  actionCatalog?: AnyRecord
   overview: AnyRecord[]
   overviewByDatabaseId?: Record<string, AnyRecord[]>
   drilldownByName: Record<string, AnyRecord[]>
@@ -63,6 +83,10 @@ async function setupApiMocks(page: Page, state: {
 
     if (method === 'GET' && path === '/api/v2/settings/command-schemas/audit/') {
       return fulfillJson(route, { items: [], count: 0, total: 0 })
+    }
+
+    if (method === 'GET' && path === '/api/v2/ui/action-catalog/') {
+      return fulfillJson(route, state.actionCatalog ?? defaultActionCatalogResponse())
     }
 
     if (method === 'GET' && path === '/api/v2/tenants/list-my-tenants/') {
@@ -268,7 +292,7 @@ test('Extensions: overview renders + drill-down opens (smoke)', async ({ page })
   await expect(page.getByText('Extension: ExtA', { exact: true })).toBeVisible()
 
   await expect(page.getByRole('button', { name: 'db1', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'db2', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'db2', exact: true })).toHaveCount(0)
 
   const drawerDbRequestPromise = page.waitForRequest((r) => (
     r.method() === 'GET' &&
@@ -276,12 +300,12 @@ test('Extensions: overview renders + drill-down opens (smoke)', async ({ page })
     r.url().includes('database_id=')
   ))
   await page.getByTestId('extensions-drawer-database').click()
-  await page.keyboard.type('db1')
+  await page.keyboard.type('db2')
   await page.keyboard.press('Enter')
   const drawerDbFilteredReq = await drawerDbRequestPromise
-  expect(new URL(drawerDbFilteredReq.url()).searchParams.get('database_id')).toBe('11111111-1111-1111-1111-111111111111')
-  await expect(page.getByRole('button', { name: 'db1', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'db2', exact: true })).toHaveCount(0)
+  expect(new URL(drawerDbFilteredReq.url()).searchParams.get('database_id')).toBe('22222222-2222-2222-2222-222222222222')
+  await expect(page.getByRole('button', { name: 'db1', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'db2', exact: true })).toBeVisible()
 })
 
 test('Extensions: staff without tenant context disables mutating actions', async ({ page }) => {
@@ -320,6 +344,53 @@ test('Extensions: staff without tenant context disables mutating actions', async
   await expect(page.getByText('Mutating actions are disabled', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled()
   await expect(page.getByRole('button', { name: 'Adopt from database', exact: true })).toBeDisabled()
+})
+
+test('Extensions: shows guidance when extensions.set_flags action is missing', async ({ page }) => {
+  await setupAuth(page, { activeTenantId: 't1' })
+
+  await setupApiMocks(page, {
+    me: { id: 1, username: 'staff', is_staff: true },
+    myTenants: { active_tenant_id: 't1', tenants: [{ id: 't1', name: 'Default' }] },
+    actionCatalog: {
+      catalog_version: 1,
+      extensions: {
+        actions: [],
+      },
+    },
+    overview: [
+      {
+        name: 'ExtA',
+        purpose: 'patch',
+        flags: {
+          active: { policy: true, observed: { true_count: 1, false_count: 0, unknown_count: 0, state: 'on' }, drift_count: 0, unknown_drift_count: 0 },
+          safe_mode: { policy: true, observed: { true_count: 1, false_count: 0, unknown_count: 0, state: 'on' }, drift_count: 0, unknown_drift_count: 0 },
+          unsafe_action_protection: { policy: false, observed: { true_count: 0, false_count: 1, unknown_count: 0, state: 'off' }, drift_count: 0, unknown_drift_count: 0 },
+        },
+        installed_count: 1,
+        active_count: 1,
+        inactive_count: 0,
+        missing_count: 0,
+        unknown_count: 0,
+        versions: [{ version: '1.0', count: 1 }],
+        latest_snapshot_at: '2026-01-01T00:00:00Z',
+      },
+    ],
+    drilldownByName: {
+      ExtA: [
+        { database_id: '11111111-1111-1111-1111-111111111111', database_name: 'db1', cluster_id: null, cluster_name: '', status: 'active', version: '1.0', snapshot_updated_at: '2026-01-01T00:00:00Z', flags: { active: true, safe_mode: true, unsafe_action_protection: false } },
+      ],
+    },
+  })
+
+  await page.goto('/extensions', { waitUntil: 'domcontentloaded' })
+  await page.getByRole('button', { name: 'ExtA', exact: true }).click()
+  await expect(page.getByText('Extension: ExtA', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('extensions-apply-action-missing')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled()
+
+  await page.getByTestId('extensions-open-action-catalog').click()
+  await expect(page).toHaveURL(/\/templates\?surface=action_catalog/)
 })
 
 test('Extensions: selective apply triggers policy upsert + plan/apply with tenant header', async ({ page }) => {
