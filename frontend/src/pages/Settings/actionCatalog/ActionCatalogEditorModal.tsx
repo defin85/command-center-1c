@@ -486,7 +486,8 @@ export function ActionCatalogEditorModal({
       open={open}
       onCancel={onCancel}
       footer={footer}
-      destroyOnClose
+      destroyOnHidden={false}
+      forceRender
       styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
     >
       <Form<ActionFormValues>
