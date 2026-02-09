@@ -19,15 +19,34 @@
 ## Proposed API Behavior
 - Endpoint: `GET /api/v2/operation-catalog/exposures/`
 - Query params:
-  - `surface=template|action_catalog|all` (или `all` по умолчанию только для staff);
+  - `surface=template|action_catalog|all`:
+    - канонически staff unified-list вызывается без `surface`,
+    - `surface=all` поддерживается как явный алиас (backward compatibility/deep-link);
   - `search`, `filters`, `sort`, `limit`, `offset`;
-  - `include_definition=true` (или эквивалентное include-поле).
+  - `include=definitions` (расширяемый include-механизм).
 - Response:
   - `exposures[]`, `count`, `total`;
-  - при include: definition данные (inline или `included_definitions` по `definition_id`).
+  - при `include=definitions`: top-level `definitions[]` (side-loading, unique-by-id для текущей страницы `exposures[]`).
+  - `exposures[]` сохраняет связь через `definition_id`; inline embedding definition в exposure не используется.
+
+### Response Shape Example (`include=definitions`)
+```json
+{
+  "exposures": [
+    { "id": "exp-1", "definition_id": "def-1", "surface": "template" },
+    { "id": "exp-2", "definition_id": "def-1", "surface": "action_catalog" }
+  ],
+  "definitions": [
+    { "id": "def-1", "executor_kind": "ibcmd_cli", "executor_payload": {} }
+  ],
+  "count": 2,
+  "total": 100
+}
+```
 
 ## RBAC
 - `surface=action_catalog` и `surface=all` остаются staff-only.
+- Запрос без `surface` (канонический staff unified-list) доступен только staff.
 - non-staff с template-view правами работает через `surface=template`.
 - include definition данных не должен раскрывать лишнее non-staff пользователям.
 
@@ -37,6 +56,6 @@
 - UI переводится на новый контракт после backend readiness.
 
 ## Trade-offs
-- Inline definition упрощает клиент, но может дублировать payload.
-- `included_definitions` экономит размер ответа, но усложняет клиентский маппинг.
-- Для первого шага API-расширения предпочтителен предсказуемый и простой вариант, затем можно оптимизировать при необходимости.
+- Side-loading `definitions[]` устраняет дублирование payload при повторном использовании одной definition в нескольких exposures.
+- Такой shape напрямую совместим с уже существующей frontend-нормализацией (`definitionsById`) и снижает объём переписывания UI data-layer.
+- Цена решения: клиент должен выполнить явный join по `definition_id`, но это уже текущий рабочий паттерн в коде.

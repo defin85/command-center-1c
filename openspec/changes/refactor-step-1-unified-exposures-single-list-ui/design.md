@@ -19,6 +19,11 @@
 - Table: смешанный набор строк (для staff), включая колонку `surface`.
 - Editor: `OperationExposureEditorModal` c surface-specific полями внутри одного shell.
 
+### Action binding UX (`extensions.set_flags`)
+- Настройка `target_binding.extension_name_param` выполняется в unified action editor внутри `/templates`.
+- Поле отображается как selector по `params_by_name` выбранного `command_id` (guided flow), чтобы оператор выбирал реальный command-level параметр из схемы команды.
+- Binding остаётся capability-specific данными action exposure и не переносится в `command-schemas` (driver schema остаётся source-of-truth для доступных параметров).
+
 ## Data Flow (без API изменений)
 - Staff:
   - использует существующий management flow, агрегируя exposures по текущему контракту;
@@ -40,3 +45,4 @@
 ## Trade-offs
 - На этом шаге возможен временный client-side merge/filter для mixed-list.
 - Перфоманс и payload-оптимизация целенаправленно выносятся в шаг 2 (API контракт).
+- Selector binding-поля добавляет зависимость editor UX от загруженной command schema, но снижает риск ручного ввода несуществующего параметра.

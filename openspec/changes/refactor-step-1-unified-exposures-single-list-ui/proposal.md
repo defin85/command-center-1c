@@ -11,6 +11,10 @@
   - non-staff: только `template`.
 - Добавить явное отображение `surface` в строках списка (badge/column), чтобы mixed-list был читаемым.
 - Сохранить единый `OperationExposureEditorModal` как единственный create/edit flow для обеих surfaces.
+- Для action flow (`capability=extensions.set_flags`) зафиксировать в unified modal явный выбор target-параметра команды:
+  - поле `target_binding.extension_name_param` настраивается в editor-е actions внутри `/templates`,
+  - UI использует selector по параметрам выбранного `command_id` (а не только свободный text input),
+  - binding остаётся capability-specific настройкой action, а не частью `command-schemas`.
 - Сохранить deep-link через query (`?surface=...`) и корректный fallback на `template` для non-staff.
 
 ## Impact

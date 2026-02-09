@@ -20,3 +20,20 @@
 - **WHEN** non-staff пользователь открывает `/templates`
 - **THEN** UI не показывает action create/edit controls
 - **AND** action editor flow остаётся недоступным
+
+### Requirement: Target binding для `extensions.set_flags` MUST настраиваться в unified action editor
+Система ДОЛЖНА (SHALL) настраивать `target_binding.extension_name_param` в staff-only action editor внутри `/templates` как capability-specific поле action exposure.
+
+Для `capability="extensions.set_flags"` UI ДОЛЖЕН (SHALL) показывать selector по параметрам выбранного `command_id` (из `params_by_name` схемы команды), а не требовать только свободный ввод строки.
+
+#### Scenario: Staff выбирает target-параметр из схемы команды
+- **GIVEN** staff редактирует action `extensions.set_flags` в `/templates`
+- **AND** выбран `command_id` с доступной схемой `params_by_name`
+- **WHEN** открывает capability-specific binding поле
+- **THEN** UI показывает selector доступных command params
+- **AND** выбранное значение записывается в `target_binding.extension_name_param`
+
+#### Scenario: Binding остаётся частью action editor, а не command-schemas
+- **WHEN** staff настраивает target binding для `extensions.set_flags`
+- **THEN** настройка выполняется в modal editor action exposure внутри `/templates`
+- **AND** `command-schemas` экран не используется как место хранения/редактирования binding

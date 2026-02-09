@@ -22,6 +22,12 @@ Create/Edit ДОЛЖНЫ (SHALL) выполняться через единый 
 - **THEN** обновляется набор строк в той же таблице
 - **AND** структура страницы и editor flow остаются едиными
 
+#### Scenario: Action-specific binding настраивается в том же unified editor flow
+- **GIVEN** staff пользователь редактирует action exposure `extensions.set_flags` в `/templates`
+- **WHEN** открывает modal editor из общего списка
+- **THEN** target binding настраивается в этом же modal editor как action-specific поле
+- **AND** для настройки binding не требуется отдельный page-level flow
+
 #### Scenario: Non-staff не получает action surface в unified list
 - **GIVEN** non-staff пользователь открывает `/templates`
 - **WHEN** в URL передан `surface=all` или `surface=action_catalog`

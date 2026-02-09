@@ -10,10 +10,14 @@
 
 ## What Changes
 - Расширить `GET /api/v2/operation-catalog/exposures/` для server-driven unified list:
-  - поддержать явный `surface=all` (для staff);
+  - поддержать unified staff-list без `surface` (канонически это эквивалент `all`);
+  - сохранить `surface=all` как явный алиас для backward compatibility и читаемого deep-link;
   - добавить server-side `search`/`filters`/`sort` по полям unified списка;
   - сохранить `limit/offset` как основной механизм пагинации.
-- Добавить опциональное включение definition данных в том же ответе (`include_definition` или эквивалентный include-механизм), чтобы UI не делал второй запрос на definitions для list screen.
+- Добавить явный include-механизм `include=definitions` с side-loading:
+  - в ответе возвращать `definitions[]` (уникальные по `id`) рядом с `exposures[]`;
+  - не встраивать definition inline в каждый exposure;
+  - позволить UI насытить `definitionsById` из одного list-запроса без второго round-trip.
 - Сохранить surface-aware RBAC и backward compatibility текущего контракта.
 
 ## Impact
