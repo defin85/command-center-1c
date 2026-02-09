@@ -40,6 +40,7 @@ type MockState = {
     command_id?: string
   }>
   callCounters?: MockCounters
+  upsertPayloads?: AnyRecord[]
 }
 
 declare global {
@@ -108,13 +109,15 @@ async function setupAuth(page: Page) {
   })
 }
 
-async function clickSurfaceFilter(page: Page, label: 'Templates' | 'Action Catalog') {
+async function clickSurfaceFilter(page: Page, label: 'All' | 'Templates' | 'Action Catalog') {
   await page.locator('.ant-segmented').first().getByText(label, { exact: true }).click()
 }
 
 async function setupApiMocks(page: Page, state: MockState) {
   const counters: MockCounters = state.callCounters ?? {}
   state.callCounters = counters
+  const upsertPayloads: AnyRecord[] = state.upsertPayloads ?? []
+  state.upsertPayloads = upsertPayloads
 
   const definitions: AnyRecord[] = []
   const exposures: AnyRecord[] = []
@@ -386,6 +389,7 @@ async function setupApiMocks(page: Page, state: MockState) {
     if (method === 'POST' && path === '/api/v2/operation-catalog/exposures/') {
       counters.upsertCalls = (counters.upsertCalls ?? 0) + 1
       const payload = parseJsonBody(request.postData())
+      upsertPayloads.push(deepClone(payload))
       const exposurePayload = isPlainObject(payload.exposure) ? payload.exposure : {}
       const surface = typeof exposurePayload.surface === 'string' && exposurePayload.surface
         ? exposurePayload.surface
@@ -577,6 +581,19 @@ async function setupApiMocks(page: Page, state: MockState) {
         hints_version: 1,
         capabilities: {
           'extensions.set_flags': {
+            target_binding_schema: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['extension_name_param'],
+              properties: {
+                extension_name_param: {
+                  type: 'string',
+                  title: 'Target command param',
+                  description: 'Command-level parameter name to bind runtime extension_name value.',
+                  minLength: 1,
+                },
+              },
+            },
             fixed_schema: {
               type: 'object',
               additionalProperties: false,
@@ -612,7 +629,7 @@ async function setupApiMocks(page: Page, state: MockState) {
   })
 }
 
-test('Templates: staff переключает surface filter в одном list shell', async ({ page }) => {
+test('Templates: staff переключает surface facet в одном unified shell', async ({ page }) => {
   await setupAuth(page)
   const callCounters: MockCounters = {}
   await setupApiMocks(page, {
@@ -624,20 +641,28 @@ test('Templates: staff переключает surface filter в одном list 
 
   await page.goto('/templates', { waitUntil: 'domcontentloaded' })
 
-  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
-  await expect(page.getByRole('columnheader', { name: 'Operation Type' })).toBeVisible()
-  await expect(page.getByText('Template One', { exact: true })).toBeVisible()
+  const tableBody = page.locator('.ant-table-tbody:visible').first()
+
+  await expect(page.getByRole('heading', { name: 'Operation Exposures', exact: true })).toBeVisible()
+  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBe('all')
+  await expect(page.getByRole('columnheader', { name: 'Surface' })).toBeVisible()
+  await expect(tableBody).toContainText('Template One')
+  await expect(tableBody).toContainText('extensions.list')
 
   await clickSurfaceFilter(page, 'Action Catalog')
 
   await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBe('action_catalog')
-  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
-  await expect(page.getByText('extensions.list', { exact: true })).toBeVisible()
+  await expect(tableBody).toContainText('extensions.list')
 
   await clickSurfaceFilter(page, 'Templates')
 
-  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
-  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
+  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBe('template')
+  await expect(tableBody).toContainText('Template One')
+
+  await clickSurfaceFilter(page, 'All')
+  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBe('all')
+  await expect(tableBody).toContainText('Template One')
+  await expect(tableBody).toContainText('extensions.list')
 
   expect(callCounters.operationCatalogExposuresGets ?? 0).toBeGreaterThan(0)
   expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBeGreaterThan(0)
@@ -657,8 +682,10 @@ test('Templates: non-staff deep-link на action surface откатываетс�
 
   await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
 
-  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
-  await expect(page.getByText('Viewer Template', { exact: true })).toBeVisible()
+  const tableBody = page.locator('.ant-table-tbody:visible').first()
+
+  await expect(page.getByRole('heading', { name: 'Operation Exposures', exact: true })).toBeVisible()
+  await expect(tableBody).toContainText('Viewer Template')
   await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
 
   expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
@@ -671,17 +698,20 @@ test('Templates: non-staff deep-link на action surface откатываетс�
 test('Templates: единый editor shell работает для template и action surface', async ({ page }) => {
   await setupAuth(page)
   const callCounters: MockCounters = {}
+  const upsertPayloads: AnyRecord[] = []
   await setupApiMocks(page, {
     me: { id: 3, username: 'staff', is_staff: true },
     templates: [],
     actions: [],
     callCounters,
+    upsertPayloads,
   })
 
   await page.goto('/templates', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Operation Exposures', exact: true })).toBeVisible()
+  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBe('all')
 
-  await page.getByRole('button', { name: 'New CLI Template', exact: true }).click()
+  await page.getByRole('button', { name: 'New Template', exact: true }).click()
   await expect(page.getByRole('tab', { name: 'Basics', exact: true })).toBeVisible()
   await expect(page.getByRole('tab', { name: 'Executor', exact: true })).toBeVisible()
   await expect(page.getByRole('tab', { name: 'Params', exact: true })).toBeVisible()
@@ -694,10 +724,7 @@ test('Templates: единый editor shell работает для template и a
   await page.keyboard.press('Enter')
   await page.getByTestId('action-catalog-editor-apply').click()
 
-  await expect(page.getByText('Template via unified modal', { exact: true })).toBeVisible()
-
-  await clickSurfaceFilter(page, 'Action Catalog')
-  await expect(page.getByRole('heading', { name: 'Action Catalog', exact: true })).toBeVisible()
+  await expect(page.locator('.ant-table-tbody:visible').first()).toContainText('Template via unified modal')
 
   await page.getByTestId('action-catalog-add').click()
   await expect(page.getByRole('tab', { name: 'Basics', exact: true })).toBeVisible()
@@ -713,12 +740,26 @@ test('Templates: единый editor shell работает для template и a
   await page.getByTestId('action-catalog-editor-command-id').click()
   await page.keyboard.type('infobase.extension.list')
   await page.keyboard.press('Enter')
+  await page.getByRole('tab', { name: 'Safety & Fixed', exact: true }).click()
+  await expect(page.getByTestId('action-catalog-editor-target-binding-extension-name-param')).toBeVisible()
+  await page.getByTestId('action-catalog-editor-target-binding-extension-name-param').click()
+  await page.keyboard.type('format')
+  await page.keyboard.press('Enter')
   await page.getByTestId('action-catalog-editor-apply').click()
 
-  await expect(page.getByText('extensions.new', { exact: true })).toBeVisible()
+  await expect(page.locator('.ant-table-tbody:visible').first()).toContainText('extensions.new')
 
   expect(callCounters.upsertCalls ?? 0).toBeGreaterThanOrEqual(2)
   expect(callCounters.publishCalls ?? 0).toBeGreaterThanOrEqual(1)
   expect(callCounters.operationExposureHintsGets ?? 0).toBeGreaterThanOrEqual(1)
   expect(callCounters.legacyActionHintsCalls ?? 0).toBe(0)
+  expect(upsertPayloads.some((payload) => {
+    const exposure = isPlainObject(payload.exposure) ? payload.exposure : null
+    if (!exposure) return false
+    const capabilityConfig = isPlainObject(exposure.capability_config) ? exposure.capability_config : null
+    if (!capabilityConfig) return false
+    const targetBinding = isPlainObject(capabilityConfig.target_binding) ? capabilityConfig.target_binding : null
+    if (!targetBinding) return false
+    return targetBinding.extension_name_param === 'format'
+  })).toBe(true)
 })

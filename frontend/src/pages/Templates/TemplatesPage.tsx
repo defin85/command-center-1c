@@ -17,7 +17,6 @@ import {
   type OperationTemplate,
   useCreateTemplate,
   useDeleteTemplate,
-  useOperationTemplates,
   useSyncTemplatesFromRegistry,
   useUpdateTemplate,
 } from '../../api/queries/templates'
@@ -37,9 +36,13 @@ import { buildTemplateEditorValues, buildTemplateWritePayloadFromEditor } from '
 
 const { Title, Text } = Typography
 
-type SurfaceTabKey = 'template' | 'action_catalog'
+type SurfaceTabKey = 'all' | 'template' | 'action_catalog'
+type EditorSurfaceKey = 'template' | 'action_catalog'
 
-type TemplateRow = OperationTemplate & { surface: 'template' }
+type TemplateRow = OperationTemplate & {
+  surface: 'template'
+  status: string
+}
 
 type ActionRow = {
   id: string
@@ -85,6 +88,10 @@ const toErrorMessage = (error: unknown, fallback: string): string => {
   return fallback
 }
 
+const surfaceLabel = (surface: UnifiedRow['surface']): string => (
+  surface === 'template' ? 'Template' : 'Action Catalog'
+)
+
 function OperationExposureListShell({
   activeSurface,
   isStaff,
@@ -95,27 +102,23 @@ function OperationExposureListShell({
   const { message } = App.useApp()
   const [dryRun, setDryRun] = useState<boolean>(false)
   const [modalOpen, setModalOpen] = useState(false)
-  const [editorSurface, setEditorSurface] = useState<SurfaceTabKey>('template')
+  const [editorSurface, setEditorSurface] = useState<EditorSurfaceKey>('template')
   const [editingTemplate, setEditingTemplate] = useState<TemplateRow | null>(null)
   const [editingAction, setEditingAction] = useState<ActionRow | null>(null)
   const [editingActionBase, setEditingActionBase] = useState<PlainObject | null>(null)
+  const [templateReloadTick, setTemplateReloadTick] = useState(0)
   const [actionReloadTick, setActionReloadTick] = useState(0)
   const [editorValues, setEditorValues] = useState<ActionFormValues | null>(null)
   const [form] = Form.useForm<ActionFormValues>()
 
-  const templateFallbackColumnConfigs = useMemo(() => [
+  const fallbackColumnConfigs = useMemo(() => [
     { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
+    { key: 'surface', label: 'Surface', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
     { key: 'operation_type', label: 'Operation Type', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
     { key: 'target_entity', label: 'Target', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'is_active', label: 'Active', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'updated_at', label: 'Updated', sortable: true, groupKey: 'time', groupLabel: 'Time' },
-    { key: 'actions', label: 'Actions', sortable: false, groupKey: 'meta', groupLabel: 'Meta' },
-  ], [])
-  const actionFallbackColumnConfigs = useMemo(() => [
-    { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
     { key: 'capability', label: 'Capability', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'is_active', label: 'Active', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
     { key: 'status', label: 'Status', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'is_active', label: 'Active', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
     { key: 'updated_at', label: 'Updated', sortable: true, groupKey: 'time', groupLabel: 'Time' },
     { key: 'actions', label: 'Actions', sortable: false, groupKey: 'meta', groupLabel: 'Meta' },
   ], [])
@@ -134,12 +137,14 @@ function OperationExposureListShell({
     form.resetFields()
   }, [form])
 
-  const openCreateModal = useCallback(() => {
+  const openCreateModal = useCallback((nextSurface?: EditorSurfaceKey) => {
+    const resolvedSurface: EditorSurfaceKey = nextSurface
+      ?? (activeSurface === 'action_catalog' ? 'action_catalog' : 'template')
     setEditingTemplate(null)
     setEditingAction(null)
     setEditingActionBase(null)
-    setEditorSurface(activeSurface)
-    const nextValues = activeSurface === 'template'
+    setEditorSurface(resolvedSurface)
+    const nextValues = resolvedSurface === 'template'
       ? buildTemplateEditorValues(null)
       : deriveActionFormValues(null)
     setEditorValues(nextValues)
@@ -184,6 +189,7 @@ function OperationExposureListShell({
   const handleDeleteTemplate = useCallback(async (template: TemplateRow) => {
     try {
       await deleteMutation.mutateAsync({ template_id: template.id })
+      setTemplateReloadTick((value) => value + 1)
       message.success('Template deleted')
     } catch (err) {
       message.error(toErrorMessage(err, 'Failed to delete template'))
@@ -193,14 +199,14 @@ function OperationExposureListShell({
   const handleDeleteAction = useCallback(async (row: ActionRow) => {
     try {
       await deleteOperationCatalogExposure(row.id)
-      message.success('Action deleted')
       setActionReloadTick((value) => value + 1)
+      message.success('Action deleted')
     } catch (err) {
       message.error(toErrorMessage(err, 'Failed to delete action'))
     }
   }, [message])
 
-  const templateColumns: ColumnsType<UnifiedRow> = useMemo(() => ([
+  const columns: ColumnsType<UnifiedRow> = useMemo(() => ([
     {
       title: 'Name',
       dataIndex: 'name',
@@ -213,10 +219,17 @@ function OperationExposureListShell({
       ),
     },
     {
+      title: 'Surface',
+      dataIndex: 'surface',
+      key: 'surface',
+      width: 140,
+      render: (value: UnifiedRow['surface']) => surfaceLabel(value),
+    },
+    {
       title: 'Operation Type',
       dataIndex: 'operation_type' as const,
       key: 'operation_type',
-      width: 220,
+      width: 180,
       render: (_value, record) => (record.surface === 'template' ? record.operation_type : ''),
     },
     {
@@ -227,67 +240,6 @@ function OperationExposureListShell({
       render: (_value, record) => (record.surface === 'template' ? record.target_entity : ''),
     },
     {
-      title: 'Active',
-      dataIndex: 'is_active' as const,
-      key: 'is_active',
-      width: 90,
-      render: (v: boolean) => (v ? 'yes' : 'no'),
-    },
-    {
-      title: 'Updated',
-      dataIndex: 'updated_at',
-      key: 'updated_at',
-      width: 180,
-      render: (v: string) => (v ? new Date(v).toLocaleString() : ''),
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      width: 140,
-      render: (_value, record) => (
-        <Space>
-          <Button
-            size="small"
-            disabled={record.surface !== 'template' || !isStaff || record.operation_type !== 'designer_cli'}
-            onClick={() => {
-              if (record.surface !== 'template') return
-              openEditTemplateModal(record)
-            }}
-          >
-            Edit
-          </Button>
-          <Popconfirm
-            title="Delete template?"
-            okText="Delete"
-            cancelText="Cancel"
-            onConfirm={() => {
-              if (record.surface !== 'template') return
-              void handleDeleteTemplate(record)
-            }}
-            disabled={record.surface !== 'template' || !isStaff}
-          >
-            <Button size="small" danger disabled={record.surface !== 'template' || !isStaff}>
-              Delete
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ]), [handleDeleteTemplate, isStaff, openEditTemplateModal])
-
-  const actionColumns: ColumnsType<UnifiedRow> = useMemo(() => ([
-    {
-      title: 'Name',
-      dataIndex: 'name',
-      key: 'name',
-      render: (value: string, record) => (
-        <div>
-          <div style={{ fontWeight: 600 }}>{value}</div>
-          <Text type="secondary">{record.surface === 'action_catalog' ? record.alias : record.id}</Text>
-        </div>
-      ),
-    },
-    {
       title: 'Capability',
       dataIndex: 'capability' as const,
       key: 'capability',
@@ -295,18 +247,18 @@ function OperationExposureListShell({
       render: (_value, record) => (record.surface === 'action_catalog' ? record.capability : ''),
     },
     {
+      title: 'Status',
+      dataIndex: 'status' as const,
+      key: 'status',
+      width: 130,
+      render: (_value, record) => (record.surface === 'template' ? record.status : record.status),
+    },
+    {
       title: 'Active',
       dataIndex: 'is_active' as const,
       key: 'is_active',
       width: 90,
       render: (v: boolean) => (v ? 'yes' : 'no'),
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status' as const,
-      key: 'status',
-      width: 110,
-      render: (_value, record) => (record.surface === 'action_catalog' ? record.status : ''),
     },
     {
       title: 'Updated',
@@ -318,61 +270,69 @@ function OperationExposureListShell({
     {
       title: 'Actions',
       key: 'actions',
-      width: 160,
+      width: 180,
       render: (_value, record) => (
         <Space>
           <Button
             size="small"
-            disabled={record.surface !== 'action_catalog' || !isStaff}
+            disabled={
+              record.surface === 'template'
+                ? (!isStaff || record.operation_type !== 'designer_cli')
+                : !isStaff
+            }
             onClick={() => {
-              if (record.surface !== 'action_catalog') return
+              if (record.surface === 'template') {
+                openEditTemplateModal(record)
+                return
+              }
               openEditActionModal(record)
             }}
           >
             Edit
           </Button>
           <Popconfirm
-            title="Delete action?"
+            title={record.surface === 'template' ? 'Delete template?' : 'Delete action?'}
             okText="Delete"
             cancelText="Cancel"
             onConfirm={() => {
-              if (record.surface !== 'action_catalog') return
+              if (record.surface === 'template') {
+                void handleDeleteTemplate(record)
+                return
+              }
               void handleDeleteAction(record)
             }}
-            disabled={record.surface !== 'action_catalog' || !isStaff}
+            disabled={!isStaff}
           >
-            <Button size="small" danger disabled={record.surface !== 'action_catalog' || !isStaff}>
+            <Button size="small" danger disabled={!isStaff}>
               Delete
             </Button>
           </Popconfirm>
         </Space>
       ),
     },
-  ]), [handleDeleteAction, isStaff, openEditActionModal])
+  ]), [handleDeleteAction, handleDeleteTemplate, isStaff, openEditActionModal, openEditTemplateModal])
 
-  const columns = activeSurface === 'template' ? templateColumns : actionColumns
-  const fallbackColumnConfigs = activeSurface === 'template'
-    ? templateFallbackColumnConfigs
-    : actionFallbackColumnConfigs
   const table = useTableToolkit<UnifiedRow>({
-    tableId: activeSurface === 'template' ? 'templates' : 'operation-catalog-action-exposures',
+    tableId: `operation-exposures-${activeSurface}`,
     columns,
     fallbackColumns: fallbackColumnConfigs,
     initialPageSize: 50,
   })
   const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
 
-  const templatesQuery = useOperationTemplates({
-    search: table.search,
-    filters: table.filtersPayload,
-    sort: table.sortPayload,
-    limit: table.pagination.pageSize,
-    offset: pageStart,
+  const templateExposuresQuery = useQuery({
+    queryKey: ['templates', 'template-exposures', templateReloadTick],
+    enabled: activeSurface !== 'action_catalog',
+    queryFn: async () => listOperationCatalogExposures({
+      surface: 'template',
+      limit: 1000,
+      offset: 0,
+    }),
   })
 
   const actionExposuresQuery = useQuery({
     queryKey: ['templates', 'action-catalog-exposures', actionReloadTick],
-    enabled: isStaff && activeSurface === 'action_catalog',
+    enabled: isStaff && activeSurface !== 'template',
     queryFn: async () => listOperationCatalogExposures({
       surface: 'action_catalog',
       limit: 1000,
@@ -382,21 +342,32 @@ function OperationExposureListShell({
 
   const actionDefinitionsQuery = useQuery({
     queryKey: ['templates', 'action-catalog-definitions', actionReloadTick],
-    enabled: isStaff && activeSurface === 'action_catalog',
+    enabled: isStaff && activeSurface !== 'template',
     queryFn: async () => listOperationCatalogDefinitions({
       limit: 1000,
       offset: 0,
     }),
   })
 
-  const templateRows = useMemo<TemplateRow[]>(() => (
-    (templatesQuery.data?.templates ?? []).map((template) => ({ ...template, surface: 'template' }))
-  ), [templatesQuery.data?.templates])
-  const totalTemplates = typeof templatesQuery.data?.total === 'number'
-    ? templatesQuery.data.total
-    : typeof templatesQuery.data?.count === 'number'
-      ? templatesQuery.data.count
-      : templateRows.length
+  const templateRowsAll = useMemo<TemplateRow[]>(() => (
+    (templateExposuresQuery.data?.exposures ?? [])
+      .filter((exposure) => exposure.surface === 'template')
+      .map((exposure) => ({
+        id: String(exposure.alias || ''),
+        surface: 'template',
+        status: String(exposure.status || (exposure.is_active !== false ? 'published' : 'draft')),
+        name: String(exposure.name || ''),
+        description: String(exposure.description || ''),
+        operation_type: String(exposure.operation_type || 'designer_cli'),
+        target_entity: String(exposure.target_entity || 'infobase'),
+        template_data: isPlainObject(exposure.template_data) ? exposure.template_data : {},
+        is_active: exposure.is_active !== false,
+        created_at: String(exposure.created_at || ''),
+        updated_at: String(exposure.updated_at || ''),
+        exposure_id: String(exposure.id || ''),
+        definition_id: String(exposure.definition_id || ''),
+      }))
+  ), [templateExposuresQuery.data?.exposures])
 
   const actionDefinitionsById = useMemo(() => {
     const map = new Map<string, OperationCatalogDefinition>()
@@ -429,15 +400,34 @@ function OperationExposureListShell({
       }))
   ), [actionDefinitionsById, actionExposuresQuery.data?.exposures])
 
-  const actionRowsPage = useMemo(() => {
-    let rows = actionRowsAll.slice()
+  const sourceRows = useMemo<UnifiedRow[]>(() => {
+    if (activeSurface === 'template') return templateRowsAll
+    if (activeSurface === 'action_catalog') return actionRowsAll
+    return [...templateRowsAll, ...actionRowsAll]
+  }, [activeSurface, actionRowsAll, templateRowsAll])
+
+  const pagedRows = useMemo(() => {
+    let rows = sourceRows.slice()
+
     const q = table.search.trim().toLowerCase()
     if (q) {
-      rows = rows.filter((row) => (
-        row.alias.toLowerCase().includes(q)
-        || row.name.toLowerCase().includes(q)
-        || row.capability.toLowerCase().includes(q)
-      ))
+      rows = rows.filter((row) => {
+        if (row.surface === 'template') {
+          return (
+            row.id.toLowerCase().includes(q)
+            || row.name.toLowerCase().includes(q)
+            || String(row.description || '').toLowerCase().includes(q)
+            || row.operation_type.toLowerCase().includes(q)
+            || row.target_entity.toLowerCase().includes(q)
+          )
+        }
+        return (
+          row.alias.toLowerCase().includes(q)
+          || row.name.toLowerCase().includes(q)
+          || row.capability.toLowerCase().includes(q)
+          || row.status.toLowerCase().includes(q)
+        )
+      })
     }
 
     const filters = table.filtersPayload
@@ -445,13 +435,39 @@ function OperationExposureListShell({
       const capabilityFilter = isPlainObject(filters.capability) ? filters.capability.value : null
       if (capabilityFilter !== null && capabilityFilter !== undefined && String(capabilityFilter).trim()) {
         const next = String(capabilityFilter).trim().toLowerCase()
-        rows = rows.filter((row) => row.capability.toLowerCase().includes(next))
+        rows = rows.filter((row) => (
+          row.surface === 'action_catalog' && row.capability.toLowerCase().includes(next)
+        ))
       }
+
       const statusFilter = isPlainObject(filters.status) ? filters.status.value : null
       if (statusFilter !== null && statusFilter !== undefined && String(statusFilter).trim()) {
         const next = String(statusFilter).trim().toLowerCase()
         rows = rows.filter((row) => row.status.toLowerCase().includes(next))
       }
+
+      const operationTypeFilter = isPlainObject(filters.operation_type) ? filters.operation_type.value : null
+      if (operationTypeFilter !== null && operationTypeFilter !== undefined && String(operationTypeFilter).trim()) {
+        const next = String(operationTypeFilter).trim().toLowerCase()
+        rows = rows.filter((row) => (
+          row.surface === 'template' && row.operation_type.toLowerCase().includes(next)
+        ))
+      }
+
+      const targetEntityFilter = isPlainObject(filters.target_entity) ? filters.target_entity.value : null
+      if (targetEntityFilter !== null && targetEntityFilter !== undefined && String(targetEntityFilter).trim()) {
+        const next = String(targetEntityFilter).trim().toLowerCase()
+        rows = rows.filter((row) => (
+          row.surface === 'template' && row.target_entity.toLowerCase().includes(next)
+        ))
+      }
+
+      const surfaceFilter = isPlainObject(filters.surface) ? filters.surface.value : null
+      if (surfaceFilter !== null && surfaceFilter !== undefined && String(surfaceFilter).trim()) {
+        const next = String(surfaceFilter).trim().toLowerCase()
+        rows = rows.filter((row) => row.surface.toLowerCase().includes(next))
+      }
+
       const isActiveFilter = isPlainObject(filters.is_active) ? parseBooleanFilter(filters.is_active.value) : null
       if (typeof isActiveFilter === 'boolean') {
         rows = rows.filter((row) => row.is_active === isActiveFilter)
@@ -466,37 +482,49 @@ function OperationExposureListShell({
         if (key === 'is_active') {
           return (Number(left.is_active) - Number(right.is_active)) * direction
         }
+
         const leftValue = (
           key === 'name' ? left.name
-            : key === 'capability' ? left.capability
-              : key === 'status' ? left.status
-                : key === 'updated_at' ? left.updated_at
-                  : left.alias
+            : key === 'surface' ? left.surface
+              : key === 'operation_type' ? (left.surface === 'template' ? left.operation_type : '')
+                : key === 'target_entity' ? (left.surface === 'template' ? left.target_entity : '')
+                  : key === 'capability' ? (left.surface === 'action_catalog' ? left.capability : '')
+                    : key === 'status' ? left.status
+                      : key === 'updated_at' ? left.updated_at
+                        : left.surface === 'template' ? left.id : left.alias
         )
+
         const rightValue = (
           key === 'name' ? right.name
-            : key === 'capability' ? right.capability
-              : key === 'status' ? right.status
-                : key === 'updated_at' ? right.updated_at
-                  : right.alias
+            : key === 'surface' ? right.surface
+              : key === 'operation_type' ? (right.surface === 'template' ? right.operation_type : '')
+                : key === 'target_entity' ? (right.surface === 'template' ? right.target_entity : '')
+                  : key === 'capability' ? (right.surface === 'action_catalog' ? right.capability : '')
+                    : key === 'status' ? right.status
+                      : key === 'updated_at' ? right.updated_at
+                        : right.surface === 'template' ? right.id : right.alias
         )
-        return leftValue.localeCompare(rightValue) * direction
+
+        return String(leftValue).localeCompare(String(rightValue)) * direction
       })
     }
 
     const total = rows.length
     const paged = rows.slice(pageStart, pageStart + table.pagination.pageSize)
     return { rows: paged, total }
-  }, [actionRowsAll, pageStart, table.filtersPayload, table.pagination.pageSize, table.search, table.sortPayload])
+  }, [pageStart, sourceRows, table.filtersPayload, table.pagination.pageSize, table.search, table.sortPayload])
 
-  const activeRows: UnifiedRow[] = activeSurface === 'template' ? templateRows : actionRowsPage.rows
-  const activeTotal = activeSurface === 'template' ? totalTemplates : actionRowsPage.total
-  const activeLoading = activeSurface === 'template'
-    ? templatesQuery.isLoading
-    : (actionExposuresQuery.isLoading || actionDefinitionsQuery.isLoading)
-  const activeError = activeSurface === 'template'
-    ? templatesQuery.error
-    : (actionExposuresQuery.error ?? actionDefinitionsQuery.error)
+  const activeLoading = (
+    (activeSurface !== 'action_catalog' && templateExposuresQuery.isLoading)
+    || (activeSurface !== 'template' && isStaff && (actionExposuresQuery.isLoading || actionDefinitionsQuery.isLoading))
+  )
+
+  const activeError = (
+    templateExposuresQuery.error
+    ?? actionExposuresQuery.error
+    ?? actionDefinitionsQuery.error
+  )
+
   const activeErrorStatus = (activeError as { response?: { status?: number } } | null)?.response?.status
   const showAccessWarning = activeErrorStatus === 403
 
@@ -522,6 +550,7 @@ function OperationExposureListShell({
       await createMutation.mutateAsync(built.payload)
       message.success('Template created')
     }
+    setTemplateReloadTick((value) => value + 1)
     closeModal()
   }, [closeModal, createMutation, editingTemplate, form, message, updateMutation])
 
@@ -571,9 +600,7 @@ function OperationExposureListShell({
     try {
       const result = await syncMutation.mutateAsync({ dry_run: dryRun })
       message.success(`${result.message}: created=${result.created}, updated=${result.updated}, unchanged=${result.unchanged}`)
-      if (activeSurface === 'template') {
-        templatesQuery.refetch()
-      }
+      setTemplateReloadTick((value) => value + 1)
     } catch (err) {
       const status = (err as { response?: { status?: number } } | null)?.response?.status
       if (status === 403) {
@@ -582,30 +609,41 @@ function OperationExposureListShell({
       }
       message.error('Failed to sync templates from registry')
     }
-  }, [activeSurface, dryRun, message, syncMutation, templatesQuery])
+  }, [dryRun, message, syncMutation])
 
-  const title = activeSurface === 'template' ? 'Operation Templates' : 'Action Catalog'
-  const subtitle = activeSurface === 'template'
-    ? 'Manage template exposures and sync from the in-code registry.'
-    : 'Manage action exposures in the same list + editor flow.'
+  const subtitle = activeSurface === 'all'
+    ? 'Unified list for template and action exposures.'
+    : activeSurface === 'template'
+      ? 'Filtered by template surface.'
+      : 'Filtered by action_catalog surface.'
+
+  const searchPlaceholder = activeSurface === 'all'
+    ? 'Search exposures'
+    : activeSurface === 'template'
+      ? 'Search templates'
+      : 'Search actions'
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <div>
-          <Title level={2} style={{ marginBottom: 0 }}>{title}</Title>
+          <Title level={2} style={{ marginBottom: 0 }}>Operation Exposures</Title>
           <Text type="secondary">{subtitle}</Text>
         </div>
         <Space>
-          {isStaff && (
-            <Button
-              onClick={openCreateModal}
-              data-testid={activeSurface === 'action_catalog' ? 'action-catalog-add' : undefined}
-            >
-              {activeSurface === 'template' ? 'New CLI Template' : 'New Action'}
-            </Button>
+          {isStaff && activeSurface === 'all' && (
+            <>
+              <Button onClick={() => openCreateModal('template')}>New Template</Button>
+              <Button onClick={() => openCreateModal('action_catalog')} data-testid="action-catalog-add">New Action</Button>
+            </>
           )}
-          {activeSurface === 'template' && (
+          {isStaff && activeSurface === 'template' && (
+            <Button onClick={() => openCreateModal('template')}>New Template</Button>
+          )}
+          {isStaff && activeSurface === 'action_catalog' && (
+            <Button onClick={() => openCreateModal('action_catalog')} data-testid="action-catalog-add">New Action</Button>
+          )}
+          {activeSurface !== 'action_catalog' && (
             <>
               <Space>
                 <Text>Dry run</Text>
@@ -623,21 +661,19 @@ function OperationExposureListShell({
         <Alert
           type="warning"
           message="Access denied"
-          description={activeSurface === 'template'
-            ? 'Templates endpoints require authentication; sync requires staff access.'
-            : 'Action catalog management is staff-only.'}
+          description="Operation exposures for this surface are not available for your permissions."
           showIcon
         />
       )}
 
       <TableToolkit
         table={table}
-        data={activeRows}
-        total={activeTotal}
+        data={pagedRows.rows}
+        total={pagedRows.total}
         loading={activeLoading}
         rowKey={(row) => `${row.surface}:${row.id}`}
         columns={columns}
-        searchPlaceholder={activeSurface === 'template' ? 'Search templates' : 'Search actions'}
+        searchPlaceholder={searchPlaceholder}
       />
 
       <OperationExposureEditorModal
@@ -660,9 +696,13 @@ export function TemplatesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const requestedSurface = searchParams.get('surface')
-  const normalizedSurface: SurfaceTabKey = requestedSurface === 'action_catalog' && isStaff
-    ? 'action_catalog'
-    : 'template'
+  const normalizedSurface: SurfaceTabKey = useMemo(() => {
+    if (!isStaff) return 'template'
+    if (requestedSurface === 'template') return 'template'
+    if (requestedSurface === 'action_catalog') return 'action_catalog'
+    if (requestedSurface === 'all') return 'all'
+    return 'all'
+  }, [isStaff, requestedSurface])
 
   const [activeSurface, setActiveSurface] = useState<SurfaceTabKey>(normalizedSurface)
 
@@ -672,41 +712,48 @@ export function TemplatesPage() {
 
   useEffect(() => {
     const current = searchParams.get('surface')
-    if (normalizedSurface === 'action_catalog') {
-      if (current === 'action_catalog') return
+
+    if (!isStaff) {
+      if (current === null) return
       const next = new URLSearchParams(searchParams)
-      next.set('surface', 'action_catalog')
+      next.delete('surface')
       setSearchParams(next, { replace: true })
       return
     }
-    if (current === null) return
+
+    if (current === normalizedSurface) return
     const next = new URLSearchParams(searchParams)
-    next.delete('surface')
+    next.set('surface', normalizedSurface)
     setSearchParams(next, { replace: true })
-  }, [normalizedSurface, searchParams, setSearchParams])
+  }, [isStaff, normalizedSurface, searchParams, setSearchParams])
 
   const handleSurfaceChange = useCallback((next: string | number) => {
     const nextKey = String(next)
-    const resolved: SurfaceTabKey = nextKey === 'action_catalog' && isStaff ? 'action_catalog' : 'template'
+    const resolved: SurfaceTabKey = !isStaff
+      ? 'template'
+      : nextKey === 'template' || nextKey === 'action_catalog' || nextKey === 'all'
+        ? nextKey
+        : 'all'
+
     setActiveSurface(resolved)
+
     const nextParams = new URLSearchParams(searchParams)
-    if (resolved === 'action_catalog') {
-      nextParams.set('surface', 'action_catalog')
-    } else {
+    if (!isStaff) {
       nextParams.delete('surface')
+    } else {
+      nextParams.set('surface', resolved)
     }
     setSearchParams(nextParams, { replace: true })
   }, [isStaff, searchParams, setSearchParams])
 
   const surfaceOptions = useMemo(() => {
     const items: Array<{ value: SurfaceTabKey; label: string }> = [
+      { value: 'all', label: 'All' },
       { value: 'template', label: 'Templates' },
+      { value: 'action_catalog', label: 'Action Catalog' },
     ]
-    if (isStaff) {
-      items.push({ value: 'action_catalog', label: 'Action Catalog' })
-    }
     return items
-  }, [isStaff])
+  }, [])
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>

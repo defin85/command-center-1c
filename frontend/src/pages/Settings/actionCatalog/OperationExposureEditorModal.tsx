@@ -192,6 +192,16 @@ export function OperationExposureEditorModal({
     return getCommandParamsFromSchema(selectedCommand.params_by_name, commandsDriver)
   }, [commandsDriver, selectedCommand])
 
+  const targetBindingParamOptions = useMemo(() => (
+    commandParams.map(({ name, schema }) => {
+      const labelFromSchema = typeof schema.label === 'string' ? schema.label.trim() : ''
+      return {
+        value: name,
+        label: labelFromSchema ? `${name} — ${labelFromSchema}` : name,
+      }
+    })
+  ), [commandParams])
+
   const hasParamsTemplate = commandParams.length > 0
 
   const paramsTemplateObject = useMemo(() => {
@@ -1025,10 +1035,20 @@ export function OperationExposureEditorModal({
                             },
                           ]}
                         >
-                          <Input
-                            placeholder="e.g. extension_name"
-                            data-testid="action-catalog-editor-target-binding-extension-name-param"
-                          />
+                          {selectedCommand && !driverCatalogUnavailable && targetBindingParamOptions.length > 0 ? (
+                            <Select
+                              showSearch
+                              optionFilterProp="label"
+                              options={targetBindingParamOptions}
+                              placeholder="Select command param"
+                              data-testid="action-catalog-editor-target-binding-extension-name-param"
+                            />
+                          ) : (
+                            <Input
+                              placeholder="e.g. extension_name"
+                              data-testid="action-catalog-editor-target-binding-extension-name-param"
+                            />
+                          )}
                         </Form.Item>
                       )}
                       <ActionCatalogCapabilityFixedSection
