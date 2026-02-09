@@ -11,18 +11,20 @@ export const AuthzProvider = ({ children }: { children: ReactNode }) => {
   const accessQuery = useEffectiveAccess(undefined, {
     includeDatabases: true,
     includeClusters: true,
+    includeTemplates: true,
     enabled: hasToken,
   })
 
   const isStaff = Boolean(meQuery.data?.is_staff)
   const isLoading = Boolean(hasToken && (meQuery.isLoading || accessQuery.isLoading))
 
-  const { databaseLevels, clusterLevels } = useMemo(() => {
+  const { databaseLevels, clusterLevels, templateLevels } = useMemo(() => {
     const dbLevels = new Map<string, AccessLevel>()
     const clLevels = new Map<string, AccessLevel>()
+    const tplLevels = new Map<string, AccessLevel>()
     const data = accessQuery.data
     if (!data) {
-      return { databaseLevels: dbLevels, clusterLevels: clLevels }
+      return { databaseLevels: dbLevels, clusterLevels: clLevels, templateLevels: tplLevels }
     }
 
     data.databases?.forEach((item) => {
@@ -39,7 +41,15 @@ export const AuthzProvider = ({ children }: { children: ReactNode }) => {
       }
     })
 
-    return { databaseLevels: dbLevels, clusterLevels: clLevels }
+    data.operation_templates?.forEach((item) => {
+      const level = normalizeLevel(item.level)
+      if (!level) return
+      const templateId = typeof item.template?.id === 'string' ? item.template.id : ''
+      if (!templateId) return
+      tplLevels.set(templateId, level)
+    })
+
+    return { databaseLevels: dbLevels, clusterLevels: clLevels, templateLevels: tplLevels }
   }, [accessQuery.data])
 
   const getDatabaseLevel = (databaseId: string | null | undefined): AccessLevel | null => {
@@ -52,6 +62,11 @@ export const AuthzProvider = ({ children }: { children: ReactNode }) => {
     return clusterLevels.get(clusterId) ?? null
   }
 
+  const getTemplateLevel = (templateId: string | null | undefined): AccessLevel | null => {
+    if (!templateId) return null
+    return templateLevels.get(templateId) ?? null
+  }
+
   const canDatabase = (databaseId: string | null | undefined, required: AccessLevel): boolean => {
     if (isStaff) return true
     const level = getDatabaseLevel(databaseId)
@@ -61,6 +76,12 @@ export const AuthzProvider = ({ children }: { children: ReactNode }) => {
   const canCluster = (clusterId: string | null | undefined, required: AccessLevel): boolean => {
     if (isStaff) return true
     const level = getClusterLevel(clusterId)
+    return hasLevel(level, required)
+  }
+
+  const canTemplate = (templateId: string | null | undefined, required: AccessLevel): boolean => {
+    if (isStaff) return true
+    const level = getTemplateLevel(templateId)
     return hasLevel(level, required)
   }
 
@@ -80,17 +101,27 @@ export const AuthzProvider = ({ children }: { children: ReactNode }) => {
     return false
   }
 
+  const canAnyTemplate = (required: AccessLevel): boolean => {
+    if (isStaff) return true
+    for (const level of templateLevels.values()) {
+      if (hasLevel(level, required)) return true
+    }
+    return false
+  }
+
   const value: AuthzContextValue = {
     isStaff,
     isLoading,
     canDatabase,
     canCluster,
+    canTemplate,
     canAnyDatabase,
     canAnyCluster,
+    canAnyTemplate,
     getDatabaseLevel,
     getClusterLevel,
+    getTemplateLevel,
   }
 
   return <AuthzContext.Provider value={value}>{children}</AuthzContext.Provider>
 }
-

@@ -27,11 +27,13 @@ export type AuthzContextValue = {
   isLoading: boolean
   canDatabase: (databaseId: string | null | undefined, required: AccessLevel) => boolean
   canCluster: (clusterId: string | null | undefined, required: AccessLevel) => boolean
+  canTemplate: (templateId: string | null | undefined, required: AccessLevel) => boolean
   canAnyDatabase: (required: AccessLevel) => boolean
   canAnyCluster: (required: AccessLevel) => boolean
+  canAnyTemplate: (required: AccessLevel) => boolean
   getDatabaseLevel: (databaseId: string | null | undefined) => AccessLevel | null
   getClusterLevel: (clusterId: string | null | undefined) => AccessLevel | null
+  getTemplateLevel: (templateId: string | null | undefined) => AccessLevel | null
 }
 
 export const AuthzContext = createContext<AuthzContextValue | null>(null)
-

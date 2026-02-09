@@ -41,6 +41,7 @@ type MockState = {
   }>
   callCounters?: MockCounters
   upsertPayloads?: AnyRecord[]
+  templateAccessById?: Record<string, 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN'>
 }
 
 declare global {
@@ -118,6 +119,7 @@ async function setupApiMocks(page: Page, state: MockState) {
   state.callCounters = counters
   const upsertPayloads: AnyRecord[] = state.upsertPayloads ?? []
   state.upsertPayloads = upsertPayloads
+  const templateAccessById = state.templateAccessById ?? {}
 
   const definitions: AnyRecord[] = []
   const exposures: AnyRecord[] = []
@@ -310,7 +312,34 @@ async function setupApiMocks(page: Page, state: MockState) {
     }
 
     if (method === 'GET' && path === '/api/v2/rbac/get-effective-access/') {
-      return fulfillJson(route, { clusters: [], databases: [] })
+      const defaultTemplateLevel: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN' = state.me?.is_staff ? 'ADMIN' : 'VIEW'
+      const operationTemplates = exposures
+        .filter((row) => row.surface === 'template')
+        .map((row) => {
+          const templateId = String(row.alias || '').trim()
+          if (!templateId) return null
+          const level = templateAccessById[templateId] ?? defaultTemplateLevel
+          return {
+            template: {
+              id: templateId,
+              name: String(row.name || templateId),
+            },
+            level,
+            source: 'direct',
+            sources: [{ source: 'direct', level }],
+          }
+        })
+        .filter((row): row is {
+          template: { id: string; name: string }
+          level: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN'
+          source: 'direct'
+          sources: Array<{ source: 'direct'; level: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN' }>
+        } => row !== null)
+      return fulfillJson(route, {
+        clusters: [],
+        databases: [],
+        operation_templates: operationTemplates,
+      })
     }
 
     if (method === 'GET' && path === '/api/v2/rbac/list-roles/') {
@@ -670,6 +699,27 @@ test('Templates: staff переключает surface facet в одном unifie
   expect(callCounters.legacyTemplateCalls ?? 0).toBe(0)
 })
 
+test('Templates: staff deep-link на action_catalog сохраняется при открытии страницы', async ({ page }) => {
+  await setupAuth(page)
+  const callCounters: MockCounters = {}
+  await setupApiMocks(page, {
+    me: { id: 11, username: 'admin', is_staff: true },
+    templates: [{ id: 'tpl-one', name: 'Template One' }],
+    actions: [{ id: 'extensions.list', label: 'List extensions', capability: 'extensions.list' }],
+    callCounters,
+  })
+
+  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
+  const tableBody = page.locator('.ant-table-tbody:visible').first()
+
+  await expect(page.getByRole('heading', { name: 'Operation Exposures', exact: true })).toBeVisible()
+  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBe('action_catalog')
+  await expect(tableBody).toContainText('extensions.list')
+
+  expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBeGreaterThan(0)
+  expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBeGreaterThan(0)
+})
+
 test('Templates: non-staff deep-link на action surface откатывается в template', async ({ page }) => {
   await setupAuth(page)
   const callCounters: MockCounters = {}
@@ -687,12 +737,44 @@ test('Templates: non-staff deep-link на action surface откатываетс�
   await expect(page.getByRole('heading', { name: 'Operation Exposures', exact: true })).toBeVisible()
   await expect(tableBody).toContainText('Viewer Template')
   await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
+  await expect(page.getByRole('button', { name: 'New Template', exact: true })).toHaveCount(0)
 
   expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
   expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBe(0)
   expect(callCounters.operationExposureHintsGets ?? 0).toBe(0)
   expect(callCounters.legacyTemplateCalls ?? 0).toBe(0)
   expect(callCounters.legacyActionHintsCalls ?? 0).toBe(0)
+})
+
+test('Templates: non-staff с MANAGE по templates получает template controls без action controls', async ({ page }) => {
+  await setupAuth(page)
+  const callCounters: MockCounters = {}
+  await setupApiMocks(page, {
+    me: { id: 4, username: 'template-manager', is_staff: false },
+    templates: [{ id: 'tpl-manage', name: 'Template Manage' }],
+    actions: [{ id: 'extensions.hidden', label: 'Hidden Action', capability: 'extensions.hidden' }],
+    templateAccessById: {
+      'tpl-manage': 'MANAGE',
+    },
+    callCounters,
+  })
+
+  await page.goto('/templates?surface=template', { waitUntil: 'domcontentloaded' })
+  const tableBody = page.locator('.ant-table-tbody:visible').first()
+
+  await expect(page.getByRole('heading', { name: 'Operation Exposures', exact: true })).toBeVisible()
+  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
+  await expect(tableBody).toContainText('Template Manage')
+  await expect(page.getByRole('button', { name: 'New Template', exact: true })).toBeVisible()
+  await expect(page.getByTestId('action-catalog-add')).toHaveCount(0)
+
+  await tableBody.getByRole('button', { name: 'Edit', exact: true }).first().click()
+  await expect(page.getByTestId('operation-exposure-editor-name')).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(page.getByTestId('operation-exposure-editor-name')).toBeHidden()
+
+  expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
+  expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBe(0)
 })
 
 test('Templates: единый editor shell работает для template и action surface', async ({ page }) => {

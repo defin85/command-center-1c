@@ -22,7 +22,7 @@ import {
 } from '../../api/queries/templates'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
-import { useMe } from '../../api/queries/me'
+import { useAuthz } from '../../authz/useAuthz'
 import type { ActionFormValues } from '../Settings/actionCatalogTypes'
 import type { PlainObject } from '../Settings/actionCatalogTypes'
 import { buildActionFromForm, deriveActionFormValues, isPlainObject } from '../Settings/actionCatalogUtils'
@@ -95,9 +95,13 @@ const surfaceLabel = (surface: UnifiedRow['surface']): string => (
 function OperationExposureListShell({
   activeSurface,
   isStaff,
+  canManageTemplate,
+  canManageAnyTemplate,
 }: {
   activeSurface: SurfaceTabKey
   isStaff: boolean
+  canManageTemplate: (templateId: string) => boolean
+  canManageAnyTemplate: boolean
 }) {
   const { message } = App.useApp()
   const [dryRun, setDryRun] = useState<boolean>(false)
@@ -277,7 +281,7 @@ function OperationExposureListShell({
             size="small"
             disabled={
               record.surface === 'template'
-                ? (!isStaff || record.operation_type !== 'designer_cli')
+                ? (!canManageTemplate(record.id) || record.operation_type !== 'designer_cli')
                 : !isStaff
             }
             onClick={() => {
@@ -301,16 +305,20 @@ function OperationExposureListShell({
               }
               void handleDeleteAction(record)
             }}
-            disabled={!isStaff}
+            disabled={record.surface === 'template' ? !canManageTemplate(record.id) : !isStaff}
           >
-            <Button size="small" danger disabled={!isStaff}>
+            <Button
+              size="small"
+              danger
+              disabled={record.surface === 'template' ? !canManageTemplate(record.id) : !isStaff}
+            >
               Delete
             </Button>
           </Popconfirm>
         </Space>
       ),
     },
-  ]), [handleDeleteAction, handleDeleteTemplate, isStaff, openEditActionModal, openEditTemplateModal])
+  ]), [canManageTemplate, handleDeleteAction, handleDeleteTemplate, isStaff, openEditActionModal, openEditTemplateModal])
 
   const table = useTableToolkit<UnifiedRow>({
     tableId: `operation-exposures-${activeSurface}`,
@@ -631,19 +639,19 @@ function OperationExposureListShell({
           <Text type="secondary">{subtitle}</Text>
         </div>
         <Space>
-          {isStaff && activeSurface === 'all' && (
+          {activeSurface === 'all' && (
             <>
-              <Button onClick={() => openCreateModal('template')}>New Template</Button>
-              <Button onClick={() => openCreateModal('action_catalog')} data-testid="action-catalog-add">New Action</Button>
+              {canManageAnyTemplate && <Button onClick={() => openCreateModal('template')}>New Template</Button>}
+              {isStaff && <Button onClick={() => openCreateModal('action_catalog')} data-testid="action-catalog-add">New Action</Button>}
             </>
           )}
-          {isStaff && activeSurface === 'template' && (
+          {canManageAnyTemplate && activeSurface === 'template' && (
             <Button onClick={() => openCreateModal('template')}>New Template</Button>
           )}
           {isStaff && activeSurface === 'action_catalog' && (
             <Button onClick={() => openCreateModal('action_catalog')} data-testid="action-catalog-add">New Action</Button>
           )}
-          {activeSurface !== 'action_catalog' && (
+          {activeSurface !== 'action_catalog' && canManageAnyTemplate && (
             <>
               <Space>
                 <Text>Dry run</Text>
@@ -691,18 +699,29 @@ function OperationExposureListShell({
 }
 
 export function TemplatesPage() {
-  const meQuery = useMe()
-  const isStaff = Boolean(meQuery.data?.is_staff)
+  const authz = useAuthz()
+  const isStaff = authz.isStaff
+  const authzResolved = !authz.isLoading
+  const canManageAnyTemplate = isStaff || authz.canAnyTemplate('MANAGE')
+  const canManageTemplate = useCallback((templateId: string) => (
+    isStaff || authz.canTemplate(templateId, 'MANAGE')
+  ), [authz, isStaff])
   const [searchParams, setSearchParams] = useSearchParams()
 
   const requestedSurface = searchParams.get('surface')
   const normalizedSurface: SurfaceTabKey = useMemo(() => {
+    if (!authzResolved) {
+      if (requestedSurface === 'template') return 'template'
+      if (requestedSurface === 'action_catalog') return 'action_catalog'
+      if (requestedSurface === 'all') return 'all'
+      return 'all'
+    }
     if (!isStaff) return 'template'
     if (requestedSurface === 'template') return 'template'
     if (requestedSurface === 'action_catalog') return 'action_catalog'
     if (requestedSurface === 'all') return 'all'
     return 'all'
-  }, [isStaff, requestedSurface])
+  }, [authzResolved, isStaff, requestedSurface])
 
   const [activeSurface, setActiveSurface] = useState<SurfaceTabKey>(normalizedSurface)
 
@@ -711,6 +730,7 @@ export function TemplatesPage() {
   }, [normalizedSurface])
 
   useEffect(() => {
+    if (!authzResolved) return
     const current = searchParams.get('surface')
 
     if (!isStaff) {
@@ -725,7 +745,7 @@ export function TemplatesPage() {
     const next = new URLSearchParams(searchParams)
     next.set('surface', normalizedSurface)
     setSearchParams(next, { replace: true })
-  }, [isStaff, normalizedSurface, searchParams, setSearchParams])
+  }, [authzResolved, isStaff, normalizedSurface, searchParams, setSearchParams])
 
   const handleSurfaceChange = useCallback((next: string | number) => {
     const nextKey = String(next)
@@ -767,7 +787,12 @@ export function TemplatesPage() {
           />
         </Space>
       )}
-      <OperationExposureListShell activeSurface={activeSurface} isStaff={isStaff} />
+      <OperationExposureListShell
+        activeSurface={activeSurface}
+        isStaff={isStaff}
+        canManageTemplate={canManageTemplate}
+        canManageAnyTemplate={canManageAnyTemplate}
+      />
     </Space>
   )
 }
