@@ -494,6 +494,126 @@ def test_operation_catalog_exposures_supports_search_filters_sort_and_pagination
 
 
 @pytest.mark.django_db
+def test_operation_catalog_exposures_rejects_invalid_filters_and_sort_json(staff_client):
+    _create_action_exposure(
+        staff_client,
+        alias="extensions.validation",
+        name="Validation action",
+        capability="extensions.list",
+    )
+
+    invalid_filters_resp = staff_client.get(
+        "/api/v2/operation-catalog/exposures/",
+        data={"surface": "action_catalog", "filters": "{bad-json"},
+    )
+    assert invalid_filters_resp.status_code == 400
+    invalid_filters_payload = invalid_filters_resp.json()
+    assert invalid_filters_payload["success"] is False
+    assert invalid_filters_payload["error"]["code"] == "VALIDATION_ERROR"
+    assert invalid_filters_payload["error"]["message"] == "filters must be valid JSON object"
+
+    invalid_sort_resp = staff_client.get(
+        "/api/v2/operation-catalog/exposures/",
+        data={"surface": "action_catalog", "sort": "{bad-json"},
+    )
+    assert invalid_sort_resp.status_code == 400
+    invalid_sort_payload = invalid_sort_resp.json()
+    assert invalid_sort_payload["success"] is False
+    assert invalid_sort_payload["error"]["code"] == "VALIDATION_ERROR"
+    assert invalid_sort_payload["error"]["message"] == "sort must be valid JSON object"
+
+    non_object_filters_resp = staff_client.get(
+        "/api/v2/operation-catalog/exposures/",
+        data={"surface": "action_catalog", "filters": json.dumps(["bad", "type"])},
+    )
+    assert non_object_filters_resp.status_code == 400
+    non_object_filters_payload = non_object_filters_resp.json()
+    assert non_object_filters_payload["success"] is False
+    assert non_object_filters_payload["error"]["code"] == "VALIDATION_ERROR"
+    assert non_object_filters_payload["error"]["message"] == "filters must be a JSON object"
+
+    non_object_sort_resp = staff_client.get(
+        "/api/v2/operation-catalog/exposures/",
+        data={"surface": "action_catalog", "sort": json.dumps(["bad", "type"])},
+    )
+    assert non_object_sort_resp.status_code == 400
+    non_object_sort_payload = non_object_sort_resp.json()
+    assert non_object_sort_payload["success"] is False
+    assert non_object_sort_payload["error"]["code"] == "VALIDATION_ERROR"
+    assert non_object_sort_payload["error"]["message"] == "sort must be a JSON object"
+
+
+@pytest.mark.django_db
+def test_operation_catalog_exposures_surface_all_matches_no_surface_with_same_query_params(staff_client):
+    upsert_template_exposure(
+        template_id="tpl-common",
+        name="Common template",
+        description="",
+        operation_type="designer_cli",
+        target_entity="infobase",
+        template_data={"kind": "designer_cli", "driver": "cli", "command_id": "infobase.extension.list"},
+        is_active=True,
+    )
+    _create_action_exposure(
+        staff_client,
+        alias="extensions.common.alpha",
+        name="Common alpha",
+        capability="extensions.list",
+        status="published",
+    )
+    _create_action_exposure(
+        staff_client,
+        alias="extensions.common.beta",
+        name="Common beta",
+        capability="extensions.sync",
+        status="published",
+    )
+    _create_action_exposure(
+        staff_client,
+        alias="extensions.outside",
+        name="Outside scope",
+        capability="extensions.list",
+        status="published",
+    )
+
+    params = {
+        "search": "Common",
+        "filters": json.dumps({"status": {"op": "contains", "value": "published"}}),
+        "sort": json.dumps({"key": "alias", "order": "asc"}),
+        "include": "definitions",
+        "limit": 1,
+        "offset": 1,
+    }
+    no_surface_resp = staff_client.get("/api/v2/operation-catalog/exposures/", data=params)
+    assert no_surface_resp.status_code == 200
+    no_surface_payload = no_surface_resp.json()
+
+    all_surface_resp = staff_client.get(
+        "/api/v2/operation-catalog/exposures/",
+        data={**params, "surface": "all"},
+    )
+    assert all_surface_resp.status_code == 200
+    all_surface_payload = all_surface_resp.json()
+
+    assert all_surface_payload["count"] == no_surface_payload["count"]
+    assert all_surface_payload["total"] == no_surface_payload["total"]
+
+    all_rows = [
+        (row["surface"], row["alias"], row["definition_id"])
+        for row in all_surface_payload["exposures"]
+    ]
+    no_surface_rows = [
+        (row["surface"], row["alias"], row["definition_id"])
+        for row in no_surface_payload["exposures"]
+    ]
+    assert all_rows == no_surface_rows
+
+    all_definition_ids = sorted(item["id"] for item in all_surface_payload.get("definitions", []))
+    no_surface_definition_ids = sorted(item["id"] for item in no_surface_payload.get("definitions", []))
+    assert all_definition_ids == no_surface_definition_ids
+
+
+@pytest.mark.django_db
 def test_operation_catalog_exposures_backward_compatible_without_new_params(staff_client):
     _create_action_exposure(
         staff_client,
