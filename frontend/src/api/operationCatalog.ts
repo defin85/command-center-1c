@@ -75,6 +75,7 @@ export type OperationCatalogDefinitionListResponse = {
 
 export type OperationCatalogExposureListResponse = {
   exposures: OperationCatalogExposure[]
+  definitions?: OperationCatalogDefinition[]
   count: number
   total: number
 }
@@ -116,6 +117,10 @@ export async function listOperationCatalogExposures(params?: {
   capability?: string
   status?: string
   alias?: string
+  search?: string
+  filters?: string
+  sort?: string
+  include?: string
   limit?: number
   offset?: number
 }): Promise<OperationCatalogExposureListResponse> {

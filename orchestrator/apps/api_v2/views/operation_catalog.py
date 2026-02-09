@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import hashlib
 import re
 from typing import Any
 
 from django.db.models import Q
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import serializers, status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -78,6 +79,128 @@ def _template_manage_allowed(user, template_alias: str | None = None) -> bool:
     if legacy_template is None:
         return True
     return bool(user.has_perm(perms.PERM_TEMPLATES_MANAGE_OPERATION_TEMPLATE, legacy_template))
+
+
+_EXPOSURE_FILTER_FIELD_MAP: dict[str, str] = {
+    "name": "label",
+    "surface": "surface",
+    "operation_type": "definition__executor_payload__operation_type",
+    "target_entity": "definition__executor_payload__target_entity",
+    "capability": "capability",
+    "status": "status",
+    "is_active": "is_active",
+    "alias": "alias",
+}
+
+_EXPOSURE_SORT_FIELD_MAP: dict[str, str] = {
+    "name": "label",
+    "surface": "surface",
+    "operation_type": "definition__executor_payload__operation_type",
+    "target_entity": "definition__executor_payload__target_entity",
+    "capability": "capability",
+    "status": "status",
+    "is_active": "is_active",
+    "updated_at": "updated_at",
+    "alias": "alias",
+}
+
+_EXPOSURE_TEXT_FIELDS = {"name", "surface", "operation_type", "target_entity", "capability", "status", "alias"}
+
+
+def _parse_json_object_param(raw: Any, *, field_name: str) -> tuple[dict[str, Any] | None, str | None]:
+    text = str(raw or "").strip()
+    if not text:
+        return None, None
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None, f"{field_name} must be valid JSON object"
+    if not isinstance(parsed, dict):
+        return None, f"{field_name} must be a JSON object"
+    return parsed, None
+
+
+def _parse_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    if text in {"true", "1", "yes"}:
+        return True
+    if text in {"false", "0", "no"}:
+        return False
+    return None
+
+
+def _apply_exposure_search(qs, search: str | None):
+    query = str(search or "").strip()
+    if not query:
+        return qs
+    return qs.filter(
+        Q(alias__icontains=query)
+        | Q(label__icontains=query)
+        | Q(description__icontains=query)
+        | Q(capability__icontains=query)
+        | Q(status__icontains=query)
+        | Q(surface__icontains=query)
+        | Q(definition__executor_payload__operation_type__icontains=query)
+        | Q(definition__executor_payload__target_entity__icontains=query)
+    )
+
+
+def _apply_exposure_filters(qs, filters_payload: dict[str, Any] | None):
+    if not filters_payload:
+        return qs
+
+    for raw_key, raw_filter in filters_payload.items():
+        key = str(raw_key or "").strip()
+        field_name = _EXPOSURE_FILTER_FIELD_MAP.get(key)
+        if not field_name:
+            continue
+
+        op = "eq"
+        value: Any = raw_filter
+        if isinstance(raw_filter, dict):
+            op = str(raw_filter.get("op") or "eq").strip().lower()
+            value = raw_filter.get("value")
+
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+
+        if key == "surface" and str(value).strip().lower() == "all":
+            continue
+
+        if key == "is_active":
+            bool_value = _parse_bool(value)
+            if bool_value is None:
+                continue
+            qs = qs.filter(is_active=bool_value)
+            continue
+
+        if op == "contains" and key in _EXPOSURE_TEXT_FIELDS:
+            qs = qs.filter(**{f"{field_name}__icontains": str(value)})
+            continue
+
+        qs = qs.filter(**{field_name: value})
+
+    return qs
+
+
+def _apply_exposure_sort(qs, sort_payload: dict[str, Any] | None):
+    if not sort_payload:
+        return qs
+
+    key = str(sort_payload.get("key") or "").strip()
+    order = str(sort_payload.get("order") or "asc").strip().lower()
+    field_name = _EXPOSURE_SORT_FIELD_MAP.get(key)
+    if not field_name:
+        return qs
+
+    prefix = "-" if order == "desc" else ""
+    return qs.order_by(f"{prefix}{field_name}", "surface", "display_order", "alias")
 
 
 def _generate_template_alias(name: str) -> str:
@@ -229,6 +352,7 @@ class OperationCatalogDefinitionDetailResponseSerializer(serializers.Serializer)
 
 class OperationCatalogExposureListResponseSerializer(serializers.Serializer):
     exposures = OperationCatalogExposureSerializer(many=True)
+    definitions = OperationCatalogDefinitionSerializer(many=True, required=False)
     count = serializers.IntegerField()
     total = serializers.IntegerField()
 
@@ -361,10 +485,48 @@ def get_operation_definition(request, definition_id: str):
     methods=["GET"],
     tags=["v2"],
     summary="List operation exposures",
+    parameters=[
+        OpenApiParameter(
+            name="surface",
+            location=OpenApiParameter.QUERY,
+            required=False,
+            type=str,
+            description="template | action_catalog | all. Omit for canonical staff unified-list.",
+        ),
+        OpenApiParameter(name="tenant_id", location=OpenApiParameter.QUERY, required=False, type=str),
+        OpenApiParameter(name="capability", location=OpenApiParameter.QUERY, required=False, type=str),
+        OpenApiParameter(name="status", location=OpenApiParameter.QUERY, required=False, type=str),
+        OpenApiParameter(name="alias", location=OpenApiParameter.QUERY, required=False, type=str),
+        OpenApiParameter(name="search", location=OpenApiParameter.QUERY, required=False, type=str),
+        OpenApiParameter(
+            name="filters",
+            location=OpenApiParameter.QUERY,
+            required=False,
+            type=str,
+            description="JSON object with server-side filters",
+        ),
+        OpenApiParameter(
+            name="sort",
+            location=OpenApiParameter.QUERY,
+            required=False,
+            type=str,
+            description="JSON object with server-side sort config",
+        ),
+        OpenApiParameter(
+            name="include",
+            location=OpenApiParameter.QUERY,
+            required=False,
+            type=str,
+            description="Comma-separated include list, e.g. definitions",
+        ),
+        OpenApiParameter(name="limit", location=OpenApiParameter.QUERY, required=False, type=int),
+        OpenApiParameter(name="offset", location=OpenApiParameter.QUERY, required=False, type=int),
+    ],
     responses={
         200: OperationCatalogExposureListResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden"),
+        400: OpenApiResponse(description="Validation error"),
     },
 )
 @extend_schema(
@@ -385,7 +547,8 @@ def list_operation_exposures(request):
     if request.method == "POST":
         return _upsert_operation_exposure_impl(request)
 
-    surface = str(request.query_params.get("surface") or "").strip() or None
+    surface_raw = str(request.query_params.get("surface") or "").strip().lower() or None
+    surface = None if surface_raw == "all" else surface_raw
     if not _is_known_surface(surface):
         return Response(
             {"success": False, "error": {"code": "VALIDATION_ERROR", "message": "unknown surface"}},
@@ -403,6 +566,25 @@ def list_operation_exposures(request):
     capability = str(request.query_params.get("capability") or "").strip() or None
     status = str(request.query_params.get("status") or "").strip() or None
     alias = str(request.query_params.get("alias") or "").strip() or None
+    search = str(request.query_params.get("search") or "").strip() or None
+    filters_payload, filters_error = _parse_json_object_param(request.query_params.get("filters"), field_name="filters")
+    if filters_error:
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": filters_error}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    sort_payload, sort_error = _parse_json_object_param(request.query_params.get("sort"), field_name="sort")
+    if sort_error:
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": sort_error}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    include_items = {
+        item.strip().lower()
+        for item in str(request.query_params.get("include") or "").split(",")
+        if item and item.strip()
+    }
+    include_definitions = "definitions" in include_items
     limit = _parse_int(request.query_params.get("limit"), default=50, min_value=1, max_value=1000)
     offset = _parse_int(request.query_params.get("offset"), default=0, min_value=0, max_value=100000)
 
@@ -423,10 +605,24 @@ def list_operation_exposures(request):
         allowed_ids = list(allowed_templates_qs.values_list("id", flat=True))
         qs = qs.filter(alias__in=allowed_ids)
 
+    qs = _apply_exposure_search(qs, search)
+    qs = _apply_exposure_filters(qs, filters_payload)
+    qs = _apply_exposure_sort(qs, sort_payload)
+
     total = qs.count()
     rows = list(qs[offset:offset + limit])
     payload = [_serialize_exposure(row) for row in rows]
-    return Response({"exposures": payload, "count": len(payload), "total": total})
+    response_payload: dict[str, Any] = {"exposures": payload, "count": len(payload), "total": total}
+    if include_definitions:
+        unique_definitions: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            definition_id = str(row.definition_id)
+            if definition_id in unique_definitions:
+                continue
+            unique_definitions[definition_id] = _serialize_definition(row.definition)
+        response_payload["definitions"] = list(unique_definitions.values())
+
+    return Response(response_payload)
 
 
 def _coerce_definition_payload(raw: Any) -> tuple[dict[str, Any], list[dict[str, str]]]:

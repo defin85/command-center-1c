@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
-from apps.core import permission_codes as perms
 from apps.databases.models import PermissionLevel
 from apps.runtime_settings.models import TenantRuntimeSettingOverride
 from apps.tenancy.models import Tenant
@@ -28,6 +29,50 @@ def _grant_template_capability(user: User, codename: str) -> None:
     ct = ContentType.objects.get(app_label="templates", model="operationtemplate")
     perm = Permission.objects.get(content_type=ct, codename=codename)
     user.user_permissions.add(perm)
+
+
+def _create_action_exposure(
+    client: APIClient,
+    *,
+    alias: str,
+    name: str,
+    capability: str,
+    status: str = "draft",
+    command_id: str = "infobase.extension.list",
+    definition_id: str | None = None,
+) -> dict:
+    payload: dict = {
+        "exposure": {
+            "surface": "action_catalog",
+            "alias": alias,
+            "name": name,
+            "description": "",
+            "is_active": True,
+            "capability": capability,
+            "contexts": ["database_card"],
+            "display_order": 0,
+            "capability_config": {},
+            "status": status,
+        }
+    }
+    if definition_id:
+        payload["definition_id"] = definition_id
+    else:
+        payload["definition"] = {
+            "tenant_scope": "global",
+            "executor_kind": "ibcmd_cli",
+            "executor_payload": {
+                "kind": "ibcmd_cli",
+                "driver": "ibcmd",
+                "command_id": command_id,
+                "params": {},
+            },
+            "contract_version": 1,
+        }
+
+    resp = client.post("/api/v2/operation-catalog/exposures/", data=payload, format="json")
+    assert resp.status_code == 200
+    return resp.json()
 
 
 @pytest.fixture
@@ -310,6 +355,164 @@ def test_operation_catalog_template_surface_allows_non_staff_with_view_scope(tem
 
     resp_action = template_manager_client.get("/api/v2/operation-catalog/exposures/?surface=action_catalog")
     assert resp_action.status_code == 403
+
+    resp_unified = template_manager_client.get("/api/v2/operation-catalog/exposures/")
+    assert resp_unified.status_code == 403
+
+    resp_all = template_manager_client.get("/api/v2/operation-catalog/exposures/?surface=all")
+    assert resp_all.status_code == 403
+
+
+@pytest.mark.django_db
+def test_operation_catalog_exposures_staff_unified_list_no_surface_and_all_alias(staff_client):
+    upsert_template_exposure(
+        template_id="tpl-unified",
+        name="Template unified",
+        description="",
+        operation_type="designer_cli",
+        target_entity="infobase",
+        template_data={"kind": "designer_cli", "driver": "cli", "command_id": "infobase.extension.list"},
+        is_active=True,
+    )
+    _create_action_exposure(
+        staff_client,
+        alias="extensions.unified",
+        name="Unified action",
+        capability="extensions.list",
+    )
+
+    resp_no_surface = staff_client.get("/api/v2/operation-catalog/exposures/")
+    assert resp_no_surface.status_code == 200
+    payload_no_surface = resp_no_surface.json()
+    rows_no_surface = {(row["surface"], row["alias"]) for row in payload_no_surface["exposures"]}
+    assert ("template", "tpl-unified") in rows_no_surface
+    assert ("action_catalog", "extensions.unified") in rows_no_surface
+
+    resp_all = staff_client.get("/api/v2/operation-catalog/exposures/?surface=all")
+    assert resp_all.status_code == 200
+    payload_all = resp_all.json()
+    rows_all = {(row["surface"], row["alias"]) for row in payload_all["exposures"]}
+    assert rows_all == rows_no_surface
+    assert payload_all["total"] == payload_no_surface["total"]
+
+
+@pytest.mark.django_db
+def test_operation_catalog_exposures_include_definitions_side_loading_is_unique(staff_client):
+    first = _create_action_exposure(
+        staff_client,
+        alias="extensions.def.one",
+        name="Def one",
+        capability="extensions.list",
+    )
+    definition_id = first["definition"]["id"]
+    _create_action_exposure(
+        staff_client,
+        alias="extensions.def.two",
+        name="Def two",
+        capability="extensions.sync",
+        definition_id=definition_id,
+    )
+
+    resp = staff_client.get(
+        "/api/v2/operation-catalog/exposures/",
+        data={"surface": "action_catalog", "include": "definitions", "limit": 50, "offset": 0},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["count"] == 2
+    assert payload["total"] == 2
+    assert len(payload.get("definitions", [])) == 1
+    assert payload["definitions"][0]["id"] == definition_id
+    assert all("definition" not in row for row in payload["exposures"])
+
+
+@pytest.mark.django_db
+def test_operation_catalog_exposures_supports_search_filters_sort_and_pagination(staff_client):
+    _create_action_exposure(
+        staff_client,
+        alias="extensions.alpha",
+        name="Alpha Action",
+        capability="extensions.list",
+        status="published",
+    )
+    _create_action_exposure(
+        staff_client,
+        alias="extensions.zulu",
+        name="Zulu Action",
+        capability="extensions.sync",
+        status="draft",
+    )
+    upsert_template_exposure(
+        template_id="tpl-filtered",
+        name="Template filtered",
+        description="",
+        operation_type="designer_cli",
+        target_entity="infobase",
+        template_data={"kind": "designer_cli", "driver": "cli", "command_id": "infobase.extension.list"},
+        is_active=True,
+    )
+
+    sorted_resp = staff_client.get(
+        "/api/v2/operation-catalog/exposures/",
+        data={
+            "surface": "action_catalog",
+            "search": "Action",
+            "sort": json.dumps({"key": "name", "order": "asc"}),
+            "limit": 1,
+            "offset": 0,
+        },
+    )
+    assert sorted_resp.status_code == 200
+    sorted_payload = sorted_resp.json()
+    assert sorted_payload["count"] == 1
+    assert sorted_payload["total"] == 2
+    assert sorted_payload["exposures"][0]["name"] == "Alpha Action"
+
+    filtered_resp = staff_client.get(
+        "/api/v2/operation-catalog/exposures/",
+        data={
+            "surface": "action_catalog",
+            "filters": json.dumps({"capability": {"op": "contains", "value": "sync"}}),
+        },
+    )
+    assert filtered_resp.status_code == 200
+    filtered_payload = filtered_resp.json()
+    assert filtered_payload["total"] == 1
+    assert filtered_payload["exposures"][0]["alias"] == "extensions.zulu"
+
+    template_filtered_resp = staff_client.get(
+        "/api/v2/operation-catalog/exposures/",
+        data={
+            "surface": "template",
+            "filters": json.dumps({"operation_type": {"op": "contains", "value": "designer"}}),
+        },
+    )
+    assert template_filtered_resp.status_code == 200
+    template_payload = template_filtered_resp.json()
+    aliases = {row["alias"] for row in template_payload["exposures"]}
+    assert "tpl-filtered" in aliases
+
+
+@pytest.mark.django_db
+def test_operation_catalog_exposures_backward_compatible_without_new_params(staff_client):
+    _create_action_exposure(
+        staff_client,
+        alias="extensions.compat",
+        name="Compat action",
+        capability="extensions.list",
+    )
+
+    resp = staff_client.get(
+        "/api/v2/operation-catalog/exposures/",
+        data={"surface": "action_catalog", "limit": 50, "offset": 0},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert "exposures" in payload
+    assert "count" in payload
+    assert "total" in payload
+    assert "definitions" not in payload
+    assert any(row["alias"] == "extensions.compat" for row in payload["exposures"])
 
 
 @pytest.mark.django_db

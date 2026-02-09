@@ -6,7 +6,6 @@ import type { ColumnsType } from 'antd/es/table'
 
 import {
   deleteOperationCatalogExposure,
-  listOperationCatalogDefinitions,
   listOperationCatalogExposures,
   publishOperationCatalogExposure,
   type OperationCatalogDefinition,
@@ -61,15 +60,6 @@ type ActionRow = {
 
 type UnifiedRow = TemplateRow | ActionRow
 
-const parseBooleanFilter = (value: unknown): boolean | null => {
-  if (typeof value === 'boolean') return value
-  const text = String(value ?? '').trim().toLowerCase()
-  if (!text) return null
-  if (text === 'true' || text === '1' || text === 'yes') return true
-  if (text === 'false' || text === '0' || text === 'no') return false
-  return null
-}
-
 const toErrorMessage = (error: unknown, fallback: string): string => {
   const err = error as {
     message?: string
@@ -110,8 +100,7 @@ function OperationExposureListShell({
   const [editingTemplate, setEditingTemplate] = useState<TemplateRow | null>(null)
   const [editingAction, setEditingAction] = useState<ActionRow | null>(null)
   const [editingActionBase, setEditingActionBase] = useState<PlainObject | null>(null)
-  const [templateReloadTick, setTemplateReloadTick] = useState(0)
-  const [actionReloadTick, setActionReloadTick] = useState(0)
+  const [exposuresReloadTick, setExposuresReloadTick] = useState(0)
   const [editorValues, setEditorValues] = useState<ActionFormValues | null>(null)
   const [form] = Form.useForm<ActionFormValues>()
 
@@ -186,7 +175,7 @@ function OperationExposureListShell({
   const handleDeleteTemplate = useCallback(async (template: TemplateRow) => {
     try {
       await deleteMutation.mutateAsync({ template_id: template.id })
-      setTemplateReloadTick((value) => value + 1)
+      setExposuresReloadTick((value) => value + 1)
       message.success('Template deleted')
     } catch (err) {
       message.error(toErrorMessage(err, 'Failed to delete template'))
@@ -196,7 +185,7 @@ function OperationExposureListShell({
   const handleDeleteAction = useCallback(async (row: ActionRow) => {
     try {
       await deleteOperationCatalogExposure(row.id)
-      setActionReloadTick((value) => value + 1)
+      setExposuresReloadTick((value) => value + 1)
       message.success('Action deleted')
     } catch (err) {
       message.error(toErrorMessage(err, 'Failed to delete action'))
@@ -321,211 +310,102 @@ function OperationExposureListShell({
     disableServerMetadata: true,
   })
   const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
+  const searchValue = table.search.trim()
+  const filtersParam = useMemo(() => (
+    table.filtersPayload ? JSON.stringify(table.filtersPayload) : undefined
+  ), [table.filtersPayload])
+  const sortParam = useMemo(() => (
+    table.sortPayload ? JSON.stringify(table.sortPayload) : undefined
+  ), [table.sortPayload])
+  const requestSurface = activeSurface === 'all' ? undefined : activeSurface
+  const includeDefinitions = isStaff && activeSurface !== 'template'
 
-  const templateExposuresQuery = useQuery({
-    queryKey: ['templates', 'template-exposures', templateReloadTick],
-    enabled: activeSurface !== 'action_catalog',
+  const exposuresQuery = useQuery({
+    queryKey: [
+      'templates',
+      'operation-exposures',
+      requestSurface ?? 'all',
+      exposuresReloadTick,
+      searchValue,
+      filtersParam ?? '',
+      sortParam ?? '',
+      table.pagination.page,
+      table.pagination.pageSize,
+      includeDefinitions ? 'definitions' : 'plain',
+    ],
+    enabled: activeSurface !== 'action_catalog' || isStaff,
     queryFn: async () => listOperationCatalogExposures({
-      surface: 'template',
-      limit: 1000,
-      offset: 0,
+      surface: requestSurface,
+      search: searchValue || undefined,
+      filters: filtersParam,
+      sort: sortParam,
+      include: includeDefinitions ? 'definitions' : undefined,
+      limit: table.pagination.pageSize,
+      offset: pageStart,
     }),
   })
 
-  const actionExposuresQuery = useQuery({
-    queryKey: ['templates', 'action-catalog-exposures', actionReloadTick],
-    enabled: isStaff && activeSurface !== 'template',
-    queryFn: async () => listOperationCatalogExposures({
-      surface: 'action_catalog',
-      limit: 1000,
-      offset: 0,
-    }),
-  })
-
-  const actionDefinitionsQuery = useQuery({
-    queryKey: ['templates', 'action-catalog-definitions', actionReloadTick],
-    enabled: isStaff && activeSurface !== 'template',
-    queryFn: async () => listOperationCatalogDefinitions({
-      limit: 1000,
-      offset: 0,
-    }),
-  })
-
-  const templateRowsAll = useMemo<TemplateRow[]>(() => (
-    (templateExposuresQuery.data?.exposures ?? [])
-      .filter((exposure) => exposure.surface === 'template')
-      .map((exposure) => ({
-        id: String(exposure.alias || ''),
-        surface: 'template',
-        status: String(exposure.status || (exposure.is_active !== false ? 'published' : 'draft')),
-        name: String(exposure.name || ''),
-        description: String(exposure.description || ''),
-        operation_type: String(exposure.operation_type || 'designer_cli'),
-        target_entity: String(exposure.target_entity || 'infobase'),
-        template_data: isPlainObject(exposure.template_data) ? exposure.template_data : {},
-        is_active: exposure.is_active !== false,
-        created_at: String(exposure.created_at || ''),
-        updated_at: String(exposure.updated_at || ''),
-        exposure_id: String(exposure.id || ''),
-        definition_id: String(exposure.definition_id || ''),
-      }))
-  ), [templateExposuresQuery.data?.exposures])
-
-  const actionDefinitionsById = useMemo(() => {
+  const definitionsById = useMemo(() => {
     const map = new Map<string, OperationCatalogDefinition>()
-    for (const definition of actionDefinitionsQuery.data?.definitions ?? []) {
+    for (const definition of exposuresQuery.data?.definitions ?? []) {
       if (typeof definition.id === 'string') {
         map.set(definition.id, definition)
       }
     }
     return map
-  }, [actionDefinitionsQuery.data?.definitions])
-
-  const actionRowsAll = useMemo<ActionRow[]>(() => (
-    (actionExposuresQuery.data?.exposures ?? [])
-      .filter((exposure) => exposure.surface === 'action_catalog')
-      .map((exposure) => ({
-        id: exposure.id,
-        surface: 'action_catalog',
-        alias: String(exposure.alias || ''),
-        name: String(exposure.name || ''),
-        description: String(exposure.description || ''),
-        capability: String(exposure.capability || ''),
-        contexts: Array.isArray(exposure.contexts)
-          ? exposure.contexts.filter((item): item is string => typeof item === 'string')
-          : [],
-        status: String(exposure.status || ''),
-        is_active: exposure.is_active !== false,
-        updated_at: String(exposure.updated_at || ''),
-        exposure,
-        definition: actionDefinitionsById.get(String(exposure.definition_id || '')) ?? null,
-      }))
-  ), [actionDefinitionsById, actionExposuresQuery.data?.exposures])
-
-  const sourceRows = useMemo<UnifiedRow[]>(() => {
-    if (activeSurface === 'template') return templateRowsAll
-    if (activeSurface === 'action_catalog') return actionRowsAll
-    return [...templateRowsAll, ...actionRowsAll]
-  }, [activeSurface, actionRowsAll, templateRowsAll])
+  }, [exposuresQuery.data?.definitions])
 
   const pagedRows = useMemo(() => {
-    let rows = sourceRows.slice()
+    const rows: UnifiedRow[] = []
 
-    const q = table.search.trim().toLowerCase()
-    if (q) {
-      rows = rows.filter((row) => {
-        if (row.surface === 'template') {
-          return (
-            row.id.toLowerCase().includes(q)
-            || row.name.toLowerCase().includes(q)
-            || String(row.description || '').toLowerCase().includes(q)
-            || row.operation_type.toLowerCase().includes(q)
-            || row.target_entity.toLowerCase().includes(q)
-          )
-        }
-        return (
-          row.alias.toLowerCase().includes(q)
-          || row.name.toLowerCase().includes(q)
-          || row.capability.toLowerCase().includes(q)
-          || row.status.toLowerCase().includes(q)
-        )
-      })
-    }
-
-    const filters = table.filtersPayload
-    if (filters) {
-      const capabilityFilter = isPlainObject(filters.capability) ? filters.capability.value : null
-      if (capabilityFilter !== null && capabilityFilter !== undefined && String(capabilityFilter).trim()) {
-        const next = String(capabilityFilter).trim().toLowerCase()
-        rows = rows.filter((row) => (
-          row.surface === 'action_catalog' && row.capability.toLowerCase().includes(next)
-        ))
+    for (const exposure of exposuresQuery.data?.exposures ?? []) {
+      if (exposure.surface === 'template') {
+        rows.push({
+          id: String(exposure.alias || ''),
+          surface: 'template',
+          status: String(exposure.status || (exposure.is_active !== false ? 'published' : 'draft')),
+          name: String(exposure.name || ''),
+          description: String(exposure.description || ''),
+          operation_type: String(exposure.operation_type || 'designer_cli'),
+          target_entity: String(exposure.target_entity || 'infobase'),
+          template_data: isPlainObject(exposure.template_data) ? exposure.template_data : {},
+          is_active: exposure.is_active !== false,
+          created_at: String(exposure.created_at || ''),
+          updated_at: String(exposure.updated_at || ''),
+          exposure_id: String(exposure.id || ''),
+          definition_id: String(exposure.definition_id || ''),
+        })
+        continue
       }
 
-      const statusFilter = isPlainObject(filters.status) ? filters.status.value : null
-      if (statusFilter !== null && statusFilter !== undefined && String(statusFilter).trim()) {
-        const next = String(statusFilter).trim().toLowerCase()
-        rows = rows.filter((row) => row.status.toLowerCase().includes(next))
-      }
-
-      const operationTypeFilter = isPlainObject(filters.operation_type) ? filters.operation_type.value : null
-      if (operationTypeFilter !== null && operationTypeFilter !== undefined && String(operationTypeFilter).trim()) {
-        const next = String(operationTypeFilter).trim().toLowerCase()
-        rows = rows.filter((row) => (
-          row.surface === 'template' && row.operation_type.toLowerCase().includes(next)
-        ))
-      }
-
-      const targetEntityFilter = isPlainObject(filters.target_entity) ? filters.target_entity.value : null
-      if (targetEntityFilter !== null && targetEntityFilter !== undefined && String(targetEntityFilter).trim()) {
-        const next = String(targetEntityFilter).trim().toLowerCase()
-        rows = rows.filter((row) => (
-          row.surface === 'template' && row.target_entity.toLowerCase().includes(next)
-        ))
-      }
-
-      const surfaceFilter = isPlainObject(filters.surface) ? filters.surface.value : null
-      if (surfaceFilter !== null && surfaceFilter !== undefined && String(surfaceFilter).trim()) {
-        const next = String(surfaceFilter).trim().toLowerCase()
-        rows = rows.filter((row) => row.surface.toLowerCase().includes(next))
-      }
-
-      const isActiveFilter = isPlainObject(filters.is_active) ? parseBooleanFilter(filters.is_active.value) : null
-      if (typeof isActiveFilter === 'boolean') {
-        rows = rows.filter((row) => row.is_active === isActiveFilter)
+      if (exposure.surface === 'action_catalog') {
+        rows.push({
+          id: String(exposure.id || ''),
+          surface: 'action_catalog',
+          alias: String(exposure.alias || ''),
+          name: String(exposure.name || ''),
+          description: String(exposure.description || ''),
+          capability: String(exposure.capability || ''),
+          contexts: Array.isArray(exposure.contexts)
+            ? exposure.contexts.filter((item): item is string => typeof item === 'string')
+            : [],
+          status: String(exposure.status || ''),
+          is_active: exposure.is_active !== false,
+          updated_at: String(exposure.updated_at || ''),
+          exposure,
+          definition: definitionsById.get(String(exposure.definition_id || '')) ?? null,
+        })
       }
     }
 
-    const sort = table.sortPayload
-    if (sort?.key && sort.order) {
-      const direction = sort.order === 'desc' ? -1 : 1
-      rows.sort((left, right) => {
-        const key = sort.key
-        if (key === 'is_active') {
-          return (Number(left.is_active) - Number(right.is_active)) * direction
-        }
-
-        const leftValue = (
-          key === 'name' ? left.name
-            : key === 'surface' ? left.surface
-              : key === 'operation_type' ? (left.surface === 'template' ? left.operation_type : '')
-                : key === 'target_entity' ? (left.surface === 'template' ? left.target_entity : '')
-                  : key === 'capability' ? (left.surface === 'action_catalog' ? left.capability : '')
-                    : key === 'status' ? left.status
-                      : key === 'updated_at' ? left.updated_at
-                        : left.surface === 'template' ? left.id : left.alias
-        )
-
-        const rightValue = (
-          key === 'name' ? right.name
-            : key === 'surface' ? right.surface
-              : key === 'operation_type' ? (right.surface === 'template' ? right.operation_type : '')
-                : key === 'target_entity' ? (right.surface === 'template' ? right.target_entity : '')
-                  : key === 'capability' ? (right.surface === 'action_catalog' ? right.capability : '')
-                    : key === 'status' ? right.status
-                      : key === 'updated_at' ? right.updated_at
-                        : right.surface === 'template' ? right.id : right.alias
-        )
-
-        return String(leftValue).localeCompare(String(rightValue)) * direction
-      })
+    return {
+      rows,
+      total: typeof exposuresQuery.data?.total === 'number' ? exposuresQuery.data.total : rows.length,
     }
+  }, [definitionsById, exposuresQuery.data?.exposures, exposuresQuery.data?.total])
 
-    const total = rows.length
-    const paged = rows.slice(pageStart, pageStart + table.pagination.pageSize)
-    return { rows: paged, total }
-  }, [pageStart, sourceRows, table.filtersPayload, table.pagination.pageSize, table.search, table.sortPayload])
-
-  const activeLoading = (
-    (activeSurface !== 'action_catalog' && templateExposuresQuery.isLoading)
-    || (activeSurface !== 'template' && isStaff && (actionExposuresQuery.isLoading || actionDefinitionsQuery.isLoading))
-  )
-
-  const activeError = (
-    templateExposuresQuery.error
-    ?? actionExposuresQuery.error
-    ?? actionDefinitionsQuery.error
-  )
+  const activeLoading = exposuresQuery.isLoading
+  const activeError = exposuresQuery.error
 
   const activeErrorStatus = (activeError as { response?: { status?: number } } | null)?.response?.status
   const showAccessWarning = activeErrorStatus === 403
@@ -552,7 +432,7 @@ function OperationExposureListShell({
       await createMutation.mutateAsync(built.payload)
       message.success('Template created')
     }
-    setTemplateReloadTick((value) => value + 1)
+    setExposuresReloadTick((value) => value + 1)
     closeModal()
   }, [closeModal, createMutation, editingTemplate, form, message, updateMutation])
 
@@ -566,7 +446,7 @@ function OperationExposureListShell({
       existing,
       displayOrder: typeof existing?.exposure.display_order === 'number'
         ? existing.exposure.display_order
-        : actionRowsAll.length,
+        : 0,
     })
     if (!payload) {
       message.error('Action ID is required')
@@ -582,9 +462,9 @@ function OperationExposureListShell({
     }
 
     message.success(editingAction ? 'Action updated' : 'Action created')
-    setActionReloadTick((value) => value + 1)
+    setExposuresReloadTick((value) => value + 1)
     closeModal()
-  }, [actionRowsAll.length, closeModal, editingAction, editingActionBase, form, message])
+  }, [closeModal, editingAction, editingActionBase, form, message])
 
   const handleApply = useCallback(async () => {
     try {
@@ -602,7 +482,7 @@ function OperationExposureListShell({
     try {
       const result = await syncMutation.mutateAsync({ dry_run: dryRun })
       message.success(`${result.message}: created=${result.created}, updated=${result.updated}, unchanged=${result.unchanged}`)
-      setTemplateReloadTick((value) => value + 1)
+      setExposuresReloadTick((value) => value + 1)
     } catch (err) {
       const status = (err as { response?: { status?: number } } | null)?.response?.status
       if (status === 403) {

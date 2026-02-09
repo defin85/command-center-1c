@@ -4,6 +4,7 @@ type AnyRecord = Record<string, unknown>
 
 type MockCounters = {
   operationCatalogExposuresGets?: number
+  operationCatalogExposuresWithDefinitionsGets?: number
   operationCatalogActionExposuresGets?: number
   operationCatalogDefinitionsGets?: number
   operationExposureHintsGets?: number
@@ -381,29 +382,141 @@ async function setupApiMocks(page: Page, state: MockState) {
       if (surface === 'action_catalog') {
         counters.operationCatalogActionExposuresGets = (counters.operationCatalogActionExposuresGets ?? 0) + 1
       }
+      const includeRaw = String(url.searchParams.get('include') || '')
+      const includeSet = new Set(
+        includeRaw
+          .split(',')
+          .map((item) => item.trim().toLowerCase())
+          .filter(Boolean)
+      )
+      if (includeSet.has('definitions')) {
+        counters.operationCatalogExposuresWithDefinitionsGets = (counters.operationCatalogExposuresWithDefinitionsGets ?? 0) + 1
+      }
       const alias = url.searchParams.get('alias')
       const status = url.searchParams.get('status')
       const capability = url.searchParams.get('capability')
+      const search = String(url.searchParams.get('search') || '').trim().toLowerCase()
       const limit = parseIntParam(url.searchParams.get('limit'), 50, 1, 1000)
       const offset = parseIntParam(url.searchParams.get('offset'), 0, 0, 100_000)
+      let filtersPayload: AnyRecord = {}
+      const rawFilters = url.searchParams.get('filters')
+      if (rawFilters) {
+        try {
+          const parsed = JSON.parse(rawFilters) as unknown
+          if (isPlainObject(parsed)) filtersPayload = parsed
+        } catch (_err) {
+          return fulfillJson(route, { success: false, error: { code: 'VALIDATION_ERROR', message: 'filters must be valid JSON object' } }, 400)
+        }
+      }
+      let sortPayload: AnyRecord = {}
+      const rawSort = url.searchParams.get('sort')
+      if (rawSort) {
+        try {
+          const parsed = JSON.parse(rawSort) as unknown
+          if (isPlainObject(parsed)) sortPayload = parsed
+        } catch (_err) {
+          return fulfillJson(route, { success: false, error: { code: 'VALIDATION_ERROR', message: 'sort must be valid JSON object' } }, 400)
+        }
+      }
 
       let rows = exposures.slice()
       if (surface) rows = rows.filter((row) => String(row.surface) === surface)
       if (alias) rows = rows.filter((row) => String(row.alias) === alias)
       if (status) rows = rows.filter((row) => String(row.status) === status)
       if (capability) rows = rows.filter((row) => String(row.capability) === capability)
+      if (search) {
+        rows = rows.filter((row) => (
+          String(row.alias || '').toLowerCase().includes(search)
+          || String(row.name || '').toLowerCase().includes(search)
+          || String(row.description || '').toLowerCase().includes(search)
+          || String(row.capability || '').toLowerCase().includes(search)
+          || String(row.status || '').toLowerCase().includes(search)
+          || String(row.surface || '').toLowerCase().includes(search)
+          || String(row.operation_type || '').toLowerCase().includes(search)
+          || String(row.target_entity || '').toLowerCase().includes(search)
+        ))
+      }
 
-      rows.sort((left, right) => {
-        const bySurface = String(left.surface).localeCompare(String(right.surface))
-        if (bySurface !== 0) return bySurface
-        const byOrder = Number(left.display_order ?? 0) - Number(right.display_order ?? 0)
-        if (byOrder !== 0) return byOrder
-        return String(left.alias).localeCompare(String(right.alias))
-      })
+      const applyTextFilter = (key: string, getter: (row: AnyRecord) => string) => {
+        const raw = filtersPayload[key]
+        if (!isPlainObject(raw)) return
+        const value = String(raw.value ?? '').trim().toLowerCase()
+        if (!value) return
+        rows = rows.filter((row) => getter(row).toLowerCase().includes(value))
+      }
+
+      applyTextFilter('name', (row) => String(row.name || ''))
+      applyTextFilter('surface', (row) => String(row.surface || ''))
+      applyTextFilter('operation_type', (row) => String(row.operation_type || ''))
+      applyTextFilter('target_entity', (row) => String(row.target_entity || ''))
+      applyTextFilter('capability', (row) => String(row.capability || ''))
+      applyTextFilter('status', (row) => String(row.status || ''))
+      applyTextFilter('alias', (row) => String(row.alias || ''))
+
+      const isActiveFilter = filtersPayload.is_active
+      if (isPlainObject(isActiveFilter)) {
+        const raw = String(isActiveFilter.value ?? '').trim().toLowerCase()
+        if (raw === 'true' || raw === '1' || raw === 'yes') {
+          rows = rows.filter((row) => row.is_active === true)
+        } else if (raw === 'false' || raw === '0' || raw === 'no') {
+          rows = rows.filter((row) => row.is_active === false)
+        }
+      }
+
+      const sortKey = String(sortPayload.key ?? '').trim()
+      const sortOrder = String(sortPayload.order ?? '').trim().toLowerCase()
+      if (sortKey) {
+        const direction = sortOrder === 'desc' ? -1 : 1
+        rows.sort((left, right) => {
+          const leftValue = (
+            sortKey === 'name' ? String(left.name || '')
+              : sortKey === 'surface' ? String(left.surface || '')
+                : sortKey === 'operation_type' ? String(left.operation_type || '')
+                  : sortKey === 'target_entity' ? String(left.target_entity || '')
+                    : sortKey === 'capability' ? String(left.capability || '')
+                      : sortKey === 'status' ? String(left.status || '')
+                        : sortKey === 'updated_at' ? String(left.updated_at || '')
+                          : sortKey === 'is_active' ? Number(left.is_active === true)
+                            : sortKey === 'alias' ? String(left.alias || '')
+                              : String(left.alias || '')
+          )
+          const rightValue = (
+            sortKey === 'name' ? String(right.name || '')
+              : sortKey === 'surface' ? String(right.surface || '')
+                : sortKey === 'operation_type' ? String(right.operation_type || '')
+                  : sortKey === 'target_entity' ? String(right.target_entity || '')
+                    : sortKey === 'capability' ? String(right.capability || '')
+                      : sortKey === 'status' ? String(right.status || '')
+                        : sortKey === 'updated_at' ? String(right.updated_at || '')
+                          : sortKey === 'is_active' ? Number(right.is_active === true)
+                            : sortKey === 'alias' ? String(right.alias || '')
+                              : String(right.alias || '')
+          )
+          if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+            return (leftValue - rightValue) * direction
+          }
+          return String(leftValue).localeCompare(String(rightValue)) * direction
+        })
+      } else {
+        rows.sort((left, right) => {
+          const bySurface = String(left.surface).localeCompare(String(right.surface))
+          if (bySurface !== 0) return bySurface
+          const byOrder = Number(left.display_order ?? 0) - Number(right.display_order ?? 0)
+          if (byOrder !== 0) return byOrder
+          return String(left.alias).localeCompare(String(right.alias))
+        })
+      }
 
       const total = rows.length
       const paged = rows.slice(offset, offset + limit).map((item) => deepClone(item))
-      return fulfillJson(route, { exposures: paged, count: paged.length, total })
+      const response: AnyRecord = { exposures: paged, count: paged.length, total }
+      if (includeSet.has('definitions')) {
+        const definitionIds = new Set(paged.map((item) => String(item.definition_id || '')))
+        response.definitions = definitions
+          .filter((item) => definitionIds.has(String(item.id || '')))
+          .map((item) => deepClone(item))
+      }
+      return fulfillJson(route, response)
     }
 
     if (method === 'GET' && path === '/api/v2/operation-catalog/definitions/') {
@@ -695,7 +808,8 @@ test('Templates: staff переключает surface facet в одном unifie
 
   expect(callCounters.operationCatalogExposuresGets ?? 0).toBeGreaterThan(0)
   expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBeGreaterThan(0)
-  expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBeGreaterThan(0)
+  expect(callCounters.operationCatalogExposuresWithDefinitionsGets ?? 0).toBeGreaterThan(0)
+  expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBe(0)
   expect(callCounters.legacyTemplateCalls ?? 0).toBe(0)
 })
 
@@ -717,7 +831,8 @@ test('Templates: staff deep-link на action_catalog сохраняется пр
   await expect(tableBody).toContainText('extensions.list')
 
   expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBeGreaterThan(0)
-  expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBeGreaterThan(0)
+  expect(callCounters.operationCatalogExposuresWithDefinitionsGets ?? 0).toBeGreaterThan(0)
+  expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBe(0)
 })
 
 test('Templates: non-staff deep-link на action surface откатывается в template', async ({ page }) => {
