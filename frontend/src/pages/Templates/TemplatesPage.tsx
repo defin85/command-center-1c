@@ -138,8 +138,7 @@ function OperationExposureListShell({
     setEditingAction(null)
     setEditingActionBase(null)
     setEditorValues(null)
-    form.resetFields()
-  }, [form])
+  }, [])
 
   const openCreateModal = useCallback((nextSurface?: EditorSurfaceKey) => {
     const resolvedSurface: EditorSurfaceKey = nextSurface
@@ -152,10 +151,8 @@ function OperationExposureListShell({
       ? buildTemplateEditorValues(null)
       : deriveActionFormValues(null)
     setEditorValues(nextValues)
-    form.resetFields()
-    form.setFieldsValue(nextValues)
     setModalOpen(true)
-  }, [activeSurface, form])
+  }, [activeSurface])
 
   const openEditTemplateModal = useCallback((template: TemplateRow) => {
     setEditingTemplate(template)
@@ -164,10 +161,8 @@ function OperationExposureListShell({
     setEditorSurface('template')
     const nextValues = buildTemplateEditorValues(template)
     setEditorValues(nextValues)
-    form.resetFields()
-    form.setFieldsValue(nextValues)
     setModalOpen(true)
-  }, [form])
+  }, [])
 
   const openEditActionModal = useCallback((row: ActionRow) => {
     if (!row.definition) {
@@ -185,10 +180,8 @@ function OperationExposureListShell({
     setEditingActionBase(baseAction)
     setEditorSurface('action_catalog')
     setEditorValues(nextValues)
-    form.resetFields()
-    form.setFieldsValue(nextValues)
     setModalOpen(true)
-  }, [form, message])
+  }, [message])
 
   const handleDeleteTemplate = useCallback(async (template: TemplateRow) => {
     try {
@@ -325,6 +318,7 @@ function OperationExposureListShell({
     columns,
     fallbackColumns: fallbackColumnConfigs,
     initialPageSize: 50,
+    disableServerMetadata: true,
   })
   const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
 
@@ -684,16 +678,18 @@ function OperationExposureListShell({
         searchPlaceholder={searchPlaceholder}
       />
 
-      <OperationExposureEditorModal
-        open={modalOpen}
-        title={modalTitle}
-        surface={editorSurface}
-        executorKindOptions={editorSurface === 'template' ? ['designer_cli'] : undefined}
-        form={form}
-        initialValues={editorValues}
-        onCancel={closeModal}
-        onApply={() => void handleApply()}
-      />
+      {modalOpen && (
+        <OperationExposureEditorModal
+          open={modalOpen}
+          title={modalTitle}
+          surface={editorSurface}
+          executorKindOptions={editorSurface === 'template' ? ['designer_cli'] : undefined}
+          form={form}
+          initialValues={editorValues}
+          onCancel={closeModal}
+          onApply={() => void handleApply()}
+        />
+      )}
     </Space>
   )
 }

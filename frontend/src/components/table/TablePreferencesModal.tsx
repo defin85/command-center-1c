@@ -473,7 +473,7 @@ export const TablePreferencesModal = ({
           )}
         </Space>
 
-        <Tabs destroyInactiveTabPane defaultActiveKey="columns" items={tabs} />
+        <Tabs destroyOnHidden defaultActiveKey="columns" items={tabs} />
       </Space>
     </Modal>
   )

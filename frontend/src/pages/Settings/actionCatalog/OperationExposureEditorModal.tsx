@@ -511,7 +511,7 @@ export function OperationExposureEditorModal({
         <Tabs
           activeKey={activeTabKey}
           onChange={(next) => setActiveTabKey(next)}
-          destroyInactiveTabPane={false}
+          destroyOnHidden={false}
           items={[
             {
               key: 'basics',
@@ -874,7 +874,7 @@ export function OperationExposureEditorModal({
                         <Collapse
                           size="small"
                           ghost
-                          destroyInactivePanel
+                          destroyOnHidden
                           activeKey={guidedParamsGroupsOpen}
                           onChange={(next) => setGuidedParamsGroupsOpen(Array.isArray(next) ? next.map(String) : [String(next)])}
                           items={[
@@ -1066,12 +1066,16 @@ export function OperationExposureEditorModal({
               label: 'Preview',
               forceRender: true,
               children: (
-                <Input.TextArea
-                  rows={10}
-                  value={JSON.stringify(form.getFieldsValue(true), null, 2)}
-                  readOnly
-                  data-testid="action-catalog-editor-preview-json"
-                />
+                <Form.Item noStyle shouldUpdate>
+                  {(formInstance) => (
+                    <Input.TextArea
+                      rows={10}
+                      value={JSON.stringify(formInstance.getFieldsValue(true), null, 2)}
+                      readOnly
+                      data-testid="action-catalog-editor-preview-json"
+                    />
+                  )}
+                </Form.Item>
               ),
             },
           ]}

@@ -45,6 +45,7 @@ export interface UseTableToolkitOptions<T> {
   columns: ColumnsType<T>
   fallbackColumns: TableColumnConfig[]
   initialPageSize?: number
+  disableServerMetadata?: boolean
 }
 
 const defaultFilterConfigs = (columns: TableColumnConfig[]): TableFilterConfig[] =>
@@ -78,8 +79,10 @@ export const useTableToolkit = <T,>({
   columns,
   fallbackColumns,
   initialPageSize = 50,
+  disableServerMetadata = false,
 }: UseTableToolkitOptions<T>): TableToolkitState<T> => {
-  const { data: tableMetadata } = useTableMetadata(tableId)
+  const metadataTableId = disableServerMetadata ? '' : tableId
+  const { data: tableMetadata } = useTableMetadata(metadataTableId)
   type MetadataColumn = NonNullable<typeof tableMetadata>['columns'][number]
   const emptyMetadataColumns = useMemo<MetadataColumn[]>(() => [], [])
   const metadataColumns = tableMetadata?.columns ?? emptyMetadataColumns
