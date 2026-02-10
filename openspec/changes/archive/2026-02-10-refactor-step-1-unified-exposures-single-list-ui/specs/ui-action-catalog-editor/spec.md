@@ -21,6 +21,7 @@
 - **THEN** UI не показывает action create/edit controls
 - **AND** action editor flow остаётся недоступным
 
+## ADDED Requirements
 ### Requirement: Target binding для `extensions.set_flags` MUST настраиваться в unified action editor
 Система ДОЛЖНА (SHALL) настраивать `target_binding.extension_name_param` в staff-only action editor внутри `/templates` как capability-specific поле action exposure.
 
