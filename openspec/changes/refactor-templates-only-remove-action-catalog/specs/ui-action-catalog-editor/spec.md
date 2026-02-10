@@ -1,84 +1,82 @@
 ## ADDED Requirements
-### Requirement: UI Action Catalog editor MUST быть decommissioned
+### Requirement: UI Action Catalog editor MUST быть полностью decommissioned
 Система НЕ ДОЛЖНА (SHALL NOT) предоставлять UI flow редактирования `action_catalog`.
 
-Единый editor shell ДОЛЖЕН (SHALL) использоваться только для templates.
+#### Scenario: Legacy mode `/templates?surface=action_catalog` недоступен
+- **WHEN** пользователь открывает legacy route
+- **THEN** action editor не открывается
+- **AND** UI остаётся в templates-only режиме
 
-#### Scenario: Legacy route/режим action editor недоступен
-- **WHEN** staff открывает legacy deep-link `/templates?surface=action_catalog`
-- **THEN** UI не открывает action editor режим
-- **AND** пользователь переводится в templates-only flow
-
-#### Scenario: В `/templates` отсутствуют controls создания/редактирования actions
-- **WHEN** staff открывает `/templates`
-- **THEN** UI не показывает `New Action` и action-specific controls
-- **AND** доступны только template editor controls
+#### Scenario: UI не показывает controls action editor
+- **WHEN** пользователь открывает `/templates`
+- **THEN** controls `New Action` и action-specific редактирование отсутствуют
+- **AND** доступен только template editor flow
 
 ## REMOVED Requirements
 ### Requirement: Staff-only UI редактор каталога действий
-**Reason**: action editor decommissioned.
-**Migration**: использовать templates-only editor shell.
+**Reason**: capability decommissioned.
+**Migration**: templates-only editor.
 
 ### Requirement: Guided editor + Raw JSON toggle
-**Reason**: относится к удалённому action-catalog editor flow.
-**Migration**: аналогичное поведение (где нужно) поддерживается в templates editor.
+**Reason**: относится к action-catalog editor flow.
+**Migration**: поведение сохраняется/развивается в templates editor.
 
 ### Requirement: Поддержка executor kinds
-**Reason**: requirement был определён для action editor capability.
-**Migration**: executor support фиксируется в template editor и backend template contracts.
+**Reason**: action editor удалён.
+**Migration**: executor kinds поддерживаются в templates editor.
 
 ### Requirement: Save с серверной валидацией и отображением ошибок
-**Reason**: action-specific save flow удаляется.
-**Migration**: server validation остаётся в templates save flow.
+**Reason**: action save flow удалён.
+**Migration**: server validation остаётся в templates flow.
 
 ### Requirement: Preview execution plan в редакторе action catalog
-**Reason**: action editor decommissioned.
-**Migration**: preview доступен в template-based manual execution flow.
+**Reason**: action editor удалён.
+**Migration**: preview в manual operations/templates execution flow.
 
 ### Requirement: Preview и ошибки `ibcmd_cli` согласованы с Operations
-**Reason**: action editor decommissioned.
-**Migration**: требования применяются к template-based execution UX.
+**Reason**: action editor удалён.
+**Migration**: перенос в manual operations UI.
 
 ### Requirement: Preview для `ibcmd_cli` требует выбранные таргеты (или базу-пример)
-**Reason**: action editor decommissioned.
-**Migration**: preview правила применяются в template-based manual flow.
+**Reason**: action editor удалён.
+**Migration**: сохраняется в manual operations preview flow.
 
 ### Requirement: Safe params template UX в Action Catalog
-**Reason**: action-catalog редактор удаляется.
-**Migration**: schema-driven params UX остаётся в templates editor.
+**Reason**: action editor удалён.
+**Migration**: schema-driven UX в templates editor.
 
 ### Requirement: Guided/Raw JSON редактор params в Action Catalog
-**Reason**: action editor decommissioned.
-**Migration**: guided/raw params остаются в templates editor.
+**Reason**: action editor удалён.
+**Migration**: guided/raw params в templates editor.
 
 ### Requirement: Staff-only endpoint для Action Catalog editor hints
-**Reason**: endpoint contract для action-catalog editor деcommissioned.
-**Migration**: hints endpoint поддерживается только для templates editor сценариев (при необходимости).
+**Reason**: action-catalog editor contract удалён.
+**Migration**: hints используются только templates editor (если требуется).
 
 ### Requirement: Editor MUST записывать action exposures в unified persistent store
-**Reason**: action exposure contract удалён.
-**Migration**: editor записывает только template exposures.
+**Reason**: action exposures удалены.
+**Migration**: editor пишет только templates.
 
 ### Requirement: Editor MUST использовать shared command-config contract с Templates UI
-**Reason**: упоминание surfaces `template` + `action_catalog` больше неактуально.
-**Migration**: shared contract применяется только к templates flow.
+**Reason**: упоминание двух surfaces неактуально.
+**Migration**: shared contract остаётся templates-only.
 
 ### Requirement: Editor hints MUST включать `target_binding` schema для `extensions.set_flags`
-**Reason**: action-specific hints contract удаляется.
-**Migration**: binding validation переносится в template compatibility checks.
+**Reason**: action hints удаляются.
+**Migration**: binding validation в template compatibility.
 
 ### Requirement: Editor MUST показывать migration/validation diagnostics для unified exposure
-**Reason**: action-catalog migration diagnostics больше не требуются для UI editor capability.
-**Migration**: diagnostics остаются в template management/error reporting.
+**Reason**: action-catalog diagnostics неактуальны.
+**Migration**: diagnostics в templates flow.
 
 ### Requirement: Target binding для `extensions.set_flags` MUST настраиваться в unified action editor
-**Reason**: unified action editor удалён.
-**Migration**: binding настраивается/валидируется в template-based модели.
+**Reason**: action editor удалён.
+**Migration**: binding хранится/валидируется в templates contract.
 
 ### Requirement: Editor SHALL скрывать runtime-поля selective apply для `extensions.set_flags`
 **Reason**: action editor удалён.
-**Migration**: runtime selective state задаётся только при запуске template-based операции.
+**Migration**: runtime selective state задаётся при запуске manual operation.
 
 ### Requirement: Editor SHALL показывать подсказку про runtime source `$flags.*`
-**Reason**: действие относится к удалённому action editor flow.
-**Migration**: helper text переносится в template/manual execution UI.
+**Reason**: привязка к action editor удалена.
+**Migration**: helper text в manual operation launch UI.

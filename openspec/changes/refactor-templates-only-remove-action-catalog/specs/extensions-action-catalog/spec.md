@@ -1,83 +1,88 @@
 ## ADDED Requirements
-### Requirement: Extensions Action Catalog MUST быть decommissioned
-Система НЕ ДОЛЖНА (SHALL NOT) предоставлять runtime или management контракт Action Catalog для домена extensions.
+### Requirement: Action Catalog capability MUST быть полностью decommissioned
+Система НЕ ДОЛЖНА (SHALL NOT) предоставлять runtime и management контракты Action Catalog как platform capability.
 
-#### Scenario: Action Catalog endpoint для extensions недоступен
-- **WHEN** клиент вызывает legacy endpoint `GET /api/v2/ui/action-catalog/`
-- **THEN** endpoint возвращает unsupported (`404`/`410` по целевому контракту)
-- **AND** runtime execution `extensions.*` через action catalog не выполняется
+#### Scenario: Legacy endpoint недоступен
+- **WHEN** клиент вызывает `GET /api/v2/ui/action-catalog/`
+- **THEN** API возвращает `HTTP 404`
+- **AND** тело ошибки содержит `error.code="NOT_FOUND"`
+- **AND** runtime execution через action catalog недоступен
 
-#### Scenario: Action-catalog exposure не используется в execution
-- **GIVEN** в хранилище остаются legacy записи `surface=action_catalog`
-- **WHEN** пользователь запускает ручную operations flow для `extensions.*`
-- **THEN** система не читает эти записи для runtime-резолва
-- **AND** execution строится только из templates
+#### Scenario: Action-catalog surface недоступен в operation-catalog
+- **WHEN** клиент вызывает operation-catalog c `surface=action_catalog`
+- **THEN** API возвращает `HTTP 400` (`VALIDATION_ERROR`)
+- **AND** action-catalog management path не активируется
+
+#### Scenario: Legacy action-catalog данные удалены
+- **WHEN** завершён cutover migration
+- **THEN** `surface=action_catalog` exposure rows отсутствуют в БД
+- **AND** capability не может быть реактивирована конфигурацией
 
 ## REMOVED Requirements
 ### Requirement: RuntimeSetting для каталога действий расширений
 **Reason**: capability decommissioned.
-**Migration**: использовать templates-only execution контракты.
+**Migration**: templates/manual-operations execution only.
 
 ### Requirement: API для effective action catalog
-**Reason**: endpoint удаляется из поддерживаемого контракта.
-**Migration**: использовать templates-based list/plan/apply.
+**Reason**: endpoint удалён.
+**Migration**: templates/manual-operations APIs.
 
 ### Requirement: Action executors
-**Reason**: executor semantics переносятся в template-based execution.
-**Migration**: настраивать executors в templates.
+**Reason**: action layer удалён.
+**Migration**: executors настраиваются в templates.
 
 ### Requirement: Deactivate и delete — разные действия
-**Reason**: action-catalog action model удаляется.
-**Migration**: фиксировать ручные операции через templates/manual contract.
+**Reason**: action model удалён.
+**Migration**: ручные операции задаются hardcoded manual operations layer.
 
 ### Requirement: Bulk execution
-**Reason**: bulk execution больше не управляется action catalog.
-**Migration**: использовать template-based plan/apply bulk path.
+**Reason**: bulk через action catalog удалён.
+**Migration**: template-based manual operations bulk path.
 
 ### Requirement: Fail-closed validation
-**Reason**: validation переносится в template-based contracts.
-**Migration**: проверять template compatibility и runtime input.
+**Reason**: action-catalog validation больше неактуальна.
+**Migration**: fail-closed validation в manual operations + template compatibility.
 
 ### Requirement: Snapshot расширений в Postgres
-**Reason**: требование не относится к decommissioned action-catalog capability.
-**Migration**: требования snapshot остаются в capabilities `extensions-overview`/`extensions-plan-apply`.
+**Reason**: этот аспект переопределяется в `command-result-snapshots` через result-contract mapping.
+**Migration**: использовать manual_operation metadata + pinned mapping.
 
 ### Requirement: Staff может увидеть plan/provenance при запуске действия расширений
-**Reason**: action-catalog launch flow удаляется.
-**Migration**: preview/provenance показывается в template-based manual flow.
+**Reason**: action-catalog launch flow удалён.
+**Migration**: preview/provenance в templates/manual flow.
 
 ### Requirement: User-friendly ошибки preflight для действий расширений
-**Reason**: action-catalog launch flow удаляется.
-**Migration**: ошибки остаются в template-based plan/apply UX.
+**Reason**: action-catalog launch flow удалён.
+**Migration**: ошибки остаются в manual operations UI.
 
 ### Requirement: Семантика extensions действий задаётся capability, а не id
-**Reason**: action entity (`id/capability` в action catalog) деcommissioned.
-**Migration**: семантика ручной операции задаётся manual contract + template compatibility.
+**Reason**: action entity удалён.
+**Migration**: semantics задаются hardcoded `manual_operation` keys.
 
 ### Requirement: Зарезервированные capability валидируются fail-closed
-**Reason**: reserved capability логика action-catalog больше не используется.
-**Migration**: fail-closed валидация переносится в template-based contracts.
+**Reason**: reserved action-catalog semantics удалены.
+**Migration**: fail-closed manual_operation/template compatibility.
 
 ### Requirement: Actions для управления флагами расширений через capability
-**Reason**: action catalog decommissioned.
-**Migration**: `extensions.set_flags` выполняется через `template_id`.
+**Reason**: action capability слой удалён.
+**Migration**: `extensions.set_flags` в manual operations registry.
 
 ### Requirement: extensions.set_flags поддерживает selective apply через params-based executor
-**Reason**: требование переносится в `extensions-plan-apply` как template-based execution правило.
-**Migration**: selective apply задаётся runtime input `flags_values` + `apply_mask`.
+**Reason**: перенос в `extensions-plan-apply` как template-based правило.
+**Migration**: runtime input `flags_values` + `apply_mask`.
 
 ### Requirement: Presets для `extensions.set_flags` через `executor.fixed.apply_mask`
-**Reason**: action-layer preset contract удаляется вместе с capability.
-**Migration**: runtime selective state передаётся только в request.
+**Reason**: action-layer contract удалён.
+**Migration**: selective state только в request.
 
 ### Requirement: Unified action exposure MUST хранить capability-specific binding contract
-**Reason**: action exposure decommissioned.
-**Migration**: binding/compatibility хранится и валидируется в template execution contract.
+**Reason**: action exposure удалён.
+**Migration**: binding хранится в template payload.
 
 ### Requirement: `extensions.set_flags` binding MUST валидироваться против схемы команды
-**Reason**: перенос binding validation в template-based path.
-**Migration**: валидация выполняется для selected template до plan/apply.
+**Reason**: перенос в template compatibility validation.
+**Migration**: validation на template plan path.
 
 ### Requirement: `extensions.set_flags` action SHALL быть transport/binding-конфигурацией
-**Reason**: action entity удаляется.
-**Migration**: runtime/source contract определяется template payload + runtime input.
+**Reason**: action entity decommissioned.
+**Migration**: transport/binding в template contract.

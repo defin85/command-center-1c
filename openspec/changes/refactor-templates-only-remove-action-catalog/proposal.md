@@ -1,31 +1,44 @@
-# Change: Templates-only execution и decommission Action Catalog
+# Change: Templates-only manual operations и полный decommission Action Catalog
 
 ## Why
-Система сейчас одновременно использует `templates` и `action_catalog` для запуска атомарных операций, что создаёт два конкурирующих runtime source of truth, конфликтующий UX и недетерминированный execution path.
+Текущая архитектура смешивает два разных execution source of truth (`templates` и `action_catalog`), из-за чего:
+- контракты API/UX расходятся,
+- появляются неявные runtime-resolve пути,
+- поддержка и аудит поведения усложняются.
 
-Нужно выполнить полный переход на одну модель:
+Нужен единый platform-level контракт:
 - атомарные операции исполняются только из `templates`,
-- workflow управляет только цепочками (оркестрацией) поверх template-based атомарных шагов,
-- Operations/manual execution использует тот же template-based контракт,
-- `action_catalog` удаляется как runtime и management сущность.
+- ручные операции запускаются через жёстко заданный (hardcoded) слой manual operations,
+- пользователь подставляет конкретные templates и вручную настраивает mapping raw driver output -> canonical contract,
+- `action_catalog` удаляется как capability платформы.
 
 ## What Changes
-- Полностью вывести `action_catalog` из runtime и management контрактов.
-- Зафиксировать `operation_exposure(surface="template")` как единственный исполняемый источник атомарных операций.
-- Перевести `POST /api/v2/extensions/plan/` и `POST /api/v2/extensions/apply/` на template-based контракт (`template_id` + runtime input), без `action_id`.
-- Убрать execution path `extensions.*` через `GET /api/v2/ui/action-catalog/` и удалить endpoint из публичного контракта.
-- Перевести `/templates` в templates-only экран (без mixed surfaces и без Action Catalog controls), переиспользуя существующий editor shell.
-- Перевести `/extensions` и `/databases` на ручные операции по явному контракту manual actions, но с template-based запуском.
-- Выполнить одномоментный cutover в одном change без MVP, fallback, dual-path и backward-совместимости для `action_catalog` runtime-контрактов.
+- Полностью удалить `action_catalog` как platform capability (runtime + management + UI editor).
+- Удалить `GET /api/v2/ui/action-catalog/` из поддерживаемого API (стабильный decommission-код: `404`).
+- Удалить `surface=action_catalog` из `operation-catalog` контрактов и из domain model (`OperationExposure`).
+- Выполнить hard delete legacy `action_catalog` exposure-данных в миграции.
+- Ввести единый hardcoded слой manual operations (первый домен: `extensions`):
+  - поддерживаемые manual operations: `extensions.sync`, `extensions.set_flags`,
+  - legacy `extensions.list` удалить из runtime-контуров.
+- Перевести `extensions.plan/apply` на единый manual-operations контракт:
+  - request содержит `manual_operation`,
+  - template резолвится через `template_id` (explicit override) или tenant-level preferred binding,
+  - `action_id` полностью удаляется.
+- Добавить tenant-scoped persist bindings: preferred `template_id` на каждую manual operation.
+- Зафиксировать единый result contract слой:
+  - manual operation объявляет canonical `result_contract`,
+  - raw ответ драйвера маппится пользователем через mapping spec,
+  - в execution metadata фиксируются contract/mapping версии.
+- Перевести `/templates`, `/extensions`, `/databases` на templates-only manual execution UX.
 
 ## Breaking Changes
+- `GET /api/v2/ui/action-catalog/` возвращает `404`.
+- `operation-catalog/exposures` больше не принимает `surface=action_catalog`.
 - `POST /api/v2/extensions/plan/`:
-  - `action_id` удаляется из runtime-контракта,
-  - вводится обязательный template-based контракт для `extensions.*`.
-- `GET /api/v2/ui/action-catalog/` удаляется из поддерживаемого API-контракта.
-- `operation-catalog/exposures` больше не поддерживает `surface=action_catalog`.
-- `/templates?surface=action_catalog` и все action-catalog UI flows удаляются.
-- Legacy-клиенты, отправляющие `action_id` или использующие action-catalog surface/endpoint, получают fail-closed ошибки (`400/404/410` по конкретному контракту endpoint-а).
+  - удаляется `action_id`,
+  - вводится `manual_operation` + template-based resolve.
+- `extensions.list` удаляется как runtime operation.
+- Legacy планы/запросы action-catalog формата отклоняются fail-closed.
 
 ## Impact
 - Affected specs:
@@ -35,21 +48,19 @@
   - `extensions-overview`
   - `extensions-action-catalog`
   - `ui-action-catalog-editor`
+  - `execution-plan-binding-provenance`
+  - `command-result-snapshots`
 - Affected code:
   - Backend: `orchestrator/apps/api_v2/views/extensions_plan_apply.py`
   - Backend: `orchestrator/apps/api_v2/views/ui/actions.py`
   - Backend: `orchestrator/apps/api_v2/views/operation_catalog.py`
   - Backend: `orchestrator/apps/templates/operation_catalog_service.py`
-  - Backend model/migrations: `orchestrator/apps/templates/models.py` и связанные миграции
+  - Backend model/migrations: `orchestrator/apps/templates/models.py` + миграции удаления `action_catalog`
   - Frontend: `frontend/src/pages/Templates/**`, `frontend/src/pages/Extensions/**`, `frontend/src/pages/Databases/**`
   - Frontend API/query: `frontend/src/api/queries/ui.ts`, generated client/types
   - Contracts/docs/tests: `contracts/orchestrator/openapi.yaml`, `docs/**`, `frontend/tests/**`, `orchestrator/apps/**/tests/**`
 
-## Dependencies
-- Этот change supersedes незавершённый `refactor-extensions-templates-first-manual-contracts`.
-- Реализация выполняется целиком в рамках одного change (single cutover scope).
-
 ## Non-Goals
-- Поэтапный rollout, canary и dual-read модели.
-- Сохранение совместимости с action-catalog runtime flow.
-- Введение второго временного контракта manual operations (MVP-слоя).
+- MVP/fallback/dual-path rollout.
+- Backward compatibility для action-catalog execution flows.
+- Временные adapter-слои `action_id -> template_id`.

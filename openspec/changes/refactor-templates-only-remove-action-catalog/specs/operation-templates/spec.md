@@ -1,36 +1,40 @@
 ## MODIFIED Requirements
-### Requirement: `/templates` MUST быть единым UI управления template и action exposures
+### Requirement: `/templates` MUST быть templates-only UI управления шаблонами
 Система ДОЛЖНА (SHALL) использовать `/templates` как templates-only реестр `operation_exposure(surface="template")`.
 
-Экран НЕ ДОЛЖЕН (SHALL NOT) показывать/управлять `action_catalog` surface.
-
-#### Scenario: `/templates` отображает только templates
-- **GIVEN** пользователь открывает `/templates`
-- **WHEN** список загружается
-- **THEN** UI показывает только template exposures
+#### Scenario: `/templates` не показывает action-catalog controls
+- **WHEN** пользователь открывает `/templates`
+- **THEN** UI показывает только templates
 - **AND** controls `Action Catalog`/`New Action` отсутствуют
 
-#### Scenario: Legacy deep-link `surface=action_catalog` не активирует удалённый режим
-- **GIVEN** пользователь открывает `/templates?surface=action_catalog`
-- **WHEN** страница инициализируется
-- **THEN** UI нормализует режим к templates-only
+#### Scenario: Legacy deep-link `surface=action_catalog` нормализуется
+- **WHEN** пользователь открывает `/templates?surface=action_catalog`
+- **THEN** UI нормализует состояние к templates-only
 - **AND** action-catalog запросы не отправляются
 
-### Requirement: `/templates` list MUST использовать server-driven unified exposures contract
+### Requirement: `/templates` list MUST использовать server-driven exposures contract
 Система ДОЛЖНА (SHALL) использовать server-driven list контракт `operation-catalog/exposures` для template-only выборки.
 
 #### Scenario: Table state обрабатывается backend-ом
-- **GIVEN** пользователь применил search/filters/sort/pagination на `/templates`
+- **GIVEN** пользователь применил search/filters/sort/pagination
 - **WHEN** UI выполняет list запрос
 - **THEN** backend возвращает paged template-only результат
-- **AND** UI не выполняет client-side merge surfaces
+- **AND** UI не делает client-side merge разных surfaces
 
 ## ADDED Requirements
-### Requirement: Templates editor MUST переиспользовать существующий unified editor shell
-Система ДОЛЖНА (SHALL) использовать существующий editor shell (бывший unified/action editor) как единственный flow редактирования templates.
+### Requirement: Template editor MUST быть универсальным по executor kinds
+Система ДОЛЖНА (SHALL) поддерживать в templates editor executor kinds `ibcmd_cli`, `designer_cli`, `workflow` в едином editor shell.
 
-#### Scenario: Create/Edit template выполняется в одном modal shell
-- **GIVEN** пользователь создаёт или редактирует template
-- **WHEN** открывается editor modal
-- **THEN** используется тот же общий editor shell
-- **AND** доступны только template-поля и template-валидация
+#### Scenario: Один editor shell конфигурирует разные executor kinds
+- **WHEN** пользователь переключает executor kind в template editor
+- **THEN** UI остаётся в одном modal flow
+- **AND** shape payload валидируется как template contract
+
+### Requirement: Template MUST быть явно совместим с manual operation
+Система ДОЛЖНА (SHALL) явно маркировать template exposure для manual operation совместимости через `capability` template exposure.
+
+#### Scenario: Template помечен как compatible с manual operation
+- **GIVEN** template предназначен для `extensions.set_flags`
+- **WHEN** template сохраняется
+- **THEN** `exposure.capability` фиксируется как `extensions.set_flags`
+- **AND** template может использоваться только этим manual operation key
