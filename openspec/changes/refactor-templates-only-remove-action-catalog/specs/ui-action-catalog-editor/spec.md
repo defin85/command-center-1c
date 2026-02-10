@@ -51,7 +51,7 @@
 
 ### Requirement: Staff-only endpoint для Action Catalog editor hints
 **Reason**: action-catalog editor contract удалён.
-**Migration**: hints используются только templates editor (если требуется).
+**Migration**: endpoint удаляется; templates editor использует только templates-only hints contracts.
 
 ### Requirement: Editor MUST записывать action exposures в unified persistent store
 **Reason**: action exposures удалены.

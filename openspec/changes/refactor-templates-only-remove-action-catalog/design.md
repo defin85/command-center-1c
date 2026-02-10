@@ -75,7 +75,7 @@ Legacy `action_id` path всегда отклоняется (`400`).
 ### 5. Preferred Template Bindings (Persist)
 Добавляется tenant-scoped store preferred template per manual operation.
 
-Предлагаемый контракт хранения:
+Контракт хранения (обязательный для реализации в этом change):
 - `tenant_id`
 - `manual_operation`
 - `template_id`
