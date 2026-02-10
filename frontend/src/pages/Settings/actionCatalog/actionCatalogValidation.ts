@@ -294,6 +294,9 @@ export const validateActionCatalogDraft = (
       if (!fixed) {
         errors.push(`extensions.actions[${idx}].executor.fixed: must be an object`)
       } else {
+        if (capability === 'extensions.set_flags' && fixed.apply_mask !== undefined) {
+          errors.push(`extensions.actions[${idx}].executor.fixed.apply_mask: preset is not allowed for extensions.set_flags`)
+        }
         if (fixed.confirm_dangerous !== undefined && typeof fixed.confirm_dangerous !== 'boolean') {
           errors.push(`extensions.actions[${idx}].executor.fixed.confirm_dangerous: must be a boolean`)
         }

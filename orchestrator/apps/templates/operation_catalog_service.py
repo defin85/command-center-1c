@@ -271,6 +271,35 @@ def validate_set_flags_binding(
     cache = commands_cache if commands_cache is not None else {}
     errors: list[dict[str, str]] = []
 
+    definition_fixed = definition_payload.get("fixed")
+    if isinstance(definition_fixed, dict) and "apply_mask" in definition_fixed:
+        errors.append(
+            {
+                "path": "definition.executor_payload.fixed.apply_mask",
+                "code": "FORBIDDEN",
+                "message": "apply_mask preset is not allowed for extensions.set_flags; use runtime request/workflow input",
+            }
+        )
+    if "apply_mask" in capability_config:
+        errors.append(
+            {
+                "path": "capability_config.apply_mask",
+                "code": "FORBIDDEN",
+                "message": "apply_mask preset is not allowed for extensions.set_flags; use runtime request/workflow input",
+            }
+        )
+    cfg_fixed = capability_config.get("fixed")
+    if isinstance(cfg_fixed, dict) and "apply_mask" in cfg_fixed:
+        errors.append(
+            {
+                "path": "capability_config.fixed.apply_mask",
+                "code": "FORBIDDEN",
+                "message": "apply_mask preset is not allowed for extensions.set_flags; use runtime request/workflow input",
+            }
+        )
+    if errors:
+        return errors
+
     target_binding = capability_config.get("target_binding")
     if not isinstance(target_binding, dict):
         errors.append({"path": "capability_config.target_binding", "code": "REQUIRED", "message": "target_binding is required"})
@@ -391,10 +420,6 @@ def _merge_action_executor(definition_payload: dict[str, Any], capability_config
         merged_fixed.update(cfg_fixed)
         executor["fixed"] = merged_fixed
 
-    if "apply_mask" in capability_config:
-        merged_fixed = dict(executor.get("fixed") if isinstance(executor.get("fixed"), dict) else {})
-        merged_fixed["apply_mask"] = capability_config.get("apply_mask")
-        executor["fixed"] = merged_fixed
     return executor
 
 
@@ -608,6 +633,55 @@ def delete_template_exposure(*, template_id: str) -> OperationExposure | None:
 
 def list_migration_issues_queryset() -> QuerySet[OperationMigrationIssue]:
     return OperationMigrationIssue.objects.select_related("tenant", "exposure").all().order_by("-created_at")
+
+
+def list_set_flags_apply_mask_preset_findings(*, statuses: list[str] | None = None) -> list[dict[str, Any]]:
+    qs = OperationExposure.objects.select_related("definition", "tenant").filter(
+        surface=OperationExposure.SURFACE_ACTION_CATALOG,
+        capability=_SET_FLAGS_CAPABILITY,
+    )
+    if statuses:
+        qs = qs.filter(status__in=statuses)
+
+    preset_paths = {
+        "definition.executor_payload.fixed.apply_mask",
+        "capability_config.apply_mask",
+        "capability_config.fixed.apply_mask",
+    }
+    findings: list[dict[str, Any]] = []
+    for exposure in qs:
+        definition_payload = exposure.definition.executor_payload if isinstance(exposure.definition.executor_payload, dict) else {}
+        capability_config = exposure.capability_config if isinstance(exposure.capability_config, dict) else {}
+        errors = validate_set_flags_binding(
+            executor_kind=exposure.definition.executor_kind,
+            definition_payload=definition_payload,
+            capability_config=capability_config,
+            commands_cache=None,
+        )
+        preset_errors = [err for err in errors if str(err.get("path") or "") in preset_paths]
+        if not preset_errors:
+            continue
+        findings.append(
+            {
+                "exposure_id": str(exposure.id),
+                "definition_id": str(exposure.definition_id),
+                "alias": exposure.alias,
+                "label": exposure.label,
+                "tenant_id": str(exposure.tenant_id) if exposure.tenant_id else None,
+                "status": exposure.status,
+                "is_active": bool(exposure.is_active),
+                "paths": [str(err.get("path") or "") for err in preset_errors],
+                "messages": [str(err.get("message") or "") for err in preset_errors],
+            }
+        )
+    findings.sort(
+        key=lambda item: (
+            str(item.get("tenant_id") or ""),
+            str(item.get("status") or ""),
+            str(item.get("alias") or ""),
+        )
+    )
+    return findings
 
 
 def filter_exposures_queryset(

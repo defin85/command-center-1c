@@ -4,7 +4,7 @@ from django.contrib.contenttypes.models import ContentType
 from rest_framework.response import Response
 from rest_framework.test import APIClient
 
-from apps.databases.models import Database, DatabaseExtensionsSnapshot, DatabasePermission, ExtensionFlagsPolicy, PermissionLevel
+from apps.databases.models import Database, DatabaseExtensionsSnapshot, DatabasePermission, PermissionLevel
 from apps.operations.models import BatchOperation, CommandResultSnapshot
 from apps.runtime_settings.models import TenantRuntimeSettingOverride
 from apps.templates.models import OperationExposure
@@ -604,7 +604,7 @@ def test_extensions_apply_success_enqueues_sync(client, staff_user, monkeypatch)
 
 
 @pytest.mark.django_db
-def test_extensions_plan_apply_set_flags_resolves_policy_and_sets_post_completion_sync(client, staff_user, monkeypatch):
+def test_extensions_plan_apply_set_flags_uses_runtime_flags_values_and_sets_post_completion_sync(client, staff_user, monkeypatch):
     default = Tenant.objects.get(slug="default")
     _grant_view_database_permission(staff_user)
     _grant_manage_database_permission(staff_user)
@@ -640,9 +640,9 @@ def test_extensions_plan_apply_set_flags_resolves_policy_and_sets_post_completio
                     "driver": "ibcmd",
                     "command_id": "dummy_set_flags",
                     "params": {
-                        "active": "$policy.active",
-                        "safe_mode": "$policy.safe_mode",
-                        "unsafe_action_protection": "$policy.unsafe_action_protection",
+                        "active": "$flags.active",
+                        "safe_mode": "$flags.safe_mode",
+                        "unsafe_action_protection": "$flags.unsafe_action_protection",
                     },
                     "target_binding": {"extension_name_param": "extension_name"},
                 },
@@ -665,20 +665,12 @@ def test_extensions_plan_apply_set_flags_resolves_policy_and_sets_post_completio
         defaults={"snapshot": {"extensions": [{"name": "ExtA"}], "raw": {}, "parse_error": None}},
     )
 
-    ExtensionFlagsPolicy.objects.create(
-        tenant_id=str(default.id),
-        extension_name="ExtA",
-        active=True,
-        safe_mode=None,
-        unsafe_action_protection=None,
-    )
-
     def _fake_preview(**kwargs):
         assert kwargs.get("command_id") == "dummy_set_flags"
         assert kwargs.get("params") == {
             "active": True,
-            "safe_mode": None,
-            "unsafe_action_protection": None,
+            "safe_mode": False,
+            "unsafe_action_protection": True,
             "extension_name": "ExtA",
         }
         assert kwargs.get("additional_args") == []
@@ -693,6 +685,16 @@ def test_extensions_plan_apply_set_flags_resolves_policy_and_sets_post_completio
         assert metadata_overrides.get("post_completion_extensions_sync") is True
         assert metadata_overrides.get("post_completion_extensions_sync_executor", {}).get("command_id") == "dummy_sync_extensions"
         assert metadata_overrides.get("extension_name") == "ExtA"
+        assert metadata_overrides.get("apply_mask") == {
+            "active": True,
+            "safe_mode": True,
+            "unsafe_action_protection": True,
+        }
+        assert metadata_overrides.get("flags_values") == {
+            "active": True,
+            "safe_mode": False,
+            "unsafe_action_protection": True,
+        }
         assert metadata_overrides.get("snapshot_kinds") is None
         return Response({"operation_id": "op-set-flags", "status": "queued"}, status=202)
 
@@ -700,7 +702,14 @@ def test_extensions_plan_apply_set_flags_resolves_policy_and_sets_post_completio
 
     plan_resp = client.post(
         "/api/v2/extensions/plan/",
-        {"database_ids": [db.id], "capability": "extensions.set_flags", "extension_name": "ExtA"},
+        {
+            "database_ids": [db.id],
+            "capability": "extensions.set_flags",
+            "action_id": "SetFlagsAction",
+            "extension_name": "ExtA",
+            "flags_values": {"active": True, "safe_mode": False, "unsafe_action_protection": True},
+            "apply_mask": {"active": True, "safe_mode": True, "unsafe_action_protection": True},
+        },
         format="json",
         HTTP_X_CC1C_TENANT_ID=str(default.id),
     )
@@ -718,7 +727,7 @@ def test_extensions_plan_apply_set_flags_resolves_policy_and_sets_post_completio
 
 
 @pytest.mark.django_db
-def test_extensions_plan_set_flags_requires_action_id_when_ambiguous(client, staff_user):
+def test_extensions_plan_set_flags_requires_action_id(client, staff_user):
     default = Tenant.objects.get(slug="default")
     _grant_view_database_permission(staff_user)
     _grant_manage_database_permission(staff_user)
@@ -767,18 +776,142 @@ def test_extensions_plan_set_flags_requires_action_id_when_ambiguous(client, sta
 
     resp = client.post(
         "/api/v2/extensions/plan/",
-        {"database_ids": [db.id], "capability": "extensions.set_flags", "extension_name": "ExtA"},
+        {
+            "database_ids": [db.id],
+            "capability": "extensions.set_flags",
+            "extension_name": "ExtA",
+            "flags_values": {"active": True, "safe_mode": False, "unsafe_action_protection": True},
+            "apply_mask": {"active": True, "safe_mode": False, "unsafe_action_protection": False},
+        },
         format="json",
         HTTP_X_CC1C_TENANT_ID=str(default.id),
     )
     assert resp.status_code == 400
     payload = resp.json()
-    assert payload["error"]["code"] == "AMBIGUOUS_ACTION"
-    assert "candidates" in payload["error"]
+    assert payload["error"]["code"] == "MISSING_PARAMETER"
+    assert payload["error"]["message"] == "action_id is required"
 
 
 @pytest.mark.django_db
-def test_extensions_plan_set_flags_uses_preset_apply_mask_when_request_missing(client, staff_user, monkeypatch):
+def test_extensions_plan_set_flags_requires_apply_mask(client, staff_user):
+    default = Tenant.objects.get(slug="default")
+    _grant_view_database_permission(staff_user)
+    _grant_manage_database_permission(staff_user)
+    _jwt_login(client, username=staff_user.username, password="pass")
+
+    _seed_action_catalog_exposures(
+        tenant=default,
+        actions=[
+            {
+                "id": "SetFlagsAction",
+                "capability": "extensions.set_flags",
+                "label": "Set flags",
+                "contexts": ["bulk_page"],
+                "executor": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "dummy_set_flags",
+                    "params": {
+                        "active": "$flags.active",
+                        "safe_mode": "$flags.safe_mode",
+                        "unsafe_action_protection": "$flags.unsafe_action_protection",
+                    },
+                    "target_binding": {"extension_name_param": "extension_name"},
+                },
+            },
+        ],
+    )
+
+    db = Database.objects.create(
+        tenant=default,
+        name="db_set_flags_missing_apply_mask",
+        host="localhost",
+        port=80,
+        base_name="db_set_flags_missing_apply_mask",
+        odata_url="http://localhost/odata",
+        username="u",
+        password="p",
+    )
+
+    resp = client.post(
+        "/api/v2/extensions/plan/",
+        {
+            "database_ids": [db.id],
+            "capability": "extensions.set_flags",
+            "action_id": "SetFlagsAction",
+            "extension_name": "ExtA",
+            "flags_values": {"active": True, "safe_mode": False, "unsafe_action_protection": False},
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(default.id),
+    )
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["error"]["code"] == "MISSING_PARAMETER"
+    assert payload["error"]["message"] == "apply_mask is required"
+
+
+@pytest.mark.django_db
+def test_extensions_plan_set_flags_requires_flags_values(client, staff_user):
+    default = Tenant.objects.get(slug="default")
+    _grant_view_database_permission(staff_user)
+    _grant_manage_database_permission(staff_user)
+    _jwt_login(client, username=staff_user.username, password="pass")
+
+    _seed_action_catalog_exposures(
+        tenant=default,
+        actions=[
+            {
+                "id": "SetFlagsAction",
+                "capability": "extensions.set_flags",
+                "label": "Set flags",
+                "contexts": ["bulk_page"],
+                "executor": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "dummy_set_flags",
+                    "params": {
+                        "active": "$flags.active",
+                        "safe_mode": "$flags.safe_mode",
+                        "unsafe_action_protection": "$flags.unsafe_action_protection",
+                    },
+                    "target_binding": {"extension_name_param": "extension_name"},
+                },
+            },
+        ],
+    )
+
+    db = Database.objects.create(
+        tenant=default,
+        name="db_set_flags_missing_flags_values",
+        host="localhost",
+        port=80,
+        base_name="db_set_flags_missing_flags_values",
+        odata_url="http://localhost/odata",
+        username="u",
+        password="p",
+    )
+
+    resp = client.post(
+        "/api/v2/extensions/plan/",
+        {
+            "database_ids": [db.id],
+            "capability": "extensions.set_flags",
+            "action_id": "SetFlagsAction",
+            "extension_name": "ExtA",
+            "apply_mask": {"active": True, "safe_mode": False, "unsafe_action_protection": False},
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(default.id),
+    )
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["error"]["code"] == "MISSING_PARAMETER"
+    assert payload["error"]["message"] == "flags_values is required"
+
+
+@pytest.mark.django_db
+def test_extensions_plan_set_flags_rejects_executor_apply_mask_preset(client, staff_user, monkeypatch):
     default = Tenant.objects.get(slug="default")
     _grant_view_database_permission(staff_user)
     _grant_manage_database_permission(staff_user)
@@ -807,16 +940,16 @@ def test_extensions_plan_set_flags_uses_preset_apply_mask_when_request_missing(c
             {
                 "id": "SetFlagsActiveOnly",
                 "capability": "extensions.set_flags",
-                "label": "Set flags: active only",
+                "label": "Set flags: preset mask (invalid)",
                 "contexts": ["bulk_page"],
                 "executor": {
                     "kind": "ibcmd_cli",
                     "driver": "ibcmd",
                     "command_id": "dummy_set_flags",
                     "params": {
-                        "active": "$policy.active",
-                        "safe_mode": "$policy.safe_mode",
-                        "unsafe_action_protection": "$policy.unsafe_action_protection",
+                        "active": "$flags.active",
+                        "safe_mode": "$flags.safe_mode",
+                        "unsafe_action_protection": "$flags.unsafe_action_protection",
                     },
                     "fixed": {
                         "apply_mask": {
@@ -846,52 +979,20 @@ def test_extensions_plan_set_flags_uses_preset_apply_mask_when_request_missing(c
         defaults={"snapshot": {"extensions": [{"name": "ExtA"}], "raw": {}, "parse_error": None}},
     )
 
-    ExtensionFlagsPolicy.objects.create(
-        tenant_id=str(default.id),
-        extension_name="ExtA",
-        active=True,
-        safe_mode=None,
-        unsafe_action_protection=None,
-    )
-
-    def _fake_preview(**kwargs):
-        assert kwargs.get("command_id") == "dummy_set_flags"
-        assert kwargs.get("params") == {"active": True, "extension_name": "ExtA"}
-        assert kwargs.get("additional_args") == []
-        return ({"execution_plan": {"plan_version": 1}, "bindings": []}, None, None)
-
-    monkeypatch.setattr("apps.api_v2.views.extensions_plan_apply._preview_ibcmd_cli", _fake_preview)
-
-    def _fake_execute(_request, validated_data, *, metadata_overrides=None, **_kwargs):
-        assert validated_data.get("command_id") == "dummy_set_flags"
-        assert validated_data.get("params") == {"active": True, "extension_name": "ExtA"}
-        assert metadata_overrides is not None
-        assert metadata_overrides.get("action_capability") == "extensions.set_flags"
-        return Response({"operation_id": "op-set-flags", "status": "queued"}, status=202)
-
-    monkeypatch.setattr("apps.api_v2.views.extensions_plan_apply._execute_ibcmd_cli_validated", _fake_execute)
-
     plan_resp = client.post(
         "/api/v2/extensions/plan/",
         {
             "database_ids": [db.id],
             "action_id": "SetFlagsActiveOnly",
             "extension_name": "ExtA",
+            "flags_values": {"active": True, "safe_mode": False, "unsafe_action_protection": False},
+            "apply_mask": {"active": True, "safe_mode": False, "unsafe_action_protection": False},
         },
         format="json",
         HTTP_X_CC1C_TENANT_ID=str(default.id),
     )
-    assert plan_resp.status_code == 200
-    plan_id = plan_resp.json()["plan_id"]
-
-    apply_resp = client.post(
-        "/api/v2/extensions/apply/",
-        {"plan_id": plan_id, "strict": False},
-        format="json",
-        HTTP_X_CC1C_TENANT_ID=str(default.id),
-    )
-    assert apply_resp.status_code == 202
-    assert apply_resp.json()["operation_id"] == "op-set-flags"
+    assert plan_resp.status_code == 400
+    assert plan_resp.json()["error"]["code"] == "CONFIGURATION_ERROR"
 
 
 @pytest.mark.django_db
@@ -935,7 +1036,9 @@ def test_extensions_plan_set_flags_rejects_apply_mask_all_false(client, staff_us
         {
             "database_ids": [db.id],
             "capability": "extensions.set_flags",
+            "action_id": "SetFlagsAction",
             "extension_name": "ExtA",
+            "flags_values": {"active": True, "safe_mode": False, "unsafe_action_protection": True},
             "apply_mask": {"active": False, "safe_mode": False, "unsafe_action_protection": False},
         },
         format="json",
@@ -946,7 +1049,7 @@ def test_extensions_plan_set_flags_rejects_apply_mask_all_false(client, staff_us
 
 
 @pytest.mark.django_db
-def test_extensions_plan_set_flags_selective_apply_fails_closed_when_additional_args_use_policy(client, staff_user, monkeypatch):
+def test_extensions_plan_set_flags_selective_apply_fails_closed_when_additional_args_use_flag_switches(client, staff_user, monkeypatch):
     default = Tenant.objects.get(slug="default")
     _grant_view_database_permission(staff_user)
     _grant_manage_database_permission(staff_user)
@@ -971,11 +1074,11 @@ def test_extensions_plan_set_flags_selective_apply_fails_closed_when_additional_
                     "driver": "ibcmd",
                     "command_id": "dummy_set_flags",
                     "params": {
-                        "active": "$policy.active",
-                        "safe_mode": "$policy.safe_mode",
-                        "unsafe_action_protection": "$policy.unsafe_action_protection",
+                        "active": "$flags.active",
+                        "safe_mode": "$flags.safe_mode",
+                        "unsafe_action_protection": "$flags.unsafe_action_protection",
                     },
-                    "additional_args": ["--active", "$policy.active"],
+                    "additional_args": ["--active"],
                     "target_binding": {"extension_name_param": "extension_name"},
                 },
             },
@@ -996,13 +1099,6 @@ def test_extensions_plan_set_flags_selective_apply_fails_closed_when_additional_
         database=db,
         defaults={"snapshot": {"extensions": [{"name": "ExtA"}], "raw": {}, "parse_error": None}},
     )
-    ExtensionFlagsPolicy.objects.create(
-        tenant_id=str(default.id),
-        extension_name="ExtA",
-        active=True,
-        safe_mode=False,
-        unsafe_action_protection=False,
-    )
 
     monkeypatch.setattr(
         "apps.api_v2.views.extensions_plan_apply._preview_ibcmd_cli",
@@ -1014,7 +1110,9 @@ def test_extensions_plan_set_flags_selective_apply_fails_closed_when_additional_
         {
             "database_ids": [db.id],
             "capability": "extensions.set_flags",
+            "action_id": "SetFlagsAction",
             "extension_name": "ExtA",
+            "flags_values": {"active": True, "safe_mode": False, "unsafe_action_protection": False},
             "apply_mask": {"active": True, "safe_mode": False, "unsafe_action_protection": False},
         },
         format="json",
@@ -1061,9 +1159,9 @@ def test_extensions_plan_apply_set_flags_selective_apply_masks_params(client, st
                     "driver": "ibcmd",
                     "command_id": "dummy_set_flags",
                     "params": {
-                        "active": "$policy.active",
-                        "safe_mode": "$policy.safe_mode",
-                        "unsafe_action_protection": "$policy.unsafe_action_protection",
+                        "active": "$flags.active",
+                        "safe_mode": "$flags.safe_mode",
+                        "unsafe_action_protection": "$flags.unsafe_action_protection",
                     },
                     "target_binding": {"extension_name_param": "extension_name"},
                 },
@@ -1084,13 +1182,6 @@ def test_extensions_plan_apply_set_flags_selective_apply_masks_params(client, st
     DatabaseExtensionsSnapshot.objects.update_or_create(
         database=db,
         defaults={"snapshot": {"extensions": [{"name": "ExtA"}], "raw": {}, "parse_error": None}},
-    )
-    ExtensionFlagsPolicy.objects.create(
-        tenant_id=str(default.id),
-        extension_name="ExtA",
-        active=True,
-        safe_mode=False,
-        unsafe_action_protection=False,
     )
 
     def _fake_preview(**kwargs):
@@ -1116,7 +1207,9 @@ def test_extensions_plan_apply_set_flags_selective_apply_masks_params(client, st
         {
             "database_ids": [db.id],
             "capability": "extensions.set_flags",
+            "action_id": "SetFlagsAction",
             "extension_name": "ExtA",
+            "flags_values": {"active": True, "safe_mode": False, "unsafe_action_protection": True},
             "apply_mask": {"active": True, "safe_mode": False, "unsafe_action_protection": False},
         },
         format="json",
@@ -1158,7 +1251,14 @@ def test_extensions_plan_set_flags_requires_manage_database_permission(client, u
 
     resp = client.post(
         "/api/v2/extensions/plan/",
-        {"database_ids": [db.id], "capability": "extensions.set_flags", "extension_name": "ExtA"},
+        {
+            "database_ids": [db.id],
+            "capability": "extensions.set_flags",
+            "action_id": "SetFlagsAction",
+            "extension_name": "ExtA",
+            "flags_values": {"active": True, "safe_mode": False, "unsafe_action_protection": False},
+            "apply_mask": {"active": True, "safe_mode": False, "unsafe_action_protection": False},
+        },
         format="json",
     )
     assert resp.status_code == 403
@@ -1185,13 +1285,6 @@ def test_extensions_plan_set_flags_staff_requires_explicit_tenant_header(client,
         database=db,
         defaults={"snapshot": {"extensions": [{"name": "ExtA"}], "raw": {}, "parse_error": None}},
     )
-    ExtensionFlagsPolicy.objects.create(
-        tenant_id=str(default.id),
-        extension_name="ExtA",
-        active=True,
-        safe_mode=None,
-        unsafe_action_protection=None,
-    )
     _seed_action_catalog_exposures(
         tenant=default,
         actions=[
@@ -1212,7 +1305,14 @@ def test_extensions_plan_set_flags_staff_requires_explicit_tenant_header(client,
 
     resp = client.post(
         "/api/v2/extensions/plan/",
-        {"database_ids": [db.id], "capability": "extensions.set_flags", "extension_name": "ExtA"},
+        {
+            "database_ids": [db.id],
+            "capability": "extensions.set_flags",
+            "action_id": "SetFlagsAction",
+            "extension_name": "ExtA",
+            "flags_values": {"active": True, "safe_mode": False, "unsafe_action_protection": True},
+            "apply_mask": {"active": True, "safe_mode": False, "unsafe_action_protection": False},
+        },
         format="json",
     )
     assert resp.status_code == 400
@@ -1244,6 +1344,11 @@ def test_extensions_apply_set_flags_fails_closed_without_extensions_sync_configu
                     "kind": "ibcmd_cli",
                     "driver": "ibcmd",
                     "command_id": "dummy_set_flags",
+                    "params": {
+                        "active": "$flags.active",
+                        "safe_mode": "$flags.safe_mode",
+                        "unsafe_action_protection": "$flags.unsafe_action_protection",
+                    },
                     "target_binding": {"extension_name_param": "extension_name"},
                 },
             },
@@ -1264,13 +1369,6 @@ def test_extensions_apply_set_flags_fails_closed_without_extensions_sync_configu
         database=db,
         defaults={"snapshot": {"extensions": [{"name": "ExtA"}], "raw": {}, "parse_error": None}},
     )
-    ExtensionFlagsPolicy.objects.create(
-        tenant_id=str(default.id),
-        extension_name="ExtA",
-        active=True,
-        safe_mode=None,
-        unsafe_action_protection=None,
-    )
 
     monkeypatch.setattr(
         "apps.api_v2.views.extensions_plan_apply._preview_ibcmd_cli",
@@ -1279,7 +1377,14 @@ def test_extensions_apply_set_flags_fails_closed_without_extensions_sync_configu
 
     plan_resp = client.post(
         "/api/v2/extensions/plan/",
-        {"database_ids": [db.id], "capability": "extensions.set_flags", "extension_name": "ExtA"},
+        {
+            "database_ids": [db.id],
+            "capability": "extensions.set_flags",
+            "action_id": "SetFlagsAction",
+            "extension_name": "ExtA",
+            "flags_values": {"active": True, "safe_mode": False, "unsafe_action_protection": False},
+            "apply_mask": {"active": True, "safe_mode": False, "unsafe_action_protection": False},
+        },
         format="json",
         HTTP_X_CC1C_TENANT_ID=str(default.id),
     )

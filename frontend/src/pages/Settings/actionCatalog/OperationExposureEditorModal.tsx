@@ -105,6 +105,7 @@ export function OperationExposureEditorModal({
 
   const editorKind = (Form.useWatch(['executor', 'kind'], form) as ExecutorKind | undefined) ?? 'ibcmd_cli'
   const editorCapability = (Form.useWatch(['capability'], form) as string | undefined) ?? ''
+  const isSetFlagsCapability = editorCapability.trim() === 'extensions.set_flags'
   const editorCommandId = Form.useWatch(['executor', 'command_id'], form) as string | undefined
   const targetBindingValue = Form.useWatch(['executor', 'target_binding_extension_name_param'], form) as string | undefined
   const commandsDriver = canonicalDriverForExecutorKind(editorKind) ?? 'ibcmd'
@@ -1034,6 +1035,25 @@ export function OperationExposureEditorModal({
 
                   {!hintsQuery.isError && (
                     <Space direction="vertical" style={{ width: '100%' }}>
+                      {isSetFlagsCapability && (
+                        <Alert
+                          type="info"
+                          showIcon
+                          data-testid="action-catalog-editor-set-flags-runtime-source-hint"
+                          message="Runtime source of truth"
+                          description={(
+                            <Space direction="vertical" size={2}>
+                              <Text>
+                                Values for <Text code>active</Text>, <Text code>safe_mode</Text> and{' '}
+                                <Text code>unsafe_action_protection</Text> are provided only at launch.
+                              </Text>
+                              <Text type="secondary">
+                                Configure transport/binding here and map params via <Text code>$flags.*</Text>.
+                              </Text>
+                            </Space>
+                          )}
+                        />
+                      )}
                       {targetBindingSchema && (
                         <Form.Item
                           label={targetBindingLabel}

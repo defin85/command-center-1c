@@ -736,21 +736,9 @@ async function setupApiMocks(page: Page, state: MockState) {
                 },
               },
             },
-            fixed_schema: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                apply_mask: {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['active', 'safe_mode', 'unsafe_action_protection'],
-                  properties: {
-                    active: { type: 'boolean', default: false },
-                    safe_mode: { type: 'boolean', default: false },
-                    unsafe_action_protection: { type: 'boolean', default: false },
-                  },
-                },
-              },
+            help: {
+              title: 'Runtime source for set_flags values',
+              description: 'Flag values are provided at launch via flags_values ($flags.* tokens).',
             },
           },
         },
@@ -939,6 +927,8 @@ test('Templates: единый editor shell работает для template и a
   await page.keyboard.press('Enter')
   await page.getByRole('tab', { name: 'Safety & Fixed', exact: true }).click()
   const applyButton = page.getByTestId('action-catalog-editor-apply')
+  await expect(page.getByTestId('action-catalog-editor-set-flags-runtime-source-hint')).toBeVisible()
+  await expect(page.getByTestId('action-catalog-editor-fixed-apply_mask-enable')).toHaveCount(0)
   await expect(page.getByTestId('action-catalog-editor-target-binding-extension-name-param')).toBeVisible()
   await expect(page.getByText('Target command param is required', { exact: true })).toBeVisible()
   await expect(applyButton).toBeDisabled()

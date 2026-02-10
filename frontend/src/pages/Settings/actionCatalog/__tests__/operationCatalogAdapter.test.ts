@@ -6,7 +6,7 @@ import {
 } from '../operationCatalogAdapter'
 
 describe('operationCatalogAdapter', () => {
-  test('buildCatalogFromOperationCatalogRecords merges capability config into executor', () => {
+  test('buildCatalogFromOperationCatalogRecords merges target_binding and ignores legacy apply_mask capability preset', () => {
     const catalog = buildCatalogFromOperationCatalogRecords([
       {
         exposure: {
@@ -64,13 +64,6 @@ describe('operationCatalogAdapter', () => {
               target_binding: {
                 extension_name_param: 'extension_name',
               },
-              fixed: {
-                apply_mask: {
-                  active: true,
-                  safe_mode: false,
-                  unsafe_action_protection: false,
-                },
-              },
             },
           },
         ],
@@ -78,7 +71,7 @@ describe('operationCatalogAdapter', () => {
     })
   })
 
-  test('buildOperationCatalogUpsertFromAction splits target_binding and apply_mask into capability_config', () => {
+  test('buildOperationCatalogUpsertFromAction keeps target_binding in capability_config and strips set_flags apply_mask preset', () => {
     const payload = buildOperationCatalogUpsertFromAction(
       {
         id: 'extensions.set_flags',
@@ -102,6 +95,7 @@ describe('operationCatalogAdapter', () => {
               safe_mode: false,
               unsafe_action_protection: false,
             },
+            confirm_dangerous: true,
           },
         },
       },
@@ -132,12 +126,11 @@ describe('operationCatalogAdapter', () => {
         target_binding: {
           extension_name_param: 'extension_name',
         },
-        apply_mask: {
-          active: true,
-          safe_mode: false,
-          unsafe_action_protection: false,
+        fixed: {
+          confirm_dangerous: true,
         },
       },
     })
+    expect(payload?.exposure.capability_config).not.toHaveProperty('apply_mask')
   })
 })

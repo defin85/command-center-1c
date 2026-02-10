@@ -13361,9 +13361,10 @@ components:
         extension_name:
           type: string
           nullable: true
+        flags_values:
+          $ref: '#/components/schemas/_SetFlagsValues'
         apply_mask:
-          type: object
-          additionalProperties: {}
+          $ref: '#/components/schemas/_SetFlagsApplyMask'
       required:
       - database_ids
     ExtensionsPlanResponse:
@@ -17215,6 +17216,34 @@ components:
             type: string
       required:
       - valid
+    _SetFlagsApplyMask:
+      type: object
+      additionalProperties: false
+      properties:
+        active:
+          type: boolean
+        safe_mode:
+          type: boolean
+        unsafe_action_protection:
+          type: boolean
+      required:
+      - active
+      - safe_mode
+      - unsafe_action_protection
+    _SetFlagsValues:
+      type: object
+      additionalProperties: false
+      properties:
+        active:
+          type: boolean
+        safe_mode:
+          type: boolean
+        unsafe_action_protection:
+          type: boolean
+      required:
+      - active
+      - safe_mode
+      - unsafe_action_protection
   securitySchemes:
     bearerAuth:
       type: http

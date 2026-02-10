@@ -18,6 +18,12 @@ import {
 } from '../../api/queries/extensions'
 import type { ActionCatalogAction } from '../../api/types/actionCatalog'
 import { tryShowIbcmdCliUiError } from '../../components/ibcmd/ibcmdCliUiErrors'
+import {
+  buildSetFlagsRuntimeInput,
+  hasSetFlagsMaskSelection,
+  resolveExtensionsApplyMode,
+  type SetFlagsPolicyState,
+} from './setFlagsWorkflow'
 
 const { Title, Text } = Typography
 
@@ -78,12 +84,6 @@ const normalizePolicyBool = (value: unknown): boolean | null => {
   if (value === true) return true
   if (value === false) return false
   return null
-}
-
-type ExtensionsFlagsPolicyState = {
-  active: boolean | null
-  safe_mode: boolean | null
-  unsafe_action_protection: boolean | null
 }
 
 type UIBinding = {
@@ -170,13 +170,12 @@ export const Extensions = () => {
   const [planPending, setPlanPending] = useState(false)
   const [applyPending, setApplyPending] = useState(false)
 
-  const [drawerPolicy, setDrawerPolicy] = useState<ExtensionsFlagsPolicyState>({
+  const [drawerPolicy, setDrawerPolicy] = useState<SetFlagsPolicyState>({
     active: null,
     safe_mode: null,
     unsafe_action_protection: null,
   })
 
-  const [applyReason, setApplyReason] = useState('')
   const [applyActiveEnabled, setApplyActiveEnabled] = useState(false)
   const [applyActiveValue, setApplyActiveValue] = useState(false)
   const [applySafeModeEnabled, setApplySafeModeEnabled] = useState(false)
@@ -234,12 +233,6 @@ export const Extensions = () => {
     setDrawerPage(1)
   }, [clusterId])
 
-  const selectedRow = useMemo(() => {
-    const rows = overviewQuery.data?.extensions ?? []
-    if (!selectedExtension) return null
-    return rows.find((r) => r.name === selectedExtension) ?? null
-  }, [overviewQuery.data?.extensions, selectedExtension])
-
   const drilldownEnabled = drawerOpen && Boolean(selectedExtension)
   const drilldownQuery = useExtensionsOverviewDatabases({
     name: selectedExtension || '',
@@ -250,6 +243,8 @@ export const Extensions = () => {
     limit: drawerDatabaseId ? 100 : drawerPageSize,
     offset: drawerDatabaseId ? 0 : (drawerPage - 1) * drawerPageSize,
   }, drilldownEnabled)
+  const applyMode = resolveExtensionsApplyMode(drawerDatabaseId)
+  const fallbackMode = applyMode === 'targeted_fallback'
 
   const resetApplyFormFromPolicy = (policy?: { active?: unknown; safe_mode?: unknown; unsafe_action_protection?: unknown } | null) => {
     const active = normalizePolicyBool(policy?.active)
@@ -260,7 +255,6 @@ export const Extensions = () => {
       safe_mode: safeMode,
       unsafe_action_protection: unsafeActionProtection,
     })
-    setApplyReason('')
     setApplyActiveEnabled(active !== null)
     setApplyActiveValue(Boolean(active))
     setApplySafeModeEnabled(safeMode !== null)
@@ -350,15 +344,28 @@ export const Extensions = () => {
       return
     }
 
-    const applyMask = {
-      active: applyActiveEnabled,
-      safe_mode: applySafeModeEnabled,
-      unsafe_action_protection: applyUnsafeActionProtectionEnabled,
-    }
-    if (!applyMask.active && !applyMask.safe_mode && !applyMask.unsafe_action_protection) {
+    const { applyMask, flagsValues } = buildSetFlagsRuntimeInput(
+      {
+        applyActiveEnabled,
+        applyActiveValue,
+        applySafeModeEnabled,
+        applySafeModeValue,
+        applyUnsafeActionProtectionEnabled,
+        applyUnsafeActionProtectionValue,
+      },
+      drawerPolicy,
+    )
+    if (!hasSetFlagsMaskSelection(applyMask)) {
       message.error('Select at least one flag to apply')
       return
     }
+    const mode = resolveExtensionsApplyMode(drawerDatabaseId)
+    const applyTitle = mode === 'targeted_fallback'
+      ? 'Apply selected flags in fallback mode?'
+      : 'Launch workflow-first flags rollout?'
+    const applySuccessMessage = mode === 'targeted_fallback'
+      ? 'Operation queued: targeted fallback apply'
+      : 'Operation queued: workflow-first rollout'
 
     setPlanPending(true)
     try {
@@ -394,33 +401,12 @@ export const Extensions = () => {
         return
       }
 
-      // IMPORTANT: do not rely on selectedRow which can disappear after pagination/filter changes.
-      // Keep the latest known policy in drawer state to avoid accidental null overwrites.
-      const currentPolicy = drawerPolicy
-
-      const nextPolicy = {
-        active: applyActiveEnabled ? applyActiveValue : currentPolicy.active,
-        safe_mode: applySafeModeEnabled ? applySafeModeValue : currentPolicy.safe_mode,
-        unsafe_action_protection: applyUnsafeActionProtectionEnabled ? applyUnsafeActionProtectionValue : currentPolicy.unsafe_action_protection,
-      }
-
-      const updatedPolicy = await api.putExtensionsFlagsPolicy(selectedExtension, {
-        ...nextPolicy,
-        reason: applyReason.trim() || undefined,
-      })
-      setDrawerPolicy({
-        active: normalizePolicyBool(updatedPolicy.active),
-        safe_mode: normalizePolicyBool(updatedPolicy.safe_mode),
-        unsafe_action_protection: normalizePolicyBool(updatedPolicy.unsafe_action_protection),
-      })
-      await overviewQuery.refetch()
-      if (drilldownEnabled) await drilldownQuery.refetch()
-
       const plan = await api.postExtensionsPlan({
         database_ids: databaseIds,
         capability: 'extensions.set_flags',
         action_id: setFlagsActionId || undefined,
         extension_name: selectedExtension,
+        flags_values: flagsValues,
         apply_mask: applyMask,
       })
 
@@ -442,24 +428,28 @@ export const Extensions = () => {
       ]
 
       modal.confirm({
-        title: 'Apply selected flags?',
+        title: applyTitle,
         content: (
           <div>
             <div style={{ marginBottom: 8 }}>
               Extension <Text code>{selectedExtension}</Text> will be applied to {databaseIds.length} database(s).
             </div>
+            <div style={{ marginBottom: 8 }}>
+              Mode:{' '}
+              {mode === 'targeted_fallback'
+                ? <Tag color="orange">fallback / targeted</Tag>
+                : <Tag color="blue">workflow-first / bulk</Tag>}
+            </div>
             <Space size={8} wrap style={{ marginBottom: 8 }}>
-              <div>Active: {applyMask.active ? boolTag(applyActiveValue) : <Text type="secondary">skipped</Text>}</div>
-              <div>Safe mode: {applyMask.safe_mode ? boolTag(applySafeModeValue) : <Text type="secondary">skipped</Text>}</div>
-              <div>Unsafe action protection: {applyMask.unsafe_action_protection ? boolTag(applyUnsafeActionProtectionValue) : <Text type="secondary">skipped</Text>}</div>
+              <div>Active: {applyMask.active ? boolTag(flagsValues.active) : <Text type="secondary">skipped</Text>}</div>
+              <div>Safe mode: {applyMask.safe_mode ? boolTag(flagsValues.safe_mode) : <Text type="secondary">skipped</Text>}</div>
+              <div>Unsafe action protection: {applyMask.unsafe_action_protection ? boolTag(flagsValues.unsafe_action_protection) : <Text type="secondary">skipped</Text>}</div>
             </Space>
-            {selectedRow?.flags ? (
-              <Space size={8} wrap style={{ marginBottom: 8 }}>
-                <div>Active: {boolTag(selectedRow.flags.active?.policy)}</div>
-                <div>Safe mode: {boolTag(selectedRow.flags.safe_mode?.policy)}</div>
-                <div>Unsafe action protection: {boolTag(selectedRow.flags.unsafe_action_protection?.policy)}</div>
-              </Space>
-            ) : null}
+            <div style={{ marginBottom: 8 }}>
+              <Text type="secondary">
+                Runtime source: this launch request sends explicit <Text code>flags_values</Text> and <Text code>apply_mask</Text>.
+              </Text>
+            </div>
             {previewText ? (
               <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{previewText}</pre>
             ) : (
@@ -490,7 +480,7 @@ export const Extensions = () => {
           setApplyPending(true)
           try {
             const res = await api.postExtensionsApply({ plan_id: plan.plan_id })
-            message.success('Operation queued: apply flags policy')
+            message.success(applySuccessMessage)
             if (res.operation_id) {
               navigate(`/operations?operation=${res.operation_id}`)
             }
@@ -571,10 +561,11 @@ export const Extensions = () => {
                         capability: 'extensions.set_flags',
                         action_id: setFlagsActionId || undefined,
                         extension_name: selectedExtension,
+                        flags_values: flagsValues,
                         apply_mask: applyMask,
                       })
                       const res = await api.postExtensionsApply({ plan_id: nextPlan.plan_id })
-                      message.success('Operation queued: apply flags policy')
+                      message.success(applySuccessMessage)
                       if (res.operation_id) {
                         navigate(`/operations?operation=${res.operation_id}`)
                       }
@@ -596,7 +587,7 @@ export const Extensions = () => {
               })
             } else if (!tryShowIbcmdCliUiError(e, modal, message)) {
               const errorMessage = e instanceof Error ? e.message : 'unknown error'
-              message.error(`Failed to apply policy: ${errorMessage}`)
+              message.error(`Failed to apply rollout: ${errorMessage}`)
             }
           } finally {
             setApplyPending(false)
@@ -615,10 +606,6 @@ export const Extensions = () => {
       const code = extractErrorCode(maybe?.response?.data)
       if (code === 'CONFIGURATION_ERROR') {
         message.error('Selective apply is not supported by current action catalog configuration')
-        return
-      }
-      if (code === 'POLICY_NOT_FOUND') {
-        message.error('Flags policy is not configured for this extension')
         return
       }
       if (!tryShowIbcmdCliUiError(e, modal, message)) {
@@ -908,13 +895,34 @@ export const Extensions = () => {
               type="warning"
               showIcon
               message="Mutating actions are disabled"
-              description="Staff users must select a tenant (X-CC1C-Tenant-ID) to change policy or apply actions."
+              description="Staff users must select a tenant (X-CC1C-Tenant-ID) to run mutating actions."
             />
           )}
 
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
-            <Text strong>Apply flags policy</Text>
+            <Text strong>Run set_flags rollout</Text>
             <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <Alert
+                type={fallbackMode ? 'warning' : 'info'}
+                showIcon
+                data-testid="extensions-apply-mode-hint"
+                message={fallbackMode ? 'Fallback mode (targeted)' : 'Workflow-first mode (bulk)'}
+                description={fallbackMode
+                  ? 'Use for emergency/single DB changes only.'
+                  : 'Primary path for mass rollout. Progress is tracked in Operations.'}
+              />
+              <Alert
+                type="info"
+                showIcon
+                data-testid="extensions-apply-runtime-source-hint"
+                message="Runtime source of truth"
+                description={(
+                  <Space direction="vertical" size={2}>
+                    <Text>Values below are sent as <Text code>flags_values</Text> + <Text code>apply_mask</Text> in launch request.</Text>
+                    <Text type="secondary">Action Catalog stores only transport/binding (`$flags.*` mapping).</Text>
+                  </Space>
+                )}
+              />
               <Space align="center" wrap>
                 <Text type="secondary">Action</Text>
                 <Select
@@ -1023,14 +1031,6 @@ export const Extensions = () => {
                   disabled={!applyUnsafeActionProtectionEnabled}
                 />
               </Space>
-              <Input.TextArea
-                data-testid="extensions-apply-reason"
-                value={applyReason}
-                onChange={(e) => setApplyReason(e.target.value)}
-                placeholder="Reason (optional)"
-                rows={2}
-                style={{ maxWidth: 640 }}
-              />
               <Space wrap>
                 <Tooltip
                   title={

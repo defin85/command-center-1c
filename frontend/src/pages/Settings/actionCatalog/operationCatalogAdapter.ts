@@ -31,9 +31,6 @@ const mergeExecutorPayload = (
   const mergedFixed: PlainObject = {}
   for (const [key, value] of Object.entries(payloadFixed)) mergedFixed[key] = value
   for (const [key, value] of Object.entries(cfgFixed)) mergedFixed[key] = value
-  if (capabilityConfig.apply_mask !== undefined) {
-    mergedFixed.apply_mask = capabilityConfig.apply_mask
-  }
   if (Object.keys(mergedFixed).length > 0) {
     payload.fixed = mergedFixed
   } else {
@@ -96,13 +93,8 @@ const splitExecutorForOperationCatalog = (executorRaw: unknown): {
   const capabilityConfig: PlainObject = {}
   const fixed = isPlainObject(executor.fixed) ? deepCopy(executor.fixed) : null
   if (isPlainObject(fixed)) {
-    const fixedPayload = deepCopy(fixed)
-    if (fixedPayload.apply_mask !== undefined) {
-      capabilityConfig.apply_mask = fixedPayload.apply_mask
-      delete fixedPayload.apply_mask
-    }
-    if (Object.keys(fixedPayload).length > 0) {
-      capabilityConfig.fixed = fixedPayload
+    if (Object.keys(fixed).length > 0) {
+      capabilityConfig.fixed = fixed
     }
   }
 
@@ -138,6 +130,30 @@ export const buildOperationCatalogUpsertFromAction = (
   const capability = typeof action.capability === 'string' ? action.capability.trim() : ''
   const contexts = asStringArray(action.contexts)
   const { definitionPayload, capabilityConfig } = splitExecutorForOperationCatalog(action.executor)
+
+  if (capability === 'extensions.set_flags') {
+    const fixed = isPlainObject(definitionPayload.fixed) ? deepCopy(definitionPayload.fixed) : null
+    if (isPlainObject(fixed) && fixed.apply_mask !== undefined) {
+      delete fixed.apply_mask
+      if (Object.keys(fixed).length > 0) {
+        definitionPayload.fixed = fixed
+      } else {
+        delete definitionPayload.fixed
+      }
+    }
+    if (isPlainObject(capabilityConfig.fixed)) {
+      const cfgFixed = deepCopy(capabilityConfig.fixed)
+      if (isPlainObject(cfgFixed) && cfgFixed.apply_mask !== undefined) {
+        delete cfgFixed.apply_mask
+        if (Object.keys(cfgFixed).length > 0) {
+          capabilityConfig.fixed = cfgFixed
+        } else {
+          delete capabilityConfig.fixed
+        }
+      }
+    }
+    delete capabilityConfig.apply_mask
+  }
 
   const fallbackKind = opts.existing?.definition.executor_kind ?? 'ibcmd_cli'
   const definitionKind = typeof definitionPayload.kind === 'string' && definitionPayload.kind.trim()

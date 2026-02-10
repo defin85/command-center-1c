@@ -58,6 +58,17 @@ Action Catalog управляется через unified persistent контра
 - `workflow_id`: выбирается из списка доступных workflow templates
 - Дополнительно (advanced): `params`, `fixed.*`
 
+## Специально для `extensions.set_flags`
+
+- Action Catalog хранит только transport/binding/safety конфигурацию.
+- Runtime значения флагов передаются только при запуске (`flags_values` + `apply_mask`).
+- Preset `apply_mask` в action/exposure запрещён и будет отвергнут backend.
+- Для set_flags обязательны:
+  - `target_binding.extension_name_param`
+  - params mapping через `$flags.active`, `$flags.safe_mode`, `$flags.unsafe_action_protection`
+
+Подробный сценарий миграции и операторский runbook: [extensions-set-flags-workflow-first.md](./extensions-set-flags-workflow-first.md)
+
 ## Режимы редактирования
 
 ### Guided

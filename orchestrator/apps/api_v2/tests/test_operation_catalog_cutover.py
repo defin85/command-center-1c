@@ -227,6 +227,105 @@ def test_operation_catalog_endpoints_upsert_list_publish_validate(staff_client):
 
 
 @pytest.mark.django_db
+def test_operation_catalog_set_flags_rejects_apply_mask_preset_on_validate_and_publish(staff_client):
+    upsert_resp = staff_client.post(
+        "/api/v2/operation-catalog/exposures/",
+        data={
+            "definition": {
+                "tenant_scope": "global",
+                "executor_kind": "ibcmd_cli",
+                "executor_payload": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "infobase.extension.update",
+                    "params": {
+                        "active": "$flags.active",
+                        "safe_mode": "$flags.safe_mode",
+                        "unsafe_action_protection": "$flags.unsafe_action_protection",
+                        "name": "$extension.name",
+                    },
+                },
+                "contract_version": 1,
+            },
+            "exposure": {
+                "surface": "action_catalog",
+                "alias": "extensions.set_flags.preset.invalid",
+                "name": "Set flags with preset",
+                "description": "",
+                "is_active": True,
+                "capability": "extensions.set_flags",
+                "contexts": ["database_card"],
+                "display_order": 0,
+                "capability_config": {
+                    "target_binding": {"extension_name_param": "name"},
+                    "apply_mask": {
+                        "active": True,
+                        "safe_mode": False,
+                        "unsafe_action_protection": False,
+                    },
+                },
+                "status": "draft",
+            },
+        },
+        format="json",
+    )
+    assert upsert_resp.status_code == 200
+    exposure = upsert_resp.json()["exposure"]
+    assert exposure["status"] == "invalid"
+
+    validate_resp = staff_client.post(
+        "/api/v2/operation-catalog/validate/",
+        data={
+            "definition": {
+                "tenant_scope": "global",
+                "executor_kind": "ibcmd_cli",
+                "executor_payload": {
+                    "kind": "ibcmd_cli",
+                    "driver": "ibcmd",
+                    "command_id": "infobase.extension.update",
+                    "params": {
+                        "active": "$flags.active",
+                        "safe_mode": "$flags.safe_mode",
+                        "unsafe_action_protection": "$flags.unsafe_action_protection",
+                        "name": "$extension.name",
+                    },
+                },
+                "contract_version": 1,
+            },
+            "exposure": {
+                "surface": "action_catalog",
+                "alias": "extensions.set_flags.preset.invalid.validate",
+                "name": "Set flags validate",
+                "capability": "extensions.set_flags",
+                "capability_config": {
+                    "target_binding": {"extension_name_param": "name"},
+                    "apply_mask": {
+                        "active": True,
+                        "safe_mode": False,
+                        "unsafe_action_protection": False,
+                    },
+                },
+            },
+        },
+        format="json",
+    )
+    assert validate_resp.status_code == 200
+    validate_payload = validate_resp.json()
+    assert validate_payload["valid"] is False
+    assert any(err.get("path") == "capability_config.apply_mask" for err in validate_payload.get("errors", []))
+
+    publish_resp = staff_client.post(
+        f"/api/v2/operation-catalog/exposures/{exposure['id']}/publish/",
+        data={},
+        format="json",
+    )
+    assert publish_resp.status_code == 200
+    publish_payload = publish_resp.json()
+    assert publish_payload["published"] is False
+    assert any(err.get("path") == "capability_config.apply_mask" for err in publish_payload.get("validation_errors", []))
+
+
+@pytest.mark.django_db
 def test_operation_catalog_upsert_rejects_kind_driver_mismatch(staff_client):
     resp = staff_client.post(
         "/api/v2/operation-catalog/exposures/",

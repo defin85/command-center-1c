@@ -53,23 +53,20 @@ def test_action_catalog_editor_hints_contains_extensions_set_flags(staff_client)
     assert "extensions.set_flags" in caps
     hints = caps["extensions.set_flags"]
     assert isinstance(hints, dict)
-    fixed_schema = hints.get("fixed_schema")
-    assert isinstance(fixed_schema, dict)
-    assert fixed_schema.get("type") == "object"
-    props = fixed_schema.get("properties")
-    assert isinstance(props, dict)
-    assert "apply_mask" in props
-
-    fixed_ui_schema = hints.get("fixed_ui_schema")
-    assert isinstance(fixed_ui_schema, dict)
-    apply_mask_ui = fixed_ui_schema.get("apply_mask")
-    assert isinstance(apply_mask_ui, dict)
-    assert apply_mask_ui.get("active", {}).get("ui:widget") == "switch"
+    assert "fixed_schema" not in hints
+    assert "fixed_ui_schema" not in hints
 
     target_binding_schema = hints.get("target_binding_schema")
     assert isinstance(target_binding_schema, dict)
     assert target_binding_schema.get("type") == "object"
     assert "extension_name_param" in (target_binding_schema.get("properties") or {})
+
+    help_payload = hints.get("help")
+    assert isinstance(help_payload, dict)
+    help_title = help_payload.get("title")
+    help_description = help_payload.get("description")
+    assert isinstance(help_title, str) and help_title
+    assert isinstance(help_description, str) and "$flags." in help_description
 
 
 @pytest.mark.django_db

@@ -138,6 +138,10 @@
 **Для кого:** Staff operators (настройка actions в unified catalog)
 **Содержание:** как управлять Action Catalog на `/templates?surface=action_catalog`, значения `contexts`/`executor.kind`, типовые ошибки валидации и их исправление.
 
+#### 🚦 [extensions-set-flags-workflow-first.md](./extensions-set-flags-workflow-first.md)
+**Для кого:** Operators / staff, сопровождающие rollout расширений
+**Содержание:** migration guide для `extensions.set_flags` (runtime source-of-truth, bulk/fallback режимы, check/report команда).
+
 **Приложения:**
 - Sprint planning templates
 - Architecture Decision Record (ADR) template

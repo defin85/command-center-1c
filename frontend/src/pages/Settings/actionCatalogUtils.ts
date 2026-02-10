@@ -190,7 +190,16 @@ export const deriveActionFormValues = (action: PlainObject | null): ActionFormVa
     ? targetBinding.extension_name_param
     : ''
 
-  const fixed = toFixedFormValue(executorRaw.fixed)
+  const fixedRaw = toFixedFormValue(executorRaw.fixed)
+  const fixed = (() => {
+    if (!fixedRaw || capability.trim() !== 'extensions.set_flags' || !isPlainObject(fixedRaw)) {
+      return fixedRaw
+    }
+    const nextFixed = deepCopy(fixedRaw)
+    if (!isPlainObject(nextFixed)) return undefined
+    delete nextFixed.apply_mask
+    return Object.keys(nextFixed).length > 0 ? nextFixed : undefined
+  })()
 
   return {
     id,
@@ -293,7 +302,16 @@ export const buildActionFromForm = (base: PlainObject | null, values: ActionForm
     delete executor.target_binding
   }
 
-  const fixedNext = toFixedFormValue(values.executor.fixed)
+  const fixedNextRaw = toFixedFormValue(values.executor.fixed)
+  const fixedNext = (() => {
+    if (!fixedNextRaw || nextCapability !== 'extensions.set_flags' || !isPlainObject(fixedNextRaw)) {
+      return fixedNextRaw
+    }
+    const nextFixed = deepCopy(fixedNextRaw)
+    if (!isPlainObject(nextFixed)) return undefined
+    delete nextFixed.apply_mask
+    return Object.keys(nextFixed).length > 0 ? nextFixed : undefined
+  })()
   if (fixedNext) {
     executor.fixed = fixedNext
   } else {

@@ -18,6 +18,12 @@
 - Просмотр/поиск баз, фильтры по статусу/health.
 - Операторские операции выполняются через Operations (ниже).
 
+### Extensions (`/extensions`)
+- Основной путь для массового `extensions.set_flags`: workflow-first запуск с явным runtime input (`flags_values` + `apply_mask`).
+- Точечный режим (single DB) оставлен как fallback для аварийных случаев.
+- Progress/результат отслеживать в `/operations`.
+- Детальный runbook: [extensions-set-flags-workflow-first.md](./extensions-set-flags-workflow-first.md)
+
 ### Operations (`/operations`)
 - **All Operations**: список batch-операций.
 - **Live Monitor**: мониторинг конкретной операции (ссылка вида `/operations?tab=monitor&operation=<id>`).

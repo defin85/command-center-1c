@@ -61,7 +61,7 @@ describe('Action Catalog: executor.connection', () => {
 })
 
 describe('Action Catalog: capability fixed round-trip', () => {
-  it('preserves dynamic fixed payload on form round-trip', () => {
+  it('strips apply_mask preset for extensions.set_flags and preserves other fixed keys', () => {
     const base = {
       id: 'flags.custom',
       capability: 'extensions.set_flags',
@@ -89,10 +89,14 @@ describe('Action Catalog: capability fixed round-trip', () => {
     }
 
     const values = deriveActionFormValues(base)
-    expect((values as { executor: { fixed: { policy?: unknown } } }).executor.fixed.policy).toEqual({ mode: 'strict', retries: 2 })
+    const valuesFixed = (values as { executor: { fixed: Record<string, unknown> } }).executor.fixed
+    expect(valuesFixed.policy).toEqual({ mode: 'strict', retries: 2 })
+    expect(valuesFixed.apply_mask).toBeUndefined()
 
-    const rebuilt = buildActionFromForm(base, values) as { executor: { fixed: unknown } }
-    expect(rebuilt.executor.fixed).toEqual(base.executor.fixed)
+    const rebuilt = buildActionFromForm(base, values) as { executor: { fixed: Record<string, unknown> } }
+    expect(rebuilt.executor.fixed.apply_mask).toBeUndefined()
+    expect(rebuilt.executor.fixed.policy).toEqual({ mode: 'strict', retries: 2 })
+    expect(rebuilt.executor.fixed.custom_toggle).toBe(false)
   })
 
   it('drops fixed group when it is explicitly cleared in form state', () => {
@@ -185,7 +189,13 @@ describe('Action Catalog: fixed schema hints', () => {
     },
   }
 
-  it('does not reject capability fixed keys without hints', () => {
+  it('rejects set_flags apply_mask preset even without hints', () => {
+    const res = validateActionCatalogDraft(draftWithPreset)
+    expect(res.ok).toBe(false)
+    expect(res.errors.join('\n')).toMatch(/executor\.fixed\.apply_mask: preset is not allowed/i)
+  })
+
+  it('does not reject other fixed keys without hints', () => {
     const draft = {
       ...draftWithPreset,
       extensions: {
@@ -195,7 +205,6 @@ describe('Action Catalog: fixed schema hints', () => {
             executor: {
               ...draftWithPreset.extensions.actions[0].executor,
               fixed: {
-                ...draftWithPreset.extensions.actions[0].executor.fixed,
                 custom_toggle: true,
               },
             },
@@ -208,30 +217,26 @@ describe('Action Catalog: fixed schema hints', () => {
     expect(res.errors).toEqual([])
   })
 
-  it('validates fixed payload with backend hints schema', () => {
+  it('target_binding hints work without fixed_schema', () => {
     const hints = {
       capabilities: {
         'extensions.set_flags': {
-          fixed_schema: {
+          target_binding_schema: {
             type: 'object',
-            additionalProperties: false,
+            required: ['extension_name_param'],
             properties: {
-              apply_mask: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['active', 'safe_mode', 'unsafe_action_protection'],
-                properties: {
-                  active: { type: 'boolean' },
-                  safe_mode: { type: 'boolean' },
-                  unsafe_action_protection: { type: 'boolean' },
-                },
-              },
+              extension_name_param: { type: 'string' },
             },
           },
         },
       },
     }
-    const invalidDraft = {
+
+    const invalidRes = validateActionCatalogDraft(draftWithPreset, { editorHints: hints })
+    expect(invalidRes.ok).toBe(false)
+    expect(invalidRes.errors.join('\n')).toMatch(/executor\.target_binding: is required/i)
+
+    const validDraft = {
       ...draftWithPreset,
       extensions: {
         actions: [
@@ -239,23 +244,16 @@ describe('Action Catalog: fixed schema hints', () => {
             ...draftWithPreset.extensions.actions[0],
             executor: {
               ...draftWithPreset.extensions.actions[0].executor,
-              fixed: {
-                apply_mask: {
-                  active: true,
-                  safe_mode: false,
-                  unknown_flag: true,
-                },
+              fixed: undefined,
+              target_binding: {
+                extension_name_param: 'extension_name',
               },
             },
           },
         ],
       },
     }
-    const invalidRes = validateActionCatalogDraft(invalidDraft, { editorHints: hints })
-    expect(invalidRes.ok).toBe(false)
-    expect(invalidRes.errors.join('\n')).toMatch(/executor\.fixed\.apply_mask: unknown key: unknown_flag/i)
-
-    const validRes = validateActionCatalogDraft(draftWithPreset, { editorHints: hints })
+    const validRes = validateActionCatalogDraft(validDraft, { editorHints: hints })
     expect(validRes.ok).toBe(true)
   })
 })

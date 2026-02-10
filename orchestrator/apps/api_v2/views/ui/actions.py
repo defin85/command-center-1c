@@ -52,51 +52,6 @@ class ActionCatalogEditorHintsResponseSerializer(serializers.Serializer):
 
 
 def _build_extensions_set_flags_hints() -> dict:
-    fixed_schema = {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "apply_mask": {
-                "type": "object",
-                "title": "apply_mask (preset)",
-                "description": (
-                    "Optional preset mask for extensions.set_flags. "
-                    "If omitted, caller provides apply_mask or system applies all flags."
-                ),
-                "additionalProperties": False,
-                "required": ["active", "safe_mode", "unsafe_action_protection"],
-                "properties": {
-                    "active": {
-                        "type": "boolean",
-                        "title": "active",
-                        "description": "Apply only the active flag (extension enabled/disabled).",
-                        "default": False,
-                    },
-                    "safe_mode": {
-                        "type": "boolean",
-                        "title": "safe_mode",
-                        "description": "Apply only the safe_mode flag.",
-                        "default": False,
-                    },
-                    "unsafe_action_protection": {
-                        "type": "boolean",
-                        "title": "unsafe_action_protection",
-                        "description": "Apply only the unsafe_action_protection flag.",
-                        "default": False,
-                    },
-                },
-            }
-        },
-    }
-
-    fixed_ui_schema = {
-        "apply_mask": {
-            "active": {"ui:widget": "switch"},
-            "safe_mode": {"ui:widget": "switch"},
-            "unsafe_action_protection": {"ui:widget": "switch"},
-        }
-    }
-
     target_binding_schema = {
         "type": "object",
         "additionalProperties": False,
@@ -112,12 +67,13 @@ def _build_extensions_set_flags_hints() -> dict:
     }
 
     return {
-        "fixed_schema": fixed_schema,
-        "fixed_ui_schema": fixed_ui_schema,
         "target_binding_schema": target_binding_schema,
         "help": {
-            "title": "Set flags presets",
-            "description": "Capability-specific fields for extensions.set_flags, including target binding.",
+            "title": "Runtime source for set_flags values",
+            "description": (
+                "extensions.set_flags stores only transport/binding in action catalog. "
+                "Flag values are provided at launch via flags_values ($flags.* tokens)."
+            ),
         },
     }
 
