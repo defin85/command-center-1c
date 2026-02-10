@@ -134,7 +134,7 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
       { database_id: values.database_id, ...payloadBase },
       { onSuccess: handleResetForm }
     )
-  }, [createDbmsUser, dbmsUserForm, editingDbmsUser, handleResetForm, updateDbmsUser])
+  }, [createDbmsUser, dbmsUserForm, editingDbmsUser, handleResetForm, message, updateDbmsUser])
 
   const handleDelete = useCallback((record: DbmsUserMapping) => {
     modal.confirm({

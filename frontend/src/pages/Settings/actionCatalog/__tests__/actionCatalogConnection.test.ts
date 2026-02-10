@@ -5,7 +5,7 @@ import { validateActionCatalogDraft } from '../actionCatalogValidation'
 
 describe('Action Catalog: executor.connection', () => {
   it('drops executor.connection on form round-trip', () => {
-    const base: any = {
+    const base = {
       id: 'ListExtension',
       label: 'List extension',
       contexts: ['database_card'],
@@ -29,14 +29,14 @@ describe('Action Catalog: executor.connection', () => {
     }
 
     const values = deriveActionFormValues(base)
-    expect((values as any).executor.connection).toBeUndefined()
+    expect((values as { executor: { connection?: unknown } }).executor.connection).toBeUndefined()
 
-    const rebuilt = buildActionFromForm(base, values) as any
+    const rebuilt = buildActionFromForm(base, values) as { executor: { connection?: unknown } }
     expect(rebuilt.executor.connection).toBeUndefined()
   })
 
   it('validation rejects executor.connection', () => {
-    const badDraft: any = {
+    const badDraft = {
       catalog_version: 1,
       extensions: {
         actions: [
@@ -62,7 +62,7 @@ describe('Action Catalog: executor.connection', () => {
 
 describe('Action Catalog: capability fixed round-trip', () => {
   it('preserves dynamic fixed payload on form round-trip', () => {
-    const base: any = {
+    const base = {
       id: 'flags.custom',
       capability: 'extensions.set_flags',
       label: 'Custom fixed',
@@ -89,14 +89,14 @@ describe('Action Catalog: capability fixed round-trip', () => {
     }
 
     const values = deriveActionFormValues(base)
-    expect((values as any).executor.fixed.policy).toEqual({ mode: 'strict', retries: 2 })
+    expect((values as { executor: { fixed: { policy?: unknown } } }).executor.fixed.policy).toEqual({ mode: 'strict', retries: 2 })
 
-    const rebuilt = buildActionFromForm(base, values) as any
+    const rebuilt = buildActionFromForm(base, values) as { executor: { fixed: unknown } }
     expect(rebuilt.executor.fixed).toEqual(base.executor.fixed)
   })
 
   it('drops fixed group when it is explicitly cleared in form state', () => {
-    const base: any = {
+    const base = {
       id: 'flags.clear',
       capability: 'extensions.set_flags',
       label: 'Clear fixed',
@@ -119,10 +119,10 @@ describe('Action Catalog: capability fixed round-trip', () => {
     }
 
     const values = deriveActionFormValues(base)
-    const fixed = values.executor.fixed as any
+    const fixed = values.executor.fixed as Record<string, unknown>
     fixed.apply_mask = undefined
 
-    const rebuilt = buildActionFromForm(base, values) as any
+    const rebuilt = buildActionFromForm(base, values) as { executor: { fixed: Record<string, unknown> } }
     expect(rebuilt.executor.fixed.apply_mask).toBeUndefined()
     expect(rebuilt.executor.fixed.policy).toEqual({ mode: 'strict' })
   })
@@ -130,7 +130,7 @@ describe('Action Catalog: capability fixed round-trip', () => {
 
 describe('Action Catalog: reserved capabilities', () => {
   it('validation allows multiple extensions.set_flags actions (1->N mapping)', () => {
-    const draft: any = {
+    const draft = {
       catalog_version: 1,
       extensions: {
         actions: [
@@ -159,7 +159,7 @@ describe('Action Catalog: reserved capabilities', () => {
 })
 
 describe('Action Catalog: fixed schema hints', () => {
-  const draftWithPreset: any = {
+  const draftWithPreset = {
     catalog_version: 1,
     extensions: {
       actions: [
@@ -186,7 +186,7 @@ describe('Action Catalog: fixed schema hints', () => {
   }
 
   it('does not reject capability fixed keys without hints', () => {
-    const draft: any = {
+    const draft = {
       ...draftWithPreset,
       extensions: {
         actions: [
@@ -231,7 +231,7 @@ describe('Action Catalog: fixed schema hints', () => {
         },
       },
     }
-    const invalidDraft: any = {
+    const invalidDraft = {
       ...draftWithPreset,
       extensions: {
         actions: [
@@ -277,7 +277,7 @@ describe('Action Catalog: target_binding hints', () => {
   }
 
   it('preserves target_binding on form round-trip', () => {
-    const base: any = {
+    const base = {
       id: 'flags.binding',
       capability: 'extensions.set_flags',
       label: 'Set flags binding',
@@ -295,12 +295,12 @@ describe('Action Catalog: target_binding hints', () => {
     const values = deriveActionFormValues(base)
     expect(values.executor.target_binding_extension_name_param).toBe('extension_name')
 
-    const rebuilt = buildActionFromForm(base, values) as any
+    const rebuilt = buildActionFromForm(base, values) as { executor: { target_binding: unknown } }
     expect(rebuilt.executor.target_binding).toEqual({ extension_name_param: 'extension_name' })
   })
 
   it('validates required target_binding with backend hints schema', () => {
-    const invalidDraft: any = {
+    const invalidDraft = {
       catalog_version: 1,
       extensions: {
         actions: [
@@ -322,7 +322,7 @@ describe('Action Catalog: target_binding hints', () => {
     expect(invalidRes.ok).toBe(false)
     expect(invalidRes.errors.join('\n')).toMatch(/executor\.target_binding: is required/i)
 
-    const validDraft: any = {
+    const validDraft = {
       ...invalidDraft,
       extensions: {
         actions: [
@@ -345,7 +345,7 @@ describe('Action Catalog: target_binding hints', () => {
 
 describe('Action Catalog: canonical kind/driver mapping', () => {
   it('allows omitting driver for canonical executor kinds', () => {
-    const draft: any = {
+    const draft = {
       catalog_version: 1,
       extensions: {
         actions: [
@@ -368,7 +368,7 @@ describe('Action Catalog: canonical kind/driver mapping', () => {
   })
 
   it('fails closed on conflicting kind/driver pairs', () => {
-    const draft: any = {
+    const draft = {
       catalog_version: 1,
       extensions: {
         actions: [

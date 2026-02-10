@@ -150,7 +150,7 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
       { database_id: values.database_id, ...payloadBase, ib_password: values.ib_password?.trim() || undefined },
       { onSuccess: handleResetForm }
     )
-  }, [createInfobaseUser, editingIbUser, handleResetForm, ibUserForm, updateInfobaseUser])
+  }, [createInfobaseUser, editingIbUser, handleResetForm, ibUserForm, modal, updateInfobaseUser])
 
   const handleDelete = useCallback((record: InfobaseUserMapping) => {
     modal.confirm({

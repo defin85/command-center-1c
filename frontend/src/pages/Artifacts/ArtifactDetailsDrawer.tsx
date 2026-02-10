@@ -66,8 +66,12 @@ export function ArtifactDetailsDrawer({
   const aliasesQuery = useArtifactAliases(selectedArtifactId)
   const aliasMutation = useUpsertArtifactAlias(selectedArtifactId)
 
-  const versions = versionsQuery.data?.versions ?? []
-  const aliases = aliasesQuery.data?.aliases ?? []
+  const versions = useMemo(() => (
+    versionsQuery.data?.versions ?? []
+  ), [versionsQuery.data?.versions])
+  const aliases = useMemo(() => (
+    aliasesQuery.data?.aliases ?? []
+  ), [aliasesQuery.data?.aliases])
 
   const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? null
   const selectedVersionRowKey = selectedVersionId ?? undefined

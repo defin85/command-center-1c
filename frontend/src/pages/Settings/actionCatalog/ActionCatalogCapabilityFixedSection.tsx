@@ -67,7 +67,7 @@ export function ActionCatalogCapabilityFixedSection({
   hints: ActionCatalogEditorHintsResponse | undefined
 }) {
   const { Text } = Typography
-  const anyForm = form as unknown as FormInstance<any>
+  const anyForm = form as unknown as FormInstance<Record<string, unknown>>
   const [enabledByGroup, setEnabledByGroup] = useState<Record<string, boolean>>({})
 
   const capabilityHints = useMemo<JsonObject | null>(() => {

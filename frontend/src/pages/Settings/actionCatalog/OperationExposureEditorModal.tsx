@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, App, AutoComplete, Button, Collapse, Descriptions, Form, Input, InputNumber, Modal, Segmented, Select, Space, Switch, Tabs, Typography } from 'antd'
 import type { FormInstance } from 'antd'
+import { DownOutlined } from '@ant-design/icons'
 
 import { useDriverCommands } from '../../../api/queries/driverCommands'
 import type { DriverCommandParamV2, DriverCommandV2 } from '../../../api/driverCommands'
@@ -105,6 +106,7 @@ export function OperationExposureEditorModal({
   const editorKind = (Form.useWatch(['executor', 'kind'], form) as ExecutorKind | undefined) ?? 'ibcmd_cli'
   const editorCapability = (Form.useWatch(['capability'], form) as string | undefined) ?? ''
   const editorCommandId = Form.useWatch(['executor', 'command_id'], form) as string | undefined
+  const targetBindingValue = Form.useWatch(['executor', 'target_binding_extension_name_param'], form) as string | undefined
   const commandsDriver = canonicalDriverForExecutorKind(editorKind) ?? 'ibcmd'
   const resolvedExecutorKindOptions = useMemo(() => {
     if (!Array.isArray(executorKindOptions) || executorKindOptions.length === 0) return EXECUTOR_KIND_OPTIONS
@@ -147,6 +149,15 @@ export function OperationExposureEditorModal({
   const targetBindingMinLength = typeof targetBindingPropertySchema?.minLength === 'number'
     ? targetBindingPropertySchema.minLength
     : undefined
+  const normalizedTargetBindingValue = useMemo(() => (
+    typeof targetBindingValue === 'string' ? targetBindingValue.trim() : ''
+  ), [targetBindingValue])
+  const targetBindingMissingRequired = useMemo(() => (
+    !isTemplateSurface
+    && Boolean(targetBindingSchema)
+    && targetBindingRequired
+    && normalizedTargetBindingValue.length === 0
+  ), [isTemplateSurface, normalizedTargetBindingValue, targetBindingRequired, targetBindingSchema])
 
   const workflowTemplatesQuery = useWorkflowTemplates(
     workflowSearch.trim() ? { search: workflowSearch.trim() } : undefined,
@@ -485,7 +496,12 @@ export function OperationExposureEditorModal({
       </Space>
       <Space>
         <Button onClick={onCancel}>Cancel</Button>
-        <Button type="primary" onClick={onApply} data-testid="action-catalog-editor-apply">
+        <Button
+          type="primary"
+          onClick={onApply}
+          data-testid="action-catalog-editor-apply"
+          disabled={targetBindingMissingRequired}
+        >
           Save
         </Button>
       </Space>
@@ -574,11 +590,15 @@ export function OperationExposureEditorModal({
                       >
                         <AutoComplete
                           options={CAPABILITY_OPTIONS}
-                          placeholder="e.g. extensions.list"
                           allowClear
                           filterOption={(inputValue, option) => (option?.value ?? '').includes(inputValue)}
                           data-testid="action-catalog-editor-capability"
-                        />
+                        >
+                          <Input
+                            placeholder="Select from list or type (e.g. extensions.list)"
+                            suffix={<DownOutlined style={{ color: 'rgba(0, 0, 0, 0.45)' }} />}
+                          />
+                        </AutoComplete>
                       </Form.Item>
 
                       <Form.Item
@@ -1019,6 +1039,8 @@ export function OperationExposureEditorModal({
                           label={targetBindingLabel}
                           name={['executor', 'target_binding_extension_name_param']}
                           tooltip={targetBindingDescription}
+                          validateStatus={targetBindingMissingRequired ? 'error' : undefined}
+                          help={targetBindingMissingRequired ? `${targetBindingLabel} is required` : undefined}
                           rules={[
                             {
                               required: targetBindingRequired,
@@ -1038,14 +1060,16 @@ export function OperationExposureEditorModal({
                           {selectedCommand && !driverCatalogUnavailable && targetBindingParamOptions.length > 0 ? (
                             <Select
                               showSearch
+                              showArrow
+                              suffixIcon={<DownOutlined />}
                               optionFilterProp="label"
                               options={targetBindingParamOptions}
-                              placeholder="Select command param"
+                              placeholder="Select command parameter"
                               data-testid="action-catalog-editor-target-binding-extension-name-param"
                             />
                           ) : (
                             <Input
-                              placeholder="e.g. extension_name"
+                              placeholder="Enter command parameter name (e.g. extension_name)"
                               data-testid="action-catalog-editor-target-binding-extension-name-param"
                             />
                           )}

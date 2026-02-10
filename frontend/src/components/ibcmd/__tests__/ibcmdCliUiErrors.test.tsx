@@ -4,7 +4,7 @@ import { parseIbcmdCliUiError, tryShowIbcmdCliUiError } from '../ibcmdCliUiError
 
 describe('ibcmdCliUiErrors', () => {
   it('parses IBCMD_CONNECTION_PROFILE_INVALID and shows modal', () => {
-    const error: any = {
+    const error: unknown = {
       response: {
         data: {
           error: {

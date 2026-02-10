@@ -509,17 +509,22 @@ export const Extensions = () => {
 
               if (code === 'DRIFT_CONFLICT' && data && typeof data === 'object') {
                 const driftRaw = (data as Record<string, unknown>).drift
-                const drift = driftRaw && typeof driftRaw === 'object' ? driftRaw as Record<string, any> : null
+                const drift = driftRaw && typeof driftRaw === 'object' ? driftRaw as Record<string, unknown> : null
                 const driftRows = drift
                   ? Object.entries(drift).map(([databaseId, entry]) => {
-                    const base = entry?.base
-                    const current = entry?.current
+                    const entryRecord = entry && typeof entry === 'object'
+                      ? entry as Record<string, unknown>
+                      : null
+                    const base = entryRecord?.base
+                    const current = entryRecord?.current
+                    const baseRecord = base && typeof base === 'object' ? base as Record<string, unknown> : null
+                    const currentRecord = current && typeof current === 'object' ? current as Record<string, unknown> : null
                     return {
                       database_id: databaseId,
-                      base_at: typeof base?.at === 'string' ? base.at : '',
-                      current_at: typeof current?.at === 'string' ? current.at : '',
-                      base_hash: typeof base?.hash === 'string' ? base.hash : '',
-                      current_hash: typeof current?.hash === 'string' ? current.hash : '',
+                      base_at: typeof baseRecord?.at === 'string' ? baseRecord.at : '',
+                      current_at: typeof currentRecord?.at === 'string' ? currentRecord.at : '',
+                      base_hash: typeof baseRecord?.hash === 'string' ? baseRecord.hash : '',
+                      current_hash: typeof currentRecord?.hash === 'string' ? currentRecord.hash : '',
                     }
                   })
                   : []

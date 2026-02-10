@@ -95,7 +95,9 @@ export function PermissionsTab(props: {
   }, [usersQuery.data?.users])
 
   const rolesQuery = useRoles({ limit: 500, offset: 0 }, { enabled: canManageRbac })
-  const roles = rolesQuery.data?.roles ?? []
+  const roles = useMemo(() => (
+    rolesQuery.data?.roles ?? []
+  ), [rolesQuery.data?.roles])
   const roleNameById = useMemo(() => (
     new Map(roles.map((role) => [role.id, role.name]))
   ), [roles])

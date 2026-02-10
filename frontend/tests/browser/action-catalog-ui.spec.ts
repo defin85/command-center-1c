@@ -938,11 +938,15 @@ test('Templates: единый editor shell работает для template и a
   await page.keyboard.type('infobase.extension.list')
   await page.keyboard.press('Enter')
   await page.getByRole('tab', { name: 'Safety & Fixed', exact: true }).click()
+  const applyButton = page.getByTestId('action-catalog-editor-apply')
   await expect(page.getByTestId('action-catalog-editor-target-binding-extension-name-param')).toBeVisible()
+  await expect(page.getByText('Target command param is required', { exact: true })).toBeVisible()
+  await expect(applyButton).toBeDisabled()
   await page.getByTestId('action-catalog-editor-target-binding-extension-name-param').click()
   await page.keyboard.type('format')
   await page.keyboard.press('Enter')
-  await page.getByTestId('action-catalog-editor-apply').click()
+  await expect(applyButton).toBeEnabled()
+  await applyButton.click()
 
   await expect(page.locator('.ant-table-tbody:visible').first()).toContainText('extensions.new')
 

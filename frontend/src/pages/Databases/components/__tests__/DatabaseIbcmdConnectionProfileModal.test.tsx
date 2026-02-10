@@ -96,6 +96,12 @@ function renderModal(database: Database) {
   return { user, onSave, onReset, getForm: () => formRef }
 }
 
+function requireForm(getForm: () => FormInstance | null): FormInstance {
+  const form = getForm()
+  if (!form) throw new Error('Form is not initialized')
+  return form
+}
+
 describe('DatabaseIbcmdConnectionProfileModal', () => {
   beforeEach(() => {
     mockOfflineKeys = {}
@@ -123,7 +129,7 @@ describe('DatabaseIbcmdConnectionProfileModal', () => {
     await user.click(screen.getByRole('button', { name: 'Add' }))
 
     await waitFor(() => {
-      const form = getForm()!
+      const form = requireForm(getForm)
       const entries = form.getFieldValue('offline_entries')
       expect(Array.isArray(entries) ? entries.length : 0).toBe(1)
       expect(entries?.[0]?.key).toBe('db_name')
@@ -137,14 +143,16 @@ describe('DatabaseIbcmdConnectionProfileModal', () => {
       expect(getForm()).not.toBeNull()
     })
 
-    const form = getForm()!
+    const form = requireForm(getForm)
     await act(async () => {
       form.setFieldsValue({ offline_entries: [{ key: '--db-name', value: 'x' }] })
     })
     await waitFor(() => {
       expect(screen.getByPlaceholderText('/path/to/value')).toBeInTheDocument()
     })
-    await expect(form.validateFields()).rejects.toBeDefined()
+    await act(async () => {
+      await form.validateFields().catch(() => undefined)
+    })
 
     await waitFor(() => {
       expect(screen.getByText(/без префикса/i)).toBeInTheDocument()
@@ -158,9 +166,11 @@ describe('DatabaseIbcmdConnectionProfileModal', () => {
       expect(getForm()).not.toBeNull()
     })
 
-    const form = getForm()!
-    form.setFieldValue('remote', 'http://host:1545')
-    await expect(form.validateFields()).rejects.toBeDefined()
+    const form = requireForm(getForm)
+    await act(async () => {
+      form.setFieldValue('remote', 'http://host:1545')
+      await form.validateFields().catch(() => undefined)
+    })
 
     await waitFor(() => {
       expect(screen.getByText(/ssh:\/\//i)).toBeInTheDocument()

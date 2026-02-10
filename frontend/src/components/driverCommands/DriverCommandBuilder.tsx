@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import '../../lib/monacoEnv'
 
 export { DriverCommandBuilder } from './builder/DriverCommandBuilder'
@@ -12,4 +13,3 @@ export type {
   IbcmdDbmsAuth,
   IbcmdIbAuth,
 } from './builder/types'
-

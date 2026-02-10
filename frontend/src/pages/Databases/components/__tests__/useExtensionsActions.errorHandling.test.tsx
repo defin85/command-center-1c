@@ -33,7 +33,7 @@ describe('useActionRunner: ibcmd_cli error handling', () => {
 
     const { result } = renderHook(() => useActionRunner({ isStaff: false, message, modal, navigate }))
 
-    const action: any = {
+    const action = {
       id: 'extensions.list',
       label: 'List extensions',
       contexts: ['database_card'],
