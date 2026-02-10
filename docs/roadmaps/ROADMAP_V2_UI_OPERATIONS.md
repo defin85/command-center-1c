@@ -211,16 +211,18 @@
 ### Этап 9 — Расширения: полный lifecycle через Streams
 
 Результат:
-- Введён action catalog для UI как RuntimeSetting `ui.action_catalog` (bindings действий расширений -> executors).
-- API `GET /api/v2/ui/action-catalog/` возвращает effective catalog для текущего пользователя (RBAC + driver catalogs + workflows, fail-closed).
+- Полностью удалён runtime Action Catalog (`ui.action_catalog`) как execution source.
+- Введён templates-only manual operations flow:
+  - `manual_operation` + template-based resolve;
+  - tenant preferred bindings для `extensions.sync` и `extensions.set_flags`;
+  - fail-closed ошибки при отсутствии/устаревании binding.
 - UI `/databases`:
-  - single DB: Drawer "Extensions" с действиями из каталога (контекст `database_card`) и просмотром snapshot (`get-extensions-snapshot`).
-  - bulk: Dropdown "Extensions" по выбранным базам (контекст `bulk_page`).
-- Выполнение действий не требует новых engine/endpoints: используем существующие `execute-ibcmd-cli` / `execute-workflow` / `designer_cli`.
+  - single DB и bulk сценарии работают через единый plan/apply pipeline.
+- API `GET /api/v2/ui/action-catalog/` переведён в стабильный decommission-контракт `404 (NOT_FOUND)`.
 
 Проверка:
-- Действия из `ui.action_catalog` запускаются из UI и видны в `/operations` или `/workflows/executions`.
-- Для действий list/sync snapshot расширений сохраняется в Postgres и читается через `get-extensions-snapshot`.
+- Планирование/применение manual operations проходит через `POST /api/v2/extensions/plan|apply`.
+- Для `extensions.sync` snapshot расширений сохраняется в Postgres и читается через `get-extensions-snapshot`.
 
 ---
 

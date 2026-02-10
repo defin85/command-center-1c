@@ -134,9 +134,13 @@
 - Бизнес-метрики
 - Skill matrix для команды
 
+#### 🧭 [MANUAL_OPERATIONS_GUIDE.md](./MANUAL_OPERATIONS_GUIDE.md)
+**Для кого:** Staff operators (templates-only ручные операции)
+**Содержание:** manual operations (`extensions.sync`, `extensions.set_flags`), preferred template bindings, порядок resolve, fail-closed ошибки и plan/apply lifecycle.
+
 #### ⚙️ [ACTION_CATALOG_GUIDE.md](./ACTION_CATALOG_GUIDE.md)
-**Для кого:** Staff operators (настройка actions в unified catalog)
-**Содержание:** как управлять Action Catalog на `/templates?surface=action_catalog`, значения `contexts`/`executor.kind`, типовые ошибки валидации и их исправление.
+**Для кого:** Поддержка legacy контекста
+**Содержание:** краткое уведомление о decommission Action Catalog и ссылка на актуальный templates-only flow.
 
 #### 🚦 [extensions-set-flags-workflow-first.md](./extensions-set-flags-workflow-first.md)
 **Для кого:** Operators / staff, сопровождающие rollout расширений

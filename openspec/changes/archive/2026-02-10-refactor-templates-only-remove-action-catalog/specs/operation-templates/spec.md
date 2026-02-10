@@ -1,5 +1,5 @@
 ## MODIFIED Requirements
-### Requirement: `/templates` MUST быть templates-only UI управления шаблонами
+### Requirement: `/templates` MUST быть единым UI управления template и action exposures
 Система ДОЛЖНА (SHALL) использовать `/templates` как templates-only реестр `operation_exposure(surface="template")`.
 
 #### Scenario: `/templates` не показывает action-catalog controls
@@ -12,7 +12,7 @@
 - **THEN** UI нормализует состояние к templates-only
 - **AND** action-catalog запросы не отправляются
 
-### Requirement: `/templates` list MUST использовать server-driven exposures contract
+### Requirement: `/templates` list MUST использовать server-driven unified exposures contract
 Система ДОЛЖНА (SHALL) использовать server-driven list контракт `operation-catalog/exposures` для template-only выборки.
 
 #### Scenario: Table state обрабатывается backend-ом

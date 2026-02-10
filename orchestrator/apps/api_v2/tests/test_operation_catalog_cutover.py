@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import json
-
 import pytest
-from django.contrib.auth.models import Permission
+from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
-from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
 from apps.databases.models import PermissionLevel
@@ -29,50 +26,6 @@ def _grant_template_capability(user: User, codename: str) -> None:
     ct = ContentType.objects.get(app_label="templates", model="operationtemplate")
     perm = Permission.objects.get(content_type=ct, codename=codename)
     user.user_permissions.add(perm)
-
-
-def _create_action_exposure(
-    client: APIClient,
-    *,
-    alias: str,
-    name: str,
-    capability: str,
-    status: str = "draft",
-    command_id: str = "infobase.extension.list",
-    definition_id: str | None = None,
-) -> dict:
-    payload: dict = {
-        "exposure": {
-            "surface": "action_catalog",
-            "alias": alias,
-            "name": name,
-            "description": "",
-            "is_active": True,
-            "capability": capability,
-            "contexts": ["database_card"],
-            "display_order": 0,
-            "capability_config": {},
-            "status": status,
-        }
-    }
-    if definition_id:
-        payload["definition_id"] = definition_id
-    else:
-        payload["definition"] = {
-            "tenant_scope": "global",
-            "executor_kind": "ibcmd_cli",
-            "executor_payload": {
-                "kind": "ibcmd_cli",
-                "driver": "ibcmd",
-                "command_id": command_id,
-                "params": {},
-            },
-            "contract_version": 1,
-        }
-
-    resp = client.post("/api/v2/operation-catalog/exposures/", data=payload, format="json")
-    assert resp.status_code == 200
-    return resp.json()
 
 
 @pytest.fixture
@@ -142,191 +95,26 @@ def test_runtime_overrides_list_excludes_decommissioned_keys(staff_client):
 
 
 @pytest.mark.django_db
-def test_operation_catalog_endpoints_upsert_list_publish_validate(staff_client):
-    upsert_resp = staff_client.post(
-        "/api/v2/operation-catalog/exposures/",
-        data={
-            "definition": {
-                "tenant_scope": "global",
-                "executor_kind": "ibcmd_cli",
-                "executor_payload": {
-                    "kind": "ibcmd_cli",
-                    "driver": "ibcmd",
-                    "command_id": "infobase.extension.list",
-                    "params": {},
-                },
-                "contract_version": 1,
-            },
-            "exposure": {
-                "surface": "action_catalog",
-                "alias": "extensions.list.test",
-                "name": "List extensions",
-                "description": "",
-                "is_active": True,
-                "capability": "extensions.list",
-                "contexts": ["database_card"],
-                "display_order": 0,
-                "capability_config": {},
-                "status": "draft",
-            },
-        },
-        format="json",
-    )
-    assert upsert_resp.status_code == 200
-    upsert_payload = upsert_resp.json()
-    exposure_id = upsert_payload["exposure"]["id"]
-    definition_id = upsert_payload["definition"]["id"]
-
-    list_resp = staff_client.get("/api/v2/operation-catalog/exposures/", data={"surface": "action_catalog"})
-    assert list_resp.status_code == 200
-    assert any(item["alias"] == "extensions.list.test" for item in list_resp.json()["exposures"])
-
-    publish_resp = staff_client.post(f"/api/v2/operation-catalog/exposures/{exposure_id}/publish/", data={}, format="json")
-    assert publish_resp.status_code == 200
-    publish_payload = publish_resp.json()
-    assert publish_payload["published"] is True
-    assert publish_payload["exposure"]["status"] == "published"
-    assert publish_payload["validation_errors"] == []
-
-    defs_resp = staff_client.get("/api/v2/operation-catalog/definitions/")
-    assert defs_resp.status_code == 200
-    assert any(item["id"] == definition_id for item in defs_resp.json()["definitions"])
-
-    def_detail_resp = staff_client.get(f"/api/v2/operation-catalog/definitions/{definition_id}/")
-    assert def_detail_resp.status_code == 200
-    assert def_detail_resp.json()["definition"]["id"] == definition_id
-
-    validate_resp = staff_client.post(
-        "/api/v2/operation-catalog/validate/",
-        data={
-            "definition": {
-                "tenant_scope": "global",
-                "executor_kind": "ibcmd_cli",
-                "executor_payload": {
-                    "kind": "ibcmd_cli",
-                    "driver": "ibcmd",
-                    "command_id": "infobase.extension.update",
-                    "params": {},
-                },
-                "contract_version": 1,
-            },
-            "exposure": {
-                "surface": "action_catalog",
-                "alias": "extensions.set_flags.bad",
-                "name": "Set flags",
-                "capability": "extensions.set_flags",
-                "capability_config": {},
-            },
-        },
-        format="json",
-    )
-    assert validate_resp.status_code == 200
-    validate_payload = validate_resp.json()
-    assert validate_payload["valid"] is False
-    assert validate_payload["errors"]
+def test_legacy_ui_action_catalog_endpoint_returns_stable_decommission_contract(staff_client):
+    resp = staff_client.get("/api/v2/ui/action-catalog/")
+    assert resp.status_code == 404
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "NOT_FOUND"
 
 
 @pytest.mark.django_db
-def test_operation_catalog_set_flags_rejects_apply_mask_preset_on_validate_and_publish(staff_client):
-    upsert_resp = staff_client.post(
-        "/api/v2/operation-catalog/exposures/",
-        data={
-            "definition": {
-                "tenant_scope": "global",
-                "executor_kind": "ibcmd_cli",
-                "executor_payload": {
-                    "kind": "ibcmd_cli",
-                    "driver": "ibcmd",
-                    "command_id": "infobase.extension.update",
-                    "params": {
-                        "active": "$flags.active",
-                        "safe_mode": "$flags.safe_mode",
-                        "unsafe_action_protection": "$flags.unsafe_action_protection",
-                        "name": "$extension.name",
-                    },
-                },
-                "contract_version": 1,
-            },
-            "exposure": {
-                "surface": "action_catalog",
-                "alias": "extensions.set_flags.preset.invalid",
-                "name": "Set flags with preset",
-                "description": "",
-                "is_active": True,
-                "capability": "extensions.set_flags",
-                "contexts": ["database_card"],
-                "display_order": 0,
-                "capability_config": {
-                    "target_binding": {"extension_name_param": "name"},
-                    "apply_mask": {
-                        "active": True,
-                        "safe_mode": False,
-                        "unsafe_action_protection": False,
-                    },
-                },
-                "status": "draft",
-            },
-        },
-        format="json",
-    )
-    assert upsert_resp.status_code == 200
-    exposure = upsert_resp.json()["exposure"]
-    assert exposure["status"] == "invalid"
-
-    validate_resp = staff_client.post(
-        "/api/v2/operation-catalog/validate/",
-        data={
-            "definition": {
-                "tenant_scope": "global",
-                "executor_kind": "ibcmd_cli",
-                "executor_payload": {
-                    "kind": "ibcmd_cli",
-                    "driver": "ibcmd",
-                    "command_id": "infobase.extension.update",
-                    "params": {
-                        "active": "$flags.active",
-                        "safe_mode": "$flags.safe_mode",
-                        "unsafe_action_protection": "$flags.unsafe_action_protection",
-                        "name": "$extension.name",
-                    },
-                },
-                "contract_version": 1,
-            },
-            "exposure": {
-                "surface": "action_catalog",
-                "alias": "extensions.set_flags.preset.invalid.validate",
-                "name": "Set flags validate",
-                "capability": "extensions.set_flags",
-                "capability_config": {
-                    "target_binding": {"extension_name_param": "name"},
-                    "apply_mask": {
-                        "active": True,
-                        "safe_mode": False,
-                        "unsafe_action_protection": False,
-                    },
-                },
-            },
-        },
-        format="json",
-    )
-    assert validate_resp.status_code == 200
-    validate_payload = validate_resp.json()
-    assert validate_payload["valid"] is False
-    assert any(err.get("path") == "capability_config.apply_mask" for err in validate_payload.get("errors", []))
-
-    publish_resp = staff_client.post(
-        f"/api/v2/operation-catalog/exposures/{exposure['id']}/publish/",
-        data={},
-        format="json",
-    )
-    assert publish_resp.status_code == 200
-    publish_payload = publish_resp.json()
-    assert publish_payload["published"] is False
-    assert any(err.get("path") == "capability_config.apply_mask" for err in publish_payload.get("validation_errors", []))
+def test_operation_catalog_list_rejects_action_catalog_surface(staff_client):
+    resp = staff_client.get("/api/v2/operation-catalog/exposures/?surface=action_catalog")
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "VALIDATION_ERROR"
+    assert payload["error"]["message"] == "unknown surface"
 
 
 @pytest.mark.django_db
-def test_operation_catalog_upsert_rejects_kind_driver_mismatch(staff_client):
+def test_operation_catalog_upsert_rejects_non_template_surface(staff_client):
     resp = staff_client.post(
         "/api/v2/operation-catalog/exposures/",
         data={
@@ -335,18 +123,19 @@ def test_operation_catalog_upsert_rejects_kind_driver_mismatch(staff_client):
                 "executor_kind": "ibcmd_cli",
                 "executor_payload": {
                     "kind": "ibcmd_cli",
-                    "driver": "cli",
+                    "driver": "ibcmd",
                     "command_id": "infobase.extension.list",
+                    "params": {},
                 },
                 "contract_version": 1,
             },
             "exposure": {
                 "surface": "action_catalog",
-                "alias": "extensions.list.mismatch",
+                "alias": "extensions.list",
                 "name": "List extensions",
                 "description": "",
                 "is_active": True,
-                "capability": "extensions.list",
+                "capability": "extensions.sync",
                 "contexts": ["database_card"],
                 "display_order": 0,
                 "capability_config": {},
@@ -357,14 +146,16 @@ def test_operation_catalog_upsert_rejects_kind_driver_mismatch(staff_client):
     )
     assert resp.status_code == 400
     payload = resp.json()
+    assert payload["success"] is False
     assert payload["error"]["code"] == "VALIDATION_ERROR"
-    assert any(item["code"] == "DRIVER_KIND_MISMATCH" for item in payload["error"]["message"])
+    assert payload["error"]["message"][0]["path"] == "exposure.surface"
+    assert payload["error"]["message"][0]["message"] == "unknown surface"
 
 
 @pytest.mark.django_db
-def test_operation_catalog_dedup_ignores_redundant_driver(staff_client):
-    first_resp = staff_client.post(
-        "/api/v2/operation-catalog/exposures/",
+def test_operation_catalog_validate_rejects_non_template_surface(staff_client):
+    resp = staff_client.post(
+        "/api/v2/operation-catalog/validate/",
         data={
             "definition": {
                 "tenant_scope": "global",
@@ -379,53 +170,19 @@ def test_operation_catalog_dedup_ignores_redundant_driver(staff_client):
             },
             "exposure": {
                 "surface": "action_catalog",
-                "alias": "extensions.list.with-driver",
-                "name": "List with driver",
-                "description": "",
-                "is_active": True,
-                "capability": "extensions.list",
-                "contexts": ["database_card"],
-                "display_order": 0,
+                "alias": "extensions.list.validate",
+                "name": "List extensions",
+                "capability": "extensions.sync",
                 "capability_config": {},
-                "status": "draft",
             },
         },
         format="json",
     )
-    assert first_resp.status_code == 200
-    first_definition_id = first_resp.json()["definition"]["id"]
-
-    second_resp = staff_client.post(
-        "/api/v2/operation-catalog/exposures/",
-        data={
-            "definition": {
-                "tenant_scope": "global",
-                "executor_kind": "ibcmd_cli",
-                "executor_payload": {
-                    "kind": "ibcmd_cli",
-                    "command_id": "infobase.extension.list",
-                    "params": {},
-                },
-                "contract_version": 1,
-            },
-            "exposure": {
-                "surface": "action_catalog",
-                "alias": "extensions.list.no-driver",
-                "name": "List no driver",
-                "description": "",
-                "is_active": True,
-                "capability": "extensions.list",
-                "contexts": ["database_card"],
-                "display_order": 1,
-                "capability_config": {},
-                "status": "draft",
-            },
-        },
-        format="json",
-    )
-    assert second_resp.status_code == 200
-    second_definition_id = second_resp.json()["definition"]["id"]
-    assert second_definition_id == first_definition_id
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["valid"] is False
+    assert payload["errors"][0]["path"] == "exposure.surface"
+    assert payload["errors"][0]["message"] == "only template surface is supported"
 
 
 @pytest.mark.django_db
@@ -452,286 +209,13 @@ def test_operation_catalog_template_surface_allows_non_staff_with_view_scope(tem
     aliases = {row["alias"] for row in resp_template.json()["exposures"]}
     assert "tpl-perm-view" in aliases
 
+    resp_default = template_manager_client.get("/api/v2/operation-catalog/exposures/")
+    assert resp_default.status_code == 200
+    aliases_default = {row["alias"] for row in resp_default.json()["exposures"]}
+    assert "tpl-perm-view" in aliases_default
+
     resp_action = template_manager_client.get("/api/v2/operation-catalog/exposures/?surface=action_catalog")
-    assert resp_action.status_code == 403
-
-    resp_unified = template_manager_client.get("/api/v2/operation-catalog/exposures/")
-    assert resp_unified.status_code == 403
-
-    resp_all = template_manager_client.get("/api/v2/operation-catalog/exposures/?surface=all")
-    assert resp_all.status_code == 403
-
-
-@pytest.mark.django_db
-def test_operation_catalog_exposures_staff_unified_list_no_surface_and_all_alias(staff_client):
-    upsert_template_exposure(
-        template_id="tpl-unified",
-        name="Template unified",
-        description="",
-        operation_type="designer_cli",
-        target_entity="infobase",
-        template_data={"kind": "designer_cli", "driver": "cli", "command_id": "infobase.extension.list"},
-        is_active=True,
-    )
-    _create_action_exposure(
-        staff_client,
-        alias="extensions.unified",
-        name="Unified action",
-        capability="extensions.list",
-    )
-
-    resp_no_surface = staff_client.get("/api/v2/operation-catalog/exposures/")
-    assert resp_no_surface.status_code == 200
-    payload_no_surface = resp_no_surface.json()
-    rows_no_surface = {(row["surface"], row["alias"]) for row in payload_no_surface["exposures"]}
-    assert ("template", "tpl-unified") in rows_no_surface
-    assert ("action_catalog", "extensions.unified") in rows_no_surface
-
-    resp_all = staff_client.get("/api/v2/operation-catalog/exposures/?surface=all")
-    assert resp_all.status_code == 200
-    payload_all = resp_all.json()
-    rows_all = {(row["surface"], row["alias"]) for row in payload_all["exposures"]}
-    assert rows_all == rows_no_surface
-    assert payload_all["total"] == payload_no_surface["total"]
-
-
-@pytest.mark.django_db
-def test_operation_catalog_exposures_include_definitions_side_loading_is_unique(staff_client):
-    first = _create_action_exposure(
-        staff_client,
-        alias="extensions.def.one",
-        name="Def one",
-        capability="extensions.list",
-    )
-    definition_id = first["definition"]["id"]
-    _create_action_exposure(
-        staff_client,
-        alias="extensions.def.two",
-        name="Def two",
-        capability="extensions.sync",
-        definition_id=definition_id,
-    )
-
-    resp = staff_client.get(
-        "/api/v2/operation-catalog/exposures/",
-        data={"surface": "action_catalog", "include": "definitions", "limit": 50, "offset": 0},
-    )
-    assert resp.status_code == 200
-    payload = resp.json()
-    assert payload["count"] == 2
-    assert payload["total"] == 2
-    assert len(payload.get("definitions", [])) == 1
-    assert payload["definitions"][0]["id"] == definition_id
-    assert all("definition" not in row for row in payload["exposures"])
-
-
-@pytest.mark.django_db
-def test_operation_catalog_exposures_supports_search_filters_sort_and_pagination(staff_client):
-    _create_action_exposure(
-        staff_client,
-        alias="extensions.alpha",
-        name="Alpha Action",
-        capability="extensions.list",
-        status="published",
-    )
-    _create_action_exposure(
-        staff_client,
-        alias="extensions.zulu",
-        name="Zulu Action",
-        capability="extensions.sync",
-        status="draft",
-    )
-    upsert_template_exposure(
-        template_id="tpl-filtered",
-        name="Template filtered",
-        description="",
-        operation_type="designer_cli",
-        target_entity="infobase",
-        template_data={"kind": "designer_cli", "driver": "cli", "command_id": "infobase.extension.list"},
-        is_active=True,
-    )
-
-    sorted_resp = staff_client.get(
-        "/api/v2/operation-catalog/exposures/",
-        data={
-            "surface": "action_catalog",
-            "search": "Action",
-            "sort": json.dumps({"key": "name", "order": "asc"}),
-            "limit": 1,
-            "offset": 0,
-        },
-    )
-    assert sorted_resp.status_code == 200
-    sorted_payload = sorted_resp.json()
-    assert sorted_payload["count"] == 1
-    assert sorted_payload["total"] == 2
-    assert sorted_payload["exposures"][0]["name"] == "Alpha Action"
-
-    filtered_resp = staff_client.get(
-        "/api/v2/operation-catalog/exposures/",
-        data={
-            "surface": "action_catalog",
-            "filters": json.dumps({"capability": {"op": "contains", "value": "sync"}}),
-        },
-    )
-    assert filtered_resp.status_code == 200
-    filtered_payload = filtered_resp.json()
-    assert filtered_payload["total"] == 1
-    assert filtered_payload["exposures"][0]["alias"] == "extensions.zulu"
-
-    template_filtered_resp = staff_client.get(
-        "/api/v2/operation-catalog/exposures/",
-        data={
-            "surface": "template",
-            "filters": json.dumps({"operation_type": {"op": "contains", "value": "designer"}}),
-        },
-    )
-    assert template_filtered_resp.status_code == 200
-    template_payload = template_filtered_resp.json()
-    aliases = {row["alias"] for row in template_payload["exposures"]}
-    assert "tpl-filtered" in aliases
-
-
-@pytest.mark.django_db
-def test_operation_catalog_exposures_rejects_invalid_filters_and_sort_json(staff_client):
-    _create_action_exposure(
-        staff_client,
-        alias="extensions.validation",
-        name="Validation action",
-        capability="extensions.list",
-    )
-
-    invalid_filters_resp = staff_client.get(
-        "/api/v2/operation-catalog/exposures/",
-        data={"surface": "action_catalog", "filters": "{bad-json"},
-    )
-    assert invalid_filters_resp.status_code == 400
-    invalid_filters_payload = invalid_filters_resp.json()
-    assert invalid_filters_payload["success"] is False
-    assert invalid_filters_payload["error"]["code"] == "VALIDATION_ERROR"
-    assert invalid_filters_payload["error"]["message"] == "filters must be valid JSON object"
-
-    invalid_sort_resp = staff_client.get(
-        "/api/v2/operation-catalog/exposures/",
-        data={"surface": "action_catalog", "sort": "{bad-json"},
-    )
-    assert invalid_sort_resp.status_code == 400
-    invalid_sort_payload = invalid_sort_resp.json()
-    assert invalid_sort_payload["success"] is False
-    assert invalid_sort_payload["error"]["code"] == "VALIDATION_ERROR"
-    assert invalid_sort_payload["error"]["message"] == "sort must be valid JSON object"
-
-    non_object_filters_resp = staff_client.get(
-        "/api/v2/operation-catalog/exposures/",
-        data={"surface": "action_catalog", "filters": json.dumps(["bad", "type"])},
-    )
-    assert non_object_filters_resp.status_code == 400
-    non_object_filters_payload = non_object_filters_resp.json()
-    assert non_object_filters_payload["success"] is False
-    assert non_object_filters_payload["error"]["code"] == "VALIDATION_ERROR"
-    assert non_object_filters_payload["error"]["message"] == "filters must be a JSON object"
-
-    non_object_sort_resp = staff_client.get(
-        "/api/v2/operation-catalog/exposures/",
-        data={"surface": "action_catalog", "sort": json.dumps(["bad", "type"])},
-    )
-    assert non_object_sort_resp.status_code == 400
-    non_object_sort_payload = non_object_sort_resp.json()
-    assert non_object_sort_payload["success"] is False
-    assert non_object_sort_payload["error"]["code"] == "VALIDATION_ERROR"
-    assert non_object_sort_payload["error"]["message"] == "sort must be a JSON object"
-
-
-@pytest.mark.django_db
-def test_operation_catalog_exposures_surface_all_matches_no_surface_with_same_query_params(staff_client):
-    upsert_template_exposure(
-        template_id="tpl-common",
-        name="Common template",
-        description="",
-        operation_type="designer_cli",
-        target_entity="infobase",
-        template_data={"kind": "designer_cli", "driver": "cli", "command_id": "infobase.extension.list"},
-        is_active=True,
-    )
-    _create_action_exposure(
-        staff_client,
-        alias="extensions.common.alpha",
-        name="Common alpha",
-        capability="extensions.list",
-        status="published",
-    )
-    _create_action_exposure(
-        staff_client,
-        alias="extensions.common.beta",
-        name="Common beta",
-        capability="extensions.sync",
-        status="published",
-    )
-    _create_action_exposure(
-        staff_client,
-        alias="extensions.outside",
-        name="Outside scope",
-        capability="extensions.list",
-        status="published",
-    )
-
-    params = {
-        "search": "Common",
-        "filters": json.dumps({"status": {"op": "contains", "value": "published"}}),
-        "sort": json.dumps({"key": "alias", "order": "asc"}),
-        "include": "definitions",
-        "limit": 1,
-        "offset": 1,
-    }
-    no_surface_resp = staff_client.get("/api/v2/operation-catalog/exposures/", data=params)
-    assert no_surface_resp.status_code == 200
-    no_surface_payload = no_surface_resp.json()
-
-    all_surface_resp = staff_client.get(
-        "/api/v2/operation-catalog/exposures/",
-        data={**params, "surface": "all"},
-    )
-    assert all_surface_resp.status_code == 200
-    all_surface_payload = all_surface_resp.json()
-
-    assert all_surface_payload["count"] == no_surface_payload["count"]
-    assert all_surface_payload["total"] == no_surface_payload["total"]
-
-    all_rows = [
-        (row["surface"], row["alias"], row["definition_id"])
-        for row in all_surface_payload["exposures"]
-    ]
-    no_surface_rows = [
-        (row["surface"], row["alias"], row["definition_id"])
-        for row in no_surface_payload["exposures"]
-    ]
-    assert all_rows == no_surface_rows
-
-    all_definition_ids = sorted(item["id"] for item in all_surface_payload.get("definitions", []))
-    no_surface_definition_ids = sorted(item["id"] for item in no_surface_payload.get("definitions", []))
-    assert all_definition_ids == no_surface_definition_ids
-
-
-@pytest.mark.django_db
-def test_operation_catalog_exposures_backward_compatible_without_new_params(staff_client):
-    _create_action_exposure(
-        staff_client,
-        alias="extensions.compat",
-        name="Compat action",
-        capability="extensions.list",
-    )
-
-    resp = staff_client.get(
-        "/api/v2/operation-catalog/exposures/",
-        data={"surface": "action_catalog", "limit": 50, "offset": 0},
-    )
-    assert resp.status_code == 200
-    payload = resp.json()
-    assert "exposures" in payload
-    assert "count" in payload
-    assert "total" in payload
-    assert "definitions" not in payload
-    assert any(row["alias"] == "extensions.compat" for row in payload["exposures"])
+    assert resp_action.status_code == 400
 
 
 @pytest.mark.django_db

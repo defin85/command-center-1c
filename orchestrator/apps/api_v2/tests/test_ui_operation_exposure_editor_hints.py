@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 
 @pytest.fixture
 def staff_user():
-    user = User.objects.create_user(username="ui_action_catalog_hints_staff", password="pass")
+    user = User.objects.create_user(username="ui_operation_exposure_hints_staff", password="pass")
     user.is_staff = True
     user.save(update_fields=["is_staff"])
     return user
@@ -20,7 +20,7 @@ def staff_client(staff_user):
 
 @pytest.fixture
 def user():
-    return User.objects.create_user(username="ui_action_catalog_hints_user", password="pass")
+    return User.objects.create_user(username="ui_operation_exposure_hints_user", password="pass")
 
 
 @pytest.fixture
@@ -31,19 +31,19 @@ def client(user):
 
 
 @pytest.mark.django_db
-def test_action_catalog_editor_hints_requires_auth():
+def test_operation_exposure_editor_hints_requires_auth():
     resp = APIClient().get("/api/v2/ui/operation-exposures/editor-hints/")
     assert resp.status_code == 401
 
 
 @pytest.mark.django_db
-def test_action_catalog_editor_hints_staff_only(client):
+def test_operation_exposure_editor_hints_staff_only(client):
     resp = client.get("/api/v2/ui/operation-exposures/editor-hints/")
     assert resp.status_code == 403
 
 
 @pytest.mark.django_db
-def test_action_catalog_editor_hints_contains_extensions_set_flags(staff_client):
+def test_operation_exposure_editor_hints_contains_extensions_set_flags(staff_client):
     resp = staff_client.get("/api/v2/ui/operation-exposures/editor-hints/")
     assert resp.status_code == 200
     payload = resp.json()

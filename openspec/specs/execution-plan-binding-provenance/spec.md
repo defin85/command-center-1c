@@ -27,30 +27,25 @@ Binding Provenance MUST содержать список биндингов, гд
 - **THEN** система возвращает `workflow_id`, `input_context_masked` и `bindings[]` без raw секретов
 
 ### Requirement: Preview plan/provenance до запуска
-Система ДОЛЖНА (SHALL) предоставить staff-only preview API, который возвращает Execution Plan + Binding Provenance **без создания операции/исполнения**.
+Система ДОЛЖНА (SHALL) предоставлять staff-only preview API для templates/manual operations flow без создания исполнения.
 
-#### Scenario: Preview доступен из /databases drawer для staff
-- **GIVEN** пользователь является staff
-- **WHEN** staff открывает drawer запуска действия и запрашивает preview
-- **THEN** UI получает plan+bindings и отображает их до запуска
+#### Scenario: Preview доступен из `/databases` manual operations
+- **GIVEN** пользователь staff
+- **WHEN** запрашивает preview перед запуском manual operation из `/databases`
+- **THEN** UI получает plan+bindings до запуска
 
-#### Scenario: Preview доступен из редактора Action Catalog в `/templates`
-- **GIVEN** пользователь является staff
-- **WHEN** staff в `/templates?surface=action_catalog` выбирает действие и запрашивает preview
-- **THEN** UI получает plan+bindings и отображает их
+#### Scenario: Preview доступен из `/extensions` manual operations
+- **GIVEN** пользователь staff
+- **WHEN** запрашивает preview перед запуском manual operation из `/extensions`
+- **THEN** UI получает plan+bindings до запуска
 
 ### Requirement: Persisted plan/provenance доступен в details
-Система ДОЛЖНА (SHALL) сохранять Execution Plan + Binding Provenance (без секретов) вместе с созданным исполнением и отображать их staff пользователю в details:
-- `/operations` (для операций),
-- `/workflows/executions` (для workflow executions).
+Система ДОЛЖНА (SHALL) сохранять provenance с привязкой к templates/manual operations контракту.
 
-#### Scenario: /operations details показывает persisted plan
-- **WHEN** staff открывает details выполненной операции
-- **THEN** UI отображает сохранённый plan+bindings и их статусы (без секретов)
-
-#### Scenario: /workflows/executions details показывает persisted plan
-- **WHEN** staff открывает details workflow execution
-- **THEN** UI отображает сохранённый plan+bindings (без секретов)
+#### Scenario: Persisted metadata содержит manual operation context
+- **WHEN** staff открывает details выполнения
+- **THEN** metadata включает `manual_operation` и `template_id`
+- **AND** action-catalog поля (`action_id`, `action_capability`) отсутствуют
 
 ### Requirement: Staff-only видимость с расширением через RBAC
 По умолчанию система ДОЛЖНА (SHALL) ограничивать доступ к plan/provenance только staff пользователям.
@@ -93,3 +88,4 @@ Binding Provenance MUST содержать список биндингов, гд
 - **THEN** bindings содержат записи со `source_ref` вида `target_db.metadata.*` (или эквивалентно)
 - **AND** bindings содержат запись `credentials.db_user_mapping` (или эквивалентно) для DBMS creds
 - **AND** такие bindings имеют `sensitive=true` и не содержат raw значений секретов
+

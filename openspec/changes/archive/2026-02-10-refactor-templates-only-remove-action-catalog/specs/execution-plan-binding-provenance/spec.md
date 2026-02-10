@@ -19,8 +19,3 @@
 - **WHEN** staff открывает details выполнения
 - **THEN** metadata включает `manual_operation` и `template_id`
 - **AND** action-catalog поля (`action_id`, `action_capability`) отсутствуют
-
-## REMOVED Requirements
-### Requirement: Preview доступен из редактора Action Catalog в `/templates`
-**Reason**: action-catalog editor decommissioned.
-**Migration**: preview выполняется из manual operations launch flows.

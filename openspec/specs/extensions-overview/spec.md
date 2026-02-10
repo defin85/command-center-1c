@@ -4,14 +4,13 @@
 Определяет обзорный экран `/extensions` и связанные API/снимки (snapshots) для отображения агрегированной картины расширений по доступным пользователю базам, включая drill-down и требования RBAC.
 ## Requirements
 ### Requirement: Обзор расширений по всем базам
-Система ДОЛЖНА (SHALL) предоставить экран `/extensions`, который показывает агрегированную таблицу расширений по доступным пользователю базам.
+Система ДОЛЖНА (SHALL) использовать `/extensions` как templates-only manual operations экран для домена extensions.
 
-#### Scenario: UI позволяет selective apply flags policy
-- **WHEN** пользователь открывает drawer расширения `X` на `/extensions` и нажимает `Apply flags policy`
-- **THEN** UI отображает форму из 3 строк (`active`, `safe_mode`, `unsafe_action_protection`), где каждая строка имеет:
-  - checkbox “Apply this flag”
-  - switch “Value” (disabled, если checkbox выключен)
-- **AND** пользователь может подтвердить apply, выбрав подмножество флагов
+#### Scenario: Ручная операция запускается через manual-operation контракт
+- **GIVEN** пользователь открыл drawer расширения на `/extensions`
+- **WHEN** выбирает `manual_operation`, template и подтверждает запуск
+- **THEN** UI вызывает template-based `extensions plan/apply`
+- **AND** backend резолвит executor через template contract
 
 ### Requirement: Нормализованный список расширений в snapshot
 Система ДОЛЖНА (SHALL) сохранять в snapshot расширений нормализованный структурированный список расширений, пригодный для табличного отображения и канонизации.
@@ -69,21 +68,45 @@
 - **THEN** UI получает из `GET /api/v2/extensions/overview/databases/` per-db значения флагов
 - **AND** для базы без распознанного значения флага UI показывает `unknown` (без подмены на false)
 
-### Requirement: Workflow-first bulk управление флагами и расширениями
-Система ДОЛЖНА (SHALL) использовать workflow-first сценарий как основной способ массового управления расширениями/флагами в `/extensions`.
+### Requirement: `/extensions` MUST поддерживать preferred template bindings
+Система ДОЛЖНА (SHALL) использовать tenant preferred template binding per manual operation.
 
-#### Scenario: Bulk apply запускает workflow rollout
-- **GIVEN** пользователь работает в `/extensions` и выбирает массовое применение
-- **WHEN** пользователь подтверждает параметры (`flags_values`, `apply_mask`, таргеты, rollout strategy)
-- **THEN** UI запускает workflow execution
-- **AND** дальнейший прогресс отслеживается через `/operations`
+#### Scenario: UI подставляет preferred template по умолчанию
+- **GIVEN** для `manual_operation="extensions.sync"` настроен preferred template
+- **WHEN** пользователь открывает запуск операции
+- **THEN** UI подставляет этот template по умолчанию
+- **AND** пользователь может переопределить template для конкретного запуска
 
-### Requirement: Точечное управление остаётся fallback-режимом
-Система ДОЛЖНА (SHALL) сохранять точечное применение (single/small target) как fallback и НЕ ДОЛЖНА (SHALL NOT) позиционировать его как основной путь массового rollout.
+### Requirement: Preferred template bindings MUST иметь явный read/write API контракт
+Система ДОЛЖНА (SHALL) предоставлять tenant-scoped API для управления preferred template bindings:
+- `GET /api/v2/extensions/manual-operation-bindings/`,
+- `PUT /api/v2/extensions/manual-operation-bindings/{manual_operation}/`,
+- `DELETE /api/v2/extensions/manual-operation-bindings/{manual_operation}/`.
 
-#### Scenario: Оператор применяет изменения для одной базы
-- **GIVEN** оператору нужен аварийный/индивидуальный случай
-- **WHEN** он запускает точечное применение для одной базы
-- **THEN** UI использует тот же валидируемый execution pipeline
-- **AND** интерфейс явно маркирует режим как fallback/аварийный
+#### Scenario: PUT binding с несовместимым template отклоняется
+- **WHEN** клиент вызывает `PUT /api/v2/extensions/manual-operation-bindings/{manual_operation}/` с `template_id`, несовместимым с `manual_operation`
+- **THEN** backend возвращает `HTTP 400` (`CONFIGURATION_ERROR`)
+- **AND** persisted binding не изменяется
+
+#### Scenario: DELETE binding удаляет fallback
+- **GIVEN** для `manual_operation` существовал preferred binding
+- **WHEN** клиент вызывает `DELETE /api/v2/extensions/manual-operation-bindings/{manual_operation}/`
+- **THEN** binding удаляется
+- **AND** следующий запуск без `template_id` override завершается `MISSING_TEMPLATE_BINDING`
+
+### Requirement: `/databases` MUST запускать extensions manual operations напрямую
+Система ДОЛЖНА (SHALL) позволять запуск manual operations домена extensions прямо из `/databases`, используя тот же backend контракт, что и `/extensions`.
+
+#### Scenario: Запуск из `/databases` использует единый pipeline
+- **WHEN** пользователь запускает extensions manual operation из `/databases`
+- **THEN** UI вызывает тот же `extensions plan/apply` flow
+- **AND** action-catalog path не используется
+
+### Requirement: Action-catalog runtime controls MUST отсутствовать
+Система НЕ ДОЛЖНА (SHALL NOT) отображать action-catalog controls на `/extensions` и `/databases`.
+
+#### Scenario: UI не показывает action-catalog controls
+- **WHEN** пользователь открывает controls запуска
+- **THEN** отсутствуют selector/alerts/navigation, связанные с Action Catalog
+- **AND** доступен только templates/manual operations UX
 

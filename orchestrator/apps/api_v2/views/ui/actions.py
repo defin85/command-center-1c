@@ -81,3 +81,19 @@ def get_operation_exposure_editor_hints(request):
             },
         }
     )
+
+
+@extend_schema(exclude=True)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_legacy_action_catalog(_request):
+    return Response(
+        {
+            "success": False,
+            "error": {
+                "code": "NOT_FOUND",
+                "message": "action catalog endpoint is decommissioned",
+            },
+        },
+        status=http_status.HTTP_404_NOT_FOUND,
+    )

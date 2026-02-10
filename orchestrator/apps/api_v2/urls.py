@@ -49,6 +49,7 @@ urlpatterns = [
     # ========================================================================
     # UI Metadata
     # ========================================================================
+    path('ui/action-catalog/', ui.get_legacy_action_catalog, name='ui-action-catalog-legacy'),
     path('ui/table-metadata/', ui.get_table_metadata, name='ui-table-metadata'),
     path('ui/operation-exposures/editor-hints/', ui.get_operation_exposure_editor_hints, name='ui-operation-exposure-editor-hints'),
     path('ui/execution-plan/preview/', ui.preview_execution_plan, name='ui-execution-plan-preview'),
