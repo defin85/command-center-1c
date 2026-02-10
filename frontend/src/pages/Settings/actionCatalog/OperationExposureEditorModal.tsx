@@ -31,7 +31,6 @@ const MODE_OPTIONS: { value: 'guided' | 'manual'; label: string }[] = [
 ]
 
 const CAPABILITY_OPTIONS: { value: string; label: string }[] = [
-  { value: 'extensions.list', label: 'extensions.list' },
   { value: 'extensions.sync', label: 'extensions.sync' },
   { value: 'extensions.set_flags', label: 'extensions.set_flags' },
 ]
@@ -154,11 +153,10 @@ export function OperationExposureEditorModal({
     typeof targetBindingValue === 'string' ? targetBindingValue.trim() : ''
   ), [targetBindingValue])
   const targetBindingMissingRequired = useMemo(() => (
-    !isTemplateSurface
-    && Boolean(targetBindingSchema)
+    Boolean(targetBindingSchema)
     && targetBindingRequired
     && normalizedTargetBindingValue.length === 0
-  ), [isTemplateSurface, normalizedTargetBindingValue, targetBindingRequired, targetBindingSchema])
+  ), [normalizedTargetBindingValue, targetBindingRequired, targetBindingSchema])
 
   const workflowTemplatesQuery = useWorkflowTemplates(
     workflowSearch.trim() ? { search: workflowSearch.trim() } : undefined,
@@ -257,10 +255,9 @@ export function OperationExposureEditorModal({
 
   useEffect(() => {
     if (!open) return
-    if (isTemplateSurface) return
     if (targetBindingSchema) return
     form.setFieldValue(['executor', 'target_binding_extension_name_param'], '')
-  }, [form, isTemplateSurface, open, targetBindingSchema])
+  }, [form, open, targetBindingSchema])
 
   useEffect(() => {
     if (!open) return
@@ -557,6 +554,32 @@ export function OperationExposureEditorModal({
                       </Form.Item>
                       <Form.Item label="Description" name="description">
                         <Input.TextArea rows={2} placeholder="Optional description" data-testid="operation-exposure-editor-description" />
+                      </Form.Item>
+                      <Form.Item
+                        label="Manual operation capability (optional)"
+                        name="capability"
+                        rules={[
+                          {
+                            validator: (_rule, value) => {
+                              const raw = typeof value === 'string' ? value.trim() : ''
+                              if (!raw) return Promise.resolve()
+                              if (CAPABILITY_RE.test(raw)) return Promise.resolve()
+                              return Promise.reject(new Error('Capability must be a namespaced string (e.g. extensions.sync)'))
+                            },
+                          },
+                        ]}
+                      >
+                        <AutoComplete
+                          options={CAPABILITY_OPTIONS}
+                          allowClear
+                          filterOption={(inputValue, option) => (option?.value ?? '').includes(inputValue)}
+                          data-testid="operation-exposure-editor-capability"
+                        >
+                          <Input
+                            placeholder="Select from list or type (e.g. extensions.sync)"
+                            suffix={<DownOutlined style={{ color: 'rgba(0, 0, 0, 0.45)' }} />}
+                          />
+                        </AutoComplete>
                       </Form.Item>
                       <Form.Item label="Active" name="is_active" valuePropName="checked">
                         <Switch data-testid="operation-exposure-editor-active" />

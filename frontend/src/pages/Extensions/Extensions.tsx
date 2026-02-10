@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Alert, App, Button, Checkbox, Drawer, Input, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd'
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
 import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 
 import { getV2 } from '../../api/generated'
+import type { ManualOperationKey } from '../../api/generated/model/manualOperationKey'
 import { useClusters } from '../../api/queries/clusters'
 import { useDatabases } from '../../api/queries/databases'
 import { useMe } from '../../api/queries/me'
-import { useActionCatalog } from '../../api/queries/ui'
+import {
+  useDeleteManualOperationBinding,
+  useManualOperationBindings,
+  useUpsertManualOperationBinding,
+} from '../../api/queries/extensionsManualOperations'
 import {
   type ExtensionsFlagAggregate,
   useExtensionsOverview,
@@ -16,7 +22,7 @@ import {
   type ExtensionsOverviewDatabaseRow,
   type ExtensionsOverviewRow,
 } from '../../api/queries/extensions'
-import type { ActionCatalogAction } from '../../api/types/actionCatalog'
+import { listOperationCatalogExposures } from '../../api/operationCatalog'
 import { tryShowIbcmdCliUiError } from '../../components/ibcmd/ibcmdCliUiErrors'
 import {
   buildSetFlagsRuntimeInput,
@@ -116,6 +122,18 @@ const formatExecutionPlan = (executionPlan: unknown): string => {
   return lines.join('\n')
 }
 
+const MANUAL_OPERATION_OPTIONS: Array<{ value: ManualOperationKey; label: string }> = [
+  { value: 'extensions.sync', label: 'extensions.sync' },
+  { value: 'extensions.set_flags', label: 'extensions.set_flags' },
+]
+
+type TemplateOption = {
+  value: string
+  label: string
+  description?: string
+  capability?: string
+}
+
 export const Extensions = () => {
   const navigate = useNavigate()
   const { message, modal } = App.useApp()
@@ -183,48 +201,84 @@ export const Extensions = () => {
   const [applyUnsafeActionProtectionEnabled, setApplyUnsafeActionProtectionEnabled] = useState(false)
   const [applyUnsafeActionProtectionValue, setApplyUnsafeActionProtectionValue] = useState(false)
 
-  const actionCatalogQuery = useActionCatalog()
-  const extensionsActionsRaw = (actionCatalogQuery.data as unknown as { extensions?: { actions?: unknown } } | null)?.extensions?.actions
-  const extensionsActions: ActionCatalogAction[] = useMemo(
-    () => (Array.isArray(extensionsActionsRaw) ? (extensionsActionsRaw as ActionCatalogAction[]) : []),
-    [extensionsActionsRaw],
-  )
-  const setFlagsActions = useMemo(
-    () => extensionsActions.filter((a) => (a.capability ?? '').trim() === 'extensions.set_flags'),
-    [extensionsActions],
-  )
-  const setFlagsActionOptions = useMemo(
-    () => setFlagsActions.map((a) => ({ value: a.id, label: `${a.label} (${a.id})` })),
-    [setFlagsActions],
-  )
-  const setFlagsActionsById = useMemo(() => {
-    const map = new Map<string, ActionCatalogAction>()
-    for (const action of setFlagsActions) {
-      if (typeof action.id === 'string' && action.id) {
-        map.set(action.id, action)
+  const [manualOperation, setManualOperation] = useState<ManualOperationKey>('extensions.set_flags')
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>(undefined)
+
+  const bindingsQuery = useManualOperationBindings()
+  const upsertBindingMutation = useUpsertManualOperationBinding()
+  const deleteBindingMutation = useDeleteManualOperationBinding()
+
+  const preferredBindingByOperation = useMemo(() => {
+    const map = new Map<ManualOperationKey, { template_id: string; updated_at?: string | null; updated_by?: string | null }>()
+    for (const row of bindingsQuery.data ?? []) {
+      const operation = row?.manual_operation
+      if (operation === 'extensions.sync' || operation === 'extensions.set_flags') {
+        map.set(operation, {
+          template_id: String(row.template_id || ''),
+          updated_at: row.updated_at,
+          updated_by: row.updated_by,
+        })
       }
     }
     return map
-  }, [setFlagsActions])
-  const [setFlagsActionId, setSetFlagsActionId] = useState<string | undefined>(undefined)
-  const selectedSetFlagsAction = useMemo(() => {
-    if (!setFlagsActionId) return null
-    return setFlagsActionsById.get(setFlagsActionId) ?? null
-  }, [setFlagsActionId, setFlagsActionsById])
-  const actionCatalogLoadFailed = actionCatalogQuery.isError
-  const actionCatalogConfigMissing = actionCatalogQuery.isSuccess && setFlagsActions.length === 0
-  const actionSelectionMissing = !actionCatalogQuery.isLoading && !actionCatalogConfigMissing && !setFlagsActionId
+  }, [bindingsQuery.data])
+  const preferredBinding = preferredBindingByOperation.get(manualOperation) ?? null
+
+  const templatesQuery = useQuery({
+    queryKey: ['extensions', 'manual-operation-templates', manualOperation],
+    enabled: drawerOpen,
+    queryFn: async () => listOperationCatalogExposures({
+      surface: 'template',
+      capability: manualOperation,
+      status: 'published',
+      limit: 500,
+      offset: 0,
+    }),
+  })
+  const templateOptions = useMemo<TemplateOption[]>(() => {
+    const items: TemplateOption[] = []
+    for (const exposure of templatesQuery.data?.exposures ?? []) {
+      if (exposure.surface !== 'template') continue
+      const alias = String(exposure.alias || '').trim()
+      if (!alias) continue
+      const name = String(exposure.name || alias).trim() || alias
+      const description = String(exposure.description || '').trim()
+      const capability = String(exposure.capability || '').trim()
+      items.push({
+        value: alias,
+        label: description ? `${name} (${alias})` : name,
+        description,
+        capability: capability || undefined,
+      })
+    }
+    items.sort((a, b) => a.label.localeCompare(b.label))
+    return items
+  }, [templatesQuery.data?.exposures])
+  const templatesById = useMemo(() => {
+    const map = new Map<string, TemplateOption>()
+    for (const option of templateOptions) {
+      map.set(option.value, option)
+    }
+    return map
+  }, [templateOptions])
+  const selectedTemplate = useMemo(() => {
+    if (!selectedTemplateId) return null
+    return templatesById.get(selectedTemplateId) ?? null
+  }, [selectedTemplateId, templatesById])
+  const templateSelectionMissing = !selectedTemplateId && !preferredBinding
+  const setFlagsOperationSelected = manualOperation === 'extensions.set_flags'
+
   useEffect(() => {
     if (!drawerOpen) return
-    if (setFlagsActions.length === 0) {
-      setSetFlagsActionId(undefined)
+    const optionValues = new Set(templateOptions.map((item) => item.value))
+    if (selectedTemplateId && optionValues.has(selectedTemplateId)) return
+    const preferredTemplateId = preferredBinding?.template_id
+    if (preferredTemplateId && optionValues.has(preferredTemplateId)) {
+      setSelectedTemplateId(preferredTemplateId)
       return
     }
-    const exists = setFlagsActionId && setFlagsActions.some((a) => a.id === setFlagsActionId)
-    if (!exists) {
-      setSetFlagsActionId(setFlagsActions[0].id)
-    }
-  }, [drawerOpen, setFlagsActions, setFlagsActionId])
+    setSelectedTemplateId(undefined)
+  }, [drawerOpen, preferredBinding?.template_id, selectedTemplateId, templateOptions])
 
   useEffect(() => {
     setDatabaseId(undefined)
@@ -245,6 +299,26 @@ export const Extensions = () => {
   }, drilldownEnabled)
   const applyMode = resolveExtensionsApplyMode(drawerDatabaseId)
   const fallbackMode = applyMode === 'targeted_fallback'
+  const runtimeInputPreview = useMemo(() => buildSetFlagsRuntimeInput(
+    {
+      applyActiveEnabled,
+      applyActiveValue,
+      applySafeModeEnabled,
+      applySafeModeValue,
+      applyUnsafeActionProtectionEnabled,
+      applyUnsafeActionProtectionValue,
+    },
+    drawerPolicy,
+  ), [
+    applyActiveEnabled,
+    applyActiveValue,
+    applySafeModeEnabled,
+    applySafeModeValue,
+    applyUnsafeActionProtectionEnabled,
+    applyUnsafeActionProtectionValue,
+    drawerPolicy,
+  ])
+  const hasRuntimeMaskSelection = hasSetFlagsMaskSelection(runtimeInputPreview.applyMask)
 
   const resetApplyFormFromPolicy = (policy?: { active?: unknown; safe_mode?: unknown; unsafe_action_protection?: unknown } | null) => {
     const active = normalizePolicyBool(policy?.active)
@@ -326,23 +400,59 @@ export const Extensions = () => {
     })
   }
 
+  const savePreferredBinding = async () => {
+    if (!selectedTemplateId) {
+      message.info('Select template first')
+      return
+    }
+    if (mutatingDisabled) return
+    try {
+      await upsertBindingMutation.mutateAsync({
+        manualOperation,
+        templateId: selectedTemplateId,
+      })
+      message.success('Preferred template binding updated')
+    } catch (e: unknown) {
+      if (!tryShowIbcmdCliUiError(e, modal, message)) {
+        const errorMessage = e instanceof Error ? e.message : 'unknown error'
+        message.error(`Failed to update preferred binding: ${errorMessage}`)
+      }
+    }
+  }
+
+  const clearPreferredBinding = async () => {
+    if (!preferredBinding) return
+    if (mutatingDisabled) return
+    try {
+      await deleteBindingMutation.mutateAsync(manualOperation)
+      message.success('Preferred template binding removed')
+    } catch (e: unknown) {
+      if (!tryShowIbcmdCliUiError(e, modal, message)) {
+        const errorMessage = e instanceof Error ? e.message : 'unknown error'
+        message.error(`Failed to remove preferred binding: ${errorMessage}`)
+      }
+    }
+  }
+
   const runApplyPolicy = async () => {
     if (!selectedExtension) return
     if (mutatingDisabled) return
     if (planPending || applyPending) return
+    if (templateSelectionMissing) {
+      message.error('Select template or configure preferred binding')
+      return
+    }
 
-    if (actionCatalogLoadFailed) {
-      message.error('Failed to load Action Catalog actions')
-      return
-    }
-    if (actionCatalogQuery.isSuccess && setFlagsActions.length === 0) {
-      message.error('extensions.set_flags action is not configured in Action Catalog')
-      return
-    }
-    if (!setFlagsActionId) {
-      message.error('Select action')
-      return
-    }
+    const isSetFlagsOperation = manualOperation === 'extensions.set_flags'
+    const mode = resolveExtensionsApplyMode(drawerDatabaseId)
+    const applyTitle = isSetFlagsOperation
+      ? (mode === 'targeted_fallback' ? 'Apply selected flags in fallback mode?' : 'Launch workflow-first flags rollout?')
+      : 'Launch extensions sync?'
+    const applySuccessMessage = isSetFlagsOperation
+      ? (mode === 'targeted_fallback'
+        ? 'Operation queued: targeted fallback apply'
+        : 'Operation queued: workflow-first rollout')
+      : 'Operation queued: extensions sync'
 
     const { applyMask, flagsValues } = buildSetFlagsRuntimeInput(
       {
@@ -355,17 +465,28 @@ export const Extensions = () => {
       },
       drawerPolicy,
     )
-    if (!hasSetFlagsMaskSelection(applyMask)) {
+    if (isSetFlagsOperation && !hasSetFlagsMaskSelection(applyMask)) {
       message.error('Select at least one flag to apply')
       return
     }
-    const mode = resolveExtensionsApplyMode(drawerDatabaseId)
-    const applyTitle = mode === 'targeted_fallback'
-      ? 'Apply selected flags in fallback mode?'
-      : 'Launch workflow-first flags rollout?'
-    const applySuccessMessage = mode === 'targeted_fallback'
-      ? 'Operation queued: targeted fallback apply'
-      : 'Operation queued: workflow-first rollout'
+
+    const buildPlanRequest = (databaseIds: string[]) => {
+      if (isSetFlagsOperation) {
+        return {
+          database_ids: databaseIds,
+          manual_operation: manualOperation,
+          template_id: selectedTemplateId || undefined,
+          extension_name: selectedExtension,
+          flags_values: flagsValues,
+          apply_mask: applyMask,
+        }
+      }
+      return {
+        database_ids: databaseIds,
+        manual_operation: manualOperation,
+        template_id: selectedTemplateId || undefined,
+      }
+    }
 
     setPlanPending(true)
     try {
@@ -386,7 +507,7 @@ export const Extensions = () => {
         if (total > 500) {
           modal.error({
             title: 'Too many databases',
-            content: `This action is limited to 500 databases per run (matched: ${total}). Narrow filters and retry.`,
+            content: `This operation is limited to 500 databases per run (matched: ${total}). Narrow filters and retry.`,
           })
           return
         }
@@ -401,14 +522,7 @@ export const Extensions = () => {
         return
       }
 
-      const plan = await api.postExtensionsPlan({
-        database_ids: databaseIds,
-        capability: 'extensions.set_flags',
-        action_id: setFlagsActionId || undefined,
-        extension_name: selectedExtension,
-        flags_values: flagsValues,
-        apply_mask: applyMask,
-      })
+      const plan = await api.postExtensionsPlan(buildPlanRequest(databaseIds))
 
       const previewText = formatExecutionPlan(plan.execution_plan)
       const bindings = extractBindings(plan.bindings)
@@ -432,24 +546,34 @@ export const Extensions = () => {
         content: (
           <div>
             <div style={{ marginBottom: 8 }}>
-              Extension <Text code>{selectedExtension}</Text> will be applied to {databaseIds.length} database(s).
+              Extension <Text code>{selectedExtension}</Text> will be processed on {databaseIds.length} database(s).
             </div>
             <div style={{ marginBottom: 8 }}>
-              Mode:{' '}
-              {mode === 'targeted_fallback'
-                ? <Tag color="orange">fallback / targeted</Tag>
-                : <Tag color="blue">workflow-first / bulk</Tag>}
+              Manual operation: <Text code>{manualOperation}</Text>
             </div>
-            <Space size={8} wrap style={{ marginBottom: 8 }}>
-              <div>Active: {applyMask.active ? boolTag(flagsValues.active) : <Text type="secondary">skipped</Text>}</div>
-              <div>Safe mode: {applyMask.safe_mode ? boolTag(flagsValues.safe_mode) : <Text type="secondary">skipped</Text>}</div>
-              <div>Unsafe action protection: {applyMask.unsafe_action_protection ? boolTag(flagsValues.unsafe_action_protection) : <Text type="secondary">skipped</Text>}</div>
-            </Space>
             <div style={{ marginBottom: 8 }}>
-              <Text type="secondary">
-                Runtime source: this launch request sends explicit <Text code>flags_values</Text> and <Text code>apply_mask</Text>.
-              </Text>
+              Template: <Text code>{selectedTemplateId || preferredBinding?.template_id || 'preferred binding'}</Text>
             </div>
+            {isSetFlagsOperation && (
+              <>
+                <div style={{ marginBottom: 8 }}>
+                  Mode:{' '}
+                  {mode === 'targeted_fallback'
+                    ? <Tag color="orange">fallback / targeted</Tag>
+                    : <Tag color="blue">workflow-first / bulk</Tag>}
+                </div>
+                <Space size={8} wrap style={{ marginBottom: 8 }}>
+                  <div>Active: {applyMask.active ? boolTag(flagsValues.active) : <Text type="secondary">skipped</Text>}</div>
+                  <div>Safe mode: {applyMask.safe_mode ? boolTag(flagsValues.safe_mode) : <Text type="secondary">skipped</Text>}</div>
+                  <div>Unsafe action protection: {applyMask.unsafe_action_protection ? boolTag(flagsValues.unsafe_action_protection) : <Text type="secondary">skipped</Text>}</div>
+                </Space>
+                <div style={{ marginBottom: 8 }}>
+                  <Text type="secondary">
+                    Runtime source: this launch request sends explicit <Text code>flags_values</Text> and <Text code>apply_mask</Text>.
+                  </Text>
+                </div>
+              </>
+            )}
             {previewText ? (
               <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{previewText}</pre>
             ) : (
@@ -556,14 +680,7 @@ export const Extensions = () => {
                   onOk: async () => {
                     setApplyPending(true)
                     try {
-                      const nextPlan = await api.postExtensionsPlan({
-                        database_ids: databaseIds,
-                        capability: 'extensions.set_flags',
-                        action_id: setFlagsActionId || undefined,
-                        extension_name: selectedExtension,
-                        flags_values: flagsValues,
-                        apply_mask: applyMask,
-                      })
+                      const nextPlan = await api.postExtensionsPlan(buildPlanRequest(databaseIds))
                       const res = await api.postExtensionsApply({ plan_id: nextPlan.plan_id })
                       message.success(applySuccessMessage)
                       if (res.operation_id) {
@@ -604,8 +721,12 @@ export const Extensions = () => {
         return typeof code === 'string' ? code : null
       }
       const code = extractErrorCode(maybe?.response?.data)
+      if (code === 'MISSING_TEMPLATE_BINDING') {
+        message.error('Preferred template binding is missing. Select a template or configure preferred binding.')
+        return
+      }
       if (code === 'CONFIGURATION_ERROR') {
-        message.error('Selective apply is not supported by current action catalog configuration')
+        message.error('Selected template is incompatible with this manual operation.')
         return
       }
       if (!tryShowIbcmdCliUiError(e, modal, message)) {
@@ -615,10 +736,6 @@ export const Extensions = () => {
     } finally {
       setPlanPending(false)
     }
-  }
-
-  const openActionCatalogManager = () => {
-    navigate('/templates?surface=action_catalog')
   }
 
   const overviewColumns: ColumnsType<ExtensionsOverviewRow> = [
@@ -900,156 +1017,178 @@ export const Extensions = () => {
           )}
 
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
-            <Text strong>Run set_flags rollout</Text>
+            <Text strong>Run manual operation</Text>
             <Space direction="vertical" size={8} style={{ width: '100%' }}>
               <Alert
-                type={fallbackMode ? 'warning' : 'info'}
+                type={setFlagsOperationSelected && fallbackMode ? 'warning' : 'info'}
                 showIcon
                 data-testid="extensions-apply-mode-hint"
-                message={fallbackMode ? 'Fallback mode (targeted)' : 'Workflow-first mode (bulk)'}
-                description={fallbackMode
-                  ? 'Use for emergency/single DB changes only.'
-                  : 'Primary path for mass rollout. Progress is tracked in Operations.'}
-              />
-              <Alert
-                type="info"
-                showIcon
-                data-testid="extensions-apply-runtime-source-hint"
-                message="Runtime source of truth"
-                description={(
-                  <Space direction="vertical" size={2}>
-                    <Text>Values below are sent as <Text code>flags_values</Text> + <Text code>apply_mask</Text> in launch request.</Text>
-                    <Text type="secondary">Action Catalog stores only transport/binding (`$flags.*` mapping).</Text>
-                  </Space>
-                )}
+                message={setFlagsOperationSelected
+                  ? (fallbackMode ? 'Fallback mode (targeted)' : 'Workflow-first mode (bulk)')
+                  : 'Template-based sync mode'}
+                description={setFlagsOperationSelected
+                  ? (fallbackMode
+                    ? 'Use for emergency/single DB changes only.'
+                    : 'Primary path for mass rollout. Progress is tracked in Operations.')
+                  : 'Runs extensions.sync through selected template and manual-operation contract.'}
               />
               <Space align="center" wrap>
-                <Text type="secondary">Action</Text>
+                <Text type="secondary">Operation</Text>
                 <Select
-                  data-testid="extensions-apply-action"
-                  value={setFlagsActionId}
-                  onChange={(v) => setSetFlagsActionId(v)}
-                  options={setFlagsActionOptions}
-                  placeholder={actionCatalogQuery.isLoading ? 'Loading…' : 'Select action'}
-                  loading={actionCatalogQuery.isLoading}
+                  data-testid="extensions-apply-manual-operation"
+                  value={manualOperation}
+                  options={MANUAL_OPERATION_OPTIONS}
+                  onChange={(value) => setManualOperation(value)}
+                  style={{ minWidth: 280 }}
+                />
+              </Space>
+              <Space align="center" wrap>
+                <Text type="secondary">Template</Text>
+                <Select
+                  data-testid="extensions-apply-template"
+                  value={selectedTemplateId}
+                  onChange={(value) => setSelectedTemplateId(value)}
+                  options={templateOptions}
+                  placeholder={templatesQuery.isLoading ? 'Loading templates…' : 'Select template (or rely on preferred)'}
+                  loading={templatesQuery.isLoading}
                   allowClear
-                  style={{ minWidth: 360 }}
-                  disabled={setFlagsActionOptions.length === 0}
+                  style={{ minWidth: 420 }}
                 />
                 <Button
                   size="small"
-                  onClick={openActionCatalogManager}
-                  data-testid="extensions-open-action-catalog"
+                  onClick={() => void savePreferredBinding()}
+                  loading={upsertBindingMutation.isPending}
+                  disabled={!selectedTemplateId || mutatingDisabled}
                 >
-                  Open Action Catalog
+                  Save preferred
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() => void clearPreferredBinding()}
+                  loading={deleteBindingMutation.isPending}
+                  disabled={!preferredBinding || mutatingDisabled}
+                >
+                  Clear preferred
                 </Button>
               </Space>
-              {actionCatalogLoadFailed && (
+              {templatesQuery.isError && (
                 <Alert
                   type="error"
                   showIcon
-                  data-testid="extensions-apply-action-error"
-                  message="Action Catalog is unavailable"
-                  description="Cannot load actions for capability extensions.set_flags."
-                  action={(
-                    <Button size="small" onClick={() => void actionCatalogQuery.refetch()}>
-                      Retry
-                    </Button>
-                  )}
+                  message="Failed to load compatible templates"
+                  description="Template list is unavailable. Retry later or reload the page."
                 />
               )}
-              {actionCatalogConfigMissing && (
+              {bindingsQuery.isError && (
                 <Alert
                   type="warning"
                   showIcon
-                  data-testid="extensions-apply-action-missing"
-                  message="extensions.set_flags action is not configured"
-                  description={(
-                    <Space direction="vertical" size={2}>
-                      <Text>Configure one published action with capability <Text code>extensions.set_flags</Text>.</Text>
-                      <Text type="secondary">Use Templates → Action Catalog to create or publish it.</Text>
-                    </Space>
-                  )}
+                  message="Preferred binding is unavailable"
+                  description="Binding API is temporarily unavailable. You can still launch with explicit template override."
                 />
               )}
-              {selectedSetFlagsAction && (
-                <Space
-                  size={8}
-                  wrap
-                  data-testid="extensions-apply-action-summary"
-                >
-                  <Tag color="blue">{selectedSetFlagsAction.label || selectedSetFlagsAction.id}</Tag>
-                  <Tag>{selectedSetFlagsAction.id}</Tag>
-                  <Tag>{selectedSetFlagsAction.capability || 'no capability'}</Tag>
-                  {selectedSetFlagsAction.executor?.command_id && (
-                    <Tag>{selectedSetFlagsAction.executor.command_id}</Tag>
+              {preferredBinding && (
+                <Space size={8} wrap data-testid="extensions-preferred-binding-summary">
+                  <Tag color="geekblue">preferred</Tag>
+                  <Tag>{preferredBinding.template_id}</Tag>
+                  {preferredBinding.updated_at && (
+                    <Tag>{dayjs(preferredBinding.updated_at).format('DD.MM.YYYY HH:mm')}</Tag>
                   )}
+                  {preferredBinding.updated_by && <Tag>{preferredBinding.updated_by}</Tag>}
                 </Space>
               )}
-              <Space align="center" wrap>
-                <Checkbox
-                  data-testid="extensions-apply-flag-active-enabled"
-                  checked={applyActiveEnabled}
-                  onChange={(e) => setApplyActiveEnabled(e.target.checked)}
-                >
-                  Active
-                </Checkbox>
-                <Switch
-                  data-testid="extensions-apply-flag-active-value"
-                  checked={applyActiveValue}
-                  onChange={setApplyActiveValue}
-                  disabled={!applyActiveEnabled}
+              {selectedTemplate && (
+                <Space size={8} wrap data-testid="extensions-apply-template-summary">
+                  <Tag color="blue">{selectedTemplate.value}</Tag>
+                  <Tag>{selectedTemplate.capability || 'no capability'}</Tag>
+                </Space>
+              )}
+              {templateSelectionMissing && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message="Template is not resolved"
+                  description="Choose a template override or configure preferred template binding for this manual operation."
                 />
-              </Space>
-              <Space align="center" wrap>
-                <Checkbox
-                  data-testid="extensions-apply-flag-safe-mode-enabled"
-                  checked={applySafeModeEnabled}
-                  onChange={(e) => setApplySafeModeEnabled(e.target.checked)}
-                >
-                  Safe mode
-                </Checkbox>
-                <Switch
-                  data-testid="extensions-apply-flag-safe-mode-value"
-                  checked={applySafeModeValue}
-                  onChange={setApplySafeModeValue}
-                  disabled={!applySafeModeEnabled}
-                />
-              </Space>
-              <Space align="center" wrap>
-                <Checkbox
-                  data-testid="extensions-apply-flag-unsafe-action-protection-enabled"
-                  checked={applyUnsafeActionProtectionEnabled}
-                  onChange={(e) => setApplyUnsafeActionProtectionEnabled(e.target.checked)}
-                >
-                  Unsafe action protection
-                </Checkbox>
-                <Switch
-                  data-testid="extensions-apply-flag-unsafe-action-protection-value"
-                  checked={applyUnsafeActionProtectionValue}
-                  onChange={setApplyUnsafeActionProtectionValue}
-                  disabled={!applyUnsafeActionProtectionEnabled}
-                />
-              </Space>
+              )}
+              {setFlagsOperationSelected && (
+                <>
+                  <Alert
+                    type="info"
+                    showIcon
+                    data-testid="extensions-apply-runtime-source-hint"
+                    message="Runtime source of truth"
+                    description={(
+                      <Space direction="vertical" size={2}>
+                        <Text>Values below are sent as <Text code>flags_values</Text> + <Text code>apply_mask</Text> in launch request.</Text>
+                        <Text type="secondary">Template stores transport/binding only (`$flags.*` mapping).</Text>
+                      </Space>
+                    )}
+                  />
+                  <Space align="center" wrap>
+                    <Checkbox
+                      data-testid="extensions-apply-flag-active-enabled"
+                      checked={applyActiveEnabled}
+                      onChange={(e) => setApplyActiveEnabled(e.target.checked)}
+                    >
+                      Active
+                    </Checkbox>
+                    <Switch
+                      data-testid="extensions-apply-flag-active-value"
+                      checked={applyActiveValue}
+                      onChange={setApplyActiveValue}
+                      disabled={!applyActiveEnabled}
+                    />
+                  </Space>
+                  <Space align="center" wrap>
+                    <Checkbox
+                      data-testid="extensions-apply-flag-safe-mode-enabled"
+                      checked={applySafeModeEnabled}
+                      onChange={(e) => setApplySafeModeEnabled(e.target.checked)}
+                    >
+                      Safe mode
+                    </Checkbox>
+                    <Switch
+                      data-testid="extensions-apply-flag-safe-mode-value"
+                      checked={applySafeModeValue}
+                      onChange={setApplySafeModeValue}
+                      disabled={!applySafeModeEnabled}
+                    />
+                  </Space>
+                  <Space align="center" wrap>
+                    <Checkbox
+                      data-testid="extensions-apply-flag-unsafe-action-protection-enabled"
+                      checked={applyUnsafeActionProtectionEnabled}
+                      onChange={(e) => setApplyUnsafeActionProtectionEnabled(e.target.checked)}
+                    >
+                      Unsafe action protection
+                    </Checkbox>
+                    <Switch
+                      data-testid="extensions-apply-flag-unsafe-action-protection-value"
+                      checked={applyUnsafeActionProtectionValue}
+                      onChange={setApplyUnsafeActionProtectionValue}
+                      disabled={!applyUnsafeActionProtectionEnabled}
+                    />
+                  </Space>
+                </>
+              )}
               <Space wrap>
                 <Tooltip
                   title={
                     mutatingDisabled
                       ? 'Select a tenant to enable this action'
-                      : actionCatalogLoadFailed
-                        ? 'Action Catalog is unavailable'
-                        : actionCatalogConfigMissing
-                          ? 'Configure extensions.set_flags action in Action Catalog'
-                          : actionSelectionMissing
-                            ? 'Select action'
-                            : undefined
+                      : templateSelectionMissing
+                        ? 'Template is not resolved'
+                        : setFlagsOperationSelected && !hasRuntimeMaskSelection
+                          ? 'Select at least one flag to apply'
+                          : undefined
                   }
                 >
                   <Button
                     type="primary"
                     onClick={runApplyPolicy}
                     loading={planPending || applyPending}
-                    disabled={!selectedExtension || mutatingDisabled || actionCatalogLoadFailed || actionCatalogConfigMissing || actionSelectionMissing}
+                    disabled={!selectedExtension || mutatingDisabled || templateSelectionMissing || (setFlagsOperationSelected && !hasRuntimeMaskSelection)}
                   >
                     Apply
                   </Button>
@@ -1058,7 +1197,7 @@ export const Extensions = () => {
                   <Button
                     onClick={runAdoptPolicy}
                     loading={adoptPending}
-                    disabled={!selectedExtension || !drawerDatabaseId || mutatingDisabled}
+                    disabled={!selectedExtension || !drawerDatabaseId || mutatingDisabled || !setFlagsOperationSelected}
                   >
                     Adopt from database
                   </Button>

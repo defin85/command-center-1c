@@ -32,9 +32,6 @@ from apps.operations.ibcmd_cli_builder import (
 )
 from apps.operations.prometheus_metrics import record_driver_command_denied
 from apps.operations.services import OperationsService
-from apps.templates.operation_catalog_service import (
-    compute_ibcmd_cli_snapshot_marker_from_unified_catalog,
-)
 
 from .utils import _is_sensitive_key
 
@@ -766,18 +763,6 @@ def _execute_ibcmd_cli_validated(
         "execution_plan": execution_plan,
         "bindings": bindings,
     }
-
-    try:
-        tenant_id = str(getattr(request, "tenant_id", "") or "").strip() or None
-        if tenant_id:
-            metadata.update(
-                compute_ibcmd_cli_snapshot_marker_from_unified_catalog(
-                    tenant_id=tenant_id,
-                    command_id=command_id,
-                )
-            )
-    except Exception:
-        pass
 
     if isinstance(metadata_overrides, dict) and metadata_overrides:
         try:

@@ -1,13 +1,12 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { App, Button, Space, Select, Breadcrumb, Form, Typography, Dropdown } from 'antd'
 import type { TableRowSelection } from 'antd/es/table/interface'
-import { PlusOutlined, HomeOutlined, ClusterOutlined, HeartOutlined, EditOutlined, DownOutlined, AppstoreOutlined } from '@ant-design/icons'
+import { PlusOutlined, HomeOutlined, ClusterOutlined, HeartOutlined, EditOutlined, DownOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import type { Database } from '../../api/generated/model/database'
 import type { Cluster } from '../../api/generated/model/cluster'
 import { SetDatabaseStatusRequestStatus as SetDatabaseStatusRequestStatusEnum } from '../../api/generated/model/setDatabaseStatusRequestStatus'
 import type { SetDatabaseStatusRequestStatus as SetDatabaseStatusValue } from '../../api/generated/model/setDatabaseStatusRequestStatus'
-import type { ActionCatalogAction } from '../../api/types/actionCatalog'
 import { BulkActionsToolbar, OperationConfirmModal } from '../../components/actions'
 import type { DatabaseActionKey } from '../../components/actions'
 import type { RASOperationType } from '../../api/operations'
@@ -23,7 +22,6 @@ import {
   useDatabaseExtensionsSnapshot,
 } from '../../api/queries/databases'
 import { useClusters } from '../../api/queries/clusters'
-import { useActionCatalog } from '../../api/queries/ui'
 import { useAuthz } from '../../authz/useAuthz'
 import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { TableToolkit } from '../../components/table/TableToolkit'
@@ -33,17 +31,17 @@ import { DatabaseDbmsMetadataModal } from './components/DatabaseDbmsMetadataModa
 import { DatabaseIbcmdConnectionProfileModal } from './components/DatabaseIbcmdConnectionProfileModal'
 import { ExtensionsDrawer } from './components/ExtensionsDrawer'
 import { useDatabasesColumns } from './components/useDatabasesColumns'
-import { useActionRunner } from '../../hooks/useActionRunner'
 import { buildIbcmdConnectionProfileUpdatePayload } from './lib/ibcmdConnectionProfile'
 
 const EMPTY_CLUSTERS: Cluster[] = []
-const EMPTY_ACTIONS: ActionCatalogAction[] = []
 
 export const Databases = () => {
   const navigate = useNavigate()
   const { message, modal } = App.useApp()
   const authz = useAuthz()
   const isStaff = authz.isStaff
+  const hasTenantContext = Boolean(localStorage.getItem('active_tenant_id'))
+  const mutatingDisabled = isStaff && !hasTenantContext
   const [searchParams] = useSearchParams()
   const clusterIdFromUrl = searchParams.get('cluster')
 
@@ -101,7 +99,6 @@ export const Databases = () => {
   const clusters = clustersResponse?.clusters ?? EMPTY_CLUSTERS
   const { isConnected: isDatabaseStreamConnected } = useDatabaseStreamStatus()
   const fallbackPollIntervalMs = isDatabaseStreamConnected ? false : 120000
-  const actionCatalogQuery = useActionCatalog()
   const extensionsSnapshotQuery = useDatabaseExtensionsSnapshot({
     id: extensionsDatabase?.id ?? '',
     enabled: extensionsDrawerVisible && Boolean(extensionsDatabase?.id),
@@ -115,7 +112,6 @@ export const Databases = () => {
   const updateDatabaseCredentials = useUpdateDatabaseCredentials()
   const updateDatabaseDbmsMetadata = useUpdateDatabaseDbmsMetadata()
   const updateDatabaseIbcmdConnectionProfile = useUpdateDatabaseIbcmdConnectionProfile()
-  const { runAction: runExtensionsAction, actionPendingId: extensionsActionPendingId, resetActionPendingId: resetExtensionsActionPendingId } = useActionRunner({ isStaff, message, modal, navigate })
 
   // Derived state: selected cluster object
   const selectedCluster = useMemo(() => {
@@ -141,19 +137,6 @@ export const Databases = () => {
   const canManageSelected = useMemo(
     () => selectedDatabases.length > 0 && selectedDatabases.every((db) => canManageDatabase(db.id)),
     [selectedDatabases, canManageDatabase]
-  )
-
-  const extensionsActionsRaw = (actionCatalogQuery.data as unknown as { extensions?: { actions?: unknown } } | null)?.extensions?.actions
-  const extensionsActions: ActionCatalogAction[] = Array.isArray(extensionsActionsRaw)
-    ? (extensionsActionsRaw as ActionCatalogAction[])
-    : EMPTY_ACTIONS
-  const extensionsDatabaseCardActions = useMemo(
-    () => extensionsActions.filter((action) => action.contexts.includes('database_card')),
-    [extensionsActions]
-  )
-  const extensionsBulkActions = useMemo(
-    () => extensionsActions.filter((action) => action.contexts.includes('bulk_page')),
-    [extensionsActions]
   )
 
   type AxiosErrorLike = { response?: { status?: number }; message?: string }
@@ -454,7 +437,6 @@ export const Databases = () => {
   const closeExtensionsDrawer = () => {
     setExtensionsDrawerVisible(false)
     setExtensionsDatabase(null)
-    resetExtensionsActionPendingId()
   }
 
   // Row selection configuration
@@ -736,32 +718,6 @@ export const Databases = () => {
               Set status <DownOutlined />
             </Button>
           </Dropdown>
-          {extensionsBulkActions.length > 0 && (
-            <Dropdown
-              trigger={['click']}
-              disabled={!canOperateSelected || actionCatalogQuery.isLoading || Boolean(extensionsActionPendingId)}
-              menu={{
-                items: extensionsBulkActions.map((action) => ({
-                  key: action.id,
-                  label: action.label,
-                  danger: action.executor.fixed?.confirm_dangerous === true,
-                })),
-                onClick: async ({ key }) => {
-                  if (!canOperateSelected) {
-                    message.error('Недостаточно прав для операций с расширениями')
-                    return
-                  }
-                  const action = extensionsBulkActions.find((item) => item.id === key)
-                  if (!action) return
-                  await runExtensionsAction(action, selectedDatabases.map((d) => d.id))
-                },
-              }}
-            >
-              <Button icon={<AppstoreOutlined />} loading={extensionsActionPendingId !== null} disabled={!canOperateSelected}>
-                Extensions <DownOutlined />
-              </Button>
-            </Dropdown>
-          )}
         </Space>
       )}
 
@@ -807,15 +763,11 @@ export const Databases = () => {
 
       <ExtensionsDrawer
         open={extensionsDrawerVisible}
+        databaseId={extensionsDatabase?.id}
         databaseName={extensionsDatabase?.name}
-        actions={extensionsDatabaseCardActions}
-        actionsLoading={actionCatalogQuery.isLoading}
-        pendingActionId={extensionsActionPendingId}
+        mutatingDisabled={mutatingDisabled}
         onClose={closeExtensionsDrawer}
-        onRunAction={async (action) => {
-          if (!extensionsDatabase) return
-          await runExtensionsAction(action, [extensionsDatabase.id])
-        }}
+        onOperationQueued={(operationId) => navigate(`/operations?operation=${operationId}`)}
         snapshot={extensionsSnapshotQuery.data ?? null}
         snapshotLoading={extensionsSnapshotQuery.isLoading}
         snapshotFetching={extensionsSnapshotQuery.isFetching}

@@ -12,13 +12,6 @@ export function useTableMetadata(tableId: string) {
   })
 }
 
-export function useActionCatalog() {
-  return useQuery({
-    queryKey: ['ui', 'action-catalog'],
-    queryFn: () => api.getUiActionCatalog(),
-  })
-}
-
 export function useOperationExposureEditorHints(enabled = true) {
   return useQuery<ActionCatalogEditorHintsResponse>({
     queryKey: ['ui', 'operation-exposures', 'editor-hints'],

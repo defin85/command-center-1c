@@ -53,14 +53,10 @@ def _is_template_surface(surface: str) -> bool:
     return surface == OperationExposure.SURFACE_TEMPLATE
 
 
-def _is_action_catalog_surface(surface: str) -> bool:
-    return surface == OperationExposure.SURFACE_ACTION_CATALOG
-
-
 def _is_known_surface(surface: str | None) -> bool:
     if surface is None:
         return True
-    return surface in {OperationExposure.SURFACE_TEMPLATE, OperationExposure.SURFACE_ACTION_CATALOG}
+    return surface in {OperationExposure.SURFACE_TEMPLATE}
 
 
 def _template_view_allowed(user) -> bool:
@@ -168,9 +164,6 @@ def _apply_exposure_filters(qs, filters_payload: dict[str, Any] | None):
         if value is None:
             continue
         if isinstance(value, str) and not value.strip():
-            continue
-
-        if key == "surface" and str(value).strip().lower() == "all":
             continue
 
         if key == "is_active":
@@ -491,7 +484,7 @@ def get_operation_definition(request, definition_id: str):
             location=OpenApiParameter.QUERY,
             required=False,
             type=str,
-            description="template | action_catalog | all. Omit for canonical staff unified-list.",
+            description="template. Any other value is rejected.",
         ),
         OpenApiParameter(name="tenant_id", location=OpenApiParameter.QUERY, required=False, type=str),
         OpenApiParameter(name="capability", location=OpenApiParameter.QUERY, required=False, type=str),
@@ -548,19 +541,15 @@ def list_operation_exposures(request):
         return _upsert_operation_exposure_impl(request)
 
     surface_raw = str(request.query_params.get("surface") or "").strip().lower() or None
-    surface = None if surface_raw == "all" else surface_raw
+    surface = surface_raw or OperationExposure.SURFACE_TEMPLATE
     if not _is_known_surface(surface):
         return Response(
             {"success": False, "error": {"code": "VALIDATION_ERROR", "message": "unknown surface"}},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    if _is_action_catalog_surface(surface or "") and not getattr(request.user, "is_staff", False):
-        return _forbidden_staff_only()
-    if _is_template_surface(surface or "") and not _template_view_allowed(request.user):
+    if _is_template_surface(surface) and not _template_view_allowed(request.user):
         return _forbidden("You do not have permission to view templates.")
-    if surface is None and not getattr(request.user, "is_staff", False):
-        return _forbidden_staff_only()
 
     tenant_id = str(request.query_params.get("tenant_id") or "").strip() or None
     capability = str(request.query_params.get("capability") or "").strip() or None
@@ -654,8 +643,6 @@ def _coerce_exposure_payload(raw: Any) -> tuple[dict[str, Any], list[dict[str, s
     name = str(raw.get("name") or "").strip()
     if not surface:
         errors.append({"path": "exposure.surface", "code": "REQUIRED", "message": "surface is required"})
-    if not alias and surface != OperationExposure.SURFACE_TEMPLATE:
-        errors.append({"path": "exposure.alias", "code": "REQUIRED", "message": "alias is required"})
     if not name:
         errors.append({"path": "exposure.name", "code": "REQUIRED", "message": "name is required"})
     contexts_raw = raw.get("contexts")
@@ -707,13 +694,21 @@ def _upsert_operation_exposure_impl(request):
             status=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    if _is_action_catalog_surface(exposure_payload["surface"]) and not getattr(request.user, "is_staff", False):
-        return _forbidden_staff_only()
-    if _is_template_surface(exposure_payload["surface"]):
-        if not exposure_payload["alias"]:
-            exposure_payload["alias"] = _generate_template_alias(exposure_payload["name"])
-        if not _template_manage_allowed(request.user, exposure_payload["alias"]):
-            return _forbidden("You do not have permission to manage templates.")
+    if not _is_template_surface(exposure_payload["surface"]):
+        return Response(
+            {
+                "success": False,
+                "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": [{"path": "exposure.surface", "code": "INVALID", "message": "only template surface is supported"}],
+                },
+            },
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if not exposure_payload["alias"]:
+        exposure_payload["alias"] = _generate_template_alias(exposure_payload["name"])
+    if not _template_manage_allowed(request.user, exposure_payload["alias"]):
+        return _forbidden("You do not have permission to manage templates.")
 
     definition_id = payload.get("definition_id")
     definition_obj = None
@@ -805,8 +800,11 @@ def publish_operation_exposure(request, exposure_id: str):
             status=http_status.HTTP_404_NOT_FOUND,
         )
 
-    if _is_action_catalog_surface(exposure.surface) and not getattr(request.user, "is_staff", False):
-        return _forbidden_staff_only()
+    if not _is_template_surface(exposure.surface):
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": "only template surface is supported"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
     if _is_template_surface(exposure.surface) and not _template_manage_allowed(request.user, exposure.alias):
         return _forbidden("You do not have permission to manage templates.")
 
@@ -850,8 +848,13 @@ def validate_operation_exposure(request):
     if exposure_errors:
         return Response({"valid": False, "errors": exposure_errors})
 
-    if _is_action_catalog_surface(exposure_payload["surface"]) and not getattr(request.user, "is_staff", False):
-        return _forbidden_staff_only()
+    if not _is_template_surface(exposure_payload["surface"]):
+        return Response(
+            {
+                "valid": False,
+                "errors": [{"path": "exposure.surface", "code": "INVALID", "message": "only template surface is supported"}],
+            }
+        )
     if _is_template_surface(exposure_payload["surface"]) and not _template_manage_allowed(request.user, exposure_payload.get("alias")):
         return _forbidden("You do not have permission to manage templates.")
 
@@ -893,26 +896,21 @@ def delete_operation_exposure(request, exposure_id: str):
             status=http_status.HTTP_404_NOT_FOUND,
         )
 
-    if _is_action_catalog_surface(exposure.surface) and not getattr(request.user, "is_staff", False):
-        return _forbidden_staff_only()
+    if not _is_template_surface(exposure.surface):
+        return Response(
+            {"success": False, "error": {"code": "VALIDATION_ERROR", "message": "only template surface is supported"}},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
     if _is_template_surface(exposure.surface) and not _template_manage_allowed(request.user, exposure.alias):
         return _forbidden("You do not have permission to manage templates.")
 
-    if _is_template_surface(exposure.surface):
-        deleted = delete_template_exposure(template_id=exposure.alias)
-        if deleted is None:
-            return Response(
-                {"success": False, "error": {"code": "NOT_FOUND", "message": "Template exposure not found"}},
-                status=http_status.HTTP_404_NOT_FOUND,
-            )
-        return Response({"deleted": True, "exposure": _serialize_exposure(deleted)})
-
-    definition = exposure.definition
-    serialized = _serialize_exposure(exposure)
-    exposure.delete()
-    if not OperationExposure.objects.filter(definition=definition).exists():
-        definition.delete()
-    return Response({"deleted": True, "exposure": serialized})
+    deleted = delete_template_exposure(template_id=exposure.alias)
+    if deleted is None:
+        return Response(
+            {"success": False, "error": {"code": "NOT_FOUND", "message": "Template exposure not found"}},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+    return Response({"deleted": True, "exposure": _serialize_exposure(deleted)})
 
 
 @extend_schema(

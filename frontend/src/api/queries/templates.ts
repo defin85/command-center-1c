@@ -16,6 +16,8 @@ export interface OperationTemplate {
   description?: string | null
   operation_type: string
   target_entity: string
+  capability?: string
+  capability_config?: Record<string, unknown>
   template_data: Record<string, unknown>
   is_active: boolean
   created_at: string
@@ -40,6 +42,8 @@ export interface OperationTemplateWrite {
   description?: string
   operation_type: string
   target_entity: string
+  capability?: string
+  capability_config?: Record<string, unknown>
   template_data: Record<string, unknown>
   is_active?: boolean
 }
@@ -132,6 +136,10 @@ const toOperationTemplate = (exposure: OperationCatalogExposure): OperationTempl
     description: exposure.description ?? '',
     operation_type: operationType,
     target_entity: targetEntity,
+    capability: String(exposure.capability || '').trim() || undefined,
+    capability_config: isPlainObject(exposure.capability_config)
+      ? deepClone(exposure.capability_config)
+      : {},
     template_data: templateData,
     is_active: exposure.is_active !== false,
     created_at: String(exposure.created_at || ''),
@@ -236,6 +244,11 @@ const buildTemplateUpsertPayload = (request: OperationTemplateWrite) => {
   const operationType = String(request.operation_type || '').trim() || 'designer_cli'
   const targetEntity = String(request.target_entity || '').trim() || 'infobase'
   const templateData = isPlainObject(request.template_data) ? deepClone(request.template_data) : {}
+  const capability = String(request.capability || '').trim()
+  const capabilityConfig = isPlainObject(request.capability_config)
+    ? deepClone(request.capability_config)
+    : {}
+
   const executorPayload: Record<string, unknown> = {
     operation_type: operationType,
     target_entity: targetEntity,
@@ -245,6 +258,33 @@ const buildTemplateUpsertPayload = (request: OperationTemplateWrite) => {
   const canonicalDriver = canonicalDriverForOperationType(operationType)
   if (canonicalDriver) {
     executorPayload.driver = canonicalDriver
+  }
+
+  const commandId = typeof templateData.command_id === 'string' ? templateData.command_id.trim() : ''
+  if (commandId) {
+    executorPayload.command_id = commandId
+  }
+  const workflowId = typeof templateData.workflow_id === 'string' ? templateData.workflow_id.trim() : ''
+  if (workflowId) {
+    executorPayload.workflow_id = workflowId
+  }
+  if (templateData.mode === 'manual' || templateData.mode === 'guided') {
+    executorPayload.mode = templateData.mode
+  }
+  if (isPlainObject(templateData.params)) {
+    executorPayload.params = deepClone(templateData.params)
+  }
+  if (Array.isArray(templateData.additional_args)) {
+    executorPayload.additional_args = templateData.additional_args
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+  if (typeof templateData.stdin === 'string') {
+    executorPayload.stdin = templateData.stdin
+  }
+  if (isPlainObject(templateData.fixed)) {
+    executorPayload.fixed = deepClone(templateData.fixed)
   }
 
   return {
@@ -261,10 +301,10 @@ const buildTemplateUpsertPayload = (request: OperationTemplateWrite) => {
       name: String(request.name || '').trim(),
       description: String(request.description || ''),
       is_active: request.is_active !== false,
-      capability: `templates.${operationType || 'legacy'}`,
+      capability: capability || `templates.${operationType || 'legacy'}`,
       contexts: [],
       display_order: 0,
-      capability_config: {},
+      capability_config: capabilityConfig,
       status: request.is_active === false ? 'draft' as const : 'published' as const,
     },
   }

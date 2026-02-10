@@ -350,20 +350,11 @@ class WorkerEventHandlersMixin:
 
             exec_cfg = metadata.get("post_completion_extensions_sync_executor")
             if not isinstance(exec_cfg, dict):
-                from apps.templates.operation_catalog_service import (
-                    resolve_reserved_action_executor_from_unified_catalog,
+                runtime.logger.warning(
+                    "post_completion_extensions_sync: missing explicit executor in metadata (tenant=%s)",
+                    tenant_id_str,
                 )
-
-                exec_cfg = resolve_reserved_action_executor_from_unified_catalog(
-                    tenant_id=tenant_id_str,
-                    capability="extensions.sync",
-                )
-                if not isinstance(exec_cfg, dict):
-                    runtime.logger.warning(
-                        "post_completion_extensions_sync: extensions.sync is not configured (tenant=%s)",
-                        tenant_id_str,
-                    )
-                    return
+                return
 
             if not isinstance(exec_cfg, dict) or exec_cfg.get("kind") != "ibcmd_cli":
                 runtime.logger.warning(
@@ -465,7 +456,7 @@ class WorkerEventHandlersMixin:
                     "mode": mode,
                     "snapshot_kinds": ["extensions"],
                     "snapshot_source": "extensions_plan_apply.post_completion",
-                    "action_capability": "extensions.sync",
+                    "manual_operation": "extensions.sync",
                     "triggered_by_operation_id": str(getattr(batch_op, "id", "")),
                 },
             )

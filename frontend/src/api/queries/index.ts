@@ -21,10 +21,15 @@ export {
 } from './templates'
 export { useMe } from './me'
 export { useDlqMessages, useRetryDlqMessage } from './dlq'
-export { useTableMetadata, useActionCatalog } from './ui'
+export { useTableMetadata } from './ui'
 export { useUsers, useCreateUser, useUpdateUser, useSetUserPassword } from './users'
 export type { UserSummary } from './users'
 export { useExtensionsOverview, useExtensionsOverviewDatabases } from './extensions'
+export {
+  useManualOperationBindings,
+  useUpsertManualOperationBinding,
+  useDeleteManualOperationBinding,
+} from './extensionsManualOperations'
 export {
   useInfobaseUsers,
   useCreateInfobaseUser,

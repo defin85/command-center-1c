@@ -31,20 +31,6 @@ _CANONICAL_DRIVER_BY_KIND = {
     OperationDefinition.EXECUTOR_IBCMD_CLI: "ibcmd",
     OperationDefinition.EXECUTOR_DESIGNER_CLI: "cli",
 }
-_RESERVED_ACTION_CAPABILITIES = {
-    "extensions.list",
-    "extensions.sync",
-    "extensions.set_flags",
-}
-_LEGACY_RESERVED_ACTION_IDS = {
-    "extensions.list": "extensions.list",
-    "extensions.sync": "extensions.sync",
-    "extensions.set_flags": "extensions.set_flags",
-}
-_SNAPSHOT_PRODUCING_ACTION_CAPABILITIES = {
-    "extensions.list",
-    "extensions.sync",
-}
 
 
 def _canonical_json(value: Any) -> str:
@@ -404,145 +390,6 @@ def serialize_template_exposure(exposure: OperationExposure) -> dict[str, Any]:
     }
 
 
-def _merge_action_executor(definition_payload: dict[str, Any], capability_config: dict[str, Any]) -> dict[str, Any]:
-    executor = dict(definition_payload)
-    fixed = executor.get("fixed") if isinstance(executor.get("fixed"), dict) else {}
-    if fixed:
-        executor["fixed"] = dict(fixed)
-
-    target_binding = capability_config.get("target_binding")
-    if isinstance(target_binding, dict):
-        executor["target_binding"] = dict(target_binding)
-
-    cfg_fixed = capability_config.get("fixed")
-    if isinstance(cfg_fixed, dict):
-        merged_fixed = dict(executor.get("fixed") if isinstance(executor.get("fixed"), dict) else {})
-        merged_fixed.update(cfg_fixed)
-        executor["fixed"] = merged_fixed
-
-    return executor
-
-
-def serialize_action_exposure(exposure: OperationExposure) -> dict[str, Any]:
-    definition_payload = exposure.definition.executor_payload if isinstance(exposure.definition.executor_payload, dict) else {}
-    capability_config = exposure.capability_config if isinstance(exposure.capability_config, dict) else {}
-    return {
-        "id": exposure.alias,
-        "capability": exposure.capability or None,
-        "label": exposure.label,
-        "contexts": exposure.contexts if isinstance(exposure.contexts, list) else [],
-        "executor": _merge_action_executor(definition_payload, capability_config),
-    }
-
-
-def list_effective_action_exposures(*, tenant_id: str | None) -> list[OperationExposure]:
-    base_qs = (
-        OperationExposure.objects.select_related("definition")
-        .filter(
-            surface=OperationExposure.SURFACE_ACTION_CATALOG,
-            status=OperationExposure.STATUS_PUBLISHED,
-            is_active=True,
-        )
-        .order_by("display_order", "label", "alias")
-    )
-    global_rows = list(base_qs.filter(tenant__isnull=True))
-    by_alias: dict[str, OperationExposure] = {row.alias: row for row in global_rows}
-
-    if tenant_id:
-        tenant_rows = list(base_qs.filter(tenant_id=tenant_id))
-        for row in tenant_rows:
-            by_alias[row.alias] = row
-    return list(by_alias.values())
-
-
-def build_effective_action_catalog_payload(*, tenant_id: str | None) -> dict[str, Any]:
-    actions = [serialize_action_exposure(exposure) for exposure in list_effective_action_exposures(tenant_id=tenant_id)]
-    return {
-        "catalog_version": 1,
-        "extensions": {"actions": actions},
-    }
-
-
-def _normalize_str(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def _reserved_action_capability(action: dict[str, Any]) -> str | None:
-    capability = _normalize_str(action.get("capability"))
-    if capability:
-        return capability if capability in _RESERVED_ACTION_CAPABILITIES else None
-    action_id = _normalize_str(action.get("id"))
-    return _LEGACY_RESERVED_ACTION_IDS.get(action_id)
-
-
-def _iter_catalog_actions(catalog: dict[str, Any]) -> list[dict[str, Any]]:
-    extensions = catalog.get("extensions")
-    actions = extensions.get("actions") if isinstance(extensions, dict) else None
-    if not isinstance(actions, list):
-        return []
-    out: list[dict[str, Any]] = []
-    for action in actions:
-        if isinstance(action, dict):
-            out.append(action)
-    return out
-
-
-def compute_ibcmd_cli_snapshot_marker_from_unified_catalog(
-    *,
-    tenant_id: str | None,
-    command_id: str,
-) -> dict[str, Any]:
-    normalized_command_id = _normalize_str(command_id)
-    if not normalized_command_id:
-        return {}
-
-    catalog = build_effective_action_catalog_payload(tenant_id=tenant_id)
-    matched_capabilities: set[str] = set()
-    for action in _iter_catalog_actions(catalog):
-        capability = _reserved_action_capability(action)
-        if capability not in _SNAPSHOT_PRODUCING_ACTION_CAPABILITIES:
-            continue
-        executor = action.get("executor")
-        if not isinstance(executor, dict):
-            continue
-        if _normalize_str(executor.get("kind")) != OperationDefinition.EXECUTOR_IBCMD_CLI:
-            continue
-        if _normalize_str(executor.get("command_id")) != normalized_command_id:
-            continue
-        matched_capabilities.add(capability)
-
-    if not matched_capabilities:
-        return {}
-
-    marker: dict[str, Any] = {
-        "snapshot_kinds": ["extensions"],
-        "snapshot_source": "operation_catalog",
-    }
-    if len(matched_capabilities) == 1:
-        marker["action_capability"] = next(iter(matched_capabilities))
-    return marker
-
-
-def resolve_reserved_action_executor_from_unified_catalog(
-    *,
-    tenant_id: str | None,
-    capability: str,
-) -> dict[str, Any] | None:
-    normalized_capability = _normalize_str(capability)
-    if not normalized_capability:
-        return None
-
-    catalog = build_effective_action_catalog_payload(tenant_id=tenant_id)
-    for action in _iter_catalog_actions(catalog):
-        reserved_capability = _reserved_action_capability(action)
-        if reserved_capability != normalized_capability:
-            continue
-        executor = action.get("executor")
-        if isinstance(executor, dict):
-            return dict(executor)
-    return None
-
-
 def list_template_exposures_queryset() -> QuerySet[OperationExposure]:
     return (
         OperationExposure.objects.select_related("definition")
@@ -637,7 +484,7 @@ def list_migration_issues_queryset() -> QuerySet[OperationMigrationIssue]:
 
 def list_set_flags_apply_mask_preset_findings(*, statuses: list[str] | None = None) -> list[dict[str, Any]]:
     qs = OperationExposure.objects.select_related("definition", "tenant").filter(
-        surface=OperationExposure.SURFACE_ACTION_CATALOG,
+        surface="action_catalog",
         capability=_SET_FLAGS_CAPABILITY,
     )
     if statuses:

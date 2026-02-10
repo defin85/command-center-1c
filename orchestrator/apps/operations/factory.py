@@ -12,9 +12,6 @@ from django.db import transaction
 from apps.databases.models import Database
 from apps.operations.models import BatchOperation, Task
 from apps.templates.models import OperationTemplate
-from apps.templates.operation_catalog_service import (
-    compute_ibcmd_cli_snapshot_marker_from_unified_catalog,
-)
 from apps.templates.tracing import get_current_trace_id
 
 logger = logging.getLogger(__name__)
@@ -206,23 +203,6 @@ class BatchOperationFactory:
                     str(effective.overrides_version_id) if effective.overrides_version_id else None
                 ),
             })
-
-            try:
-                if target_databases:
-                    tenant_ids = {
-                        str(tid) for tid in Database.objects.filter(id__in=target_databases).values_list("tenant_id", flat=True)
-                        if tid
-                    }
-                    if len(tenant_ids) == 1:
-                        tenant_id = next(iter(tenant_ids))
-                        metadata.update(
-                            compute_ibcmd_cli_snapshot_marker_from_unified_catalog(
-                                tenant_id=tenant_id,
-                                command_id=command_id,
-                            )
-                        )
-            except Exception:
-                pass
 
         logger.info(
             f"Creating BatchOperation: id={operation_id}, "

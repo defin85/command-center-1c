@@ -12,6 +12,7 @@ from .views import (
     clusters,
     extensions,
     extensions_flags_policy,
+    extensions_manual_operation_bindings,
     extensions_plan_apply,
     operations,
     workflows,
@@ -49,7 +50,6 @@ urlpatterns = [
     # UI Metadata
     # ========================================================================
     path('ui/table-metadata/', ui.get_table_metadata, name='ui-table-metadata'),
-    path('ui/action-catalog/', ui.get_action_catalog, name='ui-action-catalog'),
     path('ui/operation-exposures/editor-hints/', ui.get_operation_exposure_editor_hints, name='ui-operation-exposure-editor-hints'),
     path('ui/execution-plan/preview/', ui.preview_execution_plan, name='ui-execution-plan-preview'),
 
@@ -88,6 +88,16 @@ urlpatterns = [
     path('extensions/flags-policy/', extensions_flags_policy.list_extensions_flags_policy, name='extensions-flags-policy-list'),
     path('extensions/flags-policy/adopt/', extensions_flags_policy.adopt_extensions_flags_policy, name='extensions-flags-policy-adopt'),
     path('extensions/flags-policy/<str:extension_name>/', extensions_flags_policy.upsert_extensions_flags_policy, name='extensions-flags-policy-upsert'),
+    path(
+        'extensions/manual-operation-bindings/',
+        extensions_manual_operation_bindings.list_manual_operation_bindings,
+        name='extensions-manual-operation-bindings-list',
+    ),
+    path(
+        'extensions/manual-operation-bindings/<str:manual_operation>/',
+        extensions_manual_operation_bindings.manual_operation_binding_detail,
+        name='extensions-manual-operation-bindings-detail',
+    ),
     path('extensions/plan/', extensions_plan_apply.extensions_plan, name='extensions-plan'),
     path('extensions/apply/', extensions_plan_apply.extensions_apply, name='extensions-apply'),
 

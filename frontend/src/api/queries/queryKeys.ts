@@ -101,6 +101,7 @@ export const queryKeys = {
     all: ['extensions'] as const,
     overview: (filters?: unknown) => [...queryKeys.extensions.all, 'overview', filters] as const,
     overviewDatabases: (filters?: unknown) => [...queryKeys.extensions.all, 'overview-databases', filters] as const,
+    manualOperationBindings: () => [...queryKeys.extensions.all, 'manual-operation-bindings'] as const,
   },
   tenants: {
     all: ['tenants'] as const,

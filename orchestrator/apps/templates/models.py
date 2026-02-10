@@ -119,11 +119,9 @@ class OperationExposure(models.Model):
     """Surface-specific publication bound to canonical operation definition."""
 
     SURFACE_TEMPLATE = "template"
-    SURFACE_ACTION_CATALOG = "action_catalog"
 
     SURFACE_CHOICES = [
         (SURFACE_TEMPLATE, "Template"),
-        (SURFACE_ACTION_CATALOG, "Action Catalog"),
     ]
 
     STATUS_DRAFT = "draft"
@@ -231,6 +229,44 @@ class OperationMigrationIssue(models.Model):
 
     def __str__(self) -> str:
         return f"{self.source_type}:{self.source_id}:{self.severity}"
+
+
+class ManualOperationTemplateBinding(models.Model):
+    """Tenant-scoped preferred template binding for a manual operation key."""
+    from django.conf import settings as django_settings
+
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="manual_operation_template_bindings",
+    )
+    manual_operation = models.CharField(max_length=64)
+    template_id = models.CharField(max_length=128)
+    updated_by = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_manual_operation_template_bindings',
+    )
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "manual_operation_template_bindings"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "manual_operation"],
+                name="manual_op_tpl_binding_tenant_op_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "manual_operation"], name="manual_op_tpl_tenant_op_idx"),
+            models.Index(fields=["template_id"], name="manual_op_tpl_template_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.tenant_id}:{self.manual_operation}:{self.template_id}"
 
 
 class OperationTemplatePermission(models.Model):

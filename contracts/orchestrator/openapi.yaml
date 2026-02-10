@@ -2668,9 +2668,9 @@ paths:
   /api/v2/extensions/apply/:
     post:
       operationId: v2_extensions_apply_create
-      description: Apply extensions sync for planned databases with drift check (observed
-        vs base snapshot hash).
-      summary: Extensions apply
+      description: Apply planned manual operation for extensions with drift check
+        (observed vs base snapshot hash).
+      summary: Extensions manual-operation apply
       tags:
       - v2
       requestBody:
@@ -2697,7 +2697,11 @@ paths:
                 description: Unspecified response body
           description: ''
         '400':
-          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: 'Validation error. Codes: `PLAN_INVALID_LEGACY`, `VALIDATION_ERROR`.'
         '401':
           description: Unauthorized
         '403':
@@ -3026,12 +3030,138 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+  /api/v2/extensions/manual-operation-bindings/:
+    get:
+      operationId: v2_extensions_manual_operation_bindings_retrieve
+      description: List preferred template bindings for manual operations in current
+        tenant.
+      summary: List preferred manual operation bindings
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualOperationBindingListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/extensions/manual-operation-bindings/{manual_operation}/:
+    put:
+      operationId: v2_extensions_manual_operation_bindings_update
+      description: Upsert preferred template binding for the manual operation.
+      summary: Upsert preferred manual operation binding
+      parameters:
+      - in: path
+        name: manual_operation
+        schema:
+          $ref: '#/components/schemas/ManualOperationKey'
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualOperationBindingUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ManualOperationBindingUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ManualOperationBindingUpsertRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualOperationBindingResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: 'Validation/configuration error. Codes: `INVALID_PARAMETER`,
+            `CONFIGURATION_ERROR`.'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+    delete:
+      operationId: v2_extensions_manual_operation_bindings_destroy
+      description: Delete preferred template binding for the manual operation.
+      summary: Delete preferred manual operation binding
+      parameters:
+      - in: path
+        name: manual_operation
+        schema:
+          $ref: '#/components/schemas/ManualOperationKey'
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualOperationBindingDeleteResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: 'Validation error. Codes: `INVALID_PARAMETER`.'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/extensions/plan/:
     post:
       operationId: v2_extensions_plan_create
-      description: Build plan for extensions apply (captures base snapshot hashes
-        per database).
-      summary: Extensions plan
+      description: Build manual-operation plan for extensions (captures base snapshot
+        hashes per database and resolves template by explicit override or preferred
+        binding).
+      summary: Extensions manual-operation plan
       tags:
       - v2
       requestBody:
@@ -3056,7 +3186,12 @@ paths:
                 $ref: '#/components/schemas/ExtensionsPlanResponse'
           description: ''
         '400':
-          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: 'Validation/configuration error. Codes: `INVALID_PARAMETER`,
+            `MISSING_TEMPLATE_BINDING`, `CONFIGURATION_ERROR`, `VALIDATION_ERROR`.'
         '401':
           description: Unauthorized
         '403':
@@ -3433,7 +3568,9 @@ paths:
         name: surface
         schema:
           type: string
-        description: template | action_catalog | all. Omit for canonical staff unified-list.
+          enum:
+          - template
+        description: template. Any other value is rejected.
       - in: query
         name: tenant_id
         schema:
@@ -8169,35 +8306,6 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
-      parameters:
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-  /api/v2/ui/action-catalog/:
-    get:
-      operationId: v2_ui_action_catalog_retrieve
-      description: Returns effective action catalog for the current user (RBAC + driver
-        catalogs + workflows).
-      summary: Get effective action catalog
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionCatalogResponse'
-          description: ''
-        '401':
-          description: Unauthorized
       parameters:
       - name: X-CC1C-Tenant-ID
         in: header
@@ -13342,6 +13450,65 @@ components:
       - name
       - unknown_count
       - versions
+    ManualOperationKey:
+      enum:
+      - extensions.sync
+      - extensions.set_flags
+      type: string
+      description: |-
+        * `extensions.sync` - extensions.sync
+        * `extensions.set_flags` - extensions.set_flags
+      x-spec-enum-id: e7d8f4f7f9f11ea4
+    ManualOperationBinding:
+      type: object
+      properties:
+        manual_operation:
+          $ref: '#/components/schemas/ManualOperationKey'
+        template_id:
+          type: string
+        updated_by:
+          type: string
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - manual_operation
+      - template_id
+      - updated_at
+    ManualOperationBindingDeleteResponse:
+      type: object
+      properties:
+        deleted:
+          type: boolean
+        manual_operation:
+          $ref: '#/components/schemas/ManualOperationKey'
+      required:
+      - deleted
+      - manual_operation
+    ManualOperationBindingListResponse:
+      type: object
+      properties:
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManualOperationBinding'
+      required:
+      - bindings
+    ManualOperationBindingResponse:
+      type: object
+      properties:
+        binding:
+          $ref: '#/components/schemas/ManualOperationBinding'
+      required:
+      - binding
+    ManualOperationBindingUpsertRequest:
+      type: object
+      properties:
+        template_id:
+          type: string
+      required:
+      - template_id
     ExtensionsPlanRequest:
       type: object
       properties:
@@ -13352,10 +13519,9 @@ components:
             format: uuid
           maxItems: 500
           minItems: 1
-        capability:
-          type: string
-          nullable: true
-        action_id:
+        manual_operation:
+          $ref: '#/components/schemas/ManualOperationKey'
+        template_id:
           type: string
           nullable: true
         extension_name:
@@ -13367,6 +13533,7 @@ components:
           $ref: '#/components/schemas/_SetFlagsApplyMask'
       required:
       - database_ids
+      - manual_operation
     ExtensionsPlanResponse:
       type: object
       properties:
@@ -14154,6 +14321,11 @@ components:
           format: uuid
         surface:
           type: string
+          enum:
+          - template
+          description: |-
+            * `template` - template
+          x-spec-enum-id: c3a7128a2d6f4b68
         alias:
           type: string
         tenant_id:
