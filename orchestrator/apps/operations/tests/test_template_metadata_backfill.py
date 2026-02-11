@@ -50,13 +50,12 @@ def _create_template_with_exposure(*, template_id: str) -> tuple[OperationTempla
     return template, exposure
 
 
-def _create_batch_operation(*, operation_id: str, template: OperationTemplate | None, metadata: dict) -> BatchOperation:
+def _create_batch_operation(*, operation_id: str, metadata: dict) -> BatchOperation:
     return BatchOperation.objects.create(
         id=operation_id,
         name=f"Operation {operation_id}",
         operation_type=BatchOperation.TYPE_DESIGNER_CLI,
         target_entity="infobase",
-        template=template,
         payload={},
         metadata=metadata,
         created_by="pytest",
@@ -67,15 +66,13 @@ def _create_batch_operation(*, operation_id: str, template: OperationTemplate | 
 def test_backfill_operation_template_metadata_fills_alias_and_exposure_id():
     template, exposure = _create_template_with_exposure(template_id="tpl-op-meta-1")
 
-    op_fk = _create_batch_operation(
-        operation_id="op-meta-fk",
-        template=template,
-        metadata={"workflow_execution_id": "wf-1"},
+    op_missing_exposure_id = _create_batch_operation(
+        operation_id="op-meta-missing-exp-id",
+        metadata={"workflow_execution_id": "wf-1", "template_id": template.id},
     )
-    op_meta = _create_batch_operation(
+    op_stale_exposure_id = _create_batch_operation(
         operation_id="op-meta-only",
-        template=None,
-        metadata={"template_id": template.id},
+        metadata={"template_id": template.id, "template_exposure_id": "stale"},
     )
 
     out = StringIO()
@@ -86,16 +83,16 @@ def test_backfill_operation_template_metadata_fills_alias_and_exposure_id():
     assert payload["operations_with_template_ref"] == 2
     assert payload["updated_operations"] == 2
     assert payload["missing_exposure"] == 0
-    assert payload["source_template_fk"] == 1
-    assert payload["source_metadata_template_id"] == 1
+    assert payload["source_template_fk"] == 0
+    assert payload["source_metadata_template_id"] == 2
 
-    op_fk.refresh_from_db()
-    assert op_fk.metadata["template_id"] == template.id
-    assert op_fk.metadata["template_exposure_id"] == str(exposure.id)
+    op_missing_exposure_id.refresh_from_db()
+    assert op_missing_exposure_id.metadata["template_id"] == template.id
+    assert op_missing_exposure_id.metadata["template_exposure_id"] == str(exposure.id)
 
-    op_meta.refresh_from_db()
-    assert op_meta.metadata["template_id"] == template.id
-    assert op_meta.metadata["template_exposure_id"] == str(exposure.id)
+    op_stale_exposure_id.refresh_from_db()
+    assert op_stale_exposure_id.metadata["template_id"] == template.id
+    assert op_stale_exposure_id.metadata["template_exposure_id"] == str(exposure.id)
 
 
 @pytest.mark.django_db
@@ -111,15 +108,14 @@ def test_backfill_operation_template_metadata_strict_fails_and_rolls_back():
     )
     operation = _create_batch_operation(
         operation_id="op-meta-missing",
-        template=template,
-        metadata={},
+        metadata={"template_id": template.id},
     )
 
     with pytest.raises(CommandError):
         call_command("backfill_operation_template_metadata", "--strict")
 
     operation.refresh_from_db()
-    assert operation.metadata == {}
+    assert operation.metadata == {"template_id": template.id}
 
 
 @pytest.mark.django_db
@@ -127,12 +123,11 @@ def test_backfill_operation_template_metadata_dry_run_rolls_back():
     template, exposure = _create_template_with_exposure(template_id="tpl-op-meta-dry")
     operation = _create_batch_operation(
         operation_id="op-meta-dry",
-        template=template,
-        metadata={},
+        metadata={"template_id": template.id},
     )
 
     call_command("backfill_operation_template_metadata", "--dry-run")
 
     operation.refresh_from_db()
-    assert operation.metadata == {}
+    assert operation.metadata == {"template_id": template.id}
     assert str(exposure.id) != operation.metadata.get("template_exposure_id")

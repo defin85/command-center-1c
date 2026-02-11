@@ -54,6 +54,6 @@ class TestErrorHandling:
             target_databases=[str(test_database.id)],
         )
 
-        assert operation.template_id == operation_template.id
+        assert operation.metadata["template_id"] == operation_template.id
         assert operation.operation_type == operation_template.operation_type
         assert operation.target_entity == "Users"

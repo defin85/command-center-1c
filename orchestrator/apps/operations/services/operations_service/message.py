@@ -88,7 +88,8 @@ class OperationsServiceMessageMixin:
             "metadata": {
                 "created_by": operation.created_by or "system",
                 "created_at": operation.created_at.isoformat(),
-                "template_id": str(operation.template.id) if operation.template else None,
+                "template_id": operation.template_id,
+                "template_exposure_id": operation.template_exposure_id,
                 "tags": operation.metadata.get("tags", []),
                 "workflow_execution_id": operation.metadata.get("workflow_execution_id"),
                 "node_id": operation.metadata.get("node_id"),

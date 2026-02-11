@@ -4,7 +4,7 @@ from uuid import uuid4
 from apps.databases.models import Database
 from apps.operations.factory import BatchOperationFactory
 from apps.operations.services import OperationsService
-from apps.templates.models import OperationTemplate
+from apps.templates.models import OperationDefinition, OperationExposure, OperationTemplate
 
 
 @pytest.fixture
@@ -49,6 +49,8 @@ class TestOperationsServiceBuildMessage:
         assert message["payload"]["data"]["options"]["disable_startup_messages"] is True
         assert message["payload"]["filters"] == {}
         assert message["payload"]["options"] == {}
+        assert message["metadata"]["template_id"] == template.id
+        assert message["metadata"]["template_exposure_id"] is None
 
     def test_build_message_protocol_payload_keeps_sections(self, test_database, db):
         template = OperationTemplate.objects.create(
@@ -119,3 +121,48 @@ class TestOperationsServiceBuildMessage:
         message = OperationsService._build_message(operation)
         assert message["target_databases"] == []
         assert message["payload"]["options"] == {"target_scope": "global"}
+
+    def test_build_message_includes_template_exposure_id_when_available(self, test_database, db):
+        template = OperationTemplate.objects.create(
+            id="tpl_cli_exposure_" + str(uuid4())[:8],
+            name="CLI Exposure Template",
+            operation_type="designer_cli",
+            target_entity="Infobase",
+            template_data={},
+        )
+        definition = OperationDefinition.objects.create(
+            tenant_scope="global",
+            executor_kind=OperationDefinition.EXECUTOR_DESIGNER_CLI,
+            executor_payload={
+                "operation_type": "designer_cli",
+                "target_entity": "Infobase",
+                "template_data": {},
+            },
+            contract_version=1,
+            fingerprint="fp-" + template.id,
+            status=OperationDefinition.STATUS_ACTIVE,
+        )
+        exposure = OperationExposure.objects.create(
+            definition=definition,
+            surface=OperationExposure.SURFACE_TEMPLATE,
+            alias=template.id,
+            tenant=None,
+            label=template.id,
+            description="",
+            is_active=True,
+            capability="",
+            contexts=[],
+            display_order=0,
+            capability_config={},
+            status=OperationExposure.STATUS_PUBLISHED,
+        )
+
+        operation = BatchOperationFactory.create(
+            template=template,
+            rendered_data={"command": "Any", "args": [], "options": {}},
+            target_databases=[str(test_database.id)],
+        )
+
+        message = OperationsService._build_message(operation)
+        assert message["metadata"]["template_id"] == template.id
+        assert message["metadata"]["template_exposure_id"] == str(exposure.id)

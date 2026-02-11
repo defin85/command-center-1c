@@ -43,18 +43,12 @@ def run_template_metadata_backfill() -> TemplateMetadataBackfillStats:
 
     stats.scanned_operations = BatchOperation.objects.count()
 
-    queryset = BatchOperation.objects.only("id", "template_id", "metadata").iterator()
+    queryset = BatchOperation.objects.only("id", "metadata").iterator()
     for operation in queryset:
         metadata = dict(operation.metadata) if isinstance(operation.metadata, dict) else {}
-        template_alias = ""
-
-        if operation.template_id:
-            template_alias = str(operation.template_id).strip()
-            stats.source_template_fk += 1
-        else:
-            template_alias = str(metadata.get("template_id") or "").strip()
-            if template_alias:
-                stats.source_metadata_template_id += 1
+        template_alias = str(metadata.get("template_id") or "").strip()
+        if template_alias:
+            stats.source_metadata_template_id += 1
 
         if not template_alias:
             continue

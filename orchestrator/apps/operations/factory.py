@@ -11,7 +11,7 @@ from django.db import transaction
 
 from apps.databases.models import Database
 from apps.operations.models import BatchOperation, Task
-from apps.templates.models import OperationTemplate
+from apps.templates.models import OperationExposure, OperationTemplate
 from apps.templates.tracing import get_current_trace_id
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,22 @@ def _extract_target_scope(rendered_data: Dict[str, Any]) -> str:
         if value:
             return value
     return ""
+
+
+def _resolve_template_exposure_id(*, template_alias: str) -> str:
+    alias = str(template_alias or "").strip()
+    if not alias:
+        return ""
+    exposure_id = (
+        OperationExposure.objects.filter(
+            surface=OperationExposure.SURFACE_TEMPLATE,
+            tenant__isnull=True,
+            alias=alias,
+        )
+        .values_list("id", flat=True)
+        .first()
+    )
+    return str(exposure_id) if exposure_id else ""
 
 
 class BatchOperationFactory:
@@ -102,6 +118,13 @@ class BatchOperationFactory:
         }
         if trace_id:
             metadata['trace_id'] = trace_id
+
+        template_alias = str(template.id or "").strip()
+        if template_alias:
+            metadata["template_id"] = template_alias
+            template_exposure_id = _resolve_template_exposure_id(template_alias=template_alias)
+            if template_exposure_id:
+                metadata["template_exposure_id"] = template_exposure_id
 
         if operation_type == BatchOperation.TYPE_IBCMD_CLI:
             from apps.operations.driver_catalog_effective import get_effective_driver_catalog, resolve_driver_catalog_versions
@@ -218,7 +241,6 @@ class BatchOperationFactory:
                 target_entity=target_entity,
                 payload=operation_payload,
                 config=operation_config,
-                template=template,
                 status=BatchOperation.STATUS_PENDING,
                 created_by=created_by,
                 metadata=metadata,

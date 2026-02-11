@@ -86,15 +86,6 @@ class BatchOperation(models.Model):
         help_text="Databases to execute operation on"
     )
 
-    # Template reference (optional)
-    template = models.ForeignKey(
-        'templates.OperationTemplate',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='batch_operations'
-    )
-
     # Payload & Configuration
     payload = models.JSONField(default=dict, help_text="Operation payload/parameters")
     config = models.JSONField(
@@ -206,3 +197,17 @@ class BatchOperation(models.Model):
         if self.total_tasks == 0:
             return None
         return (self.completed_tasks / self.total_tasks) * 100
+
+    @property
+    def template_id(self) -> Optional[str]:
+        """Compatibility accessor for template alias stored in metadata."""
+        metadata = self.metadata if isinstance(self.metadata, dict) else {}
+        value = str(metadata.get("template_id") or "").strip()
+        return value or None
+
+    @property
+    def template_exposure_id(self) -> Optional[str]:
+        """Compatibility accessor for template exposure identifier stored in metadata."""
+        metadata = self.metadata if isinstance(self.metadata, dict) else {}
+        value = str(metadata.get("template_exposure_id") or "").strip()
+        return value or None

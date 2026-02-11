@@ -34,16 +34,22 @@ class PreflightCheck:
         }
 
 
-def _count_batch_template_fk_orphans() -> int:
+def _count_batch_template_metadata_orphans() -> int:
     with connection.cursor() as cursor:
         cursor.execute(
             """
             SELECT COUNT(*)
             FROM batch_operations bo
-            LEFT JOIN operation_templates ot ON ot.id = bo.template_id
-            WHERE bo.template_id IS NOT NULL
-              AND ot.id IS NULL
-            """
+            WHERE NULLIF(TRIM(COALESCE(bo.metadata->>'template_id', '')), '') IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM operation_exposures oe
+                  WHERE oe.surface = %s
+                    AND oe.tenant_id IS NULL
+                    AND oe.alias = TRIM(bo.metadata->>'template_id')
+              )
+            """,
+            [OperationExposure.SURFACE_TEMPLATE],
         )
         row = cursor.fetchone()
     return int(row[0] if row else 0)
@@ -132,8 +138,8 @@ def run_operation_exposure_cutover_preflight() -> dict[str, Any]:
         ),
         PreflightCheck(
             key="batch_operation_template_fk_orphans",
-            description="batch_operations.template_id must not contain orphan references.",
-            mismatches=_count_batch_template_fk_orphans(),
+            description="batch_operations.metadata.template_id must not contain orphan exposure aliases.",
+            mismatches=_count_batch_template_metadata_orphans(),
             critical=True,
             details={},
         ),
@@ -160,4 +166,3 @@ def run_operation_exposure_cutover_preflight() -> dict[str, Any]:
         },
         "checks": [item.to_dict() for item in checks],
     }
-
