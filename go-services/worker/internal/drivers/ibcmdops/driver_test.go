@@ -366,20 +366,26 @@ func TestBuildRequestIbcmdCliServiceStrategyInjectsInfobaseAuthArgsForExtensions
 	}
 }
 
-func TestBuildRequestIbcmdCliServiceStrategyFailsClosedOutsideAllowlist(t *testing.T) {
+func TestBuildRequestIbcmdCliServiceStrategyInjectsInfobaseAuthArgsForExtensionUpdate(t *testing.T) {
 	msg := &models.OperationMessage{
 		OperationID:   "op-1",
 		OperationType: "ibcmd_cli",
 		Payload: models.OperationPayload{
 			Data: map[string]interface{}{
-				"command_id": "infobase.dump",
-				"argv":       []string{"infobase", "dump"},
-				"ib_auth":    map[string]interface{}{"strategy": "service"},
+				"command_id": "infobase.extension.update",
+				"argv": []string{
+					"infobase",
+					"extension",
+					"update",
+					"--active=no",
+					"--name=DemoExtension",
+				},
+				"ib_auth": map[string]interface{}{"strategy": "service"},
 			},
 		},
 	}
 
-	_, err := buildRequest(
+	req, err := buildRequest(
 		context.Background(),
 		msg,
 		"db-1",
@@ -394,8 +400,35 @@ func TestBuildRequestIbcmdCliServiceStrategyFailsClosedOutsideAllowlist(t *testi
 		},
 		nil,
 	)
-	if err == nil {
-		t.Fatalf("expected error")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(strings.Join(req.Args, " "), "--user=svc") {
+		t.Fatalf("expected --user=svc in args, got %#v", req.Args)
+	}
+	if !strings.Contains(strings.Join(req.Args, " "), "--password=svcpwd") {
+		t.Fatalf("expected --password=svcpwd in args, got %#v", req.Args)
+	}
+
+	findBinding := func(targetRef string) map[string]interface{} {
+		for _, raw := range req.RuntimeBindings {
+			if raw == nil {
+				continue
+			}
+			if v, ok := raw["target_ref"]; ok && v == targetRef {
+				return raw
+			}
+		}
+		return nil
+	}
+
+	ibUser := findBinding("flag:--user")
+	if ibUser == nil || ibUser["source_ref"] != "credentials.ib_service_mapping" || ibUser["status"] != "applied" {
+		t.Fatalf("unexpected IB user binding: %#v", ibUser)
+	}
+	ibPwd := findBinding("flag:--password")
+	if ibPwd == nil || ibPwd["source_ref"] != "credentials.ib_service_mapping" || ibPwd["status"] != "applied" {
+		t.Fatalf("unexpected IB password binding: %#v", ibPwd)
 	}
 }
 

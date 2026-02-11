@@ -208,10 +208,6 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 		ibAuthStrategy := extractIbcmdIbAuthStrategy(data)
 		needsAuthArgs := shouldInjectInfobaseAuthArgs(commandID, resolvedArgs)
 
-		if ibAuthStrategy == "service" && commandID != "" && !isServiceIbAuthAllowed(commandID) {
-			return nil, fmt.Errorf("ib_auth.strategy=service is not allowed for command_id=%s", commandID)
-		}
-
 		sourceRef := "credentials.ib_user_mapping"
 		if ibAuthStrategy == "service" {
 			sourceRef = "credentials.ib_service_mapping"

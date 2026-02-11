@@ -74,42 +74,11 @@ func stripInfobaseAuthArgs(args []string) []string {
 }
 
 func shouldInjectInfobaseAuthArgs(commandID string, argv []string) bool {
-	cmd := strings.TrimSpace(commandID)
-	if cmd == "infobase.dump" || cmd == "infobase.restore" || cmd == "infobase.extension.list" || cmd == "infobase.extension.info" {
-		return true
-	}
-	if len(argv) >= 2 && strings.TrimSpace(argv[0]) == "infobase" {
-		sub := strings.TrimSpace(argv[1])
-		if sub == "dump" || sub == "restore" {
-			return true
-		}
-		// Some catalog command IDs flatten "infobase config extension <cmd>" into "infobase extension <cmd>".
-		// By this point argv may already include "config" (normalizeIbcmdArgv), but we keep this robust.
-		if sub == "extension" {
-			if len(argv) >= 3 {
-				action := strings.TrimSpace(argv[2])
-				return action == "list" || action == "info"
-			}
-			return false
-		}
-		if sub == "config" && len(argv) >= 4 && strings.TrimSpace(argv[2]) == "extension" {
-			action := strings.TrimSpace(argv[3])
-			return action == "list" || action == "info"
-		}
-	}
-	return false
+	_ = commandID
+	return len(argv) > 0
 }
 
 func isServiceDbmsAuthAllowed(commandID string) bool {
 	// Keep this intentionally tight; expand only with explicit approval.
 	return commandID == "infobase.extension.list" || commandID == "infobase.extension.info"
-}
-
-func isServiceIbAuthAllowed(commandID string) bool {
-	switch strings.TrimSpace(commandID) {
-	case "infobase.extension.list", "infobase.extension.info":
-		return true
-	default:
-		return false
-	}
 }
