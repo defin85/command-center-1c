@@ -78,6 +78,7 @@ Change ID: `refactor-operation-exposure-bigbang-cutover`
 - Проверена целостность backup (метаданные + размер + быстрый restore-check).
 - Зафиксирован backup id/path в релизном логе.
 - Подтверждена доступность previous deploy artifact.
+- Рекомендованный инструмент исполнения: `scripts/rollout/backup-restore-operation-exposure-cutover.sh`.
 
 Правило:
 - Нет валидного backup -> `No-Go`.
@@ -213,17 +214,25 @@ Smoke-проверки (обязательные):
 # 0) Перейти в репозиторий
 cd /home/egor/code/command-center-1c
 
-# 1) Применить миграции
+# 1) Backup + restore rehearsal (production-like staging / production window)
+./scripts/rollout/backup-restore-operation-exposure-cutover.sh
+
+# 2) Применить миграции
 cd orchestrator
 ../.venv/bin/python manage.py migrate
 
-# 2) Backfill (dry-run на rehearsal, commit в production cutover)
+# 3) Backfill (dry-run на rehearsal, commit в production cutover)
 ../.venv/bin/python manage.py backfill_operation_catalog --dry-run
+../.venv/bin/python manage.py backfill_operation_exposure_permissions --dry-run --strict-parity --json
+../.venv/bin/python manage.py backfill_operation_template_metadata --dry-run --strict --json
 
-# 3) Production backfill (без dry-run) - после PASS preflight
+# 4) Production backfill (без dry-run) - после PASS preflight
 ../.venv/bin/python manage.py backfill_operation_catalog
+../.venv/bin/python manage.py backfill_operation_exposure_permissions --strict-parity --json
+../.venv/bin/python manage.py backfill_operation_template_metadata --strict --json
 
-# 4) Здесь выполняются preflight/gate команды из задач 1.2/1.4
+# 5) Здесь выполняются preflight/gate команды из задач 1.2/1.4
 #    (обязательное условие: critical mismatches = 0)
+../.venv/bin/python manage.py preflight_operation_exposure_cutover --strict --json
+../.venv/bin/python manage.py gate_operation_template_references --strict --json
 ```
-
