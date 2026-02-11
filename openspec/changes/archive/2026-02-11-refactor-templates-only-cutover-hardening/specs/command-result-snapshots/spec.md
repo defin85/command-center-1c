@@ -2,12 +2,18 @@
 ### Requirement: Completion MUST резолвить mapping строго по pinned reference
 Система ДОЛЖНА (SHALL) использовать для completion normalization только mapping, зафиксированный в metadata (`mapping_spec_id`, `mapping_spec_version`), без неявного переключения на текущее состояние mapping.
 
+#### Scenario: Pinned mapping ref доступен и согласован по версии
+- **GIVEN** metadata содержит `mapping_spec_ref` с корректными `mapping_spec_id`, `mapping_spec_version`, `entity_kind`
+- **WHEN** выполняется completion
+- **THEN** canonical normalization использует только pinned mapping из metadata
+- **AND** canonical snapshot детерминирован относительно metadata плана
+
 #### Scenario: Pinned mapping version расходится с текущим опубликованным mapping
 - **GIVEN** план создан с pinned `mapping_spec_version=A`
 - **AND** к моменту completion в системе опубликована версия `B`
 - **WHEN** выполняется completion по данному плану
-- **THEN** normalization использует версию `A`
-- **AND** canonical snapshot детерминирован относительно metadata плана
+- **THEN** система не применяет runtime fallback на текущий mapping
+- **AND** raw snapshot сохраняется вместе с diagnostics о version mismatch
 
 #### Scenario: Pinned mapping недоступен на completion
 - **GIVEN** metadata содержит `mapping_spec_ref`, но соответствующий mapping отсутствует/недоступен

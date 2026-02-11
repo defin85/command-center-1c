@@ -51,7 +51,8 @@ def _create_set_flags_exposure(
     )
     return OperationExposure.objects.create(
         definition=definition,
-        surface=OperationExposure.SURFACE_ACTION_CATALOG,
+        # Legacy data simulation for migration report checks.
+        surface="action_catalog",
         alias=alias,
         tenant=None,
         label=alias,

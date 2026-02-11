@@ -59,6 +59,14 @@ async function setupCommonApiMocks(page: Page, opts: {
       return fulfillJson(route, { items: [], count: 0, total: 0 })
     }
 
+    if (method === 'GET' && path === '/api/v2/tenants/list-my-tenants/') {
+      return fulfillJson(route, { active_tenant_id: null, tenants: [] })
+    }
+
+    if (method === 'POST' && path === '/api/v2/tenants/set-active/') {
+      return fulfillJson(route, { active_tenant_id: null })
+    }
+
     if (method === 'GET' && path === '/api/v2/ui/table-metadata/') {
       return fulfillJson(route, { table_id: 'unknown', version: 'test', columns: [] })
     }
@@ -67,8 +75,9 @@ async function setupCommonApiMocks(page: Page, opts: {
   })
 }
 
-test('Databases: staff bulk Extensions action shows preview confirm (smoke)', async ({ page }) => {
+test('Databases: templates-only bulk screen не вызывает legacy action-catalog endpoint', async ({ page }) => {
   await setupAuth(page, true)
+  let legacyActionCatalogCalls = 0
   await setupCommonApiMocks(page, {
     isStaff: true,
     handlers: async (method, path, _url) => {
@@ -149,38 +158,11 @@ test('Databases: staff bulk Extensions action shows preview confirm (smoke)', as
       }
 
       if (method === 'GET' && path === '/api/v2/ui/action-catalog/') {
+        legacyActionCatalogCalls += 1
         return {
-          status: 200,
-          data: {
-            catalog_version: 1,
-            extensions: {
-              actions: [
-                {
-                  id: 'extensions.list',
-                  label: 'List extensions',
-                  contexts: ['bulk_page'],
-                  executor: { kind: 'ibcmd_cli', driver: 'ibcmd', command_id: 'infobase.extension.list' },
-                },
-              ],
-            },
-          },
+          status: 404,
+          data: { success: false, error: { code: 'NOT_FOUND', message: 'Not found' } },
         }
-      }
-
-      if (method === 'POST' && path === '/api/v2/ui/execution-plan/preview/') {
-        return {
-          status: 200,
-          data: {
-            execution_plan: { kind: 'ibcmd_cli', argv_masked: ['infobase', 'config', 'extension', 'list', '--db-pwd=***'] },
-            bindings: [
-              { target_ref: 'command_id', source_ref: 'request.executor.command_id', resolve_at: 'api', sensitive: false, status: 'applied' },
-            ],
-          },
-        }
-      }
-
-      if (method === 'POST' && path === '/api/v2/operations/execute-ibcmd-cli/') {
-        return { status: 202, data: { operation_id: 'op-1', status: 'queued', total_tasks: 1, message: 'queued' } }
       }
 
       return null
@@ -188,20 +170,13 @@ test('Databases: staff bulk Extensions action shows preview confirm (smoke)', as
   })
 
   await page.goto('/databases', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Databases', exact: true })).toBeVisible()
   await expect(page.getByText('db1', { exact: true })).toBeVisible()
 
   const firstRow = page.locator('tr[data-row-key="11111111-1111-1111-1111-111111111111"]')
   await firstRow.locator('input.ant-checkbox-input').check({ force: true })
-
-  await page.getByRole('button', { name: /Extensions/ }).click()
-  await page.getByRole('menuitem', { name: 'List extensions', exact: true }).click()
-
-  await expect(page.locator('.ant-modal-confirm-title', { hasText: 'Подтвердить действие?' })).toBeVisible()
-  await expect(page.getByText('argv_masked:', { exact: false })).toBeVisible()
-  await expect(page.getByText('--db-pwd=***', { exact: false })).toBeVisible()
-  await expect(page.getByText('Binding Provenance:', { exact: true })).toBeVisible()
-  await expect(page.getByRole('cell', { name: 'command_id', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Отмена', exact: true }).click()
+  await expect(page.getByRole('button', { name: /Bulk Actions/ })).toBeVisible()
+  expect(legacyActionCatalogCalls).toBe(0)
 })
 
 test('Operations: staff details modal shows Execution Plan (smoke)', async ({ page }) => {

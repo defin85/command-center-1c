@@ -9546,24 +9546,6 @@ components:
       required:
       - capabilities
       - hints_version
-    ActionCatalogExtensions:
-      type: object
-      properties:
-        actions:
-          type: array
-          items: {}
-      required:
-      - actions
-    ActionCatalogResponse:
-      type: object
-      properties:
-        catalog_version:
-          type: integer
-        extensions:
-          $ref: '#/components/schemas/ActionCatalogExtensions'
-      required:
-      - catalog_version
-      - extensions
     AdminAuditLogItem:
       type: object
       properties:

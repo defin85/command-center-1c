@@ -4,8 +4,9 @@ import uuid
 from unittest.mock import patch
 
 from apps.databases.models import Database, DatabaseExtensionsSnapshot
+from apps.mappings.models import TenantMappingSpec
 from apps.operations.event_subscriber import EventSubscriber
-from apps.operations.models import BatchOperation, Task
+from apps.operations.models import BatchOperation, CommandResultSnapshot, Task
 from apps.tenancy.models import Tenant
 
 from ._event_subscriber_test_base import EventSubscriberBaseTestCase
@@ -417,4 +418,219 @@ class EventSubscriberWorkerEventsTest(EventSubscriberBaseTestCase):
                     "hash_sum": "56pD01LTf43r4q+f7HKWxkeqJwE=",
                 }
             ],
+        )
+
+    @patch("apps.operations.event_subscriber.runtime.operations_redis_client")
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_worker_completed_fail_closed_on_mapping_version_drift(
+        self, mock_redis_class, mock_ops_redis
+    ):
+        subscriber = EventSubscriber()
+
+        tenant = Tenant.objects.filter(slug="default").first()
+        self.assertIsNotNone(tenant, "default tenant must exist for tests")
+
+        mapping = TenantMappingSpec.objects.create(
+            tenant=tenant,
+            entity_kind=TenantMappingSpec.ENTITY_EXTENSIONS_INVENTORY,
+            status=TenantMappingSpec.STATUS_PUBLISHED,
+            spec={"mapping_version": 1},
+        )
+        pinned_version = mapping.updated_at.isoformat()
+        mapping.spec = {"mapping_version": 2}
+        mapping.save(update_fields=["spec", "updated_at"])
+        mapping.refresh_from_db()
+        self.assertNotEqual(mapping.updated_at.isoformat(), pinned_version)
+
+        op = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name="IBCMD extensions.list pinned-drift",
+            operation_type=BatchOperation.TYPE_IBCMD_CLI,
+            target_entity="Infobase",
+            status=BatchOperation.STATUS_PROCESSING,
+            metadata={
+                "command_id": "infobase.extension.list",
+                "snapshot_kinds": ["extensions"],
+                "manual_operation": "extensions.sync",
+                "result_contract": "extensions.inventory.v1",
+                "mapping_spec_ref": {
+                    "mapping_spec_id": str(mapping.id),
+                    "mapping_spec_version": pinned_version,
+                    "entity_kind": TenantMappingSpec.ENTITY_EXTENSIONS_INVENTORY,
+                },
+            },
+        )
+        Task.objects.create(
+            id="task-extensions-mapping-drift",
+            batch_operation=op,
+            database=self.database,
+            status=Task.STATUS_PROCESSING,
+        )
+
+        subscriber.handle_worker_completed(
+            {
+                "operation_id": op.id,
+                "status": "completed",
+                "results": [
+                    {
+                        "database_id": str(self.database.id),
+                        "success": True,
+                        "data": {"data": {"extensions": [{"name": "Ext1", "version": "1.0", "is_active": True}]}},
+                    }
+                ],
+                "summary": {"total": 1, "succeeded": 1, "failed": 0},
+            },
+            "corr-ext-mapping-drift",
+        )
+
+        op.refresh_from_db()
+        snapshot_errors = op.metadata.get("snapshot_errors") or []
+        codes = {row.get("error_code") for row in snapshot_errors if isinstance(row, dict)}
+        self.assertIn("PINNED_MAPPING_VERSION_MISMATCH", codes)
+
+        snapshot = CommandResultSnapshot.objects.filter(operation_id=op.id, database_id=self.database.id).first()
+        self.assertIsNotNone(snapshot, "command result snapshot must be created")
+        self.assertIn("raw", snapshot.canonical_payload)
+
+        task = Task.objects.get(id="task-extensions-mapping-drift")
+        diagnostics = (task.result or {}).get("diagnostics") if isinstance(task.result, dict) else None
+        self.assertIsInstance(diagnostics, list)
+        self.assertTrue(
+            any(isinstance(item, dict) and item.get("code") == "PINNED_MAPPING_VERSION_MISMATCH" for item in diagnostics)
+        )
+
+    @patch("apps.operations.event_subscriber.runtime.operations_redis_client")
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_worker_completed_missing_pinned_mapping_keeps_raw_snapshot(
+        self, mock_redis_class, mock_ops_redis
+    ):
+        subscriber = EventSubscriber()
+
+        tenant = Tenant.objects.filter(slug="default").first()
+        self.assertIsNotNone(tenant, "default tenant must exist for tests")
+
+        op = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name="IBCMD extensions.list missing-mapping",
+            operation_type=BatchOperation.TYPE_IBCMD_CLI,
+            target_entity="Infobase",
+            status=BatchOperation.STATUS_PROCESSING,
+            metadata={
+                "command_id": "infobase.extension.list",
+                "snapshot_kinds": ["extensions"],
+                "manual_operation": "extensions.sync",
+                "result_contract": "extensions.inventory.v1",
+                "mapping_spec_ref": {
+                    "mapping_spec_id": "999999",
+                    "mapping_spec_version": "2026-02-01T00:00:00+00:00",
+                    "entity_kind": TenantMappingSpec.ENTITY_EXTENSIONS_INVENTORY,
+                },
+            },
+        )
+        Task.objects.create(
+            id="task-extensions-mapping-missing",
+            batch_operation=op,
+            database=self.database,
+            status=Task.STATUS_PROCESSING,
+        )
+
+        subscriber.handle_worker_completed(
+            {
+                "operation_id": op.id,
+                "status": "completed",
+                "results": [
+                    {
+                        "database_id": str(self.database.id),
+                        "success": True,
+                        "data": {"raw": {"stdout": "ok"}, "extensions": [{"name": "Ext1", "is_active": True}]},
+                    }
+                ],
+                "summary": {"total": 1, "succeeded": 1, "failed": 0},
+            },
+            "corr-ext-mapping-missing",
+        )
+
+        op.refresh_from_db()
+        snapshot_errors = op.metadata.get("snapshot_errors") or []
+        codes = {row.get("error_code") for row in snapshot_errors if isinstance(row, dict)}
+        self.assertIn("PINNED_MAPPING_NOT_FOUND", codes)
+
+        snapshot = CommandResultSnapshot.objects.filter(operation_id=op.id, database_id=self.database.id).first()
+        self.assertIsNotNone(snapshot, "command result snapshot must be created")
+        self.assertIsInstance(snapshot.raw_payload, dict)
+        self.assertEqual((snapshot.raw_payload.get("raw") or {}).get("stdout"), "ok")
+
+    @patch("apps.operations.event_subscriber.runtime.operations_redis_client")
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_worker_completed_appends_result_contract_validation_diagnostics(
+        self, mock_redis_class, mock_ops_redis
+    ):
+        subscriber = EventSubscriber()
+
+        tenant = Tenant.objects.filter(slug="default").first()
+        self.assertIsNotNone(tenant, "default tenant must exist for tests")
+
+        mapping = TenantMappingSpec.objects.create(
+            tenant=tenant,
+            entity_kind=TenantMappingSpec.ENTITY_EXTENSIONS_INVENTORY,
+            status=TenantMappingSpec.STATUS_PUBLISHED,
+            spec={"mapping_version": 1},
+        )
+        pinned_version = mapping.updated_at.isoformat()
+
+        op = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name="IBCMD extensions.list invalid-contract",
+            operation_type=BatchOperation.TYPE_IBCMD_CLI,
+            target_entity="Infobase",
+            status=BatchOperation.STATUS_PROCESSING,
+            metadata={
+                "command_id": "infobase.extension.list",
+                "snapshot_kinds": ["extensions"],
+                "manual_operation": "extensions.sync",
+                "result_contract": "extensions.inventory.v1",
+                "mapping_spec_ref": {
+                    "mapping_spec_id": str(mapping.id),
+                    "mapping_spec_version": pinned_version,
+                    "entity_kind": TenantMappingSpec.ENTITY_EXTENSIONS_INVENTORY,
+                },
+            },
+        )
+        Task.objects.create(
+            id="task-extensions-contract-invalid",
+            batch_operation=op,
+            database=self.database,
+            status=Task.STATUS_PROCESSING,
+        )
+
+        with patch(
+            "apps.mappings.extensions_inventory.validate_extensions_inventory",
+            return_value=["extensions[0].name is required"],
+        ):
+            subscriber.handle_worker_completed(
+                {
+                    "operation_id": op.id,
+                    "status": "completed",
+                    "results": [
+                        {
+                            "database_id": str(self.database.id),
+                            "success": True,
+                            "data": {"data": {"extensions": [{"name": "Ext1", "is_active": True}]}},
+                        }
+                    ],
+                    "summary": {"total": 1, "succeeded": 1, "failed": 0},
+                },
+                "corr-ext-contract-invalid",
+            )
+
+        op.refresh_from_db()
+        snapshot_errors = op.metadata.get("snapshot_errors") or []
+        codes = {row.get("error_code") for row in snapshot_errors if isinstance(row, dict)}
+        self.assertIn("RESULT_CONTRACT_VALIDATION_FAILED", codes)
+
+        task = Task.objects.get(id="task-extensions-contract-invalid")
+        diagnostics = (task.result or {}).get("diagnostics") if isinstance(task.result, dict) else None
+        self.assertIsInstance(diagnostics, list)
+        self.assertTrue(
+            any(isinstance(item, dict) and item.get("code") == "RESULT_CONTRACT_VALIDATION_FAILED" for item in diagnostics)
         )

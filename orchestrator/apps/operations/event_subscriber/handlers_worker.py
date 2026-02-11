@@ -11,6 +11,136 @@ from .metrics import record_batch_metric
 from . import runtime
 
 
+_RESULT_CONTRACT_EXTENSIONS_INVENTORY_V1 = "extensions.inventory.v1"
+
+
+def _resolve_pinned_extensions_mapping_spec(
+    *,
+    tenant_id: str,
+    mapping_spec_ref: Any,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    from apps.mappings.models import TenantMappingSpec
+
+    if not isinstance(mapping_spec_ref, dict):
+        return None, {
+            "code": "PINNED_MAPPING_REF_MISSING",
+            "message": "mapping_spec_ref is required for contract-aware completion",
+            "details": {},
+        }
+
+    mapping_spec_id = str(mapping_spec_ref.get("mapping_spec_id") or "").strip()
+    entity_kind = str(mapping_spec_ref.get("entity_kind") or "").strip()
+    expected_version = str(mapping_spec_ref.get("mapping_spec_version") or "").strip()
+
+    if not mapping_spec_id:
+        return None, {
+            "code": "PINNED_MAPPING_REF_INVALID",
+            "message": "mapping_spec_ref.mapping_spec_id is required",
+            "details": {"mapping_spec_ref": mapping_spec_ref},
+        }
+    try:
+        mapping_spec_pk = int(mapping_spec_id)
+    except (TypeError, ValueError):
+        return None, {
+            "code": "PINNED_MAPPING_REF_INVALID",
+            "message": "mapping_spec_ref.mapping_spec_id must be numeric",
+            "details": {"mapping_spec_ref": mapping_spec_ref},
+        }
+
+    if entity_kind != TenantMappingSpec.ENTITY_EXTENSIONS_INVENTORY:
+        return None, {
+            "code": "PINNED_MAPPING_REF_INVALID",
+            "message": "mapping_spec_ref.entity_kind is invalid",
+            "details": {
+                "mapping_spec_ref": mapping_spec_ref,
+                "expected_entity_kind": TenantMappingSpec.ENTITY_EXTENSIONS_INVENTORY,
+            },
+        }
+
+    row = (
+        TenantMappingSpec.objects.filter(
+            id=mapping_spec_pk,
+            tenant_id=tenant_id,
+            entity_kind=TenantMappingSpec.ENTITY_EXTENSIONS_INVENTORY,
+            status=TenantMappingSpec.STATUS_PUBLISHED,
+        )
+        .only("id", "updated_at", "spec")
+        .first()
+    )
+
+    if row is None:
+        return None, {
+            "code": "PINNED_MAPPING_NOT_FOUND",
+            "message": "pinned mapping is not available",
+            "details": {"mapping_spec_ref": mapping_spec_ref},
+        }
+
+    actual_version = row.updated_at.isoformat() if getattr(row, "updated_at", None) else ""
+    if expected_version and actual_version != expected_version:
+        return None, {
+            "code": "PINNED_MAPPING_VERSION_MISMATCH",
+            "message": "pinned mapping version mismatch",
+            "details": {
+                "mapping_spec_ref": mapping_spec_ref,
+                "resolved_mapping_spec_id": str(row.id),
+                "resolved_mapping_spec_version": actual_version or None,
+            },
+        }
+
+    spec = row.spec if isinstance(row.spec, dict) else {}
+    return spec, None
+
+
+def _validate_extensions_result_contract(
+    *,
+    canonical_payload: Any,
+    result_contract: str,
+) -> list[dict[str, Any]]:
+    contract = str(result_contract or "").strip()
+    if contract != _RESULT_CONTRACT_EXTENSIONS_INVENTORY_V1:
+        return []
+
+    from apps.mappings.extensions_inventory import validate_extensions_inventory
+
+    errors = validate_extensions_inventory(canonical_payload)
+    if not errors:
+        return []
+    return [
+        {
+            "code": "RESULT_CONTRACT_VALIDATION_FAILED",
+            "message": "canonical payload does not satisfy result_contract",
+            "details": {
+                "result_contract": contract,
+                "errors": errors[:20],
+            },
+        }
+    ]
+
+
+def _append_extensions_snapshot_diagnostics(
+    *,
+    snapshot_errors: list[dict[str, Any]],
+    diagnostics: list[dict[str, Any]],
+    operation_id: str,
+    database_id: str,
+    command_id: str,
+) -> None:
+    for item in diagnostics:
+        if not isinstance(item, dict):
+            continue
+        snapshot_errors.append(
+            {
+                "kind": "extensions",
+                "operation_id": operation_id,
+                "database_id": database_id,
+                "command_id": command_id,
+                "error_code": str(item.get("code") or "SNAPSHOT_DIAGNOSTIC"),
+                "error": str(item.get("message") or "snapshot diagnostic"),
+                "details": item.get("details") if isinstance(item.get("details"), dict) else {},
+            }
+        )
+
+
 class WorkerEventHandlersMixin:
     def handle_worker_completed(self, data: Dict[str, Any], correlation_id: str) -> None:
         from apps.operations.models import BatchOperation
@@ -92,6 +222,7 @@ class WorkerEventHandlersMixin:
                                 from apps.databases.extensions_snapshot import (
                                     build_extensions_snapshot_from_worker_result,
                                 )
+                                from apps.mappings.extensions_inventory import build_canonical_extensions_inventory
                                 from apps.operations.models import CommandResultSnapshot
                                 from apps.operations.snapshot_hash import canonical_json_hash
                                 from apps.databases.models import DatabaseExtensionsSnapshot
@@ -99,6 +230,43 @@ class WorkerEventHandlersMixin:
                                 snapshot_data = result.get("data")
                                 normalized = build_extensions_snapshot_from_worker_result(snapshot_data)
                                 canonical = normalized
+                                diagnostics: list[dict[str, Any]] = []
+
+                                metadata = batch_op.metadata if isinstance(batch_op.metadata, dict) else {}
+                                result_contract = str(metadata.get("result_contract") or "").strip()
+                                mapping_spec_ref = metadata.get("mapping_spec_ref")
+
+                                from apps.databases.models import Database as DatabaseModel
+
+                                db = DatabaseModel.objects.filter(id=database_id).only("id", "tenant_id").first()
+
+                                db_tenant_id = str(getattr(db, "tenant_id", "") or "")
+                                requires_contract_mapping = isinstance(mapping_spec_ref, dict) or bool(result_contract)
+                                if db_tenant_id and requires_contract_mapping:
+                                    pinned_spec, mapping_diagnostic = _resolve_pinned_extensions_mapping_spec(
+                                        tenant_id=db_tenant_id,
+                                        mapping_spec_ref=mapping_spec_ref,
+                                    )
+                                    if mapping_diagnostic is None:
+                                        canonical = build_canonical_extensions_inventory(normalized, pinned_spec or {})
+                                    else:
+                                        diagnostics.append(mapping_diagnostic)
+                                        # Fail-closed: keep normalized snapshot, do not use runtime fallback mapping.
+                                        canonical = normalized
+
+                                diagnostics.extend(
+                                    _validate_extensions_result_contract(
+                                        canonical_payload=canonical,
+                                        result_contract=result_contract,
+                                    )
+                                )
+                                if diagnostics and isinstance(snapshot_data, dict):
+                                    existing_diagnostics = snapshot_data.get("diagnostics")
+                                    if isinstance(existing_diagnostics, list):
+                                        snapshot_data["diagnostics"] = existing_diagnostics + diagnostics[:20]
+                                    else:
+                                        snapshot_data["diagnostics"] = diagnostics[:20]
+
                                 canonical_hash = canonical_json_hash(canonical)
 
                                 DatabaseExtensionsSnapshot.objects.update_or_create(
@@ -125,10 +293,6 @@ class WorkerEventHandlersMixin:
                                 except Exception:
                                     pass
 
-                                from apps.databases.models import Database as DatabaseModel
-
-                                db = DatabaseModel.objects.filter(id=database_id).only("id", "tenant_id").first()
-
                                 if db and getattr(db, "tenant_id", None):
                                     CommandResultSnapshot.objects.create(
                                         tenant_id=db.tenant_id,
@@ -142,6 +306,14 @@ class WorkerEventHandlersMixin:
                                         canonical_hash=canonical_hash,
                                         captured_at=now,
                                     )
+                                    if diagnostics:
+                                        _append_extensions_snapshot_diagnostics(
+                                            snapshot_errors=snapshot_errors,
+                                            diagnostics=diagnostics,
+                                            operation_id=str(operation_id),
+                                            database_id=str(database_id),
+                                            command_id=op_command_id,
+                                        )
                             except Exception as exc:
                                 runtime.logger.warning(
                                     "Extensions snapshot persistence failed",

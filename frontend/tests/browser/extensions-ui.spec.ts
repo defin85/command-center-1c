@@ -31,29 +31,10 @@ async function setupAuth(page: Page, opts?: { activeTenantId?: string }) {
   }, opts)
 }
 
-const defaultActionCatalogResponse = () => ({
-  catalog_version: 1,
-  extensions: {
-    actions: [
-      {
-        id: 'extensions.set_flags.default',
-        capability: 'extensions.set_flags',
-        label: 'Set flags',
-        contexts: ['bulk_page'],
-        executor: {
-          kind: 'ibcmd_cli',
-          driver: 'ibcmd',
-          command_id: 'infobase.extension.update',
-        },
-      },
-    ],
-  },
-})
-
 async function setupApiMocks(page: Page, state: {
   me?: AnyRecord
   myTenants?: AnyRecord
-  actionCatalog?: AnyRecord
+  templates?: AnyRecord[]
   overview: AnyRecord[]
   overviewByDatabaseId?: Record<string, AnyRecord[]>
   drilldownByName: Record<string, AnyRecord[]>
@@ -62,6 +43,7 @@ async function setupApiMocks(page: Page, state: {
   onPlanHeaders?: (headers: Record<string, string>) => void
   onApplyHeaders?: (headers: Record<string, string>) => void
   onPolicyHeaders?: (headers: Record<string, string>) => void
+  onLegacyActionCatalogRequest?: () => void
 }) {
   await page.route('**/api/v2/**', async (route) => {
     const request = route.request()
@@ -85,8 +67,54 @@ async function setupApiMocks(page: Page, state: {
       return fulfillJson(route, { items: [], count: 0, total: 0 })
     }
 
+    if (method === 'GET' && path === '/api/v2/extensions/manual-operation-bindings/') {
+      return fulfillJson(route, {
+        bindings: [
+          {
+            manual_operation: 'extensions.set_flags',
+            template_id: 'tpl-set-flags',
+            updated_at: '2026-01-01T00:00:00Z',
+            updated_by: 'test',
+          },
+        ],
+        count: 1,
+        total: 1,
+      })
+    }
+
     if (method === 'GET' && path === '/api/v2/ui/action-catalog/') {
-      return fulfillJson(route, state.actionCatalog ?? defaultActionCatalogResponse())
+      try {
+        state.onLegacyActionCatalogRequest?.()
+      } catch (_err) {
+        // ignore
+      }
+      return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND', message: 'Not found' } }, 404)
+    }
+
+    if (method === 'GET' && path === '/api/v2/operation-catalog/exposures/') {
+      const templates = Array.isArray(state.templates) && state.templates.length > 0
+        ? state.templates
+        : [
+          { alias: 'tpl-set-flags', name: 'Set flags template', capability: 'extensions.set_flags' },
+          { alias: 'tpl-sync', name: 'Sync template', capability: 'extensions.sync' },
+        ]
+      const surface = String(url.searchParams.get('surface') || '').trim()
+      const capability = String(url.searchParams.get('capability') || '').trim()
+
+      let exposures = templates.map((item) => ({
+        id: `exp-${String(item.alias || '')}`,
+        definition_id: `def-${String(item.alias || '')}`,
+        surface: 'template',
+        alias: String(item.alias || ''),
+        name: String(item.name || item.alias || ''),
+        description: String(item.description || ''),
+        capability: String(item.capability || ''),
+        status: 'published',
+        is_active: true,
+      }))
+      if (surface) exposures = exposures.filter((item) => item.surface === surface)
+      if (capability) exposures = exposures.filter((item) => item.capability === capability)
+      return fulfillJson(route, { exposures, count: exposures.length, total: exposures.length })
     }
 
     if (method === 'GET' && path === '/api/v2/tenants/list-my-tenants/') {
@@ -346,18 +374,13 @@ test('Extensions: staff without tenant context disables mutating actions', async
   await expect(page.getByRole('button', { name: 'Adopt from database', exact: true })).toBeDisabled()
 })
 
-test('Extensions: shows guidance when extensions.set_flags action is missing', async ({ page }) => {
+test('Extensions: templates-only flow не обращается к legacy action-catalog endpoint', async ({ page }) => {
   await setupAuth(page, { activeTenantId: 't1' })
+  let legacyActionCatalogCalls = 0
 
   await setupApiMocks(page, {
     me: { id: 1, username: 'staff', is_staff: true },
     myTenants: { active_tenant_id: 't1', tenants: [{ id: 't1', name: 'Default' }] },
-    actionCatalog: {
-      catalog_version: 1,
-      extensions: {
-        actions: [],
-      },
-    },
     overview: [
       {
         name: 'ExtA',
@@ -381,19 +404,19 @@ test('Extensions: shows guidance when extensions.set_flags action is missing', a
         { database_id: '11111111-1111-1111-1111-111111111111', database_name: 'db1', cluster_id: null, cluster_name: '', status: 'active', version: '1.0', snapshot_updated_at: '2026-01-01T00:00:00Z', flags: { active: true, safe_mode: true, unsafe_action_protection: false } },
       ],
     },
+    onLegacyActionCatalogRequest: () => {
+      legacyActionCatalogCalls += 1
+    },
   })
 
   await page.goto('/extensions', { waitUntil: 'domcontentloaded' })
   await page.getByRole('button', { name: 'ExtA', exact: true }).click()
   await expect(page.getByText('Extension: ExtA', { exact: true })).toBeVisible()
-  await expect(page.getByTestId('extensions-apply-action-missing')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled()
-
-  await page.getByTestId('extensions-open-action-catalog').click()
-  await expect(page).toHaveURL(/\/templates\?surface=action_catalog/)
+  await expect(page.getByTestId('extensions-apply-template')).toBeVisible()
+  expect(legacyActionCatalogCalls).toBe(0)
 })
 
-test('Extensions: selective apply triggers policy upsert + plan/apply with tenant header', async ({ page }) => {
+test('Extensions: selective apply triggers plan/apply with tenant header (templates-only)', async ({ page }) => {
   await setupAuth(page, { activeTenantId: 't1' })
 
   const seenTenantHeaders: string[] = []
@@ -432,9 +455,6 @@ test('Extensions: selective apply triggers policy upsert + plan/apply with tenan
     onApplyHeaders: (headers) => {
       if (headers['x-cc1c-tenant-id']) seenTenantHeaders.push(headers['x-cc1c-tenant-id'])
     },
-    onPolicyHeaders: (headers) => {
-      if (headers['x-cc1c-tenant-id']) seenTenantHeaders.push(headers['x-cc1c-tenant-id'])
-    },
   })
 
   await page.goto('/extensions', { waitUntil: 'domcontentloaded' })
@@ -444,25 +464,21 @@ test('Extensions: selective apply triggers policy upsert + plan/apply with tenan
   await page.getByTestId('extensions-apply-flag-safe-mode-enabled').click()
   await page.getByTestId('extensions-apply-flag-unsafe-action-protection-enabled').click()
 
-  const policyReqPromise = page.waitForRequest((r) => r.method() === 'PUT' && r.url().includes('/api/v2/extensions/flags-policy/ExtA/'))
   const planReqPromise = page.waitForRequest((r) => r.method() === 'POST' && r.url().includes('/api/v2/extensions/plan/'))
 
   await page.getByRole('button', { name: 'Apply', exact: true }).click()
 
-  const policyReq = await policyReqPromise
-  expect(policyReq.headers()['x-cc1c-tenant-id']).toBe('t1')
-  expect(policyReq.postDataJSON()).toMatchObject({ active: true, safe_mode: true, unsafe_action_protection: false })
-
   const planReq = await planReqPromise
   expect(planReq.headers()['x-cc1c-tenant-id']).toBe('t1')
   expect(planReq.postDataJSON()).toMatchObject({
-    capability: 'extensions.set_flags',
+    manual_operation: 'extensions.set_flags',
     extension_name: 'ExtA',
+    flags_values: { active: true, safe_mode: true, unsafe_action_protection: false },
     apply_mask: { active: true, safe_mode: false, unsafe_action_protection: false },
   })
 
-  await expect(page.locator('.ant-modal-confirm-title').filter({ hasText: 'Apply selected flags?' })).toBeVisible()
+  await expect(page.locator('.ant-modal-confirm-title').filter({ hasText: 'Launch workflow-first flags rollout?' })).toBeVisible()
   await page.getByRole('button', { name: 'Apply', exact: true }).click()
 
-  expect(seenTenantHeaders).toEqual(['t1', 't1', 't1'])
+  expect(seenTenantHeaders).toEqual(['t1', 't1'])
 })

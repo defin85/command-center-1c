@@ -13,6 +13,7 @@ type MockCounters = {
   deleteCalls?: number
   legacyTemplateCalls?: number
   legacyActionHintsCalls?: number
+  legacyActionCatalogCalls?: number
 }
 
 type MockUser = {
@@ -109,10 +110,6 @@ async function setupAuth(page: Page) {
     }
     localStorage.setItem('auth_token', 'test-token')
   })
-}
-
-async function clickSurfaceFilter(page: Page, label: 'All' | 'Templates' | 'Action Catalog') {
-  await page.locator('.ant-segmented').first().getByText(label, { exact: true }).click()
 }
 
 async function setupApiMocks(page: Page, state: MockState) {
@@ -305,6 +302,10 @@ async function setupApiMocks(page: Page, state: MockState) {
 
     if (path === '/api/v2/ui/action-catalog/editor-hints/') {
       counters.legacyActionHintsCalls = (counters.legacyActionHintsCalls ?? 0) + 1
+      return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND', message: 'Not found' } }, 404)
+    }
+    if (path === '/api/v2/ui/action-catalog/') {
+      counters.legacyActionCatalogCalls = (counters.legacyActionCatalogCalls ?? 0) + 1
       return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND', message: 'Not found' } }, 404)
     }
 
@@ -759,7 +760,7 @@ async function setupApiMocks(page: Page, state: MockState) {
   })
 }
 
-test('Templates: staff переключает surface facet в одном unified shell', async ({ page }) => {
+test('Templates: staff работает в templates-only shell без action surface', async ({ page }) => {
   await setupAuth(page)
   const callCounters: MockCounters = {}
   await setupApiMocks(page, {
@@ -773,35 +774,23 @@ test('Templates: staff переключает surface facet в одном unifie
 
   const tableBody = page.locator('.ant-table-tbody:visible').first()
 
-  await expect(page.getByRole('heading', { name: 'Operation Exposures', exact: true })).toBeVisible()
-  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBe('all')
-  await expect(page.getByRole('columnheader', { name: 'Surface' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
+  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
   await expect(tableBody).toContainText('Template One')
-  await expect(tableBody).toContainText('extensions.list')
-
-  await clickSurfaceFilter(page, 'Action Catalog')
-
-  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBe('action_catalog')
-  await expect(tableBody).toContainText('extensions.list')
-
-  await clickSurfaceFilter(page, 'Templates')
-
-  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBe('template')
-  await expect(tableBody).toContainText('Template One')
-
-  await clickSurfaceFilter(page, 'All')
-  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBe('all')
-  await expect(tableBody).toContainText('Template One')
-  await expect(tableBody).toContainText('extensions.list')
+  await expect(tableBody).not.toContainText('extensions.list')
+  await expect(page.getByTestId('action-catalog-add')).toHaveCount(0)
 
   expect(callCounters.operationCatalogExposuresGets ?? 0).toBeGreaterThan(0)
-  expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBeGreaterThan(0)
-  expect(callCounters.operationCatalogExposuresWithDefinitionsGets ?? 0).toBeGreaterThan(0)
+  expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
+  expect(callCounters.operationCatalogExposuresWithDefinitionsGets ?? 0).toBe(0)
   expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBe(0)
+  expect(callCounters.operationExposureHintsGets ?? 0).toBe(0)
   expect(callCounters.legacyTemplateCalls ?? 0).toBe(0)
+  expect(callCounters.legacyActionHintsCalls ?? 0).toBe(0)
+  expect(callCounters.legacyActionCatalogCalls ?? 0).toBe(0)
 })
 
-test('Templates: staff deep-link на action_catalog сохраняется при открытии страницы', async ({ page }) => {
+test('Templates: staff deep-link на template остаётся в templates-only shell', async ({ page }) => {
   await setupAuth(page)
   const callCounters: MockCounters = {}
   await setupApiMocks(page, {
@@ -811,19 +800,20 @@ test('Templates: staff deep-link на action_catalog сохраняется пр
     callCounters,
   })
 
-  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
+  await page.goto('/templates?surface=template', { waitUntil: 'domcontentloaded' })
   const tableBody = page.locator('.ant-table-tbody:visible').first()
 
-  await expect(page.getByRole('heading', { name: 'Operation Exposures', exact: true })).toBeVisible()
-  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBe('action_catalog')
-  await expect(tableBody).toContainText('extensions.list')
+  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
+  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
+  await expect(tableBody).toContainText('Template One')
+  await expect(tableBody).not.toContainText('extensions.list')
 
-  expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBeGreaterThan(0)
-  expect(callCounters.operationCatalogExposuresWithDefinitionsGets ?? 0).toBeGreaterThan(0)
+  expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
+  expect(callCounters.operationCatalogExposuresWithDefinitionsGets ?? 0).toBe(0)
   expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBe(0)
 })
 
-test('Templates: non-staff deep-link на action surface откатывается в template', async ({ page }) => {
+test('Templates: non-staff deep-link на template открывает templates-only view', async ({ page }) => {
   await setupAuth(page)
   const callCounters: MockCounters = {}
   await setupApiMocks(page, {
@@ -833,11 +823,11 @@ test('Templates: non-staff deep-link на action surface откатываетс�
     callCounters,
   })
 
-  await page.goto('/templates?surface=action_catalog', { waitUntil: 'domcontentloaded' })
+  await page.goto('/templates?surface=template', { waitUntil: 'domcontentloaded' })
 
   const tableBody = page.locator('.ant-table-tbody:visible').first()
 
-  await expect(page.getByRole('heading', { name: 'Operation Exposures', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
   await expect(tableBody).toContainText('Viewer Template')
   await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
   await expect(page.getByRole('button', { name: 'New Template', exact: true })).toHaveCount(0)
@@ -862,10 +852,10 @@ test('Templates: non-staff с MANAGE по templates получает template co
     callCounters,
   })
 
-  await page.goto('/templates?surface=template', { waitUntil: 'domcontentloaded' })
+  await page.goto('/templates', { waitUntil: 'domcontentloaded' })
   const tableBody = page.locator('.ant-table-tbody:visible').first()
 
-  await expect(page.getByRole('heading', { name: 'Operation Exposures', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
   await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
   await expect(tableBody).toContainText('Template Manage')
   await expect(page.getByRole('button', { name: 'New Template', exact: true })).toBeVisible()
@@ -880,7 +870,7 @@ test('Templates: non-staff с MANAGE по templates получает template co
   expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBe(0)
 })
 
-test('Templates: единый editor shell работает для template и action surface', async ({ page }) => {
+test('Templates: единый editor shell работает только для template flow', async ({ page }) => {
   await setupAuth(page)
   const callCounters: MockCounters = {}
   const upsertPayloads: AnyRecord[] = []
@@ -893,8 +883,9 @@ test('Templates: единый editor shell работает для template и a
   })
 
   await page.goto('/templates', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('heading', { name: 'Operation Exposures', exact: true })).toBeVisible()
-  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBe('all')
+  await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
+  await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
+  await expect(page.getByTestId('action-catalog-add')).toHaveCount(0)
 
   await page.getByRole('button', { name: 'New Template', exact: true }).click()
   await expect(page.getByRole('tab', { name: 'Basics', exact: true })).toBeVisible()
@@ -911,46 +902,15 @@ test('Templates: единый editor shell работает для template и a
 
   await expect(page.locator('.ant-table-tbody:visible').first()).toContainText('Template via unified modal')
 
-  await page.getByTestId('action-catalog-add').click()
-  await expect(page.getByRole('tab', { name: 'Basics', exact: true })).toBeVisible()
-  await expect(page.getByRole('tab', { name: 'Executor', exact: true })).toBeVisible()
-  await expect(page.getByRole('tab', { name: 'Params', exact: true })).toBeVisible()
-  await expect(page.getByRole('tab', { name: 'Safety & Fixed', exact: true })).toBeVisible()
-  await expect(page.getByRole('tab', { name: 'Preview', exact: true })).toBeVisible()
-
-  await page.getByTestId('action-catalog-editor-id').fill('extensions.new')
-  await page.getByTestId('action-catalog-editor-label').fill('New Action')
-  await page.getByTestId('action-catalog-editor-capability').locator('input').fill('extensions.set_flags')
-  await page.keyboard.press('Enter')
-  await page.getByTestId('action-catalog-editor-command-id').click()
-  await page.keyboard.type('infobase.extension.list')
-  await page.keyboard.press('Enter')
-  await page.getByRole('tab', { name: 'Safety & Fixed', exact: true }).click()
-  const applyButton = page.getByTestId('action-catalog-editor-apply')
-  await expect(page.getByTestId('action-catalog-editor-set-flags-runtime-source-hint')).toBeVisible()
-  await expect(page.getByTestId('action-catalog-editor-fixed-apply_mask-enable')).toHaveCount(0)
-  await expect(page.getByTestId('action-catalog-editor-target-binding-extension-name-param')).toBeVisible()
-  await expect(page.getByText('Target command param is required', { exact: true })).toBeVisible()
-  await expect(applyButton).toBeDisabled()
-  await page.getByTestId('action-catalog-editor-target-binding-extension-name-param').click()
-  await page.keyboard.type('format')
-  await page.keyboard.press('Enter')
-  await expect(applyButton).toBeEnabled()
-  await applyButton.click()
-
-  await expect(page.locator('.ant-table-tbody:visible').first()).toContainText('extensions.new')
-
-  expect(callCounters.upsertCalls ?? 0).toBeGreaterThanOrEqual(2)
-  expect(callCounters.publishCalls ?? 0).toBeGreaterThanOrEqual(1)
+  expect(callCounters.upsertCalls ?? 0).toBeGreaterThanOrEqual(1)
   expect(callCounters.operationExposureHintsGets ?? 0).toBeGreaterThanOrEqual(1)
+  expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
   expect(callCounters.legacyActionHintsCalls ?? 0).toBe(0)
+  expect(callCounters.legacyActionCatalogCalls ?? 0).toBe(0)
+
   expect(upsertPayloads.some((payload) => {
     const exposure = isPlainObject(payload.exposure) ? payload.exposure : null
     if (!exposure) return false
-    const capabilityConfig = isPlainObject(exposure.capability_config) ? exposure.capability_config : null
-    if (!capabilityConfig) return false
-    const targetBinding = isPlainObject(capabilityConfig.target_binding) ? capabilityConfig.target_binding : null
-    if (!targetBinding) return false
-    return targetBinding.extension_name_param === 'format'
+    return exposure.surface === 'template'
   })).toBe(true)
 })

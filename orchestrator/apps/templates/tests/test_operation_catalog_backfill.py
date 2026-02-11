@@ -93,4 +93,5 @@ def test_backfill_ignores_legacy_ui_action_catalog_payloads():
 
     assert stats.actions_processed == 0
     assert stats.issues_created == 0
-    assert OperationExposure.objects.filter(surface=OperationExposure.SURFACE_ACTION_CATALOG).count() == 0
+    # Assert by literal legacy value to avoid coupling tests to removed constants.
+    assert OperationExposure.objects.filter(surface="action_catalog").count() == 0

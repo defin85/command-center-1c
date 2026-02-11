@@ -67,10 +67,10 @@ python manage.py report_set_flags_apply_mask_presets --all-statuses --fail-on-fi
 
 ## Как исправлять finding
 
-1. Открыть action в `/templates?surface=action_catalog`.
+1. Открыть templates-only editor в `/templates` и выбрать template, привязанный к `extensions.set_flags`.
 2. Удалить любой preset `apply_mask` из `fixed`/capability-config (если остался в legacy данных).
 3. Проверить `target_binding.extension_name_param`.
 4. Проверить `executor.params` и `$flags.*` mapping.
-5. Сохранить и опубликовать action.
+5. Сохранить и опубликовать template exposure.
 
 После исправления повторно запустить report-команду и убедиться, что findings = 0.
