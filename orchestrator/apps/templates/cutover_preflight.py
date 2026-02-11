@@ -11,7 +11,6 @@ from apps.templates.models import (
     OperationExposure,
     OperationExposureGroupPermission,
     OperationExposurePermission,
-    OperationTemplate,
 )
 
 
@@ -55,6 +54,21 @@ def _count_batch_template_metadata_orphans() -> int:
     return int(row[0] if row else 0)
 
 
+def _count_template_exposure_payload_mismatches() -> int:
+    mismatches = 0
+    exposures = OperationExposure.objects.select_related("definition").filter(
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        tenant__isnull=True,
+    )
+    for exposure in exposures.iterator():
+        payload = exposure.definition.executor_payload if isinstance(exposure.definition.executor_payload, dict) else {}
+        operation_type = str(payload.get("operation_type") or exposure.definition.executor_kind or "").strip()
+        template_data = payload.get("template_data")
+        if not operation_type or not isinstance(template_data, dict):
+            mismatches += 1
+    return mismatches
+
+
 def run_operation_exposure_cutover_preflight() -> dict[str, Any]:
     template_surface = OperationExposure.SURFACE_TEMPLATE
 
@@ -72,19 +86,6 @@ def run_operation_exposure_cutover_preflight() -> dict[str, Any]:
         .filter(cnt__gt=1)
         .count()
     )
-
-    exposure_aliases_qs = OperationExposure.objects.filter(
-        surface=template_surface,
-        tenant__isnull=True,
-    ).values_list("alias", flat=True)
-
-    legacy_templates_without_exposure = OperationTemplate.objects.exclude(
-        id__in=exposure_aliases_qs
-    ).count()
-    exposures_without_legacy_template = OperationExposure.objects.filter(
-        surface=template_surface,
-        tenant__isnull=True,
-    ).exclude(alias__in=OperationTemplate.objects.values_list("id", flat=True)).count()
 
     direct_permissions_out_of_scope = OperationExposurePermission.objects.exclude(
         exposure__surface=template_surface,
@@ -111,16 +112,9 @@ def run_operation_exposure_cutover_preflight() -> dict[str, Any]:
             details={"surface": template_surface, "tenant_scope": "tenant"},
         ),
         PreflightCheck(
-            key="legacy_template_has_exposure",
-            description="Each legacy OperationTemplate must have a global template exposure alias.",
-            mismatches=legacy_templates_without_exposure,
-            critical=True,
-            details={},
-        ),
-        PreflightCheck(
-            key="exposure_has_legacy_template",
-            description="Each global template exposure alias must map to legacy OperationTemplate before contract.",
-            mismatches=exposures_without_legacy_template,
+            key="template_exposure_payload_contract",
+            description="Each global template exposure must contain operation_type and template_data in definition payload.",
+            mismatches=_count_template_exposure_payload_mismatches(),
             critical=True,
             details={},
         ),
@@ -155,11 +149,17 @@ def run_operation_exposure_cutover_preflight() -> dict[str, Any]:
     return {
         "generated_at": timezone.now().isoformat(),
         "summary": {
-            "templates_total": OperationTemplate.objects.count(),
             "template_exposures_total": OperationExposure.objects.filter(
                 surface=template_surface,
                 tenant__isnull=True,
             ).count(),
+            "template_definitions_total": OperationExposure.objects.filter(
+                surface=template_surface,
+                tenant__isnull=True,
+            )
+            .values("definition_id")
+            .distinct()
+            .count(),
             "direct_permissions_total": OperationExposurePermission.objects.filter(
                 exposure__surface=template_surface,
                 exposure__tenant__isnull=True,

@@ -16,7 +16,6 @@ from apps.templates.models import (
     OperationDefinition,
     OperationExposure,
     OperationMigrationIssue,
-    OperationTemplate,
 )
 
 logger = logging.getLogger(__name__)
@@ -437,26 +436,6 @@ def upsert_template_exposure(
         status=status,
     )
 
-    # Projection for existing template RBAC and internal execution flows.
-    projection, _ = OperationTemplate.objects.get_or_create(id=template_id, defaults={"name": name, "operation_type": operation_type, "target_entity": target_entity, "template_data": template_data})
-    projection.name = name
-    projection.description = description
-    projection.operation_type = operation_type
-    projection.target_entity = target_entity
-    projection.template_data = template_data
-    projection.is_active = is_active
-    projection.save(
-        update_fields=[
-            "name",
-            "description",
-            "operation_type",
-            "target_entity",
-            "template_data",
-            "is_active",
-            "updated_at",
-        ]
-    )
-
     return exposure, created
 
 
@@ -472,7 +451,6 @@ def delete_template_exposure(*, template_id: str) -> OperationExposure | None:
 
     definition = exposure.definition
     exposure.delete()
-    OperationTemplate.objects.filter(id=template_id).delete()
     if not OperationExposure.objects.filter(definition=definition).exists():
         definition.delete()
     return exposure

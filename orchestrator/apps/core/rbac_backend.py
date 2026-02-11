@@ -13,6 +13,7 @@ Staff bypass:
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 
 from django.contrib.auth.backends import ModelBackend
 
@@ -74,13 +75,17 @@ class RBACPermissionBackend(ModelBackend):
                 allow_database_permissions=allow_database_permissions,
             )
 
-        from apps.templates.models import OperationTemplate
+        from apps.templates.models import OperationExposure
         from apps.templates.rbac import TemplatePermissionService
         from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate
 
-        if isinstance(obj, OperationTemplate):
+        if isinstance(obj, OperationExposure):
+            if obj.surface != OperationExposure.SURFACE_TEMPLATE:
+                return False
             return TemplatePermissionService.has_operation_template_access(
-                user_obj, obj, required_level
+                user_obj,
+                SimpleNamespace(id=str(obj.alias)),
+                required_level,
             )
 
         if isinstance(obj, WorkflowTemplate):

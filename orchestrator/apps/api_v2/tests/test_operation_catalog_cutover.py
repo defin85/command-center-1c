@@ -9,9 +9,9 @@ from apps.databases.models import PermissionLevel
 from apps.runtime_settings.models import TenantRuntimeSettingOverride
 from apps.tenancy.models import Tenant
 from apps.templates.models import (
+    OperationExposure,
     OperationExposurePermission,
     OperationMigrationIssue,
-    OperationTemplate,
 )
 from apps.templates.operation_catalog_service import upsert_template_exposure
 
@@ -285,7 +285,11 @@ def test_operation_catalog_template_surface_upsert_publish_and_delete_for_non_st
     delete_resp = template_manager_client.delete(f"/api/v2/operation-catalog/exposures/{exposure_id}/")
     assert delete_resp.status_code == 200
     assert delete_resp.json()["deleted"] is True
-    assert not OperationTemplate.objects.filter(id="tpl-perm-manage").exists()
+    assert not OperationExposure.objects.filter(
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias="tpl-perm-manage",
+        tenant__isnull=True,
+    ).exists()
 
 
 @pytest.mark.django_db

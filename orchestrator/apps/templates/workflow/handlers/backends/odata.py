@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Set
 from apps.operations.factory import BatchOperationFactory
 from apps.operations.models import BatchOperation
 from apps.operations.waiter import OperationTimeoutError, ResultWaiter
-from apps.templates.models import OperationTemplate
 from apps.templates.workflow.models import WorkflowExecution
 
 # Import registry types
@@ -135,7 +134,7 @@ class ODataBackend(AbstractOperationBackend):
 
     def execute(
         self,
-        template: OperationTemplate,
+        template: Any,
         rendered_data: Dict[str, Any],
         target_databases: List[str],
         context: Dict[str, Any],
@@ -146,7 +145,7 @@ class ODataBackend(AbstractOperationBackend):
         Execute OData operation via BatchOperationFactory.
 
         Args:
-            template: OperationTemplate with operation metadata
+            template: Resolved runtime template with operation metadata
             rendered_data: Rendered template data
             target_databases: List of database UUIDs
             context: Execution context

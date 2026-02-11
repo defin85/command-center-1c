@@ -2,6 +2,8 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+from apps.templates.template_runtime import TemplateResolveError, resolve_runtime_template
+
 from .permissions import IsInternalService
 from .serializers import TemplateRenderRequestSerializer
 from .views_common import exclude_schema, logger
@@ -34,8 +36,6 @@ def get_template(request):
         }
     }
     """
-    from apps.templates.models import OperationTemplate
-
     template_id = request.query_params.get("template_id")
     if not template_id:
         return Response(
@@ -44,12 +44,27 @@ def get_template(request):
         )
 
     try:
-        template = OperationTemplate.objects.get(id=template_id)
-    except OperationTemplate.DoesNotExist:
-        return Response({"success": False, "error": f"Template {template_id} not found"}, status=status.HTTP_404_NOT_FOUND)
+        template = resolve_runtime_template(
+            template_alias=template_id,
+            require_active=False,
+            require_published=False,
+        )
+    except TemplateResolveError as exc:
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if exc.code == "TEMPLATE_NOT_FOUND"
+            else status.HTTP_400_BAD_REQUEST
+        )
+        return Response({"success": False, "error": f"{exc.code}: {exc.message}"}, status=status_code)
 
     if not template.is_active:
         logger.warning(f"Template {template_id} is inactive")
+    if template.exposure_status != "published":
+        logger.warning(
+            "Template %s is not published (status=%s)",
+            template_id,
+            template.exposure_status,
+        )
 
     template_data = {
         "id": template.id,
@@ -96,8 +111,6 @@ def render_template(request):
     """
     from jinja2 import TemplateSyntaxError
 
-    from apps.templates.models import OperationTemplate
-
     template_id = request.query_params.get("template_id")
     if not template_id:
         return Response(
@@ -114,9 +127,18 @@ def render_template(request):
 
     # Get template
     try:
-        template = OperationTemplate.objects.get(id=template_id)
-    except OperationTemplate.DoesNotExist:
-        return Response({"success": False, "error": f"Template {template_id} not found"}, status=status.HTTP_404_NOT_FOUND)
+        template = resolve_runtime_template(
+            template_alias=template_id,
+            require_active=False,
+            require_published=False,
+        )
+    except TemplateResolveError as exc:
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if exc.code == "TEMPLATE_NOT_FOUND"
+            else status.HTTP_400_BAD_REQUEST
+        )
+        return Response({"success": False, "error": f"{exc.code}: {exc.message}"}, status=status_code)
 
     # Render template_data recursively
     try:
@@ -172,4 +194,3 @@ def _render_template_data(data, context):
 
     # Return non-template values as-is
     return data
-

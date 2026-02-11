@@ -16,7 +16,6 @@ from typing import Any, Dict, List, Set
 from apps.operations.factory import BatchOperationFactory
 from apps.operations.models import BatchOperation
 from apps.operations.waiter import OperationTimeoutError, ResultWaiter
-from apps.templates.models import OperationTemplate
 from apps.templates.workflow.models import WorkflowExecution
 
 from apps.templates.registry import (
@@ -149,7 +148,7 @@ class RASBackend(AbstractOperationBackend):
 
     def execute(
         self,
-        template: OperationTemplate,
+        template: Any,
         rendered_data: Dict[str, Any],
         target_databases: List[str],
         context: Dict[str, Any],

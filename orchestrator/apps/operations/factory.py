@@ -11,7 +11,7 @@ from django.db import transaction
 
 from apps.databases.models import Database
 from apps.operations.models import BatchOperation, Task
-from apps.templates.models import OperationExposure, OperationTemplate
+from apps.templates.models import OperationExposure
 from apps.templates.tracing import get_current_trace_id
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ class BatchOperationFactory:
     @classmethod
     def create(
         cls,
-        template: OperationTemplate,
+        template: Any,
         rendered_data: Dict[str, Any],
         target_databases: List[str],
         workflow_execution_id: Optional[str] = None,
@@ -105,7 +105,7 @@ class BatchOperationFactory:
         operation_type = getattr(template, 'operation_type', None) or 'query'
 
         # Определяем целевую сущность
-        target_entity = rendered_data.get('entity', template.name)
+        target_entity = rendered_data.get("entity", getattr(template, "target_entity", None) or template.name)
 
         operation_payload: Dict[str, Any] = rendered_data
         operation_config: Dict[str, Any] = {}
@@ -122,7 +122,9 @@ class BatchOperationFactory:
         template_alias = str(template.id or "").strip()
         if template_alias:
             metadata["template_id"] = template_alias
-            template_exposure_id = _resolve_template_exposure_id(template_alias=template_alias)
+            template_exposure_id = str(getattr(template, "exposure_id", "") or "").strip()
+            if not template_exposure_id:
+                template_exposure_id = _resolve_template_exposure_id(template_alias=template_alias)
             if template_exposure_id:
                 metadata["template_exposure_id"] = template_exposure_id
 

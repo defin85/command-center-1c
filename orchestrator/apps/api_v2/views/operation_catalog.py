@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import re
+from types import SimpleNamespace
 from typing import Any
 
 from django.db.models import Q
@@ -14,7 +15,12 @@ from rest_framework.response import Response
 
 from apps.core import permission_codes as perms
 from apps.databases.models import PermissionLevel
-from apps.templates.models import OperationDefinition, OperationExposure, OperationTemplate
+from apps.templates.models import (
+    OperationDefinition,
+    OperationExposure,
+    OperationExposureGroupPermission,
+    OperationExposurePermission,
+)
 from apps.templates.operation_catalog_service import (
     delete_template_exposure,
     filter_exposures_queryset,
@@ -71,10 +77,11 @@ def _template_manage_allowed(user, template_alias: str | None = None) -> bool:
     alias = str(template_alias or "").strip()
     if not alias:
         return True
-    legacy_template = OperationTemplate.objects.filter(id=alias).first()
-    if legacy_template is None:
-        return True
-    return bool(user.has_perm(perms.PERM_TEMPLATES_MANAGE_OPERATION_TEMPLATE, legacy_template))
+    return TemplatePermissionService.has_operation_template_access(
+        user,
+        SimpleNamespace(id=alias),
+        PermissionLevel.MANAGE,
+    )
 
 
 _EXPOSURE_FILTER_FIELD_MAP: dict[str, str] = {
@@ -216,47 +223,6 @@ def _generate_template_alias(name: str) -> str:
     while _exists(f"{base}-{suffix}"):
         suffix += 1
     return f"{base}-{suffix}"
-
-
-def _sync_template_projection(exposure: OperationExposure) -> None:
-    if exposure.surface != OperationExposure.SURFACE_TEMPLATE:
-        return
-
-    payload = exposure.definition.executor_payload if isinstance(exposure.definition.executor_payload, dict) else {}
-    operation_type = str(payload.get("operation_type") or exposure.definition.executor_kind or "").strip()
-    if not operation_type:
-        operation_type = "designer_cli"
-    target_entity = str(payload.get("target_entity") or "infobase").strip() or "infobase"
-    template_data = payload.get("template_data") if isinstance(payload.get("template_data"), dict) else {}
-
-    projection, _ = OperationTemplate.objects.get_or_create(
-        id=exposure.alias,
-        defaults={
-            "name": exposure.label,
-            "description": exposure.description,
-            "operation_type": operation_type,
-            "target_entity": target_entity,
-            "template_data": template_data,
-            "is_active": bool(exposure.is_active),
-        },
-    )
-    projection.name = exposure.label
-    projection.description = exposure.description
-    projection.operation_type = operation_type
-    projection.target_entity = target_entity
-    projection.template_data = template_data
-    projection.is_active = bool(exposure.is_active)
-    projection.save(
-        update_fields=[
-            "name",
-            "description",
-            "operation_type",
-            "target_entity",
-            "template_data",
-            "is_active",
-            "updated_at",
-        ]
-    )
 
 
 def _serialize_definition(definition: OperationDefinition) -> dict[str, Any]:
@@ -586,13 +552,22 @@ def list_operation_exposures(request):
     )
 
     if _is_template_surface(surface or "") and not getattr(request.user, "is_staff", False):
-        allowed_templates_qs = TemplatePermissionService.filter_accessible_operation_templates(
-            request.user,
-            OperationTemplate.objects.all(),
-            min_level=PermissionLevel.VIEW,
+        user_template_aliases = OperationExposurePermission.objects.filter(
+            user=request.user,
+            level__gte=PermissionLevel.VIEW,
+            exposure__surface=OperationExposure.SURFACE_TEMPLATE,
+            exposure__tenant__isnull=True,
+        ).values_list("exposure__alias", flat=True)
+        group_template_aliases = OperationExposureGroupPermission.objects.filter(
+            group__user=request.user,
+            level__gte=PermissionLevel.VIEW,
+            exposure__surface=OperationExposure.SURFACE_TEMPLATE,
+            exposure__tenant__isnull=True,
+        ).values_list("exposure__alias", flat=True)
+        qs = qs.filter(
+            Q(alias__in=user_template_aliases)
+            | Q(alias__in=group_template_aliases)
         )
-        allowed_ids = list(allowed_templates_qs.values_list("id", flat=True))
-        qs = qs.filter(alias__in=allowed_ids)
 
     qs = _apply_exposure_search(qs, search)
     qs = _apply_exposure_filters(qs, filters_payload)
@@ -775,7 +750,6 @@ def _upsert_operation_exposure_impl(request):
         status=exposure_payload["status"],
     )
 
-    _sync_template_projection(exposure_obj)
     return Response({"exposure": _serialize_exposure(exposure_obj), "definition": _serialize_definition(definition_obj)})
 
 
@@ -823,7 +797,6 @@ def publish_operation_exposure(request, exposure_id: str):
 
     exposure.status = OperationExposure.STATUS_PUBLISHED
     exposure.save(update_fields=["status", "updated_at"])
-    _sync_template_projection(exposure)
     return Response({"published": True, "exposure": _serialize_exposure(exposure), "validation_errors": []})
 
 

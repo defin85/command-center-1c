@@ -7,7 +7,6 @@ Defines the contract for all operation backend implementations.
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Set
 
-from apps.templates.models import OperationTemplate
 from apps.templates.workflow.models import WorkflowExecution
 from ..base import NodeExecutionMode, NodeExecutionResult
 
@@ -27,7 +26,7 @@ class AbstractOperationBackend(ABC):
     @abstractmethod
     def execute(
         self,
-        template: OperationTemplate,
+        template: Any,
         rendered_data: Dict[str, Any],
         target_databases: List[str],
         context: Dict[str, Any],
@@ -38,7 +37,7 @@ class AbstractOperationBackend(ABC):
         Execute operation using this backend.
 
         Args:
-            template: OperationTemplate with operation metadata
+            template: Resolved runtime template with operation metadata
             rendered_data: Rendered template data (parameters, etc.)
             target_databases: List of database UUIDs to execute on
             context: Execution context with variables

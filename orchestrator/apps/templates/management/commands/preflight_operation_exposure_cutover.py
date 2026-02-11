@@ -45,12 +45,12 @@ class Command(BaseCommand):
 
     def _print_human_report(self, report: dict[str, Any]) -> None:
         summary = report["summary"]
-        direct_permissions_total = summary.get("direct_permissions_total", summary.get("legacy_direct_permissions_total", 0))
-        group_permissions_total = summary.get("group_permissions_total", summary.get("legacy_group_permissions_total", 0))
+        direct_permissions_total = summary.get("direct_permissions_total", 0)
+        group_permissions_total = summary.get("group_permissions_total", 0)
         self.stdout.write("operation exposure cutover preflight report")
         self.stdout.write(f"generated_at: {report['generated_at']}")
-        self.stdout.write(f"templates_total: {summary['templates_total']}")
         self.stdout.write(f"template_exposures_total: {summary['template_exposures_total']}")
+        self.stdout.write(f"template_definitions_total: {summary.get('template_definitions_total', 0)}")
         self.stdout.write(f"direct_permissions_total: {direct_permissions_total}")
         self.stdout.write(f"group_permissions_total: {group_permissions_total}")
         self.stdout.write(f"total_checks: {summary['total_checks']}")

@@ -16,7 +16,7 @@ from apps.databases.models import Database
 from apps.operations.waiter import OperationTimeoutError
 from apps.templates.engine.exceptions import TemplateRenderError, TemplateValidationError
 from apps.templates.engine.renderer import TemplateRenderer
-from apps.templates.models import OperationTemplate
+from apps.templates.template_runtime import TemplateResolveError, resolve_runtime_template
 from apps.templates.workflow.models import WorkflowExecution, WorkflowNode
 
 from .base import BaseNodeHandler, NodeExecutionMode, NodeExecutionResult
@@ -30,7 +30,7 @@ class OperationHandler(BaseNodeHandler):
     Handler for Operation nodes with Strategy pattern for backend routing.
 
     Flow:
-        1. Get OperationTemplate by node.template_id
+        1. Resolve runtime template by exposure alias (node.template_id)
         2. Render template via TemplateRenderer
         3. Extract target_databases from context
         4. Route to appropriate backend based on operation_type:
@@ -99,11 +99,15 @@ class OperationHandler(BaseNodeHandler):
         )
 
         try:
-            # 1. Get OperationTemplate
+            # 1. Resolve template via exposure alias (fail-closed)
             if not node.template_id:
                 raise ValueError(f"Operation node {node.id} missing template_id")
 
-            template = OperationTemplate.objects.get(id=node.template_id)
+            template = resolve_runtime_template(
+                template_alias=node.template_id,
+                require_active=True,
+                require_published=True,
+            )
 
             logger.info(
                 f"Executing operation node {node.id}",
@@ -195,9 +199,12 @@ class OperationHandler(BaseNodeHandler):
             self._update_step_result(step_result, result)
             return result
 
-        except OperationTemplate.DoesNotExist:
-            error_msg = f"OperationTemplate not found: {node.template_id}"
-            logger.error(error_msg, extra={'node_id': node.id, 'template_id': node.template_id})
+        except TemplateResolveError as exc:
+            error_msg = f"{exc.code}: {exc.message}"
+            logger.error(
+                error_msg,
+                extra={"node_id": node.id, "template_id": node.template_id, "code": exc.code},
+            )
             return self._return_error(error_msg, step_result, start_time)
 
         except (TemplateRenderError, TemplateValidationError) as exc:
