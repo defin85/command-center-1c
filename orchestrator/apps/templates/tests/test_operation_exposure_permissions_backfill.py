@@ -6,7 +6,6 @@ from io import StringIO
 import pytest
 from django.contrib.auth.models import Group
 from django.core.management import call_command
-from django.core.management.base import CommandError
 
 from apps.templates.models import (
     OperationDefinition,
@@ -14,12 +13,10 @@ from apps.templates.models import (
     OperationExposureGroupPermission,
     OperationExposurePermission,
     OperationTemplate,
-    OperationTemplateGroupPermission,
-    OperationTemplatePermission,
 )
 
 
-def _create_template_with_exposure(*, template_id: str) -> OperationTemplate:
+def _create_template_with_exposure(*, template_id: str) -> tuple[OperationTemplate, OperationExposure]:
     template = OperationTemplate.objects.create(
         id=template_id,
         name=f"Template {template_id}",
@@ -41,7 +38,7 @@ def _create_template_with_exposure(*, template_id: str) -> OperationTemplate:
         fingerprint=f"fp-{template_id}",
         status=OperationDefinition.STATUS_ACTIVE,
     )
-    OperationExposure.objects.create(
+    exposure = OperationExposure.objects.create(
         definition=definition,
         surface=OperationExposure.SURFACE_TEMPLATE,
         alias=template_id,
@@ -55,30 +52,29 @@ def _create_template_with_exposure(*, template_id: str) -> OperationTemplate:
         capability_config={},
         status=OperationExposure.STATUS_PUBLISHED,
     )
-    return template
+    return template, exposure
 
 
 @pytest.mark.django_db
-def test_backfill_operation_exposure_permissions_persists_and_has_zero_parity(django_user_model):
-    template = _create_template_with_exposure(template_id="tpl-oep-backfill")
+def test_backfill_operation_exposure_permissions_reports_template_scope_rows(django_user_model):
+    _, exposure = _create_template_with_exposure(template_id="tpl-oep-backfill")
     user = django_user_model.objects.create_user(username="legacy_u", password="pass")
     group = Group.objects.create(name="legacy_group")
 
-    OperationTemplatePermission.objects.create(user=user, template=template, level=10, notes="u-note")
-    OperationTemplateGroupPermission.objects.create(group=group, template=template, level=30, notes="g-note")
+    OperationExposurePermission.objects.create(user=user, exposure=exposure, level=10, notes="u-note")
+    OperationExposureGroupPermission.objects.create(group=group, exposure=exposure, level=30, notes="g-note")
 
     out = StringIO()
     call_command("backfill_operation_exposure_permissions", "--json", stdout=out)
     payload = json.loads(out.getvalue())
 
-    assert payload["direct_backfilled_created"] == 1
-    assert payload["group_backfilled_created"] == 1
+    assert payload["direct_legacy_rows"] == 1
+    assert payload["group_legacy_rows"] == 1
+    assert payload["direct_backfilled_created"] == 0
+    assert payload["group_backfilled_created"] == 0
     assert payload["parity_mismatches_total"] == 0
     assert payload["direct_missing_exposure"] == 0
     assert payload["group_missing_exposure"] == 0
-
-    assert OperationExposurePermission.objects.count() == 1
-    assert OperationExposureGroupPermission.objects.count() == 1
 
     strict_out = StringIO()
     call_command("backfill_operation_exposure_permissions", "--strict-parity", "--json", stdout=strict_out)
@@ -87,19 +83,10 @@ def test_backfill_operation_exposure_permissions_persists_and_has_zero_parity(dj
 
 
 @pytest.mark.django_db
-def test_backfill_operation_exposure_permissions_strict_fails_when_exposure_missing(django_user_model):
-    template = OperationTemplate.objects.create(
-        id="tpl-missing-exp",
-        name="Template missing exposure",
-        description="",
-        operation_type="designer_cli",
-        target_entity="infobase",
-        template_data={},
-        is_active=True,
-    )
-    user = django_user_model.objects.create_user(username="legacy_u_2", password="pass")
-    OperationTemplatePermission.objects.create(user=user, template=template, level=10, notes="")
-
-    with pytest.raises(CommandError):
-        call_command("backfill_operation_exposure_permissions", "--strict-parity")
-
+def test_backfill_operation_exposure_permissions_strict_parity_passes_on_empty_state():
+    out = StringIO()
+    call_command("backfill_operation_exposure_permissions", "--strict-parity", "--json", stdout=out)
+    payload = json.loads(out.getvalue())
+    assert payload["direct_legacy_rows"] == 0
+    assert payload["group_legacy_rows"] == 0
+    assert payload["parity_mismatches_total"] == 0

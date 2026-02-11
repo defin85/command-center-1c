@@ -8,7 +8,6 @@ from rest_framework import serializers
 
 from apps.core import permission_codes as perms
 from apps.databases.models import Cluster, Database, PermissionLevel
-from apps.templates.models import OperationTemplate
 from apps.templates.workflow.models import WorkflowTemplate
 from apps.artifacts.models import Artifact
 
@@ -250,6 +249,5 @@ class RefArtifactsResponseSerializer(serializers.Serializer):
     artifacts = ArtifactRefSerializer(many=True)
     count = serializers.IntegerField()
     total = serializers.IntegerField()
-
 
 

@@ -11,7 +11,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.databases.models import PermissionLevel
-from apps.templates.models import OperationTemplate, OperationTemplateGroupPermission, OperationTemplatePermission
+from apps.templates.models import (
+    OperationExposure,
+    OperationExposureGroupPermission,
+    OperationExposurePermission,
+)
 from apps.operations.services.admin_action_audit import log_admin_action
 
 from .common import (
@@ -40,6 +44,16 @@ from .serializers_permissions import (
     RevokeOperationTemplatePermissionRequestSerializer,
 )
 
+_TEMPLATE_SURFACE = OperationExposure.SURFACE_TEMPLATE
+
+
+def _template_exposures():
+    return OperationExposure.objects.filter(surface=_TEMPLATE_SURFACE, tenant__isnull=True)
+
+
+def _template_ref(exposure: OperationExposure) -> dict[str, str]:
+    return {"id": str(exposure.alias), "name": str(exposure.label or exposure.alias)}
+
 @extend_schema(
     tags=["v2"],
     summary="List operation template permissions (user)",
@@ -61,7 +75,10 @@ def list_operation_template_permissions(request):
         return denied
 
     pagination = _parse_pagination(request)
-    qs = OperationTemplatePermission.objects.select_related("user", "template", "granted_by").all()
+    qs = OperationExposurePermission.objects.select_related("user", "exposure", "granted_by").filter(
+        exposure__surface=_TEMPLATE_SURFACE,
+        exposure__tenant__isnull=True,
+    )
 
     user_id = request.query_params.get("user_id")
     if user_id:
@@ -69,7 +86,7 @@ def list_operation_template_permissions(request):
 
     template_id = request.query_params.get("template_id")
     if template_id:
-        qs = qs.filter(template_id=template_id)
+        qs = qs.filter(exposure__alias=template_id)
 
     level = request.query_params.get("level")
     if level:
@@ -81,14 +98,18 @@ def list_operation_template_permissions(request):
 
     search = request.query_params.get("search")
     if search:
-        qs = qs.filter(Q(user__username__icontains=search) | Q(template__name__icontains=search))
+        qs = qs.filter(
+            Q(user__username__icontains=search)
+            | Q(exposure__label__icontains=search)
+            | Q(exposure__alias__icontains=search)
+        )
 
     total = qs.count()
     rows = list(qs.order_by("-granted_at")[pagination.offset: pagination.offset + pagination.limit])
     data = [
         {
             "user": _user_ref(row.user),
-            "template": {"id": row.template.id, "name": row.template.name},
+            "template": _template_ref(row.exposure),
             "level": _level_code(row.level),
             "granted_by": _user_ref(row.granted_by),
             "granted_at": row.granted_at,
@@ -142,8 +163,8 @@ def grant_operation_template_permission(request):
         )
 
     try:
-        template = OperationTemplate.objects.get(id=template_id)
-    except OperationTemplate.DoesNotExist:
+        exposure = _template_exposures().get(alias=template_id)
+    except OperationExposure.DoesNotExist:
         return Response(
             {"success": False, "error": {"code": "TEMPLATE_NOT_FOUND", "message": "Template not found"}},
             status=404,
@@ -152,9 +173,9 @@ def grant_operation_template_permission(request):
     old_level = None
     old_notes = None
     with transaction.atomic():
-        obj, created = OperationTemplatePermission.objects.select_for_update().get_or_create(
+        obj, created = OperationExposurePermission.objects.select_for_update().get_or_create(
             user=user,
-            template=template,
+            exposure=exposure,
             defaults={"level": level, "notes": notes, "granted_by": request.user},
         )
         if not created:
@@ -169,7 +190,7 @@ def grant_operation_template_permission(request):
         "created": created,
         "permission": {
             "user": _user_ref(obj.user),
-            "template": {"id": obj.template.id, "name": obj.template.name},
+            "template": _template_ref(obj.exposure),
             "level": _level_code(obj.level),
             "granted_by": _user_ref(obj.granted_by),
             "granted_at": obj.granted_at,
@@ -229,11 +250,25 @@ def revoke_operation_template_permission(request):
     old_level = None
     old_notes = None
     with transaction.atomic():
-        existing = OperationTemplatePermission.objects.select_for_update().filter(user_id=user_id, template_id=template_id).first()
+        existing = (
+            OperationExposurePermission.objects.select_for_update()
+            .filter(
+                user_id=user_id,
+                exposure__surface=_TEMPLATE_SURFACE,
+                exposure__tenant__isnull=True,
+                exposure__alias=template_id,
+            )
+            .first()
+        )
         if existing is not None:
             old_level = _level_code(existing.level)
             old_notes = existing.notes or ""
-        deleted, _ = OperationTemplatePermission.objects.filter(user_id=user_id, template_id=template_id).delete()
+        deleted, _ = OperationExposurePermission.objects.filter(
+            user_id=user_id,
+            exposure__surface=_TEMPLATE_SURFACE,
+            exposure__tenant__isnull=True,
+            exposure__alias=template_id,
+        ).delete()
     log_admin_action(
         request,
         action="rbac.revoke_operation_template_permission",
@@ -271,7 +306,10 @@ def list_operation_template_group_permissions(request):
         return denied
 
     pagination = _parse_pagination(request)
-    qs = OperationTemplateGroupPermission.objects.select_related("group", "template", "granted_by").all()
+    qs = OperationExposureGroupPermission.objects.select_related("group", "exposure", "granted_by").filter(
+        exposure__surface=_TEMPLATE_SURFACE,
+        exposure__tenant__isnull=True,
+    )
 
     group_id = request.query_params.get("group_id")
     if group_id:
@@ -279,7 +317,7 @@ def list_operation_template_group_permissions(request):
 
     template_id = request.query_params.get("template_id")
     if template_id:
-        qs = qs.filter(template_id=template_id)
+        qs = qs.filter(exposure__alias=template_id)
 
     level = request.query_params.get("level")
     if level:
@@ -291,14 +329,18 @@ def list_operation_template_group_permissions(request):
 
     search = request.query_params.get("search")
     if search:
-        qs = qs.filter(Q(group__name__icontains=search) | Q(template__name__icontains=search))
+        qs = qs.filter(
+            Q(group__name__icontains=search)
+            | Q(exposure__label__icontains=search)
+            | Q(exposure__alias__icontains=search)
+        )
 
     total = qs.count()
     rows = list(qs.order_by("-granted_at")[pagination.offset: pagination.offset + pagination.limit])
     data = [
         {
             "group": _group_ref(row.group),
-            "template": {"id": row.template.id, "name": row.template.name},
+            "template": _template_ref(row.exposure),
             "level": _level_code(row.level),
             "granted_by": _user_ref(row.granted_by),
             "granted_at": row.granted_at,
@@ -352,8 +394,8 @@ def grant_operation_template_group_permission(request):
         )
 
     try:
-        template = OperationTemplate.objects.get(id=template_id)
-    except OperationTemplate.DoesNotExist:
+        exposure = _template_exposures().get(alias=template_id)
+    except OperationExposure.DoesNotExist:
         return Response(
             {"success": False, "error": {"code": "TEMPLATE_NOT_FOUND", "message": "Template not found"}},
             status=404,
@@ -362,9 +404,9 @@ def grant_operation_template_group_permission(request):
     old_level = None
     old_notes = None
     with transaction.atomic():
-        obj, created = OperationTemplateGroupPermission.objects.select_for_update().get_or_create(
+        obj, created = OperationExposureGroupPermission.objects.select_for_update().get_or_create(
             group=group,
-            template=template,
+            exposure=exposure,
             defaults={"level": level, "notes": notes, "granted_by": request.user},
         )
         if not created:
@@ -379,7 +421,7 @@ def grant_operation_template_group_permission(request):
         "created": created,
         "permission": {
             "group": _group_ref(obj.group),
-            "template": {"id": obj.template.id, "name": obj.template.name},
+            "template": _template_ref(obj.exposure),
             "level": _level_code(obj.level),
             "granted_by": _user_ref(obj.granted_by),
             "granted_at": obj.granted_at,
@@ -439,11 +481,25 @@ def revoke_operation_template_group_permission(request):
     old_level = None
     old_notes = None
     with transaction.atomic():
-        existing = OperationTemplateGroupPermission.objects.select_for_update().filter(group_id=group_id, template_id=template_id).first()
+        existing = (
+            OperationExposureGroupPermission.objects.select_for_update()
+            .filter(
+                group_id=group_id,
+                exposure__surface=_TEMPLATE_SURFACE,
+                exposure__tenant__isnull=True,
+                exposure__alias=template_id,
+            )
+            .first()
+        )
         if existing is not None:
             old_level = _level_code(existing.level)
             old_notes = existing.notes or ""
-        deleted, _ = OperationTemplateGroupPermission.objects.filter(group_id=group_id, template_id=template_id).delete()
+        deleted, _ = OperationExposureGroupPermission.objects.filter(
+            group_id=group_id,
+            exposure__surface=_TEMPLATE_SURFACE,
+            exposure__tenant__isnull=True,
+            exposure__alias=template_id,
+        ).delete()
     log_admin_action(
         request,
         action="rbac.revoke_operation_template_group_permission",
@@ -503,20 +559,24 @@ def bulk_grant_operation_template_group_permission(request):
             status=404,
         )
 
-    found_ids = set(OperationTemplate.objects.filter(id__in=template_ids).values_list("id", flat=True))
-    missing = [str(tid) for tid in template_ids if tid not in found_ids]
+    exposure_map = {
+        str(alias): str(exposure_id)
+        for alias, exposure_id in _template_exposures().filter(alias__in=template_ids).values_list("alias", "id")
+    }
+    missing = [str(tid) for tid in template_ids if tid not in exposure_map]
     if missing:
         return Response(
             {"success": False, "error": {"code": "TEMPLATE_NOT_FOUND", "message": f"Templates not found: {missing}"}},
             status=404,
         )
+    exposure_ids = [exposure_map[tid] for tid in template_ids]
 
     with transaction.atomic():
         result = _bulk_upsert_group_permissions(
-            model=OperationTemplateGroupPermission,
+            model=OperationExposureGroupPermission,
             group=group,
-            object_ids=template_ids,
-            object_id_field="template_id",
+            object_ids=exposure_ids,
+            object_id_field="exposure_id",
             level=level,
             notes=notes,
             granted_by=request.user,
@@ -581,20 +641,24 @@ def bulk_revoke_operation_template_group_permission(request):
             status=404,
         )
 
-    found_ids = set(OperationTemplate.objects.filter(id__in=template_ids).values_list("id", flat=True))
-    missing = [str(tid) for tid in template_ids if tid not in found_ids]
+    exposure_map = {
+        str(alias): str(exposure_id)
+        for alias, exposure_id in _template_exposures().filter(alias__in=template_ids).values_list("alias", "id")
+    }
+    missing = [str(tid) for tid in template_ids if tid not in exposure_map]
     if missing:
         return Response(
             {"success": False, "error": {"code": "TEMPLATE_NOT_FOUND", "message": f"Templates not found: {missing}"}},
             status=404,
         )
+    exposure_ids = [exposure_map[tid] for tid in template_ids]
 
     with transaction.atomic():
         result = _bulk_delete_group_permissions(
-            model=OperationTemplateGroupPermission,
+            model=OperationExposureGroupPermission,
             group=group,
-            object_ids=template_ids,
-            object_id_field="template_id",
+            object_ids=exposure_ids,
+            object_id_field="exposure_id",
         )
 
     log_admin_action(
@@ -611,4 +675,3 @@ def bulk_revoke_operation_template_group_permission(request):
         },
     )
     return Response(result)
-

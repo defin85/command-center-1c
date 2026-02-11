@@ -8,7 +8,11 @@ from rest_framework.test import APIClient
 from apps.databases.models import PermissionLevel
 from apps.runtime_settings.models import TenantRuntimeSettingOverride
 from apps.tenancy.models import Tenant
-from apps.templates.models import OperationMigrationIssue, OperationTemplate, OperationTemplatePermission
+from apps.templates.models import (
+    OperationExposurePermission,
+    OperationMigrationIssue,
+    OperationTemplate,
+)
 from apps.templates.operation_catalog_service import upsert_template_exposure
 
 
@@ -197,10 +201,9 @@ def test_operation_catalog_template_surface_allows_non_staff_with_view_scope(tem
         template_data={"kind": "designer_cli", "driver": "cli", "command_id": "infobase.extension.list"},
         is_active=True,
     )
-    template = OperationTemplate.objects.get(id=exposure.alias)
-    OperationTemplatePermission.objects.update_or_create(
+    OperationExposurePermission.objects.update_or_create(
         user=user,
-        template=template,
+        exposure=exposure,
         defaults={"level": PermissionLevel.VIEW, "notes": ""},
     )
 
@@ -230,10 +233,9 @@ def test_operation_catalog_template_surface_upsert_publish_and_delete_for_non_st
         template_data={"kind": "designer_cli", "driver": "cli", "command_id": "infobase.extension.list"},
         is_active=True,
     )
-    template = OperationTemplate.objects.get(id=exposure.alias)
-    OperationTemplatePermission.objects.update_or_create(
+    OperationExposurePermission.objects.update_or_create(
         user=user,
-        template=template,
+        exposure=exposure,
         defaults={"level": PermissionLevel.MANAGE, "notes": ""},
     )
 

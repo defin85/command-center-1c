@@ -11,13 +11,13 @@ from django.core.management.base import CommandError
 from apps.templates.models import (
     OperationDefinition,
     OperationExposure,
+    OperationExposurePermission,
     OperationTemplate,
-    OperationTemplatePermission,
 )
 
 
 def _reset_state() -> None:
-    OperationTemplatePermission.objects.all().delete()
+    OperationExposurePermission.objects.all().delete()
     OperationExposure.objects.all().delete()
     OperationDefinition.objects.all().delete()
     OperationTemplate.objects.all().delete()
@@ -72,7 +72,8 @@ def test_preflight_cutover_command_passes_in_strict_mode_when_ready():
 
     User = get_user_model()
     user = User.objects.create_user(username="preflight_u", password="pass")
-    OperationTemplatePermission.objects.create(user=user, template=template, level=10, notes="")
+    exposure = OperationExposure.objects.get(alias=template.id)
+    OperationExposurePermission.objects.create(user=user, exposure=exposure, level=10, notes="")
 
     out = StringIO()
     call_command("preflight_operation_exposure_cutover", "--json", "--strict", stdout=out)
@@ -81,18 +82,13 @@ def test_preflight_cutover_command_passes_in_strict_mode_when_ready():
     assert payload["summary"]["total_critical_mismatches"] == 0
     by_key = {item["key"]: item for item in payload["checks"]}
     assert by_key["legacy_template_has_exposure"]["mismatches"] == 0
-    assert by_key["legacy_direct_permission_has_exposure"]["mismatches"] == 0
+    assert by_key["direct_permission_targets_template_exposure"]["mismatches"] == 0
 
 
 @pytest.mark.django_db
 def test_preflight_cutover_command_strict_fails_on_critical_mismatch():
     _reset_state()
-    template = _create_template(template_id="tpl-cutover-mismatch")
-
-    User = get_user_model()
-    user = User.objects.create_user(username="preflight_u2", password="pass")
-    OperationTemplatePermission.objects.create(user=user, template=template, level=10, notes="")
+    _create_template(template_id="tpl-cutover-mismatch")
 
     with pytest.raises(CommandError):
         call_command("preflight_operation_exposure_cutover", "--strict")
-

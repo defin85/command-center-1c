@@ -14,7 +14,11 @@ from apps.artifacts.models import ArtifactGroupPermission
 from apps.core import permission_codes as perms
 from apps.databases.models import ClusterGroupPermission, DatabaseGroupPermission
 from apps.operations.services.admin_action_audit import log_admin_action
-from apps.templates.models import OperationTemplateGroupPermission, WorkflowTemplateGroupPermission
+from apps.templates.models import (
+    OperationExposure,
+    OperationExposureGroupPermission,
+    WorkflowTemplateGroupPermission,
+)
 
 from .common import _ensure_manage_rbac, _group_ref, _parse_pagination
 from .serializers_core import (
@@ -311,7 +315,11 @@ def delete_role(request):
     has_bindings = (
         ClusterGroupPermission.objects.filter(group=group).exists()
         or DatabaseGroupPermission.objects.filter(group=group).exists()
-        or OperationTemplateGroupPermission.objects.filter(group=group).exists()
+        or OperationExposureGroupPermission.objects.filter(
+            group=group,
+            exposure__surface=OperationExposure.SURFACE_TEMPLATE,
+            exposure__tenant__isnull=True,
+        ).exists()
         or WorkflowTemplateGroupPermission.objects.filter(group=group).exists()
         or ArtifactGroupPermission.objects.filter(group=group).exists()
     )
@@ -547,5 +555,4 @@ def set_role_capabilities(request):
         },
     )
     return Response({"group": _group_ref(group), "permission_codes": updated_codes})
-
 

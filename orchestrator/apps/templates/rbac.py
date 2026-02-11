@@ -4,9 +4,9 @@ from django.db.models import Max, Q
 
 from apps.databases.models import PermissionLevel
 from apps.templates.models import (
-    OperationTemplate,
-    OperationTemplateGroupPermission,
-    OperationTemplatePermission,
+    OperationExposure,
+    OperationExposureGroupPermission,
+    OperationExposurePermission,
     WorkflowTemplatePermission,
     WorkflowTemplateGroupPermission,
 )
@@ -25,22 +25,29 @@ class TemplatePermissionService:
     def get_user_level_for_operation_template(
         cls,
         user,
-        template: OperationTemplate,
+        template,
     ) -> Optional[int]:
         if not user or not getattr(user, "is_authenticated", False):
             return None
         if getattr(user, "is_staff", False):
             return PermissionLevel.ADMIN
+        template_id = str(getattr(template, "id", "") or "").strip()
+        if not template_id:
+            return None
 
-        user_level = OperationTemplatePermission.objects.filter(
+        user_level = OperationExposurePermission.objects.filter(
             user=user,
-            template=template,
+            exposure__surface=OperationExposure.SURFACE_TEMPLATE,
+            exposure__tenant__isnull=True,
+            exposure__alias=template_id,
         ).values_list("level", flat=True).first()
 
         group_level = (
-            OperationTemplateGroupPermission.objects.filter(
+            OperationExposureGroupPermission.objects.filter(
                 group__user=user,
-                template=template,
+                exposure__surface=OperationExposure.SURFACE_TEMPLATE,
+                exposure__tenant__isnull=True,
+                exposure__alias=template_id,
             )
             .aggregate(level=Max("level"))
             .get("level")
@@ -89,7 +96,7 @@ class TemplatePermissionService:
     def has_operation_template_access(
         cls,
         user,
-        template: OperationTemplate,
+        template,
         required_level: int,
     ) -> bool:
         level = cls.get_user_level_for_operation_template(user, template)
@@ -119,14 +126,18 @@ class TemplatePermissionService:
         if getattr(user, "is_staff", False):
             return queryset
 
-        user_template_ids = OperationTemplatePermission.objects.filter(
+        user_template_ids = OperationExposurePermission.objects.filter(
             user=user,
             level__gte=min_level,
-        ).values_list("template_id", flat=True)
-        group_template_ids = OperationTemplateGroupPermission.objects.filter(
+            exposure__surface=OperationExposure.SURFACE_TEMPLATE,
+            exposure__tenant__isnull=True,
+        ).values_list("exposure__alias", flat=True)
+        group_template_ids = OperationExposureGroupPermission.objects.filter(
             group__user=user,
             level__gte=min_level,
-        ).values_list("template_id", flat=True)
+            exposure__surface=OperationExposure.SURFACE_TEMPLATE,
+            exposure__tenant__isnull=True,
+        ).values_list("exposure__alias", flat=True)
         return queryset.filter(Q(id__in=user_template_ids) | Q(id__in=group_template_ids))
 
     @classmethod

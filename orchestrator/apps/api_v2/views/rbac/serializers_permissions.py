@@ -15,9 +15,6 @@ from apps.databases.models import (
     PermissionLevel,
 )
 from apps.templates.models import (
-    OperationTemplate,
-    OperationTemplateGroupPermission,
-    OperationTemplatePermission,
     WorkflowTemplateGroupPermission,
     WorkflowTemplatePermission,
 )
@@ -272,7 +269,7 @@ class BulkRevokeDatabaseGroupPermissionRequestSerializer(serializers.Serializer)
 
 class BulkGrantOperationTemplateGroupPermissionRequestSerializer(serializers.Serializer):
     group_id = serializers.IntegerField()
-    template_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
+    template_ids = serializers.ListField(child=serializers.CharField(), allow_empty=False)
     level = PermissionLevelCodeField()
     notes = serializers.CharField(required=False, allow_blank=True)
     reason = serializers.CharField()
@@ -280,7 +277,7 @@ class BulkGrantOperationTemplateGroupPermissionRequestSerializer(serializers.Ser
 
 class BulkRevokeOperationTemplateGroupPermissionRequestSerializer(serializers.Serializer):
     group_id = serializers.IntegerField()
-    template_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
+    template_ids = serializers.ListField(child=serializers.CharField(), allow_empty=False)
     reason = serializers.CharField()
 
 
@@ -422,5 +419,4 @@ class ArtifactPermissionUpsertResponseSerializer(serializers.Serializer):
 class ArtifactGroupPermissionUpsertResponseSerializer(serializers.Serializer):
     created = serializers.BooleanField()
     permission = ArtifactGroupPermissionSerializer()
-
 

@@ -11,8 +11,6 @@ from django_json_widget.widgets import JSONEditorWidget
 
 from .models import (
     OperationTemplate,
-    OperationTemplateGroupPermission,
-    OperationTemplatePermission,
     WorkflowExecution,
     WorkflowStepResult,
     WorkflowTemplate,
@@ -509,38 +507,6 @@ class WorkflowStepResultAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
         'status', 'input_data', 'output_data', 'error_message',
         'started_at', 'completed_at', 'span_id', 'trace_id'
     ]
-
-
-@admin.register(OperationTemplatePermission)
-class OperationTemplatePermissionAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
-    """Admin for OperationTemplatePermission model (RBAC)."""
-
-    list_display = ['user', 'template', 'level', 'granted_by', 'granted_at']
-    list_filter = ['level']
-    search_fields = ['user__username', 'template__name', 'template__id']
-    autocomplete_fields = ['user', 'template']
-    readonly_fields = ['granted_at']
-
-    def save_model(self, request, obj, form, change):
-        if not change:
-            obj.granted_by = request.user
-        super().save_model(request, obj, form, change)
-
-
-@admin.register(OperationTemplateGroupPermission)
-class OperationTemplateGroupPermissionAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
-    """Admin for OperationTemplateGroupPermission model (RBAC)."""
-
-    list_display = ['group', 'template', 'level', 'granted_by', 'granted_at']
-    list_filter = ['level']
-    search_fields = ['group__name', 'template__name', 'template__id']
-    autocomplete_fields = ['group', 'template']
-    readonly_fields = ['granted_at']
-
-    def save_model(self, request, obj, form, change):
-        if not change:
-            obj.granted_by = request.user
-        super().save_model(request, obj, form, change)
 
 
 @admin.register(WorkflowTemplatePermission)

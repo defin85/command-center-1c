@@ -7,8 +7,6 @@ from apps.templates.models import (
     OperationExposure,
     OperationExposureGroupPermission,
     OperationExposurePermission,
-    OperationTemplateGroupPermission,
-    OperationTemplatePermission,
 )
 
 
@@ -54,118 +52,51 @@ class ExposurePermissionBackfillStats:
         )
 
 
-def _global_template_exposure_map() -> dict[str, str]:
+def _template_scope_filters() -> dict[str, Any]:
     return {
-        str(alias): str(exposure_id)
-        for alias, exposure_id in OperationExposure.objects.filter(
-            surface=OperationExposure.SURFACE_TEMPLATE,
-            tenant__isnull=True,
-        ).values_list("alias", "id")
+        "exposure__surface": OperationExposure.SURFACE_TEMPLATE,
+        "exposure__tenant__isnull": True,
     }
 
 
-def _sync_direct_permissions(stats: ExposurePermissionBackfillStats, alias_to_exposure_id: dict[str, str]) -> None:
-    queryset = OperationTemplatePermission.objects.select_related("template").all()
-    stats.direct_legacy_rows = queryset.count()
-
-    for row in queryset:
-        exposure_id = alias_to_exposure_id.get(str(row.template_id))
-        if not exposure_id:
-            stats.direct_missing_exposure += 1
-            continue
-
-        obj, created = OperationExposurePermission.objects.get_or_create(
-            user_id=row.user_id,
-            exposure_id=exposure_id,
-            defaults={
-                "level": row.level,
-                "granted_by_id": row.granted_by_id,
-                "notes": row.notes,
-            },
-        )
-        if created:
-            stats.direct_backfilled_created += 1
-            continue
-
-        changed_fields: list[str] = []
-        if int(obj.level) != int(row.level):
-            obj.level = row.level
-            changed_fields.append("level")
-        if int(obj.granted_by_id or 0) != int(row.granted_by_id or 0):
-            obj.granted_by_id = row.granted_by_id
-            changed_fields.append("granted_by")
-        if str(obj.notes or "") != str(row.notes or ""):
-            obj.notes = row.notes
-            changed_fields.append("notes")
-        if changed_fields:
-            obj.save(update_fields=changed_fields)
-            stats.direct_backfilled_updated += 1
+def _sync_direct_permissions(stats: ExposurePermissionBackfillStats) -> None:
+    # Post-cutover compatibility mode: legacy tables are removed, so we report
+    # exposure-scoped rows and keep counters stable for command consumers.
+    stats.direct_legacy_rows = OperationExposurePermission.objects.filter(
+        **_template_scope_filters()
+    ).count()
 
 
-def _sync_group_permissions(stats: ExposurePermissionBackfillStats, alias_to_exposure_id: dict[str, str]) -> None:
-    queryset = OperationTemplateGroupPermission.objects.select_related("template").all()
-    stats.group_legacy_rows = queryset.count()
-
-    for row in queryset:
-        exposure_id = alias_to_exposure_id.get(str(row.template_id))
-        if not exposure_id:
-            stats.group_missing_exposure += 1
-            continue
-
-        obj, created = OperationExposureGroupPermission.objects.get_or_create(
-            group_id=row.group_id,
-            exposure_id=exposure_id,
-            defaults={
-                "level": row.level,
-                "granted_by_id": row.granted_by_id,
-                "notes": row.notes,
-            },
-        )
-        if created:
-            stats.group_backfilled_created += 1
-            continue
-
-        changed_fields: list[str] = []
-        if int(obj.level) != int(row.level):
-            obj.level = row.level
-            changed_fields.append("level")
-        if int(obj.granted_by_id or 0) != int(row.granted_by_id or 0):
-            obj.granted_by_id = row.granted_by_id
-            changed_fields.append("granted_by")
-        if str(obj.notes or "") != str(row.notes or ""):
-            obj.notes = row.notes
-            changed_fields.append("notes")
-        if changed_fields:
-            obj.save(update_fields=changed_fields)
-            stats.group_backfilled_updated += 1
+def _sync_group_permissions(stats: ExposurePermissionBackfillStats) -> None:
+    stats.group_legacy_rows = OperationExposureGroupPermission.objects.filter(
+        **_template_scope_filters()
+    ).count()
 
 
-def _parity_checks(stats: ExposurePermissionBackfillStats, alias_to_exposure_id: dict[str, str]) -> None:
+def _parity_checks(stats: ExposurePermissionBackfillStats) -> None:
     direct_expected = {
-        (int(row.user_id), str(exposure_id), int(row.level))
-        for row in OperationTemplatePermission.objects.all()
-        for exposure_id in [alias_to_exposure_id.get(str(row.template_id))]
-        if exposure_id
+        (int(user_id), str(exposure_id), int(level))
+        for user_id, exposure_id, level in OperationExposurePermission.objects.filter(
+            **_template_scope_filters()
+        ).values_list("user_id", "exposure_id", "level")
     }
     direct_actual = {
         (int(user_id), str(exposure_id), int(level))
         for user_id, exposure_id, level in OperationExposurePermission.objects.filter(
-            exposure__surface=OperationExposure.SURFACE_TEMPLATE,
-            exposure__tenant__isnull=True,
+            **_template_scope_filters()
         ).values_list("user_id", "exposure_id", "level")
     }
 
     group_expected = {
-        (int(row.group_id), str(exposure_id), int(row.level))
-        for row in OperationTemplateGroupPermission.objects.all()
-        for exposure_id in [alias_to_exposure_id.get(str(row.template_id))]
-        if exposure_id
+        (int(group_id), str(exposure_id), int(level))
+        for group_id, exposure_id, level in OperationExposureGroupPermission.objects.filter(
+            **_template_scope_filters()
+        ).values_list("group_id", "exposure_id", "level")
     }
     group_actual = {
         (int(group_id), str(exposure_id), int(level))
         for group_id, exposure_id, level in OperationExposureGroupPermission.objects.filter(
-            exposure__surface=OperationExposure.SURFACE_TEMPLATE,
-            exposure__tenant__isnull=True,
+            **_template_scope_filters()
         ).values_list("group_id", "exposure_id", "level")
     }
 
@@ -177,10 +108,9 @@ def _parity_checks(stats: ExposurePermissionBackfillStats, alias_to_exposure_id:
 
 def run_operation_exposure_permissions_backfill() -> ExposurePermissionBackfillStats:
     stats = ExposurePermissionBackfillStats()
-    alias_to_exposure_id = _global_template_exposure_map()
 
-    _sync_direct_permissions(stats, alias_to_exposure_id)
-    _sync_group_permissions(stats, alias_to_exposure_id)
-    _parity_checks(stats, alias_to_exposure_id)
+    _sync_direct_permissions(stats)
+    _sync_group_permissions(stats)
+    _parity_checks(stats)
 
     return stats

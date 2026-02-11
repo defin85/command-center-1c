@@ -10,8 +10,10 @@ from apps.databases.models import (
     PermissionLevel,
 )
 from apps.templates.models import (
+    OperationDefinition,
+    OperationExposure,
+    OperationExposureGroupPermission,
     OperationTemplate,
-    OperationTemplateGroupPermission,
     WorkflowTemplateGroupPermission,
 )
 from apps.templates.workflow.models import WorkflowTemplate
@@ -26,6 +28,35 @@ def _grant_group_permission(group: Group, app_label: str, model: str, codename: 
 def _reload_user(user: User) -> User:
     # ModelBackend caches permissions on the user instance; reload to avoid stale caches.
     return User.objects.get(pk=user.pk)
+
+
+def _create_template_exposure(template_id: str) -> OperationExposure:
+    definition = OperationDefinition.objects.create(
+        tenant_scope="global",
+        executor_kind=OperationDefinition.EXECUTOR_IBCMD_CLI,
+        executor_payload={
+            "operation_type": "noop",
+            "target_entity": "db",
+            "template_data": {},
+        },
+        contract_version=1,
+        fingerprint=f"fp-{template_id}",
+        status=OperationDefinition.STATUS_ACTIVE,
+    )
+    return OperationExposure.objects.create(
+        definition=definition,
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias=template_id,
+        tenant=None,
+        label=template_id,
+        description="",
+        is_active=True,
+        capability="",
+        contexts=[],
+        display_order=0,
+        capability_config={},
+        status=OperationExposure.STATUS_PUBLISHED,
+    )
 
 
 @pytest.mark.django_db
@@ -122,9 +153,10 @@ def test_has_perm_operation_template_requires_capability_and_scope():
         template_data={},
         is_active=True,
     )
-    OperationTemplateGroupPermission.objects.create(
+    exposure = _create_template_exposure(template.id)
+    OperationExposureGroupPermission.objects.create(
         group=group,
-        template=template,
+        exposure=exposure,
         level=PermissionLevel.VIEW,
         notes="",
     )
@@ -137,7 +169,7 @@ def test_has_perm_operation_template_requires_capability_and_scope():
     user = _reload_user(user)
     assert user.has_perm("templates.manage_operation_template", template) is False
 
-    OperationTemplateGroupPermission.objects.filter(group=group, template=template).update(
+    OperationExposureGroupPermission.objects.filter(group=group, exposure=exposure).update(
         level=PermissionLevel.MANAGE
     )
     assert user.has_perm("templates.manage_operation_template", template) is True

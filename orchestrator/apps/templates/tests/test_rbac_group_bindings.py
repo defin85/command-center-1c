@@ -3,14 +3,45 @@ from django.contrib.auth.models import Group, User
 
 from apps.databases.models import PermissionLevel
 from apps.templates.models import (
+    OperationDefinition,
+    OperationExposure,
+    OperationExposureGroupPermission,
+    OperationExposurePermission,
     OperationTemplate,
-    OperationTemplateGroupPermission,
-    OperationTemplatePermission,
     WorkflowTemplatePermission,
     WorkflowTemplateGroupPermission,
 )
 from apps.templates.rbac import TemplatePermissionService
 from apps.templates.workflow.models import WorkflowTemplate
+
+
+def _create_template_exposure(template_id: str) -> OperationExposure:
+    definition = OperationDefinition.objects.create(
+        tenant_scope="global",
+        executor_kind=OperationDefinition.EXECUTOR_IBCMD_CLI,
+        executor_payload={
+            "operation_type": "noop",
+            "target_entity": "db",
+            "template_data": {},
+        },
+        contract_version=1,
+        fingerprint=f"fp-{template_id}",
+        status=OperationDefinition.STATUS_ACTIVE,
+    )
+    return OperationExposure.objects.create(
+        definition=definition,
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias=template_id,
+        tenant=None,
+        label=template_id,
+        description="",
+        is_active=True,
+        capability="",
+        contexts=[],
+        display_order=0,
+        capability_config={},
+        status=OperationExposure.STATUS_PUBLISHED,
+    )
 
 
 @pytest.mark.django_db
@@ -79,10 +110,11 @@ def test_group_operation_template_permission_allows_access():
         template_data={},
         is_active=True,
     )
+    exposure = _create_template_exposure(template.id)
 
-    OperationTemplateGroupPermission.objects.create(
+    OperationExposureGroupPermission.objects.create(
         group=group,
-        template=template,
+        exposure=exposure,
         level=PermissionLevel.VIEW,
         notes="",
     )
@@ -155,10 +187,11 @@ def test_user_operation_template_permission_allows_access():
         template_data={},
         is_active=True,
     )
+    exposure = _create_template_exposure(template.id)
 
-    OperationTemplatePermission.objects.create(
+    OperationExposurePermission.objects.create(
         user=user,
-        template=template,
+        exposure=exposure,
         level=PermissionLevel.VIEW,
         notes="",
     )

@@ -5,13 +5,42 @@ from rest_framework.test import APIClient
 
 from apps.artifacts.models import Artifact, ArtifactKind
 from apps.databases.models import Cluster, Database
-from apps.templates.models import OperationTemplate
+from apps.templates.models import OperationDefinition, OperationExposure, OperationTemplate
 
 
 def _grant_group_permission(group: Group, app_label: str, model: str, codename: str) -> None:
     ct = ContentType.objects.get(app_label=app_label, model=model)
     perm = Permission.objects.get(content_type=ct, codename=codename)
     group.permissions.add(perm)
+
+
+def _create_template_exposure(template_id: str) -> OperationExposure:
+    definition = OperationDefinition.objects.create(
+        tenant_scope="global",
+        executor_kind=OperationDefinition.EXECUTOR_IBCMD_CLI,
+        executor_payload={
+            "operation_type": "noop",
+            "target_entity": "database",
+            "template_data": {},
+        },
+        contract_version=1,
+        fingerprint=f"fp-{template_id}",
+        status=OperationDefinition.STATUS_ACTIVE,
+    )
+    return OperationExposure.objects.create(
+        definition=definition,
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias=template_id,
+        tenant=None,
+        label=template_id,
+        description="",
+        is_active=True,
+        capability="",
+        contexts=[],
+        display_order=0,
+        capability_config={},
+        status=OperationExposure.STATUS_PUBLISHED,
+    )
 
 
 @pytest.fixture
@@ -170,6 +199,7 @@ def test_template_and_artifact_bindings_user(rbac_admin_client):
         template_data={},
         is_active=True,
     )
+    _create_template_exposure(template.id)
 
     grant_tpl = rbac_admin_client.post(
         "/api/v2/rbac/grant-operation-template-permission/",

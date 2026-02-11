@@ -9,7 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.databases.models import Cluster, Database
-from apps.templates.models import OperationTemplate
+from apps.templates.models import OperationExposure
 from apps.templates.workflow.models import WorkflowTemplate
 from apps.artifacts.models import Artifact
 
@@ -106,13 +106,16 @@ def ref_operation_templates(request):
     search = (request.query_params.get("search") or "").strip()
     pagination = _parse_pagination(request, default_limit=200, max_limit=2000)
 
-    qs = OperationTemplate.objects.all()
+    qs = OperationExposure.objects.filter(
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        tenant__isnull=True,
+    )
     if search:
-        qs = qs.filter(Q(id__icontains=search) | Q(name__icontains=search))
+        qs = qs.filter(Q(alias__icontains=search) | Q(label__icontains=search))
 
     total = qs.count()
-    rows = list(qs.order_by("name")[pagination.offset: pagination.offset + pagination.limit])
-    data = [{"id": row.id, "name": row.name} for row in rows]
+    rows = list(qs.order_by("label", "alias")[pagination.offset: pagination.offset + pagination.limit])
+    data = [{"id": row.alias, "name": row.label or row.alias} for row in rows]
     return Response({"templates": data, "count": len(data), "total": total})
 
 

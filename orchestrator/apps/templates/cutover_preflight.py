@@ -9,9 +9,9 @@ from django.utils import timezone
 
 from apps.templates.models import (
     OperationExposure,
+    OperationExposureGroupPermission,
+    OperationExposurePermission,
     OperationTemplate,
-    OperationTemplateGroupPermission,
-    OperationTemplatePermission,
 )
 
 
@@ -86,11 +86,13 @@ def run_operation_exposure_cutover_preflight() -> dict[str, Any]:
         tenant__isnull=True,
     ).exclude(alias__in=OperationTemplate.objects.values_list("id", flat=True)).count()
 
-    direct_permissions_without_exposure = OperationTemplatePermission.objects.exclude(
-        template__id__in=exposure_aliases_qs
+    direct_permissions_out_of_scope = OperationExposurePermission.objects.exclude(
+        exposure__surface=template_surface,
+        exposure__tenant__isnull=True,
     ).count()
-    group_permissions_without_exposure = OperationTemplateGroupPermission.objects.exclude(
-        template__id__in=exposure_aliases_qs
+    group_permissions_out_of_scope = OperationExposureGroupPermission.objects.exclude(
+        exposure__surface=template_surface,
+        exposure__tenant__isnull=True,
     ).count()
 
     checks = [
@@ -123,16 +125,16 @@ def run_operation_exposure_cutover_preflight() -> dict[str, Any]:
             details={},
         ),
         PreflightCheck(
-            key="legacy_direct_permission_has_exposure",
-            description="Each legacy direct template permission must map to template exposure alias.",
-            mismatches=direct_permissions_without_exposure,
+            key="direct_permission_targets_template_exposure",
+            description="Each direct template permission must target global template exposure.",
+            mismatches=direct_permissions_out_of_scope,
             critical=True,
             details={},
         ),
         PreflightCheck(
-            key="legacy_group_permission_has_exposure",
-            description="Each legacy group template permission must map to template exposure alias.",
-            mismatches=group_permissions_without_exposure,
+            key="group_permission_targets_template_exposure",
+            description="Each group template permission must target global template exposure.",
+            mismatches=group_permissions_out_of_scope,
             critical=True,
             details={},
         ),
@@ -158,8 +160,14 @@ def run_operation_exposure_cutover_preflight() -> dict[str, Any]:
                 surface=template_surface,
                 tenant__isnull=True,
             ).count(),
-            "legacy_direct_permissions_total": OperationTemplatePermission.objects.count(),
-            "legacy_group_permissions_total": OperationTemplateGroupPermission.objects.count(),
+            "direct_permissions_total": OperationExposurePermission.objects.filter(
+                exposure__surface=template_surface,
+                exposure__tenant__isnull=True,
+            ).count(),
+            "group_permissions_total": OperationExposureGroupPermission.objects.filter(
+                exposure__surface=template_surface,
+                exposure__tenant__isnull=True,
+            ).count(),
             "total_checks": len(checks),
             "total_mismatches": total_mismatches,
             "total_critical_mismatches": total_critical_mismatches,

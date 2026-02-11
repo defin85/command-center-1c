@@ -21,9 +21,9 @@ from apps.databases.models import (
     PermissionLevel,
 )
 from apps.templates.models import (
-    OperationTemplate,
-    OperationTemplateGroupPermission,
-    OperationTemplatePermission,
+    OperationExposure,
+    OperationExposureGroupPermission,
+    OperationExposurePermission,
     WorkflowTemplateGroupPermission,
     WorkflowTemplatePermission,
 )
@@ -239,24 +239,40 @@ def get_effective_access(request):
     operation_templates_out = []
     if include_templates:
         direct_rows = list(
-            OperationTemplatePermission.objects.select_related("template").filter(user=target_user)
+            OperationExposurePermission.objects.select_related("exposure").filter(
+                user=target_user,
+                exposure__surface=OperationExposure.SURFACE_TEMPLATE,
+                exposure__tenant__isnull=True,
+            )
         )
-        direct_level_map: dict[str, int] = {str(p.template_id): int(p.level) for p in direct_rows if p.level is not None}
+        direct_level_map: dict[str, int] = {
+            str(p.exposure.alias): int(p.level) for p in direct_rows if p.level is not None
+        }
 
         group_rows = (
-            OperationTemplateGroupPermission.objects.filter(group__user=target_user)
-            .values("template_id")
+            OperationExposureGroupPermission.objects.filter(
+                group__user=target_user,
+                exposure__surface=OperationExposure.SURFACE_TEMPLATE,
+                exposure__tenant__isnull=True,
+            )
+            .values("exposure__alias")
             .annotate(level=Max("level"))
-            .values_list("template_id", "level")
+            .values_list("exposure__alias", "level")
         )
         group_level_map: dict[str, int] = {str(tpl_id): int(level) for tpl_id, level in group_rows if level is not None}
 
         template_ids = set(direct_level_map.keys()).union(group_level_map.keys())
         templates = list(
-            OperationTemplate.objects.filter(id__in=list(template_ids)).only("id", "name").order_by("name")
+            OperationExposure.objects.filter(
+                surface=OperationExposure.SURFACE_TEMPLATE,
+                tenant__isnull=True,
+                alias__in=list(template_ids),
+            )
+            .only("alias", "label")
+            .order_by("label", "alias")
         )
         for tpl in templates:
-            tpl_id = str(tpl.id)
+            tpl_id = str(tpl.alias)
             user_level = direct_level_map.get(tpl_id)
             group_level = group_level_map.get(tpl_id)
             levels = [lvl for lvl in [user_level, group_level] if lvl is not None]
@@ -272,7 +288,12 @@ def get_effective_access(request):
             if group_level is not None:
                 sources.append({"source": "group", "level": _level_code(group_level)})
             operation_templates_out.append(
-                {"template": {"id": tpl.id, "name": tpl.name}, "level": _level_code(effective_level), "source": source, "sources": sources}
+                {
+                    "template": {"id": tpl.alias, "name": tpl.label or tpl.alias},
+                    "level": _level_code(effective_level),
+                    "source": source,
+                    "sources": sources,
+                }
             )
 
     workflow_templates_out = []

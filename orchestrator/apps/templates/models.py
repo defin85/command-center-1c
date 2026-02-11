@@ -269,50 +269,6 @@ class ManualOperationTemplateBinding(models.Model):
         return f"{self.tenant_id}:{self.manual_operation}:{self.template_id}"
 
 
-class OperationTemplatePermission(models.Model):
-    """
-    User permission for a specific operation template.
-    """
-    from django.conf import settings as django_settings
-
-    user = models.ForeignKey(
-        django_settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='operation_template_permissions'
-    )
-    template = models.ForeignKey(
-        OperationTemplate,
-        on_delete=models.CASCADE,
-        related_name='user_permissions'
-    )
-    level = models.IntegerField(
-        choices=PermissionLevel.choices,
-        default=PermissionLevel.VIEW
-    )
-
-    # Audit fields
-    granted_by = models.ForeignKey(
-        django_settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='+'
-    )
-    granted_at = models.DateTimeField(auto_now_add=True)
-    notes = models.TextField(blank=True)
-
-    class Meta:
-        db_table = 'templates_operation_template_permissions'
-        unique_together = ['user', 'template']
-        indexes = [
-            models.Index(fields=['user', 'template'], name='otp_user_tpl_idx'),
-            models.Index(fields=['template', 'level'], name='otp_tpl_level_idx'),
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.user.username} -> {self.template.id} ({self.get_level_display()})"
-
-
 class OperationExposurePermission(models.Model):
     """
     User permission for a specific template exposure.
@@ -355,50 +311,6 @@ class OperationExposurePermission(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user.username} -> {self.exposure.alias} ({self.get_level_display()})"
-
-
-class OperationTemplateGroupPermission(models.Model):
-    """
-    Group permission for a specific operation template.
-    """
-    from django.conf import settings as django_settings
-
-    group = models.ForeignKey(
-        Group,
-        on_delete=models.CASCADE,
-        related_name='operation_template_permissions'
-    )
-    template = models.ForeignKey(
-        OperationTemplate,
-        on_delete=models.CASCADE,
-        related_name='group_permissions'
-    )
-    level = models.IntegerField(
-        choices=PermissionLevel.choices,
-        default=PermissionLevel.VIEW
-    )
-
-    # Audit fields
-    granted_by = models.ForeignKey(
-        django_settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='+'
-    )
-    granted_at = models.DateTimeField(auto_now_add=True)
-    notes = models.TextField(blank=True)
-
-    class Meta:
-        db_table = 'templates_operation_template_group_permissions'
-        unique_together = ['group', 'template']
-        indexes = [
-            models.Index(fields=['group', 'template'], name='otgp_group_tpl_idx'),
-            models.Index(fields=['template', 'level'], name='otgp_tpl_level_idx'),
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.group.name} -> {self.template.id} ({self.get_level_display()})"
 
 
 class OperationExposureGroupPermission(models.Model):
