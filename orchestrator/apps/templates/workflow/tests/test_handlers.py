@@ -13,6 +13,7 @@ Tests cover:
 import pytest
 from unittest.mock import Mock, patch
 
+from apps.templates.models import OperationDefinition, OperationExposure
 from apps.templates.workflow.handlers import (
     NodeExecutionMode,
     NodeExecutionResult,
@@ -26,6 +27,44 @@ from apps.templates.workflow.models import (
     WorkflowStepResult,
     NodeConfig,
 )
+
+
+def _create_template_exposure(
+    *,
+    template_id: str,
+    name: str,
+    operation_type: str,
+    target_entity: str,
+    template_data: object,
+    is_active: bool = True,
+    status: str = OperationExposure.STATUS_PUBLISHED,
+) -> OperationExposure:
+    definition = OperationDefinition.objects.create(
+        tenant_scope="global",
+        executor_kind=OperationDefinition.EXECUTOR_DESIGNER_CLI,
+        executor_payload={
+            "operation_type": operation_type,
+            "target_entity": target_entity,
+            "template_data": template_data,
+        },
+        contract_version=1,
+        fingerprint=f"fp-{template_id}",
+        status=OperationDefinition.STATUS_ACTIVE,
+    )
+    return OperationExposure.objects.create(
+        definition=definition,
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias=template_id,
+        tenant=None,
+        label=name,
+        description="",
+        is_active=is_active,
+        capability="",
+        contexts=[],
+        display_order=0,
+        capability_config={},
+        status=status,
+    )
 
 
 # ========== NodeExecutionResult Tests ==========
@@ -109,7 +148,7 @@ class TestOperationHandler:
     """Tests for OperationHandler."""
 
     def test_operation_handler_template_not_found(self, workflow_execution):
-        """Test error when OperationTemplate doesn't exist."""
+        """Test error when template exposure alias doesn't exist."""
         node = WorkflowNode(
             id="op1",
             name="Test Operation",
@@ -125,17 +164,63 @@ class TestOperationHandler:
         assert "not found" in result.error.lower()
         assert result.mode == NodeExecutionMode.SYNC
 
+    def test_operation_handler_template_not_published(self, workflow_execution):
+        _create_template_exposure(
+            template_id="draft_template",
+            name="Draft Template",
+            operation_type="query",
+            target_entity="Users",
+            template_data={},
+            status=OperationExposure.STATUS_DRAFT,
+        )
+
+        node = WorkflowNode(
+            id="op1",
+            name="Test Operation",
+            type="operation",
+            template_id="draft_template",
+        )
+        context = {}
+
+        handler = OperationHandler()
+        result = handler.execute(node, context, workflow_execution)
+
+        assert result.success is False
+        assert (result.error or "").startswith("TEMPLATE_NOT_PUBLISHED:")
+        assert result.mode == NodeExecutionMode.SYNC
+
+    def test_operation_handler_template_invalid_payload(self, workflow_execution):
+        _create_template_exposure(
+            template_id="invalid_template",
+            name="Invalid Template",
+            operation_type="query",
+            target_entity="Users",
+            template_data="not-an-object",
+        )
+
+        node = WorkflowNode(
+            id="op1",
+            name="Test Operation",
+            type="operation",
+            template_id="invalid_template",
+        )
+        context = {}
+
+        handler = OperationHandler()
+        result = handler.execute(node, context, workflow_execution)
+
+        assert result.success is False
+        assert (result.error or "").startswith("TEMPLATE_INVALID:")
+        assert result.mode == NodeExecutionMode.SYNC
+
     def test_operation_handler_success(self, admin_user, workflow_execution):
         """Test successful operation execution."""
-        from apps.templates.models import OperationTemplate
-
-        # Create real OperationTemplate
-        OperationTemplate.objects.create(
-            id="test_template",
+        _create_template_exposure(
+            template_id="test_template",
             name="Test Template",
             operation_type="query",
             target_entity="Users",
-            template_data={"query": "SELECT * FROM Users"}
+            template_data={"query": "SELECT * FROM Users"},
         )
 
         node = WorkflowNode(
@@ -181,16 +266,14 @@ class TestOperationHandler:
 
     def test_operation_handler_render_error(self, admin_user, workflow_execution):
         """Test error handling when template rendering fails."""
-        from apps.templates.models import OperationTemplate
         from apps.templates.engine.exceptions import TemplateRenderError
 
-        # Create template
-        OperationTemplate.objects.create(
-            id="bad_template",
+        _create_template_exposure(
+            template_id="bad_template",
             name="Bad Template",
             operation_type="query",
             target_entity="Users",
-            template_data={"query": "test"}
+            template_data={"query": "test"},
         )
 
         node = WorkflowNode(
@@ -216,15 +299,12 @@ class TestOperationHandler:
     @pytest.mark.django_db
     def test_operation_handler_creates_step_result(self, admin_user, workflow_execution):
         """Test that handler creates WorkflowStepResult for audit."""
-        from apps.templates.models import OperationTemplate
-
-        # Create template
-        OperationTemplate.objects.create(
-            id="audit_test",
+        _create_template_exposure(
+            template_id="audit_test",
             name="Audit Test",
             operation_type="test",
             target_entity="Test",
-            template_data={}
+            template_data={},
         )
 
         node = WorkflowNode(
@@ -430,15 +510,12 @@ class TestHandlersIntegration:
         self, admin_user, simple_workflow_template
     ):
         """Test that operation results are stored in context."""
-        from apps.templates.models import OperationTemplate
-
-        # Create template
-        OperationTemplate.objects.create(
-            id="context_test",
+        _create_template_exposure(
+            template_id="context_test",
             name="Context Test",
             operation_type="query",
             target_entity="Test",
-            template_data={"query": "test"}
+            template_data={"query": "test"},
         )
 
         # Create execution
@@ -496,15 +573,13 @@ class TestHandlersIntegration:
 
     def test_workflow_step_result_created_for_handlers(self, admin_user, workflow_execution):
         """Test that all handlers create WorkflowStepResult."""
-        from apps.templates.models import OperationTemplate
-
         # Test OperationHandler
-        OperationTemplate.objects.create(
-            id="step_test",
+        _create_template_exposure(
+            template_id="step_test",
             name="Step Test",
             operation_type="test",
             target_entity="Test",
-            template_data={}
+            template_data={},
         )
 
         node_op = WorkflowNode(
@@ -554,14 +629,12 @@ class TestHandlersEdgeCases:
     @pytest.mark.django_db
     def test_operation_handler_empty_context(self, admin_user, workflow_execution):
         """Test operation fails with empty context (no target databases)."""
-        from apps.templates.models import OperationTemplate
-
-        OperationTemplate.objects.create(
-            id="empty_ctx",
+        _create_template_exposure(
+            template_id="empty_ctx",
             name="Empty Context",
             operation_type="test",
             target_entity="Test",
-            template_data={"static": "data"}
+            template_data={"static": "data"},
         )
 
         node = WorkflowNode(
@@ -611,14 +684,12 @@ class TestHandlersEdgeCases:
     @pytest.mark.django_db
     def test_handlers_with_unicode_data(self, admin_user, workflow_execution):
         """Test handlers work with Unicode/Cyrillic data."""
-        from apps.templates.models import OperationTemplate
-
-        OperationTemplate.objects.create(
-            id="unicode_test",
+        _create_template_exposure(
+            template_id="unicode_test",
             name="Тестовый шаблон",  # Cyrillic
             operation_type="test",
             target_entity="Пользователи",  # Cyrillic
-            template_data={"имя": "значение"}  # Cyrillic
+            template_data={"имя": "значение"},  # Cyrillic
         )
 
         node = WorkflowNode(

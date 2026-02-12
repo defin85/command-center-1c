@@ -2,7 +2,8 @@ import pytest
 from uuid import uuid4
 
 from apps.databases.models import Database
-from apps.templates.models import OperationTemplate
+from apps.templates.models import OperationDefinition, OperationExposure
+from apps.templates.template_runtime import resolve_runtime_template
 from apps.templates.workflow.models import WorkflowTemplate
 
 
@@ -40,14 +41,34 @@ def multiple_databases(db):
 
 @pytest.fixture
 def operation_template(db):
-    return OperationTemplate.objects.create(
-        id="test_template_" + str(uuid4())[:8],
-        name="Test Operation Template",
-        operation_type="query",
-        target_entity="Users",
-        template_data={"query": "SELECT * FROM Users"},
-        description="Test template for factory",
+    template_id = "test_template_" + str(uuid4())[:8]
+    definition = OperationDefinition.objects.create(
+        tenant_scope="global",
+        executor_kind=OperationDefinition.EXECUTOR_DESIGNER_CLI,
+        executor_payload={
+            "operation_type": "query",
+            "target_entity": "Users",
+            "template_data": {"query": "SELECT * FROM Users"},
+        },
+        contract_version=1,
+        fingerprint=f"fp-{template_id}",
+        status=OperationDefinition.STATUS_ACTIVE,
     )
+    OperationExposure.objects.create(
+        definition=definition,
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias=template_id,
+        tenant=None,
+        label="Test Operation Template",
+        description="Test template for factory",
+        is_active=True,
+        capability="",
+        contexts=[],
+        display_order=0,
+        capability_config={},
+        status=OperationExposure.STATUS_PUBLISHED,
+    )
+    return resolve_runtime_template(template_alias=template_id)
 
 
 @pytest.fixture
@@ -75,4 +96,3 @@ def workflow_template(db):
 @pytest.fixture
 def workflow_execution(db, workflow_template):
     return workflow_template.create_execution({"test": "data"})
-

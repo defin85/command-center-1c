@@ -7,7 +7,6 @@ from apps.templates.models import (
     OperationExposure,
     OperationExposureGroupPermission,
     OperationExposurePermission,
-    OperationTemplate,
     WorkflowTemplatePermission,
     WorkflowTemplateGroupPermission,
 )
@@ -101,16 +100,8 @@ def test_group_operation_template_permission_allows_access():
     user = User.objects.create_user(username="u", password="pass")
     user.groups.add(group)
 
-    template = OperationTemplate.objects.create(
-        id="tpl-1",
-        name="T1",
-        description="",
-        operation_type="noop",
-        target_entity="db",
-        template_data={},
-        is_active=True,
-    )
-    exposure = _create_template_exposure(template.id)
+    template_id = "tpl-1"
+    exposure = _create_template_exposure(template_id)
 
     OperationExposureGroupPermission.objects.create(
         group=group,
@@ -120,14 +111,19 @@ def test_group_operation_template_permission_allows_access():
     )
 
     assert (
-        TemplatePermissionService.get_user_level_for_operation_template(user, template)
+        TemplatePermissionService.get_user_level_for_operation_template(user, exposure)
         == PermissionLevel.VIEW
     )
 
     accessible = TemplatePermissionService.filter_accessible_operation_templates(
-        user, OperationTemplate.objects.all(), min_level=PermissionLevel.VIEW
+        user,
+        OperationExposure.objects.filter(
+            surface=OperationExposure.SURFACE_TEMPLATE,
+            tenant__isnull=True,
+        ),
+        min_level=PermissionLevel.VIEW,
     )
-    assert accessible.filter(id=template.id).exists()
+    assert accessible.filter(alias=template_id).exists()
 
 
 @pytest.mark.django_db
@@ -178,16 +174,8 @@ def test_user_workflow_template_permission_inherits_to_execution():
 def test_user_operation_template_permission_allows_access():
     user = User.objects.create_user(username="u", password="pass")
 
-    template = OperationTemplate.objects.create(
-        id="tpl-1",
-        name="T1",
-        description="",
-        operation_type="noop",
-        target_entity="db",
-        template_data={},
-        is_active=True,
-    )
-    exposure = _create_template_exposure(template.id)
+    template_id = "tpl-1"
+    exposure = _create_template_exposure(template_id)
 
     OperationExposurePermission.objects.create(
         user=user,
@@ -197,14 +185,19 @@ def test_user_operation_template_permission_allows_access():
     )
 
     assert (
-        TemplatePermissionService.get_user_level_for_operation_template(user, template)
+        TemplatePermissionService.get_user_level_for_operation_template(user, exposure)
         == PermissionLevel.VIEW
     )
 
     accessible = TemplatePermissionService.filter_accessible_operation_templates(
-        user, OperationTemplate.objects.all(), min_level=PermissionLevel.VIEW
+        user,
+        OperationExposure.objects.filter(
+            surface=OperationExposure.SURFACE_TEMPLATE,
+            tenant__isnull=True,
+        ),
+        min_level=PermissionLevel.VIEW,
     )
-    assert accessible.filter(id=template.id).exists()
+    assert accessible.filter(alias=template_id).exists()
 
 
 @pytest.mark.django_db

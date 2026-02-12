@@ -6,7 +6,45 @@ import pytest
 from apps.operations.factory import BatchOperationFactory
 from apps.operations.models import BatchOperation
 from apps.operations.services import EnqueueResult
-from apps.templates.models import OperationTemplate
+from apps.templates.models import OperationDefinition, OperationExposure
+from apps.templates.template_runtime import resolve_runtime_template
+
+
+def _create_runtime_template(
+    *,
+    template_id: str,
+    name: str,
+    operation_type: str,
+    target_entity: str,
+    template_data: dict[str, object],
+) -> object:
+    definition = OperationDefinition.objects.create(
+        tenant_scope="global",
+        executor_kind=OperationDefinition.EXECUTOR_DESIGNER_CLI,
+        executor_payload={
+            "operation_type": operation_type,
+            "target_entity": target_entity,
+            "template_data": template_data,
+        },
+        contract_version=1,
+        fingerprint=f"fp-{template_id}",
+        status=OperationDefinition.STATUS_ACTIVE,
+    )
+    OperationExposure.objects.create(
+        definition=definition,
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias=template_id,
+        tenant=None,
+        label=name,
+        description="",
+        is_active=True,
+        capability="",
+        contexts=[],
+        display_order=0,
+        capability_config={},
+        status=OperationExposure.STATUS_PUBLISHED,
+    )
+    return resolve_runtime_template(template_alias=template_id)
 
 
 @pytest.mark.django_db
@@ -164,8 +202,8 @@ class TestOperationHandlerTargetDatabases:
         from apps.templates.workflow.handlers import NodeExecutionMode, OperationHandler
         from apps.templates.workflow.models import WorkflowNode
 
-        template = OperationTemplate.objects.create(
-            id="tpl_global_cli_" + str(uuid4())[:8],
+        template = _create_runtime_template(
+            template_id="tpl_global_cli_" + str(uuid4())[:8],
             name="Global CLI Template",
             operation_type="designer_cli",
             target_entity="Infobase",

@@ -44,3 +44,25 @@ def test_gate_operation_template_references_fails_for_forbidden_token(tmp_path):
             "--strict",
         )
 
+
+@pytest.mark.django_db
+def test_gate_operation_template_references_ignores_safe_serializer_names(tmp_path):
+    file_path = tmp_path / "safe_names.py"
+    file_path.write_text(
+        "GrantOperationTemplatePermissionRequestSerializer = object\n"
+        "OperationTemplateGroupPermissionListResponseSerializer = object\n",
+        encoding="utf-8",
+    )
+
+    out = StringIO()
+    call_command(
+        "gate_operation_template_references",
+        "--path",
+        str(file_path),
+        "--json",
+        "--strict",
+        stdout=out,
+    )
+    payload = json.loads(out.getvalue())
+    assert payload["status"] == "pass"
+    assert payload["violation_count"] == 0

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Iterable
 
 
@@ -22,6 +23,10 @@ FORBIDDEN_TOKENS = [
     "OperationTemplatePermission",
     "OperationTemplateGroupPermission",
 ]
+FORBIDDEN_PATTERNS = {
+    token: re.compile(rf"\b{re.escape(token)}\b")
+    for token in FORBIDDEN_TOKENS
+}
 
 
 @dataclass(frozen=True)
@@ -75,7 +80,8 @@ def run_operation_template_reference_gate(
             lines = file_path.read_text(encoding="latin-1").splitlines()
         for idx, line in enumerate(lines, start=1):
             for token in FORBIDDEN_TOKENS:
-                if token not in line:
+                pattern = FORBIDDEN_PATTERNS[token]
+                if pattern.search(line) is None:
                     continue
                 snippet = line.strip()
                 if len(snippet) > 200:
@@ -99,4 +105,3 @@ def run_operation_template_reference_gate(
         "violation_count": len(violations),
         "status": "pass" if not violations and not missing_paths else "fail",
     }
-

@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 
 from apps.artifacts.models import Artifact, ArtifactKind
 from apps.databases.models import Cluster, Database
-from apps.templates.models import OperationDefinition, OperationExposure, OperationTemplate
+from apps.templates.models import OperationDefinition, OperationExposure
 
 
 def _grant_group_permission(group: Group, app_label: str, model: str, codename: str) -> None:
@@ -190,20 +190,12 @@ def test_group_bindings_clusters_and_databases(rbac_admin_client, cluster, datab
 @pytest.mark.django_db
 def test_template_and_artifact_bindings_user(rbac_admin_client):
     user = User.objects.create_user(username="u_tpl", password="pass")
-    template = OperationTemplate.objects.create(
-        id="tpl-1",
-        name="Template 1",
-        description="",
-        operation_type="noop",
-        target_entity="database",
-        template_data={},
-        is_active=True,
-    )
-    _create_template_exposure(template.id)
+    template_id = "tpl-1"
+    _create_template_exposure(template_id)
 
     grant_tpl = rbac_admin_client.post(
         "/api/v2/rbac/grant-operation-template-permission/",
-        {"user_id": user.id, "template_id": template.id, "level": "VIEW", "reason": "TICKET-1"},
+        {"user_id": user.id, "template_id": template_id, "level": "VIEW", "reason": "TICKET-1"},
         format="json",
     )
     assert grant_tpl.status_code == 200
@@ -211,7 +203,7 @@ def test_template_and_artifact_bindings_user(rbac_admin_client):
 
     revoke_tpl = rbac_admin_client.post(
         "/api/v2/rbac/revoke-operation-template-permission/",
-        {"user_id": user.id, "template_id": template.id, "reason": "TICKET-2"},
+        {"user_id": user.id, "template_id": template_id, "reason": "TICKET-2"},
         format="json",
     )
     assert revoke_tpl.status_code == 200

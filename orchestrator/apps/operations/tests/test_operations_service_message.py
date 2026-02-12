@@ -1,10 +1,12 @@
 import pytest
 from uuid import uuid4
+from types import SimpleNamespace
 
 from apps.databases.models import Database
 from apps.operations.factory import BatchOperationFactory
 from apps.operations.services import OperationsService
-from apps.templates.models import OperationDefinition, OperationExposure, OperationTemplate
+from apps.templates.models import OperationDefinition, OperationExposure
+from apps.templates.template_runtime import resolve_runtime_template
 
 
 @pytest.fixture
@@ -23,13 +25,49 @@ def test_database(db):
 
 @pytest.mark.django_db
 class TestOperationsServiceBuildMessage:
+    def _create_runtime_template(
+        self,
+        *,
+        operation_type: str,
+        target_entity: str,
+    ) -> tuple[object, OperationExposure]:
+        template_id = "tpl_" + str(uuid4())[:8]
+        definition = OperationDefinition.objects.create(
+            tenant_scope="global",
+            executor_kind=OperationDefinition.EXECUTOR_DESIGNER_CLI,
+            executor_payload={
+                "operation_type": operation_type,
+                "target_entity": target_entity,
+                "template_data": {},
+            },
+            contract_version=1,
+            fingerprint="fp-" + template_id,
+            status=OperationDefinition.STATUS_ACTIVE,
+        )
+        exposure = OperationExposure.objects.create(
+            definition=definition,
+            surface=OperationExposure.SURFACE_TEMPLATE,
+            alias=template_id,
+            tenant=None,
+            label=template_id,
+            description="",
+            is_active=True,
+            capability="",
+            contexts=[],
+            display_order=0,
+            capability_config={},
+            status=OperationExposure.STATUS_PUBLISHED,
+        )
+        template = resolve_runtime_template(template_alias=template_id)
+        return template, exposure
+
     def test_build_message_legacy_payload_goes_to_data(self, test_database, db):
-        template = OperationTemplate.objects.create(
+        template = SimpleNamespace(
             id="tpl_cli_" + str(uuid4())[:8],
             name="CLI Template",
             operation_type="designer_cli",
             target_entity="Infobase",
-            template_data={},
+            exposure_id="",
         )
         rendered_data = {
             "command": "LoadCfg",
@@ -53,12 +91,12 @@ class TestOperationsServiceBuildMessage:
         assert message["metadata"]["template_exposure_id"] is None
 
     def test_build_message_protocol_payload_keeps_sections(self, test_database, db):
-        template = OperationTemplate.objects.create(
+        template = SimpleNamespace(
             id="tpl_query_" + str(uuid4())[:8],
             name="Query Template",
             operation_type="query",
             target_entity="Catalog_Users",
-            template_data={},
+            exposure_id="",
         )
         rendered_data = {
             "data": {"field": "value"},
@@ -78,12 +116,12 @@ class TestOperationsServiceBuildMessage:
         assert message["payload"]["options"] == {"filter": "Code eq 'X'"}
 
     def test_build_message_options_only_payload_keeps_options(self, test_database, db):
-        template = OperationTemplate.objects.create(
+        template = SimpleNamespace(
             id="tpl_opt_" + str(uuid4())[:8],
             name="Options Template",
             operation_type="query",
             target_entity="Catalog_Users",
-            template_data={},
+            exposure_id="",
         )
         rendered_data = {"options": {"filter": "Code eq 'X'"}}
 
@@ -99,12 +137,12 @@ class TestOperationsServiceBuildMessage:
         assert message["payload"]["options"] == {"filter": "Code eq 'X'"}
 
     def test_build_message_legacy_payload_copies_target_scope_to_payload_options(self, db):
-        template = OperationTemplate.objects.create(
+        template = SimpleNamespace(
             id="tpl_cli_global_" + str(uuid4())[:8],
             name="CLI Global Template",
             operation_type="designer_cli",
             target_entity="Infobase",
-            template_data={},
+            exposure_id="",
         )
         rendered_data = {
             "command": "Any",
@@ -123,38 +161,9 @@ class TestOperationsServiceBuildMessage:
         assert message["payload"]["options"] == {"target_scope": "global"}
 
     def test_build_message_includes_template_exposure_id_when_available(self, test_database, db):
-        template = OperationTemplate.objects.create(
-            id="tpl_cli_exposure_" + str(uuid4())[:8],
-            name="CLI Exposure Template",
+        template, exposure = self._create_runtime_template(
             operation_type="designer_cli",
             target_entity="Infobase",
-            template_data={},
-        )
-        definition = OperationDefinition.objects.create(
-            tenant_scope="global",
-            executor_kind=OperationDefinition.EXECUTOR_DESIGNER_CLI,
-            executor_payload={
-                "operation_type": "designer_cli",
-                "target_entity": "Infobase",
-                "template_data": {},
-            },
-            contract_version=1,
-            fingerprint="fp-" + template.id,
-            status=OperationDefinition.STATUS_ACTIVE,
-        )
-        exposure = OperationExposure.objects.create(
-            definition=definition,
-            surface=OperationExposure.SURFACE_TEMPLATE,
-            alias=template.id,
-            tenant=None,
-            label=template.id,
-            description="",
-            is_active=True,
-            capability="",
-            contexts=[],
-            display_order=0,
-            capability_config={},
-            status=OperationExposure.STATUS_PUBLISHED,
         )
 
         operation = BatchOperationFactory.create(

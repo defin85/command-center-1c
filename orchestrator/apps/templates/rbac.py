@@ -21,6 +21,13 @@ class TemplatePermissionService:
     It only resolves "what objects this user can access" and at what PermissionLevel.
     """
 
+    @staticmethod
+    def _template_alias(template) -> str:
+        alias = str(getattr(template, "alias", "") or "").strip()
+        if alias:
+            return alias
+        return str(getattr(template, "id", "") or "").strip()
+
     @classmethod
     def get_user_level_for_operation_template(
         cls,
@@ -31,15 +38,15 @@ class TemplatePermissionService:
             return None
         if getattr(user, "is_staff", False):
             return PermissionLevel.ADMIN
-        template_id = str(getattr(template, "id", "") or "").strip()
-        if not template_id:
+        template_alias = cls._template_alias(template)
+        if not template_alias:
             return None
 
         user_level = OperationExposurePermission.objects.filter(
             user=user,
             exposure__surface=OperationExposure.SURFACE_TEMPLATE,
             exposure__tenant__isnull=True,
-            exposure__alias=template_id,
+            exposure__alias=template_alias,
         ).values_list("level", flat=True).first()
 
         group_level = (
@@ -47,7 +54,7 @@ class TemplatePermissionService:
                 group__user=user,
                 exposure__surface=OperationExposure.SURFACE_TEMPLATE,
                 exposure__tenant__isnull=True,
-                exposure__alias=template_id,
+                exposure__alias=template_alias,
             )
             .aggregate(level=Max("level"))
             .get("level")
@@ -138,7 +145,16 @@ class TemplatePermissionService:
             exposure__surface=OperationExposure.SURFACE_TEMPLATE,
             exposure__tenant__isnull=True,
         ).values_list("exposure__alias", flat=True)
-        return queryset.filter(Q(id__in=user_template_ids) | Q(id__in=group_template_ids))
+
+        model = getattr(queryset, "model", None)
+        template_field = "id"
+        if model is OperationExposure:
+            template_field = "alias"
+
+        return queryset.filter(
+            Q(**{f"{template_field}__in": user_template_ids})
+            | Q(**{f"{template_field}__in": group_template_ids})
+        )
 
     @classmethod
     def filter_accessible_workflow_templates(

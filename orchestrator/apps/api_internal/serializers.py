@@ -164,7 +164,7 @@ class FailedEventsCleanupSerializer(serializers.Serializer):
 
 
 class TemplateSerializer(serializers.Serializer):
-    """Output serializer for OperationTemplate data."""
+    """Output serializer for exposure-backed runtime template data."""
 
     id = serializers.CharField()
     name = serializers.CharField()
