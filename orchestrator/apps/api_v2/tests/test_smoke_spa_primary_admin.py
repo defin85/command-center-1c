@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 
 from apps.databases.models import Cluster
 from apps.operations.models import BatchOperation
-from apps.templates.models import OperationTemplate
+from apps.templates.models import OperationExposure
 from apps.templates.registry import get_registry
 from apps.templates.registry.types import BackendType, OperationType, TargetEntity
 
@@ -95,7 +95,11 @@ def test_spa_primary_admin_smoke(staff_client, monkeypatch):
     previous = registry.get_all()
     registry.clear()
     try:
-        OperationTemplate.objects.all().delete()
+        base_qs = OperationExposure.objects.filter(
+            surface=OperationExposure.SURFACE_TEMPLATE,
+            tenant__isnull=True,
+        )
+        before_count = base_qs.count()
         registry.register(OperationType(
             id="smoke_op",
             name="Smoke Op",
@@ -110,12 +114,12 @@ def test_spa_primary_admin_smoke(staff_client, monkeypatch):
         sync_dry = staff_client.post("/api/v2/templates/sync-from-registry/", {"dry_run": True}, format="json")
         assert sync_dry.status_code == 200
         assert sync_dry.json()["created"] == 1
-        assert OperationTemplate.objects.count() == 0
+        assert base_qs.count() == before_count
 
         sync_apply = staff_client.post("/api/v2/templates/sync-from-registry/", {"dry_run": False}, format="json")
         assert sync_apply.status_code == 200
         assert sync_apply.json()["created"] == 1
-        assert OperationTemplate.objects.count() == 1
+        assert base_qs.count() == before_count + 1
     finally:
         registry.clear()
         registry.register_many(previous)

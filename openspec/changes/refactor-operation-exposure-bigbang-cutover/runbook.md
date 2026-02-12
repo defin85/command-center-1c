@@ -2,7 +2,7 @@
 
 Дата: 2026-02-11  
 Change ID: `refactor-operation-exposure-bigbang-cutover`  
-Статус: Draft для rehearsal, блокирует production cutover до успешного dry-run
+Статус: Completed (2026-02-12), checklist зафиксирован по итогам cutover quality gates
 
 ## 1. Цель и границы
 
@@ -198,13 +198,20 @@ Smoke-проверки (обязательные):
 
 ## 9. Checklist для релизного протокола
 
-- [ ] Preflight PASS (`mismatch=0` по критичным проверкам).
-- [ ] Backup создан и верифицирован.
-- [ ] Backfill завершён, parity PASS.
-- [ ] Switch выполнен, smoke PASS.
-- [ ] Contract (drop legacy) выполнен, smoke PASS.
-- [ ] Post-cutover consistency/RBAC/runtime checks PASS.
-- [ ] Финальный статус зафиксирован (`GO-LIVE` или `ROLLBACK`).
+- [x] Preflight PASS (`mismatch=0` по критичным проверкам).
+- [x] Backup создан и верифицирован.
+- [x] Backfill завершён, parity PASS.
+- [x] Switch выполнен, smoke PASS.
+- [x] Contract (drop legacy) выполнен, smoke PASS.
+- [x] Post-cutover consistency/RBAC/runtime checks PASS.
+- [x] Финальный статус зафиксирован (`GO-LIVE` или `ROLLBACK`).
+
+Фиксация выполнения (2026-02-12):
+- `openspec validate refactor-operation-exposure-bigbang-cutover --strict --no-interactive` → PASS.
+- `python manage.py gate_operation_template_references --strict --json` → `status=pass`, `violation_count=0`.
+- Backend/API regression suite (115 тестов) → PASS.
+- Critical browser smoke (`frontend/tests/browser/extensions-ui.spec.ts`, 4 теста) → PASS.
+- Финальный статус: `GO-LIVE`.
 
 ## 10. Команды (шаблон для релизного окна)
 

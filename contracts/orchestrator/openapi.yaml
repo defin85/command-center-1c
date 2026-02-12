@@ -10165,7 +10165,7 @@ components:
           description: User who created operation
           maxLength: 255
         metadata:
-          description: Additional metadata
+          $ref: '#/components/schemas/BatchOperationMetadata'
         created_at:
           type: string
           format: date-time
@@ -10201,6 +10201,56 @@ components:
       - tasks
       - total_tasks
       - updated_at
+    BatchOperationMetadata:
+      type: object
+      description: |
+        Additional operation metadata.
+
+        For post-cutover template-based operations, `template_id` (alias) and
+        `template_exposure_id` (UUID) are emitted together as a strict wire contract.
+        Historical records may contain only `template_id`.
+      properties:
+        template_id:
+          type: string
+          nullable: true
+          description: Template alias (`operation_exposure.alias`) for template-based operations.
+        template_exposure_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Exposure UUID (`operation_exposure.id`) for template-based operations.
+        execution_source:
+          type: string
+          nullable: true
+          description: Operation execution source marker (e.g., template_manual_operation).
+        manual_operation:
+          type: string
+          nullable: true
+        result_contract:
+          type: string
+          nullable: true
+        mapping_spec_ref:
+          type: object
+          additionalProperties: {}
+          nullable: true
+        strict_requested:
+          type: boolean
+          nullable: true
+        snapshot_source:
+          type: string
+          nullable: true
+        snapshot_kinds:
+          type: array
+          items:
+            type: string
+          nullable: true
+        execution_plan:
+          $ref: '#/components/schemas/ExecutionPlan'
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExecutionBinding'
+      additionalProperties: {}
     BulkDeleteResponse:
       type: object
       properties:
@@ -13522,9 +13572,25 @@ components:
         plan_id:
           type: string
           format: uuid
-        preconditions: {}
-        execution_plan: {}
-        bindings: {}
+        preconditions:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              hash:
+                type: string
+              at:
+                type: string
+                format: date-time
+                nullable: true
+            required:
+            - hash
+        execution_plan:
+          $ref: '#/components/schemas/ExecutionPlan'
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExecutionBinding'
       required:
       - plan_id
       - preconditions
