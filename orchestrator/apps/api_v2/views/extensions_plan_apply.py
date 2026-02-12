@@ -684,6 +684,7 @@ def extensions_plan(request):
             "execution_source": "template_manual_operation",
             "manual_operation": manual_operation,
             "template_id": resolved_template_id,
+            "template_exposure_id": str(exposure.id),
             "result_contract": result_contract,
             "mapping_spec_ref": mapping_spec_ref,
             "extension_name": extension_name if manual_operation == MANUAL_OPERATION_EXTENSIONS_SET_FLAGS else None,
@@ -721,6 +722,8 @@ def _plan_is_legacy(plan_executor: dict[str, Any]) -> bool:
     if not str(plan_executor.get("manual_operation") or "").strip():
         return True
     if not str(plan_executor.get("template_id") or "").strip():
+        return True
+    if not str(plan_executor.get("template_exposure_id") or "").strip():
         return True
     for legacy_key in ("action_id", "action_capability", "capability"):
         if legacy_key in plan_executor:
@@ -777,6 +780,7 @@ def extensions_apply(request):
 
     manual_operation = str(plan_executor.get("manual_operation") or "").strip()
     template_id = str(plan_executor.get("template_id") or "").strip()
+    template_exposure_id = str(plan_executor.get("template_exposure_id") or "").strip()
     if not is_supported_manual_operation(manual_operation):
         return Response(
             {
@@ -857,6 +861,7 @@ def extensions_apply(request):
         "execution_source": "template_manual_operation",
         "manual_operation": manual_operation,
         "template_id": template_id,
+        "template_exposure_id": template_exposure_id,
         "result_contract": plan_executor.get("result_contract"),
         "mapping_spec_ref": plan_executor.get("mapping_spec_ref"),
         "strict_requested": strict,

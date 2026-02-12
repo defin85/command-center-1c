@@ -7,6 +7,8 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
+from apps.templates.cutover_gate import DEFAULT_SWITCH_CONTOUR_PATHS
+
 
 @pytest.mark.django_db
 def test_gate_operation_template_references_passes_for_clean_custom_path(tmp_path):
@@ -59,6 +61,33 @@ def test_gate_operation_template_references_ignores_safe_serializer_names(tmp_pa
         "gate_operation_template_references",
         "--path",
         str(file_path),
+        "--json",
+        "--strict",
+        stdout=out,
+    )
+    payload = json.loads(out.getvalue())
+    assert payload["status"] == "pass"
+    assert payload["violation_count"] == 0
+
+
+@pytest.mark.django_db
+def test_gate_default_switch_contour_includes_runtime_extensions_paths():
+    assert "orchestrator/apps/api_v2/views/extensions_plan_apply.py" in DEFAULT_SWITCH_CONTOUR_PATHS
+    assert "orchestrator/apps/api_v2/views/operations/execute_ibcmd_cli_impl.py" in DEFAULT_SWITCH_CONTOUR_PATHS
+    assert "orchestrator/apps/api_v2/views/operations/listing.py" in DEFAULT_SWITCH_CONTOUR_PATHS
+
+
+@pytest.mark.django_db
+def test_gate_operation_template_references_passes_for_runtime_extensions_paths():
+    out = StringIO()
+    call_command(
+        "gate_operation_template_references",
+        "--path",
+        "orchestrator/apps/api_v2/views/extensions_plan_apply.py",
+        "--path",
+        "orchestrator/apps/api_v2/views/operations/execute_ibcmd_cli_impl.py",
+        "--path",
+        "orchestrator/apps/api_v2/views/operations/listing.py",
         "--json",
         "--strict",
         stdout=out,

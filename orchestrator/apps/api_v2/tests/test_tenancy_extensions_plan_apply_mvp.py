@@ -201,6 +201,32 @@ def test_extensions_apply_rejects_legacy_plan_contract(client, staff_user, defau
 
 
 @pytest.mark.django_db
+def test_extensions_apply_rejects_plan_without_template_exposure_id(client, staff_user, default_tenant):
+    _grant_database_permission(staff_user, "view_database")
+    _jwt_login(client, username=staff_user.username, password="pass")
+
+    plan = ExtensionsPlan.objects.create(
+        tenant=default_tenant,
+        database_ids=[],
+        preconditions={},
+        executor={
+            "execution_source": "template_manual_operation",
+            "manual_operation": "extensions.sync",
+            "template_id": "tpl-sync-legacy",
+            "executor": {
+                "kind": "ibcmd_cli",
+                "command_id": "dummy_command",
+            },
+        },
+    )
+
+    resp = client.post("/api/v2/extensions/apply/", {"plan_id": str(plan.id)}, format="json")
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["error"]["code"] == "PLAN_INVALID_LEGACY"
+
+
+@pytest.mark.django_db
 def test_extensions_plan_uses_preferred_binding_when_no_override(client, staff_user, default_tenant, preview_ok):
     _grant_database_permission(staff_user, "view_database")
     _jwt_login(client, username=staff_user.username, password="pass")
@@ -222,6 +248,7 @@ def test_extensions_plan_uses_preferred_binding_when_no_override(client, staff_u
     assert resp.status_code == 200
     plan = ExtensionsPlan.objects.get(id=resp.json()["plan_id"])
     assert plan.executor["template_id"] == "tpl-sync-default"
+    assert plan.executor["template_exposure_id"] == str(exposure.id)
 
 
 @pytest.mark.django_db
@@ -251,6 +278,7 @@ def test_extensions_plan_template_override_takes_precedence_over_binding(client,
     assert resp.status_code == 200
     plan = ExtensionsPlan.objects.get(id=resp.json()["plan_id"])
     assert plan.executor["template_id"] == "tpl-sync-override"
+    assert plan.executor["template_exposure_id"] == str(override.id)
 
 
 @pytest.mark.django_db
@@ -411,6 +439,7 @@ def test_extensions_apply_uses_pinned_metadata_from_plan(client, staff_user, def
     assert plan_resp.status_code == 200
     plan = ExtensionsPlan.objects.get(id=plan_resp.json()["plan_id"])
     pinned_ref = dict(plan.executor.get("mapping_spec_ref") or {})
+    pinned_exposure_id = str(plan.executor.get("template_exposure_id") or "")
 
     mapping.spec = {"version": 2}
     mapping.save(update_fields=["spec", "updated_at"])
@@ -421,6 +450,7 @@ def test_extensions_apply_uses_pinned_metadata_from_plan(client, staff_user, def
         assert validated_data.get("command_id") == "dummy_command"
         assert metadata_overrides is not None
         assert metadata_overrides.get("manual_operation") == "extensions.sync"
+        assert metadata_overrides.get("template_exposure_id") == pinned_exposure_id
         assert metadata_overrides.get("result_contract") == "extensions.inventory.v1"
         assert metadata_overrides.get("mapping_spec_ref") == pinned_ref
         assert metadata_overrides.get("snapshot_kinds") == ["extensions"]

@@ -145,6 +145,35 @@ def _validate_ibcmd_connection_profiles_or_error(
 
     return None
 
+def _validate_template_metadata_overrides(
+    metadata_overrides: dict[str, Any] | None,
+) -> Response | None:
+    if not isinstance(metadata_overrides, dict) or not metadata_overrides:
+        return None
+
+    execution_source = str(metadata_overrides.get("execution_source") or "").strip()
+    is_template_based = execution_source == "template_manual_operation"
+    if not is_template_based and any(key in metadata_overrides for key in ("template_id", "template_exposure_id")):
+        is_template_based = True
+
+    if not is_template_based:
+        return None
+
+    template_id = str(metadata_overrides.get("template_id") or "").strip()
+    template_exposure_id = str(metadata_overrides.get("template_exposure_id") or "").strip()
+    missing_fields: list[str] = []
+    if not template_id:
+        missing_fields.append("template_id")
+    if not template_exposure_id:
+        missing_fields.append("template_exposure_id")
+    if missing_fields:
+        return _op_error(
+            "TEMPLATE_METADATA_INVALID",
+            "template_id and template_exposure_id are required for template-based operations",
+            details={"missing_fields": missing_fields},
+        )
+    return None
+
 def _execute_ibcmd_cli_validated(
     request,
     validated_data: dict[str, Any],
@@ -167,6 +196,9 @@ def _execute_ibcmd_cli_validated(
     stdin = validated_data.get('stdin') or ""
     confirm_dangerous = bool(validated_data.get('confirm_dangerous') or False)
     timeout_seconds = int(validated_data.get('timeout_seconds') or 900)
+    template_metadata_error = _validate_template_metadata_overrides(metadata_overrides)
+    if template_metadata_error is not None:
+        return template_metadata_error
     if not command_id:
         return _op_error("MISSING_COMMAND_ID", "command_id is required")
     resolved = resolve_driver_catalog_versions("ibcmd")

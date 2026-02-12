@@ -11,6 +11,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SWITCH_CONTOUR_PATHS = [
     "orchestrator/apps/templates/workflow/handlers/operation.py",
     "orchestrator/apps/api_internal/views_templates.py",
+    "orchestrator/apps/api_v2/views/extensions_plan_apply.py",
+    "orchestrator/apps/api_v2/views/operations/execute_ibcmd_cli_impl.py",
+    "orchestrator/apps/api_v2/views/operations/listing.py",
     "orchestrator/apps/api_v2/views/rbac/operation_templates.py",
     "orchestrator/apps/api_v2/views/rbac/effective_access.py",
     "orchestrator/apps/templates/rbac.py",
