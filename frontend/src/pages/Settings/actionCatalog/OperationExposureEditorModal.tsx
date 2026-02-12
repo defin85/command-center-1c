@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App, AutoComplete, Button, Collapse, Descriptions, Form, Input, InputNumber, Modal, Segmented, Select, Space, Switch, Tabs, Typography } from 'antd'
+import { Alert, App, AutoComplete, Button, Collapse, Descriptions, Form, Grid, Input, InputNumber, Modal, Segmented, Select, Space, Switch, Tabs, Typography } from 'antd'
 import type { FormInstance } from 'antd'
 import { DownOutlined } from '@ant-design/icons'
 
@@ -355,6 +355,9 @@ export function OperationExposureEditorModal({
   const { Text } = Typography
   const { modal, message } = App.useApp()
   const isTemplateSurface = surface === 'template'
+  const screens = Grid.useBreakpoint()
+  const provenanceColumnCount = screens.md ? 2 : 1
+  const provenanceLayout: 'horizontal' | 'vertical' = screens.md ? 'horizontal' : 'vertical'
   const [workflowSearch, setWorkflowSearch] = useState('')
   const [paramsTouched, setParamsTouched] = useState(false)
   const autoFilledCommandIdsRef = useRef<Set<string>>(new Set())
@@ -750,6 +753,20 @@ export function OperationExposureEditorModal({
     setActiveTabKey('basics')
   }
 
+  const renderProvenanceValue = (value: string, options?: { code?: boolean }) => (
+    <Text
+      code={options?.code}
+      style={{
+        display: 'block',
+        whiteSpace: 'normal',
+        overflowWrap: 'anywhere',
+        wordBreak: 'break-word',
+      }}
+    >
+      {value}
+    </Text>
+  )
+
   const footer = (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <Space>
@@ -837,14 +854,15 @@ export function OperationExposureEditorModal({
                     <Descriptions
                       title="Source of truth (binding provenance)"
                       size="small"
-                      column={2}
+                      layout={provenanceLayout}
+                      column={provenanceColumnCount}
                     >
-                      <Descriptions.Item label="OperationExposure.alias">{exposureAlias}</Descriptions.Item>
-                      <Descriptions.Item label="template_exposure_id">{exposureId}</Descriptions.Item>
-                      <Descriptions.Item label="template_exposure_revision">{exposureRevision}</Descriptions.Item>
-                      <Descriptions.Item label="OperationDefinition.id">{definitionId}</Descriptions.Item>
-                      <Descriptions.Item label="publish status">{publishStatus}</Descriptions.Item>
-                      <Descriptions.Item label="operation_type">{preview.operationType}</Descriptions.Item>
+                      <Descriptions.Item label="OperationExposure.alias">{renderProvenanceValue(exposureAlias, { code: true })}</Descriptions.Item>
+                      <Descriptions.Item label="template_exposure_id">{renderProvenanceValue(exposureId, { code: true })}</Descriptions.Item>
+                      <Descriptions.Item label="template_exposure_revision">{renderProvenanceValue(exposureRevision)}</Descriptions.Item>
+                      <Descriptions.Item label="OperationDefinition.id">{renderProvenanceValue(definitionId, { code: true })}</Descriptions.Item>
+                      <Descriptions.Item label="publish status">{renderProvenanceValue(publishStatus)}</Descriptions.Item>
+                      <Descriptions.Item label="operation_type">{renderProvenanceValue(preview.operationType, { code: true })}</Descriptions.Item>
                     </Descriptions>
                   </div>
                   {preview.paramsParseError && (
