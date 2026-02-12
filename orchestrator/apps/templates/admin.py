@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 
 from django.contrib import admin
 from django.contrib import messages
@@ -10,7 +11,7 @@ from django import forms
 from django_json_widget.widgets import JSONEditorWidget
 
 from .models import (
-    OperationTemplate,
+    OperationExposure,
     WorkflowExecution,
     WorkflowStepResult,
     WorkflowTemplate,
@@ -56,213 +57,24 @@ class SafeJSONEditorWidget(JSONEditorWidget):
         return super().format_value(value)
 
 
-def get_operation_type_choices():
-    """
-    Get operation type choices from registry.
-
-    Returns choices for Select widget. Handles cases when
-    registry is empty or unavailable.
-    """
-    from apps.templates.registry import get_registry
-
-    try:
-        registry = get_registry()
-        choices = registry.get_choices()
-        if choices:
-            return choices
-        return [('', '--- No types registered ---')]
-    except Exception:
-        return [('', '--- Registry not available ---')]
+@dataclass(frozen=True)
+class OperationTemplateReference:
+    id: str
+    name: str
+    operation_type: str
+    target_entity: str
 
 
-class OperationTemplateAdminForm(forms.ModelForm):
-    """Form with dynamic operation_type choices and JSON editor for template_data."""
-
-    class Meta:
-        model = OperationTemplate
-        fields = '__all__'
-        widgets = {
-            'template_data': SafeJSONEditorWidget(
-                default_value={},
-                options={
-                    'mode': 'code',
-                    'modes': ['code', 'tree', 'form', 'view'],
-                },
-                attrs={'style': 'height: 400px; width: 100%;'}
-            ),
-        }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Set dynamic choices from registry
-        self.fields['operation_type'].widget = forms.Select(
-            choices=get_operation_type_choices()
-        )
-
-
-@admin.action(description="Sync templates from registry")
-def sync_from_registry(modeladmin, request, queryset):
-    """
-    Admin action to synchronize OperationTemplate with registry.
-
-    Creates missing templates, updates existing ones.
-    """
-    if not request.user.is_staff:
-        messages.error(
-            request,
-            "Sync from registry is disabled in Django Admin. Use SPA (/templates). Staff-only break-glass.",
-        )
-        return
-
-    from django.db import transaction
-    from apps.templates.registry import get_registry
-
-    registry = get_registry()
-
-    if not registry.get_all():
-        messages.error(request, "No operation types registered in registry.")
-        return
-
-    created = 0
-    updated = 0
-    unchanged = 0
-
-    try:
-        with transaction.atomic():
-            templates_data = registry.get_for_template_sync()
-
-            for data in templates_data:
-                template_id = data['id']
-
-                try:
-                    template = OperationTemplate.objects.get(id=template_id)
-                    # Check if update needed
-                    needs_update = False
-                    for key in ['name', 'description', 'operation_type', 'target_entity']:
-                        if getattr(template, key) != data.get(key):
-                            needs_update = True
-                            break
-
-                    if needs_update:
-                        for key, value in data.items():
-                            if key != 'id':
-                                setattr(template, key, value)
-                        template.save()
-                        updated += 1
-                    else:
-                        unchanged += 1
-
-                except OperationTemplate.DoesNotExist:
-                    OperationTemplate.objects.create(**data)
-                    created += 1
-
-        if created > 0:
-            messages.success(request, f"Created {created} new template(s).")
-        if updated > 0:
-            messages.info(request, f"Updated {updated} existing template(s).")
-        if unchanged > 0 and created == 0 and updated == 0:
-            messages.info(request, f"All {unchanged} templates are up to date.")
-
-    except Exception as e:
-        messages.error(request, f"Sync failed: {str(e)}")
-
-
-@admin.register(OperationTemplate)
-class OperationTemplateAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
-    form = OperationTemplateAdminForm
-    list_display = ['name', 'operation_type', 'target_entity', 'is_active', 'created_at']
-    list_filter = ['operation_type', 'is_active', 'created_at']
-    search_fields = ['name', 'target_entity']
-    readonly_fields = ['id', 'created_at', 'updated_at']
-    actions = [sync_from_registry]
-
-    # Add button in changelist header
-    change_list_template = 'admin/templates/operationtemplate/change_list.html'
-
-    def get_urls(self):
-        """Add custom URL for sync action."""
-        urls = super().get_urls()
-        custom_urls = [
-            path(
-                'sync/',
-                self.admin_site.admin_view(self.sync_view),
-                name='templates_operationtemplate_sync'
-            ),
-        ]
-        return custom_urls + urls
-
-    def sync_view(self, request):
-        """
-        Handle sync request from the button in changelist.
-
-        Performs the same logic as sync_from_registry action but without queryset.
-        """
-        if not request.user.is_staff:
-            messages.error(
-                request,
-                "Sync from registry is disabled in Django Admin. Use SPA (/templates). Staff-only break-glass.",
-            )
-            return HttpResponseRedirect(
-                reverse('admin:templates_operationtemplate_changelist')
-            )
-
-        from django.db import transaction
-        from apps.templates.registry import get_registry
-
-        registry = get_registry()
-
-        if not registry.get_all():
-            messages.error(request, "No operation types registered in registry.")
-            return HttpResponseRedirect(
-                reverse('admin:templates_operationtemplate_changelist')
-            )
-
-        created = 0
-        updated = 0
-        unchanged = 0
-
-        try:
-            with transaction.atomic():
-                templates_data = registry.get_for_template_sync()
-
-                for data in templates_data:
-                    template_id = data['id']
-
-                    try:
-                        template = OperationTemplate.objects.get(id=template_id)
-                        # Check if update needed
-                        needs_update = False
-                        for key in ['name', 'description', 'operation_type', 'target_entity']:
-                            if getattr(template, key) != data.get(key):
-                                needs_update = True
-                                break
-
-                        if needs_update:
-                            for key, value in data.items():
-                                if key != 'id':
-                                    setattr(template, key, value)
-                            template.save()
-                            updated += 1
-                        else:
-                            unchanged += 1
-
-                    except OperationTemplate.DoesNotExist:
-                        OperationTemplate.objects.create(**data)
-                        created += 1
-
-            if created > 0:
-                messages.success(request, f"Created {created} new template(s).")
-            if updated > 0:
-                messages.info(request, f"Updated {updated} existing template(s).")
-            if unchanged > 0 and created == 0 and updated == 0:
-                messages.info(request, f"All {unchanged} templates are up to date.")
-
-        except Exception as e:
-            messages.error(request, f"Sync failed: {str(e)}")
-
-        return HttpResponseRedirect(
-            reverse('admin:templates_operationtemplate_changelist')
-        )
+def _serialize_template_reference(exposure: OperationExposure) -> OperationTemplateReference:
+    payload = exposure.definition.executor_payload if isinstance(exposure.definition.executor_payload, dict) else {}
+    operation_type = str(payload.get("operation_type") or exposure.definition.executor_kind or "").strip()
+    target_entity = str(payload.get("target_entity") or "").strip()
+    return OperationTemplateReference(
+        id=str(exposure.alias),
+        name=str(exposure.label or exposure.alias),
+        operation_type=operation_type,
+        target_entity=target_entity,
+    )
 
 
 class WorkflowTemplateAdminForm(forms.ModelForm):
@@ -449,16 +261,26 @@ class WorkflowTemplateAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
         )
 
     def _get_operation_templates_queryset(self):
-        """Get active operation templates for reference panel."""
-        return OperationTemplate.objects.filter(
-            is_active=True
-        ).order_by('operation_type', 'name')
+        """Get active+published template exposures for reference panel."""
+        exposures = (
+            OperationExposure.objects.select_related("definition")
+            .filter(
+                surface=OperationExposure.SURFACE_TEMPLATE,
+                tenant__isnull=True,
+                is_active=True,
+                status=OperationExposure.STATUS_PUBLISHED,
+            )
+            .only("alias", "label", "definition__executor_payload", "definition__executor_kind")
+        )
+        items = [_serialize_template_reference(row) for row in exposures]
+        items.sort(key=lambda item: (item.operation_type, item.name, item.id))
+        return items
 
     def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
         """
         Override to add operation_templates to context for the reference panel.
 
-        This provides a list of all active OperationTemplate instances
+        This provides a list of all active+published template exposures
         that can be used when building the DAG structure.
         """
         extra_context = extra_context or {}

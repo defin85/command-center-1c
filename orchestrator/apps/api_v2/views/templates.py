@@ -40,7 +40,7 @@ class OperationTemplateSyncResponseSerializer(serializers.Serializer):
 @extend_schema(
     tags=['v2'],
     summary='Sync templates from registry',
-    description='Synchronize OperationTemplate records with the in-code operation registry. Requires templates.manage_operation_template.',
+    description='Synchronize template exposures (`OperationExposure` + `OperationDefinition`) with the in-code operation registry. Requires templates.manage_operation_template.',
     request=OperationTemplateSyncRequestSerializer,
     responses={
         200: OperationTemplateSyncResponseSerializer,
@@ -58,7 +58,7 @@ def sync_from_registry(request):
     """
     POST /api/v2/templates/sync-from-registry/
 
-    Synchronize OperationTemplate records with the operation registry.
+    Synchronize template exposures with the operation registry.
 
     Request Body (optional):
         { "dry_run": false }

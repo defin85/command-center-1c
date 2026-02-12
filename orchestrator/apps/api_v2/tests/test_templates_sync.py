@@ -2,7 +2,8 @@ import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
-from apps.templates.models import OperationExposure, OperationTemplate
+from apps.templates.models import OperationExposure
+from apps.templates.operation_catalog_service import upsert_template_exposure
 from apps.templates.registry import get_registry
 from apps.templates.registry.types import BackendType, OperationType, TargetEntity
 
@@ -47,16 +48,18 @@ def isolated_registry():
 
 
 def register_test_operation(registry, op_id: str = "test_op", name: str = "Test Op"):
-    registry.register(OperationType(
-        id=op_id,
-        name=name,
-        description="desc",
-        backend=BackendType.RAS,
-        target_entity=TargetEntity.INFOBASE,
-        is_async=True,
-        category="admin",
-        tags=["test"],
-    ))
+    registry.register(
+        OperationType(
+            id=op_id,
+            name=name,
+            description="desc",
+            backend=BackendType.RAS,
+            target_entity=TargetEntity.INFOBASE,
+            is_async=True,
+            category="admin",
+            tags=["test"],
+        )
+    )
 
 
 @pytest.mark.django_db
@@ -69,19 +72,21 @@ def test_sync_from_registry_requires_staff(normal_client, isolated_registry):
 @pytest.mark.django_db
 def test_sync_from_registry_dry_run_and_apply(staff_client, isolated_registry):
     register_test_operation(isolated_registry)
+    base_qs = OperationExposure.objects.filter(surface=OperationExposure.SURFACE_TEMPLATE, tenant__isnull=True)
+    before_count = base_qs.count()
 
     resp = staff_client.post("/api/v2/templates/sync-from-registry/", {"dry_run": True}, format="json")
     assert resp.status_code == 200
     data = resp.json()
     assert data["created"] == 1
     assert data["updated"] == 0
-    assert OperationTemplate.objects.count() == 0
+    assert base_qs.count() == before_count
 
     resp2 = staff_client.post("/api/v2/templates/sync-from-registry/", {"dry_run": False}, format="json")
     assert resp2.status_code == 200
     data2 = resp2.json()
     assert data2["created"] == 1
-    assert OperationTemplate.objects.count() == 1
+    assert base_qs.count() == before_count + 1
 
     resp3 = staff_client.post("/api/v2/templates/sync-from-registry/", {}, format="json")
     assert resp3.status_code == 200
@@ -92,11 +97,12 @@ def test_sync_from_registry_dry_run_and_apply(staff_client, isolated_registry):
 
 
 @pytest.mark.django_db
-def test_sync_from_registry_updates_existing_template(staff_client, isolated_registry):
+def test_sync_from_registry_updates_existing_exposure(staff_client, isolated_registry):
     register_test_operation(isolated_registry, op_id="test_op_update", name="Registry Name")
     template_id = "tpl-test-op-update"
-    OperationTemplate.objects.create(
-        id=template_id,
+
+    upsert_template_exposure(
+        template_id=template_id,
         name="Old Name",
         description="old",
         operation_type="test_op_update",
@@ -108,18 +114,16 @@ def test_sync_from_registry_updates_existing_template(staff_client, isolated_reg
     resp = staff_client.post("/api/v2/templates/sync-from-registry/", {}, format="json")
     assert resp.status_code == 200
     data = resp.json()
-    # Unified flow treats legacy-only OperationTemplate as missing exposure and creates it.
-    assert data["created"] == 1
-    assert data["updated"] == 0
+    assert data["created"] == 0
+    assert data["updated"] == 1
 
-    tpl = OperationTemplate.objects.get(id=template_id)
-    assert tpl.name == "Registry Name"
-    assert tpl.is_active is True
-    assert OperationExposure.objects.filter(
+    exposure = OperationExposure.objects.get(
         surface=OperationExposure.SURFACE_TEMPLATE,
         alias=template_id,
         tenant__isnull=True,
-    ).exists()
+    )
+    assert exposure.label == "Registry Name"
+    assert exposure.is_active is True
 
 
 @pytest.mark.django_db

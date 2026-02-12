@@ -33,8 +33,8 @@
             </div>
             {% empty %}
             <div class="no-templates-message">
-                <p>No active operation templates found.</p>
-                <p><a href="{% url 'admin:templates_operationtemplate_add' %}">Create a new Operation Template</a></p>
+                <p>No active published template exposures found.</p>
+                <p>Manage templates in staff UI or via operation-catalog API.</p>
             </div>
             {% endfor %}
         </div>
