@@ -4,21 +4,15 @@
 TBD - created by archiving change add-unified-templates-action-catalog-contract. Update Purpose after archive.
 ## Requirements
 ### Requirement: Templates API MUST использовать unified persistent store
-Система ДОЛЖНА (SHALL) управлять template exposures через unified management API `operation-catalog` (с `surface="template"`), а не через отдельный legacy template CRUD/list API-контур.
+Система ДОЛЖНА (SHALL) управлять templates через unified management API `operation-catalog` (`surface="template"`), а не через persistent projection `OperationTemplate`.
 
-Legacy endpoints `/api/v2/templates/list-templates/`, `/api/v2/templates/create-template/`, `/api/v2/templates/update-template/`, `/api/v2/templates/delete-template/` НЕ ДОЛЖНЫ (SHALL NOT) оставаться поддерживаемым контрактом управления templates.
+При этом внешний контракт ДОЛЖЕН (SHALL) оставаться backward-compatible по identifier naming (`template_id`, `operation_templates` в API-полях/ответах, где это уже зафиксировано клиентами).
 
-#### Scenario: Template list/read идёт через unified exposure API
-- **GIVEN** пользователь имеет права просмотра templates
-- **WHEN** UI/клиент запрашивает `operation-catalog` exposures с `surface=template`
-- **THEN** API возвращает template exposures из unified store
-- **AND** ответ покрывает поля, необходимые для template management UI
-
-#### Scenario: Template create/update/delete идёт через unified exposure API
-- **GIVEN** пользователь имеет права управления templates
-- **WHEN** UI/клиент выполняет upsert/publish для `surface=template`
-- **THEN** изменения фиксируются в unified store
-- **AND** отдельные template CRUD endpoints не используются
+#### Scenario: Management API возвращает template по alias с прежним template_id
+- **GIVEN** template опубликован как `operation_exposure(surface="template", alias="tpl-sync-default")`
+- **WHEN** клиент запрашивает список/детали templates
+- **THEN** в ответе используется `template_id="tpl-sync-default"` (или эквивалентный id поля в текущем контракте)
+- **AND** данные шаблона читаются из `operation_exposure + operation_definition`
 
 ### Requirement: Templates write-path MUST поддерживать dedup execution definitions
 Система ДОЛЖНА (SHALL) при create/update template переиспользовать существующий `operation_definition`, если execution payload идентичен (fingerprint match).
@@ -30,13 +24,22 @@ Legacy endpoints `/api/v2/templates/list-templates/`, `/api/v2/templates/create-
 - **AND** existing definition переиспользуется
 
 ### Requirement: Templates RBAC MUST сохраниться при переходе на unified persistence
-Система ДОЛЖНА (SHALL) сохранить текущие ограничения доступа templates API (view/manage) после перехода на unified модель.
+Система ДОЛЖНА (SHALL) сохранить текущие ограничения доступа templates API (view/manage) после перехода на exposure-only модель.
 
-#### Scenario: Пользователь без manage права не может изменить template exposure
-- **GIVEN** пользователь не имеет `templates.manage_operation_template`
-- **WHEN** пользователь вызывает create/update/delete template endpoint
-- **THEN** API возвращает отказ по правам
-- **AND** unified persistent store не изменяется
+Template RBAC НЕ ДОЛЖЕН (SHALL NOT) зависеть от FK на `OperationTemplate` после cutover.
+Template RBAC ДОЛЖЕН (SHALL) храниться в exposure-ориентированных permission-структурах (`user/group -> exposure`) и использоваться в `rbac`/`effective-access` endpoint'ах.
+
+#### Scenario: Проверка прав работает без OperationTemplate rows
+- **GIVEN** legacy `operation_templates` projection удалён
+- **WHEN** пользователь запрашивает templates list или выполняет template upsert/delete
+- **THEN** система вычисляет доступ через exposure-ориентированные шаблонные права
+- **AND** решение по доступу совпадает с ожидаемым view/manage уровнем
+
+#### Scenario: Effective access резолвится через exposure permissions
+- **GIVEN** у пользователя заданы прямые и групповые template права
+- **WHEN** вызывается endpoint effective access
+- **THEN** итоговый уровень доступа рассчитывается без чтения `OperationTemplate*Permission`
+- **AND** результат соответствует прежней семантике max(view/manage/admin)
 
 ### Requirement: `/templates` MUST быть единым UI управления template и action exposures
 Система ДОЛЖНА (SHALL) использовать `/templates` как templates-only реестр `operation_exposure(surface="template")`.
@@ -76,4 +79,45 @@ Legacy endpoints `/api/v2/templates/list-templates/`, `/api/v2/templates/create-
 - **WHEN** template сохраняется
 - **THEN** `exposure.capability` фиксируется как `extensions.set_flags`
 - **AND** template может использоваться только этим manual operation key
+
+### Requirement: Workflow operation runtime MUST резолвить template через OperationExposure alias
+Система ДОЛЖНА (SHALL) в operation-node execution path резолвить template по `OperationExposure(surface="template", alias=node.template_id)` и использовать связанный `OperationDefinition` для формирования исполняемого payload.
+
+Runtime ДОЛЖЕН (SHALL) работать fail-closed: при неуспешном resolve exposure fallback к `OperationTemplate` НЕ ДОЛЖЕН (SHALL NOT) выполняться.
+
+#### Scenario: Operation node выполняется без OperationTemplate.objects.get
+- **GIVEN** в workflow node указан `template_id="tpl-odata-create"`
+- **WHEN** workflow engine запускает operation node
+- **THEN** шаблон и execution payload получаются из exposure/definition модели
+- **AND** runtime не вызывает `OperationTemplate.objects.get`
+
+#### Scenario: Missing alias отклоняется fail-closed
+- **GIVEN** в workflow node указан `template_id`, отсутствующий в `operation_exposure(surface="template")`
+- **WHEN** workflow engine выполняет resolve template
+- **THEN** выполнение завершается ошибкой `TEMPLATE_NOT_FOUND` (или эквивалентным fail-closed кодом)
+- **AND** enqueue операции не выполняется
+- **AND** fallback на `OperationTemplate` не выполняется
+
+#### Scenario: Inactive или unpublished exposure отклоняется fail-closed
+- **GIVEN** exposure найден, но `is_active=false` или `status!=published`
+- **WHEN** runtime пытается выполнить operation node
+- **THEN** выполнение завершается ошибкой `TEMPLATE_NOT_PUBLISHED` (или эквивалентным fail-closed кодом)
+- **AND** fallback на legacy projection не выполняется
+
+### Requirement: Internal template endpoints MUST работать через exposure-only read path
+Система ДОЛЖНА (SHALL) обслуживать internal template read/render endpoint'ы через `OperationExposure + OperationDefinition` и не требовать существования legacy `OperationTemplate`.
+
+#### Scenario: Internal get-template возвращает template после удаления legacy projection
+- **GIVEN** `operation_templates` таблица удалена после cutover
+- **WHEN** internal service запрашивает `get-template` по `template_id`
+- **THEN** endpoint возвращает template contract с данными из exposure/definition
+- **AND** статус ответа остаётся совместимым с текущим internal API
+
+### Requirement: Big-bang switch MUST завершать dual-read/dual-write режим
+Система ДОЛЖНА (SHALL) после switch-фазы отключить dual-read/dual-write на `OperationTemplate` в templates контуре.
+
+#### Scenario: Post-switch запись template не создаёт legacy projection
+- **WHEN** пользователь создаёт или обновляет template после cutover
+- **THEN** изменяются только `operation_definition` и `operation_exposure`
+- **AND** попытка читать/писать `OperationTemplate` не выполняется
 

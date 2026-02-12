@@ -4,38 +4,57 @@
 TBD - created by archiving change add-unified-templates-action-catalog-contract. Update Purpose after archive.
 ## Requirements
 ### Requirement: Unified persistent contract MUST разделять definition и exposure
-Система ДОЛЖНА (SHALL) хранить исполняемые конфигурации в двух связанных слоях:
+Система ДОЛЖНА (SHALL) хранить исполняемые конфигурации templates в двух связанных слоях:
 - `operation_definition` — canonical execution payload,
-- `operation_exposure` — публикация шаблона (`surface="template"`).
+- `operation_exposure(surface="template")` — публикация шаблона и идентичность `template_id` через `alias`.
 
-`operation_exposure(surface="action_catalog")` НЕ ДОЛЖЕН (SHALL NOT) существовать в целевой модели.
+После Big-bang cutover legacy projection `OperationTemplate`/`operation_templates` НЕ ДОЛЖЕН (SHALL NOT) использоваться как read/write источник в runtime или management/API контуре.
 
-#### Scenario: Попытка создать exposure с `surface=action_catalog` отклоняется
-- **WHEN** клиент отправляет upsert exposure с `surface="action_catalog"`
-- **THEN** backend возвращает `HTTP 400` (`VALIDATION_ERROR`)
-- **AND** запись не создаётся
+#### Scenario: Runtime резолвит template без legacy projection
+- **GIVEN** релиз cutover завершён и legacy projection удалён
+- **WHEN** workflow/internal runtime запрашивает шаблон по `template_id`
+- **THEN** система резолвит шаблон через `operation_exposure(surface="template", alias=<template_id>)` и связанный `operation_definition`
+- **AND** fallback к `OperationTemplate` не выполняется
 
 ### Requirement: Migration MUST быть обратимо-наблюдаемой и fail-closed
-Система ДОЛЖНА (SHALL) выполнять миграцию из legacy источников в unified store с журналом проблем и без публикации невалидных exposure.
+Система ДОЛЖНА (SHALL) выполнять Big-bang migration в одном релизе через этапы preflight → backfill → switch → contract с явными `go/no-go` критериями.
 
-#### Scenario: Невалидный legacy объект не публикуется
-- **GIVEN** legacy запись не проходит unified validation
-- **WHEN** выполняется backfill
-- **THEN** создаётся запись в migration issues
-- **AND** соответствующий exposure НЕ публикуется в effective read model
+Система ДОЛЖНА (SHALL) прерывать cutover до switch/contract фазы при preflight или parity ошибках и оставлять сервис в согласованном pre-cutover состоянии.
+
+Preflight ДОЛЖЕН (SHALL) включать минимум:
+- alias uniqueness check для `operation_exposure(surface="template")`,
+- referential check для legacy template permissions и operation references,
+- parity checks для direct/group template permissions,
+- runtime path gate (отсутствие критичных runtime/internal/rbac обращений к `OperationTemplate`).
+
+Для критичных preflight/parity проверок порог допуска ДОЛЖЕН (SHALL) быть `0` mismatches.
+
+#### Scenario: Preflight ошибка блокирует switch и удаление legacy
+- **GIVEN** preflight обнаружил alias collision или RBAC parity mismatch
+- **WHEN** запускается cutover release
+- **THEN** switch/contract фазы не выполняются
+- **AND** удаление legacy projection не происходит
+- **AND** проблема фиксируется в migration diagnostics/runbook отчёте
+
+#### Scenario: Preflight блокирует cutover при runtime path violations
+- **GIVEN** runtime/internal/rbac gate обнаружил обращение к `OperationTemplate` в целевых switch-путях
+- **WHEN** запускается cutover release
+- **THEN** switch/contract фазы не выполняются
+- **AND** релиз помечается как `No-Go`
+
+#### Scenario: Rollback выполняется как полный откат релиза
+- **GIVEN** после switch выявлена критическая регрессия
+- **WHEN** команда выполняет rollback
+- **THEN** откат выполняется через restore pre-cutover backup и возврат предыдущего deploy
+- **AND** частичный rollback только схемы или только кода не используется
 
 ### Requirement: Unified contract MUST иметь явный API для definitions/exposures
-Система ДОЛЖНА (SHALL) использовать `operation-catalog` API как management-контур только для templates.
+Система ДОЛЖНА (SHALL) использовать `operation-catalog` API как management-контур templates и сохранять backward-compatible внешнюю идентичность template через `template_id` (значение alias exposure).
 
-#### Scenario: List exposures возвращает template-only данные
-- **WHEN** клиент вызывает `GET /api/v2/operation-catalog/exposures/`
-- **THEN** в ответе присутствуют только exposures `surface="template"`
-- **AND** поддерживаются server-side `search/filters/sort/pagination/include=definitions`
-
-#### Scenario: Неподдерживаемый surface отклоняется fail-closed
-- **WHEN** клиент передаёт `surface=action_catalog`
-- **THEN** API возвращает `HTTP 400` (`VALIDATION_ERROR`)
-- **AND** action-catalog path не активируется
+#### Scenario: Внешний template_id стабилен после cutover
+- **WHEN** клиент читает template exposure или execution metadata
+- **THEN** `template_id` совпадает с `operation_exposure.alias`
+- **AND** клиентский контракт не требует знания внутреннего `OperationExposure.id`
 
 ### Requirement: Unified contract MUST canonicalize mapping между `executor_kind` и runtime driver
 Система ДОЛЖНА (SHALL) использовать canonical mapping между `operation_definition.executor_kind` и runtime driver для canonical executors:
@@ -76,4 +95,19 @@ TBD - created by archiving change add-unified-templates-action-catalog-contract.
 - **WHEN** выполняется cutover migration
 - **THEN** definition НЕ удаляется как orphan
 - **AND** historical records остаются читаемыми для audit/details
+
+### Requirement: Big-bang cutover MUST удалить legacy template projection в одном релизе
+Система ДОЛЖНА (SHALL) в рамках того же релиза, где выполняется switch на exposure-only, удалить legacy template projection (`operation_templates` и зависимые permission/FK структуры), чтобы исключить dual-model drift.
+
+Минимальный обязательный перечень удаления ДОЛЖЕН (SHALL) включать:
+- `operation_templates`,
+- `templates_operation_template_permissions`,
+- `templates_operation_template_group_permissions`,
+- `batch_operations.template_id` FK/column и связанные индексы/constraints.
+
+#### Scenario: После cutover legacy projection отсутствует
+- **WHEN** post-cutover проверки релиза завершены
+- **THEN** persistent схема больше не содержит `operation_templates` и зависимые template-permission таблицы legacy модели
+- **AND** smoke проверки runtime/API проходят без обращений к legacy projection
+- **AND** `batch_operations` не содержит зависимости на `OperationTemplate` FK
 
