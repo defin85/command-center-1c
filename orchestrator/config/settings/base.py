@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'apps.operations',
     'apps.tenancy',
     'apps.databases',
+    'apps.intercompany_pools',
     'apps.templates',
     'apps.monitoring',
     'apps.files',  # File storage (Phase 5.1)

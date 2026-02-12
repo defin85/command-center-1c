@@ -24,13 +24,13 @@
 Система ДОЛЖНА (SHALL) хранить внешний идентификатор документа в целевой ИБ для идемпотентного upsert и прозрачного наблюдения.
 
 Система ДОЛЖНА (SHALL) поддерживать strategy-based resolver идентификатора:
-- primary strategy: GUID документа 1С через OData (если подтверждён технически),
-- fallback strategy: дополнительный реквизит или комментарий документа.
+- primary strategy: GUID документа 1С через OData (`_IDRRef` или `Ref_Key`),
+- fallback strategy: детерминированный `ExternalRunKey` (`runkey-<sha256[:32]>` от `run_id + target_database_id + document_kind + period`).
 
 #### Scenario: GUID недоступен, применяется fallback стратегия
 - **GIVEN** целевая конфигурация/endpoint не возвращает стабильный GUID документа
 - **WHEN** выполняется публикация
-- **THEN** система использует настроенную fallback стратегию внешней идентификации
+- **THEN** система использует fallback `ExternalRunKey` и записывает его в поддерживаемое поле документа
 - **AND** фиксирует выбранную стратегию в audit trail run
 
 ### Requirement: OData diagnostics MUST быть прозрачными для оператора

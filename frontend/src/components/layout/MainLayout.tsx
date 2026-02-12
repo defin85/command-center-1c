@@ -134,6 +134,16 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       label: 'Templates',
     },
     {
+      key: '/pools/runs',
+      icon: <FileTextOutlined />,
+      label: 'Pool Runs',
+    },
+    {
+      key: '/pools/templates',
+      icon: <FileTextOutlined />,
+      label: 'Pool Templates',
+    },
+    {
       key: '/service-mesh',
       icon: <DeploymentUnitOutlined />,
       label: 'Service Mesh',
