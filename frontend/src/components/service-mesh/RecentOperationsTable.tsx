@@ -348,7 +348,7 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
         columns={columns}
         size="small"
         scroll={{ y: 240 }}
-        searchPlaceholder="Search operations"
+        searchPlaceholder="Search Operations"
         toolbarActions={(
           <>
             <Select

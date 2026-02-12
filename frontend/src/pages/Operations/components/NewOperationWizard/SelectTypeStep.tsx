@@ -174,7 +174,7 @@ export const SelectTypeStep = ({
       <Space wrap style={{ marginBottom: 16 }}>
         <Input
           allowClear
-          placeholder="Search operations"
+          placeholder="Search Operations"
           prefix={<SearchOutlined />}
           value={searchValue}
           onChange={(event) => setSearchValue(event.target.value)}

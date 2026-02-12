@@ -177,7 +177,7 @@ export const TableToolkit = <T,>({
         actions={
           <>
             {toolbarActions}
-            <Button onClick={() => setPreferencesOpen(true)}>Table settings</Button>
+            <Button onClick={() => setPreferencesOpen(true)}>Table Settings</Button>
           </>
         }
       />

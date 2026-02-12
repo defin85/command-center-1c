@@ -20,7 +20,7 @@ export const OperationsTable = ({
       tableLayout="fixed"
       scroll={{ x: table.totalColumnsWidth }}
       toolbarActions={toolbarActions}
-      searchPlaceholder="Search operations"
+      searchPlaceholder="Search Operations"
     />
   )
 }
