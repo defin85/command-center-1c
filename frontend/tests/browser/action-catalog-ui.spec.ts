@@ -928,6 +928,8 @@ test('Templates: единый editor shell работает только для 
   await expect(page.getByRole('tab', { name: 'Params', exact: true })).toBeVisible()
   await expect(page.getByRole('tab', { name: 'Safety & Fixed', exact: true })).toBeVisible()
   await expect(page.getByRole('tab', { name: 'Preview', exact: true })).toBeVisible()
+  await expect(page.getByText('OperationExposure.alias', { exact: true })).toBeHidden()
+  await page.getByText('Source of truth (binding provenance)', { exact: true }).click()
   await expect(page.getByTestId('operation-exposure-editor-source-of-truth')).toContainText('OperationExposure.alias')
 
   await page.getByTestId('operation-exposure-editor-name').fill('Template via unified modal')

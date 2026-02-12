@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App, AutoComplete, Button, Collapse, Descriptions, Form, Grid, Input, InputNumber, Modal, Segmented, Select, Space, Switch, Tabs, Typography } from 'antd'
+import { Alert, App, AutoComplete, Button, Collapse, Descriptions, Form, Input, InputNumber, Modal, Segmented, Select, Space, Switch, Tabs, Typography } from 'antd'
 import type { FormInstance } from 'antd'
 import { DownOutlined } from '@ant-design/icons'
 
@@ -355,9 +355,6 @@ export function OperationExposureEditorModal({
   const { Text } = Typography
   const { modal, message } = App.useApp()
   const isTemplateSurface = surface === 'template'
-  const screens = Grid.useBreakpoint()
-  const provenanceColumnCount = screens.md ? 2 : 1
-  const provenanceLayout: 'horizontal' | 'vertical' = screens.md ? 'horizontal' : 'vertical'
   const [workflowSearch, setWorkflowSearch] = useState('')
   const [paramsTouched, setParamsTouched] = useState(false)
   const autoFilledCommandIdsRef = useRef<Set<string>>(new Set())
@@ -753,14 +750,16 @@ export function OperationExposureEditorModal({
     setActiveTabKey('basics')
   }
 
-  const renderProvenanceValue = (value: string, options?: { code?: boolean }) => (
+  const renderProvenanceValue = (value: string, options?: { monospace?: boolean }) => (
     <Text
-      code={options?.code}
       style={{
         display: 'block',
         whiteSpace: 'normal',
         overflowWrap: 'anywhere',
         wordBreak: 'break-word',
+        fontFamily: options?.monospace
+          ? 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+          : undefined,
       }}
     >
       {value}
@@ -850,21 +849,32 @@ export function OperationExposureEditorModal({
                     message="Guided flow"
                     description="Basics → Executor → Params → Safety & Fixed → Preview."
                   />
-                  <div data-testid="operation-exposure-editor-source-of-truth">
-                    <Descriptions
-                      title="Source of truth (binding provenance)"
-                      size="small"
-                      layout={provenanceLayout}
-                      column={provenanceColumnCount}
-                    >
-                      <Descriptions.Item label="OperationExposure.alias">{renderProvenanceValue(exposureAlias, { code: true })}</Descriptions.Item>
-                      <Descriptions.Item label="template_exposure_id">{renderProvenanceValue(exposureId, { code: true })}</Descriptions.Item>
-                      <Descriptions.Item label="template_exposure_revision">{renderProvenanceValue(exposureRevision)}</Descriptions.Item>
-                      <Descriptions.Item label="OperationDefinition.id">{renderProvenanceValue(definitionId, { code: true })}</Descriptions.Item>
-                      <Descriptions.Item label="publish status">{renderProvenanceValue(publishStatus)}</Descriptions.Item>
-                      <Descriptions.Item label="operation_type">{renderProvenanceValue(preview.operationType, { code: true })}</Descriptions.Item>
-                    </Descriptions>
-                  </div>
+                  <Collapse
+                    size="small"
+                    defaultActiveKey={[]}
+                    items={[
+                      {
+                        key: 'source-of-truth',
+                        label: 'Source of truth (binding provenance)',
+                        children: (
+                          <div data-testid="operation-exposure-editor-source-of-truth">
+                            <Descriptions
+                              size="small"
+                              layout="vertical"
+                              column={1}
+                            >
+                              <Descriptions.Item label="OperationExposure.alias">{renderProvenanceValue(exposureAlias, { monospace: true })}</Descriptions.Item>
+                              <Descriptions.Item label="template_exposure_id">{renderProvenanceValue(exposureId, { monospace: true })}</Descriptions.Item>
+                              <Descriptions.Item label="template_exposure_revision">{renderProvenanceValue(exposureRevision)}</Descriptions.Item>
+                              <Descriptions.Item label="OperationDefinition.id">{renderProvenanceValue(definitionId, { monospace: true })}</Descriptions.Item>
+                              <Descriptions.Item label="publish status">{renderProvenanceValue(publishStatus)}</Descriptions.Item>
+                              <Descriptions.Item label="operation_type">{renderProvenanceValue(preview.operationType, { monospace: true })}</Descriptions.Item>
+                            </Descriptions>
+                          </div>
+                        ),
+                      },
+                    ]}
+                  />
                   {preview.paramsParseError && (
                     <Alert
                       type="warning"
@@ -1564,21 +1574,34 @@ export function OperationExposureEditorModal({
                                   children: (
                                     <div
                                       data-testid="operation-exposure-editor-field-origins"
-                                      style={{ maxHeight: 240, overflowY: 'auto', paddingRight: 4 }}
+                                      style={{ maxHeight: 240, overflowY: 'auto', overflowX: 'hidden', paddingRight: 4 }}
                                     >
-                                      <Descriptions size="small" column={1}>
+                                      <Descriptions size="small" layout="vertical" column={1}>
                                         {preview.sourceOfTruth.map((item) => (
-                                          <Descriptions.Item key={item.field} label={item.field}>
-                                            <Space direction="vertical" size={2}>
-                                              <Text code>{item.value}</Text>
-                                              <Text type="secondary">
+                                          <Descriptions.Item
+                                            key={item.field}
+                                            label={renderProvenanceValue(item.field, { monospace: true })}
+                                          >
+                                            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                                              {renderProvenanceValue(item.value, { monospace: true })}
+                                              <Text
+                                                type="secondary"
+                                                style={{
+                                                  display: 'block',
+                                                  whiteSpace: 'normal',
+                                                  overflowWrap: 'anywhere',
+                                                  wordBreak: 'break-word',
+                                                }}
+                                              >
                                                 source: {item.source === 'manual' ? 'manual input' : 'derived value'}
                                               </Text>
                                             </Space>
                                           </Descriptions.Item>
                                         ))}
                                         <Descriptions.Item label="Alias source">
-                                          {preview.aliasSource === 'explicit' ? 'from form.id' : 'generated from form.name'}
+                                          {renderProvenanceValue(
+                                            preview.aliasSource === 'explicit' ? 'from form.id' : 'generated from form.name'
+                                          )}
                                         </Descriptions.Item>
                                       </Descriptions>
                                     </div>
