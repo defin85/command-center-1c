@@ -1,0 +1,28 @@
+## 1. Spec и контрактная фиксация
+- [ ] 1.1 Зафиксировать в OpenSpec, что execution runtime для `pools` = `workflows`.
+- [ ] 1.2 Уточнить API-контракт `pools/runs`: явная связь с workflow run reference и статусной проекцией.
+- [ ] 1.3 Зафиксировать migration/compatibility требования для исторических run-ов и audit.
+
+## 2. Backend: execution-core интеграция
+- [ ] 2.1 Реализовать compiler `PoolTemplate -> WorkflowTemplate/ExecutionPlan` с детерминированным mapping шагов.
+- [ ] 2.2 Реализовать запуск `Pool Run` через workflow runtime (enqueue, lifecycle, retry policy, provenance).
+- [ ] 2.3 Реализовать status projection из workflow run в pool-доменные статусы без потери диагностики.
+
+## 3. Backend: pools как domain facade
+- [ ] 3.1 Сохранить `pools/*` API как фасад над unified execution core.
+- [ ] 3.2 Сохранить доменную идемпотентность (`pool_id + period + direction + source_hash`) и прокинуть её в workflow idempotency/metadata.
+- [ ] 3.3 Обеспечить, что publication service (OData) вызывается как step adapter внутри workflow, а не как отдельный orchestrator runtime.
+
+## 4. Миграция и совместимость
+- [ ] 4.1 Добавить миграцию/бекфилл связей `pool_run -> workflow_run` для существующих/переходных записей.
+- [ ] 4.2 Обеспечить чтение historical runs/details/audit через единый view без регрессий UI/API.
+- [ ] 4.3 Подготовить deprecation-plan для legacy execution path в `pools` (без немедленного удаления `workflows`).
+
+## 5. Frontend
+- [ ] 5.1 Адаптировать `/pools/runs` и `/pools/templates` к unified status/provenance модели.
+- [ ] 5.2 Показать прозрачный execution provenance (workflow run reference, step diagnostics) в pool UI.
+
+## 6. Качество и валидация
+- [ ] 6.1 Добавить unit/integration тесты на compiler, статусную проекцию, идемпотентность и retry.
+- [ ] 6.2 Добавить API regression тесты на совместимость `pools/runs*`.
+- [ ] 6.3 Прогнать `openspec validate refactor-unify-pools-workflow-execution-core --strict --no-interactive`.
