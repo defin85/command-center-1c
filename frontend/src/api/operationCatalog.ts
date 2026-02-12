@@ -29,8 +29,11 @@ export type OperationCatalogExposure = {
   operation_type?: string
   target_entity?: string
   template_data?: Record<string, unknown>
+  template_exposure_id?: string
   exposure_revision?: number
   template_exposure_revision?: number
+  executor_kind?: string
+  executor_command_id?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -63,6 +66,11 @@ export type OperationCatalogExposureUpsertRequest = {
   exposure: OperationCatalogExposureInput
 }
 
+export type OperationCatalogExposureValidateRequest = {
+  definition?: OperationCatalogDefinitionInput
+  exposure: OperationCatalogExposureInput
+}
+
 export type OperationCatalogValidationError = {
   path: string
   code: string
@@ -91,6 +99,11 @@ export type OperationCatalogExposurePublishResponse = {
   published: boolean
   exposure: OperationCatalogExposure
   validation_errors: OperationCatalogValidationError[]
+}
+
+export type OperationCatalogExposureValidateResponse = {
+  valid: boolean
+  errors: OperationCatalogValidationError[]
 }
 
 export type OperationCatalogExposureDeleteResponse = {
@@ -150,6 +163,17 @@ export async function publishOperationCatalogExposure(
   const response = await apiClient.post<OperationCatalogExposurePublishResponse>(
     `/api/v2/operation-catalog/exposures/${encodeURIComponent(exposureId)}/publish/`,
     {},
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function validateOperationCatalogExposure(
+  payload: OperationCatalogExposureValidateRequest
+): Promise<OperationCatalogExposureValidateResponse> {
+  const response = await apiClient.post<OperationCatalogExposureValidateResponse>(
+    '/api/v2/operation-catalog/validate/',
+    payload,
     { skipGlobalError: true }
   )
   return response.data

@@ -65,6 +65,81 @@ def canonical_driver_for_executor_kind(raw_kind: Any) -> str | None:
     return _CANONICAL_DRIVER_BY_KIND.get(normalize_executor_kind(raw_kind))
 
 
+def _validate_template_runtime_contract(
+    *,
+    definition_payload: dict[str, Any],
+) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
+
+    operation_type = str(definition_payload.get("operation_type") or "").strip()
+    if not operation_type:
+        errors.append(
+            {
+                "path": "definition.executor_payload.operation_type",
+                "code": "REQUIRED",
+                "message": "operation_type is required",
+            }
+        )
+
+    template_data = definition_payload.get("template_data")
+    if template_data is None:
+        errors.append(
+            {
+                "path": "definition.executor_payload.template_data",
+                "code": "REQUIRED",
+                "message": "template_data is required",
+            }
+        )
+    elif not isinstance(template_data, dict):
+        errors.append(
+            {
+                "path": "definition.executor_payload.template_data",
+                "code": "INVALID_TYPE",
+                "message": "template_data must be an object",
+            }
+        )
+
+    if operation_type:
+        try:
+            from apps.templates.registry import get_registry
+            from apps.templates.registry.bootstrap import ensure_registry_populated
+
+            registry = get_registry()
+            if not registry.get_all():
+                ensure_registry_populated()
+
+            if not registry.get_all():
+                errors.append(
+                    {
+                        "path": "definition.executor_payload.operation_type",
+                        "code": "REGISTRY_UNAVAILABLE",
+                        "message": "operation registry is empty",
+                    }
+                )
+            elif not registry.is_valid(operation_type):
+                errors.append(
+                    {
+                        "path": "definition.executor_payload.operation_type",
+                        "code": "UNSUPPORTED_OPERATION_TYPE",
+                        "message": f"unsupported operation_type: {operation_type}",
+                    }
+                )
+        except Exception:
+            logger.exception(
+                "operation_catalog_service: failed to validate operation_type against registry",
+                extra={"operation_type": operation_type},
+            )
+            errors.append(
+                {
+                    "path": "definition.executor_payload.operation_type",
+                    "code": "REGISTRY_UNAVAILABLE",
+                    "message": "operation registry is unavailable",
+                }
+            )
+
+    return errors
+
+
 def normalize_executor_payload(
     *,
     executor_kind: Any,
@@ -362,16 +437,23 @@ def validate_exposure_payload(
         executor_kind=executor_kind,
         executor_payload=definition_payload,
     )
+    errors: list[dict[str, str]] = []
     if contract_errors:
-        return contract_errors
-    if str(capability or "").strip() != _SET_FLAGS_CAPABILITY:
-        return []
-    return validate_set_flags_binding(
-        executor_kind=executor_kind,
-        definition_payload=definition_payload,
-        capability_config=capability_config,
-        commands_cache=commands_cache,
-    )
+        errors.extend(contract_errors)
+
+    errors.extend(_validate_template_runtime_contract(definition_payload=_normalized_payload))
+
+    if str(capability or "").strip() == _SET_FLAGS_CAPABILITY:
+        errors.extend(
+            validate_set_flags_binding(
+                executor_kind=executor_kind,
+                definition_payload=definition_payload,
+                capability_config=capability_config,
+                commands_cache=commands_cache,
+            )
+        )
+
+    return errors
 
 
 def serialize_template_exposure(exposure: OperationExposure) -> dict[str, Any]:

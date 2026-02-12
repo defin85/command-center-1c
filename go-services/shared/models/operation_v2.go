@@ -19,11 +19,11 @@ type TargetDatabase struct {
 
 // OperationMessage v2.0 - Full protocol specification
 type OperationMessage struct {
-	Version       string           `json:"version"`
-	OperationID   string           `json:"operation_id"`
-	BatchID       string           `json:"batch_id,omitempty"`
-	OperationType string           `json:"operation_type"`
-	Entity        string           `json:"entity"`
+	Version       string `json:"version"`
+	OperationID   string `json:"operation_id"`
+	BatchID       string `json:"batch_id,omitempty"`
+	OperationType string `json:"operation_type"`
+	Entity        string `json:"entity"`
 
 	TargetDatabases []TargetDatabase `json:"target_databases"`
 
@@ -56,19 +56,21 @@ type ExecutionConfig struct {
 }
 
 type MessageMetadata struct {
-	CreatedBy            string    `json:"created_by"`
-	CreatedAt            time.Time `json:"created_at"`
-	TemplateID           string    `json:"template_id,omitempty"`
-	Tags                 []string  `json:"tags,omitempty"`
-	WorkflowExecutionID  string    `json:"workflow_execution_id,omitempty"`
-	NodeID               string    `json:"node_id,omitempty"`
-	TraceID              string    `json:"trace_id,omitempty"`
+	CreatedBy                string    `json:"created_by"`
+	CreatedAt                time.Time `json:"created_at"`
+	TemplateID               string    `json:"template_id,omitempty"`
+	TemplateExposureID       string    `json:"template_exposure_id,omitempty"`
+	TemplateExposureRevision int       `json:"template_exposure_revision,omitempty"`
+	Tags                     []string  `json:"tags,omitempty"`
+	WorkflowExecutionID      string    `json:"workflow_execution_id,omitempty"`
+	NodeID                   string    `json:"node_id,omitempty"`
+	TraceID                  string    `json:"trace_id,omitempty"`
 }
 
 // OperationResultV2 - Worker response to Orchestrator (v2.0)
 type OperationResultV2 struct {
-	OperationID string             `json:"operation_id"`
-	Status      string             `json:"status"` // completed|failed|timeout
+	OperationID string `json:"operation_id"`
+	Status      string `json:"status"` // completed|failed|timeout
 
 	Results []DatabaseResultV2 `json:"results"`
 
@@ -79,12 +81,12 @@ type OperationResultV2 struct {
 }
 
 type DatabaseResultV2 struct {
-	DatabaseID   string                 `json:"database_id"`
-	Success      bool                   `json:"success"`
-	Data         map[string]interface{} `json:"data,omitempty"`
-	Error        string                 `json:"error,omitempty"`
-	ErrorCode    string                 `json:"error_code,omitempty"`
-	Duration     float64                `json:"duration_seconds"`
+	DatabaseID string                 `json:"database_id"`
+	Success    bool                   `json:"success"`
+	Data       map[string]interface{} `json:"data,omitempty"`
+	Error      string                 `json:"error,omitempty"`
+	ErrorCode  string                 `json:"error_code,omitempty"`
+	Duration   float64                `json:"duration_seconds"`
 }
 
 type ResultSummary struct {

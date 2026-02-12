@@ -198,11 +198,13 @@ const WorkflowDesigner = () => {
         if (node.id === nodeId) {
           const hasTemplateId = Object.prototype.hasOwnProperty.call(data, 'templateId')
           const hasOperationRef = Object.prototype.hasOwnProperty.call(data, 'operationRef')
+          const hasIo = Object.prototype.hasOwnProperty.call(data, 'io')
           return {
             ...node,
             name: data.label ?? node.name,
             template_id: hasTemplateId ? data.templateId : node.template_id,
             operation_ref: hasOperationRef ? data.operationRef : node.operation_ref,
+            io: hasIo ? data.io : node.io,
             config: data.config ?? node.config
           }
         }
@@ -252,6 +254,7 @@ const WorkflowDesigner = () => {
           nodeType: node.type,
           templateId: node.template_id,
           operationRef: node.operation_ref,
+          io: node.io,
           config: node.config
         } as WorkflowNodeData
       })()

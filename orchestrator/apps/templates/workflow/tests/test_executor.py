@@ -248,6 +248,50 @@ class TestDAGExecutorLinearExecution:
             assert 'B' in result['nodes']
             assert 'C' in result['nodes']
 
+    def test_linear_execution_applies_handler_context_updates(self, linear_dag, execution):
+        """Handler context_updates are applied between nodes via dot-path merge."""
+        executor = DAGExecutor(linear_dag, execution)
+        observed = {}
+
+        with patch('apps.templates.workflow.executor.NodeHandlerFactory') as mock_factory:
+            mock_handler = Mock()
+            mock_factory.get_handler.return_value = mock_handler
+
+            def mock_execute(node, context, execution, mode):
+                if node.id == 'A':
+                    return NodeExecutionResult(
+                        success=True,
+                        output={'node_output': 'result_A'},
+                        error=None,
+                        mode=mode,
+                        duration_seconds=0.1,
+                        context_updates={'workflow.state.token': 'abc123'},
+                    )
+
+                if node.id == 'B':
+                    observed['token'] = (
+                        context.get('workflow', {})
+                        .get('state', {})
+                        .get('token')
+                    )
+
+                return NodeExecutionResult(
+                    success=True,
+                    output={'node_output': f'result_{node.id}'},
+                    error=None,
+                    mode=mode,
+                    duration_seconds=0.1,
+                )
+
+            mock_handler.execute = mock_execute
+
+            context = ContextManager({'initial': 'data'})
+            success, result = asyncio.run(executor.execute(context))
+
+            assert success is True
+            assert observed['token'] == 'abc123'
+            assert result['workflow']['state']['token'] == 'abc123'
+
 
 class TestDAGExecutorConditionalExecution:
     """Tests for conditional edge execution."""

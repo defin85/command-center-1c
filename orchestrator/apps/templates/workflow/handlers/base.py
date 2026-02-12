@@ -46,6 +46,7 @@ class NodeExecutionResult:
         duration_seconds: Execution duration in seconds (None if async)
         operation_id: BatchOperation ID for operation nodes (Week 17)
         task_id: Celery task ID for async execution (Week 17)
+        context_updates: Optional dot-path updates to merge into workflow context
     """
     success: bool
     output: Optional[Any]
@@ -54,6 +55,7 @@ class NodeExecutionResult:
     duration_seconds: Optional[float]
     operation_id: Optional[str] = None
     task_id: Optional[str] = None
+    context_updates: Optional[Dict[str, Any]] = None
 
 
 # ============================================================================

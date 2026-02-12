@@ -8,6 +8,7 @@ type MockCounters = {
   operationCatalogActionExposuresGets?: number
   operationCatalogDefinitionsGets?: number
   operationExposureHintsGets?: number
+  validateCalls?: number
   upsertCalls?: number
   publishCalls?: number
   deleteCalls?: number
@@ -44,6 +45,7 @@ type MockState = {
   callCounters?: MockCounters
   upsertPayloads?: AnyRecord[]
   templateAccessById?: Record<string, 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN'>
+  templateValidationErrors?: Array<{ path: string; code?: string; message: string }>
 }
 
 declare global {
@@ -529,6 +531,23 @@ async function setupApiMocks(page: Page, state: MockState) {
       return fulfillJson(route, { definitions: paged, count: paged.length, total })
     }
 
+    if (method === 'POST' && path === '/api/v2/operation-catalog/validate/') {
+      counters.validateCalls = (counters.validateCalls ?? 0) + 1
+      const issues = Array.isArray(state.templateValidationErrors)
+        ? state.templateValidationErrors
+            .filter((item) => isPlainObject(item) && typeof item.path === 'string' && typeof item.message === 'string')
+            .map((item) => ({
+              path: String(item.path),
+              code: typeof item.code === 'string' ? item.code : 'INVALID',
+              message: String(item.message),
+            }))
+        : []
+      if (issues.length > 0) {
+        return fulfillJson(route, { valid: false, errors: issues })
+      }
+      return fulfillJson(route, { valid: true, errors: [] })
+    }
+
     if (method === 'POST' && path === '/api/v2/operation-catalog/exposures/') {
       counters.upsertCalls = (counters.upsertCalls ?? 0) + 1
       const payload = parseJsonBody(request.postData())
@@ -703,6 +722,22 @@ async function setupApiMocks(page: Page, state: MockState) {
                   expects_value: true,
                   default: 'json',
                   description: 'Output format.',
+                },
+              },
+            },
+            'infobase.extension.info': {
+              label: 'extension info',
+              description: 'Read extension info',
+              argv: ['infobase', 'extension', 'info'],
+              scope: 'per_database',
+              risk_level: 'safe',
+              params_by_name: {
+                extension_name: {
+                  kind: 'flag',
+                  required: false,
+                  expects_value: true,
+                  default: '',
+                  description: 'Extension name.',
                 },
               },
             },
@@ -893,11 +928,15 @@ test('Templates: единый editor shell работает только для 
   await expect(page.getByRole('tab', { name: 'Params', exact: true })).toBeVisible()
   await expect(page.getByRole('tab', { name: 'Safety & Fixed', exact: true })).toBeVisible()
   await expect(page.getByRole('tab', { name: 'Preview', exact: true })).toBeVisible()
+  await expect(page.getByTestId('operation-exposure-editor-source-of-truth')).toContainText('OperationExposure.alias')
 
   await page.getByTestId('operation-exposure-editor-name').fill('Template via unified modal')
   await page.getByTestId('action-catalog-editor-command-id').click()
-  await page.keyboard.type('infobase.extension.list')
+  await page.keyboard.type('infobase.extension.info')
   await page.keyboard.press('Enter')
+  await page.getByTestId('action-catalog-editor-open-preview-tab').click()
+  await expect(page.getByTestId('operation-exposure-editor-execution-preview-json')).toContainText('infobase.extension.info')
+  await expect(page.getByTestId('operation-exposure-editor-field-origins')).toContainText('OperationDefinition.executor_payload.operation_type')
   await page.getByTestId('action-catalog-editor-apply').click()
 
   await expect(page.locator('.ant-table-tbody:visible').first()).toContainText('Template via unified modal')
@@ -913,4 +952,44 @@ test('Templates: единый editor shell работает только для 
     if (!exposure) return false
     return exposure.surface === 'template'
   })).toBe(true)
+})
+
+test('Templates: backend validation_errors подсвечивают поля модалки и блокируют save', async ({ page }) => {
+  await setupAuth(page)
+  const callCounters: MockCounters = {}
+  await setupApiMocks(page, {
+    me: { id: 5, username: 'staff', is_staff: true },
+    templates: [],
+    actions: [],
+    callCounters,
+    templateValidationErrors: [
+      {
+        path: 'definition.executor_payload.command_id',
+        code: 'UNKNOWN_COMMAND',
+        message: 'unknown command_id: infobase.extension.info',
+      },
+      {
+        path: 'definition.executor_payload.template_data',
+        code: 'INVALID_TYPE',
+        message: 'template_data must be an object',
+      },
+    ],
+  })
+
+  await page.goto('/templates', { waitUntil: 'domcontentloaded' })
+  await page.getByRole('button', { name: 'New Template', exact: true }).click()
+  await page.getByTestId('operation-exposure-editor-name').fill('Template blocked by validation')
+  await page.getByTestId('action-catalog-editor-command-id').click()
+  await page.keyboard.type('infobase.extension.info')
+  await page.keyboard.press('Enter')
+  await page.getByTestId('action-catalog-editor-apply').click()
+
+  await expect(page.getByTestId('operation-exposure-editor-backend-validation-errors')).toContainText('definition.executor_payload.command_id')
+  await expect(page.getByTestId('operation-exposure-editor-backend-validation-errors')).toContainText('unknown command_id: infobase.extension.info')
+  await expect(page.getByTestId('operation-exposure-editor-backend-validation-errors')).toContainText('template_data must be an object')
+  await expect(page.locator('.ant-form-item-explain-error').filter({ hasText: 'unknown command_id: infobase.extension.info' })).toHaveCount(1)
+  await expect(page.locator('.ant-form-item-explain-error').filter({ hasText: 'template_data must be an object' })).toHaveCount(1)
+
+  expect(callCounters.validateCalls ?? 0).toBeGreaterThanOrEqual(1)
+  expect(callCounters.upsertCalls ?? 0).toBe(0)
 })

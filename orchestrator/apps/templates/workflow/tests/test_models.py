@@ -609,6 +609,83 @@ class TestPydanticSchemas:
         assert node.operation_ref.alias == "tpl-legacy"
         assert node.operation_ref.binding_mode == "alias_latest"
 
+    def test_workflow_node_operation_defaults_io_contract(self):
+        """Operation node without io defaults to implicit_legacy contract."""
+        node = WorkflowNode(
+            id="op-io-default",
+            name="Operation IO Default",
+            type="operation",
+            template_id="tpl-legacy",
+        )
+        assert node.io is not None
+        assert node.io.mode == "implicit_legacy"
+        assert node.io.input_mapping == {}
+        assert node.io.output_mapping == {}
+
+    def test_workflow_node_operation_accepts_explicit_io_contract(self):
+        """Operation node accepts explicit_strict io contract."""
+        node = WorkflowNode(
+            id="op-io-explicit",
+            name="Operation IO Explicit",
+            type="operation",
+            template_id="tpl-legacy",
+            io={
+                "mode": "explicit_strict",
+                "input_mapping": {
+                    "params.database_id": "workflow.input.database.id",
+                },
+                "output_mapping": {
+                    "workflow.state.install_result": "result",
+                },
+            },
+        )
+        assert node.io is not None
+        assert node.io.mode == "explicit_strict"
+        assert node.io.input_mapping["params.database_id"] == "workflow.input.database.id"
+        assert node.io.output_mapping["workflow.state.install_result"] == "result"
+
+    def test_workflow_node_operation_rejects_non_object_input_mapping(self):
+        """input_mapping must be an object with string paths."""
+        with pytest.raises(ValueError, match="input_mapping must be an object"):
+            WorkflowNode(
+                id="op-io-invalid-mapping-type",
+                name="Operation IO Invalid Mapping Type",
+                type="operation",
+                template_id="tpl-legacy",
+                io={
+                    "mode": "explicit_strict",
+                    "input_mapping": ["workflow.input.database.id"],
+                },
+            )
+
+    def test_workflow_node_operation_rejects_invalid_mapping_path_format(self):
+        """Mapping paths must use strict dot-notation segments."""
+        with pytest.raises(ValueError, match="dot-notation without empty segments"):
+            WorkflowNode(
+                id="op-io-invalid-path",
+                name="Operation IO Invalid Path",
+                type="operation",
+                template_id="tpl-legacy",
+                io={
+                    "mode": "explicit_strict",
+                    "input_mapping": {"params..database_id": "workflow.input.database.id"},
+                },
+            )
+
+    def test_workflow_node_operation_rejects_reserved_target_paths(self):
+        """Reserved/system roots are forbidden for mapping target_path."""
+        with pytest.raises(ValueError, match="uses reserved root 'nodes'"):
+            WorkflowNode(
+                id="op-io-reserved-target",
+                name="Operation IO Reserved Target",
+                type="operation",
+                template_id="tpl-legacy",
+                io={
+                    "mode": "explicit_strict",
+                    "input_mapping": {"nodes.step1": "workflow.input.database.id"},
+                },
+            )
+
     def test_workflow_node_rejects_mismatched_template_id_and_operation_ref_alias(self):
         """Test deterministic rule rejects ambiguous dual binding."""
         with pytest.raises(ValueError, match="template_id must match operation_ref.alias"):
@@ -628,6 +705,17 @@ class TestPydanticSchemas:
                 name="Condition",
                 type="condition",
                 template_id="should_not_exist"  # Invalid!
+            )
+
+    def test_workflow_node_condition_rejects_io_contract(self):
+        """io contract is supported only for operation nodes."""
+        with pytest.raises(ValueError, match="io must be None"):
+            WorkflowNode(
+                id="cond-io",
+                name="Condition IO",
+                type="condition",
+                io={"mode": "explicit_strict"},
+                config=NodeConfig(expression="{{ True }}"),
             )
 
     def test_workflow_node_parallel_requires_parallel_config(self):

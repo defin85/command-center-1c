@@ -11,7 +11,11 @@ from apps.operations.models import BatchOperation
 from apps.templates.models import OperationDefinition, OperationExposure
 
 
-def _create_template_with_exposure(*, template_id: str) -> tuple[str, OperationExposure]:
+def _create_template_with_exposure(
+    *,
+    template_id: str,
+    contract_version: int = 1,
+) -> tuple[str, OperationExposure]:
     definition = OperationDefinition.objects.create(
         tenant_scope="global",
         executor_kind=OperationDefinition.EXECUTOR_DESIGNER_CLI,
@@ -20,7 +24,7 @@ def _create_template_with_exposure(*, template_id: str) -> tuple[str, OperationE
             "target_entity": "infobase",
             "template_data": {},
         },
-        contract_version=1,
+        contract_version=contract_version,
         fingerprint=f"fp-{template_id}",
         status=OperationDefinition.STATUS_ACTIVE,
     )
@@ -54,8 +58,11 @@ def _create_batch_operation(*, operation_id: str, metadata: dict) -> BatchOperat
 
 
 @pytest.mark.django_db
-def test_backfill_operation_template_metadata_fills_alias_and_exposure_id():
-    template_id, exposure = _create_template_with_exposure(template_id="tpl-op-meta-1")
+def test_backfill_operation_template_metadata_fills_alias_and_exposure_ref():
+    template_id, exposure = _create_template_with_exposure(
+        template_id="tpl-op-meta-1",
+        contract_version=3,
+    )
 
     op_missing_exposure_id = _create_batch_operation(
         operation_id="op-meta-missing-exp-id",
@@ -63,7 +70,11 @@ def test_backfill_operation_template_metadata_fills_alias_and_exposure_id():
     )
     op_stale_exposure_id = _create_batch_operation(
         operation_id="op-meta-only",
-        metadata={"template_id": template_id, "template_exposure_id": "stale"},
+        metadata={
+            "template_id": template_id,
+            "template_exposure_id": "stale",
+            "template_exposure_revision": "stale",
+        },
     )
 
     out = StringIO()
@@ -80,10 +91,12 @@ def test_backfill_operation_template_metadata_fills_alias_and_exposure_id():
     op_missing_exposure_id.refresh_from_db()
     assert op_missing_exposure_id.metadata["template_id"] == template_id
     assert op_missing_exposure_id.metadata["template_exposure_id"] == str(exposure.id)
+    assert op_missing_exposure_id.metadata["template_exposure_revision"] == 3
 
     op_stale_exposure_id.refresh_from_db()
     assert op_stale_exposure_id.metadata["template_id"] == template_id
     assert op_stale_exposure_id.metadata["template_exposure_id"] == str(exposure.id)
+    assert op_stale_exposure_id.metadata["template_exposure_revision"] == 3
 
 
 @pytest.mark.django_db
@@ -114,3 +127,4 @@ def test_backfill_operation_template_metadata_dry_run_rolls_back():
     operation.refresh_from_db()
     assert operation.metadata == {"template_id": template_id}
     assert str(exposure.id) != operation.metadata.get("template_exposure_id")
+    assert operation.metadata.get("template_exposure_revision") is None

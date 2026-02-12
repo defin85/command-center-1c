@@ -307,7 +307,19 @@ def update_workflow(request):
         updated_fields.append('is_active')
 
     if 'dag_structure' in request.data:
-        workflow.dag_structure = request.data['dag_structure']
+        try:
+            workflow.dag_structure = request.data['dag_structure']
+        except Exception as exc:
+            return Response(
+                {
+                    'success': False,
+                    'error': {
+                        'code': 'UPDATE_ERROR',
+                        'message': str(exc),
+                    },
+                },
+                status=400,
+            )
         workflow.is_valid = False  # Mark as needing revalidation
         updated_fields.append('dag_structure')
 

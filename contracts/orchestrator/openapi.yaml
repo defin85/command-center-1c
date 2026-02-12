@@ -10207,7 +10207,8 @@ components:
         Additional operation metadata.
 
         For post-cutover template-based operations, `template_id` (alias) and
-        `template_exposure_id` (UUID) are emitted together as a strict wire contract.
+        `template_exposure_id` (UUID) are emitted together as a strict wire contract,
+        with `template_exposure_revision` for deterministic drift diagnostics.
         Historical records may contain only `template_id`.
       properties:
         template_id:
@@ -10219,6 +10220,11 @@ components:
           format: uuid
           nullable: true
           description: Exposure UUID (`operation_exposure.id`) for template-based operations.
+        template_exposure_revision:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: Monotonic exposure revision (`OperationDefinition.contract_version`) captured at enqueue time.
         execution_source:
           type: string
           nullable: true
@@ -14400,9 +14406,20 @@ components:
           type: string
         operation_type:
           type: string
+        executor_kind:
+          type: string
+        executor_command_id:
+          type: string
+          nullable: true
         target_entity:
           type: string
         template_data: {}
+        template_exposure_id:
+          type: string
+          format: uuid
+        template_exposure_revision:
+          type: integer
+          minimum: 1
         created_at:
           type: string
           format: date-time

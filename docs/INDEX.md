@@ -136,7 +136,7 @@
 
 #### 🧭 [MANUAL_OPERATIONS_GUIDE.md](./MANUAL_OPERATIONS_GUIDE.md)
 **Для кого:** Staff operators (templates-only ручные операции)
-**Содержание:** manual operations (`extensions.sync`, `extensions.set_flags`), preferred template bindings, порядок resolve, fail-closed ошибки и plan/apply lifecycle.
+**Содержание:** manual operations (`extensions.sync`, `extensions.set_flags`), preferred template bindings, provenance полей в `/templates`, диагностика mismatch `OperationExposure/OperationDefinition`, fail-closed ошибки и plan/apply lifecycle.
 
 #### ⚙️ [ACTION_CATALOG_GUIDE.md](./ACTION_CATALOG_GUIDE.md)
 **Для кого:** Поддержка legacy контекста

@@ -4,6 +4,7 @@ import {
   deleteOperationCatalogExposure,
   listOperationCatalogExposures,
   upsertOperationCatalogExposure,
+  type OperationCatalogExposureUpsertRequest,
   type OperationCatalogExposure,
 } from '../operationCatalog'
 import { apiClient } from '../client'
@@ -23,7 +24,11 @@ export interface OperationTemplate {
   created_at: string
   updated_at: string
   exposure_id?: string
+  template_exposure_id?: string
+  template_exposure_revision?: number
   definition_id?: string
+  executor_kind?: string
+  executor_command_id?: string | null
 }
 
 export interface OperationTemplateListResponse {
@@ -129,6 +134,30 @@ const canonicalDriverForOperationType = (operationType: string): string | null =
 const toOperationTemplate = (exposure: OperationCatalogExposure): OperationTemplate => {
   const templateData = isPlainObject(exposure.template_data) ? deepClone(exposure.template_data) : {}
   const operationType = String(exposure.operation_type || '').trim() || 'designer_cli'
+  const executorKind = String(exposure.executor_kind || operationType).trim() || operationType
+  const templateExposureId = String(exposure.template_exposure_id || exposure.id || '').trim() || undefined
+  const rawTemplateExposureRevision = (
+    typeof exposure.template_exposure_revision === 'number'
+      ? exposure.template_exposure_revision
+      : typeof exposure.exposure_revision === 'number'
+        ? exposure.exposure_revision
+        : undefined
+  )
+  const templateExposureRevision = (
+    typeof rawTemplateExposureRevision === 'number'
+      && Number.isFinite(rawTemplateExposureRevision)
+      && rawTemplateExposureRevision >= 1
+      ? Math.trunc(rawTemplateExposureRevision)
+      : undefined
+  )
+  let executorCommandId = (
+    typeof exposure.executor_command_id === 'string'
+      ? exposure.executor_command_id.trim()
+      : ''
+  )
+  if (!executorCommandId) {
+    executorCommandId = typeof templateData.command_id === 'string' ? templateData.command_id.trim() : ''
+  }
   const targetEntity = String(exposure.target_entity || '').trim() || 'infobase'
   return {
     id: exposure.alias,
@@ -145,7 +174,11 @@ const toOperationTemplate = (exposure: OperationCatalogExposure): OperationTempl
     created_at: String(exposure.created_at || ''),
     updated_at: String(exposure.updated_at || ''),
     exposure_id: exposure.id,
+    template_exposure_id: templateExposureId,
+    template_exposure_revision: templateExposureRevision,
     definition_id: exposure.definition_id,
+    executor_kind: executorKind,
+    executor_command_id: executorCommandId || undefined,
   }
 }
 
@@ -176,6 +209,9 @@ const applySearch = (rows: OperationTemplate[], search: string | undefined): Ope
     row.id.toLowerCase().includes(q)
     || row.name.toLowerCase().includes(q)
     || String(row.description || '').toLowerCase().includes(q)
+    || String(row.executor_kind || '').toLowerCase().includes(q)
+    || String(row.executor_command_id || '').toLowerCase().includes(q)
+    || String(row.template_exposure_id || '').toLowerCase().includes(q)
   ))
 }
 
@@ -187,7 +223,11 @@ const applySort = (rows: OperationTemplate[], sort: { key: string; order: 'asc' 
     if (key === 'created_at') return row.created_at
     if (key === 'updated_at') return row.updated_at
     if (key === 'operation_type') return row.operation_type
+    if (key === 'executor_kind') return row.executor_kind || ''
+    if (key === 'executor_command_id') return row.executor_command_id || ''
     if (key === 'target_entity') return row.target_entity
+    if (key === 'template_exposure_id') return row.template_exposure_id || ''
+    if (key === 'template_exposure_revision') return row.template_exposure_revision || 0
     if (key === 'name') return row.name
     if (key === 'id') return row.id
     return ''
@@ -240,7 +280,9 @@ async function fetchOperationTemplates(params?: OperationTemplateFilters): Promi
   return { templates: paged, count: paged.length, total }
 }
 
-const buildTemplateUpsertPayload = (request: OperationTemplateWrite) => {
+export const buildTemplateOperationCatalogUpsertPayload = (
+  request: OperationTemplateWrite
+): OperationCatalogExposureUpsertRequest => {
   const operationType = String(request.operation_type || '').trim() || 'designer_cli'
   const targetEntity = String(request.target_entity || '').trim() || 'infobase'
   const templateData = isPlainObject(request.template_data) ? deepClone(request.template_data) : {}
@@ -340,7 +382,7 @@ export function useCreateTemplate() {
 
   return useMutation({
     mutationFn: async (request: OperationTemplateWrite): Promise<OperationTemplateDetailResponse> => {
-      const payload = buildTemplateUpsertPayload(request)
+      const payload = buildTemplateOperationCatalogUpsertPayload(request)
       const response = await upsertOperationCatalogExposure(payload)
       return { template: toOperationTemplate(response.exposure) }
     },
@@ -355,7 +397,7 @@ export function useUpdateTemplate() {
 
   return useMutation({
     mutationFn: async (request: OperationTemplateWrite): Promise<OperationTemplateDetailResponse> => {
-      const payload = buildTemplateUpsertPayload(request)
+      const payload = buildTemplateOperationCatalogUpsertPayload(request)
       const response = await upsertOperationCatalogExposure(payload)
       return { template: toOperationTemplate(response.exposure) }
     },

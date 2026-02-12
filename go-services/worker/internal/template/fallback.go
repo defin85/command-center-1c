@@ -10,7 +10,13 @@ import (
 // FallbackClient interface for Python fallback rendering.
 // This is implemented by orchestrator.FallbackRenderer.
 type FallbackClient interface {
-	RenderTemplate(ctx context.Context, templateID string, context map[string]interface{}) (map[string]interface{}, error)
+	RenderTemplate(
+		ctx context.Context,
+		templateID string,
+		templateExposureID string,
+		templateExposureRevision int,
+		context map[string]interface{},
+	) (map[string]interface{}, error)
 }
 
 // EngineWithFallback wraps Engine with Python fallback capability.
@@ -33,7 +39,14 @@ func NewEngineWithFallback(engine *Engine, fallback FallbackClient, logger *zap.
 
 // RenderWithFallback tries Go pongo2 first, falls back to Python on compatibility errors.
 // The templateID is required for the fallback API call.
-func (e *EngineWithFallback) RenderWithFallback(ctx context.Context, templateID string, templateData map[string]interface{}, templateContext map[string]interface{}) (map[string]interface{}, error) {
+func (e *EngineWithFallback) RenderWithFallback(
+	ctx context.Context,
+	templateID string,
+	templateExposureID string,
+	templateExposureRevision int,
+	templateData map[string]interface{},
+	templateContext map[string]interface{},
+) (map[string]interface{}, error) {
 	// Try Go pongo2 first
 	result, err := e.RenderJSON(ctx, templateData, templateContext)
 	if err == nil {
@@ -48,7 +61,13 @@ func (e *EngineWithFallback) RenderWithFallback(ctx context.Context, templateID 
 
 		// Fallback to Python
 		if e.fallback != nil {
-			return e.fallback.RenderTemplate(ctx, templateID, templateContext)
+			return e.fallback.RenderTemplate(
+				ctx,
+				templateID,
+				templateExposureID,
+				templateExposureRevision,
+				templateContext,
+			)
 		}
 
 		e.logger.Error("fallback client not configured",
@@ -87,8 +106,8 @@ func isCompatibilityError(err error) bool {
 	compatPatterns := []string{
 		// Unknown filters (pongo2 doesn't have all Jinja2 filters)
 		"unknown filter",
-		"filter does not exist",      // e.g. "filter does not exist: customfilter"
-		"does not exist",             // e.g. "Filter 'x' does not exist."
+		"filter does not exist", // e.g. "filter does not exist: customfilter"
+		"does not exist",        // e.g. "Filter 'x' does not exist."
 
 		// Unknown tags
 		"unknown tag",

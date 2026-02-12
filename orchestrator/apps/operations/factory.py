@@ -30,20 +30,30 @@ def _extract_target_scope(rendered_data: Dict[str, Any]) -> str:
     return ""
 
 
-def _resolve_template_exposure_id(*, template_alias: str) -> str:
+def _resolve_template_exposure_ref(*, template_alias: str) -> tuple[str, Optional[int]]:
     alias = str(template_alias or "").strip()
     if not alias:
-        return ""
-    exposure_id = (
+        return "", None
+    row = (
         OperationExposure.objects.filter(
             surface=OperationExposure.SURFACE_TEMPLATE,
             tenant__isnull=True,
             alias=alias,
         )
-        .values_list("id", flat=True)
+        .values_list("id", "definition__contract_version")
         .first()
     )
-    return str(exposure_id) if exposure_id else ""
+    if not row:
+        return "", None
+    exposure_id_raw, revision_raw = row
+    exposure_id = str(exposure_id_raw) if exposure_id_raw else ""
+    try:
+        exposure_revision = int(revision_raw)
+    except (TypeError, ValueError):
+        exposure_revision = 1
+    if exposure_revision < 1:
+        exposure_revision = 1
+    return exposure_id, exposure_revision
 
 
 class BatchOperationFactory:
@@ -123,10 +133,26 @@ class BatchOperationFactory:
         if template_alias:
             metadata["template_id"] = template_alias
             template_exposure_id = str(getattr(template, "exposure_id", "") or "").strip()
-            if not template_exposure_id:
-                template_exposure_id = _resolve_template_exposure_id(template_alias=template_alias)
+            template_exposure_revision_raw = getattr(template, "exposure_revision", None)
+            try:
+                template_exposure_revision = int(template_exposure_revision_raw)
+            except (TypeError, ValueError):
+                template_exposure_revision = None
+            if template_exposure_revision is not None and template_exposure_revision < 1:
+                template_exposure_revision = None
+
+            if not template_exposure_id or template_exposure_revision is None:
+                resolved_exposure_id, resolved_exposure_revision = _resolve_template_exposure_ref(
+                    template_alias=template_alias
+                )
+                if not template_exposure_id:
+                    template_exposure_id = resolved_exposure_id
+                if template_exposure_revision is None:
+                    template_exposure_revision = resolved_exposure_revision
             if template_exposure_id:
                 metadata["template_exposure_id"] = template_exposure_id
+            if template_exposure_revision is not None:
+                metadata["template_exposure_revision"] = template_exposure_revision
 
         if operation_type == BatchOperation.TYPE_IBCMD_CLI:
             from apps.operations.driver_catalog_effective import get_effective_driver_catalog, resolve_driver_catalog_versions

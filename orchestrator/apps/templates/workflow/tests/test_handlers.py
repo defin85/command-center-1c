@@ -13,6 +13,7 @@ Tests cover:
 import pytest
 from unittest.mock import Mock, patch
 
+from apps.runtime_settings.models import RuntimeSetting
 from apps.templates.models import OperationDefinition, OperationExposure
 from apps.templates.workflow.handlers import (
     NodeExecutionMode,
@@ -36,6 +37,7 @@ def _create_template_exposure(
     operation_type: str,
     target_entity: str,
     template_data: object,
+    contract_version: int = 1,
     is_active: bool = True,
     status: str = OperationExposure.STATUS_PUBLISHED,
 ) -> OperationExposure:
@@ -47,7 +49,7 @@ def _create_template_exposure(
             "target_entity": target_entity,
             "template_data": template_data,
         },
-        contract_version=1,
+        contract_version=contract_version,
         fingerprint=f"fp-{template_id}",
         status=OperationDefinition.STATUS_ACTIVE,
     )
@@ -164,6 +166,38 @@ class TestOperationHandler:
         assert "not found" in result.error.lower()
         assert result.mode == NodeExecutionMode.SYNC
 
+    def test_operation_handler_rejects_alias_latest_when_runtime_enforce_pinned_enabled(
+        self,
+        workflow_execution,
+    ):
+        _create_template_exposure(
+            template_id="enforce_template",
+            name="Enforce Template",
+            operation_type="query",
+            target_entity="Users",
+            template_data={"query": "SELECT 1"},
+        )
+        RuntimeSetting.objects.update_or_create(
+            key="workflows.operation_binding.enforce_pinned",
+            defaults={"value": True},
+        )
+
+        node = WorkflowNode(
+            id="op1",
+            name="Alias Latest Operation",
+            type="operation",
+            template_id="enforce_template",
+        )
+
+        handler = OperationHandler()
+        mock_renderer = Mock()
+        handler.renderer = mock_renderer
+        result = handler.execute(node, {"dry_run": True}, workflow_execution)
+
+        assert result.success is False
+        assert (result.error or "").startswith("TEMPLATE_PIN_REQUIRED:")
+        mock_renderer.render.assert_not_called()
+
     def test_operation_handler_template_not_published(self, workflow_execution):
         _create_template_exposure(
             template_id="draft_template",
@@ -213,6 +247,76 @@ class TestOperationHandler:
         assert (result.error or "").startswith("TEMPLATE_INVALID:")
         assert result.mode == NodeExecutionMode.SYNC
 
+    def test_operation_handler_pinned_exposure_success(self, workflow_execution):
+        exposure = _create_template_exposure(
+            template_id="pinned_template",
+            name="Pinned Template",
+            operation_type="query",
+            target_entity="Users",
+            template_data={"query": "SELECT 1"},
+            contract_version=7,
+        )
+        RuntimeSetting.objects.update_or_create(
+            key="workflows.operation_binding.enforce_pinned",
+            defaults={"value": True},
+        )
+
+        node = WorkflowNode(
+            id="op1",
+            name="Pinned Operation",
+            type="operation",
+            operation_ref={
+                "alias": "pinned_template",
+                "binding_mode": "pinned_exposure",
+                "template_exposure_id": str(exposure.id),
+                "template_exposure_revision": 7,
+            },
+        )
+        context = {"dry_run": True}
+
+        handler = OperationHandler()
+        mock_renderer = Mock()
+        mock_renderer.render.return_value = {"ok": True}
+        handler.renderer = mock_renderer
+
+        result = handler.execute(node, context, workflow_execution)
+
+        assert result.success is True
+        assert result.output["execution_skipped"] is True
+        mock_renderer.render.assert_called_once()
+
+    def test_operation_handler_pinned_exposure_drift_rejected(self, workflow_execution):
+        exposure = _create_template_exposure(
+            template_id="pinned_drift_template",
+            name="Pinned Drift Template",
+            operation_type="query",
+            target_entity="Users",
+            template_data={"query": "SELECT 1"},
+            contract_version=3,
+        )
+
+        node = WorkflowNode(
+            id="op1",
+            name="Pinned Operation",
+            type="operation",
+            operation_ref={
+                "alias": "pinned_drift_template",
+                "binding_mode": "pinned_exposure",
+                "template_exposure_id": str(exposure.id),
+                "template_exposure_revision": 2,
+            },
+        )
+
+        handler = OperationHandler()
+        mock_renderer = Mock()
+        handler.renderer = mock_renderer
+
+        result = handler.execute(node, {"dry_run": True}, workflow_execution)
+
+        assert result.success is False
+        assert (result.error or "").startswith("TEMPLATE_DRIFT:")
+        mock_renderer.render.assert_not_called()
+
     def test_operation_handler_success(self, admin_user, workflow_execution):
         """Test successful operation execution."""
         _create_template_exposure(
@@ -251,6 +355,161 @@ class TestOperationHandler:
 
         # Verify renderer was called
         mock_renderer.render.assert_called_once()
+
+    def test_operation_handler_explicit_strict_uses_mapped_render_context(self, workflow_execution):
+        _create_template_exposure(
+            template_id="strict_input_template",
+            name="Strict Input Template",
+            operation_type="query",
+            target_entity="Users",
+            template_data={"query": "SELECT 1"},
+        )
+
+        node = WorkflowNode(
+            id="op_strict_input",
+            name="Strict Input Operation",
+            type="operation",
+            template_id="strict_input_template",
+            io={
+                "mode": "explicit_strict",
+                "input_mapping": {"params.user_id": "workflow.user_id"},
+            },
+        )
+        context = {
+            "workflow": {"user_id": "u-123"},
+            "dry_run": True,
+            "unmapped_secret": "should_not_be_visible",
+        }
+
+        handler = OperationHandler()
+        mock_renderer = Mock()
+        mock_renderer.render.return_value = {"ok": True}
+        handler.renderer = mock_renderer
+
+        result = handler.execute(node, context, workflow_execution)
+
+        assert result.success is True
+        assert result.output["execution_skipped"] is True
+        render_kwargs = mock_renderer.render.call_args.kwargs
+        assert render_kwargs["context_data"] == {"params": {"user_id": "u-123"}}
+
+    def test_operation_handler_explicit_strict_missing_input_path_fails_closed(self, workflow_execution):
+        _create_template_exposure(
+            template_id="strict_missing_template",
+            name="Strict Missing Template",
+            operation_type="query",
+            target_entity="Users",
+            template_data={"query": "SELECT 1"},
+        )
+
+        node = WorkflowNode(
+            id="op_strict_missing",
+            name="Strict Missing Operation",
+            type="operation",
+            template_id="strict_missing_template",
+            io={
+                "mode": "explicit_strict",
+                "input_mapping": {"params.user_id": "workflow.user_id"},
+            },
+        )
+
+        handler = OperationHandler()
+        mock_renderer = Mock()
+        handler.renderer = mock_renderer
+        result = handler.execute(node, {"dry_run": True}, workflow_execution)
+
+        assert result.success is False
+        assert (result.error or "").startswith("OPERATION_INPUT_MAPPING_ERROR:")
+        mock_renderer.render.assert_not_called()
+
+    def test_operation_handler_explicit_output_mapping_exposes_context_updates(self, workflow_execution):
+        _create_template_exposure(
+            template_id="strict_output_template",
+            name="Strict Output Template",
+            operation_type="query",
+            target_entity="Users",
+            template_data={"query": "SELECT 1"},
+        )
+
+        node = WorkflowNode(
+            id="op_strict_output",
+            name="Strict Output Operation",
+            type="operation",
+            template_id="strict_output_template",
+            io={
+                "mode": "explicit_strict",
+                "input_mapping": {"params.user_id": "workflow.user_id"},
+                "output_mapping": {"workflow.state.query_result": "operation.result"},
+            },
+        )
+
+        handler = OperationHandler()
+        mock_renderer = Mock()
+        mock_renderer.render.return_value = {"query": "payload"}
+        handler.renderer = mock_renderer
+
+        backend = Mock()
+        backend.execute.return_value = NodeExecutionResult(
+            success=True,
+            output={"operation": {"result": {"rows": 10}}},
+            error=None,
+            mode=NodeExecutionMode.SYNC,
+            duration_seconds=0.1,
+        )
+
+        with patch.object(handler, "_get_backend", return_value=backend):
+            result = handler.execute(
+                node,
+                {"workflow": {"user_id": "u-123"}, "database_ids": ["db-1"]},
+                workflow_execution,
+            )
+
+        assert result.success is True
+        assert result.context_updates == {
+            "workflow.state.query_result": {"rows": 10},
+        }
+
+    def test_operation_handler_implicit_legacy_keeps_full_render_context(self, workflow_execution):
+        _create_template_exposure(
+            template_id="legacy_mode_template",
+            name="Legacy Mode Template",
+            operation_type="query",
+            target_entity="Users",
+            template_data={"query": "SELECT 1"},
+        )
+
+        node = WorkflowNode(
+            id="op_legacy_mode",
+            name="Legacy Mode Operation",
+            type="operation",
+            template_id="legacy_mode_template",
+        )
+        context = {
+            "workflow": {"user_id": "u-123"},
+            "database_ids": ["db-1"],
+            "extra": {"x": 1},
+        }
+
+        handler = OperationHandler()
+        mock_renderer = Mock()
+        mock_renderer.render.return_value = {"query": "payload"}
+        handler.renderer = mock_renderer
+
+        backend = Mock()
+        backend.execute.return_value = NodeExecutionResult(
+            success=True,
+            output={"ok": True},
+            error=None,
+            mode=NodeExecutionMode.SYNC,
+            duration_seconds=0.1,
+        )
+
+        with patch.object(handler, "_get_backend", return_value=backend):
+            result = handler.execute(node, context, workflow_execution)
+
+        assert result.success is True
+        render_kwargs = mock_renderer.render.call_args.kwargs
+        assert render_kwargs["context_data"] == context
 
     def test_extract_target_databases_accepts_database_ids(self):
         handler = OperationHandler()

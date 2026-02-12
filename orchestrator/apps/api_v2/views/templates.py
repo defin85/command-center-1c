@@ -15,7 +15,12 @@ from apps.api_v2.serializers.common import ErrorResponseSerializer
 from apps.core import permission_codes as perms
 from apps.operations.services.admin_action_audit import log_admin_action
 from apps.templates.models import OperationExposure
-from apps.templates.operation_catalog_service import serialize_template_exposure, upsert_template_exposure
+from apps.templates.operation_catalog_service import (
+    normalize_executor_kind,
+    serialize_template_exposure,
+    upsert_template_exposure,
+    validate_exposure_payload,
+)
 from apps.templates.registry import get_registry
 
 
@@ -93,6 +98,48 @@ def sync_from_registry(request):
                 'message': 'No operation types registered in registry',
             }
         }, status=400)
+
+    validation_issues: list[dict] = []
+    for data in templates_data:
+        operation_type = str(data.get("operation_type") or "").strip()
+        validation_errors = validate_exposure_payload(
+            executor_kind=normalize_executor_kind(operation_type),
+            definition_payload={
+                "operation_type": operation_type,
+                "target_entity": str(data.get("target_entity") or "").strip(),
+                "template_data": data.get("template_data"),
+            },
+            capability=f"templates.{operation_type or 'legacy'}",
+            capability_config={},
+        )
+        if validation_errors:
+            validation_issues.append(
+                {
+                    "template_id": str(data.get("id") or ""),
+                    "operation_type": operation_type,
+                    "errors": validation_errors,
+                }
+            )
+    if validation_issues:
+        log_admin_action(
+            request,
+            action="templates.sync_from_registry",
+            outcome="error",
+            target_type="template_registry",
+            metadata={"dry_run": dry_run, "validation_issue_count": len(validation_issues)},
+            error_message="VALIDATION_ERROR",
+        )
+        return Response(
+            {
+                "success": False,
+                "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Registry templates failed runtime-contract validation",
+                    "details": validation_issues,
+                },
+            },
+            status=400,
+        )
 
     created = 0
     updated = 0

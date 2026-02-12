@@ -259,9 +259,24 @@ def _serialize_exposure(exposure: OperationExposure) -> dict[str, Any]:
         "updated_at": exposure.updated_at,
     }
     if exposure.surface == OperationExposure.SURFACE_TEMPLATE:
+        template_data = payload.get("template_data") if isinstance(payload.get("template_data"), dict) else {}
+        command_id = str(payload.get("command_id") or "").strip()
+        if not command_id:
+            command_id = str(template_data.get("command_id") or "").strip()
+        try:
+            exposure_revision = int(exposure.definition.contract_version or 1)
+        except (TypeError, ValueError):
+            exposure_revision = 1
+        if exposure_revision < 1:
+            exposure_revision = 1
+
         data["operation_type"] = str(payload.get("operation_type") or "")
         data["target_entity"] = str(payload.get("target_entity") or "")
-        data["template_data"] = payload.get("template_data") if isinstance(payload.get("template_data"), dict) else {}
+        data["template_data"] = template_data
+        data["template_exposure_id"] = str(exposure.id)
+        data["template_exposure_revision"] = exposure_revision
+        data["executor_kind"] = str(exposure.definition.executor_kind or "")
+        data["executor_command_id"] = command_id or None
     return data
 
 
@@ -294,6 +309,10 @@ class OperationCatalogExposureSerializer(serializers.Serializer):
     operation_type = serializers.CharField(required=False, allow_blank=True)
     target_entity = serializers.CharField(required=False, allow_blank=True)
     template_data = serializers.JSONField(required=False)
+    template_exposure_id = serializers.UUIDField(required=False)
+    template_exposure_revision = serializers.IntegerField(required=False, min_value=1)
+    executor_kind = serializers.CharField(required=False, allow_blank=True)
+    executor_command_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     created_at = serializers.DateTimeField(required=False)
     updated_at = serializers.DateTimeField(required=False)
 

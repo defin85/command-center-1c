@@ -27,7 +27,7 @@ def staff_client(db):
     return client
 
 
-def _build_create_payload(*, pinned: bool) -> dict:
+def _build_create_payload(*, pinned: bool, io: dict | None = None) -> dict:
     node: dict = {
         "id": "step1",
         "name": "Step 1",
@@ -35,6 +35,8 @@ def _build_create_payload(*, pinned: bool) -> dict:
         "template_id": "tpl-test-step1",
         "config": {},
     }
+    if io is not None:
+        node["io"] = io
     if pinned:
         node["operation_ref"] = {
             "alias": "tpl-test-step1",
@@ -64,6 +66,9 @@ def test_create_workflow_allows_alias_latest_when_enforcement_disabled(staff_cli
     assert node["template_id"] == "tpl-test-step1"
     assert node["operation_ref"]["alias"] == "tpl-test-step1"
     assert node["operation_ref"]["binding_mode"] == "alias_latest"
+    assert node["io"]["mode"] == "implicit_legacy"
+    assert node["io"]["input_mapping"] == {}
+    assert node["io"]["output_mapping"] == {}
 
 
 @pytest.mark.django_db
@@ -166,6 +171,131 @@ def test_update_workflow_lazy_upgrades_template_id_only_dag(staff_client):
     assert node["template_id"] == "tpl-test-step1"
     assert node["operation_ref"]["alias"] == "tpl-test-step1"
     assert node["operation_ref"]["binding_mode"] == "alias_latest"
+    assert node["io"]["mode"] == "implicit_legacy"
+
+
+@pytest.mark.django_db
+def test_update_workflow_preserves_explicit_io_contract(staff_client):
+    create_response = staff_client.post(
+        "/api/v2/workflows/create-workflow/",
+        data=_build_create_payload(
+            pinned=False,
+            io={
+                "mode": "explicit_strict",
+                "input_mapping": {"params.database_id": "workflow.input.database.id"},
+                "output_mapping": {"workflow.state.result": "result"},
+            },
+        ),
+        format="json",
+    )
+    assert create_response.status_code == 201
+    workflow_id = create_response.json()["workflow"]["id"]
+
+    updated_dag = {
+        "nodes": [
+            {
+                "id": "step1",
+                "name": "Step 1",
+                "type": "operation",
+                "template_id": "tpl-test-step1",
+                "config": {},
+                "io": {
+                    "mode": "explicit_strict",
+                    "input_mapping": {"params.database_id": "workflow.input.database.id"},
+                    "output_mapping": {"workflow.state.result": "result"},
+                },
+            }
+        ],
+        "edges": [],
+    }
+
+    update_response = staff_client.post(
+        "/api/v2/workflows/update-workflow/",
+        data={"workflow_id": workflow_id, "dag_structure": updated_dag},
+        format="json",
+    )
+    assert update_response.status_code == 200
+    updated_node = update_response.json()["workflow"]["dag_structure"]["nodes"][0]
+    assert updated_node["io"]["mode"] == "explicit_strict"
+    assert updated_node["io"]["input_mapping"] == {
+        "params.database_id": "workflow.input.database.id",
+    }
+    assert updated_node["io"]["output_mapping"] == {
+        "workflow.state.result": "result",
+    }
+
+    get_response = staff_client.get(
+        "/api/v2/workflows/get-workflow/",
+        {"workflow_id": workflow_id},
+    )
+    assert get_response.status_code == 200
+    persisted_node = get_response.json()["workflow"]["dag_structure"]["nodes"][0]
+    assert persisted_node["io"]["mode"] == "explicit_strict"
+    assert persisted_node["io"]["input_mapping"] == {
+        "params.database_id": "workflow.input.database.id",
+    }
+    assert persisted_node["io"]["output_mapping"] == {
+        "workflow.state.result": "result",
+    }
+
+
+@pytest.mark.django_db
+def test_create_workflow_rejects_reserved_io_target_path(staff_client):
+    response = staff_client.post(
+        "/api/v2/workflows/create-workflow/",
+        data=_build_create_payload(
+            pinned=False,
+            io={
+                "mode": "explicit_strict",
+                "input_mapping": {"nodes.step1": "workflow.input.database.id"},
+            },
+        ),
+        format="json",
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["error"]["code"] == "CREATE_ERROR"
+    assert "reserved root 'nodes'" in payload["error"]["message"]
+
+
+@pytest.mark.django_db
+def test_update_workflow_rejects_invalid_io_path_format(staff_client):
+    create_response = staff_client.post(
+        "/api/v2/workflows/create-workflow/",
+        data=_build_create_payload(pinned=False),
+        format="json",
+    )
+    assert create_response.status_code == 201
+    workflow_id = create_response.json()["workflow"]["id"]
+
+    invalid_dag = {
+        "nodes": [
+            {
+                "id": "step1",
+                "name": "Step 1",
+                "type": "operation",
+                "template_id": "tpl-test-step1",
+                "config": {},
+                "io": {
+                    "mode": "explicit_strict",
+                    "input_mapping": {"params..database_id": "workflow.input.database.id"},
+                },
+            }
+        ],
+        "edges": [],
+    }
+
+    response = staff_client.post(
+        "/api/v2/workflows/update-workflow/",
+        data={"workflow_id": workflow_id, "dag_structure": invalid_dag},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["error"]["code"] == "UPDATE_ERROR"
+    assert "dot-notation without empty segments" in payload["error"]["message"]
 
 
 @pytest.mark.django_db

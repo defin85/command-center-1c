@@ -453,6 +453,11 @@ class DAGExecutor:
                         }
                     )
 
+                    # Apply explicit context updates from node handler (e.g. operation io.output_mapping).
+                    if result.context_updates:
+                        for target_path, value in result.context_updates.items():
+                            updated_context = updated_context.set(target_path, value)
+
                     # Update node status
                     await sync_to_async(
                         self.execution.update_node_status,

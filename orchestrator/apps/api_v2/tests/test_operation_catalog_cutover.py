@@ -26,6 +26,19 @@ def staff_client(db):
     return client
 
 
+@pytest.fixture
+def superuser_client(db):
+    user = User.objects.create_user(
+        username="operation_catalog_superuser",
+        password="pass",
+        is_staff=True,
+        is_superuser=True,
+    )
+    client = APIClient()
+    client.force_authenticate(user=user)
+    return client
+
+
 def _grant_template_capability(user: User, codename: str) -> None:
     ct = ContentType.objects.get(app_label="templates", model="operationtemplate")
     perm = Permission.objects.get(content_type=ct, codename=codename)
@@ -190,6 +203,84 @@ def test_operation_catalog_validate_rejects_non_template_surface(staff_client):
 
 
 @pytest.mark.django_db
+def test_operation_catalog_validate_enforces_template_runtime_contract(superuser_client):
+    resp = superuser_client.post(
+        "/api/v2/operation-catalog/validate/",
+        data={
+            "definition": {
+                "tenant_scope": "global",
+                "executor_kind": "designer_cli",
+                "executor_payload": {
+                    "operation_type": "designer_cli",
+                    "target_entity": "infobase",
+                    "template_data": "invalid",
+                },
+                "contract_version": 1,
+            },
+            "exposure": {
+                "surface": "template",
+                "alias": "tpl-invalid-validate",
+                "name": "Invalid Validate",
+                "capability": "",
+                "capability_config": {},
+            },
+        },
+        format="json",
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["valid"] is False
+    assert any(item["path"] == "definition.executor_payload.template_data" for item in payload["errors"])
+
+
+@pytest.mark.django_db
+def test_operation_catalog_publish_blocks_incompatible_template_payload(superuser_client):
+    upsert_resp = superuser_client.post(
+        "/api/v2/operation-catalog/exposures/",
+        data={
+            "definition": {
+                "tenant_scope": "global",
+                "executor_kind": "designer_cli",
+                "executor_payload": {
+                    "operation_type": "unknown_template_op",
+                    "target_entity": "infobase",
+                    "template_data": {},
+                },
+                "contract_version": 1,
+            },
+            "exposure": {
+                "surface": "template",
+                "alias": "tpl-invalid-publish",
+                "name": "Invalid Publish",
+                "description": "",
+                "is_active": True,
+                "capability": "",
+                "contexts": [],
+                "display_order": 0,
+                "capability_config": {},
+                "status": "draft",
+            },
+        },
+        format="json",
+    )
+    assert upsert_resp.status_code == 200
+    upsert_payload = upsert_resp.json()
+    assert upsert_payload["exposure"]["status"] == "invalid"
+    exposure_id = upsert_payload["exposure"]["id"]
+
+    publish_resp = superuser_client.post(
+        f"/api/v2/operation-catalog/exposures/{exposure_id}/publish/",
+        data={},
+        format="json",
+    )
+    assert publish_resp.status_code == 200
+    publish_payload = publish_resp.json()
+    assert publish_payload["published"] is False
+    assert publish_payload["exposure"]["status"] == "invalid"
+    assert any(item["code"] == "UNSUPPORTED_OPERATION_TYPE" for item in publish_payload["validation_errors"])
+
+
+@pytest.mark.django_db
 def test_operation_catalog_template_surface_allows_non_staff_with_view_scope(template_manager_client):
     user = User.objects.get(username="template_manager_non_staff")
     exposure, _ = upsert_template_exposure(
@@ -209,8 +300,14 @@ def test_operation_catalog_template_surface_allows_non_staff_with_view_scope(tem
 
     resp_template = template_manager_client.get("/api/v2/operation-catalog/exposures/?surface=template")
     assert resp_template.status_code == 200
-    aliases = {row["alias"] for row in resp_template.json()["exposures"]}
+    template_rows = resp_template.json()["exposures"]
+    aliases = {row["alias"] for row in template_rows}
     assert "tpl-perm-view" in aliases
+    row = next(item for item in template_rows if item["alias"] == "tpl-perm-view")
+    assert row["template_exposure_id"] == str(exposure.id)
+    assert row["template_exposure_revision"] == int(exposure.definition.contract_version)
+    assert row["executor_kind"] == str(exposure.definition.executor_kind)
+    assert row["executor_command_id"] == "infobase.extension.list"
 
     resp_default = template_manager_client.get("/api/v2/operation-catalog/exposures/")
     assert resp_default.status_code == 200

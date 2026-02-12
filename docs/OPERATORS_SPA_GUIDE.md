@@ -33,6 +33,13 @@
 - **Sync from registry** (staff-only): синхронизация шаблонов из in-code registry.
 - Create/Edit для custom CLI templates выполняется через тот же tabbed editor, что и Action Catalog (`Basics / Executor / Params / Safety & Fixed / Preview`).
 - В editor больше нет ручного выбора `driver`: для `executor.kind=designer_cli` используется canonical `driver=cli`.
+- В list/editor видны provenance-поля для связки `OperationExposure -> OperationDefinition`:
+  - alias, `template_exposure_id`, `template_exposure_revision`, `OperationDefinition.id`,
+  - preview блока «что будет выполнено».
+- Если save/publish блокируется backend-проверками, modal показывает причины и подсвечивает соответствующие поля формы.
+- Подробная инструкция по чтению provenance и диагностике mismatch:
+  - [MANUAL_OPERATIONS_GUIDE.md](./MANUAL_OPERATIONS_GUIDE.md)
+  - [observability/TEMPLATE_DRIFT_RUNBOOK.md](./observability/TEMPLATE_DRIFT_RUNBOOK.md)
 
 ### Templates-only manual operations (`/templates`)
 - Action Catalog decommissioned: рабочий сценарий выполняется только через templates-only flow.

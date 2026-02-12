@@ -89,6 +89,7 @@ class TestOperationsServiceBuildMessage:
         assert message["payload"]["options"] == {}
         assert message["metadata"]["template_id"] == template.id
         assert message["metadata"]["template_exposure_id"] is None
+        assert message["metadata"]["template_exposure_revision"] is None
 
     def test_build_message_protocol_payload_keeps_sections(self, test_database, db):
         template = SimpleNamespace(
@@ -175,3 +176,32 @@ class TestOperationsServiceBuildMessage:
         message = OperationsService._build_message(operation)
         assert message["metadata"]["template_id"] == template.id
         assert message["metadata"]["template_exposure_id"] == str(exposure.id)
+        assert message["metadata"]["template_exposure_revision"] == 1
+
+    def test_build_message_resolves_template_exposure_revision_from_alias_when_template_has_no_ref(
+        self,
+        test_database,
+        db,
+    ):
+        template, exposure = self._create_runtime_template(
+            operation_type="designer_cli",
+            target_entity="Infobase",
+        )
+        template_without_ref = SimpleNamespace(
+            id=template.id,
+            name=template.name,
+            operation_type=template.operation_type,
+            target_entity=template.target_entity,
+            exposure_id="",
+        )
+
+        operation = BatchOperationFactory.create(
+            template=template_without_ref,
+            rendered_data={"command": "Any", "args": [], "options": {}},
+            target_databases=[str(test_database.id)],
+        )
+
+        message = OperationsService._build_message(operation)
+        assert message["metadata"]["template_id"] == template.id
+        assert message["metadata"]["template_exposure_id"] == str(exposure.id)
+        assert message["metadata"]["template_exposure_revision"] == 1

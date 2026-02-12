@@ -90,6 +90,7 @@ class OperationsServiceMessageMixin:
                 "created_at": operation.created_at.isoformat(),
                 "template_id": operation.template_id,
                 "template_exposure_id": operation.template_exposure_id,
+                "template_exposure_revision": operation.template_exposure_revision,
                 "tags": operation.metadata.get("tags", []),
                 "workflow_execution_id": operation.metadata.get("workflow_execution_id"),
                 "node_id": operation.metadata.get("node_id"),

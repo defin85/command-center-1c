@@ -31,6 +31,8 @@ import type {
   NodeConfig,
   OperationTemplateListItem,
   OperationRef,
+  OperationIO,
+  OperationIOMode,
 } from '../../types/workflow'
 import { NODE_TYPE_INFO } from '../../types/workflow'
 import { LazyJsonCodeEditor } from '../code/LazyJsonCodeEditor'
@@ -58,79 +60,288 @@ interface PropertyEditorProps {
   readOnly?: boolean
 }
 
+const OPERATION_IO_SEGMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+const OPERATION_IO_RESERVED_ROOTS = new Set(['nodes'])
+const OPERATION_IO_RESERVED_PREFIXES = ['_', 'node_']
+
+const validateOperationIoPath = ({
+  path,
+  fieldName,
+  checkReservedRoot,
+}: {
+  path: string
+  fieldName: string
+  checkReservedRoot: boolean
+}) => {
+  const normalized = path.trim()
+  if (!normalized) {
+    throw new Error(`${fieldName} must not be empty`)
+  }
+  if (normalized.startsWith('.') || normalized.endsWith('.') || normalized.includes('..')) {
+    throw new Error(`${fieldName} must use dot-notation without empty segments`)
+  }
+
+  const segments = normalized.split('.')
+  for (const segment of segments) {
+    if (!OPERATION_IO_SEGMENT_RE.test(segment)) {
+      throw new Error(
+        `${fieldName} segment "${segment}" is invalid; use [A-Za-z_][A-Za-z0-9_]*`
+      )
+    }
+  }
+
+  if (checkReservedRoot) {
+    const root = segments[0]
+    if (
+      OPERATION_IO_RESERVED_ROOTS.has(root) ||
+      OPERATION_IO_RESERVED_PREFIXES.some((prefix) => root.startsWith(prefix))
+    ) {
+      throw new Error(`${fieldName} root "${root}" is reserved`)
+    }
+  }
+
+  return normalized
+}
+
+const parseOperationIoMappingObject = (raw: string, mappingName: string): Record<string, string> => {
+  const trimmed = raw.trim()
+  if (!trimmed) {
+    return {}
+  }
+  const parsed: unknown = JSON.parse(trimmed)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${mappingName} must be a JSON object`)
+  }
+
+  const record: Record<string, string> = {}
+  for (const [rawTargetPath, rawSourcePath] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof rawSourcePath !== 'string') {
+      throw new Error(`${mappingName} value for "${rawTargetPath}" must be a string`)
+    }
+
+    const targetPath = validateOperationIoPath({
+      path: rawTargetPath,
+      fieldName: `${mappingName} target path`,
+      checkReservedRoot: true,
+    })
+    const sourcePath = validateOperationIoPath({
+      path: rawSourcePath,
+      fieldName: `${mappingName} source path`,
+      checkReservedRoot: false,
+    })
+    record[targetPath] = sourcePath
+  }
+  return record
+}
+
 // Form for Operation node
 const OperationForm = ({
   config,
+  io,
   templateId,
   onTemplateChange,
   onChange,
+  onIoChange,
   templates,
   readOnly,
   idPrefix,
 }: {
   config: NodeConfig
+  io?: OperationIO
   templateId?: string
   onTemplateChange: (templateId?: string) => void
   onChange: (config: NodeConfig) => void
+  onIoChange: (io: OperationIO) => void
   templates: OperationTemplateListItem[]
   readOnly: boolean
   idPrefix: string
-}) => (
-  <>
-    <Form.Item label="Template" htmlFor={`${idPrefix}-operation-template`} required>
-      <Select
-        id={`${idPrefix}-operation-template`}
-        value={templateId}
-        placeholder="Select operation template"
-        disabled={readOnly}
-        showSearch
-        optionFilterProp="children"
-        onChange={(value) => onTemplateChange(value || undefined)}
-        options={templates.map((t) => ({
-          value: t.id,
-          label: `${t.name} (${t.operation_type})`
-        }))}
-        allowClear
-      />
-    </Form.Item>
+}) => {
+  const normalizedIo: OperationIO = io ?? {
+    mode: 'implicit_legacy',
+    input_mapping: {},
+    output_mapping: {},
+  }
+  const [inputMappingRaw, setInputMappingRaw] = useState<string>(() =>
+    JSON.stringify(normalizedIo.input_mapping || {}, null, 2)
+  )
+  const [outputMappingRaw, setOutputMappingRaw] = useState<string>(() =>
+    JSON.stringify(normalizedIo.output_mapping || {}, null, 2)
+  )
+  const [inputMappingError, setInputMappingError] = useState<string | null>(null)
+  const [outputMappingError, setOutputMappingError] = useState<string | null>(null)
+  const lastIdPrefixRef = useRef<string>(idPrefix)
 
-    <Form.Item label="Timeout (seconds)" htmlFor={`${idPrefix}-operation-timeout`}>
-      <InputNumber
-        id={`${idPrefix}-operation-timeout`}
-        value={config.timeout}
-        min={1}
-        max={3600}
-        disabled={readOnly}
-        style={{ width: '100%' }}
-        onChange={(value) => onChange({ ...config, timeout: value || undefined })}
-      />
-    </Form.Item>
+  useEffect(() => {
+    if (lastIdPrefixRef.current === idPrefix) {
+      return
+    }
+    lastIdPrefixRef.current = idPrefix
+    setInputMappingRaw(JSON.stringify(normalizedIo.input_mapping || {}, null, 2))
+    setOutputMappingRaw(JSON.stringify(normalizedIo.output_mapping || {}, null, 2))
+    setInputMappingError(null)
+    setOutputMappingError(null)
+  }, [idPrefix, normalizedIo.input_mapping, normalizedIo.output_mapping])
 
-    <Form.Item label="Retries" htmlFor={`${idPrefix}-operation-retries`}>
-      <InputNumber
-        id={`${idPrefix}-operation-retries`}
-        value={config.retries}
-        min={0}
-        max={10}
-        disabled={readOnly}
-        style={{ width: '100%' }}
-        onChange={(value) => onChange({ ...config, retries: value || undefined })}
-      />
-    </Form.Item>
+  const handleIoModeChange = (mode: OperationIOMode) => {
+    onIoChange({
+      mode,
+      input_mapping: normalizedIo.input_mapping || {},
+      output_mapping: normalizedIo.output_mapping || {},
+    })
+  }
 
-    <Form.Item label="Retry Delay (seconds)" htmlFor={`${idPrefix}-operation-retry-delay`}>
-      <InputNumber
-        id={`${idPrefix}-operation-retry-delay`}
-        value={config.retry_delay}
-        min={1}
-        max={300}
-        disabled={readOnly}
-        style={{ width: '100%' }}
-        onChange={(value) => onChange({ ...config, retry_delay: value || undefined })}
-      />
-    </Form.Item>
-  </>
-)
+  const handleInputMappingChange = (raw: string) => {
+    setInputMappingRaw(raw)
+    try {
+      const mapping = parseOperationIoMappingObject(raw, 'input_mapping')
+      setInputMappingError(null)
+      onIoChange({
+        mode: normalizedIo.mode,
+        input_mapping: mapping,
+        output_mapping: normalizedIo.output_mapping || {},
+      })
+    } catch (err) {
+      setInputMappingError(err instanceof Error ? err.message : 'Invalid JSON')
+    }
+  }
+
+  const handleOutputMappingChange = (raw: string) => {
+    setOutputMappingRaw(raw)
+    try {
+      const mapping = parseOperationIoMappingObject(raw, 'output_mapping')
+      setOutputMappingError(null)
+      onIoChange({
+        mode: normalizedIo.mode,
+        input_mapping: normalizedIo.input_mapping || {},
+        output_mapping: mapping,
+      })
+    } catch (err) {
+      setOutputMappingError(err instanceof Error ? err.message : 'Invalid JSON')
+    }
+  }
+
+  return (
+    <>
+      <Form.Item label="Template" htmlFor={`${idPrefix}-operation-template`} required>
+        <Select
+          id={`${idPrefix}-operation-template`}
+          value={templateId}
+          placeholder="Select operation template"
+          disabled={readOnly}
+          showSearch
+          optionFilterProp="children"
+          onChange={(value) => onTemplateChange(value || undefined)}
+          options={templates.map((t) => ({
+            value: t.id,
+            label: `${t.name} (${t.operation_type})`
+          }))}
+          allowClear
+        />
+      </Form.Item>
+
+      <Form.Item label="Timeout (seconds)" htmlFor={`${idPrefix}-operation-timeout`}>
+        <InputNumber
+          id={`${idPrefix}-operation-timeout`}
+          value={config.timeout}
+          min={1}
+          max={3600}
+          disabled={readOnly}
+          style={{ width: '100%' }}
+          onChange={(value) => onChange({ ...config, timeout: value || undefined })}
+        />
+      </Form.Item>
+
+      <Form.Item label="Retries" htmlFor={`${idPrefix}-operation-retries`}>
+        <InputNumber
+          id={`${idPrefix}-operation-retries`}
+          value={config.retries}
+          min={0}
+          max={10}
+          disabled={readOnly}
+          style={{ width: '100%' }}
+          onChange={(value) => onChange({ ...config, retries: value || undefined })}
+        />
+      </Form.Item>
+
+      <Form.Item label="Retry Delay (seconds)" htmlFor={`${idPrefix}-operation-retry-delay`}>
+        <InputNumber
+          id={`${idPrefix}-operation-retry-delay`}
+          value={config.retry_delay}
+          min={1}
+          max={300}
+          disabled={readOnly}
+          style={{ width: '100%' }}
+          onChange={(value) => onChange({ ...config, retry_delay: value || undefined })}
+        />
+      </Form.Item>
+
+      <Divider style={{ margin: '12px 0' }} />
+
+      <Form.Item
+        label="Data Flow Mode"
+        htmlFor={`${idPrefix}-operation-io-mode`}
+        help="implicit_legacy keeps old behavior; explicit_strict uses only declared input/output mappings."
+      >
+        <Select
+          id={`${idPrefix}-operation-io-mode`}
+          value={normalizedIo.mode}
+          disabled={readOnly}
+          onChange={(value) => handleIoModeChange(value as OperationIOMode)}
+          options={[
+            { value: 'implicit_legacy', label: 'implicit_legacy (backward-compatible)' },
+            { value: 'explicit_strict', label: 'explicit_strict (mapped only)' },
+          ]}
+        />
+      </Form.Item>
+
+      {normalizedIo.mode === 'explicit_strict' && (
+        <>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="Mapping rules"
+            description={
+              'Use JSON object format {"target.path": "source.path"}. Target roots "nodes", "_*", and "node_*" are reserved.'
+            }
+          />
+          <Collapse ghost>
+            <Panel header="Input Mapping (before render)" key="operation-io-input">
+              <Form.Item
+                help={inputMappingError ? inputMappingError : 'Map workflow context -> template render context'}
+                validateStatus={inputMappingError ? 'error' : undefined}
+              >
+                <LazyJsonCodeEditor
+                  id={`${idPrefix}-operation-input-mapping`}
+                  value={inputMappingRaw}
+                  onChange={handleInputMappingChange}
+                  readOnly={readOnly}
+                  height={180}
+                  path={`${idPrefix}-operation-input-mapping.json`}
+                />
+              </Form.Item>
+            </Panel>
+            <Panel header="Output Mapping (after success)" key="operation-io-output">
+              <Form.Item
+                help={outputMappingError ? outputMappingError : 'Map operation output -> workflow context'}
+                validateStatus={outputMappingError ? 'error' : undefined}
+              >
+                <LazyJsonCodeEditor
+                  id={`${idPrefix}-operation-output-mapping`}
+                  value={outputMappingRaw}
+                  onChange={handleOutputMappingChange}
+                  readOnly={readOnly}
+                  height={180}
+                  path={`${idPrefix}-operation-output-mapping.json`}
+                />
+              </Form.Item>
+            </Panel>
+          </Collapse>
+        </>
+      )}
+    </>
+  )
+}
 
 // Form for Condition node
 const ConditionForm = ({
@@ -481,6 +692,11 @@ const PropertyEditor = ({
     onNodeUpdate(nodeId, { config })
   }
 
+  const handleIoChange = (io: OperationIO) => {
+    setLocalData({ ...localData, io })
+    onNodeUpdate(nodeId, { io })
+  }
+
   const handleTemplateChange = (templateId?: string) => {
     const normalizedTemplateId = typeof templateId === 'string' && templateId.trim()
       ? templateId.trim()
@@ -536,9 +752,11 @@ const PropertyEditor = ({
         return (
           <OperationForm
             config={config}
+            io={localData.io}
             templateId={localData.templateId}
             onTemplateChange={handleTemplateChange}
             onChange={handleConfigChange}
+            onIoChange={handleIoChange}
             templates={operationTemplates}
             readOnly={readOnly}
             idPrefix={idPrefix}

@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from apps.databases.models import Database
 from apps.operations.waiter import OperationTimeoutError
+from apps.runtime_settings.effective import get_effective_runtime_setting
 from apps.templates.engine.exceptions import TemplateRenderError, TemplateValidationError
 from apps.templates.engine.renderer import TemplateRenderer
 from apps.templates.template_runtime import TemplateResolveError, resolve_runtime_template
@@ -23,6 +24,8 @@ from .base import BaseNodeHandler, NodeExecutionMode, NodeExecutionResult
 from .backends import AbstractOperationBackend, CLIBackend, IBCMDBackend, ODataBackend, RASBackend
 
 logger = logging.getLogger(__name__)
+
+WORKFLOW_BINDING_ENFORCE_PINNED_KEY = "workflows.operation_binding.enforce_pinned"
 
 
 class OperationHandler(BaseNodeHandler):
@@ -99,12 +102,34 @@ class OperationHandler(BaseNodeHandler):
         )
 
         try:
-            # 1. Resolve template via exposure alias (fail-closed)
-            if not node.template_id:
-                raise ValueError(f"Operation node {node.id} missing template_id")
+            # 1. Resolve template via operation_ref binding (fail-closed).
+            binding_mode, template_alias, template_exposure_id, expected_exposure_revision = (
+                self._resolve_operation_binding(node)
+            )
+
+            if self._is_enforce_pinned_runtime_enabled(context) and binding_mode != "pinned_exposure":
+                error_msg = (
+                    "TEMPLATE_PIN_REQUIRED: workflows.operation_binding.enforce_pinned=true "
+                    "requires binding_mode='pinned_exposure' for operation execution"
+                )
+                logger.error(
+                    error_msg,
+                    extra={
+                        "node_id": node.id,
+                        "template_id": template_alias,
+                        "binding_mode": binding_mode,
+                    },
+                )
+                return self._return_error(error_msg, step_result, start_time)
 
             template = resolve_runtime_template(
-                template_alias=node.template_id,
+                template_alias=template_alias,
+                template_exposure_id=(
+                    template_exposure_id if binding_mode == "pinned_exposure" else None
+                ),
+                expected_exposure_revision=(
+                    expected_exposure_revision if binding_mode == "pinned_exposure" else None
+                ),
                 require_active=True,
                 require_published=True,
             )
@@ -113,17 +138,24 @@ class OperationHandler(BaseNodeHandler):
                 f"Executing operation node {node.id}",
                 extra={
                     'node_id': node.id,
-                    'template_id': node.template_id,
+                    'template_id': template_alias,
+                    'binding_mode': binding_mode,
+                    'template_exposure_id': template_exposure_id,
+                    'template_exposure_revision': expected_exposure_revision,
                     'template_name': template.name,
                     'operation_type': template.operation_type,
                     'mode': mode.value
                 }
             )
 
-            # 2. Render template with validation
+            # 2. Build render context according to io contract, then render.
+            render_context, mapping_error = self._build_render_context(node=node, context=context)
+            if mapping_error is not None:
+                return self._return_error(mapping_error, step_result, start_time)
+
             rendered_data = self.renderer.render(
                 template=template,
-                context_data=context,
+                context_data=render_context,
                 validate=True
             )
 
@@ -149,7 +181,7 @@ class OperationHandler(BaseNodeHandler):
                 if target_scope == "global":
                     logger.info(
                         "Global scope operation node: executing without target databases",
-                        extra={"node_id": node.id, "template_id": node.template_id},
+                        extra={"node_id": node.id, "template_id": template_alias},
                     )
                 else:
                     logger.warning(
@@ -195,23 +227,45 @@ class OperationHandler(BaseNodeHandler):
                 mode=mode
             )
 
+            if result.success:
+                result.context_updates = self._build_output_context_updates(
+                    node=node,
+                    node_output=result.output,
+                )
+
             # Update step result with backend result
             self._update_step_result(step_result, result)
             return result
 
         except TemplateResolveError as exc:
             error_msg = f"{exc.code}: {exc.message}"
+            operation_ref = getattr(node, "operation_ref", None)
+            template_alias = (
+                operation_ref.alias
+                if operation_ref is not None and getattr(operation_ref, "alias", None)
+                else node.template_id
+            )
             logger.error(
                 error_msg,
-                extra={"node_id": node.id, "template_id": node.template_id, "code": exc.code},
+                extra={
+                    "node_id": node.id,
+                    "template_id": template_alias,
+                    "code": exc.code,
+                },
             )
             return self._return_error(error_msg, step_result, start_time)
 
         except (TemplateRenderError, TemplateValidationError) as exc:
             error_msg = f"Template rendering failed: {str(exc)}"
+            operation_ref = getattr(node, "operation_ref", None)
+            template_alias = (
+                operation_ref.alias
+                if operation_ref is not None and getattr(operation_ref, "alias", None)
+                else node.template_id
+            )
             logger.error(
                 error_msg,
-                extra={'node_id': node.id, 'template_id': node.template_id},
+                extra={'node_id': node.id, 'template_id': template_alias},
                 exc_info=True
             )
             return self._return_error(error_msg, step_result, start_time)
@@ -279,6 +333,151 @@ class OperationHandler(BaseNodeHandler):
             f"CLI={CLIBackend.get_supported_types()}"
         )
 
+    def _resolve_operation_binding(
+        self,
+        node: WorkflowNode,
+    ) -> tuple[str, str, Optional[str], Optional[int]]:
+        """
+        Resolve operation node binding parameters for runtime template lookup.
+
+        Returns:
+            (binding_mode, template_alias, template_exposure_id, expected_exposure_revision)
+        """
+        operation_ref = getattr(node, "operation_ref", None)
+        if operation_ref is not None:
+            alias = str(getattr(operation_ref, "alias", "") or "").strip()
+            binding_mode = str(getattr(operation_ref, "binding_mode", "alias_latest") or "alias_latest")
+            template_exposure_id = str(
+                getattr(operation_ref, "template_exposure_id", "") or ""
+            ).strip() or None
+            expected_revision = getattr(operation_ref, "template_exposure_revision", None)
+        else:
+            alias = str(getattr(node, "template_id", "") or "").strip()
+            binding_mode = "alias_latest"
+            template_exposure_id = None
+            expected_revision = None
+
+        if not alias:
+            raise ValueError(f"Operation node {node.id} missing template alias")
+
+        if binding_mode not in {"alias_latest", "pinned_exposure"}:
+            raise ValueError(
+                f"Operation node {node.id} has unsupported binding_mode '{binding_mode}'"
+            )
+
+        if binding_mode == "pinned_exposure":
+            if not template_exposure_id:
+                raise ValueError(
+                    f"Operation node {node.id} missing template_exposure_id for pinned_exposure binding"
+                )
+            if expected_revision is None:
+                raise ValueError(
+                    f"Operation node {node.id} missing template_exposure_revision for pinned_exposure binding"
+                )
+            return "pinned_exposure", alias, template_exposure_id, int(expected_revision)
+
+        return "alias_latest", alias, None, None
+
+    def _build_render_context(
+        self,
+        node: WorkflowNode,
+        context: Dict[str, Any],
+    ) -> tuple[Dict[str, Any], Optional[str]]:
+        """
+        Resolve render input context based on node.io mode.
+
+        - implicit_legacy: full workflow context (backward-compatible behavior)
+        - explicit_strict: only mapped values from io.input_mapping
+        """
+        io = getattr(node, "io", None)
+        io_mode = str(getattr(io, "mode", "implicit_legacy") or "implicit_legacy")
+        input_mapping = dict(getattr(io, "input_mapping", {}) or {})
+
+        if io_mode != "explicit_strict":
+            return context, None
+
+        mapped_context: Dict[str, Any] = {}
+        missing_source_paths: list[str] = []
+
+        for target_path, source_path in input_mapping.items():
+            try:
+                value = self._resolve_path(context, source_path)
+            except KeyError:
+                missing_source_paths.append(source_path)
+                continue
+            self._set_path(mapped_context, target_path, value)
+
+        if missing_source_paths:
+            unique_paths = sorted(set(missing_source_paths))
+            return {}, (
+                "OPERATION_INPUT_MAPPING_ERROR: missing source_path(s) for explicit_strict mode: "
+                + ", ".join(unique_paths)
+            )
+
+        return mapped_context, None
+
+    def _build_output_context_updates(
+        self,
+        node: WorkflowNode,
+        node_output: Any,
+    ) -> Dict[str, Any]:
+        """
+        Build dot-path context updates from io.output_mapping.
+
+        Missing source paths are ignored with warning to keep runtime stable for
+        optional backend response fields.
+        """
+        io = getattr(node, "io", None)
+        io_mode = str(getattr(io, "mode", "implicit_legacy") or "implicit_legacy")
+        output_mapping = dict(getattr(io, "output_mapping", {}) or {})
+
+        if io_mode != "explicit_strict" or not output_mapping:
+            return {}
+
+        source_payload: Dict[str, Any]
+        if isinstance(node_output, dict):
+            source_payload = node_output
+        else:
+            source_payload = {"result": node_output}
+
+        updates: Dict[str, Any] = {}
+        for target_path, source_path in output_mapping.items():
+            try:
+                updates[target_path] = self._resolve_path(source_payload, source_path)
+            except KeyError:
+                logger.warning(
+                    "Operation output mapping source path is missing; skipping mapping entry",
+                    extra={
+                        "node_id": node.id,
+                        "target_path": target_path,
+                        "source_path": source_path,
+                    },
+                )
+        return updates
+
+    @staticmethod
+    def _resolve_path(source: Dict[str, Any], path: str) -> Any:
+        """Resolve a dot-notation path from nested dict payload."""
+        current: Any = source
+        for segment in path.split("."):
+            if not isinstance(current, dict) or segment not in current:
+                raise KeyError(path)
+            current = current[segment]
+        return current
+
+    @staticmethod
+    def _set_path(target: Dict[str, Any], path: str, value: Any) -> None:
+        """Set value by dot-notation path in a nested dict."""
+        segments = path.split(".")
+        current: Dict[str, Any] = target
+        for segment in segments[:-1]:
+            next_value = current.get(segment)
+            if not isinstance(next_value, dict):
+                next_value = {}
+                current[segment] = next_value
+            current = next_value
+        current[segments[-1]] = value
+
     def _get_timeout(self, node: WorkflowNode) -> int:
         """Get timeout from node config or use default."""
         if node.config:
@@ -286,6 +485,19 @@ class OperationHandler(BaseNodeHandler):
             config_dict = node.config.model_dump() if hasattr(node.config, 'model_dump') else {}
             return config_dict.get('timeout_seconds', self.DEFAULT_TIMEOUT_SECONDS)
         return self.DEFAULT_TIMEOUT_SECONDS
+
+    @staticmethod
+    def _to_bool(value: object) -> bool:
+        if isinstance(value, bool):
+            return value
+        text = str(value or "").strip().lower()
+        return text in {"1", "true", "yes", "on"}
+
+    def _is_enforce_pinned_runtime_enabled(self, context: Dict[str, Any]) -> bool:
+        tenant_id_raw = context.get("tenant_id") or context.get("tenant")
+        tenant_id = str(tenant_id_raw or "").strip() or None
+        effective = get_effective_runtime_setting(WORKFLOW_BINDING_ENFORCE_PINNED_KEY, tenant_id)
+        return self._to_bool(effective.value)
 
     def _extract_target_databases(
         self,

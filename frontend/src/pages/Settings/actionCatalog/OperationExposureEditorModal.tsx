@@ -44,6 +44,16 @@ const getSchemaObject = (value: unknown): Record<string, unknown> | null => (
 
 type ParamsEditorMode = 'guided' | 'raw'
 type GuidedGroupKey = 'filled' | 'required' | 'optional'
+type PreviewFieldSource = 'manual' | 'derived'
+
+type TemplateExecutionPreview = {
+  aliasPreview: string
+  aliasSource: 'explicit' | 'generated'
+  operationType: string
+  executorPayload: Record<string, unknown>
+  sourceOfTruth: Array<{ field: string; value: string; source: PreviewFieldSource }>
+  paramsParseError: string | null
+}
 
 const isEmptyOrEmptyObjectParamsJson = (value: unknown): boolean => {
   const raw = typeof value === 'string' ? value.trim() : ''
@@ -63,12 +73,170 @@ const parseParamsJsonToObject = (
   return { ok: true, value: parsed }
 }
 
+const normalizeText = (value: unknown): string => (
+  typeof value === 'string' ? value.trim() : ''
+)
+
+const normalizeStringList = (value: unknown): string[] => (
+  Array.isArray(value)
+    ? value
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter(Boolean)
+    : []
+)
+
+const buildTemplateAliasPreview = (idValue: unknown, nameValue: unknown): { alias: string; source: 'explicit' | 'generated' } => {
+  const explicitAlias = normalizeText(idValue)
+  if (explicitAlias) {
+    return { alias: explicitAlias, source: 'explicit' }
+  }
+  const name = normalizeText(nameValue)
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  const fallback = slug ? `tpl-custom-${slug}` : 'tpl-custom-generated-on-save'
+  return { alias: fallback, source: 'generated' }
+}
+
+const buildTemplateExecutionPreview = (
+  values: Partial<ActionFormValues> | null | undefined
+): TemplateExecutionPreview => {
+  const source = values ?? {}
+  const executorRaw = isPlainObject(source.executor) ? source.executor as Record<string, unknown> : {}
+  const executorKindRaw = normalizeText(executorRaw.kind)
+  const executorKind: ExecutorKind = (
+    executorKindRaw === 'workflow' || executorKindRaw === 'designer_cli' || executorKindRaw === 'ibcmd_cli'
+      ? executorKindRaw
+      : 'ibcmd_cli'
+  )
+  const operationType = executorKind
+  const mode = executorRaw.mode === 'manual' ? 'manual' : 'guided'
+  const commandId = normalizeText(executorRaw.command_id)
+  const workflowId = normalizeText(executorRaw.workflow_id)
+  const additionalArgs = normalizeStringList(executorRaw.additional_args)
+  const stdin = typeof executorRaw.stdin === 'string' ? executorRaw.stdin : ''
+  const targetBindingExtensionNameParam = normalizeText(executorRaw.target_binding_extension_name_param)
+  const fixed = isPlainObject(executorRaw.fixed) ? executorRaw.fixed : undefined
+
+  const paramsParsed = parseParamsJsonToObject(executorRaw.params_json)
+  const paramsObject = paramsParsed.ok ? paramsParsed.value : {}
+
+  const templateData: Record<string, unknown> = {}
+  if (fixed) {
+    templateData.fixed = fixed
+  }
+  if (targetBindingExtensionNameParam) {
+    templateData.target_binding = { extension_name_param: targetBindingExtensionNameParam }
+  }
+
+  const executorPayload: Record<string, unknown> = {
+    kind: operationType,
+    operation_type: operationType,
+    target_entity: 'infobase',
+    template_data: templateData,
+  }
+
+  if (executorKind === 'workflow') {
+    templateData.kind = 'workflow'
+    templateData.workflow_id = workflowId
+    templateData.input_context = paramsObject
+    if (workflowId) {
+      executorPayload.workflow_id = workflowId
+    }
+  } else {
+    const driver = executorKind === 'designer_cli' ? 'cli' : 'ibcmd'
+    templateData.kind = executorKind
+    templateData.driver = driver
+    templateData.command_id = commandId
+    templateData.mode = mode
+    templateData.params = paramsObject
+    templateData.additional_args = additionalArgs
+    templateData.stdin = stdin
+
+    executorPayload.driver = driver
+    if (commandId) {
+      executorPayload.command_id = commandId
+    }
+    executorPayload.mode = mode
+    executorPayload.params = paramsObject
+    executorPayload.additional_args = additionalArgs
+    executorPayload.stdin = stdin
+  }
+
+  if (fixed) {
+    executorPayload.fixed = fixed
+  }
+  if (targetBindingExtensionNameParam) {
+    executorPayload.target_binding = { extension_name_param: targetBindingExtensionNameParam }
+  }
+
+  const aliasPreview = buildTemplateAliasPreview(source.id, source.name)
+  const sourceOfTruth: Array<{ field: string; value: string; source: PreviewFieldSource }> = [
+    {
+      field: 'OperationExposure.alias',
+      value: aliasPreview.alias,
+      source: aliasPreview.source === 'explicit' ? 'manual' : 'derived',
+    },
+    {
+      field: 'OperationDefinition.executor_kind',
+      value: executorKind,
+      source: 'manual',
+    },
+    {
+      field: 'OperationDefinition.executor_payload.operation_type',
+      value: operationType,
+      source: 'derived',
+    },
+    {
+      field: executorKind === 'workflow'
+        ? 'OperationDefinition.executor_payload.template_data.workflow_id'
+        : 'OperationDefinition.executor_payload.template_data.command_id',
+      value: executorKind === 'workflow' ? (workflowId || '—') : (commandId || '—'),
+      source: 'manual',
+    },
+    {
+      field: executorKind === 'workflow'
+        ? 'OperationDefinition.executor_payload.template_data.input_context'
+        : 'OperationDefinition.executor_payload.template_data.params',
+      value: JSON.stringify(paramsObject),
+      source: 'manual',
+    },
+  ]
+
+  return {
+    aliasPreview: aliasPreview.alias,
+    aliasSource: aliasPreview.source,
+    operationType,
+    executorPayload,
+    sourceOfTruth,
+    paramsParseError: paramsParsed.ok ? null : paramsParsed.error,
+  }
+}
+
+export type TemplateModalProvenance = {
+  alias?: string
+  templateExposureId?: string
+  templateExposureRevision?: number
+  definitionId?: string
+  status?: string
+}
+
+export type ModalValidationIssue = {
+  path: string
+  code?: string
+  message: string
+}
+
 export type OperationExposureEditorModalProps = {
   open: boolean
   title: string
   surface: 'action_catalog' | 'template'
   form: FormInstance<ActionFormValues>
   initialValues: ActionFormValues | null
+  templateProvenance?: TemplateModalProvenance | null
+  backendValidationErrors?: ModalValidationIssue[]
   onCancel: () => void
   onApply: () => void
   executorKindOptions?: ExecutorKind[]
@@ -80,6 +248,8 @@ export function OperationExposureEditorModal({
   surface,
   form,
   initialValues,
+  templateProvenance,
+  backendValidationErrors,
   onCancel,
   onApply,
   executorKindOptions,
@@ -522,6 +692,77 @@ export function OperationExposureEditorModal({
         preserve={false}
         initialValues={initialValues ?? undefined}
       >
+        {isTemplateSurface && (
+          <Form.Item noStyle shouldUpdate>
+            {(formInstance) => {
+              const values = formInstance.getFieldsValue(true) as Partial<ActionFormValues>
+              const preview = buildTemplateExecutionPreview(values)
+              const exposureAlias = templateProvenance?.alias || preview.aliasPreview
+              const exposureId = normalizeText(templateProvenance?.templateExposureId) || 'будет назначен при сохранении'
+              const definitionId = normalizeText(templateProvenance?.definitionId) || 'будет определён при сохранении'
+              const exposureRevision = (
+                typeof templateProvenance?.templateExposureRevision === 'number'
+                  ? String(templateProvenance.templateExposureRevision)
+                  : '1 (после первого сохранения)'
+              )
+              const publishStatus = normalizeText(templateProvenance?.status) || 'draft/published определяется при сохранении'
+
+              return (
+                <Space direction="vertical" style={{ width: '100%', marginBottom: 12 }}>
+                  <Alert
+                    type="info"
+                    showIcon
+                    data-testid="operation-exposure-editor-guided-flow"
+                    message="Guided flow"
+                    description="Шаги: Basics → Executor → Params → Safety & Fixed → Preview. Runtime исполняет OperationDefinition, привязанный через OperationExposure."
+                  />
+                  <div data-testid="operation-exposure-editor-source-of-truth">
+                    <Descriptions
+                      title="Source of truth (binding provenance)"
+                      size="small"
+                      bordered
+                      column={1}
+                    >
+                      <Descriptions.Item label="OperationExposure.alias">{exposureAlias}</Descriptions.Item>
+                      <Descriptions.Item label="template_exposure_id">{exposureId}</Descriptions.Item>
+                      <Descriptions.Item label="template_exposure_revision">{exposureRevision}</Descriptions.Item>
+                      <Descriptions.Item label="OperationDefinition.id">{definitionId}</Descriptions.Item>
+                      <Descriptions.Item label="publish status">{publishStatus}</Descriptions.Item>
+                      <Descriptions.Item label="operation_type">{preview.operationType}</Descriptions.Item>
+                    </Descriptions>
+                  </div>
+                  {preview.paramsParseError && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message="Preview ограничен"
+                      description={`params_json не разобран: ${preview.paramsParseError}. Исправьте JSON, чтобы preview был полным.`}
+                    />
+                  )}
+                </Space>
+              )
+            }}
+          </Form.Item>
+        )}
+
+        {Array.isArray(backendValidationErrors) && backendValidationErrors.length > 0 && (
+          <Alert
+            type="error"
+            showIcon
+            data-testid="operation-exposure-editor-backend-validation-errors"
+            message="Сохранение/публикация заблокированы проверками backend"
+            description={(
+              <ul style={{ margin: 0, paddingInlineStart: 18 }}>
+                {backendValidationErrors.map((item, idx) => (
+                  <li key={`${item.path || 'global'}-${idx}`}>
+                    <Text code>{item.path || 'global'}</Text>: {item.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+            style={{ marginBottom: 12 }}
+          />
+        )}
         <Tabs
           activeKey={activeTabKey}
           onChange={(next) => setActiveTabKey(next)}
@@ -1134,14 +1375,60 @@ export function OperationExposureEditorModal({
               forceRender: true,
               children: (
                 <Form.Item noStyle shouldUpdate>
-                  {(formInstance) => (
-                    <Input.TextArea
-                      rows={10}
-                      value={JSON.stringify(formInstance.getFieldsValue(true), null, 2)}
-                      readOnly
-                      data-testid="action-catalog-editor-preview-json"
-                    />
-                  )}
+                  {(formInstance) => {
+                    const values = formInstance.getFieldsValue(true) as Partial<ActionFormValues>
+                    const preview = buildTemplateExecutionPreview(values)
+                    return (
+                      <Space direction="vertical" style={{ width: '100%' }}>
+                        {isTemplateSurface && (
+                          <>
+                            <Alert
+                              type="info"
+                              showIcon
+                              data-testid="operation-exposure-editor-execution-preview-block"
+                              message="Что будет выполнено"
+                              description="Ниже показан preview итогового OperationDefinition.executor_payload, который получит runtime."
+                            />
+                            <Input.TextArea
+                              rows={10}
+                              value={JSON.stringify(preview.executorPayload, null, 2)}
+                              readOnly
+                              data-testid="operation-exposure-editor-execution-preview-json"
+                            />
+                            <div data-testid="operation-exposure-editor-field-origins">
+                              <Descriptions
+                                size="small"
+                                bordered
+                                column={1}
+                                title="Field origins"
+                              >
+                                {preview.sourceOfTruth.map((item) => (
+                                  <Descriptions.Item key={item.field} label={item.field}>
+                                    <Space direction="vertical" size={2}>
+                                      <Text code>{item.value}</Text>
+                                      <Text type="secondary">
+                                        source: {item.source === 'manual' ? 'manual input' : 'derived value'}
+                                      </Text>
+                                    </Space>
+                                  </Descriptions.Item>
+                                ))}
+                                <Descriptions.Item label="Alias source">
+                                  {preview.aliasSource === 'explicit' ? 'from form.id' : 'generated from form.name'}
+                                </Descriptions.Item>
+                              </Descriptions>
+                            </div>
+                          </>
+                        )}
+                        <Text strong>Raw form payload</Text>
+                        <Input.TextArea
+                          rows={10}
+                          value={JSON.stringify(formInstance.getFieldsValue(true), null, 2)}
+                          readOnly
+                          data-testid="action-catalog-editor-preview-json"
+                        />
+                      </Space>
+                    )
+                  }}
                 </Form.Item>
               ),
             },

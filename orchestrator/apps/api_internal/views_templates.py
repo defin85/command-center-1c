@@ -9,6 +9,53 @@ from .serializers import TemplateRenderRequestSerializer
 from .views_common import exclude_schema, logger
 
 
+def _template_lookup_query_params(request):
+    template_id = str(request.query_params.get("template_id") or "").strip()
+    template_exposure_id = str(request.query_params.get("template_exposure_id") or "").strip()
+    raw_template_exposure_revision = str(request.query_params.get("template_exposure_revision") or "").strip()
+    template_exposure_revision = None
+    if template_id:
+        template_id = template_id.strip()
+    if template_exposure_id:
+        template_exposure_id = template_exposure_id.strip()
+    if raw_template_exposure_revision:
+        try:
+            parsed_revision = int(raw_template_exposure_revision)
+        except (TypeError, ValueError):
+            return None, None, None, Response(
+                {
+                    "success": False,
+                    "error": {
+                        "template_exposure_revision": "Must be a positive integer.",
+                    },
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if parsed_revision < 1:
+            return None, None, None, Response(
+                {
+                    "success": False,
+                    "error": {
+                        "template_exposure_revision": "Must be greater than or equal to 1.",
+                    },
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        template_exposure_revision = parsed_revision
+    if not template_id and not template_exposure_id:
+        return None, None, None, Response(
+            {
+                "success": False,
+                "error": {
+                    "template_id": "This query parameter is required when template_exposure_id is absent",
+                    "template_exposure_id": "This query parameter is required when template_id is absent",
+                },
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return template_id or None, template_exposure_id or None, template_exposure_revision, None
+
+
 @exclude_schema
 @api_view(["GET"])
 @permission_classes([IsInternalService])
@@ -20,7 +67,9 @@ def get_template(request):
     Returns template definition including template_data for rendering.
 
     Query params:
-        template_id: str (required)
+        template_id: str (optional; required when template_exposure_id absent)
+        template_exposure_id: uuid (optional; required when template_id absent)
+        template_exposure_revision: int>=1 (optional; drift check)
 
     Response:
     {
@@ -36,16 +85,15 @@ def get_template(request):
         }
     }
     """
-    template_id = request.query_params.get("template_id")
-    if not template_id:
-        return Response(
-            {"success": False, "error": {"template_id": "This query parameter is required"}},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    template_id, template_exposure_id, template_exposure_revision, error_response = _template_lookup_query_params(request)
+    if error_response is not None:
+        return error_response
 
     try:
         template = resolve_runtime_template(
             template_alias=template_id,
+            template_exposure_id=template_exposure_id,
+            expected_exposure_revision=template_exposure_revision,
             require_active=False,
             require_published=False,
         )
@@ -57,12 +105,13 @@ def get_template(request):
         )
         return Response({"success": False, "error": f"{exc.code}: {exc.message}"}, status=status_code)
 
+    template_ref = template_exposure_id or template_id or template.id
     if not template.is_active:
-        logger.warning(f"Template {template_id} is inactive")
+        logger.warning(f"Template {template_ref} is inactive")
     if template.exposure_status != "published":
         logger.warning(
             "Template %s is not published (status=%s)",
-            template_id,
+            template_ref,
             template.exposure_status,
         )
 
@@ -76,7 +125,7 @@ def get_template(request):
         "is_active": template.is_active,
     }
 
-    logger.debug(f"Template fetched: {template_id}")
+    logger.debug(f"Template fetched: {template_ref}")
 
     return Response({"success": True, "template": template_data}, status=status.HTTP_200_OK)
 
@@ -92,7 +141,9 @@ def render_template(request):
     Called by Go Worker when pongo2 encounters incompatible syntax.
 
     Query params:
-        template_id: str (required)
+        template_id: str (optional; required when template_exposure_id absent)
+        template_exposure_id: uuid (optional; required when template_id absent)
+        template_exposure_revision: int>=1 (optional; drift check)
 
     Request body:
     {
@@ -111,12 +162,9 @@ def render_template(request):
     """
     from jinja2 import TemplateSyntaxError
 
-    template_id = request.query_params.get("template_id")
-    if not template_id:
-        return Response(
-            {"success": False, "error": {"template_id": "This query parameter is required"}},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    template_id, template_exposure_id, template_exposure_revision, error_response = _template_lookup_query_params(request)
+    if error_response is not None:
+        return error_response
 
     # Validate request
     req_serializer = TemplateRenderRequestSerializer(data=request.data)
@@ -129,6 +177,8 @@ def render_template(request):
     try:
         template = resolve_runtime_template(
             template_alias=template_id,
+            template_exposure_id=template_exposure_id,
+            expected_exposure_revision=template_exposure_revision,
             require_active=False,
             require_published=False,
         )
@@ -144,19 +194,22 @@ def render_template(request):
     try:
         rendered = _render_template_data(template.template_data, context)
 
-        logger.debug(f"Template rendered: {template_id}")
+        template_ref = template_exposure_id or template_id or template.id
+        logger.debug(f"Template rendered: {template_ref}")
 
         return Response({"success": True, "rendered": rendered, "error": ""}, status=status.HTTP_200_OK)
 
     except TemplateSyntaxError as e:
-        logger.error(f"Template syntax error in {template_id}: {e}")
+        template_ref = template_exposure_id or template_id or template.id
+        logger.error(f"Template syntax error in {template_ref}: {e}")
         return Response(
             {"success": False, "rendered": {}, "error": f"Template syntax error: {str(e)}"},
             status=status.HTTP_200_OK,
         )
 
     except Exception as e:
-        logger.error(f"Template render error in {template_id}: {e}")
+        template_ref = template_exposure_id or template_id or template.id
+        logger.error(f"Template render error in {template_ref}: {e}")
         return Response({"success": False, "rendered": {}, "error": f"Render error: {str(e)}"}, status=status.HTTP_200_OK)
 
 

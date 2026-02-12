@@ -152,6 +152,28 @@ class OperationRefSerializer(serializers.Serializer):
         return attrs
 
 
+class OperationIOSerializer(serializers.Serializer):
+    """Serializer for OperationIO Pydantic model."""
+
+    mode = serializers.ChoiceField(
+        choices=["implicit_legacy", "explicit_strict"],
+        default="implicit_legacy",
+        help_text="Data-flow mode for operation node",
+    )
+    input_mapping = serializers.DictField(
+        child=serializers.CharField(),
+        required=False,
+        default=dict,
+        help_text="Input mapping: target_path -> source_path",
+    )
+    output_mapping = serializers.DictField(
+        child=serializers.CharField(),
+        required=False,
+        default=dict,
+        help_text="Output mapping: target_path -> source_path",
+    )
+
+
 class WorkflowNodeSerializer(serializers.Serializer):
     """Serializer for WorkflowNode Pydantic model."""
 
@@ -175,6 +197,11 @@ class WorkflowNodeSerializer(serializers.Serializer):
         required=False,
         allow_null=True,
         help_text="OperationExposure binding for Operation nodes",
+    )
+    io = OperationIOSerializer(
+        required=False,
+        allow_null=True,
+        help_text="Operation node data-flow contract",
     )
     config = NodeConfigSerializer(required=False, default=dict)
     parallel_config = ParallelConfigSerializer(required=False, allow_null=True)

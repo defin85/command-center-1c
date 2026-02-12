@@ -149,12 +149,14 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 		return result, nil
 	}
 
-	if msg.Metadata.TemplateID != "" {
+	if msg.Metadata.TemplateID != "" || msg.Metadata.TemplateExposureID != "" {
 		renderStart := time.Now()
-		d.timeline.Record(ctx, msg.OperationID, "template.render.started", events.MergeMetadata(map[string]interface{}{
-			"database_id": databaseID,
-			"template_id": msg.Metadata.TemplateID,
-		}, workflowMetadata))
+		d.timeline.Record(
+			ctx,
+			msg.OperationID,
+			"template.render.started",
+			events.MergeMetadata(d.templateMetadata(msg, databaseID), workflowMetadata),
+		)
 		renderedPayload, err := d.renderTemplatePayload(ctx, msg, databaseID, creds)
 		if err != nil {
 			result := models.DatabaseResultV2{
@@ -163,11 +165,9 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 				Error:      fmt.Sprintf("template rendering failed: %v", err),
 				ErrorCode:  "TEMPLATE_ERROR",
 			}
-			d.timeline.Record(ctx, msg.OperationID, "template.render.failed", events.MergeMetadata(map[string]interface{}{
-				"database_id": databaseID,
-				"template_id": msg.Metadata.TemplateID,
-				"error":       result.Error,
-			}, workflowMetadata))
+			templateMeta := d.templateMetadata(msg, databaseID)
+			templateMeta["error"] = result.Error
+			d.timeline.Record(ctx, msg.OperationID, "template.render.failed", events.MergeMetadata(templateMeta, workflowMetadata))
 			d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
 				"database_id": databaseID,
 				"error":       result.Error,
@@ -175,11 +175,9 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 			return result, nil
 		}
 		msg.Payload.Data = renderedPayload
-		d.timeline.Record(ctx, msg.OperationID, "template.render.completed", events.MergeMetadata(map[string]interface{}{
-			"database_id": databaseID,
-			"template_id": msg.Metadata.TemplateID,
-			"duration_ms": time.Since(renderStart).Milliseconds(),
-		}, workflowMetadata))
+		templateMeta := d.templateMetadata(msg, databaseID)
+		templateMeta["duration_ms"] = time.Since(renderStart).Milliseconds()
+		d.timeline.Record(ctx, msg.OperationID, "template.render.completed", events.MergeMetadata(templateMeta, workflowMetadata))
 	}
 
 	var result models.DatabaseResultV2
@@ -421,7 +419,13 @@ func toODataCreds(creds *credentials.DatabaseCredentials) sharedodata.ODataCrede
 }
 
 func (d *Driver) renderTemplatePayload(ctx context.Context, msg *models.OperationMessage, databaseID string, creds *credentials.DatabaseCredentials) (map[string]interface{}, error) {
-	templateID := msg.Metadata.TemplateID
+	templateID := strings.TrimSpace(msg.Metadata.TemplateID)
+	templateExposureID := strings.TrimSpace(msg.Metadata.TemplateExposureID)
+	templateExposureRevision := msg.Metadata.TemplateExposureRevision
+	templateRef := templateExposureID
+	if templateRef == "" {
+		templateRef = templateID
+	}
 	start := time.Now()
 
 	if d.templateEngine == nil {
@@ -433,10 +437,15 @@ func (d *Driver) renderTemplatePayload(ctx context.Context, msg *models.Operatio
 		return nil, fmt.Errorf("template client not configured")
 	}
 
-	tmpl, err := d.templateClient.GetTemplate(ctx, templateID)
+	tmpl, err := d.templateClient.GetTemplate(
+		ctx,
+		templateID,
+		templateExposureID,
+		templateExposureRevision,
+	)
 	if err != nil {
 		metrics.RecordTemplateRenderError("go", time.Since(start).Seconds(), "network")
-		return nil, fmt.Errorf("failed to fetch template %s: %w", templateID, err)
+		return nil, fmt.Errorf("failed to fetch template %s: %w", templateRef, err)
 	}
 
 	templateContext := d.buildTemplateContext(msg, databaseID, creds)
@@ -448,14 +457,23 @@ func (d *Driver) renderTemplatePayload(ctx context.Context, msg *models.Operatio
 		defer cancel()
 	}
 
-	rendered, err := d.templateEngine.RenderWithFallback(renderCtx, templateID, tmpl.TemplateData, templateContext)
+	rendered, err := d.templateEngine.RenderWithFallback(
+		renderCtx,
+		templateID,
+		templateExposureID,
+		templateExposureRevision,
+		tmpl.TemplateData,
+		templateContext,
+	)
 	duration := time.Since(start).Seconds()
 
 	if err != nil {
 		errorType := categorizeTemplateError(err)
 		metrics.RecordTemplateRenderError("go", duration, errorType)
 		d.logger.Error("template rendering failed",
+			zap.String("template_ref", templateRef),
 			zap.String("template_id", templateID),
+			zap.String("template_exposure_id", templateExposureID),
 			zap.String("database_id", databaseID),
 			zap.String("error_type", errorType),
 			zap.Error(err),
@@ -465,7 +483,9 @@ func (d *Driver) renderTemplatePayload(ctx context.Context, msg *models.Operatio
 
 	metrics.RecordTemplateRenderSuccess("go", duration)
 	d.logger.Info("template rendered",
+		zap.String("template_ref", templateRef),
 		zap.String("template_id", templateID),
+		zap.String("template_exposure_id", templateExposureID),
 		zap.String("database_id", databaseID),
 		zap.Float64("duration_seconds", duration),
 	)
@@ -473,11 +493,30 @@ func (d *Driver) renderTemplatePayload(ctx context.Context, msg *models.Operatio
 	return rendered, nil
 }
 
+func (d *Driver) templateMetadata(msg *models.OperationMessage, databaseID string) map[string]interface{} {
+	meta := map[string]interface{}{
+		"database_id": databaseID,
+		"template_id": msg.Metadata.TemplateID,
+	}
+	if msg.Metadata.TemplateExposureID != "" {
+		meta["template_exposure_id"] = msg.Metadata.TemplateExposureID
+	}
+	if msg.Metadata.TemplateExposureRevision > 0 {
+		meta["template_exposure_revision"] = msg.Metadata.TemplateExposureRevision
+	}
+	return meta
+}
+
 func (d *Driver) buildTemplateContext(msg *models.OperationMessage, databaseID string, creds *credentials.DatabaseCredentials) map[string]interface{} {
+	templateContextID := msg.Metadata.TemplateID
+	if templateContextID == "" {
+		templateContextID = msg.Metadata.TemplateExposureID
+	}
+
 	builder := template.NewContextBuilder().
 		WithSystemVars().
 		WithOperationID(msg.OperationID).
-		WithTemplateID(msg.Metadata.TemplateID)
+		WithTemplateID(templateContextID)
 
 	dbContext := map[string]interface{}{
 		"id":        databaseID,

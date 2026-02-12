@@ -376,8 +376,23 @@ paths:
       parameters:
         - name: template_id
           in: query
-          required: true
+          required: false
           schema: {type: string}
+          description: Alias template exposure (required when template_exposure_id is absent)
+        - name: template_exposure_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: UUID template exposure (required when template_id is absent)
+        - name: template_exposure_revision
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: Optional pinned exposure revision for drift-check fail-closed semantics
       responses:
         '200':
           description: Шаблон получен
@@ -398,8 +413,23 @@ paths:
       parameters:
         - name: template_id
           in: query
-          required: true
+          required: false
           schema: {type: string}
+          description: Alias template exposure (required when template_exposure_id is absent)
+        - name: template_exposure_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: UUID template exposure (required when template_id is absent)
+        - name: template_exposure_revision
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: Optional pinned exposure revision for drift-check fail-closed semantics
       requestBody:
         required: true
         content:

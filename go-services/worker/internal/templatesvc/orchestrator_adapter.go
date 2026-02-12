@@ -17,8 +17,13 @@ func NewOrchestratorTemplateClient(client *orchestrator.Client) *OrchestratorTem
 }
 
 // GetTemplate fetches template from Orchestrator and converts to TemplateData.
-func (a *OrchestratorTemplateClient) GetTemplate(ctx context.Context, templateID string) (*TemplateData, error) {
-	tmpl, err := a.client.GetTemplate(ctx, templateID)
+func (a *OrchestratorTemplateClient) GetTemplate(
+	ctx context.Context,
+	templateID string,
+	templateExposureID string,
+	templateExposureRevision int,
+) (*TemplateData, error) {
+	tmpl, err := a.client.GetTemplate(ctx, templateID, templateExposureID, templateExposureRevision)
 	if err != nil {
 		return nil, err
 	}

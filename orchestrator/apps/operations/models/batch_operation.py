@@ -211,3 +211,14 @@ class BatchOperation(models.Model):
         metadata = self.metadata if isinstance(self.metadata, dict) else {}
         value = str(metadata.get("template_exposure_id") or "").strip()
         return value or None
+
+    @property
+    def template_exposure_revision(self) -> Optional[int]:
+        """Compatibility accessor for template exposure revision stored in metadata."""
+        metadata = self.metadata if isinstance(self.metadata, dict) else {}
+        raw = metadata.get("template_exposure_revision")
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return None
+        return value if value >= 1 else None

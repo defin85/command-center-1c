@@ -127,6 +127,44 @@ def test_sync_from_registry_updates_existing_exposure(staff_client, isolated_reg
 
 
 @pytest.mark.django_db
+def test_sync_from_registry_rejects_invalid_runtime_contract(staff_client, isolated_registry, monkeypatch):
+    register_test_operation(isolated_registry, op_id="test_valid_sync", name="Valid op")
+
+    monkeypatch.setattr(
+        isolated_registry,
+        "get_for_template_sync",
+        lambda: [
+            {
+                "id": "tpl-invalid-sync",
+                "name": "Invalid sync template",
+                "description": "invalid payload",
+                "operation_type": "unknown_sync_operation",
+                "target_entity": "infobase",
+                "template_data": "not-an-object",
+                "is_active": True,
+            }
+        ],
+    )
+
+    resp = staff_client.post("/api/v2/templates/sync-from-registry/", {}, format="json")
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "VALIDATION_ERROR"
+    detail = payload["error"]["details"][0]
+    assert detail["template_id"] == "tpl-invalid-sync"
+    codes = {item["code"] for item in detail["errors"]}
+    assert "UNSUPPORTED_OPERATION_TYPE" in codes
+    assert "INVALID_TYPE" in codes
+
+    assert not OperationExposure.objects.filter(
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias="tpl-invalid-sync",
+        tenant__isnull=True,
+    ).exists()
+
+
+@pytest.mark.django_db
 def test_list_templates_with_default_sort_returns_200(staff_client, isolated_registry):
     register_test_operation(isolated_registry, op_id="test_op_list", name="List Name")
     sync_resp = staff_client.post("/api/v2/templates/sync-from-registry/", {"dry_run": False}, format="json")

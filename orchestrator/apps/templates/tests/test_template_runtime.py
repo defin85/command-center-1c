@@ -12,6 +12,7 @@ def _create_template_exposure(
     operation_type: str = "query",
     target_entity: str = "db",
     template_data: object = None,
+    contract_version: int = 1,
     is_active: bool = True,
     status_value: str = OperationExposure.STATUS_PUBLISHED,
 ) -> OperationExposure:
@@ -25,7 +26,7 @@ def _create_template_exposure(
             "target_entity": target_entity,
             "template_data": template_data,
         },
-        contract_version=1,
+        contract_version=contract_version,
         fingerprint=f"fp-{template_id}",
         status=OperationDefinition.STATUS_ACTIVE,
     )
@@ -111,3 +112,53 @@ def test_resolve_runtime_template_success():
     assert runtime.template_data == {"command": "list"}
     assert runtime.exposure_id == str(exposure.id)
     assert runtime.exposure_status == OperationExposure.STATUS_PUBLISHED
+    assert runtime.exposure_revision == 1
+
+
+@pytest.mark.django_db
+def test_resolve_runtime_template_success_by_exposure_id():
+    exposure = _create_template_exposure(
+        template_id="tpl-by-id",
+        operation_type="designer_cli",
+        target_entity="Infobase",
+        template_data={"command": "info"},
+        contract_version=3,
+    )
+
+    runtime = resolve_runtime_template(template_exposure_id=str(exposure.id))
+
+    assert runtime.id == "tpl-by-id"
+    assert runtime.exposure_id == str(exposure.id)
+    assert runtime.exposure_revision == 3
+
+
+@pytest.mark.django_db
+def test_resolve_runtime_template_fail_closed_drift_revision_mismatch():
+    exposure = _create_template_exposure(
+        template_id="tpl-drift",
+        contract_version=5,
+    )
+
+    with pytest.raises(TemplateResolveError) as exc:
+        resolve_runtime_template(
+            template_exposure_id=str(exposure.id),
+            expected_exposure_revision=4,
+        )
+
+    assert exc.value.code == "TEMPLATE_DRIFT"
+
+
+@pytest.mark.django_db
+def test_resolve_runtime_template_fail_closed_alias_exposure_mismatch():
+    exposure = _create_template_exposure(
+        template_id="tpl-match",
+        contract_version=2,
+    )
+
+    with pytest.raises(TemplateResolveError) as exc:
+        resolve_runtime_template(
+            template_alias="tpl-other",
+            template_exposure_id=str(exposure.id),
+        )
+
+    assert exc.value.code == "TEMPLATE_DRIFT"

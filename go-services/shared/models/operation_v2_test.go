@@ -144,8 +144,11 @@ func TestOperationMessage_JSONSerialization(t *testing.T) {
 			},
 		},
 		Metadata: MessageMetadata{
-			CreatedBy: "user-123",
-			CreatedAt: time.Now(),
+			CreatedBy:                "user-123",
+			CreatedAt:                time.Now(),
+			TemplateID:               "tpl-users-create",
+			TemplateExposureID:       "550e8400-e29b-41d4-a716-446655440000",
+			TemplateExposureRevision: 3,
 		},
 	}
 
@@ -163,6 +166,20 @@ func TestOperationMessage_JSONSerialization(t *testing.T) {
 
 	if decoded.OperationID != msg.OperationID {
 		t.Errorf("OperationID mismatch: got %s, want %s", decoded.OperationID, msg.OperationID)
+	}
+	if decoded.Metadata.TemplateExposureID != msg.Metadata.TemplateExposureID {
+		t.Errorf(
+			"TemplateExposureID mismatch: got %s, want %s",
+			decoded.Metadata.TemplateExposureID,
+			msg.Metadata.TemplateExposureID,
+		)
+	}
+	if decoded.Metadata.TemplateExposureRevision != msg.Metadata.TemplateExposureRevision {
+		t.Errorf(
+			"TemplateExposureRevision mismatch: got %d, want %d",
+			decoded.Metadata.TemplateExposureRevision,
+			msg.Metadata.TemplateExposureRevision,
+		)
 	}
 }
 

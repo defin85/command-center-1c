@@ -4,7 +4,12 @@ import "context"
 
 // TemplateClient fetches operation templates from Orchestrator.
 type TemplateClient interface {
-	GetTemplate(ctx context.Context, templateID string) (*TemplateData, error)
+	GetTemplate(
+		ctx context.Context,
+		templateID string,
+		templateExposureID string,
+		templateExposureRevision int,
+	) (*TemplateData, error)
 }
 
 // TemplateData represents template data from Orchestrator.

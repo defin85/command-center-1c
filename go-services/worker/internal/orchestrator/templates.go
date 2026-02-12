@@ -3,6 +3,8 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
 )
 
 const (
@@ -34,13 +36,51 @@ type TemplateRenderResponse struct {
 	Error    string                 `json:"error,omitempty"`
 }
 
-// GetTemplate fetches template by ID from Orchestrator.
-func (c *Client) GetTemplate(ctx context.Context, templateID string) (*Template, error) {
-	path := fmt.Sprintf("%s?template_id=%s", pathTemplateGet, templateID)
+func buildTemplateLookupPath(
+	basePath,
+	templateID,
+	templateExposureID string,
+	templateExposureRevision int,
+) (string, error) {
+	templateID = strings.TrimSpace(templateID)
+	templateExposureID = strings.TrimSpace(templateExposureID)
+	if templateID == "" && templateExposureID == "" {
+		return "", fmt.Errorf("template reference is required")
+	}
+
+	params := url.Values{}
+	if templateID != "" {
+		params.Set("template_id", templateID)
+	}
+	if templateExposureID != "" {
+		params.Set("template_exposure_id", templateExposureID)
+	}
+	if templateExposureRevision > 0 {
+		params.Set("template_exposure_revision", fmt.Sprintf("%d", templateExposureRevision))
+	}
+
+	return fmt.Sprintf("%s?%s", basePath, params.Encode()), nil
+}
+
+// GetTemplate fetches template by alias or exposure ID from Orchestrator.
+func (c *Client) GetTemplate(
+	ctx context.Context,
+	templateID,
+	templateExposureID string,
+	templateExposureRevision int,
+) (*Template, error) {
+	path, err := buildTemplateLookupPath(pathTemplateGet, templateID, templateExposureID, templateExposureRevision)
+	if err != nil {
+		return nil, err
+	}
 
 	var resp TemplateGetResponse
 	if err := c.get(ctx, path, &resp); err != nil {
-		return nil, fmt.Errorf("failed to get template %s: %w", templateID, err)
+		templateRef := templateExposureID
+		if templateRef == "" {
+			templateRef = templateID
+		}
+		return nil, fmt.Errorf("failed to get template %s: %w", templateRef, err)
 	}
 	return &Template{
 		ID:            resp.Template.ID,
@@ -55,8 +95,20 @@ func (c *Client) GetTemplate(ctx context.Context, templateID string) (*Template,
 
 // RenderTemplate renders template via Python fallback API.
 // This is called when Go pongo2 cannot handle the template syntax.
-func (c *Client) RenderTemplate(ctx context.Context, templateID string, templateContext map[string]interface{}) (*TemplateRenderResponse, error) {
-	result, err := c.RenderTemplateRaw(ctx, templateID, templateContext)
+func (c *Client) RenderTemplate(
+	ctx context.Context,
+	templateID,
+	templateExposureID string,
+	templateExposureRevision int,
+	templateContext map[string]interface{},
+) (*TemplateRenderResponse, error) {
+	result, err := c.RenderTemplateRaw(
+		ctx,
+		templateID,
+		templateExposureID,
+		templateExposureRevision,
+		templateContext,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -70,14 +122,32 @@ func (c *Client) RenderTemplate(ctx context.Context, templateID string, template
 
 // RenderTemplateRaw renders template and returns the raw response,
 // including error information even on failed renders.
-func (c *Client) RenderTemplateRaw(ctx context.Context, templateID string, templateContext map[string]interface{}) (*TemplateRenderResponse, error) {
-	path := fmt.Sprintf("%s?template_id=%s", pathTemplateRender, templateID)
+func (c *Client) RenderTemplateRaw(
+	ctx context.Context,
+	templateID,
+	templateExposureID string,
+	templateExposureRevision int,
+	templateContext map[string]interface{},
+) (*TemplateRenderResponse, error) {
+	path, err := buildTemplateLookupPath(
+		pathTemplateRender,
+		templateID,
+		templateExposureID,
+		templateExposureRevision,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	reqBody := TemplateRenderRequest{Context: templateContext}
 
 	var resp TemplateRenderResponse
 	if err := c.post(ctx, path, reqBody, &resp); err != nil {
-		return nil, fmt.Errorf("failed to render template %s: %w", templateID, err)
+		templateRef := templateExposureID
+		if templateRef == "" {
+			templateRef = templateID
+		}
+		return nil, fmt.Errorf("failed to render template %s: %w", templateRef, err)
 	}
 	return &resp, nil
 }
@@ -94,8 +164,20 @@ func NewFallbackRenderer(client *Client) *FallbackRenderer {
 }
 
 // RenderTemplate implements template.FallbackClient interface.
-func (f *FallbackRenderer) RenderTemplate(ctx context.Context, templateID string, templateContext map[string]interface{}) (map[string]interface{}, error) {
-	resp, err := f.client.RenderTemplate(ctx, templateID, templateContext)
+func (f *FallbackRenderer) RenderTemplate(
+	ctx context.Context,
+	templateID string,
+	templateExposureID string,
+	templateExposureRevision int,
+	templateContext map[string]interface{},
+) (map[string]interface{}, error) {
+	resp, err := f.client.RenderTemplate(
+		ctx,
+		templateID,
+		templateExposureID,
+		templateExposureRevision,
+		templateContext,
+	)
 	if err != nil {
 		return nil, err
 	}

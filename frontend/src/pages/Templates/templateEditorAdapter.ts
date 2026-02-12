@@ -98,7 +98,7 @@ export const buildTemplateEditorValues = (template: OperationTemplate | null): A
 
   const templateData = isPlainObject(template.template_data) ? template.template_data : {}
   const capabilityConfig = isPlainObject(template.capability_config) ? template.capability_config : {}
-  const executorKind = normalizeExecutorKind(template.operation_type || templateData.kind)
+  const executorKind = normalizeExecutorKind(template.executor_kind || template.operation_type || templateData.kind)
   const commandConfig = templateDataToDriverCommandConfig(templateData)
   const commandId = resolveCommandIdFromTemplateData(templateData)
   const workflowId = resolveWorkflowIdFromTemplateData(templateData)

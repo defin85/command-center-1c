@@ -4,7 +4,8 @@ Pydantic schemas used by the Workflow Engine models.
 These schemas are used for JSON validation via django-pydantic-field.
 """
 
-from typing import Dict, List, Optional
+import re
+from typing import ClassVar, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -167,6 +168,104 @@ class OperationRef(BaseModel):
     )
 
 
+class OperationIO(BaseModel):
+    """Explicit data-flow contract for operation nodes."""
+
+    mode: str = Field(
+        default="implicit_legacy",
+        pattern="^(implicit_legacy|explicit_strict)$",
+        description="Data-flow mode: implicit_legacy or explicit_strict",
+    )
+    input_mapping: Dict[str, str] = Field(
+        default_factory=dict,
+        description="input mapping: target_path -> source_path",
+    )
+    output_mapping: Dict[str, str] = Field(
+        default_factory=dict,
+        description="output mapping: target_path -> source_path",
+    )
+
+    _PATH_SEGMENT_RE: ClassVar[re.Pattern[str]] = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+    _RESERVED_TARGET_ROOTS: ClassVar[set[str]] = {"nodes"}
+    _RESERVED_TARGET_PREFIXES: ClassVar[tuple[str, ...]] = ("_", "node_")
+
+    @classmethod
+    def _normalize_mapping_path(cls, path: str, *, field_name: str) -> str:
+        if not isinstance(path, str):
+            raise ValueError(f"{field_name} must be a string path")
+
+        normalized = path.strip()
+        if not normalized:
+            raise ValueError(f"{field_name} must not be empty")
+        if normalized.startswith(".") or normalized.endswith(".") or ".." in normalized:
+            raise ValueError(
+                f"{field_name} must use dot-notation without empty segments: '{path}'"
+            )
+
+        segments = normalized.split(".")
+        for segment in segments:
+            if not cls._PATH_SEGMENT_RE.match(segment):
+                raise ValueError(
+                    f"{field_name} segment '{segment}' is invalid; use [A-Za-z_][A-Za-z0-9_]*"
+                )
+        return normalized
+
+    @classmethod
+    def _validate_mapping_object(
+        cls,
+        mapping: object,
+        *,
+        field_name: str,
+    ) -> Dict[str, str]:
+        if mapping is None:
+            return {}
+        if not isinstance(mapping, dict):
+            raise ValueError(f"{field_name} must be an object with string path mappings")
+
+        normalized_mapping: Dict[str, str] = {}
+        for raw_target_path, raw_source_path in mapping.items():
+            target_path = cls._normalize_mapping_path(
+                raw_target_path,
+                field_name=f"{field_name} target_path",
+            )
+            source_path = cls._normalize_mapping_path(
+                raw_source_path,
+                field_name=f"{field_name} source_path",
+            )
+
+            root_segment = target_path.split(".", 1)[0]
+            if (
+                root_segment in cls._RESERVED_TARGET_ROOTS
+                or any(root_segment.startswith(prefix) for prefix in cls._RESERVED_TARGET_PREFIXES)
+            ):
+                raise ValueError(
+                    f"{field_name} target_path '{target_path}' uses reserved root '{root_segment}'"
+                )
+
+            normalized_mapping[target_path] = source_path
+        return normalized_mapping
+
+    @field_validator("input_mapping", "output_mapping", mode="before")
+    @classmethod
+    def validate_mapping_types(cls, value: object, info) -> Dict[str, str]:
+        return cls._validate_mapping_object(value, field_name=info.field_name)
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "mode": "explicit_strict",
+                "input_mapping": {
+                    "params.database_id": "workflow.input.database.id",
+                    "params.extension_name": "node.prepare.output.extension_name",
+                },
+                "output_mapping": {
+                    "workflow.state.install_result": "result",
+                },
+            }
+        }
+    )
+
+
 class WorkflowNode(BaseModel):
     """Represents a single node in the workflow DAG."""
 
@@ -181,6 +280,10 @@ class WorkflowNode(BaseModel):
     operation_ref: Optional[OperationRef] = Field(
         default=None,
         description="OperationExposure binding for Operation nodes",
+    )
+    io: Optional[OperationIO] = Field(
+        default=None,
+        description="Operation node data-flow contract",
     )
     config: NodeConfig = Field(default_factory=NodeConfig, description="Node-specific config")
 
@@ -230,6 +333,8 @@ class WorkflowNode(BaseModel):
                     "template_id must match operation_ref.alias "
                     f"for operation nodes (node: {self.id})"
                 )
+            if self.io is None:
+                self.io = OperationIO()
         else:
             if self.template_id is not None:
                 raise ValueError(
@@ -239,6 +344,8 @@ class WorkflowNode(BaseModel):
                 raise ValueError(
                     f"operation_ref must be None for {self.type} nodes (node: {self.id})"
                 )
+            if self.io is not None:
+                raise ValueError(f"io must be None for {self.type} nodes (node: {self.id})")
         return self
 
     # Note: validate_config removed - config validation now handled by validate_node_configs
@@ -293,6 +400,11 @@ class WorkflowNode(BaseModel):
                 "operation_ref": {
                     "alias": "bulk_user_block_v1",
                     "binding_mode": "alias_latest",
+                },
+                "io": {
+                    "mode": "implicit_legacy",
+                    "input_mapping": {},
+                    "output_mapping": {},
                 },
                 "config": {"timeout_seconds": 300, "max_retries": 2},
             }

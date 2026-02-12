@@ -5,22 +5,44 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 )
 
 func TestGetTemplate(t *testing.T) {
 	tests := []struct {
-		name           string
-		templateID     string
-		serverResponse Template
-		serverStatus   int
-		wantErr        bool
-		errContains    string
+		name                     string
+		templateID               string
+		templateExposureID       string
+		templateExposureRevision int
+		serverResponse           Template
+		serverStatus             int
+		wantErr                  bool
+		errContains              string
 	}{
 		{
 			name:       "successful get template",
 			templateID: "create_order",
+			serverResponse: Template{
+				ID:            "create_order",
+				Name:          "Create Order Template",
+				OperationType: "create",
+				TargetEntity:  "Document.ЗаказКлиента",
+				TemplateData: map[string]interface{}{
+					"Номер":          "{{ order_number }}",
+					"Контрагент_Key": "{{ counterparty_guid }}",
+				},
+				Version:  1,
+				IsActive: true,
+			},
+			serverStatus: http.StatusOK,
+			wantErr:      false,
+		},
+		{
+			name:                     "successful get template by exposure id",
+			templateExposureID:       "550e8400-e29b-41d4-a716-446655440000",
+			templateExposureRevision: 2,
 			serverResponse: Template{
 				ID:            "create_order",
 				Name:          "Create Order Template",
@@ -54,6 +76,19 @@ func TestGetTemplate(t *testing.T) {
 				}
 				if r.Header.Get("X-Internal-Token") == "" {
 					t.Error("missing X-Internal-Token header")
+				}
+				if got := r.URL.Query().Get("template_id"); got != tt.templateID {
+					t.Errorf("expected template_id=%q, got %q", tt.templateID, got)
+				}
+				if got := r.URL.Query().Get("template_exposure_id"); got != tt.templateExposureID {
+					t.Errorf("expected template_exposure_id=%q, got %q", tt.templateExposureID, got)
+				}
+				wantRevision := ""
+				if tt.templateExposureRevision > 0 {
+					wantRevision = strconv.Itoa(tt.templateExposureRevision)
+				}
+				if got := r.URL.Query().Get("template_exposure_revision"); got != wantRevision {
+					t.Errorf("expected template_exposure_revision=%q, got %q", wantRevision, got)
 				}
 
 				w.Header().Set("Content-Type", "application/json")
@@ -97,7 +132,12 @@ func TestGetTemplate(t *testing.T) {
 				t.Fatalf("failed to create client: %v", err)
 			}
 
-			template, err := client.GetTemplate(context.Background(), tt.templateID)
+			template, err := client.GetTemplate(
+				context.Background(),
+				tt.templateID,
+				tt.templateExposureID,
+				tt.templateExposureRevision,
+			)
 
 			if tt.wantErr {
 				if err == nil {
@@ -127,17 +167,38 @@ func TestGetTemplate(t *testing.T) {
 
 func TestRenderTemplate(t *testing.T) {
 	tests := []struct {
-		name           string
-		templateID     string
-		context        map[string]interface{}
-		serverResponse TemplateRenderResponse
-		serverStatus   int
-		wantErr        bool
-		errContains    string
+		name                     string
+		templateID               string
+		templateExposureID       string
+		templateExposureRevision int
+		context                  map[string]interface{}
+		serverResponse           TemplateRenderResponse
+		serverStatus             int
+		wantErr                  bool
+		errContains              string
 	}{
 		{
 			name:       "successful render",
 			templateID: "create_order",
+			context: map[string]interface{}{
+				"order_number":      "12345",
+				"counterparty_guid": "550e8400-e29b-41d4-a716-446655440000",
+			},
+			serverResponse: TemplateRenderResponse{
+				Rendered: map[string]interface{}{
+					"Номер":          "12345",
+					"Контрагент_Key": "550e8400-e29b-41d4-a716-446655440000",
+				},
+				Success: true,
+				Error:   "",
+			},
+			serverStatus: http.StatusOK,
+			wantErr:      false,
+		},
+		{
+			name:                     "successful render by exposure id",
+			templateExposureID:       "550e8400-e29b-41d4-a716-446655440000",
+			templateExposureRevision: 4,
 			context: map[string]interface{}{
 				"order_number":      "12345",
 				"counterparty_guid": "550e8400-e29b-41d4-a716-446655440000",
@@ -189,6 +250,19 @@ func TestRenderTemplate(t *testing.T) {
 				if r.Header.Get("Content-Type") != "application/json" {
 					t.Errorf("expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
 				}
+				if got := r.URL.Query().Get("template_id"); got != tt.templateID {
+					t.Errorf("expected template_id=%q, got %q", tt.templateID, got)
+				}
+				if got := r.URL.Query().Get("template_exposure_id"); got != tt.templateExposureID {
+					t.Errorf("expected template_exposure_id=%q, got %q", tt.templateExposureID, got)
+				}
+				wantRevision := ""
+				if tt.templateExposureRevision > 0 {
+					wantRevision = strconv.Itoa(tt.templateExposureRevision)
+				}
+				if got := r.URL.Query().Get("template_exposure_revision"); got != wantRevision {
+					t.Errorf("expected template_exposure_revision=%q, got %q", wantRevision, got)
+				}
 
 				// Verify request body
 				var reqBody TemplateRenderRequest
@@ -225,7 +299,13 @@ func TestRenderTemplate(t *testing.T) {
 				t.Fatalf("failed to create client: %v", err)
 			}
 
-			resp, err := client.RenderTemplate(context.Background(), tt.templateID, tt.context)
+			resp, err := client.RenderTemplate(
+				context.Background(),
+				tt.templateID,
+				tt.templateExposureID,
+				tt.templateExposureRevision,
+				tt.context,
+			)
 
 			if tt.wantErr {
 				if err == nil {
@@ -277,7 +357,7 @@ func TestRenderTemplateRaw(t *testing.T) {
 	}
 
 	// RenderTemplateRaw should return the response even on failure
-	resp, err := client.RenderTemplateRaw(context.Background(), "template-id", map[string]interface{}{})
+	resp, err := client.RenderTemplateRaw(context.Background(), "template-id", "", 0, map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -287,6 +367,13 @@ func TestRenderTemplateRaw(t *testing.T) {
 	}
 	if resp.Error != "some error" {
 		t.Errorf("expected Error='some error', got %q", resp.Error)
+	}
+}
+
+func TestTemplateLookupPathRequiresReference(t *testing.T) {
+	_, err := buildTemplateLookupPath(pathTemplateGet, "", "", 0)
+	if err == nil {
+		t.Fatal("expected error when both template_id and template_exposure_id are empty")
 	}
 }
 
@@ -320,7 +407,7 @@ func TestFallbackRenderer(t *testing.T) {
 
 	fallback := NewFallbackRenderer(client)
 
-	rendered, err := fallback.RenderTemplate(context.Background(), "template-id", map[string]interface{}{})
+	rendered, err := fallback.RenderTemplate(context.Background(), "template-id", "", 0, map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

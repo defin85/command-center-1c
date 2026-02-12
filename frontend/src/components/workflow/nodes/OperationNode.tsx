@@ -102,6 +102,13 @@ const OperationNode = ({ data, selected }: NodeProps<OperationNodeData>) => {
             </div>
           )}
 
+          {data.io?.mode === 'explicit_strict' && (
+            <div className="node-field">
+              <span className="field-label">Data flow:</span>
+              <span className="field-value">explicit_strict</span>
+            </div>
+          )}
+
           {status === 'running' && (
             <div className="node-running">
               <Spin size="small" /> Executing…

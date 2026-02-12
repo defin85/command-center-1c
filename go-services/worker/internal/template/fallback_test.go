@@ -10,14 +10,26 @@ import (
 
 // mockFallbackClient is a mock implementation of FallbackClient for testing.
 type mockFallbackClient struct {
-	renderFunc func(ctx context.Context, templateID string, context map[string]interface{}) (map[string]interface{}, error)
-	callCount  int
+	renderFunc func(
+		ctx context.Context,
+		templateID string,
+		templateExposureID string,
+		templateExposureRevision int,
+		context map[string]interface{},
+	) (map[string]interface{}, error)
+	callCount int
 }
 
-func (m *mockFallbackClient) RenderTemplate(ctx context.Context, templateID string, context map[string]interface{}) (map[string]interface{}, error) {
+func (m *mockFallbackClient) RenderTemplate(
+	ctx context.Context,
+	templateID string,
+	templateExposureID string,
+	templateExposureRevision int,
+	context map[string]interface{},
+) (map[string]interface{}, error) {
 	m.callCount++
 	if m.renderFunc != nil {
-		return m.renderFunc(ctx, templateID, context)
+		return m.renderFunc(ctx, templateID, templateExposureID, templateExposureRevision, context)
 	}
 	return map[string]interface{}{"fallback": "result"}, nil
 }
@@ -36,7 +48,7 @@ func TestEngineWithFallback_RenderWithFallback_Success(t *testing.T) {
 		"value": "hello",
 	}
 
-	result, err := ewf.RenderWithFallback(context.Background(), "test-template", templateData, templateContext)
+	result, err := ewf.RenderWithFallback(context.Background(), "test-template", "", 0, templateData, templateContext)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -56,7 +68,22 @@ func TestEngineWithFallback_RenderWithFallback_FallbackOnCompatError(t *testing.
 	engine := NewEngine(logger)
 
 	fallback := &mockFallbackClient{
-		renderFunc: func(ctx context.Context, templateID string, context map[string]interface{}) (map[string]interface{}, error) {
+		renderFunc: func(
+			ctx context.Context,
+			templateID string,
+			templateExposureID string,
+			templateExposureRevision int,
+			context map[string]interface{},
+		) (map[string]interface{}, error) {
+			if templateID != "test-template" {
+				t.Fatalf("expected templateID=test-template, got %s", templateID)
+			}
+			if templateExposureID != "exp-1" {
+				t.Fatalf("expected templateExposureID=exp-1, got %s", templateExposureID)
+			}
+			if templateExposureRevision != 7 {
+				t.Fatalf("expected templateExposureRevision=7, got %d", templateExposureRevision)
+			}
 			return map[string]interface{}{
 				"field": "fallback-value",
 			}, nil
@@ -73,7 +100,7 @@ func TestEngineWithFallback_RenderWithFallback_FallbackOnCompatError(t *testing.
 		"value": "hello",
 	}
 
-	result, err := ewf.RenderWithFallback(context.Background(), "test-template", templateData, templateContext)
+	result, err := ewf.RenderWithFallback(context.Background(), "test-template", "exp-1", 7, templateData, templateContext)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -98,13 +125,13 @@ func TestEngineWithFallback_RenderWithFallback_NoFallbackOnOtherError(t *testing
 
 	// Template with syntax error (not a compatibility issue)
 	templateData := map[string]interface{}{
-		"field": "{{ value",  // Missing closing braces
+		"field": "{{ value", // Missing closing braces
 	}
 	templateContext := map[string]interface{}{
 		"value": "hello",
 	}
 
-	_, err := ewf.RenderWithFallback(context.Background(), "test-template", templateData, templateContext)
+	_, err := ewf.RenderWithFallback(context.Background(), "test-template", "", 0, templateData, templateContext)
 	if err == nil {
 		t.Fatal("expected error for syntax error")
 	}
@@ -134,7 +161,7 @@ func TestEngineWithFallback_NoFallbackConfigured(t *testing.T) {
 		"value": "hello",
 	}
 
-	_, err := ewf.RenderWithFallback(context.Background(), "test-template", templateData, templateContext)
+	_, err := ewf.RenderWithFallback(context.Background(), "test-template", "", 0, templateData, templateContext)
 	if err == nil {
 		t.Error("expected error when fallback not configured")
 	}
