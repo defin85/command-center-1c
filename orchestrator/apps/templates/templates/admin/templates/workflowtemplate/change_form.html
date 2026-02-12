@@ -4,7 +4,7 @@
 {% block extrahead %}
 {{ block.super }}
 <style>
-    /* Operation Templates Reference Panel Styles */
+    /* Operation Exposure Reference Panel Styles */
     .template-search-container {
         margin-bottom: 15px;
         display: flex;
@@ -125,7 +125,7 @@
 
 {% block field_sets %}
 {% for fieldset in adminform %}
-    {# Insert Operation Templates Reference Panel BEFORE DAG Structure #}
+    {# Insert Operation Exposure Reference Panel BEFORE DAG Structure #}
     {% if fieldset.name == 'DAG Structure' %}
         {% include "admin/templates/workflowtemplate/includes/operation_templates_panel.html" %}
     {% endif %}

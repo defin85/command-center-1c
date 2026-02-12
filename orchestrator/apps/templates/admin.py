@@ -58,18 +58,18 @@ class SafeJSONEditorWidget(JSONEditorWidget):
 
 
 @dataclass(frozen=True)
-class OperationTemplateReference:
+class OperationExposureReference:
     id: str
     name: str
     operation_type: str
     target_entity: str
 
 
-def _serialize_template_reference(exposure: OperationExposure) -> OperationTemplateReference:
+def _serialize_template_reference(exposure: OperationExposure) -> OperationExposureReference:
     payload = exposure.definition.executor_payload if isinstance(exposure.definition.executor_payload, dict) else {}
     operation_type = str(payload.get("operation_type") or exposure.definition.executor_kind or "").strip()
     target_entity = str(payload.get("target_entity") or "").strip()
-    return OperationTemplateReference(
+    return OperationExposureReference(
         id=str(exposure.alias),
         name=str(exposure.label or exposure.alias),
         operation_type=operation_type,
@@ -157,7 +157,7 @@ class WorkflowTemplateAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
     readonly_fields = ['id', 'is_valid', 'created_at', 'updated_at']
     actions = [validate_workflows]
 
-    # Custom change form template with Validate button and Operation Templates Reference
+    # Custom change form template with Validate button and exposure reference panel
     change_form_template = 'admin/templates/workflowtemplate/change_form.html'
 
     fieldsets = (
@@ -260,7 +260,7 @@ class WorkflowTemplateAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
             reverse('admin:templates_workflowtemplate_change', args=[object_id])
         )
 
-    def _get_operation_templates_queryset(self):
+    def _get_operation_exposure_references(self):
         """Get active+published template exposures for reference panel."""
         exposures = (
             OperationExposure.objects.select_related("definition")
@@ -284,7 +284,7 @@ class WorkflowTemplateAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
         that can be used when building the DAG structure.
         """
         extra_context = extra_context or {}
-        extra_context['operation_templates'] = self._get_operation_templates_queryset()
+        extra_context['operation_templates'] = self._get_operation_exposure_references()
         return super().changeform_view(request, object_id, form_url, extra_context)
 
     def add_view(self, request, form_url='', extra_context=None):
@@ -294,7 +294,7 @@ class WorkflowTemplateAdmin(StaffWriteAdminMixin, admin.ModelAdmin):
         This ensures the reference panel is available when creating new workflows.
         """
         extra_context = extra_context or {}
-        extra_context['operation_templates'] = self._get_operation_templates_queryset()
+        extra_context['operation_templates'] = self._get_operation_exposure_references()
         return super().add_view(request, form_url, extra_context)
 
 

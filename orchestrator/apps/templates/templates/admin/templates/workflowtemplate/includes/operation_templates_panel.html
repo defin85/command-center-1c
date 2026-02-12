@@ -1,6 +1,6 @@
-{# Operation Templates Reference Panel - для выбора шаблонов при создании DAG #}
-<fieldset class="module aligned collapse" id="operation-templates-panel">
-    <h2>Operation Templates Reference</h2>
+{# Operation Exposure Reference Panel - для выбора exposed шаблонов при создании DAG #}
+<fieldset class="module aligned collapse" id="operation-exposures-panel">
+    <h2>Operation Exposure Reference</h2>
     <div class="panel-content" style="padding: 15px;">
         <!-- Search and Filter -->
         <div class="template-search-container">
@@ -10,7 +10,7 @@
             </select>
         </div>
 
-        <!-- Templates List -->
+        <!-- Exposures List -->
         <div id="templates-list" class="templates-grid">
             {% for tpl in operation_templates %}
             <div class="template-card"
@@ -40,7 +40,7 @@
         </div>
 
         <div class="templates-count" id="templates-count">
-            Showing <span id="visible-count">{{ operation_templates|length }}</span> of {{ operation_templates|length }} templates
+            Showing <span id="visible-count">{{ operation_templates|length }}</span> of {{ operation_templates|length }} exposures
         </div>
     </div>
 </fieldset>

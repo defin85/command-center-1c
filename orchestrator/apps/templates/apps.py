@@ -4,7 +4,7 @@ from django.apps import AppConfig
 class TemplatesConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'apps.templates'
-    verbose_name = 'Operation Templates'
+    verbose_name = 'Operation Exposures'
 
     def ready(self):
         """Register all operation types when app loads."""
