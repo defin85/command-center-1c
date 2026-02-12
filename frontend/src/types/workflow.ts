@@ -28,6 +28,14 @@
 
 export type NodeType = 'operation' | 'condition' | 'parallel' | 'loop' | 'subworkflow'
 export type WorkflowType = 'sequential' | 'parallel' | 'conditional' | 'complex'
+export type OperationBindingMode = 'alias_latest' | 'pinned_exposure'
+
+export interface OperationRef {
+  alias: string
+  binding_mode: OperationBindingMode
+  template_exposure_id?: string
+  template_exposure_revision?: number
+}
 
 export interface NodeConfig {
   timeout?: number
@@ -51,6 +59,7 @@ export interface DAGNode {
   name: string
   type: NodeType
   template_id?: string          // For operation nodes
+  operation_ref?: OperationRef  // OperationExposure binding for operation nodes
   config?: NodeConfig
   position?: { x: number; y: number }  // For React Flow
 }
@@ -121,6 +130,8 @@ export interface OperationTemplateListItem {
   name: string
   operation_type: string
   description?: string
+  exposure_id?: string
+  exposure_revision?: number
 }
 
 // ============================================================================
@@ -200,6 +211,7 @@ export interface WorkflowNodeData {
   label: string
   nodeType: NodeType
   templateId?: string
+  operationRef?: OperationRef
   config?: NodeConfig
   status?: StepStatus          // For monitor mode
   output?: Record<string, unknown>
@@ -225,6 +237,7 @@ export const dagNodeToReactFlow = (node: DAGNode, index: number): WorkflowNode =
       label: node.name,
       nodeType: node.type,
       templateId: node.template_id,
+      operationRef: node.operation_ref,
       config: node.config
     }
   }
@@ -247,6 +260,7 @@ export const reactFlowToDagNode = (node: WorkflowNode): DAGNode => {
     name: node.data.label,
     type: node.data.nodeType,
     template_id: node.data.templateId,
+    operation_ref: node.data.operationRef,
     config: node.data.config,
     position: node.position
   }

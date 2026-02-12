@@ -25,9 +25,66 @@ class TestNodeTypeValidation:
         assert result.is_valid
 
     def test_operation_node_missing_template_id(self):
-        """Test that operation nodes without template_id are caught by Pydantic."""
-        with pytest.raises(ValueError, match="template_id is required"):
+        """Test that operation nodes require template_id or operation_ref."""
+        with pytest.raises(ValueError, match="template_id or operation_ref is required"):
             WorkflowNode(id="op", name="Operation", type="operation", template_id=None)
+
+    def test_operation_node_template_id_synthesizes_operation_ref(self):
+        """Test legacy template_id-only node gets deterministic operation_ref."""
+        node = WorkflowNode(
+            id="op",
+            name="Operation",
+            type="operation",
+            template_id="tpl-legacy",
+        )
+        assert node.operation_ref is not None
+        assert node.operation_ref.alias == "tpl-legacy"
+        assert node.operation_ref.binding_mode == "alias_latest"
+
+    def test_operation_node_accepts_operation_ref_alias_latest(self):
+        """Test operation node may use operation_ref without explicit template_id."""
+        node = WorkflowNode(
+            id="op",
+            name="Operation",
+            type="operation",
+            operation_ref={"alias": "tpl-test", "binding_mode": "alias_latest"},
+        )
+        # Runtime compatibility shim mirrors alias into legacy template_id.
+        assert node.template_id == "tpl-test"
+        assert node.operation_ref is not None
+        assert node.operation_ref.binding_mode == "alias_latest"
+
+    def test_operation_node_rejects_mismatched_template_and_operation_ref(self):
+        """Test both bindings must reference the same alias."""
+        with pytest.raises(ValueError, match="template_id must match operation_ref.alias"):
+            WorkflowNode(
+                id="op",
+                name="Operation",
+                type="operation",
+                template_id="tpl-a",
+                operation_ref={"alias": "tpl-b", "binding_mode": "alias_latest"},
+            )
+
+    def test_operation_ref_pinned_requires_exposure_fields(self):
+        """Test pinned_exposure rejects incomplete operation_ref."""
+        with pytest.raises(ValueError, match="template_exposure_id is required"):
+            WorkflowNode(
+                id="op",
+                name="Operation",
+                type="operation",
+                operation_ref={"alias": "tpl-test", "binding_mode": "pinned_exposure"},
+            )
+
+    def test_non_operation_node_rejects_operation_ref(self):
+        """Test operation_ref is forbidden for non-operation nodes."""
+        with pytest.raises(ValueError, match="operation_ref must be None"):
+            WorkflowNode(
+                id="cond",
+                name="Condition",
+                type="condition",
+                config=NodeConfig(expression="{{ True }}"),
+                operation_ref={"alias": "tpl-test", "binding_mode": "alias_latest"},
+            )
 
     def test_condition_node_validation(self):
         """Test condition node requires expression."""
@@ -221,4 +278,3 @@ class TestPerformance:
         # Should not crash with RecursionError
         assert result.is_valid
         assert len(result.topological_order) == depth
-

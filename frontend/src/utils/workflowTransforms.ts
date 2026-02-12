@@ -35,6 +35,36 @@ import type {
   WorkflowStepResult,
 } from '../api/generated/model'
 
+type RawOperationRef = {
+  alias?: unknown
+  binding_mode?: unknown
+  template_exposure_id?: unknown
+  template_exposure_revision?: unknown
+}
+
+function normalizeOperationRef(raw: unknown): LegacyDAGNode['operation_ref'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined
+  }
+  const candidate = raw as RawOperationRef
+  const alias = typeof candidate.alias === 'string' ? candidate.alias.trim() : ''
+  if (!alias) {
+    return undefined
+  }
+  const mode = candidate.binding_mode === 'pinned_exposure' ? 'pinned_exposure' : 'alias_latest'
+  const exposureId = typeof candidate.template_exposure_id === 'string'
+    ? candidate.template_exposure_id.trim()
+    : ''
+  const revisionParsed = Number.parseInt(String(candidate.template_exposure_revision ?? ''), 10)
+  const revision = Number.isNaN(revisionParsed) ? undefined : revisionParsed
+  return {
+    alias,
+    binding_mode: mode,
+    ...(exposureId ? { template_exposure_id: exposureId } : {}),
+    ...(revision !== undefined ? { template_exposure_revision: revision } : {}),
+  }
+}
+
 // ============================================================================
 // Edge Transformations
 // ============================================================================
@@ -101,6 +131,10 @@ export function convertWaitForToString(waitFor?: 'all' | 'any' | number): string
  * into the unified 'config' field for legacy UI components.
  */
 export function convertNodeToLegacy(node: GeneratedWorkflowNode): LegacyDAGNode {
+  const operationRef = normalizeOperationRef(
+    (node as GeneratedWorkflowNode & { operation_ref?: unknown }).operation_ref
+  )
+
   // Merge specialized configs into unified config for legacy compatibility
   // Handle null -> undefined conversions for legacy type compatibility
   const mergedConfig: LegacyDAGNode['config'] = {
@@ -132,7 +166,8 @@ export function convertNodeToLegacy(node: GeneratedWorkflowNode): LegacyDAGNode 
     id: node.id,
     name: node.name,
     type: node.type as LegacyDAGNode['type'],
-    template_id: node.template_id ?? undefined,
+    template_id: node.template_id ?? operationRef?.alias ?? undefined,
+    operation_ref: operationRef,
     config: mergedConfig,
     // Note: position is not present in generated type, will be undefined
     position: (node as unknown as LegacyDAGNode).position,
@@ -157,6 +192,11 @@ export function convertNodeToGenerated(node: LegacyDAGNode): GeneratedWorkflowNo
           expression: node.config.expression ?? null,
         }
       : undefined,
+  }
+
+  const operationRef = normalizeOperationRef(node.operation_ref)
+  if (operationRef) {
+    ;(generatedNode as GeneratedWorkflowNode & { operation_ref?: unknown }).operation_ref = operationRef
   }
 
   // Extract specialized configs from legacy unified config

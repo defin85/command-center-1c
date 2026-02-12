@@ -2,51 +2,96 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
-import json
 import logging
 
-from django.db import close_old_connections
-from django.db.models import Count, Q
-from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
-
-import uuid
+from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 from apps.core import permission_codes as perms
-from apps.databases.models import PermissionLevel
-from apps.templates.rbac import TemplatePermissionService
-from apps.templates.workflow.models import WorkflowTemplate, WorkflowExecution, WorkflowStepResult
-from apps.templates.workflow.serializers import (
-    WorkflowTemplateListSerializer,
-    WorkflowTemplateDetailSerializer,
-    WorkflowExecutionListSerializer,
-    WorkflowExecutionDetailSerializer,
-    WorkflowStepResultSerializer,
+from apps.runtime_settings.effective import get_effective_runtime_setting
+from apps.templates.workflow.models import (
+    DAGStructure,
+    WorkflowExecution,
+    WorkflowTemplate,
 )
-from apps.api_v2.serializers.common import ErrorResponseSerializer, ExecutionBindingSerializer, ExecutionPlanSerializer
-from apps.operations.utils.feature_flags import is_go_workflow_engine_enabled
-
-logger = logging.getLogger(__name__)
-
+from apps.templates.workflow.serializers import (
+    WorkflowTemplateDetailSerializer,
+)
+from apps.api_v2.serializers.common import ErrorResponseSerializer
 from .common import (
-    _mask_json_dict,
     _permission_denied,
     CloneWorkflowRequestSerializer,
     CreateWorkflowRequestSerializer,
     DeleteWorkflowRequestSerializer,
     UpdateWorkflowRequestSerializer,
     ValidateWorkflowRequestSerializer,
-    ValidationIssueSerializer,
     WorkflowCloneResponseSerializer,
     WorkflowCreateResponseSerializer,
     WorkflowDeleteResponseSerializer,
     WorkflowUpdateResponseSerializer,
     WorkflowValidateResponseSerializer,
 )
+
+logger = logging.getLogger(__name__)
+
+WORKFLOW_BINDING_ENFORCE_PINNED_KEY = "workflows.operation_binding.enforce_pinned"
+
+
+def _resolve_request_tenant_id(request) -> str | None:
+    tenant_id = str(getattr(request, "tenant_id", "") or "").strip()
+    return tenant_id or None
+
+
+def _as_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().lower()
+    return text in {"1", "true", "yes", "on"}
+
+
+def _is_enforce_pinned_enabled(request) -> bool:
+    effective = get_effective_runtime_setting(
+        WORKFLOW_BINDING_ENFORCE_PINNED_KEY,
+        _resolve_request_tenant_id(request),
+    )
+    return _as_bool(effective.value)
+
+
+def _find_non_pinned_operation_nodes(dag_structure: object) -> list[str]:
+    try:
+        dag = dag_structure if isinstance(dag_structure, DAGStructure) else DAGStructure(**dag_structure)
+    except Exception:
+        return []
+
+    node_ids: list[str] = []
+    for node in dag.nodes:
+        if node.type != "operation":
+            continue
+        binding_mode = (
+            node.operation_ref.binding_mode if node.operation_ref is not None else "alias_latest"
+        )
+        if binding_mode != "pinned_exposure":
+            node_ids.append(node.id)
+    return node_ids
+
+
+def _pinned_policy_error(node_ids: list[str]) -> Response:
+    return Response(
+        {
+            "success": False,
+            "error": {
+                "code": "TEMPLATE_PIN_REQUIRED",
+                "message": (
+                    "workflows.operation_binding.enforce_pinned=true requires "
+                    "binding_mode='pinned_exposure' for all operation nodes"
+                ),
+                "details": {"node_ids": node_ids},
+            },
+        },
+        status=400,
+    )
 
 @extend_schema(
     tags=['v2'],
@@ -112,6 +157,11 @@ def create_workflow(request):
                 'message': 'dag_structure is required'
             }
         }, status=400)
+
+    if _is_enforce_pinned_enabled(request):
+        non_pinned_node_ids = _find_non_pinned_operation_nodes(dag_structure)
+        if non_pinned_node_ids:
+            return _pinned_policy_error(non_pinned_node_ids)
 
     try:
         # Create workflow template
@@ -229,6 +279,12 @@ def update_workflow(request):
                 'message': f'Cannot update workflow with {running_count} running execution(s)'
             }
         }, status=409)
+
+    if _is_enforce_pinned_enabled(request):
+        dag_candidate = request.data.get('dag_structure', workflow.dag_structure)
+        non_pinned_node_ids = _find_non_pinned_operation_nodes(dag_candidate)
+        if non_pinned_node_ids:
+            return _pinned_policy_error(non_pinned_node_ids)
 
     # Track updated fields
     updated_fields = []
@@ -635,6 +691,3 @@ def clone_workflow(request):
 # ============================================================================
 # Workflow Execution Endpoints (Phase 4)
 # ============================================================================
-
-
-

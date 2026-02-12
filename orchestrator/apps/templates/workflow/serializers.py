@@ -108,6 +108,50 @@ class SubWorkflowConfigSerializer(serializers.Serializer):
     )
 
 
+class OperationRefSerializer(serializers.Serializer):
+    """Serializer for OperationRef Pydantic model."""
+
+    alias = serializers.CharField(
+        min_length=1,
+        max_length=200,
+        help_text="OperationExposure alias for template surface",
+    )
+    binding_mode = serializers.ChoiceField(
+        choices=["alias_latest", "pinned_exposure"],
+        default="alias_latest",
+        help_text="Binding mode",
+    )
+    template_exposure_id = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+        help_text="Pinned OperationExposure ID (required for pinned_exposure)",
+    )
+    template_exposure_revision = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=1,
+        help_text="Pinned OperationExposure revision (required for pinned_exposure)",
+    )
+
+    def validate(self, attrs):
+        """Validate pinned mode required fields."""
+        mode = attrs.get("binding_mode")
+        if mode == "pinned_exposure":
+            if not attrs.get("template_exposure_id"):
+                raise serializers.ValidationError(
+                    {"template_exposure_id": "This field is required for pinned_exposure mode."}
+                )
+            if attrs.get("template_exposure_revision") is None:
+                raise serializers.ValidationError(
+                    {
+                        "template_exposure_revision": (
+                            "This field is required for pinned_exposure mode."
+                        )
+                    }
+                )
+        return attrs
+
+
 class WorkflowNodeSerializer(serializers.Serializer):
     """Serializer for WorkflowNode Pydantic model."""
 
@@ -126,6 +170,11 @@ class WorkflowNodeSerializer(serializers.Serializer):
     template_id = serializers.CharField(
         required=False, allow_null=True, allow_blank=True,
         help_text="Template ID for Operation nodes"
+    )
+    operation_ref = OperationRefSerializer(
+        required=False,
+        allow_null=True,
+        help_text="OperationExposure binding for Operation nodes",
     )
     config = NodeConfigSerializer(required=False, default=dict)
     parallel_config = ParallelConfigSerializer(required=False, allow_null=True)

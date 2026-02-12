@@ -108,6 +108,65 @@ class SubWorkflowConfig(BaseModel):
     )
 
 
+class OperationRef(BaseModel):
+    """Operation exposure binding for operation nodes."""
+
+    alias: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="OperationExposure alias for template surface",
+    )
+    binding_mode: str = Field(
+        default="alias_latest",
+        pattern="^(alias_latest|pinned_exposure)$",
+        description="Binding mode: alias_latest or pinned_exposure",
+    )
+    template_exposure_id: Optional[str] = Field(
+        default=None,
+        description="Pinned OperationExposure ID (required for pinned_exposure)",
+    )
+    template_exposure_revision: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Pinned OperationExposure revision (required for pinned_exposure)",
+    )
+
+    @field_validator("alias")
+    @classmethod
+    def validate_alias(cls, v: str) -> str:
+        """Ensure alias is a non-empty trimmed string."""
+        alias = v.strip()
+        if not alias:
+            raise ValueError("operation_ref.alias must not be empty")
+        return alias
+
+    @model_validator(mode="after")
+    def validate_pinned_fields(self) -> "OperationRef":
+        """Require exposure identity fields for pinned binding mode."""
+        if self.binding_mode == "pinned_exposure":
+            if not self.template_exposure_id:
+                raise ValueError(
+                    "template_exposure_id is required for pinned_exposure binding_mode"
+                )
+            if self.template_exposure_revision is None:
+                raise ValueError(
+                    "template_exposure_revision is required for pinned_exposure binding_mode"
+                )
+        return self
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "alias": "tpl-custom-load-extension",
+                "binding_mode": "pinned_exposure",
+                "template_exposure_id": "6b5a0b0f-6f4e-4a06-8f63-10c992bd0f8f",
+                "template_exposure_revision": 12,
+            }
+        }
+    )
+
+
 class WorkflowNode(BaseModel):
     """Represents a single node in the workflow DAG."""
 
@@ -119,6 +178,10 @@ class WorkflowNode(BaseModel):
         description="Node type: operation, condition, parallel, loop, subworkflow",
     )
     template_id: Optional[str] = Field(default=None, description="Template ID for Operation nodes")
+    operation_ref: Optional[OperationRef] = Field(
+        default=None,
+        description="OperationExposure binding for Operation nodes",
+    )
     config: NodeConfig = Field(default_factory=NodeConfig, description="Node-specific config")
 
     # Node-type specific configurations
@@ -142,15 +205,39 @@ class WorkflowNode(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def validate_template_id(self) -> "WorkflowNode":
-        """Validate template_id based on node type."""
+    def validate_template_binding(self) -> "WorkflowNode":
+        """
+        Validate and normalize template binding fields based on node type.
+
+        Deterministic migration rules for operation nodes:
+        1) template_id only -> synthesize operation_ref(alias_latest)
+        2) operation_ref only -> mirror alias into legacy template_id
+        3) both present -> aliases must match
+        """
+        template_id = self.template_id.strip() if isinstance(self.template_id, str) else ""
+
         if self.type == "operation":
-            if not self.template_id:
-                raise ValueError(f"template_id is required for operation nodes (node: {self.id})")
+            if not template_id and not self.operation_ref:
+                raise ValueError(
+                    f"template_id or operation_ref is required for operation nodes (node: {self.id})"
+                )
+            if template_id and self.operation_ref is None:
+                self.operation_ref = OperationRef(alias=template_id, binding_mode="alias_latest")
+            elif not template_id and self.operation_ref:
+                self.template_id = self.operation_ref.alias
+            elif self.operation_ref and template_id and self.operation_ref.alias != template_id:
+                raise ValueError(
+                    "template_id must match operation_ref.alias "
+                    f"for operation nodes (node: {self.id})"
+                )
         else:
             if self.template_id is not None:
                 raise ValueError(
                     f"template_id must be None for {self.type} nodes (node: {self.id})"
+                )
+            if self.operation_ref is not None:
+                raise ValueError(
+                    f"operation_ref must be None for {self.type} nodes (node: {self.id})"
                 )
         return self
 
@@ -203,6 +290,10 @@ class WorkflowNode(BaseModel):
                 "name": "Block Users",
                 "type": "operation",
                 "template_id": "bulk_user_block_v1",
+                "operation_ref": {
+                    "alias": "bulk_user_block_v1",
+                    "binding_mode": "alias_latest",
+                },
                 "config": {"timeout_seconds": 300, "max_retries": 2},
             }
         }
@@ -280,6 +371,7 @@ __all__ = [
     "DAGStructure",
     "LoopConfig",
     "NodeConfig",
+    "OperationRef",
     "ParallelConfig",
     "SubWorkflowConfig",
     "WorkflowConfig",

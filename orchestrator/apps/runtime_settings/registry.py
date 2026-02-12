@@ -65,4 +65,13 @@ RUNTIME_SETTINGS = {
         max_value=5,
         description="Maximum multiplex SSE connections per user.",
     ),
+    "workflows.operation_binding.enforce_pinned": RuntimeSettingDefinition(
+        key="workflows.operation_binding.enforce_pinned",
+        value_type="bool",
+        default=False,
+        description=(
+            "Require operation nodes to use operation_ref.binding_mode='pinned_exposure' "
+            "on workflow create/update."
+        ),
+    ),
 }

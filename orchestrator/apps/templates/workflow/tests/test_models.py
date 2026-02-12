@@ -572,14 +572,52 @@ class TestWorkflowIntegration:
 class TestPydanticSchemas:
     """Tests for Pydantic validation schemas."""
 
-    def test_workflow_node_operation_requires_template_id(self):
-        """Test operation nodes require template_id."""
-        with pytest.raises(ValueError, match="template_id is required"):
+    def test_workflow_node_operation_requires_template_reference(self):
+        """Test operation nodes require template_id or operation_ref."""
+        with pytest.raises(ValueError, match="template_id or operation_ref is required"):
             WorkflowNode(
                 id="op1",
                 name="Operation",
                 type="operation",
                 template_id=None  # Missing!
+            )
+
+    def test_workflow_node_operation_accepts_operation_ref(self):
+        """Test operation nodes can be bound via operation_ref."""
+        node = WorkflowNode(
+            id="op1",
+            name="Operation",
+            type="operation",
+            operation_ref={
+                "alias": "tpl-install-extension",
+                "binding_mode": "alias_latest",
+            },
+        )
+        assert node.operation_ref is not None
+        assert node.operation_ref.alias == "tpl-install-extension"
+        assert node.template_id == "tpl-install-extension"
+
+    def test_workflow_node_operation_synthesizes_operation_ref_from_template_id(self):
+        """Test deterministic migration rule template_id -> operation_ref."""
+        node = WorkflowNode(
+            id="op1",
+            name="Operation",
+            type="operation",
+            template_id="tpl-legacy",
+        )
+        assert node.operation_ref is not None
+        assert node.operation_ref.alias == "tpl-legacy"
+        assert node.operation_ref.binding_mode == "alias_latest"
+
+    def test_workflow_node_rejects_mismatched_template_id_and_operation_ref_alias(self):
+        """Test deterministic rule rejects ambiguous dual binding."""
+        with pytest.raises(ValueError, match="template_id must match operation_ref.alias"):
+            WorkflowNode(
+                id="op1",
+                name="Operation",
+                type="operation",
+                template_id="tpl-1",
+                operation_ref={"alias": "tpl-2", "binding_mode": "alias_latest"},
             )
 
     def test_workflow_node_condition_no_template_id(self):

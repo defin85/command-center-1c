@@ -29,6 +29,8 @@ export type OperationCatalogExposure = {
   operation_type?: string
   target_entity?: string
   template_data?: Record<string, unknown>
+  exposure_revision?: number
+  template_exposure_revision?: number
   created_at?: string
   updated_at?: string
 }

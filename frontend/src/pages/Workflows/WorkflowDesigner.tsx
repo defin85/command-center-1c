@@ -41,7 +41,8 @@ import type {
   WorkflowNodeData,
   DAGStructure,
   WorkflowTemplate,
-  ValidationResult
+  ValidationResult,
+  OperationTemplateListItem,
 } from '../../types/workflow'
 
 // Generated API
@@ -72,7 +73,7 @@ interface WorkflowDesignerState {
   isSaving: boolean
   isValidating: boolean
   validationResult: ValidationResult | null
-  operationTemplates: { id: string; name: string; operation_type: string }[]
+  operationTemplates: OperationTemplateListItem[]
 }
 
 const initialDagStructure: DAGStructure = {
@@ -145,10 +146,20 @@ const WorkflowDesigner = () => {
             const operationType = typeof row.operation_type === 'string' && row.operation_type
               ? row.operation_type
               : 'designer_cli'
+            const rawRevision = (
+              row as {
+                exposure_revision?: number | string | null
+                template_exposure_revision?: number | string | null
+              }
+            )
+            const revisionValue = rawRevision.template_exposure_revision ?? rawRevision.exposure_revision
+            const parsedRevision = Number.parseInt(String(revisionValue ?? ''), 10)
             return {
               id: String(row.alias ?? ''),
               name: String(row.name ?? ''),
               operation_type: operationType,
+              exposure_id: String(row.id ?? '') || undefined,
+              exposure_revision: Number.isNaN(parsedRevision) ? undefined : parsedRevision,
             }
           })
           .filter((row) => row.id && row.name)
@@ -185,11 +196,14 @@ const WorkflowDesigner = () => {
     setState((prev) => {
       const updatedNodes = prev.dagStructure.nodes.map((node) => {
         if (node.id === nodeId) {
+          const hasTemplateId = Object.prototype.hasOwnProperty.call(data, 'templateId')
+          const hasOperationRef = Object.prototype.hasOwnProperty.call(data, 'operationRef')
           return {
             ...node,
-            name: data.label || node.name,
-            template_id: data.templateId || node.template_id,
-            config: data.config || node.config
+            name: data.label ?? node.name,
+            template_id: hasTemplateId ? data.templateId : node.template_id,
+            operation_ref: hasOperationRef ? data.operationRef : node.operation_ref,
+            config: data.config ?? node.config
           }
         }
         return node
@@ -237,6 +251,7 @@ const WorkflowDesigner = () => {
           label: node.name,
           nodeType: node.type,
           templateId: node.template_id,
+          operationRef: node.operation_ref,
           config: node.config
         } as WorkflowNodeData
       })()

@@ -29,7 +29,8 @@ import {
 import type {
   WorkflowNodeData,
   NodeConfig,
-  OperationTemplateListItem
+  OperationTemplateListItem,
+  OperationRef,
 } from '../../types/workflow'
 import { NODE_TYPE_INFO } from '../../types/workflow'
 import { LazyJsonCodeEditor } from '../code/LazyJsonCodeEditor'
@@ -481,8 +482,39 @@ const PropertyEditor = ({
   }
 
   const handleTemplateChange = (templateId?: string) => {
-    setLocalData({ ...localData, templateId })
-    onNodeUpdate(nodeId, { templateId })
+    const normalizedTemplateId = typeof templateId === 'string' && templateId.trim()
+      ? templateId.trim()
+      : undefined
+    const selectedTemplate = normalizedTemplateId
+      ? operationTemplates.find((template) => template.id === normalizedTemplateId)
+      : undefined
+    const operationRef: OperationRef | undefined = normalizedTemplateId
+      ? (() => {
+          const exposureId = typeof selectedTemplate?.exposure_id === 'string' && selectedTemplate.exposure_id.trim()
+            ? selectedTemplate.exposure_id.trim()
+            : undefined
+          const revision = typeof selectedTemplate?.exposure_revision === 'number' && selectedTemplate.exposure_revision > 0
+            ? selectedTemplate.exposure_revision
+            : undefined
+          if (exposureId && revision !== undefined) {
+            return {
+              alias: normalizedTemplateId,
+              binding_mode: 'pinned_exposure',
+              template_exposure_id: exposureId,
+              template_exposure_revision: revision,
+            }
+          }
+          return {
+            alias: normalizedTemplateId,
+            binding_mode: 'alias_latest',
+            ...(exposureId ? { template_exposure_id: exposureId } : {}),
+            ...(revision !== undefined ? { template_exposure_revision: revision } : {}),
+          }
+        })()
+      : undefined
+
+    setLocalData({ ...localData, templateId: normalizedTemplateId, operationRef })
+    onNodeUpdate(nodeId, { templateId: normalizedTemplateId, operationRef })
   }
 
   const handleDelete = () => {

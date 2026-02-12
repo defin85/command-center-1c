@@ -80,6 +80,7 @@ const dagToReactFlow = (dag: DAGStructure): { nodes: WorkflowNode[], edges: Work
         label: node.name,
         nodeType: node.type,
         templateId: node.template_id,
+        operationRef: node.operation_ref,
         config: node.config
       }
     }
@@ -105,6 +106,7 @@ const reactFlowToDag = (nodes: WorkflowNode[], edges: WorkflowEdge[]): DAGStruct
       name: node.data.label,
       type: node.data.nodeType,
       template_id: node.data.templateId,
+      operation_ref: node.data.operationRef,
       config: node.data.config,
       position: node.position
     })),
