@@ -46,14 +46,21 @@ def _coerce_exposure_uuid(raw_value: str) -> str:
 
 
 def _resolve_exposure_revision(exposure: OperationExposure) -> int:
-    # TODO(update-workflow-operation-exposure-first-class): switch to model exposure_revision
-    # once field is introduced in schema/migrations.
+    model_revision = getattr(exposure, "exposure_revision", None)
+    try:
+        parsed_model_revision = int(model_revision)
+    except (TypeError, ValueError):
+        parsed_model_revision = 0
+    if parsed_model_revision > 0:
+        return parsed_model_revision
+
+    # Backward compatibility for rows created before exposure_revision was introduced.
     definition_version = getattr(exposure.definition, "contract_version", None)
     try:
-        parsed = int(definition_version)
+        parsed_definition_version = int(definition_version)
     except (TypeError, ValueError):
-        parsed = 1
-    return parsed if parsed > 0 else 1
+        parsed_definition_version = 1
+    return parsed_definition_version if parsed_definition_version > 0 else 1
 
 
 def _resolve_exposure(

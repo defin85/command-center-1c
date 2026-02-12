@@ -157,6 +157,7 @@ class OperationExposure(models.Model):
     display_order = models.IntegerField(default=0)
     capability_config = models.JSONField(default=dict)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    exposure_revision = models.PositiveIntegerField(default=1)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -183,6 +184,34 @@ class OperationExposure(models.Model):
 
     def __str__(self) -> str:
         return f"{self.surface}:{self.alias}:{self.status}"
+
+    def save(self, *args, **kwargs):
+        """Ensure exposure_revision is always a positive monotonic value on create."""
+        try:
+            current_revision = int(self.exposure_revision or 0)
+        except (TypeError, ValueError):
+            current_revision = 0
+        if current_revision < 1:
+            current_revision = 1
+
+        if self._state.adding:
+            definition_version = getattr(getattr(self, "definition", None), "contract_version", None)
+            if definition_version is None and self.definition_id:
+                definition_version = (
+                    OperationDefinition.objects
+                    .filter(id=self.definition_id)
+                    .values_list("contract_version", flat=True)
+                    .first()
+                )
+            try:
+                parsed_definition_version = int(definition_version or 1)
+            except (TypeError, ValueError):
+                parsed_definition_version = 1
+            if parsed_definition_version > current_revision:
+                current_revision = parsed_definition_version
+
+        self.exposure_revision = current_revision
+        return super().save(*args, **kwargs)
 
 
 class OperationMigrationIssue(models.Model):

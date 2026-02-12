@@ -10224,7 +10224,7 @@ components:
           type: integer
           nullable: true
           minimum: 1
-          description: Monotonic exposure revision (`OperationDefinition.contract_version`) captured at enqueue time.
+          description: Monotonic exposure revision (`OperationExposure.exposure_revision`) captured at enqueue time.
         execution_source:
           type: string
           nullable: true
@@ -14417,6 +14417,9 @@ components:
         template_exposure_id:
           type: string
           format: uuid
+        exposure_revision:
+          type: integer
+          minimum: 1
         template_exposure_revision:
           type: integer
           minimum: 1
@@ -17004,6 +17007,58 @@ components:
           type: string
           nullable: true
           description: Template ID for Operation nodes
+        operation_ref:
+          type: object
+          nullable: true
+          description: OperationExposure binding for Operation nodes
+          properties:
+            alias:
+              type: string
+              minLength: 1
+              maxLength: 200
+              description: OperationExposure alias for template surface
+            binding_mode:
+              type: string
+              enum:
+              - alias_latest
+              - pinned_exposure
+              description: Binding mode
+            template_exposure_id:
+              type: string
+              format: uuid
+              nullable: true
+              description: Pinned OperationExposure ID (required for pinned_exposure)
+            template_exposure_revision:
+              type: integer
+              minimum: 1
+              nullable: true
+              description: Pinned OperationExposure revision (required for pinned_exposure)
+          required:
+          - alias
+          - binding_mode
+        io:
+          type: object
+          nullable: true
+          description: Operation node data-flow contract
+          properties:
+            mode:
+              type: string
+              enum:
+              - implicit_legacy
+              - explicit_strict
+              description: Data-flow mode for operation node
+            input_mapping:
+              type: object
+              additionalProperties:
+                type: string
+              description: "Input mapping: target_path -> source_path"
+            output_mapping:
+              type: object
+              additionalProperties:
+                type: string
+              description: "Output mapping: target_path -> source_path"
+          required:
+          - mode
         config:
           $ref: '#/components/schemas/NodeConfig'
         parallel_config:

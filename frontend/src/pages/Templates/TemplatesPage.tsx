@@ -57,6 +57,25 @@ const normalizeText = (value: unknown): string => (
   typeof value === 'string' ? value.trim() : ''
 )
 
+const renderCellText = (
+  value: string | null | undefined,
+  options?: { code?: boolean; maxWidth?: number; secondary?: boolean }
+) => {
+  const normalized = normalizeText(value)
+  if (!normalized) return <Text type="secondary">—</Text>
+  const maxWidth = options?.maxWidth ?? 220
+  return (
+    <Text
+      code={options?.code}
+      type={options?.secondary ? 'secondary' : undefined}
+      ellipsis={{ tooltip: normalized }}
+      style={{ maxWidth, display: 'block' }}
+    >
+      {normalized}
+    </Text>
+  )
+}
+
 const isValidationIssue = (value: unknown): value is ModalValidationIssue => (
   Boolean(value)
   && typeof value === 'object'
@@ -227,10 +246,13 @@ function OperationTemplateListShell({
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
+      width: 300,
       render: (value: string, record) => (
-        <div>
-          <div style={{ fontWeight: 600 }}>{value}</div>
-          <Text type="secondary">{record.id}</Text>
+        <div style={{ minWidth: 0 }}>
+          <Text strong ellipsis={{ tooltip: value }} style={{ maxWidth: 260, display: 'block' }}>
+            {value}
+          </Text>
+          {renderCellText(record.id, { secondary: true, maxWidth: 260 })}
         </div>
       ),
     },
@@ -238,34 +260,36 @@ function OperationTemplateListShell({
       title: 'Operation Type',
       dataIndex: 'operation_type',
       key: 'operation_type',
-      width: 140,
+      width: 160,
+      render: (value: string | undefined) => renderCellText(value, { maxWidth: 140 }),
     },
     {
       title: 'Executor Kind',
       dataIndex: 'executor_kind',
       key: 'executor_kind',
       width: 140,
-      render: (value: string | undefined) => value || <Text type="secondary">—</Text>,
+      render: (value: string | undefined) => renderCellText(value, { maxWidth: 130 }),
     },
     {
       title: 'Command ID',
       dataIndex: 'executor_command_id',
       key: 'executor_command_id',
       width: 220,
-      render: (value: string | undefined | null) => value || <Text type="secondary">—</Text>,
+      render: (value: string | undefined | null) => renderCellText(value, { code: true, maxWidth: 200 }),
     },
     {
       title: 'Target',
       dataIndex: 'target_entity',
       key: 'target_entity',
-      width: 120,
+      width: 140,
+      render: (value: string | undefined) => renderCellText(value, { maxWidth: 120 }),
     },
     {
       title: 'Exposure ID',
       dataIndex: 'template_exposure_id',
       key: 'template_exposure_id',
       width: 240,
-      render: (value: string | undefined) => value || <Text type="secondary">—</Text>,
+      render: (value: string | undefined) => renderCellText(value, { code: true, maxWidth: 220 }),
     },
     {
       title: 'Revision',
@@ -283,7 +307,7 @@ function OperationTemplateListShell({
       dataIndex: 'capability',
       key: 'capability',
       width: 220,
-      render: (value: string | undefined) => value || <Text type="secondary">—</Text>,
+      render: (value: string | undefined) => renderCellText(value, { code: true, maxWidth: 200 }),
     },
     {
       title: 'Status',
@@ -585,6 +609,7 @@ function OperationTemplateListShell({
         rowKey={(row) => row.id}
         columns={columns}
         searchPlaceholder="Search templates"
+        scroll={{ x: Math.max(1400, table.totalColumnsWidth + 120) }}
       />
 
       {modalOpen && (

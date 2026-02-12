@@ -65,6 +65,14 @@ def canonical_driver_for_executor_kind(raw_kind: Any) -> str | None:
     return _CANONICAL_DRIVER_BY_KIND.get(normalize_executor_kind(raw_kind))
 
 
+def _positive_int(value: Any, *, default: int = 1) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return parsed if parsed > 0 else default
+
+
 def _validate_template_runtime_contract(
     *,
     definition_payload: dict[str, Any],
@@ -254,6 +262,7 @@ def resolve_exposure(
         qs = qs.filter(tenant__isnull=True)
     exposure = qs.first()
     if exposure is None:
+        initial_revision = _positive_int(getattr(definition, "contract_version", 1), default=1)
         exposure = OperationExposure.objects.create(
             definition=definition,
             surface=surface,
@@ -267,9 +276,11 @@ def resolve_exposure(
             display_order=int(display_order),
             capability_config=_clean_json(capability_config),
             status=status,
+            exposure_revision=initial_revision,
         )
         return exposure, True
 
+    previous_definition_id = exposure.definition_id
     exposure.definition = definition
     exposure.label = label
     exposure.description = description
@@ -279,19 +290,29 @@ def resolve_exposure(
     exposure.display_order = int(display_order)
     exposure.capability_config = _clean_json(capability_config)
     exposure.status = status
+
+    next_revision = _positive_int(getattr(exposure, "exposure_revision", 1), default=1)
+    if str(previous_definition_id or "") != str(definition.id):
+        next_revision += 1
+    exposure.exposure_revision = next_revision
+
+    update_fields = [
+        "definition",
+        "label",
+        "description",
+        "is_active",
+        "capability",
+        "contexts",
+        "display_order",
+        "capability_config",
+        "status",
+        "updated_at",
+    ]
+    if "exposure_revision" not in update_fields:
+        update_fields.append("exposure_revision")
+
     exposure.save(
-        update_fields=[
-            "definition",
-            "label",
-            "description",
-            "is_active",
-            "capability",
-            "contexts",
-            "display_order",
-            "capability_config",
-            "status",
-            "updated_at",
-        ]
+        update_fields=update_fields
     )
     return exposure, False
 

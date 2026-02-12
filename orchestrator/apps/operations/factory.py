@@ -40,7 +40,7 @@ def _resolve_template_exposure_ref(*, template_alias: str) -> tuple[str, Optiona
             tenant__isnull=True,
             alias=alias,
         )
-        .values_list("id", "definition__contract_version")
+        .values_list("id", "exposure_revision")
         .first()
     )
     if not row:

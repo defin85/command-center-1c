@@ -45,6 +45,7 @@ const getSchemaObject = (value: unknown): Record<string, unknown> | null => (
 type ParamsEditorMode = 'guided' | 'raw'
 type GuidedGroupKey = 'filled' | 'required' | 'optional'
 type PreviewFieldSource = 'manual' | 'derived'
+type EditorTabKey = 'basics' | 'executor' | 'params' | 'safety' | 'preview'
 
 type TemplateExecutionPreview = {
   aliasPreview: string
@@ -53,6 +54,15 @@ type TemplateExecutionPreview = {
   executorPayload: Record<string, unknown>
   sourceOfTruth: Array<{ field: string; value: string; source: PreviewFieldSource }>
   paramsParseError: string | null
+}
+
+type FormValidationErrorShape = {
+  errorFields?: Array<{ name?: unknown; errors?: unknown }>
+}
+
+type LocalValidationIssue = {
+  path: string
+  message: string
 }
 
 const isEmptyOrEmptyObjectParamsJson = (value: unknown): boolean => {
@@ -85,6 +95,94 @@ const normalizeStringList = (value: unknown): string[] => (
       .filter(Boolean)
     : []
 )
+
+const resolveFieldPath = (name: unknown): string => {
+  if (Array.isArray(name)) return name.map((chunk) => String(chunk)).join('.')
+  if (typeof name === 'string' || typeof name === 'number') return String(name)
+  return ''
+}
+
+const resolveTabForFieldPath = (fieldPathRaw: string): EditorTabKey => {
+  const fieldPath = fieldPathRaw.trim()
+  if (!fieldPath) return 'basics'
+
+  if (fieldPath.startsWith('executor.params_json')) return 'params'
+  if (
+    fieldPath.startsWith('executor.fixed')
+    || fieldPath.startsWith('executor.target_binding_extension_name_param')
+  ) return 'safety'
+  if (
+    fieldPath.startsWith('executor.additional_args')
+    || fieldPath.startsWith('executor.mode')
+    || fieldPath.startsWith('executor.stdin')
+  ) return 'executor'
+  return 'basics'
+}
+
+const resolveFirstErrorTab = (error: unknown): EditorTabKey | null => {
+  const maybeError = error as FormValidationErrorShape | null
+  if (!Array.isArray(maybeError?.errorFields) || maybeError.errorFields.length === 0) {
+    return null
+  }
+  const firstNamePath = maybeError.errorFields[0]?.name
+  const fieldPath = resolveFieldPath(firstNamePath)
+  return resolveTabForFieldPath(fieldPath)
+}
+
+const extractLocalValidationIssues = (error: unknown): LocalValidationIssue[] => {
+  const maybeError = error as FormValidationErrorShape | null
+  if (!Array.isArray(maybeError?.errorFields) || maybeError.errorFields.length === 0) {
+    return []
+  }
+
+  const issues: LocalValidationIssue[] = []
+  for (const field of maybeError.errorFields) {
+    const path = resolveFieldPath(field?.name) || 'form'
+    const messages = Array.isArray(field?.errors)
+      ? field.errors
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : []
+    if (messages.length === 0) continue
+    for (const message of messages) {
+      issues.push({ path, message })
+    }
+  }
+  return issues
+}
+
+const copyTextWithFallback = async (text: string): Promise<boolean> => {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch (_err) {
+      // Fall through to legacy copy path.
+    }
+  }
+  if (typeof document === 'undefined') return false
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+
+  let copied = false
+  try {
+    copied = document.execCommand('copy')
+  } catch (_err) {
+    copied = false
+  } finally {
+    document.body.removeChild(textarea)
+  }
+  return copied
+}
 
 const buildTemplateAliasPreview = (idValue: unknown, nameValue: unknown): { alias: string; source: 'explicit' | 'generated' } => {
   const explicitAlias = normalizeText(idValue)
@@ -265,6 +363,7 @@ export function OperationExposureEditorModal({
   const [rawParamsError, setRawParamsError] = useState<string | null>(null)
   const [paramsSearch, setParamsSearch] = useState('')
   const [activeTabKey, setActiveTabKey] = useState('basics')
+  const [localValidationIssues, setLocalValidationIssues] = useState<LocalValidationIssue[]>([])
   const [guidedParamsGroupsOpen, setGuidedParamsGroupsOpen] = useState<string[]>(['filled', 'required'])
   const [guidedRenderLimitByGroup, setGuidedRenderLimitByGroup] = useState<Record<GuidedGroupKey, number>>({
     filled: GUIDED_PARAMS_RENDER_BATCH,
@@ -411,6 +510,7 @@ export function OperationExposureEditorModal({
     autoFilledCommandIdsRef.current.clear()
     setParamsTouched(false)
     setActiveTabKey('basics')
+    setLocalValidationIssues([])
     setParamsSearch('')
     setGuidedParamsGroupsOpen(['filled', 'required'])
     setGuidedRenderLimitByGroup({
@@ -621,13 +721,13 @@ export function OperationExposureEditorModal({
   }
 
   const handleCopyPreviewJson = async () => {
-    try {
-      const raw = JSON.stringify(form.getFieldsValue(true), null, 2)
-      await navigator.clipboard.writeText(raw)
+    const raw = JSON.stringify(form.getFieldsValue(true), null, 2)
+    const copied = await copyTextWithFallback(raw)
+    if (copied) {
       message.success('Copied')
-    } catch (_err) {
-      message.error('Copy failed')
+      return
     }
+    message.error('Copy failed')
   }
 
   const handleOpenPreviewTab = () => {
@@ -637,6 +737,7 @@ export function OperationExposureEditorModal({
   const handleResetForm = () => {
     form.resetFields()
     setParamsTouched(false)
+    setLocalValidationIssues([])
     setParamsSearch('')
     setGuidedParamsGroupsOpen(['filled', 'required'])
     setGuidedRenderLimitByGroup({
@@ -666,7 +767,23 @@ export function OperationExposureEditorModal({
         <Button onClick={onCancel}>Cancel</Button>
         <Button
           type="primary"
-          onClick={onApply}
+          onClick={async () => {
+            try {
+              await form.validateFields()
+              setLocalValidationIssues([])
+              onApply()
+            } catch (error) {
+              const localIssues = extractLocalValidationIssues(error)
+              setLocalValidationIssues(localIssues)
+              const nextTab = resolveFirstErrorTab(error)
+              if (nextTab) {
+                setActiveTabKey(nextTab)
+                message.error('Fix validation errors before save')
+                return
+              }
+              message.error('Save failed')
+            }
+          }}
           data-testid="action-catalog-editor-apply"
           disabled={targetBindingMissingRequired}
         >
@@ -714,14 +831,13 @@ export function OperationExposureEditorModal({
                     showIcon
                     data-testid="operation-exposure-editor-guided-flow"
                     message="Guided flow"
-                    description="Шаги: Basics → Executor → Params → Safety & Fixed → Preview. Runtime исполняет OperationDefinition, привязанный через OperationExposure."
+                    description="Basics → Executor → Params → Safety & Fixed → Preview."
                   />
                   <div data-testid="operation-exposure-editor-source-of-truth">
                     <Descriptions
                       title="Source of truth (binding provenance)"
                       size="small"
-                      bordered
-                      column={1}
+                      column={2}
                     >
                       <Descriptions.Item label="OperationExposure.alias">{exposureAlias}</Descriptions.Item>
                       <Descriptions.Item label="template_exposure_id">{exposureId}</Descriptions.Item>
@@ -756,6 +872,24 @@ export function OperationExposureEditorModal({
                 {backendValidationErrors.map((item, idx) => (
                   <li key={`${item.path || 'global'}-${idx}`}>
                     <Text code>{item.path || 'global'}</Text>: {item.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+            style={{ marginBottom: 12 }}
+          />
+        )}
+        {localValidationIssues.length > 0 && (
+          <Alert
+            type="error"
+            showIcon
+            data-testid="operation-exposure-editor-local-validation-summary"
+            message="Форма содержит ошибки"
+            description={(
+              <ul style={{ margin: 0, paddingInlineStart: 18 }}>
+                {localValidationIssues.map((item, idx) => (
+                  <li key={`${item.path}-${idx}`}>
+                    <Text code>{item.path}</Text>: {item.message}
                   </li>
                 ))}
               </ul>
@@ -1379,7 +1513,7 @@ export function OperationExposureEditorModal({
                     const values = formInstance.getFieldsValue(true) as Partial<ActionFormValues>
                     const preview = buildTemplateExecutionPreview(values)
                     return (
-                      <Space direction="vertical" style={{ width: '100%' }}>
+                      <Space direction="vertical" size="small" style={{ width: '100%' }}>
                         {isTemplateSurface && (
                           <>
                             <Alert
@@ -1387,45 +1521,55 @@ export function OperationExposureEditorModal({
                               showIcon
                               data-testid="operation-exposure-editor-execution-preview-block"
                               message="Что будет выполнено"
-                              description="Ниже показан preview итогового OperationDefinition.executor_payload, который получит runtime."
+                              description="Проверьте итоговый execution payload перед сохранением."
                             />
-                            <Input.TextArea
-                              rows={10}
-                              value={JSON.stringify(preview.executorPayload, null, 2)}
-                              readOnly
-                              data-testid="operation-exposure-editor-execution-preview-json"
+                            <Collapse
+                              size="small"
+                              defaultActiveKey={['execution']}
+                              items={[
+                                {
+                                  key: 'execution',
+                                  label: 'Execution payload',
+                                  children: (
+                                    <Input.TextArea
+                                      rows={5}
+                                      value={JSON.stringify(preview.executorPayload, null, 2)}
+                                      readOnly
+                                      style={{ maxHeight: 220, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
+                                      data-testid="operation-exposure-editor-execution-preview-json"
+                                    />
+                                  ),
+                                },
+                                {
+                                  key: 'origins',
+                                  label: `Field origins (${preview.sourceOfTruth.length + 1})`,
+                                  children: (
+                                    <div
+                                      data-testid="operation-exposure-editor-field-origins"
+                                      style={{ maxHeight: 240, overflowY: 'auto', paddingRight: 4 }}
+                                    >
+                                      <Descriptions size="small" column={1}>
+                                        {preview.sourceOfTruth.map((item) => (
+                                          <Descriptions.Item key={item.field} label={item.field}>
+                                            <Space direction="vertical" size={2}>
+                                              <Text code>{item.value}</Text>
+                                              <Text type="secondary">
+                                                source: {item.source === 'manual' ? 'manual input' : 'derived value'}
+                                              </Text>
+                                            </Space>
+                                          </Descriptions.Item>
+                                        ))}
+                                        <Descriptions.Item label="Alias source">
+                                          {preview.aliasSource === 'explicit' ? 'from form.id' : 'generated from form.name'}
+                                        </Descriptions.Item>
+                                      </Descriptions>
+                                    </div>
+                                  ),
+                                },
+                              ]}
                             />
-                            <div data-testid="operation-exposure-editor-field-origins">
-                              <Descriptions
-                                size="small"
-                                bordered
-                                column={1}
-                                title="Field origins"
-                              >
-                                {preview.sourceOfTruth.map((item) => (
-                                  <Descriptions.Item key={item.field} label={item.field}>
-                                    <Space direction="vertical" size={2}>
-                                      <Text code>{item.value}</Text>
-                                      <Text type="secondary">
-                                        source: {item.source === 'manual' ? 'manual input' : 'derived value'}
-                                      </Text>
-                                    </Space>
-                                  </Descriptions.Item>
-                                ))}
-                                <Descriptions.Item label="Alias source">
-                                  {preview.aliasSource === 'explicit' ? 'from form.id' : 'generated from form.name'}
-                                </Descriptions.Item>
-                              </Descriptions>
-                            </div>
                           </>
                         )}
-                        <Text strong>Raw form payload</Text>
-                        <Input.TextArea
-                          rows={10}
-                          value={JSON.stringify(formInstance.getFieldsValue(true), null, 2)}
-                          readOnly
-                          data-testid="action-catalog-editor-preview-json"
-                        />
                       </Space>
                     )
                   }}

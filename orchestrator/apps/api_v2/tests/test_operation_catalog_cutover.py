@@ -305,7 +305,7 @@ def test_operation_catalog_template_surface_allows_non_staff_with_view_scope(tem
     assert "tpl-perm-view" in aliases
     row = next(item for item in template_rows if item["alias"] == "tpl-perm-view")
     assert row["template_exposure_id"] == str(exposure.id)
-    assert row["template_exposure_revision"] == int(exposure.definition.contract_version)
+    assert row["template_exposure_revision"] == int(exposure.exposure_revision)
     assert row["executor_kind"] == str(exposure.definition.executor_kind)
     assert row["executor_command_id"] == "infobase.extension.list"
 

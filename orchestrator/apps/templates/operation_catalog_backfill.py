@@ -127,6 +127,12 @@ def _resolve_exposure(
 
     exposure = qs.first()
     if exposure is None:
+        try:
+            initial_revision = int(getattr(definition, "contract_version", 1) or 1)
+        except (TypeError, ValueError):
+            initial_revision = 1
+        if initial_revision < 1:
+            initial_revision = 1
         exposure = OperationExposure.objects.create(
             definition=definition,
             surface=surface,
@@ -140,9 +146,11 @@ def _resolve_exposure(
             display_order=int(display_order),
             capability_config=_clean_json(capability_config),
             status=status,
+            exposure_revision=initial_revision,
         )
         return exposure, True
 
+    previous_definition_id = exposure.definition_id
     exposure.definition = definition
     exposure.label = label
     exposure.description = description
@@ -152,6 +160,17 @@ def _resolve_exposure(
     exposure.display_order = int(display_order)
     exposure.capability_config = _clean_json(capability_config)
     exposure.status = status
+
+    try:
+        next_revision = int(getattr(exposure, "exposure_revision", 1) or 1)
+    except (TypeError, ValueError):
+        next_revision = 1
+    if next_revision < 1:
+        next_revision = 1
+    if str(previous_definition_id or "") != str(definition.id):
+        next_revision += 1
+    exposure.exposure_revision = next_revision
+
     exposure.save(
         update_fields=[
             "definition",
@@ -163,6 +182,7 @@ def _resolve_exposure(
             "display_order",
             "capability_config",
             "status",
+            "exposure_revision",
             "updated_at",
         ]
     )

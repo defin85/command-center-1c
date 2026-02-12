@@ -31,12 +31,12 @@ def _template_alias_to_exposure_ref_map() -> dict[str, tuple[str, int]]:
     return {
         str(alias): (
             str(exposure_id),
-            int(contract_version) if int(contract_version or 1) >= 1 else 1,
+            int(exposure_revision) if int(exposure_revision or 1) >= 1 else 1,
         )
-        for alias, exposure_id, contract_version in OperationExposure.objects.filter(
+        for alias, exposure_id, exposure_revision in OperationExposure.objects.filter(
             surface=OperationExposure.SURFACE_TEMPLATE,
             tenant__isnull=True,
-        ).values_list("alias", "id", "definition__contract_version")
+        ).values_list("alias", "id", "exposure_revision")
     }
 
 
