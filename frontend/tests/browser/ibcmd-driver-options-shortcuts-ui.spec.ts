@@ -244,6 +244,8 @@ test('Operations: ibcmd driver options hide DBMS creds + save shortcut includes 
   await page.keyboard.press('Enter')
 
   await expect(wizard.getByText('Driver options')).toBeVisible()
+  await expect(wizard.getByText('Connection will be derived from database profiles')).toBeVisible()
+  await wizard.getByTestId('ibcmd-connection-override').getByRole('switch').click()
   await expect(wizard.getByText('Offline: advanced')).toBeVisible()
   await expect(wizard.getByText('DBMS', { exact: true })).toBeVisible()
   await expect(wizard.getByText('DB server', { exact: true })).toBeVisible()

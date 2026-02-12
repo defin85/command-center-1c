@@ -46,7 +46,8 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
     if (!data) return
 
     const stored = localStorage.getItem('active_tenant_id')
-    const preferred = data.active_tenant_id || data.tenants[0]?.id || null
+    const tenants = Array.isArray(data.tenants) ? data.tenants : []
+    const preferred = data.active_tenant_id || tenants[0]?.id || null
     if (!stored && preferred) {
       localStorage.setItem('active_tenant_id', preferred)
     }
