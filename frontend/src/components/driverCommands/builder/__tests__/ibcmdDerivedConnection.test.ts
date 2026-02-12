@@ -86,4 +86,20 @@ describe('computeDerivedIbcmdConnectionReport', () => {
     const report = computeDerivedIbcmdConnectionReport([db], ['db1'])
     expect(report.counts).toEqual({ remote: 0, offline: 1, unconfigured: 0 })
   })
+
+  it('does not mark remote as diff when remote URL is the same across selected databases', () => {
+    const db1 = makeDb({
+      id: 'db1',
+      ibcmd_connection: { remote: 'ssh://same-host:1545' },
+    })
+    const db2 = makeDb({
+      id: 'db2',
+      ibcmd_connection: { remote: 'ssh://same-host:1545' },
+    })
+
+    const report = computeDerivedIbcmdConnectionReport([db1, db2], ['db1', 'db2'])
+    expect(report.counts).toEqual({ remote: 2, offline: 0, unconfigured: 0 })
+    expect(report.mixed_mode).toBe(false)
+    expect(report.diff.remote.some((entry) => entry.key === 'remote')).toBe(false)
+  })
 })

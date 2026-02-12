@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 
 from apps.artifacts.models import Artifact, ArtifactAlias, ArtifactKind, ArtifactVersion
 from apps.artifacts.storage import ArtifactStorageClient
-from apps.databases.models import PermissionLevel
+from apps.databases.models import Database, PermissionLevel
 from apps.operations.models import BatchOperation, Task
 from apps.templates.models import WorkflowTemplatePermission
 from apps.templates.workflow.models import WorkflowTemplate, WorkflowType
@@ -205,6 +205,79 @@ def test_preview_execution_plan_ibcmd_masks_db_pwd(staff_client, staff_user, mon
     argv_masked = payload["execution_plan"]["argv_masked"]
     assert any("--db-pwd=***" in token for token in argv_masked)
     assert secret not in json.dumps(payload)
+
+
+@pytest.mark.django_db
+def test_preview_execution_plan_ibcmd_derived_offline_triplet_uses_metadata_fallback_sources(
+    staff_client,
+    staff_user,
+    monkeypatch,
+):
+    _grant_operation_permission(staff_client, staff_user, "execute_safe_operation")
+
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "commands_by_id": {
+            "infobase.extension.list": {
+                "label": "list extensions",
+                "description": "list",
+                "argv": ["infobase", "config", "extension", "list"],
+                "scope": "per_database",
+                "risk_level": "safe",
+                "params_by_name": {},
+            },
+        },
+    }
+    overrides_catalog = {"catalog_version": 2, "driver": "ibcmd", "overrides": {}}
+    _seed_ibcmd_catalog(monkeypatch, base_catalog=base_catalog, overrides_catalog=overrides_catalog)
+
+    target_db = Database.objects.create(
+        name="preview-derived-fallback-db",
+        host="localhost",
+        port=80,
+        odata_url="http://localhost/odata",
+        username="odata",
+        password="secret",
+        metadata={
+            "ibcmd_connection": {
+                "offline": {
+                    "config": "/srv/1c/config",
+                    "data": "/srv/1c/data",
+                }
+            },
+            "dbms": "PostgreSQL",
+            "db_server": "db.internal",
+            "db_name": "ib_main",
+        },
+    )
+
+    resp = staff_client.post(
+        "/api/v2/ui/execution-plan/preview/",
+        {
+            "executor": {"kind": "ibcmd_cli", "command_id": "infobase.extension.list", "mode": "guided"},
+            "database_ids": [str(target_db.id)],
+        },
+        format="json",
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    bindings = payload["bindings"]
+
+    def source_for(target_ref: str) -> str | None:
+        for binding in bindings:
+            if binding.get("target_ref") == target_ref:
+                return binding.get("source_ref")
+        return None
+
+    assert source_for("connection.offline.config") == "target_db.metadata.ibcmd_connection.offline.config"
+    assert source_for("connection.offline.data") == "target_db.metadata.ibcmd_connection.offline.data"
+    assert source_for("connection.offline.dbms") == "target_db.metadata.dbms"
+    assert source_for("connection.offline.db_server") == "target_db.metadata.db_server"
+    assert source_for("connection.offline.db_name") == "target_db.metadata.db_name"
 
 
 @pytest.mark.django_db

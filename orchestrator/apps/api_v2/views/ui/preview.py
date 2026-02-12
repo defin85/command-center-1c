@@ -170,6 +170,27 @@ def _validate_derived_ibcmd_profiles_preview(
     }
     return databases, meta, None
 
+
+def _derived_profile_key_uses_metadata_fallback(databases: list[Any], *, key: str) -> bool:
+    """
+    Return True when at least one selected DB has no offline.<key> in its profile.
+
+    For dbms/db_server/db_name this means runtime may resolve the value from
+    Database.metadata.<key>, so preview provenance should point to fallback source.
+    """
+    for db in databases:
+        db_meta = getattr(db, "metadata", None)
+        db_meta_dict = db_meta if isinstance(db_meta, dict) else {}
+        profile = _normalize_ibcmd_connection_profile(db_meta_dict.get("ibcmd_connection"))
+        offline = profile.get("offline") if isinstance(profile, dict) else None
+        offline_dict = offline if isinstance(offline, dict) else {}
+        value = offline_dict.get(key)
+        if value not in (None, "") and str(value).strip():
+            continue
+        return True
+    return False
+
+
 def _preview_ibcmd_cli(
     *,
     user,
@@ -212,6 +233,7 @@ def _preview_ibcmd_cli(
     has_explicit_connection = bool(flattened_connection)
     command_scope = str(command.get("scope") or "").strip()
     derived_meta: dict[str, Any] | None = None
+    derived_databases: list[Any] = []
     if command_scope == "per_database" and not has_explicit_connection:
         if not database_ids:
             return None, {
@@ -221,9 +243,13 @@ def _preview_ibcmd_cli(
                     "message": "database_ids are required for per_database preview when connection is derived from database profiles",
                 },
             }, 400
-        _, derived_meta, err_status = _validate_derived_ibcmd_profiles_preview(user=user, database_ids=database_ids)
+        validated_databases, derived_meta, err_status = _validate_derived_ibcmd_profiles_preview(
+            user=user,
+            database_ids=database_ids,
+        )
         if err_status is not None:
             return None, derived_meta, err_status
+        derived_databases = validated_databases or []
 
     if flattened_connection:
         conflicts = detect_connection_option_conflicts(
@@ -314,6 +340,12 @@ def _preview_ibcmd_cli(
 
     # For per_database ibcmd_cli, connection may be resolved at runtime per target database.
     if command_scope == "per_database" and database_ids and not has_explicit_connection:
+        fallback_keys: set[str] = set()
+        if derived_databases:
+            for key in ("dbms", "db_server", "db_name"):
+                if _derived_profile_key_uses_metadata_fallback(derived_databases, key=key):
+                    fallback_keys.add(key)
+
         bindings.append(
             {
                 "target_ref": "connection_source",
@@ -359,10 +391,13 @@ def _preview_ibcmd_cli(
             "temp",
             "users_data",
         ):
+            source_ref = f"target_db.metadata.ibcmd_connection.offline.{key}"
+            if key in fallback_keys:
+                source_ref = f"target_db.metadata.{key}"
             bindings.append(
                 {
                     "target_ref": f"connection.offline.{key}",
-                    "source_ref": f"target_db.metadata.ibcmd_connection.offline.{key}",
+                    "source_ref": source_ref,
                     "resolve_at": "worker",
                     "sensitive": False,
                     "status": "unresolved",
