@@ -108,6 +108,8 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "GET", Path: "/pools/runs/", OperationID: "v2_pools_runs_list"},
 	{Method: "POST", Path: "/pools/runs/", OperationID: "v2_pools_runs_create"},
 	{Method: "GET", Path: "/pools/runs/:run_id/", OperationID: "v2_pools_runs_get"},
+	{Method: "POST", Path: "/pools/runs/:run_id/abort-publication/", OperationID: "v2_pools_runs_abort_publication"},
+	{Method: "POST", Path: "/pools/runs/:run_id/confirm-publication/", OperationID: "v2_pools_runs_confirm_publication"},
 	{Method: "GET", Path: "/pools/runs/:run_id/report/", OperationID: "v2_pools_runs_report_get"},
 	{Method: "POST", Path: "/pools/runs/:run_id/retry/", OperationID: "v2_pools_runs_retry"},
 	{Method: "GET", Path: "/pools/schema-templates/", OperationID: "v2_pools_schema_templates_list"},

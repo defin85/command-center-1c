@@ -153,7 +153,7 @@ Compatibility profile ДОЛЖЕН (SHALL) храниться как machine-rea
 - **THEN** preflight читает registry из стабильного capability path
 - **AND** корректно возвращает `Go` или `No-Go` по `migrated` статусам
 
-### Requirement: Pools facade error payload MUST сохранять tenant confidentiality
+### Requirement: Tenant confidentiality MUST использовать fail-closed внешний ответ
 Система ДОЛЖНА (SHALL) сохранять неразличимость cross-tenant и unknown-run ошибок в pools/runs endpoints.
 
 Payload ошибок ДОЛЖЕН (SHALL):
