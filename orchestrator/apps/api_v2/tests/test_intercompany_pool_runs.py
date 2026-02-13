@@ -358,6 +358,7 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
     workflow_execution = WorkflowExecution.objects.get(id=run.workflow_execution_id)
     assert workflow_execution.execution_consumer == "pools"
     assert workflow_execution.tenant_id == run.tenant_id
+    assert workflow_execution.input_context.get("approved_at") is None
 
 
 @pytest.mark.django_db
@@ -509,6 +510,31 @@ def test_get_pool_run_projects_completed_workflow_with_failed_targets_to_partial
     payload = response.json()
     assert payload["run"]["status"] == PoolRun.STATUS_PARTIAL_SUCCESS
     assert payload["run"]["status_reason"] is None
+    assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_COMPLETED
+
+
+@pytest.mark.django_db
+def test_get_pool_run_projects_safe_completed_unapproved_workflow_to_validated_awaiting_approval(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = PoolRun.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        direction=PoolRunDirection.BOTTOM_UP,
+        period_start=date(2026, 1, 1),
+        mode=PoolRunMode.SAFE,
+    )
+    run.mark_validated(summary={"rows": 1}, diagnostics=[])
+    run.save()
+    _attach_workflow_execution_to_run(run=run, status=WorkflowExecution.STATUS_COMPLETED)
+
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["status"] == PoolRun.STATUS_VALIDATED
+    assert payload["run"]["status_reason"] == "awaiting_approval"
     assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_COMPLETED
 
 
@@ -845,6 +871,7 @@ def test_create_pool_run_with_schema_template_uses_workflow_runtime(
     assert workflow_execution.tenant_id == default_tenant.id
     run = PoolRun.objects.get(id=payload["run"]["id"])
     assert run.publication_confirmed_at is not None
+    assert workflow_execution.input_context.get("approved_at") is not None
 
 
 @pytest.mark.django_db

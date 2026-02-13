@@ -162,9 +162,19 @@ def _project_pool_status(*, run: PoolRun, workflow_status: str | None) -> tuple[
     status_reason: str | None = None
     workflow_state = str(workflow_status or "").strip().lower()
     failed_targets = int((run.publication_summary or {}).get("failed_targets") or 0)
+    safe_unapproved = run.mode == PoolRunMode.SAFE and run.publication_confirmed_at is None
 
     if workflow_state in {WorkflowExecution.STATUS_FAILED, WorkflowExecution.STATUS_CANCELLED}:
         return PoolRun.STATUS_FAILED, None
+
+    if safe_unapproved:
+        if workflow_state in {
+            WorkflowExecution.STATUS_PENDING,
+            WorkflowExecution.STATUS_RUNNING,
+            WorkflowExecution.STATUS_COMPLETED,
+            "queued",
+        }:
+            return PoolRun.STATUS_VALIDATED, "awaiting_approval"
 
     if workflow_state == WorkflowExecution.STATUS_COMPLETED:
         if failed_targets > 0:
@@ -176,11 +186,6 @@ def _project_pool_status(*, run: PoolRun, workflow_status: str | None) -> tuple[
         WorkflowExecution.STATUS_RUNNING,
         "queued",
     }:
-        safe_unapproved = (
-            run.mode == PoolRunMode.SAFE and run.publication_confirmed_at is None
-        )
-        if safe_unapproved:
-            return PoolRun.STATUS_VALIDATED, "awaiting_approval"
         if run.publishing_started_at is not None:
             return PoolRun.STATUS_PUBLISHING, None
         return PoolRun.STATUS_VALIDATED, "queued"

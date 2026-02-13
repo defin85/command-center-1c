@@ -87,7 +87,7 @@ class PoolWorkflowCompiler:
 
         template_version = self._build_template_version(schema_template)
         steps = self._build_steps(run_context)
-        dag_structure = self._build_dag_structure(steps)
+        dag_structure = self._build_dag_structure(steps, run_context=run_context)
 
         plan_seed = {
             "pool_id": str(run_context.pool_id),
@@ -184,7 +184,11 @@ class PoolWorkflowCompiler:
         return steps
 
     @staticmethod
-    def _build_dag_structure(steps: list[PoolExecutionPlanStep]) -> dict[str, Any]:
+    def _build_dag_structure(
+        steps: list[PoolExecutionPlanStep],
+        *,
+        run_context: PoolWorkflowRunContext,
+    ) -> dict[str, Any]:
         nodes: list[dict[str, Any]] = []
         edges: list[dict[str, Any]] = []
 
@@ -211,12 +215,17 @@ class PoolWorkflowCompiler:
                 }
             )
             if idx > 0:
-                edges.append(
-                    {
-                        "from": steps[idx - 1].node_id,
-                        "to": step.node_id,
-                    }
-                )
+                edge: dict[str, Any] = {
+                    "from": steps[idx - 1].node_id,
+                    "to": step.node_id,
+                }
+                if (
+                    run_context.mode == PoolRunMode.SAFE
+                    and step.node_id == "publication_odata"
+                    and steps[idx - 1].node_id == "approval_gate"
+                ):
+                    edge["condition"] = "{{approved_at}}"
+                edges.append(edge)
 
         return {"nodes": nodes, "edges": edges}
 

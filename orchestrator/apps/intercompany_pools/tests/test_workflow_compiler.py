@@ -77,6 +77,12 @@ def test_compile_pool_execution_plan_safe_mode_includes_approval_gate() -> None:
         "approval_gate",
         "publication_odata",
     ]
+    approval_edge = next(
+        edge
+        for edge in plan.dag_structure["edges"]
+        if edge["from"] == "approval_gate" and edge["to"] == "publication_odata"
+    )
+    assert approval_edge["condition"] == "{{approved_at}}"
 
 
 @pytest.mark.django_db
@@ -95,6 +101,7 @@ def test_compile_pool_execution_plan_unsafe_mode_skips_approval_gate() -> None:
         "reconciliation_report",
         "publication_odata",
     ]
+    assert all("condition" not in edge for edge in plan.dag_structure["edges"])
 
 
 @pytest.mark.django_db
@@ -143,4 +150,3 @@ def test_compiled_plan_builds_valid_workflow_template() -> None:
     assert len(workflow_template.dag_structure.nodes) == len(plan.steps)
     assert workflow_template.config.timeout_seconds == 86400
     assert plan.workflow_binding_hint == "legacy-binding-hint"
-

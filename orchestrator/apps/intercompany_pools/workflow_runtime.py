@@ -66,20 +66,6 @@ def start_pool_run_workflow_execution(
                 source_hash=locked_run.source_hash,
             ),
         )
-        workflow_template = _resolve_or_create_workflow_template(plan=plan, requested_by=requested_by)
-        execution = workflow_template.create_execution(
-            _build_input_context(run=locked_run),
-            tenant=locked_run.tenant,
-            execution_consumer="pools",
-        )
-        execution.execution_plan = _build_execution_plan_snapshot(
-            run=locked_run,
-            plan=plan,
-            workflow_template=workflow_template,
-        )
-        execution.bindings = _build_execution_bindings(plan=plan)
-        execution.save(update_fields=["execution_plan", "bindings"])
-
         save_fields = {
             "updated_at",
             "workflow_execution_id",
@@ -87,10 +73,6 @@ def start_pool_run_workflow_execution(
             "execution_backend",
             "workflow_template_name",
         }
-        locked_run.workflow_execution_id = execution.id
-        locked_run.workflow_status = execution.status
-        locked_run.execution_backend = "workflow_core"
-        locked_run.workflow_template_name = workflow_template.name
 
         if locked_run.schema_template_id is None:
             locked_run.schema_template = schema_template
@@ -108,9 +90,26 @@ def start_pool_run_workflow_execution(
             and locked_run.publication_confirmed_at is None
         ):
             locked_run.confirm_publication(confirmed_by=requested_by)
-            save_fields.update(
-                {"publication_confirmed_at", "publication_confirmed_by"}
-            )
+            save_fields.update({"publication_confirmed_at", "publication_confirmed_by"})
+
+        workflow_template = _resolve_or_create_workflow_template(plan=plan, requested_by=requested_by)
+        execution = workflow_template.create_execution(
+            _build_input_context(run=locked_run),
+            tenant=locked_run.tenant,
+            execution_consumer="pools",
+        )
+        execution.execution_plan = _build_execution_plan_snapshot(
+            run=locked_run,
+            plan=plan,
+            workflow_template=workflow_template,
+        )
+        execution.bindings = _build_execution_bindings(plan=plan)
+        execution.save(update_fields=["execution_plan", "bindings"])
+
+        locked_run.workflow_execution_id = execution.id
+        locked_run.workflow_status = execution.status
+        locked_run.execution_backend = "workflow_core"
+        locked_run.workflow_template_name = workflow_template.name
 
         locked_run.save(update_fields=sorted(save_fields))
         locked_run.add_audit_event(

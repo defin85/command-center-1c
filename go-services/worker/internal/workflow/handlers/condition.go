@@ -134,36 +134,7 @@ func (h *ConditionHandler) getExpression(node *models.Node) string {
 // - Simple variable references: "{{variable}}"
 // - Comparison placeholders (for demonstration)
 func (h *ConditionHandler) evaluateSimpleExpression(expr string, ctx *wfcontext.ExecutionContext) string {
-	expr = strings.TrimSpace(expr)
-
-	// Direct boolean values
-	lower := strings.ToLower(expr)
-	if lower == "true" || lower == "false" {
-		return lower
-	}
-
-	// Simple variable reference: {{variable}}
-	if strings.HasPrefix(expr, "{{") && strings.HasSuffix(expr, "}}") {
-		varName := strings.TrimSpace(expr[2 : len(expr)-2])
-		if val, ok := ctx.Get(varName); ok {
-			switch v := val.(type) {
-			case bool:
-				return strconv.FormatBool(v)
-			case string:
-				return v
-			case int:
-				return strconv.FormatBool(v != 0)
-			case float64:
-				return strconv.FormatBool(v != 0)
-			default:
-				return fmt.Sprintf("%v", val)
-			}
-		}
-		return "false"
-	}
-
-	// Return as-is for complex expressions (should use template engine)
-	return expr
+	return evaluateExpressionWithoutTemplate(expr, ctx)
 }
 
 // createResult builds a NodeResult for the condition evaluation.
@@ -227,11 +198,71 @@ func EvaluateCondition(
 			return false, fmt.Errorf("condition evaluation failed: %w", err)
 		}
 	} else {
-		// Simple evaluation without template engine
-		rendered = expression
+		// Fail closed for unresolved template expressions when template engine is unavailable.
+		rendered = evaluateExpressionWithoutTemplate(expression, execCtx)
 	}
 
 	return isTruthy(rendered), nil
+}
+
+func evaluateExpressionWithoutTemplate(expression string, execCtx *wfcontext.ExecutionContext) string {
+	expr := strings.TrimSpace(expression)
+
+	lower := strings.ToLower(expr)
+	if lower == "true" || lower == "false" {
+		return lower
+	}
+
+	if strings.HasPrefix(expr, "{{") && strings.HasSuffix(expr, "}}") {
+		varName := strings.TrimSpace(expr[2 : len(expr)-2])
+		if varName == "" {
+			return "false"
+		}
+		val, ok := execCtx.Get(varName)
+		if !ok {
+			return "false"
+		}
+		return stringifyValueForTruthyCheck(val)
+	}
+
+	return expr
+}
+
+func stringifyValueForTruthyCheck(val interface{}) string {
+	switch v := val.(type) {
+	case nil:
+		return "false"
+	case bool:
+		return strconv.FormatBool(v)
+	case string:
+		return v
+	case int:
+		return strconv.FormatBool(v != 0)
+	case int8:
+		return strconv.FormatBool(v != 0)
+	case int16:
+		return strconv.FormatBool(v != 0)
+	case int32:
+		return strconv.FormatBool(v != 0)
+	case int64:
+		return strconv.FormatBool(v != 0)
+	case uint:
+		return strconv.FormatBool(v != 0)
+	case uint8:
+		return strconv.FormatBool(v != 0)
+	case uint16:
+		return strconv.FormatBool(v != 0)
+	case uint32:
+		return strconv.FormatBool(v != 0)
+	case uint64:
+		return strconv.FormatBool(v != 0)
+	case float32:
+		return strconv.FormatBool(v != 0)
+	case float64:
+		return strconv.FormatBool(v != 0)
+	default:
+		return fmt.Sprintf("%v", val)
+	}
 }
 
 // ConditionEvaluatorImpl implements the executor.ConditionEvaluator interface.

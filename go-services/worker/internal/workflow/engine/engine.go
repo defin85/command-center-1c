@@ -37,14 +37,14 @@ import (
 
 // Engine is the main entry point for workflow execution.
 type Engine struct {
-	stateStore    state.StateStore
-	historyStore  state.HistoryStore
-	stateManager  *state.StateManager
-	handlerReg    *handlers.HandlerRegistry
-	handlerDeps   *handlers.HandlerDependencies
-	logger        *slog.Logger
-	zapLogger     *zap.Logger
-	config        *EngineConfig
+	stateStore   state.StateStore
+	historyStore state.HistoryStore
+	stateManager *state.StateManager
+	handlerReg   *handlers.HandlerRegistry
+	handlerDeps  *handlers.HandlerDependencies
+	logger       *slog.Logger
+	zapLogger    *zap.Logger
+	config       *EngineConfig
 }
 
 // EngineConfig holds configuration for the workflow engine.
@@ -185,9 +185,7 @@ func (e *Engine) StartWorkflow(
 	}
 
 	// Register handlers
-	for _, handler := range e.handlerReg.AllHandlers() {
-		exec.RegisterHandler(handler)
-	}
+	e.configureExecutor(exec)
 
 	// Initialize execution context
 	execCtx := wfcontext.NewExecutionContextWithVars(executionID, dag.ID, inputVars)
@@ -266,9 +264,7 @@ func (e *Engine) ExecuteWorkflowSync(
 	}
 
 	// Register handlers
-	for _, handler := range e.handlerReg.AllHandlers() {
-		exec.RegisterHandler(handler)
-	}
+	e.configureExecutor(exec)
 
 	// Initialize context
 	execCtx := wfcontext.NewExecutionContextWithVars(executionID, dag.ID, inputVars)
@@ -353,6 +349,13 @@ func (e *Engine) ValidateDAG(dagJSON []byte) (*validator.ValidationResult, error
 
 	v := validator.NewValidator(dag)
 	return v.Validate(), nil
+}
+
+func (e *Engine) configureExecutor(exec *executor.Executor) {
+	for _, handler := range e.handlerReg.AllHandlers() {
+		exec.RegisterHandler(handler)
+	}
+	exec.SetConditionEvaluator(handlers.NewConditionEvaluator(e.handlerDeps.TemplateEngine))
 }
 
 // ExecutionResult holds the result of a workflow execution.

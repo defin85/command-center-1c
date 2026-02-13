@@ -246,12 +246,12 @@ func TestIsTruthy(t *testing.T) {
 		{"none", false},
 		{"null", false},
 		{"nil", false},
-		{"some_value", true},   // Non-empty string is truthy
-		{"  true  ", true},     // Trimmed
-		{"  false  ", false},   // Trimmed
-		{"3.14", true},         // Non-zero number
-		{"0.0", false},         // Zero number
-		{"-1", true},           // Negative number is truthy
+		{"some_value", true}, // Non-empty string is truthy
+		{"  true  ", true},   // Trimmed
+		{"  false  ", false}, // Trimmed
+		{"3.14", true},       // Non-zero number
+		{"0.0", false},       // Zero number
+		{"-1", true},         // Negative number is truthy
 	}
 
 	for _, tc := range testCases {
@@ -528,6 +528,22 @@ func TestConditionEvaluatorImpl(t *testing.T) {
 		result, err := evaluator.Evaluate("true", execCtx)
 		require.NoError(t, err)
 		assert.True(t, result)
+	})
+
+	t.Run("evaluate template variable without template engine", func(t *testing.T) {
+		evaluator := NewConditionEvaluator(nil)
+
+		pendingCtx := wfcontext.NewExecutionContext("exec-1", "workflow-1")
+		pendingCtx = pendingCtx.Set("approved_at", nil)
+		pendingResult, err := evaluator.Evaluate("{{approved_at}}", pendingCtx)
+		require.NoError(t, err)
+		assert.False(t, pendingResult)
+
+		approvedCtx := wfcontext.NewExecutionContext("exec-2", "workflow-1")
+		approvedCtx = approvedCtx.Set("approved_at", "2026-01-01T00:00:00Z")
+		approvedResult, err := evaluator.Evaluate("{{approved_at}}", approvedCtx)
+		require.NoError(t, err)
+		assert.True(t, approvedResult)
 	})
 }
 
