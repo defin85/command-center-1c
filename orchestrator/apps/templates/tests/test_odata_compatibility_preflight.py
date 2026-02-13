@@ -70,3 +70,29 @@ def test_odata_compatibility_preflight_fails_on_rejected_content_type() -> None:
     checks = {item["key"]: item for item in payload["checks"]}
     assert payload["decision"] == "no_go"
     assert checks["media_type_policy"]["ok"] is False
+
+
+@pytest.mark.django_db
+def test_odata_compatibility_preflight_reports_legacy_mode_policy_block_without_legacy_entry() -> None:
+    out = StringIO()
+    call_command(
+        "preflight_odata_compatibility_profile",
+        "--configuration-id",
+        "1c-accounting-3.0-standard-odata",
+        "--compatibility-mode",
+        "8.3.7",
+        "--write-content-type",
+        "application/json;odata=nometadata",
+        "--release-profile-version",
+        "0.4.2-draft",
+        "--json",
+        stdout=out,
+    )
+    payload = json.loads(out.getvalue())
+    checks = {item["key"]: item for item in payload["checks"]}
+    legacy_check = checks["legacy_mode_policy"]
+
+    assert payload["decision"] == "no_go"
+    assert legacy_check["ok"] is False
+    assert legacy_check["legacy_target"] is True
+    assert legacy_check["legacy_supported"] is False

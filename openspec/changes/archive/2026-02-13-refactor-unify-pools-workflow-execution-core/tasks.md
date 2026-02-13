@@ -75,19 +75,19 @@
 - [x] 5.3 Добавить UI для `safe` режима: `preparing`/`awaiting_approval`, действия `confirm-publication` и `abort-publication`.
 
 ## 6. Качество и валидация
-- [ ] 6.1 Добавить unit/integration тесты на compiler, статусную проекцию, идемпотентность и retry.
-- [ ] 6.2 Добавить API regression тесты на совместимость `pools/runs*`.
-- [ ] 6.3 Добавить тесты `safe/unsafe` approval gate, `approval_state` и `status_reason` проекции.
-- [ ] 6.4 Добавить тесты retry interval clamp (<=120), OData identity strategy и diagnostic fields.
-- [ ] 6.5 Добавить тесты decommission preflight (`Go/No-Go`) на базе `execution-consumers-registry.yaml`.
-- [ ] 6.6 Добавить API/интеграционные тесты на idempotency команд confirm/abort и provenance retry-lineage.
+- [x] 6.1 Добавить unit/integration тесты на compiler, статусную проекцию, идемпотентность и retry.
+- [x] 6.2 Добавить API regression тесты на совместимость `pools/runs*`.
+- [x] 6.3 Добавить тесты `safe/unsafe` approval gate, `approval_state` и `status_reason` проекции.
+- [x] 6.4 Добавить тесты retry interval clamp (<=120), OData identity strategy и diagnostic fields.
+- [x] 6.5 Добавить тесты decommission preflight (`Go/No-Go`) на базе `execution-consumers-registry.yaml`.
+- [x] 6.6 Добавить API/интеграционные тесты на idempotency команд confirm/abort и provenance retry-lineage.
 - [x] 6.7 Прогнать `openspec validate refactor-unify-pools-workflow-execution-core --strict --no-interactive`.
 - [x] 6.8 Выполнить anti-drift self-check: подтвердить, что инварианты state machine согласованы между `proposal/design/spec/tasks`.
-- [ ] 6.9 Добавить контрактные тесты command state-matrix (`confirm/abort`: `400|202|200|409`) и idempotent-replay кейса `aborted_by_operator`.
-- [ ] 6.10 Добавить API contract-тесты на error payload safe-команд (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`) и точные HTTP-коды (`400|202|200|409`).
-- [ ] 6.11 Добавить preflight-тесты на блокировку rollout при несовместимости media-type policy profile и compatibility mode (`<=8.3.7` без legacy entry).
-- [ ] 6.12 Добавить security-тесты на неразличимость ответов для unknown/cross-tenant `run_id` (`404 RUN_NOT_FOUND`).
-- [ ] 6.13 Добавить интеграционные тесты `Idempotency-Key` для safe-команд (deterministic replay + `idempotency_key_reused`).
-- [ ] 6.14 Добавить CI-проверки schema-валидации для `execution-consumers-registry.yaml` и `odata-compatibility-profile.yaml`.
-- [ ] 6.15 Добавить интеграционные тесты Variant A на атомарность `command_log + outbox` (нет enqueue без committed command outcome).
-- [ ] 6.16 Добавить race-тесты `confirm` vs `abort` на single-winner CAS и отсутствие duplicate enqueue/cancel side effects.
+- [x] 6.9 Добавить контрактные тесты command state-matrix (`confirm/abort`: `400|202|200|409`) и idempotent-replay кейса `aborted_by_operator`.
+- [x] 6.10 Добавить API contract-тесты на error payload safe-команд (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`) и точные HTTP-коды (`400|202|200|409`).
+- [x] 6.11 Добавить preflight-тесты на блокировку rollout при несовместимости media-type policy profile и compatibility mode (`<=8.3.7` без legacy entry).
+- [x] 6.12 Добавить security-тесты на неразличимость ответов для unknown/cross-tenant `run_id` (`404 RUN_NOT_FOUND`).
+- [x] 6.13 Добавить интеграционные тесты `Idempotency-Key` для safe-команд (deterministic replay + `idempotency_key_reused`).
+- [x] 6.14 Добавить CI-проверки schema-валидации для `execution-consumers-registry.yaml` и `odata-compatibility-profile.yaml`.
+- [x] 6.15 Добавить интеграционные тесты Variant A на атомарность `command_log + outbox` (нет enqueue без committed command outcome).
+- [x] 6.16 Добавить race-тесты `confirm` vs `abort` на single-winner CAS и отсутствие duplicate enqueue/cancel side effects.

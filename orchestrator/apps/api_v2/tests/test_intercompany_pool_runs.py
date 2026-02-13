@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from unittest.mock import MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.contrib.auth.models import User
@@ -120,6 +120,63 @@ def _create_database(*, tenant: Tenant, name: str) -> Database:
         username="admin",
         password="secret",
     )
+
+
+def _create_run_with_execution_state(
+    *,
+    tenant: Tenant,
+    pool: OrganizationPool,
+    mode: str = PoolRunMode.SAFE,
+    workflow_status: str = WorkflowExecution.STATUS_COMPLETED,
+    approval_required: bool = True,
+    approval_state: str = "awaiting_approval",
+    approved_at: str | None = None,
+    publication_step_state: str = "not_enqueued",
+    terminal_reason: str | None = None,
+) -> PoolRun:
+    run = PoolRun.objects.create(
+        tenant=tenant,
+        pool=pool,
+        direction=PoolRunDirection.BOTTOM_UP,
+        period_start=date(2026, 1, 1),
+        mode=mode,
+    )
+    run.mark_validated(summary={"rows": 1}, diagnostics=[])
+    run.save(update_fields=["status", "validated_at", "validation_summary", "diagnostics", "updated_at"])
+
+    input_context: dict[str, object] = {
+        "pool_run_id": str(run.id),
+        "approval_required": approval_required,
+        "approval_state": approval_state,
+        "approved_at": approved_at,
+        "publication_step_state": publication_step_state,
+    }
+    if terminal_reason:
+        input_context["terminal_reason"] = terminal_reason
+
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=workflow_status,
+        input_context=input_context,
+    )
+    return run
+
+
+def _assert_safe_command_conflict_payload(
+    payload: dict[str, object],
+    *,
+    run_id: UUID,
+    expected_code: str,
+    expected_reason: str,
+    expected_retryable: bool,
+) -> None:
+    assert payload["success"] is False
+    assert payload["error_code"] == expected_code
+    assert isinstance(payload["error_message"], str)
+    assert payload["error_message"]
+    assert payload["conflict_reason"] == expected_reason
+    assert payload["retryable"] is expected_retryable
+    assert payload["run_id"] == str(run_id)
 
 
 @pytest.fixture
@@ -832,6 +889,188 @@ def test_confirm_publication_requires_idempotency_key_header(
 
 
 @pytest.mark.django_db
+def test_abort_publication_requires_idempotency_key_header(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_run_with_execution_state(
+        tenant=default_tenant,
+        pool=pool,
+        approval_required=True,
+        approval_state="awaiting_approval",
+        publication_step_state="not_enqueued",
+    )
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/abort-publication/",
+        {},
+        format="json",
+    )
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "IDEMPOTENCY_KEY_REQUIRED"
+
+
+@pytest.mark.django_db
+def test_confirm_publication_returns_noop_200_for_already_approved_run(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_run_with_execution_state(
+        tenant=default_tenant,
+        pool=pool,
+        approval_required=True,
+        approval_state="approved",
+        approved_at=timezone.now().isoformat(),
+        publication_step_state="queued",
+        workflow_status=WorkflowExecution.STATUS_RUNNING,
+    )
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/confirm-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="confirm-noop-1",
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["result"] == "noop"
+    assert payload["replayed"] is False
+    assert payload["run"]["approval_state"] == "approved"
+    assert payload["run"]["status_reason"] == "queued"
+    assert PoolRunCommandOutbox.objects.filter(run=run).count() == 0
+
+
+@pytest.mark.django_db
+def test_abort_publication_returns_noop_200_for_aborted_terminal_replay(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_run_with_execution_state(
+        tenant=default_tenant,
+        pool=pool,
+        approval_required=True,
+        approval_state="approved",
+        approved_at=timezone.now().isoformat(),
+        publication_step_state="queued",
+        workflow_status=WorkflowExecution.STATUS_CANCELLED,
+        terminal_reason="aborted_by_operator",
+    )
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/abort-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="abort-noop-1",
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["result"] == "noop"
+    assert payload["replayed"] is False
+    assert payload["run"]["terminal_reason"] == "aborted_by_operator"
+    assert PoolRunCommandOutbox.objects.filter(run=run).count() == 0
+
+
+@pytest.mark.django_db
+def test_confirm_publication_from_preparing_returns_retryable_conflict_payload(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_run_with_execution_state(
+        tenant=default_tenant,
+        pool=pool,
+        approval_required=True,
+        approval_state="preparing",
+        publication_step_state="not_enqueued",
+    )
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/confirm-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="confirm-preparing-1",
+    )
+    assert response.status_code == 409
+    _assert_safe_command_conflict_payload(
+        response.json(),
+        run_id=run.id,
+        expected_code="AWAITING_PRE_PUBLISH",
+        expected_reason="awaiting_pre_publish",
+        expected_retryable=True,
+    )
+
+
+@pytest.mark.django_db
+def test_confirm_publication_for_unsafe_run_returns_not_safe_conflict_payload(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_run_with_execution_state(
+        tenant=default_tenant,
+        pool=pool,
+        mode=PoolRunMode.UNSAFE,
+        approval_required=False,
+        approval_state="not_required",
+        approved_at=timezone.now().isoformat(),
+        publication_step_state="queued",
+        workflow_status=WorkflowExecution.STATUS_RUNNING,
+    )
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/confirm-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="confirm-unsafe-1",
+    )
+    assert response.status_code == 409
+    _assert_safe_command_conflict_payload(
+        response.json(),
+        run_id=run.id,
+        expected_code="NOT_SAFE_RUN",
+        expected_reason="not_safe_run",
+        expected_retryable=False,
+    )
+
+
+@pytest.mark.django_db
+def test_abort_publication_after_started_step_returns_publication_started_conflict_payload(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_run_with_execution_state(
+        tenant=default_tenant,
+        pool=pool,
+        approval_required=True,
+        approval_state="approved",
+        approved_at=timezone.now().isoformat(),
+        publication_step_state="started",
+        workflow_status=WorkflowExecution.STATUS_RUNNING,
+    )
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/abort-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="abort-started-1",
+    )
+    assert response.status_code == 409
+    _assert_safe_command_conflict_payload(
+        response.json(),
+        run_id=run.id,
+        expected_code="PUBLICATION_STARTED",
+        expected_reason="publication_started",
+        expected_retryable=False,
+    )
+
+
+@pytest.mark.django_db
 def test_confirm_publication_returns_accepted_and_deterministic_replay(
     authenticated_client: APIClient,
     default_tenant: Tenant,
@@ -869,6 +1108,47 @@ def test_confirm_publication_returns_accepted_and_deterministic_replay(
         {},
         format="json",
         HTTP_IDEMPOTENCY_KEY="confirm-key-1",
+    )
+
+    assert first.status_code == 202
+    first_payload = first.json()
+    assert first_payload["result"] == "accepted"
+    assert first_payload["replayed"] is False
+
+    assert replay.status_code == 202
+    replay_payload = replay.json()
+    assert replay_payload["result"] == "accepted"
+    assert replay_payload["replayed"] is True
+
+    assert PoolRunCommandLog.objects.filter(run=run).count() == 1
+    assert PoolRunCommandOutbox.objects.filter(run=run).count() == 1
+
+
+@pytest.mark.django_db
+def test_abort_publication_returns_accepted_and_deterministic_replay(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_run_with_execution_state(
+        tenant=default_tenant,
+        pool=pool,
+        approval_required=True,
+        approval_state="awaiting_approval",
+        publication_step_state="not_enqueued",
+    )
+
+    first = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/abort-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="abort-key-replay-1",
+    )
+    replay = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/abort-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="abort-key-replay-1",
     )
 
     assert first.status_code == 202
@@ -927,9 +1207,13 @@ def test_abort_publication_after_confirm_pending_outbox_returns_single_winner_co
 
     assert confirm.status_code == 202
     assert abort.status_code == 409
-    abort_payload = abort.json()
-    assert abort_payload["conflict_reason"] == "terminal_state"
-    assert abort_payload["error_code"] == "TERMINAL_STATE"
+    _assert_safe_command_conflict_payload(
+        abort.json(),
+        run_id=run.id,
+        expected_code="TERMINAL_STATE",
+        expected_reason="terminal_state",
+        expected_retryable=False,
+    )
 
     outbox_entries = list(PoolRunCommandOutbox.objects.filter(run=run))
     assert len(outbox_entries) == 1
@@ -977,9 +1261,83 @@ def test_confirm_publication_with_reused_key_from_other_command_returns_idempote
 
     assert abort.status_code == 202
     assert confirm.status_code == 409
-    confirm_payload = confirm.json()
-    assert confirm_payload["conflict_reason"] == "idempotency_key_reused"
-    assert confirm_payload["error_code"] == "IDEMPOTENCY_KEY_REUSED"
+    _assert_safe_command_conflict_payload(
+        confirm.json(),
+        run_id=run.id,
+        expected_code="IDEMPOTENCY_KEY_REUSED",
+        expected_reason="idempotency_key_reused",
+        expected_retryable=False,
+    )
+
+
+@pytest.mark.django_db
+def test_get_pool_run_cross_tenant_and_unknown_run_are_indistinguishable(
+    user: User,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+
+    another_tenant = Tenant.objects.create(slug=f"tenant-alt-{uuid4().hex[:6]}", name="Tenant Alt")
+    TenantMember.objects.create(
+        tenant=another_tenant,
+        user=user,
+        role=TenantMember.ROLE_ADMIN,
+    )
+    another_client = APIClient()
+    another_client.force_authenticate(user=user)
+    another_client.credentials(HTTP_X_CC1C_TENANT_ID=str(another_tenant.id))
+
+    cross_tenant_response = another_client.get(f"/api/v2/pools/runs/{run.id}/")
+    unknown_response = another_client.get(f"/api/v2/pools/runs/{uuid4()}/")
+
+    assert cross_tenant_response.status_code == 404
+    assert unknown_response.status_code == 404
+    assert cross_tenant_response.json() == unknown_response.json()
+    assert cross_tenant_response.json()["error"]["code"] == "RUN_NOT_FOUND"
+
+
+@pytest.mark.django_db
+def test_confirm_publication_cross_tenant_and_unknown_run_are_indistinguishable(
+    user: User,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_run_with_execution_state(
+        tenant=default_tenant,
+        pool=pool,
+        approval_required=True,
+        approval_state="awaiting_approval",
+        publication_step_state="not_enqueued",
+    )
+
+    another_tenant = Tenant.objects.create(slug=f"tenant-alt-safe-{uuid4().hex[:6]}", name="Tenant Alt Safe")
+    TenantMember.objects.create(
+        tenant=another_tenant,
+        user=user,
+        role=TenantMember.ROLE_ADMIN,
+    )
+    another_client = APIClient()
+    another_client.force_authenticate(user=user)
+    another_client.credentials(HTTP_X_CC1C_TENANT_ID=str(another_tenant.id))
+
+    cross_tenant_response = another_client.post(
+        f"/api/v2/pools/runs/{run.id}/confirm-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="tenant-cross-check",
+    )
+    unknown_response = another_client.post(
+        f"/api/v2/pools/runs/{uuid4()}/confirm-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="tenant-cross-check-unknown",
+    )
+
+    assert cross_tenant_response.status_code == 404
+    assert unknown_response.status_code == 404
+    assert cross_tenant_response.json() == unknown_response.json()
+    assert cross_tenant_response.json()["error"]["code"] == "RUN_NOT_FOUND"
 
 
 @pytest.mark.django_db

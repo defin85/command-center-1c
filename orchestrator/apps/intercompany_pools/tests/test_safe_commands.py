@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -12,6 +13,7 @@ from apps.intercompany_pools.models import (
     PoolRunCommandOutboxIntent,
     PoolRunCommandResultClass,
     PoolRunCommandType,
+    PoolRunCommandLog,
     PoolRunMode,
 )
 from apps.intercompany_pools.safe_commands import (
@@ -191,3 +193,26 @@ def test_safe_commands_reused_key_for_other_command_returns_idempotency_conflict
     assert reused.result_class == PoolRunCommandResultClass.CONFLICT
     assert reused.conflict_reason == CONFLICT_REASON_IDEMPOTENCY_KEY_REUSED
     assert PoolRunCommandOutbox.objects.filter(run=run).count() == 1
+
+
+@pytest.mark.django_db
+def test_safe_commands_variant_a_atomicity_rolls_back_command_log_when_outbox_write_fails() -> None:
+    run = _create_safe_run_with_awaiting_approval_execution()
+    execution = WorkflowExecution.objects.get(id=run.workflow_execution_id)
+    before_context = dict(execution.input_context)
+
+    with patch(
+        "apps.intercompany_pools.safe_commands.enqueue_pool_run_command_outbox_intent",
+        side_effect=RuntimeError("forced outbox failure"),
+    ):
+        with pytest.raises(RuntimeError, match="forced outbox failure"):
+            process_pool_run_safe_command(
+                run_id=run.id,
+                command_type=PoolRunCommandType.CONFIRM_PUBLICATION,
+                idempotency_key="confirm-atomicity-fail-1",
+            )
+
+    refreshed_context = WorkflowExecution.objects.values_list("input_context", flat=True).get(id=execution.id)
+    assert refreshed_context == before_context
+    assert PoolRunCommandLog.objects.filter(run=run).count() == 0
+    assert PoolRunCommandOutbox.objects.filter(run=run).count() == 0
