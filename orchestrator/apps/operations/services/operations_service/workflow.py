@@ -49,6 +49,7 @@ class OperationsServiceWorkflowMixin:
         """
         data = dict(workflow_config or {})
         data["execution_id"] = execution_id
+        idempotency_key = str(data.get("idempotency_key") or execution_id).strip() or execution_id
 
         message = {
             "version": cls.VERSION,
@@ -63,7 +64,7 @@ class OperationsServiceWorkflowMixin:
                 "timeout_seconds": 300,  # 5 minutes for workflow
                 "retry_count": 1,
                 "priority": "normal",
-                "idempotency_key": execution_id,
+                "idempotency_key": idempotency_key,
             },
             "metadata": {
                 "created_by": "workflow_engine",

@@ -371,6 +371,7 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
     assert workflow_execution.input_context.get("approved_at") is None
     assert workflow_execution.input_context.get("approval_state") == "preparing"
     assert workflow_execution.input_context.get("publication_step_state") == "not_enqueued"
+    assert workflow_execution.input_context.get("pool_run_idempotency_key") == run.idempotency_key
 
 
 @pytest.mark.django_db
@@ -440,6 +441,8 @@ def test_create_pool_run_enqueues_to_workflow_stream_with_normal_priority(
     message = call_args.args[0]
     assert call_args.kwargs["stream_name"] == "commands:worker:workflows"
     assert message["execution_config"]["priority"] == "normal"
+    assert message["execution_config"]["idempotency_key"] == run_payload["idempotency_key"]
+    assert message["payload"]["data"]["pool_run_idempotency_key"] == run_payload["idempotency_key"]
     assert message["operation_type"] == "execute_workflow"
     mock_event_publisher.publish.assert_called_once()
 

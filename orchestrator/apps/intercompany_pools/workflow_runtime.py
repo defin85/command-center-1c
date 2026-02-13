@@ -141,8 +141,10 @@ def start_pool_run_workflow_execution(
         execution_id=execution_id or "",
         workflow_config={
             "pool_run_id": str(run.id),
+            "pool_run_idempotency_key": run.idempotency_key,
             "execution_consumer": "pools",
             "priority": "normal",
+            "idempotency_key": run.idempotency_key or (execution_id or ""),
         },
     )
     run_refresh = PoolRun.objects.get(id=run.id)
@@ -188,6 +190,7 @@ def start_pool_run_workflow_execution(
 def _build_input_context(*, run: PoolRun) -> dict[str, Any]:
     return {
         "pool_run_id": str(run.id),
+        "pool_run_idempotency_key": run.idempotency_key,
         "pool_id": str(run.pool_id),
         "tenant_id": str(run.tenant_id),
         "direction": run.direction,

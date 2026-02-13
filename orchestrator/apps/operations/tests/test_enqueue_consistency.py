@@ -54,3 +54,25 @@ def test_enqueue_workflow_execution_returns_error_on_redis_failure():
         }
 
         mock_event_publisher.publish.assert_not_called()
+
+
+def test_enqueue_workflow_execution_propagates_custom_idempotency_key():
+    execution_id = str(uuid4())
+    custom_key = "pool-run-idempotency-key"
+
+    with (
+        patch("apps.operations.services.operations_service.workflow.redis_client") as mock_redis_client,
+        patch("apps.operations.services.operations_service.workflow.event_publisher") as mock_event_publisher,
+    ):
+        mock_redis_client.enqueue_operation_stream.return_value = "1702389123456-0"
+
+        result = OperationsService.enqueue_workflow_execution(
+            execution_id=execution_id,
+            workflow_config={"idempotency_key": custom_key},
+        )
+
+        assert result.success is True
+        mock_redis_client.enqueue_operation_stream.assert_called_once()
+        message = mock_redis_client.enqueue_operation_stream.call_args.args[0]
+        assert message["execution_config"]["idempotency_key"] == custom_key
+        mock_event_publisher.publish.assert_called_once()

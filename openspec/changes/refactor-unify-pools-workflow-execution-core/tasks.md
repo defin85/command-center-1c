@@ -48,7 +48,7 @@
 
 ## 3. Backend: pools как domain facade
 - [ ] 3.1 Сохранить `pools/*` API как фасад над unified execution core.
-- [ ] 3.2 Сохранить доменную идемпотентность (`pool_id + period + direction + source_hash`) и прокинуть её в workflow idempotency/metadata.
+- [x] 3.2 Сохранить доменную идемпотентность (`pool_id + period + direction + source_hash`) и прокинуть её в workflow idempotency/metadata.
 - [ ] 3.3 Обеспечить, что publication service (OData) вызывается как step adapter внутри workflow, а не как отдельный orchestrator runtime.
 - [x] 3.4 Добавить provenance block в `/pools/runs*` (`workflow_run_id`, `workflow_status`, `execution_backend`, `retry_chain`).
 - [x] 3.5 Добавить `status_reason` для статуса `validated` (`preparing`, `awaiting_approval`, `queued`) и команды фасада `confirm-publication`/`abort-publication`.
