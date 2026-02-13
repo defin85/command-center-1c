@@ -7,7 +7,7 @@ Rollout ДОЛЖЕН (SHALL) быть заблокирован (`No-Go`), есл
 
 ## Ownership and Versioning
 - Owner: `platform + pools` (совместная ответственность за актуальность profile и rollout gate).
-- Текущая версия профиля: `0.1.0-draft`.
+- Текущая версия профиля: `0.2.0-draft`.
 - Версионирование: `MAJOR.MINOR.PATCH`.
   - `MAJOR`: несовместимое изменение schema/profile policy.
   - `MINOR`: добавление новой конфигурации или нового поддерживаемого паттерна endpoint/posting.
@@ -32,7 +32,8 @@ Rollout ДОЛЖЕН (SHALL) быть заблокирован (`No-Go`), есл
 ## Supported Configurations
 | configuration_id | configuration_version_range | document_upsert_endpoint_pattern | document_posting_operation | document_identity_fields_priority | external_run_key_field | known_limitations | profile_entry_version | source_reference | verification_status | verified_at | verified_by |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1c-accounting-3.0-standard-odata | 3.0.x (tenant-specific patch-level) | `/odata/standard.odata/Document_IntercompanyPoolDistribution` | `PATCH Document_IntercompanyPoolDistribution(guid'{Ref_Key}')` body: `{"Posted": true}` | Ref_Key -> _IDRRef -> ExternalRunKey | ExternalRunKey | Для posting обязателен GUID; при fallback identity сначала выполняется lookup по `ExternalRunKey` | v1 | `orchestrator/apps/intercompany_pools/publication.py`; `orchestrator/apps/intercompany_pools/tests/test_publication.py`; `contracts/orchestrator/openapi.yaml` | verified | 2026-02-13 | automated-test-baseline |
+| cc1c-internal-test-double-intercompany-doc | n/a (internal test baseline) | `/odata/standard.odata/Document_IntercompanyPoolDistribution` | `PATCH Document_IntercompanyPoolDistribution(guid'{Ref_Key}')` body: `{"Posted": true}` | Ref_Key -> _IDRRef -> ExternalRunKey | ExternalRunKey | Используется в автотестах как internal test-double; в типовой БП 3.0 такой document entity может отсутствовать | v1 | `orchestrator/apps/intercompany_pools/publication.py`; `orchestrator/apps/intercompany_pools/tests/test_publication.py`; `contracts/orchestrator/openapi.yaml` | verified | 2026-02-13 | automated-test-baseline |
+| 1c-accounting-3.0-standard-odata | 3.0.x (target production line) | `TBD after target metadata audit (e.g. Document_РеализацияТоваровУслуг)` | `TBD after target posting contract confirmation` | Ref_Key -> _IDRRef -> ExternalRunKey | ExternalRunKey (or mapped extension field) | В целевой БП 3.0 отсутствует `Document_IntercompanyPoolDistribution`; требуется маппинг доменной публикации на доступный document endpoint и отдельный production-like прогон | v1 | `docs/ODATA_INTEGRATION.md`; target metadata/protocol pending | draft | - | - |
 
 ## Rollout Gate
 `publication_odata` rollout in production разрешён только если:
@@ -60,7 +61,12 @@ Rollout ДОЛЖЕН (SHALL) быть заблокирован (`No-Go`), есл
   - дополнительно к `verified` выполнена проверка на целевой production-like конфигурации 1С;
   - есть подтверждённый rollout протокол и владелец-аппрувер (platform/pools).
 
+## Target Eligibility Rule
+- Статус `verified` на internal test-double записи НЕ является основанием для production rollout.
+- Для production rollout обязательна запись именно для целевой 1С-конфигурации (например, `1c-accounting-3.0-standard-odata`) со статусом `approved`.
+
 ## Change Log
 | profile_version | date | summary |
 | --- | --- | --- |
+| 0.2.0-draft | 2026-02-13 | Split internal test baseline vs target BP 3.0; downgraded target entry to draft until real metadata mapping and production-like verification. |
 | 0.1.0-draft | 2026-02-13 | Initial profile contract, rollout gate, schema and versioning rules. |
