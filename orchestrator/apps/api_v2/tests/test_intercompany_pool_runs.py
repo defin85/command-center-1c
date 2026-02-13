@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import User
@@ -20,11 +21,13 @@ from apps.intercompany_pools.models import (
     PoolRun,
     PoolRunAuditEvent,
     PoolRunDirection,
+    PoolRunMode,
     PoolSchemaTemplate,
     PoolSchemaTemplateFormat,
 )
 from apps.intercompany_pools.publication import publish_run_documents
 from apps.operations.services import EnqueueResult
+from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate, WorkflowType
 from apps.tenancy.models import Tenant, TenantMember
 
 
@@ -40,6 +43,58 @@ def _create_validated_run(*, tenant: Tenant, pool: OrganizationPool) -> PoolRun:
     run.confirm_publication()
     run.save(update_fields=["publication_confirmed_at", "publication_confirmed_by", "updated_at"])
     return run
+
+
+def _attach_workflow_execution_to_run(*, run: PoolRun, status: str) -> WorkflowExecution:
+    template = WorkflowTemplate.objects.create(
+        name=f"pool-run-{uuid4().hex[:8]}",
+        description="",
+        workflow_type=WorkflowType.SEQUENTIAL,
+        dag_structure={
+            "nodes": [
+                {
+                    "id": "n1",
+                    "name": "Node 1",
+                    "type": "operation",
+                    "template_id": "tpl-test",
+                }
+            ],
+            "edges": [],
+        },
+        is_valid=True,
+        is_active=True,
+    )
+    execution = template.create_execution({"pool_run_id": str(run.id)})
+    update_fields = ["workflow_execution_id", "workflow_status", "execution_backend", "workflow_template_name", "updated_at"]
+    if status == WorkflowExecution.STATUS_RUNNING:
+        execution.start()
+        execution.save(update_fields=["status", "started_at"])
+    elif status == WorkflowExecution.STATUS_COMPLETED:
+        execution.start()
+        execution.complete({"ok": True})
+        execution.save(update_fields=["status", "started_at", "completed_at", "final_result"])
+    elif status == WorkflowExecution.STATUS_FAILED:
+        execution.start()
+        execution.fail("failed")
+        execution.save(
+            update_fields=[
+                "status",
+                "started_at",
+                "completed_at",
+                "error_message",
+                "error_node_id",
+            ]
+        )
+    elif status == WorkflowExecution.STATUS_CANCELLED:
+        execution.cancel()
+        execution.save(update_fields=["status", "completed_at"])
+
+    run.workflow_execution_id = execution.id
+    run.workflow_status = execution.status
+    run.execution_backend = "workflow_core"
+    run.workflow_template_name = template.name
+    run.save(update_fields=update_fields)
+    return execution
 
 
 def _create_database(*, tenant: Tenant, name: str) -> Database:
@@ -282,7 +337,7 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
     assert first_payload["created"] is True
     assert first_payload["run"]["status"] == PoolRun.STATUS_VALIDATED
     assert first_payload["run"]["workflow_execution_id"] is not None
-    assert first_payload["run"]["workflow_status"] == "queued"
+    assert first_payload["run"]["workflow_status"] == "pending"
     assert first_payload["run"]["execution_backend"] == "workflow_core"
 
     assert second.status_code == 200
@@ -369,6 +424,50 @@ def test_get_pool_run_returns_details(
     assert len(payload["publication_attempts"]) == 1
     assert payload["publication_attempts"][0]["target_database_id"] == str(database.id)
     assert any(event["event_type"] == "run.test_event" for event in payload["audit_events"])
+
+
+@pytest.mark.django_db
+def test_get_pool_run_projects_safe_pending_workflow_to_validated_awaiting_approval(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = PoolRun.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        direction=PoolRunDirection.BOTTOM_UP,
+        period_start=date(2026, 1, 1),
+        mode=PoolRunMode.SAFE,
+    )
+    run.mark_validated(summary={"rows": 1}, diagnostics=[])
+    run.save()
+    _attach_workflow_execution_to_run(run=run, status=WorkflowExecution.STATUS_PENDING)
+
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["status"] == PoolRun.STATUS_VALIDATED
+    assert payload["run"]["status_reason"] == "awaiting_approval"
+    assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_PENDING
+
+
+@pytest.mark.django_db
+def test_get_pool_run_projects_completed_workflow_with_failed_targets_to_partial_success(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    run.publication_summary = {"failed_targets": 2}
+    run.save(update_fields=["publication_summary", "updated_at"])
+    _attach_workflow_execution_to_run(run=run, status=WorkflowExecution.STATUS_COMPLETED)
+
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["status"] == PoolRun.STATUS_PARTIAL_SUCCESS
+    assert payload["run"]["status_reason"] is None
+    assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_COMPLETED
 
 
 @pytest.mark.django_db

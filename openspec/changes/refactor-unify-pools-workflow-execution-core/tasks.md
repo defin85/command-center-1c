@@ -32,7 +32,7 @@
 ## 2. Backend: execution-core интеграция
 - [x] 2.1 Реализовать compiler `PoolImportSchemaTemplate + run_context -> PoolExecutionPlan/WorkflowTemplate` с детерминированным mapping шагов.
 - [x] 2.2 Реализовать запуск `Pool Run` через workflow runtime (enqueue, lifecycle, retry policy, provenance).
-- [ ] 2.3 Реализовать status projection из workflow run в pool-доменные статусы без потери диагностики.
+- [x] 2.3 Реализовать status projection из workflow run в pool-доменные статусы без потери диагностики.
 - [ ] 2.4 Реализовать publication retry contract: `max_attempts_total=5`, retry только failed subset.
 - [ ] 2.5 Зафиксировать queueing contract phase 1: `commands:worker:workflows`, `priority=normal`.
 - [ ] 2.6 Реализовать approval gate в workflow graph (`safe`: ожидание confirm, `unsafe`: auto-confirm).

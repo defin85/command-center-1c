@@ -38,6 +38,7 @@ from apps.intercompany_pools.publication import (
 )
 from apps.intercompany_pools.runs import upsert_pool_run
 from apps.intercompany_pools.workflow_runtime import start_pool_run_workflow_execution
+from apps.templates.workflow.models import WorkflowExecution
 from apps.tenancy.authentication import TENANT_HEADER
 from apps.tenancy.models import Tenant
 
@@ -108,6 +109,11 @@ def _parse_limit(raw: str | None, *, default: int = 50, max_value: int = 200) ->
 
 
 def _serialize_run(run: PoolRun) -> dict[str, Any]:
+    workflow_status = _resolve_workflow_status(run)
+    projected_status, status_reason = _project_pool_status(run=run, workflow_status=workflow_status)
+    execution_backend = run.execution_backend or (
+        "workflow_core" if run.workflow_execution_id else "legacy_pool_runtime"
+    )
     return {
         "id": str(run.id),
         "tenant_id": str(run.tenant_id),
@@ -115,14 +121,15 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
         "schema_template_id": str(run.schema_template_id) if run.schema_template_id else None,
         "mode": run.mode,
         "direction": run.direction,
-        "status": run.status,
+        "status": projected_status,
+        "status_reason": status_reason,
         "period_start": run.period_start,
         "period_end": run.period_end,
         "source_hash": run.source_hash,
         "idempotency_key": run.idempotency_key,
         "workflow_execution_id": str(run.workflow_execution_id) if run.workflow_execution_id else None,
-        "workflow_status": run.workflow_status or None,
-        "execution_backend": run.execution_backend or None,
+        "workflow_status": workflow_status,
+        "execution_backend": execution_backend,
         "workflow_template_name": run.workflow_template_name or None,
         "seed": run.seed,
         "validation_summary": run.validation_summary,
@@ -136,6 +143,54 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
         "publishing_started_at": run.publishing_started_at,
         "completed_at": run.completed_at,
     }
+
+
+def _resolve_workflow_status(run: PoolRun) -> str | None:
+    if not run.workflow_execution_id:
+        return run.workflow_status or None
+
+    execution_status = (
+        WorkflowExecution.objects.filter(id=run.workflow_execution_id)
+        .values_list("status", flat=True)
+        .first()
+    )
+    return execution_status or run.workflow_status or None
+
+
+def _project_pool_status(*, run: PoolRun, workflow_status: str | None) -> tuple[str, str | None]:
+    status = run.status
+    status_reason: str | None = None
+    workflow_state = str(workflow_status or "").strip().lower()
+    failed_targets = int((run.publication_summary or {}).get("failed_targets") or 0)
+
+    if workflow_state in {WorkflowExecution.STATUS_FAILED, WorkflowExecution.STATUS_CANCELLED}:
+        return PoolRun.STATUS_FAILED, None
+
+    if workflow_state == WorkflowExecution.STATUS_COMPLETED:
+        if failed_targets > 0:
+            return PoolRun.STATUS_PARTIAL_SUCCESS, None
+        return PoolRun.STATUS_PUBLISHED, None
+
+    if workflow_state in {
+        WorkflowExecution.STATUS_PENDING,
+        WorkflowExecution.STATUS_RUNNING,
+        "queued",
+    }:
+        safe_unapproved = (
+            run.mode == PoolRunMode.SAFE and run.publication_confirmed_at is None
+        )
+        if safe_unapproved:
+            return PoolRun.STATUS_VALIDATED, "awaiting_approval"
+        if run.publishing_started_at is not None:
+            return PoolRun.STATUS_PUBLISHING, None
+        return PoolRun.STATUS_VALIDATED, "queued"
+
+    if status == PoolRun.STATUS_VALIDATED:
+        if run.mode == PoolRunMode.SAFE and run.publication_confirmed_at is None:
+            status_reason = "awaiting_approval"
+        else:
+            status_reason = "queued"
+    return status, status_reason
 
 
 def _serialize_attempt(attempt: PoolPublicationAttempt) -> dict[str, Any]:
@@ -220,6 +275,7 @@ class PoolRunSerializer(serializers.Serializer):
     mode = serializers.CharField()
     direction = serializers.CharField()
     status = serializers.CharField()
+    status_reason = serializers.CharField(required=False, allow_null=True)
     period_start = serializers.DateField()
     period_end = serializers.DateField(required=False, allow_null=True)
     source_hash = serializers.CharField()
