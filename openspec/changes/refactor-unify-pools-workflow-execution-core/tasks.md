@@ -59,7 +59,7 @@
 - [x] 3.10 Обеспечить fail-closed поведение facade API: cross-tenant/unknown `run_id` возвращает одинаковый `404 RUN_NOT_FOUND` без утечки причины.
 
 ## 4. Миграция и совместимость
-- [ ] 4.1 Добавить миграцию/бекфилл связей `pool_run -> workflow_run` для существующих/переходных записей.
+- [x] 4.1 Добавить миграцию/бекфилл связей `pool_run -> workflow_run` для существующих/переходных записей.
 - [ ] 4.2 Обеспечить чтение historical runs/details/audit через единый view без регрессий UI/API.
 - [ ] 4.3 Подготовить deprecation-plan для legacy execution path в `pools` (без немедленного удаления `workflows`).
 - [ ] 4.4 Добавить tenant linkage/backfill для workflow execution записей, связанных с pools.
