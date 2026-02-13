@@ -6,31 +6,31 @@
 - [x] 0.5 Зафиксировать dependency-gate: OData compatibility profile (endpoint/posting fields) обязателен до production rollout unified publication.
 
 ## 1. Spec и контрактная фиксация
-- [ ] 1.1 Зафиксировать в OpenSpec, что execution runtime для `pools` = `workflows`.
-- [ ] 1.2 Уточнить API-контракт `pools/runs`: явная связь с workflow run reference и статусной проекцией.
-- [ ] 1.3 Зафиксировать migration/compatibility требования для исторических run-ов и audit.
-- [ ] 1.4 Зафиксировать канонический status mapping `pool <-> workflow` без двусмысленностей.
-- [ ] 1.5 Зафиксировать tenant boundary контракт (`pool_run.tenant_id == workflow_execution.tenant_id`).
-- [ ] 1.6 Зафиксировать `safe/unsafe` approval gate как явный контракт (`confirm-publication` / `abort-publication`) без второго runtime.
-- [ ] 1.7 Зафиксировать подстатусы `validated` через `status_reason` (`preparing`, `awaiting_approval`, `queued`) и явный `approval_state`.
-- [ ] 1.8 Зафиксировать retry-контракт полностью: `max_attempts_total=5`, конфигурируемый интервал, cap 120 секунд.
-- [ ] 1.9 Зафиксировать OData identity strategy (`GUID` primary, `ExternalRunKey` fallback) и канонический diagnostic payload.
-- [ ] 1.10 Зафиксировать source-of-truth правило между change-ами и preflight-контракт decommission.
-- [ ] 1.11 Зафиксировать API-контракт safe-команд (`POST /api/v2/pools/runs/{run_id}/confirm-publication`, `POST /api/v2/pools/runs/{run_id}/abort-publication`) с idempotency/error моделью, safe-only применимостью и запретом `abort` после старта `publication_odata`.
-- [ ] 1.12 Зафиксировать lineage-семантику provenance (`workflow_run_id` как root, `workflow_status` как active attempt, структура `retry_chain`, nullable `legacy_reference`).
-- [ ] 1.13 Зафиксировать state-matrix `confirm/abort` по всем ключевым состояниям (`approval_state` + facade-status: `validated/*`, `publishing`, terminal) без implicit интерпретаций.
-- [ ] 1.14 Зафиксировать `approval_state` как runtime source-of-truth и обязательное поле unified API details.
-- [ ] 1.15 Зафиксировать явные HTTP response-коды safe-команд (`400`, `202`, `200`, `409`) и канонический error payload (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`).
-- [ ] 1.16 Зафиксировать preflight-gate совместимости `compatibility mode` целевой ИБ и media-type policy из OData profile (legacy `<=8.3.7` требует отдельной approved записи).
-- [ ] 1.17 Зафиксировать приоритет projection-сигналов (`approval_state`, `approved_at`, `publication_odata started/not started`) над `workflow.status`.
-- [ ] 1.18 Зафиксировать fail-closed tenant confidentiality: cross-tenant и unknown `run_id` неразличимы во внешнем API (`404 RUN_NOT_FOUND`).
-- [ ] 1.19 Зафиксировать command-level idempotency safe-команд через обязательный `Idempotency-Key` и conflict-case `idempotency_key_reused`.
-- [ ] 1.20 Зафиксировать machine-readable source-of-truth артефакты: `execution-consumers-registry.yaml` + schema и `odata-compatibility-profile.yaml` + schema.
-- [ ] 1.21 Зафиксировать dual-write/dual-read cutover и rollback criteria/runbook в migration-контракте.
-- [ ] 1.22 Зафиксировать выбор Variant A (transactional command log + transactional outbox + single-winner CAS) как обязательную архитектуру safe-команд и cutover-атомарности.
+- [x] 1.1 Зафиксировать в OpenSpec, что execution runtime для `pools` = `workflows`.
+- [x] 1.2 Уточнить API-контракт `pools/runs`: явная связь с workflow run reference и статусной проекцией.
+- [x] 1.3 Зафиксировать migration/compatibility требования для исторических run-ов и audit.
+- [x] 1.4 Зафиксировать канонический status mapping `pool <-> workflow` без двусмысленностей.
+- [x] 1.5 Зафиксировать tenant boundary контракт (`pool_run.tenant_id == workflow_execution.tenant_id`).
+- [x] 1.6 Зафиксировать `safe/unsafe` approval gate как явный контракт (`confirm-publication` / `abort-publication`) без второго runtime.
+- [x] 1.7 Зафиксировать подстатусы `validated` через `status_reason` (`preparing`, `awaiting_approval`, `queued`) и явный `approval_state`.
+- [x] 1.8 Зафиксировать retry-контракт полностью: `max_attempts_total=5`, конфигурируемый интервал, cap 120 секунд.
+- [x] 1.9 Зафиксировать OData identity strategy (`GUID` primary, `ExternalRunKey` fallback) и канонический diagnostic payload.
+- [x] 1.10 Зафиксировать source-of-truth правило между change-ами и preflight-контракт decommission.
+- [x] 1.11 Зафиксировать API-контракт safe-команд (`POST /api/v2/pools/runs/{run_id}/confirm-publication`, `POST /api/v2/pools/runs/{run_id}/abort-publication`) с idempotency/error моделью, safe-only применимостью и запретом `abort` после старта `publication_odata`.
+- [x] 1.12 Зафиксировать lineage-семантику provenance (`workflow_run_id` как root, `workflow_status` как active attempt, структура `retry_chain`, nullable `legacy_reference`).
+- [x] 1.13 Зафиксировать state-matrix `confirm/abort` по всем ключевым состояниям (`approval_state` + facade-status: `validated/*`, `publishing`, terminal) без implicit интерпретаций.
+- [x] 1.14 Зафиксировать `approval_state` как runtime source-of-truth и обязательное поле unified API details.
+- [x] 1.15 Зафиксировать явные HTTP response-коды safe-команд (`400`, `202`, `200`, `409`) и канонический error payload (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`).
+- [x] 1.16 Зафиксировать preflight-gate совместимости `compatibility mode` целевой ИБ и media-type policy из OData profile (legacy `<=8.3.7` требует отдельной approved записи).
+- [x] 1.17 Зафиксировать приоритет projection-сигналов (`approval_state`, `approved_at`, `publication_odata started/not started`) над `workflow.status`.
+- [x] 1.18 Зафиксировать fail-closed tenant confidentiality: cross-tenant и unknown `run_id` неразличимы во внешнем API (`404 RUN_NOT_FOUND`).
+- [x] 1.19 Зафиксировать command-level idempotency safe-команд через обязательный `Idempotency-Key` и conflict-case `idempotency_key_reused`.
+- [x] 1.20 Зафиксировать machine-readable source-of-truth артефакты: `execution-consumers-registry.yaml` + schema и `odata-compatibility-profile.yaml` + schema.
+- [x] 1.21 Зафиксировать dual-write/dual-read cutover и rollback criteria/runbook в migration-контракте.
+- [x] 1.22 Зафиксировать выбор Variant A (transactional command log + transactional outbox + single-winner CAS) как обязательную архитектуру safe-команд и cutover-атомарности.
 
 ## 2. Backend: execution-core интеграция
-- [ ] 2.1 Реализовать compiler `PoolImportSchemaTemplate + run_context -> PoolExecutionPlan/WorkflowTemplate` с детерминированным mapping шагов.
+- [x] 2.1 Реализовать compiler `PoolImportSchemaTemplate + run_context -> PoolExecutionPlan/WorkflowTemplate` с детерминированным mapping шагов.
 - [ ] 2.2 Реализовать запуск `Pool Run` через workflow runtime (enqueue, lifecycle, retry policy, provenance).
 - [ ] 2.3 Реализовать status projection из workflow run в pool-доменные статусы без потери диагностики.
 - [ ] 2.4 Реализовать publication retry contract: `max_attempts_total=5`, retry только failed subset.
