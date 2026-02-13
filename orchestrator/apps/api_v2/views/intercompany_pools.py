@@ -42,6 +42,18 @@ from apps.templates.workflow.models import WorkflowExecution
 from apps.tenancy.authentication import TENANT_HEADER
 from apps.tenancy.models import Tenant
 
+APPROVAL_STATE_NOT_REQUIRED = "not_required"
+APPROVAL_STATE_PREPARING = "preparing"
+APPROVAL_STATE_AWAITING_APPROVAL = "awaiting_approval"
+APPROVAL_STATE_APPROVED = "approved"
+
+_VALID_APPROVAL_STATES = {
+    APPROVAL_STATE_NOT_REQUIRED,
+    APPROVAL_STATE_PREPARING,
+    APPROVAL_STATE_AWAITING_APPROVAL,
+    APPROVAL_STATE_APPROVED,
+}
+
 
 def _error(*, code: str, message: str, status_code: int) -> Response:
     return Response(
@@ -109,8 +121,17 @@ def _parse_limit(raw: str | None, *, default: int = 50, max_value: int = 200) ->
 
 
 def _serialize_run(run: PoolRun) -> dict[str, Any]:
-    workflow_status = _resolve_workflow_status(run)
-    projected_status, status_reason = _project_pool_status(run=run, workflow_status=workflow_status)
+    workflow_status, workflow_input_context = _resolve_workflow_projection_context(run)
+    approval_state = _resolve_approval_state(
+        run=run,
+        workflow_status=workflow_status,
+        workflow_input_context=workflow_input_context,
+    )
+    projected_status, status_reason = _project_pool_status(
+        run=run,
+        workflow_status=workflow_status,
+        approval_state=approval_state,
+    )
     execution_backend = run.execution_backend or (
         "workflow_core" if run.workflow_execution_id else "legacy_pool_runtime"
     )
@@ -129,6 +150,7 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
         "idempotency_key": run.idempotency_key,
         "workflow_execution_id": str(run.workflow_execution_id) if run.workflow_execution_id else None,
         "workflow_status": workflow_status,
+        "approval_state": approval_state,
         "execution_backend": execution_backend,
         "workflow_template_name": run.workflow_template_name or None,
         "seed": run.seed,
@@ -145,19 +167,73 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
     }
 
 
-def _resolve_workflow_status(run: PoolRun) -> str | None:
-    if not run.workflow_execution_id:
-        return run.workflow_status or None
+def _resolve_workflow_projection_context(run: PoolRun) -> tuple[str | None, dict[str, Any]]:
+    workflow_status = run.workflow_status or None
+    workflow_input_context: dict[str, Any] = {}
 
-    execution_status = (
+    if not run.workflow_execution_id:
+        return workflow_status, workflow_input_context
+
+    execution = (
         WorkflowExecution.objects.filter(id=run.workflow_execution_id)
-        .values_list("status", flat=True)
+        .values("status", "input_context")
         .first()
     )
-    return execution_status or run.workflow_status or None
+    if not execution:
+        return workflow_status, workflow_input_context
+
+    raw_input_context = execution.get("input_context")
+    if isinstance(raw_input_context, dict):
+        workflow_input_context = raw_input_context
+
+    resolved_status = execution.get("status") or workflow_status
+    return resolved_status, workflow_input_context
 
 
-def _project_pool_status(*, run: PoolRun, workflow_status: str | None) -> tuple[str, str | None]:
+def _resolve_approval_state(
+    *,
+    run: PoolRun,
+    workflow_status: str | None,
+    workflow_input_context: dict[str, Any],
+) -> str | None:
+    if not run.workflow_execution_id:
+        return None
+
+    if run.mode == PoolRunMode.UNSAFE:
+        return APPROVAL_STATE_NOT_REQUIRED
+
+    approved_at_from_context = workflow_input_context.get("approved_at")
+    if run.publication_confirmed_at is not None or _has_context_value(approved_at_from_context):
+        return APPROVAL_STATE_APPROVED
+
+    workflow_state = str(workflow_status or "").strip().lower()
+    raw_state = str(workflow_input_context.get("approval_state") or "").strip().lower()
+    if raw_state in _VALID_APPROVAL_STATES:
+        if raw_state == APPROVAL_STATE_PREPARING and workflow_state == WorkflowExecution.STATUS_COMPLETED:
+            return APPROVAL_STATE_AWAITING_APPROVAL
+        if raw_state == APPROVAL_STATE_NOT_REQUIRED:
+            return APPROVAL_STATE_PREPARING
+        return raw_state
+
+    if workflow_state == WorkflowExecution.STATUS_COMPLETED:
+        return APPROVAL_STATE_AWAITING_APPROVAL
+    return APPROVAL_STATE_PREPARING
+
+
+def _has_context_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+
+def _project_pool_status(
+    *,
+    run: PoolRun,
+    workflow_status: str | None,
+    approval_state: str | None,
+) -> tuple[str, str | None]:
     status = run.status
     status_reason: str | None = None
     workflow_state = str(workflow_status or "").strip().lower()
@@ -167,14 +243,22 @@ def _project_pool_status(*, run: PoolRun, workflow_status: str | None) -> tuple[
     if workflow_state in {WorkflowExecution.STATUS_FAILED, WorkflowExecution.STATUS_CANCELLED}:
         return PoolRun.STATUS_FAILED, None
 
-    if safe_unapproved:
+    if safe_unapproved and approval_state in {
+        APPROVAL_STATE_PREPARING,
+        APPROVAL_STATE_AWAITING_APPROVAL,
+    }:
+        status_reason = (
+            "preparing"
+            if approval_state == APPROVAL_STATE_PREPARING
+            else "awaiting_approval"
+        )
         if workflow_state in {
             WorkflowExecution.STATUS_PENDING,
             WorkflowExecution.STATUS_RUNNING,
             WorkflowExecution.STATUS_COMPLETED,
             "queued",
         }:
-            return PoolRun.STATUS_VALIDATED, "awaiting_approval"
+            return PoolRun.STATUS_VALIDATED, status_reason
 
     if workflow_state == WorkflowExecution.STATUS_COMPLETED:
         if failed_targets > 0:
@@ -192,7 +276,10 @@ def _project_pool_status(*, run: PoolRun, workflow_status: str | None) -> tuple[
 
     if status == PoolRun.STATUS_VALIDATED:
         if run.mode == PoolRunMode.SAFE and run.publication_confirmed_at is None:
-            status_reason = "awaiting_approval"
+            if approval_state == APPROVAL_STATE_AWAITING_APPROVAL:
+                status_reason = "awaiting_approval"
+            else:
+                status_reason = "preparing"
         else:
             status_reason = "queued"
     return status, status_reason
@@ -287,6 +374,7 @@ class PoolRunSerializer(serializers.Serializer):
     idempotency_key = serializers.CharField()
     workflow_execution_id = serializers.UUIDField(required=False, allow_null=True)
     workflow_status = serializers.CharField(required=False, allow_null=True)
+    approval_state = serializers.CharField(required=False, allow_null=True)
     execution_backend = serializers.CharField(required=False, allow_null=True)
     workflow_template_name = serializers.CharField(required=False, allow_null=True)
     seed = serializers.IntegerField(required=False, allow_null=True)

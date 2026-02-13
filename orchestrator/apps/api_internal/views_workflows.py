@@ -8,6 +8,11 @@ from .permissions import IsInternalService
 from .serializers import WorkflowExecutionStatusUpdateSerializer
 from .views_common import _model_dump, exclude_schema, logger
 
+APPROVAL_STATE_NOT_REQUIRED = "not_required"
+APPROVAL_STATE_PREPARING = "preparing"
+APPROVAL_STATE_AWAITING_APPROVAL = "awaiting_approval"
+APPROVAL_STATE_APPROVED = "approved"
+
 
 @exclude_schema
 @api_view(["GET"])
@@ -118,6 +123,7 @@ def update_workflow_execution_status(request):
         else:
             return Response({"success": False, "error": "Unsupported status"}, status=status.HTTP_400_BAD_REQUEST)
 
+        _advance_pools_approval_state_on_status_update(execution=execution, target_status=target_status)
         execution.save()
 
     except Exception:
@@ -128,3 +134,31 @@ def update_workflow_execution_status(request):
 
     return Response({"success": True, "execution_id": str(execution.id), "status": execution.status})
 
+
+def _advance_pools_approval_state_on_status_update(*, execution, target_status: str) -> None:
+    if execution.execution_consumer != "pools":
+        return
+    if target_status != execution.STATUS_COMPLETED:
+        return
+
+    input_context = execution.input_context if isinstance(execution.input_context, dict) else {}
+    if not input_context:
+        return
+
+    approval_required = bool(input_context.get("approval_required"))
+    approved_at = input_context.get("approved_at")
+    raw_state = str(input_context.get("approval_state") or "").strip().lower()
+
+    next_state = raw_state
+    if approval_required and not approved_at:
+        if raw_state in {"", APPROVAL_STATE_PREPARING}:
+            next_state = APPROVAL_STATE_AWAITING_APPROVAL
+    elif approval_required and approved_at:
+        next_state = APPROVAL_STATE_APPROVED
+    elif not approval_required:
+        next_state = APPROVAL_STATE_NOT_REQUIRED
+
+    if next_state and next_state != raw_state:
+        updated_context = dict(input_context)
+        updated_context["approval_state"] = next_state
+        execution.input_context = updated_context

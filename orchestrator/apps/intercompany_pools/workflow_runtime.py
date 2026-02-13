@@ -19,6 +19,11 @@ User = get_user_model()
 _DEFAULT_TEMPLATE_CODE = "__runtime-default__"
 _DEFAULT_TEMPLATE_NAME = "Pools Runtime Default Template"
 
+APPROVAL_STATE_NOT_REQUIRED = "not_required"
+APPROVAL_STATE_PREPARING = "preparing"
+APPROVAL_STATE_AWAITING_APPROVAL = "awaiting_approval"
+APPROVAL_STATE_APPROVED = "approved"
+
 
 @dataclass(frozen=True)
 class PoolWorkflowStartResult:
@@ -187,7 +192,16 @@ def _build_input_context(*, run: PoolRun) -> dict[str, Any]:
         "source_hash": run.source_hash,
         "approval_required": run.mode == PoolRunMode.SAFE,
         "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
+        "approval_state": _resolve_approval_state_for_input_context(run=run),
     }
+
+
+def _resolve_approval_state_for_input_context(*, run: PoolRun) -> str:
+    if run.mode == PoolRunMode.UNSAFE:
+        return APPROVAL_STATE_NOT_REQUIRED
+    if run.publication_confirmed_at is not None:
+        return APPROVAL_STATE_APPROVED
+    return APPROVAL_STATE_PREPARING
 
 
 def _build_execution_plan_snapshot(
