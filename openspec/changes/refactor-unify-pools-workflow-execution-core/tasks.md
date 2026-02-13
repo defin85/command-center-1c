@@ -61,7 +61,7 @@
 ## 4. Миграция и совместимость
 - [x] 4.1 Добавить миграцию/бекфилл связей `pool_run -> workflow_run` для существующих/переходных записей.
 - [x] 4.2 Обеспечить чтение historical runs/details/audit через единый view без регрессий UI/API.
-- [ ] 4.3 Подготовить deprecation-plan для legacy execution path в `pools` (без немедленного удаления `workflows`).
+- [x] 4.3 Подготовить deprecation-plan для legacy execution path в `pools` (без немедленного удаления `workflows`).
 - [ ] 4.4 Добавить tenant linkage/backfill для workflow execution записей, связанных с pools.
 - [ ] 4.5 Добавить `execution-consumers-registry.yaml` (+ `execution-consumers-registry.schema.yaml`) и preflight-проверку готовности к decommission `workflows`.
 - [ ] 4.6 Зафиксировать переходный режим для non-pools consumers с `tenant_id=null` до их миграции.

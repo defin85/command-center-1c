@@ -275,6 +275,7 @@
 11. Нормализовать foundation template metadata (`workflow_binding`) как compiler hint без изменения публичного API surface.
 12. Зафиксировать rollback criteria/runbook: откат routing на legacy path при нарушении SLO, tenant boundary incident или рассинхроне проекции; dual-write остаётся включён до завершения расследования.
 13. После стабилизации выключить legacy pool-local execution path.
+14. Вести переход по deprecation-plan `legacy-execution-deprecation-plan.md` (фазы, go/no-go, rollback triggers) без немедленного удаления `workflows`.
 
 ## Risks / Trade-offs
 - Риск: усложнение facade API из-за approval команд.
