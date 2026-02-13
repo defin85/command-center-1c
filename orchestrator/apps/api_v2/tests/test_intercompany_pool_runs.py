@@ -53,6 +53,7 @@ def _attach_workflow_execution_to_run(
     run: PoolRun,
     status: str,
     input_context: dict[str, object] | None = None,
+    link_run: bool = True,
 ) -> WorkflowExecution:
     template = WorkflowTemplate.objects.create(
         name=f"pool-run-{uuid4().hex[:8]}",
@@ -101,11 +102,12 @@ def _attach_workflow_execution_to_run(
         execution.cancel()
         execution.save(update_fields=["status", "completed_at"])
 
-    run.workflow_execution_id = execution.id
-    run.workflow_status = execution.status
-    run.execution_backend = "workflow_core"
-    run.workflow_template_name = template.name
-    run.save(update_fields=update_fields)
+    if link_run:
+        run.workflow_execution_id = execution.id
+        run.workflow_status = execution.status
+        run.execution_backend = "workflow_core"
+        run.workflow_template_name = template.name
+        run.save(update_fields=update_fields)
     return execution
 
 
@@ -490,6 +492,77 @@ def test_get_pool_run_returns_details(
     assert payload["publication_attempts"][0]["attempt_timestamp"] is not None
     assert payload["publication_attempts"][0]["publication_identity_strategy"] == ""
     assert any(event["event_type"] == "run.test_event" for event in payload["audit_events"])
+
+
+@pytest.mark.django_db
+def test_get_pool_run_resolves_transition_workflow_link_without_persisted_relation(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    run.add_audit_event(
+        event_type="run.transition_only_event",
+        status_before=run.status,
+        status_after=run.status,
+        payload={"source": "transition"},
+    )
+    execution = _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_RUNNING,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": False,
+            "approval_state": "not_required",
+            "publication_step_state": "started",
+        },
+        link_run=False,
+    )
+    run_state = PoolRun.objects.get(id=run.id)
+    assert run_state.workflow_execution_id is None
+    assert run_state.execution_backend == "legacy_pool_runtime"
+
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["workflow_execution_id"] == str(execution.id)
+    assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_RUNNING
+    assert payload["run"]["execution_backend"] == "workflow_core"
+    assert payload["run"]["provenance"]["workflow_run_id"] == str(execution.id)
+    assert payload["run"]["provenance"]["workflow_status"] == WorkflowExecution.STATUS_RUNNING
+    assert payload["run"]["status"] == PoolRun.STATUS_PUBLISHING
+    assert any(event["event_type"] == "run.transition_only_event" for event in payload["audit_events"])
+
+
+@pytest.mark.django_db
+def test_list_runs_resolves_transition_workflow_link_without_persisted_relation(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    execution = _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_PENDING,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": True,
+            "approval_state": "awaiting_approval",
+            "publication_step_state": "not_enqueued",
+        },
+        link_run=False,
+    )
+    assert PoolRun.objects.get(id=run.id).workflow_execution_id is None
+
+    response = authenticated_client.get(f"/api/v2/pools/runs/?pool_id={pool.id}&limit=10")
+    assert response.status_code == 200
+    payload = response.json()
+    run_payload = next(item for item in payload["runs"] if item["id"] == str(run.id))
+    assert run_payload["workflow_execution_id"] == str(execution.id)
+    assert run_payload["workflow_status"] == WorkflowExecution.STATUS_PENDING
+    assert run_payload["execution_backend"] == "workflow_core"
+    assert run_payload["provenance"]["workflow_run_id"] == str(execution.id)
+    assert run_payload["provenance"]["workflow_status"] == WorkflowExecution.STATUS_PENDING
 
 
 @pytest.mark.django_db

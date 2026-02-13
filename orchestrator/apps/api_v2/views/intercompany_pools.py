@@ -241,24 +241,64 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
 def _resolve_workflow_projection_context(run: PoolRun) -> tuple[str | None, dict[str, Any]]:
     workflow_status = run.workflow_status or None
     workflow_input_context: dict[str, Any] = {}
+    execution = _resolve_workflow_execution_for_projection(run=run)
 
-    if not run.workflow_execution_id:
-        return workflow_status, workflow_input_context
-
-    execution = (
-        WorkflowExecution.objects.filter(id=run.workflow_execution_id)
-        .values("status", "input_context")
-        .first()
-    )
     if not execution:
         return workflow_status, workflow_input_context
+
+    execution_id = execution.get("id")
+    if execution_id:
+        run.workflow_execution_id = execution_id
+        run.execution_backend = "workflow_core"
 
     raw_input_context = execution.get("input_context")
     if isinstance(raw_input_context, dict):
         workflow_input_context = raw_input_context
 
+    template_name = str(execution.get("workflow_template__name") or "").strip()
+    if template_name and not run.workflow_template_name:
+        run.workflow_template_name = template_name
+
     resolved_status = execution.get("status") or workflow_status
+    if resolved_status:
+        run.workflow_status = resolved_status
     return resolved_status, workflow_input_context
+
+
+def _resolve_workflow_execution_for_projection(run: PoolRun) -> dict[str, Any] | None:
+    execution_fields = ("id", "status", "input_context", "tenant_id", "workflow_template__name")
+    if run.workflow_execution_id:
+        execution = (
+            WorkflowExecution.objects.filter(id=run.workflow_execution_id)
+            .values(*execution_fields)
+            .first()
+        )
+        if execution:
+            return execution
+
+    transition_candidates = list(
+        WorkflowExecution.objects.filter(
+            execution_consumer="pools",
+            input_context__pool_run_id=str(run.id),
+        )
+        .values(*execution_fields)
+        .order_by("id")
+    )
+    if not transition_candidates:
+        return None
+
+    exact_tenant_candidates = [
+        candidate for candidate in transition_candidates if candidate.get("tenant_id") == run.tenant_id
+    ]
+    if len(exact_tenant_candidates) == 1:
+        return exact_tenant_candidates[0]
+    if len(exact_tenant_candidates) > 1:
+        return None
+
+    null_tenant_candidates = [candidate for candidate in transition_candidates if candidate.get("tenant_id") is None]
+    if len(transition_candidates) == 1 and len(null_tenant_candidates) == 1:
+        return null_tenant_candidates[0]
+    return None
 
 
 def _resolve_approval_state(
