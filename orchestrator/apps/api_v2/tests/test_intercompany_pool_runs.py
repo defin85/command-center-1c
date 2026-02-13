@@ -354,6 +354,7 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
     run = PoolRun.objects.get(id=first_payload["run"]["id"])
     assert run.idempotency_key
     assert run.workflow_execution_id is not None
+    assert run.publication_confirmed_at is None
     workflow_execution = WorkflowExecution.objects.get(id=run.workflow_execution_id)
     assert workflow_execution.execution_consumer == "pools"
     assert workflow_execution.tenant_id == run.tenant_id
@@ -842,6 +843,8 @@ def test_create_pool_run_with_schema_template_uses_workflow_runtime(
     workflow_execution = WorkflowExecution.objects.get(id=payload["run"]["workflow_execution_id"])
     assert workflow_execution.execution_consumer == "pools"
     assert workflow_execution.tenant_id == default_tenant.id
+    run = PoolRun.objects.get(id=payload["run"]["id"])
+    assert run.publication_confirmed_at is not None
 
 
 @pytest.mark.django_db

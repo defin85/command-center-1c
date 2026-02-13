@@ -35,7 +35,7 @@
 - [x] 2.3 Реализовать status projection из workflow run в pool-доменные статусы без потери диагностики.
 - [x] 2.4 Реализовать publication retry contract: `max_attempts_total=5`, retry только failed subset.
 - [x] 2.5 Зафиксировать queueing contract phase 1: `commands:worker:workflows`, `priority=normal`.
-- [ ] 2.6 Реализовать approval gate в workflow graph (`safe`: ожидание confirm, `unsafe`: auto-confirm).
+- [x] 2.6 Реализовать approval gate в workflow graph (`safe`: ожидание confirm, `unsafe`: auto-confirm).
 - [x] 2.7 Добавить и применить поля `workflow_execution.tenant_id` и `workflow_execution.execution_consumer` с правилом обязательности для `pools`.
 - [x] 2.8 Реализовать validator/normalizer `retry_interval_seconds` с верхней границей 120 секунд.
 - [x] 2.9 Реализовать strategy-based resolver внешнего document identity в шаге `publication_odata`.
