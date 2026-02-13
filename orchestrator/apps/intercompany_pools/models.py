@@ -495,6 +495,70 @@ class PoolRunCommandLog(models.Model):
         return f"{self.run_id}:{self.command_type}:{self.idempotency_key}"
 
 
+class PoolRunCommandOutboxIntent(models.TextChoices):
+    ENQUEUE_WORKFLOW_EXECUTION = "enqueue_workflow_execution", "Enqueue Workflow Execution"
+    CANCEL_WORKFLOW_EXECUTION = "cancel_workflow_execution", "Cancel Workflow Execution"
+
+
+class PoolRunCommandOutboxStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    DISPATCHED = "dispatched", "Dispatched"
+
+
+class PoolRunCommandOutbox(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    run = models.ForeignKey(PoolRun, on_delete=models.CASCADE, related_name="command_outbox_entries")
+    tenant = models.ForeignKey("tenancy.Tenant", on_delete=models.CASCADE, related_name="pool_run_command_outbox")
+    command_log = models.ForeignKey(
+        PoolRunCommandLog,
+        on_delete=models.CASCADE,
+        related_name="outbox_entries",
+        null=True,
+        blank=True,
+    )
+    intent_type = models.CharField(max_length=48, choices=PoolRunCommandOutboxIntent.choices, db_index=True)
+    stream_name = models.CharField(max_length=128, default="commands:worker:workflows")
+    message_payload = models.JSONField(default=dict, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=PoolRunCommandOutboxStatus.choices,
+        default=PoolRunCommandOutboxStatus.PENDING,
+        db_index=True,
+    )
+    dispatch_attempts = models.PositiveIntegerField(default=0)
+    next_retry_at = models.DateTimeField(default=timezone.now, db_index=True)
+    last_attempted_at = models.DateTimeField(null=True, blank=True)
+    dispatched_at = models.DateTimeField(null=True, blank=True)
+    stream_message_id = models.CharField(max_length=64, blank=True, default="")
+    last_error_code = models.CharField(max_length=64, blank=True, default="")
+    last_error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_run_command_outbox"
+        indexes = [
+            models.Index(fields=["status", "next_retry_at"]),
+            models.Index(fields=["run", "status", "-created_at"]),
+            models.Index(fields=["tenant", "status", "-created_at"]),
+            models.Index(fields=["command_log", "intent_type"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(stream_name=""),
+                name="chk_pool_run_command_outbox_stream_name_nonempty",
+            ),
+            models.UniqueConstraint(
+                fields=["command_log", "intent_type"],
+                condition=Q(command_log__isnull=False),
+                name="uniq_pool_run_command_outbox_command_intent",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.run_id}:{self.intent_type}:{self.status}"
+
+
 class PoolPublicationAttemptStatus(models.TextChoices):
     SUCCESS = "success", "Success"
     FAILED = "failed", "Failed"
