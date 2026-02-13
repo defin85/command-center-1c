@@ -1,0 +1,29 @@
+registry_version: 1.0.0-draft
+generated_at: "2026-02-13T20:45:00Z"
+owner: platform-team
+consumers:
+  - consumer: pools
+    migrated: false
+    migration_owner: pools-team
+    migration_target: workflow_core
+    migration_eta: "TBD"
+    notes: "Active migration in refactor-unify-pools-workflow-execution-core; Variant A (transactional command log + outbox) selected"
+    updated_at: "2026-02-13T18:30:00Z"
+  - consumer: extensions
+    migrated: true
+    migration_owner: platform-team
+    migration_target: workflow_core
+    migration_eta: "completed"
+    notes: "Template-driven execution path is unified"
+    updated_at: "2026-02-10T12:00:00Z"
+  - consumer: operations
+    migrated: true
+    migration_owner: platform-team
+    migration_target: workflow_core
+    migration_eta: "completed"
+    notes: "Routing and execution stream split stabilized"
+    updated_at: "2026-01-29T20:00:00Z"
+decommission_policy:
+  block_if_unmigrated: true
+  required_report: go-no-go-consumer-migration
+  escalation_channel: platform-oncall

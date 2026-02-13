@@ -20,8 +20,14 @@
 - [ ] 1.12 Зафиксировать lineage-семантику provenance (`workflow_run_id` как root, `workflow_status` как active attempt, структура `retry_chain`, nullable `legacy_reference`).
 - [ ] 1.13 Зафиксировать state-matrix `confirm/abort` по всем ключевым состояниям (`approval_state` + facade-status: `validated/*`, `publishing`, terminal) без implicit интерпретаций.
 - [ ] 1.14 Зафиксировать `approval_state` как runtime source-of-truth и обязательное поле unified API details.
-- [ ] 1.15 Зафиксировать явные HTTP response-коды safe-команд (`202`, `200`, `409`) и канонический error payload (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`).
+- [ ] 1.15 Зафиксировать явные HTTP response-коды safe-команд (`400`, `202`, `200`, `409`) и канонический error payload (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`).
 - [ ] 1.16 Зафиксировать preflight-gate совместимости `compatibility mode` целевой ИБ и media-type policy из OData profile (legacy `<=8.3.7` требует отдельной approved записи).
+- [ ] 1.17 Зафиксировать приоритет projection-сигналов (`approval_state`, `approved_at`, `publication_odata started/not started`) над `workflow.status`.
+- [ ] 1.18 Зафиксировать fail-closed tenant confidentiality: cross-tenant и unknown `run_id` неразличимы во внешнем API (`404 RUN_NOT_FOUND`).
+- [ ] 1.19 Зафиксировать command-level idempotency safe-команд через обязательный `Idempotency-Key` и conflict-case `idempotency_key_reused`.
+- [ ] 1.20 Зафиксировать machine-readable source-of-truth артефакты: `execution-consumers-registry.yaml` + schema и `odata-compatibility-profile.yaml` + schema.
+- [ ] 1.21 Зафиксировать dual-write/dual-read cutover и rollback criteria/runbook в migration-контракте.
+- [ ] 1.22 Зафиксировать выбор Variant A (transactional command log + transactional outbox + single-winner CAS) как обязательную архитектуру safe-команд и cutover-атомарности.
 
 ## 2. Backend: execution-core интеграция
 - [ ] 2.1 Реализовать compiler `PoolImportSchemaTemplate + run_context -> PoolExecutionPlan/WorkflowTemplate` с детерминированным mapping шагов.
@@ -35,6 +41,10 @@
 - [ ] 2.9 Реализовать strategy-based resolver внешнего document identity в шаге `publication_odata`.
 - [ ] 2.10 Реализовать safe-flow порядок шагов: pre-publish (`prepare_input`, `distribution_calculation`, `reconciliation_report`) до `approval_gate`, публикация только после confirm.
 - [ ] 2.11 Реализовать `approval_state` lifecycle (`preparing -> awaiting_approval -> approved/not_required`) и детерминированную status projection для safe-flow.
+- [ ] 2.12 Реализовать и хранить `publication_step_state` в runtime metadata для детерминированной проекции `validated/queued -> publishing`.
+- [ ] 2.13 Реализовать таблицу `pool_run_command_log` для `Idempotency-Key` (scope `(run_id, command_type, key)`, deterministic replay, response snapshot, TTL/retention).
+- [ ] 2.14 Реализовать таблицу `pool_run_command_outbox` и dispatcher в `commands:worker:workflows` (at-least-once + idempotent republish + retry/backoff).
+- [ ] 2.15 Реализовать single-winner CAS для гонки `confirm-publication` vs `abort-publication` на одном run без duplicate side effects.
 
 ## 3. Backend: pools как domain facade
 - [ ] 3.1 Сохранить `pools/*` API как фасад над unified execution core.
@@ -46,15 +56,18 @@
 - [ ] 3.7 Вернуть канонический набор полей diagnostics по попыткам публикации в API facade.
 - [ ] 3.8 Поддержать compatibility `workflow_binding` на import templates как optional compiler hint без отдельного runtime-смысла.
 - [ ] 3.9 Добавить в API details поля `approval_state` и `terminal_reason` для unified execution с nullable-совместимостью для legacy.
+- [ ] 3.10 Обеспечить fail-closed поведение facade API: cross-tenant/unknown `run_id` возвращает одинаковый `404 RUN_NOT_FOUND` без утечки причины.
 
 ## 4. Миграция и совместимость
 - [ ] 4.1 Добавить миграцию/бекфилл связей `pool_run -> workflow_run` для существующих/переходных записей.
 - [ ] 4.2 Обеспечить чтение historical runs/details/audit через единый view без регрессий UI/API.
 - [ ] 4.3 Подготовить deprecation-plan для legacy execution path в `pools` (без немедленного удаления `workflows`).
 - [ ] 4.4 Добавить tenant linkage/backfill для workflow execution записей, связанных с pools.
-- [ ] 4.5 Добавить `execution_consumers_registry` и preflight-проверку готовности к decommission `workflows`.
+- [ ] 4.5 Добавить `execution-consumers-registry.yaml` (+ `execution-consumers-registry.schema.yaml`) и preflight-проверку готовности к decommission `workflows`.
 - [ ] 4.6 Зафиксировать переходный режим для non-pools consumers с `tenant_id=null` до их миграции.
-- [ ] 4.7 Поддерживать и версионировать `odata-compatibility-profile.md` (конфигурация -> endpoint/posting fields/identifier strategy) как prerequisite rollout.
+- [ ] 4.7 Поддерживать и версионировать `odata-compatibility-profile.yaml` (+ `odata-compatibility-profile.schema.yaml`) как prerequisite rollout.
+- [ ] 4.8 Внедрить dual-write/dual-read cutover-план и зафиксировать rollback criteria/runbook (SLO, tenant boundary, projection drift).
+- [ ] 4.9 Зафиксировать и внедрить операционные SLI для Variant A (`command_log write errors`, `outbox lag`, `dispatch retry saturation`) как rollback trigger.
 
 ## 5. Frontend
 - [ ] 5.1 Адаптировать `/pools/runs` и `/pools/templates` к unified status/provenance модели.
@@ -66,10 +79,15 @@
 - [ ] 6.2 Добавить API regression тесты на совместимость `pools/runs*`.
 - [ ] 6.3 Добавить тесты `safe/unsafe` approval gate, `approval_state` и `status_reason` проекции.
 - [ ] 6.4 Добавить тесты retry interval clamp (<=120), OData identity strategy и diagnostic fields.
-- [ ] 6.5 Добавить тесты decommission preflight (`Go/No-Go`) на базе `execution_consumers_registry`.
+- [ ] 6.5 Добавить тесты decommission preflight (`Go/No-Go`) на базе `execution-consumers-registry.yaml`.
 - [ ] 6.6 Добавить API/интеграционные тесты на idempotency команд confirm/abort и provenance retry-lineage.
 - [x] 6.7 Прогнать `openspec validate refactor-unify-pools-workflow-execution-core --strict --no-interactive`.
 - [x] 6.8 Выполнить anti-drift self-check: подтвердить, что инварианты state machine согласованы между `proposal/design/spec/tasks`.
-- [ ] 6.9 Добавить контрактные тесты command state-matrix (`confirm/abort`: `202|200|409`) и idempotent-replay кейса `aborted_by_operator`.
-- [ ] 6.10 Добавить API contract-тесты на error payload safe-команд (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`) и точные HTTP-коды (`202|200|409`).
+- [ ] 6.9 Добавить контрактные тесты command state-matrix (`confirm/abort`: `400|202|200|409`) и idempotent-replay кейса `aborted_by_operator`.
+- [ ] 6.10 Добавить API contract-тесты на error payload safe-команд (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`) и точные HTTP-коды (`400|202|200|409`).
 - [ ] 6.11 Добавить preflight-тесты на блокировку rollout при несовместимости media-type policy profile и compatibility mode (`<=8.3.7` без legacy entry).
+- [ ] 6.12 Добавить security-тесты на неразличимость ответов для unknown/cross-tenant `run_id` (`404 RUN_NOT_FOUND`).
+- [ ] 6.13 Добавить интеграционные тесты `Idempotency-Key` для safe-команд (deterministic replay + `idempotency_key_reused`).
+- [ ] 6.14 Добавить CI-проверки schema-валидации для `execution-consumers-registry.yaml` и `odata-compatibility-profile.yaml`.
+- [ ] 6.15 Добавить интеграционные тесты Variant A на атомарность `command_log + outbox` (нет enqueue без committed command outcome).
+- [ ] 6.16 Добавить race-тесты `confirm` vs `abort` на single-winner CAS и отсутствие duplicate enqueue/cancel side effects.

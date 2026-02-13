@@ -21,6 +21,7 @@
 - `workflow_binding`: optional metadata на import template из foundation-change; в unified runtime используется только как hint для compiler.
 - `PoolExecutionPlan`: скомпилированный workflow-compatible graph для конкретного run-контекста.
 - `approval_state`: техническая фаза safe-flow (`not_required`, `preparing`, `awaiting_approval`, `approved`), используемая для детерминированной проекции статуса.
+- `publication_step_state`: runtime-флаг шага `publication_odata` (`not_enqueued`, `queued`, `started`, `completed`), используемый как primary сигнал для перехода `validated/queued -> publishing`.
 - `status_reason`: подстатус facade-модели только для `validated` (`preparing`, `awaiting_approval`, `queued`); для остальных статусов `null`.
 - `terminal_reason`: причина terminal-status для facade (`completed`, `failed_runtime`, `aborted_by_operator`), используется для детерминированной матрицы повторных safe-команд.
 
@@ -40,12 +41,15 @@
   - хранится в metadata workflow execution;
   - участвует в status projection как обязательный input;
   - возвращается в `GET /api/v2/pools/runs/{run_id}` для unified execution (legacy: `null`).
+- Decision: status projection использует primary runtime-сигналы:
+  - primary: `approval_state`, `approved_at`, `publication_step_state`;
+  - secondary: `workflow.status` (используется только как вспомогательный индикатор очереди/terminal).
 - Decision: canonical status mapping фиксируется и обязателен для API:
   - `draft` — run создан, workflow run ещё не создан;
-  - `validated` + `status_reason=preparing` — `workflow.status in {pending, running}`, `approval_required=true`, `approved_at is null`, `approval_state=preparing`;
-  - `validated` + `status_reason=awaiting_approval` — `workflow.status=pending`, `approval_required=true`, `approved_at is null`, `approval_state=awaiting_approval`;
-  - `validated` + `status_reason=queued` — `workflow.status=pending`, `approval_required=false` или `approved_at is not null`;
-  - `publishing` — `workflow.status=running`, `approval_required=false` или `approved_at is not null`;
+  - `validated` + `status_reason=preparing` — `approval_required=true`, `approved_at is null`, `approval_state=preparing` (допустим `workflow.status in {pending, running}`);
+  - `validated` + `status_reason=awaiting_approval` — `approval_required=true`, `approved_at is null`, `approval_state=awaiting_approval`;
+  - `validated` + `status_reason=queued` — `publication_step_state in {not_enqueued, queued}`, `approval_required=false` или `approved_at is not null`;
+  - `publishing` — `publication_step_state=started`, `approval_required=false` или `approved_at is not null`;
   - `published` — `workflow.status=completed` и `failed_targets=0`;
   - `partial_success` — `workflow.status=completed` и `failed_targets>0`;
   - `failed` — `workflow.status in {failed, cancelled}`.
@@ -84,18 +88,34 @@
 - Decision: `pools/runs*` остаётся доменным API-слоем и хранит reference на workflow run + provenance block.
 - Decision: команды safe-mode имеют явную conflict-модель:
   - команды применимы только к safe-run (`approval_required=true`); для `unsafe` (`approval_state=not_required`) возвращается business conflict;
+  - команды требуют `Idempotency-Key` header; key scope: `(run_id, command_type, idempotency_key)`;
+  - повтор с тем же ключом возвращает сохранённый deterministic response (`202` или `200`) без side effects;
+  - reuse ключа с несовместимым command payload/state-class возвращает `409` (`conflict_reason=idempotency_key_reused`);
   - семантическая идемпотентность = no side effects + no duplicate enqueue; response class определяется state-matrix;
   - `confirm-publication` допустим только из `approval_state=awaiting_approval`;
   - повторный `confirm-publication` в facade-состояниях `validated/queued` или `publishing` возвращает idempotent no-op;
   - `abort-publication` допустим только до старта шага `publication_odata`;
   - повторный `abort-publication` допустим как idempotent no-op только при `terminal_reason=aborted_by_operator`;
   - во всех остальных terminal/non-eligible состояниях команды возвращают business conflict.
+- Decision: для safe-command processing и cutover атомарности выбран Variant A (предпочтительный):
+  - канонический путь: transactional command log + transactional outbox в PostgreSQL;
+  - один API-вызов (`confirm-publication`/`abort-publication`) в рамках одной транзакции ДОЛЖЕН:
+    - валидировать state-matrix,
+    - выполнить single-winner CAS-переход по (`approval_state`, `publication_step_state`, `terminal_reason`),
+    - записать command outcome snapshot,
+    - записать outbox-событие enqueue/cancel (если применимо);
+  - публикация в Redis stream выполняется только outbox-dispatcher после commit;
+  - fallback Variant B (Redis-only dedupe/lock без command log/outbox) отклонён для этого change.
+- Decision: tenant confidentiality enforced на внешнем API:
+  - cross-tenant и unknown `run_id` возвращают неразличимый внешний результат (`404 RUN_NOT_FOUND`);
+  - причина `cross_tenant` фиксируется только во внутреннем audit/security логе.
 - Decision: safe-команды имеют явный HTTP-контракт:
+  - отсутствие `Idempotency-Key` -> `400 Bad Request`;
   - `confirm-publication` (`approval_state=awaiting_approval`) -> `202 Accepted`;
   - `confirm-publication` idempotent replay (`validated/queued|publishing`) -> `200 OK`;
   - `abort-publication` до старта `publication_odata` -> `202 Accepted`;
   - `abort-publication` idempotent replay (`terminal_reason=aborted_by_operator`) -> `200 OK`;
-  - invalid command-state -> `409 Conflict` с каноническим error payload.
+  - invalid command-state или reuse ключа с несовместимой семантикой -> `409 Conflict` с каноническим error payload.
 - Decision: для historical/legacy runs без workflow-link возвращается совместимый provenance:
   - `workflow_run_id=null`,
   - `workflow_status=null`,
@@ -104,8 +124,12 @@
   - `legacy_reference` при наличии.
 - Decision: удаление `workflows` запрещено до preflight-проверки consumer registry:
   - owner: platform team;
-  - source-of-truth: `execution_consumers_registry` с флагами миграции;
+  - source-of-truth: `openspec/changes/refactor-unify-pools-workflow-execution-core/execution-consumers-registry.yaml` с валидацией по `execution-consumers-registry.schema.yaml`;
   - decommission разрешён только когда все consumers помечены `migrated=true`.
+- Decision: machine-readable external dependency gate:
+  - source-of-truth OData profile: `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.yaml`;
+  - human-readable `odata-compatibility-profile.md` поддерживается как проекция;
+  - CI preflight валидирует profile и registry schema перед rollout/decommission.
 
 ## Architecture Invariants (Anti-Drift)
 - Invariant 1: `workflows` остаётся единственным runtime для `pools`; второй lifecycle в `intercompany_pools` запрещён.
@@ -119,7 +143,13 @@
 - Invariant 9: `approval_state` хранится как runtime source-of-truth в workflow metadata и возвращается facade API для unified execution.
 - Invariant 10: state-matrix для `confirm/abort` не может оставаться неявной или частичной.
 - Invariant 11: `409 Conflict` для safe-команд возвращает канонический error payload (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`).
-- Invariant 12: preflight rollout шага `publication_odata` обязан валидировать совместимость compatibility mode целевой ИБ и media-type policy из `odata-compatibility-profile.md`; для legacy mode (`<=8.3.7`) без отдельной approved записи rollout блокируется (`No-Go`).
+- Invariant 12: preflight rollout шага `publication_odata` обязан валидировать совместимость compatibility mode целевой ИБ и media-type policy из `odata-compatibility-profile.yaml`; для legacy mode (`<=8.3.7`) без отдельной approved записи rollout блокируется (`No-Go`).
+- Invariant 13: `publication_step_state` и `approval_state` имеют приоритет над `workflow.status` при проекции facade-статусов.
+- Invariant 14: cross-tenant и unknown `run_id` во внешнем API неразличимы (`404 RUN_NOT_FOUND`).
+- Invariant 15: safe-команды без `Idempotency-Key` отклоняются как `400`, а reuse ключа с несовместимой семантикой — как `409`.
+- Invariant 16: safe-команды (`confirm/abort`) выполняются только через Variant A pipeline `command_log + outbox`; direct enqueue из HTTP path запрещён.
+- Invariant 17: enqueue/cancel side effects для safe-команд допустимы только после commit транзакции, в которой записан command outcome snapshot.
+- Invariant 18: конкурентные `confirm-publication` и `abort-publication` на одном run разрешаются детерминированно через single-winner CAS; проигравшая команда не создаёт side effects.
 
 ## Change Synchronization Rule
 - Любая правка runtime-семантики в этом change ДОЛЖНА обновлять в одном коммите:
@@ -127,18 +157,21 @@
   - `openspec/changes/refactor-unify-pools-workflow-execution-core/design.md`
   - `openspec/changes/refactor-unify-pools-workflow-execution-core/tasks.md`
   - `openspec/changes/refactor-unify-pools-workflow-execution-core/specs/pool-workflow-execution-core/spec.md`
+  - `openspec/changes/refactor-unify-pools-workflow-execution-core/execution-consumers-registry.yaml`
+  - `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.yaml`
 
 ## Status Projection Contract
 - `draft`: pool run существует, workflow run ещё не создан.
 - `validated/preparing`: pre-publish шаги ещё выполняются или ставятся в очередь до точки ручного решения.
 - `validated/awaiting_approval`: workflow run создан, ожидает явного решения пользователя.
 - `validated/queued`: workflow run готов к исполнению и находится в очереди.
-- `publishing`: workflow исполняется в фазе публикации/дозаписи после автоматического или ручного подтверждения.
+- `publishing`: шаг `publication_odata` помечен как started и выполняется после автоматического или ручного подтверждения.
 - `published`: завершено без failed targets.
 - `partial_success`: завершено с failed targets.
 - `failed`: workflow завершился `failed` или `cancelled` (включая `abort-publication`).
 - `status_reason`: применяется только для `validated`; допустимые значения `preparing|awaiting_approval|queued`.
 - Для остальных facade-статусов `status_reason` возвращается `null`.
+- Primary inputs проекции: `approval_state`, `approved_at`, `publication_step_state`; `workflow.status` используется как secondary terminal/queue indicator.
 
 ## Execution Mapping (Target)
 - `PoolImportSchemaTemplate` + run context -> compiler -> `PoolExecutionPlan` -> `WorkflowTemplate`.
@@ -177,16 +210,21 @@
 
 ## Facade Commands Contract
 - `POST /api/v2/pools/runs/{run_id}/confirm-publication`:
+  - обязательный header: `Idempotency-Key`;
   - допустим из `approval_state=awaiting_approval`, переводит run в `queued`/`publishing`;
   - повторный вызов в facade-состояниях `validated/queued` или `publishing` идемпотентен и не создаёт duplicate enqueue;
   - в `approval_state=preparing|not_required` и terminal-состояниях возвращает business conflict.
 - `POST /api/v2/pools/runs/{run_id}/abort-publication`:
+  - обязательный header: `Idempotency-Key`;
   - завершает run как `failed` через workflow `cancelled`, если `publication_odata` ещё не начат;
   - повторный вызов идемпотентен только если `terminal_reason=aborted_by_operator`.
 - Для terminal run команды confirm/abort возвращают business conflict, кроме idempotent-replay случая `abort-publication` при `terminal_reason=aborted_by_operator`.
 - Для run, где уже начат `publication_odata`, `abort-publication` возвращает business conflict без изменения состояния.
+- Cross-tenant и unknown `run_id` для `confirm/abort` возвращают одинаковый `404 RUN_NOT_FOUND` без утечки причины во внешний payload.
 
 ## Command State-Matrix
+- Общая precondition для `confirm-publication` и `abort-publication`:
+  - header `Idempotency-Key` обязателен, при отсутствии -> `400 Bad Request`.
 - `confirm-publication`:
   - `approval_state=awaiting_approval` и facade `validated/awaiting_approval`: `202 Accepted`, enqueue publication.
   - `approval_state=approved` и facade `validated/queued|publishing`: `200 OK`, idempotent no-op.
@@ -203,35 +241,40 @@
 - OpenAPI response schema для `confirm-publication` / `abort-publication`:
   - `error_code` (string, stable machine code),
   - `error_message` (string, human-readable),
-  - `conflict_reason` (enum: `not_safe_run`, `awaiting_pre_publish`, `publication_started`, `terminal_state`, `cross_tenant`),
+  - `conflict_reason` (enum: `not_safe_run`, `awaiting_pre_publish`, `publication_started`, `terminal_state`, `idempotency_key_reused`),
   - `retryable` (boolean),
   - `run_id` (string/uuid).
 
 ## External Dependency Gate
-- Unified publication rollout в production разрешён только после фиксации OData compatibility profile (source-of-truth: `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.md`):
+- Unified publication rollout в production разрешён только после фиксации OData compatibility profile (source-of-truth: `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.yaml`):
   - список поддерживаемых endpoint/posting fields на конфигурацию 1С;
   - документированная стратегия fallback на `ExternalRunKey`;
   - подтверждённая верификация profile (`verification_status=approved`) для каждой целевой конфигурации;
   - release-артефакт фиксирует конкретную `profile_version`.
+- CI preflight валидирует `odata-compatibility-profile.yaml` по schema и блокирует rollout при невалидной структуре.
 
 ## Decommission Preflight Contract
 - Перед любым `workflows` decommission запускается preflight:
-  - читает `execution_consumers_registry`,
+  - читает `execution-consumers-registry.yaml`,
+  - валидирует структуру по `execution-consumers-registry.schema.yaml`,
   - валидирует, что каждый consumer имеет `migrated=true`,
   - формирует отчёт `Go/No-Go` с перечнем блокирующих consumers.
 - Без статуса `Go` удаление runtime не выполняется.
 
 ## Migration Plan
-1. Добавить поля `pool_run.workflow_execution_id`, `workflow_execution.tenant_id`, `workflow_execution.execution_consumer`.
-2. Добавить serializer/openapi контракт для status_reason, provenance lineage и команд confirm/abort.
-3. Добавить status projection service с canonical mapping, reason-кодами и `approval_state`.
-4. Перевести create/start path `pools/runs` на workflow runtime с `safe/unsafe` approval gate и pre-publish шагами до ручного решения.
-5. Добавить confirm/abort команды фасада для safe-mode.
-6. Перевести retry path на failed-subset re-execution через workflow runtime.
+1. Добавить поля `pool_run.workflow_execution_id`, `workflow_execution.tenant_id`, `workflow_execution.execution_consumer` и runtime metadata `publication_step_state`.
+2. Добавить таблицы Variant A: `pool_run_command_log` (idempotency + response snapshot + CAS outcome) и `pool_run_command_outbox` (enqueue/cancel intents).
+3. Добавить outbox-dispatcher с at-least-once delivery, retry/backoff и идемпотентной публикацией в `commands:worker:workflows`.
+4. Добавить serializer/openapi контракт для status_reason, provenance lineage и команд confirm/abort (включая `Idempotency-Key`).
+5. Добавить status projection service с canonical mapping, где primary inputs = `approval_state`, `approved_at`, `publication_step_state`.
+6. Включить dual-write: create/start path записывает и facade (`pool_run`) и unified runtime linkage (`workflow_execution`) в одной транзакции с command/outbox артефактами там, где применимо.
 7. Включить dual-read для historical/legacy runs и нормализацию legacy provenance (`legacy_reference`, nullable workflow поля).
-8. Выполнить backfill `pool_run -> workflow_run` и tenant linkage для `execution_consumer=pools`.
-9. Нормализовать foundation template metadata (`workflow_binding`) как compiler hint без изменения публичного API surface.
-10. После стабилизации выключить legacy pool-local execution path.
+8. Перевести confirm/abort/retry path на workflow runtime и включить command dedupe storage для `Idempotency-Key` на базе `pool_run_command_log`.
+9. Выполнить backfill `pool_run -> workflow_run` и tenant linkage для `execution_consumer=pools`.
+10. Включить fail-closed tenant confidentiality (`404 RUN_NOT_FOUND` для cross-tenant/unknown run).
+11. Нормализовать foundation template metadata (`workflow_binding`) как compiler hint без изменения публичного API surface.
+12. Зафиксировать rollback criteria/runbook: откат routing на legacy path при нарушении SLO, tenant boundary incident или рассинхроне проекции; dual-write остаётся включён до завершения расследования.
+13. После стабилизации выключить legacy pool-local execution path.
 
 ## Risks / Trade-offs
 - Риск: усложнение facade API из-за approval команд.
@@ -242,3 +285,5 @@
   - Mitigation: единый runtime validator (`effective_interval <= 120`) + контрактные тесты.
 - Риск: drift между change-ами.
   - Mitigation: зафиксированный source-of-truth rule и cross-reference в proposal/spec/tasks.
+- Риск: lag/застревание outbox-dispatcher может задержать enqueue publication/cancel.
+  - Mitigation: мониторинг outbox-lag, алерты по stale pending, ручной replay-runbook и idempotent republish.

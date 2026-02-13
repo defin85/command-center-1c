@@ -1,7 +1,9 @@
 # OData Compatibility Profile (Unified Pools Publication)
 
 ## Purpose
-Этот профиль является source-of-truth для production rollout шага `publication_odata` в unified execution core.
+Этот документ является human-readable проекцией machine-readable profile `odata-compatibility-profile.yaml`.
+
+Machine-readable profile `odata-compatibility-profile.yaml` является source-of-truth для production rollout шага `publication_odata` в unified execution core.
 
 Rollout ДОЛЖЕН (SHALL) быть заблокирован (`No-Go`), если для целевой 1С-конфигурации отсутствует утверждённая запись в этом профиле.
 
@@ -55,6 +57,8 @@ Rollout ДОЛЖЕН (SHALL) быть заблокирован (`No-Go`), есл
 ## Change Control
 - Любое изменение endpoint/posting fields требует обновления этой таблицы в том же change-set, что и runtime-код/контракт.
 - Изменения profile обязаны:
+  - обновлять `odata-compatibility-profile.yaml` (source-of-truth) и проходить schema-валидацию;
+  - синхронно обновлять этот markdown-документ как human-readable проекцию;
   - обновлять `profile_version` согласно правилам выше;
   - обновлять `profile_entry_version` затронутых строк;
   - добавлять `source_reference` на проверяющий артефакт.

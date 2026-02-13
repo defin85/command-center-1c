@@ -22,10 +22,10 @@
   - команда подтверждения/остановки публикации выносится в явный API-контракт (`confirm-publication` / `abort-publication`).
 - Зафиксировать канонический mapping статусов (без open-ended интерпретаций):
   - `pool:draft` — локально создан run до создания `workflow_run`;
-  - `workflow:(pending|running) + approval_required=true + approved_at is null + approval_state=preparing -> pool:validated` (`status_reason=preparing`);
-  - `workflow:pending + approval_required=true + approved_at is null + approval_state=awaiting_approval -> pool:validated` (`status_reason=awaiting_approval`);
-  - `workflow:pending + (approval_required=false OR approved_at is not null) -> pool:validated` (`status_reason=queued`);
-  - `workflow:running + (approval_required=false OR approved_at is not null) -> pool:publishing`;
+  - `approval_required=true + approved_at is null + approval_state=preparing -> pool:validated` (`status_reason=preparing`) независимо от того, находится ли workflow в `pending` или `running`;
+  - `approval_required=true + approved_at is null + approval_state=awaiting_approval -> pool:validated` (`status_reason=awaiting_approval`);
+  - `publication_odata` ещё не started + (`approval_required=false` OR `approved_at is not null`) + `workflow.status in {pending, running} -> pool:validated` (`status_reason=queued`);
+  - `publication_odata` started + (`approval_required=false` OR `approved_at is not null`) -> pool:publishing;
   - `workflow:completed + failed_targets=0 -> pool:published`;
   - `workflow:completed + failed_targets>0 -> pool:partial_success`;
   - `workflow:failed|cancelled -> pool:failed`.
@@ -60,27 +60,45 @@
 - Зафиксировать явный API-контракт safe-команд:
   - `POST /api/v2/pools/runs/{run_id}/confirm-publication`;
   - `POST /api/v2/pools/runs/{run_id}/abort-publication`;
+  - команды используют `Idempotency-Key` header как command-level idempotency key; дедупликация выполняется по `(run_id, command_type, idempotency_key)` и запрещает race/duplicate enqueue;
   - команды применимы только к safe-run (`approval_required=true`); для `unsafe` возвращается business conflict;
-  - семантическая идемпотентность команд означает отсутствие изменения состояния при повторе и запрет duplicate enqueue; response class детерминирован state-matrix (`202`/`200`/`409`);
+  - семантическая идемпотентность команд означает отсутствие изменения состояния при повторе и запрет duplicate enqueue; response class детерминирован state-matrix (`400`/`202`/`200`/`409`);
   - `confirm-publication` допустим только из `approval_state=awaiting_approval`: первый вызов возвращает `202 Accepted` (enqueue publication), повтор в facade-состояниях `validated/queued` или `publishing` возвращает `200 OK` idempotent no-op;
   - `abort-publication` допустим только до старта шага `publication_odata`: первый вызов возвращает `202 Accepted` (cancel execution), повторный `abort-publication` для run c `terminal_reason=aborted_by_operator` возвращает `200 OK` idempotent no-op;
   - `abort-publication` после старта `publication_odata` всегда возвращает business conflict.
+- Зафиксировать предпочтительный архитектурный Variant A для safe-команд и cutover:
+  - command processing реализуется через transactional command log + transactional outbox (PostgreSQL) с атомарной записью command outcome snapshot;
+  - enqueue side effects разрешены только через outbox-dispatcher после commit транзакции; direct enqueue из HTTP path запрещён;
+  - гонка `confirm-publication` vs `abort-publication` разрешается single-winner CAS-переходом по runtime-полям (`approval_state`, `publication_step_state`, `terminal_reason`) с детерминированным ответом проигравшей команды;
+  - fallback Variant B (Redis-only dedupe/lock без command log/outbox) в этом change НЕ применяется.
 - Зафиксировать канонический error payload для `409 Conflict` на safe-командах:
   - `error_code`,
   - `error_message`,
-  - `conflict_reason` (`not_safe_run|awaiting_pre_publish|publication_started|terminal_state|cross_tenant`),
+  - `conflict_reason` (`not_safe_run|awaiting_pre_publish|publication_started|terminal_state|idempotency_key_reused`),
   - `retryable`,
   - `run_id`.
+- Зафиксировать tenant confidentiality для facade API:
+  - cross-tenant и неизвестный `run_id` возвращают одинаковый внешний ответ (`404 RUN_NOT_FOUND`) без раскрытия факта существования run в другом tenant;
+  - детализация причины (`cross_tenant`) остаётся только во внутренних audit/security логах.
 - Зафиксировать contract source-of-truth для `approval_state`:
   - `approval_state` хранится в workflow execution metadata как каноническое runtime-поле;
   - `GET /api/v2/pools/runs/{run_id}` возвращает `approval_state` для unified execution (`nullable` для legacy run).
+- Зафиксировать стратегию миграции cutover:
+  - переход выполняется через dual-write + dual-read для `pool_run <-> workflow_execution` до стабилизации;
+  - dual-write в рамках Variant A выполняется в одной транзакции с command log/outbox и без direct enqueue из API;
+  - rollback-критерии и rollback-path фиксируются заранее (SLO деградация, tenant boundary incident, рассинхрон projection), без частичного отката схемы данных.
+- Зафиксировать machine-readable source-of-truth артефакты:
+  - `execution-consumers-registry` хранится в `openspec/changes/refactor-unify-pools-workflow-execution-core/execution-consumers-registry.yaml` с валидацией по `execution-consumers-registry.schema.yaml`;
+  - OData compatibility profile хранится в `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.yaml` с валидацией по `odata-compatibility-profile.schema.yaml`;
+  - markdown-файлы профилей используются как human-readable проекция и не заменяют machine-readable source-of-truth.
 - Зафиксировать единый source-of-truth: execution-runtime семантика `pool-distribution-runs` и `pool-odata-publication` резолвится этим change, а `add-intercompany-pool-distribution-module` остаётся источником domain vocabulary/foundation.
 - Зафиксировать anti-drift архитектурные инварианты change:
   - `approval_required=true` и `approved_at is null` НЕ может проецироваться в `pool:publishing`;
   - `status_reason` допустим только для `pool:validated`;
   - `abort-publication` после старта `publication_odata` всегда `business conflict`;
   - state-matrix `confirm/abort` обязателен и не допускает implicit интерпретаций;
-  - изменения runtime-семантики считаются валидными только при синхронном обновлении `proposal.md`, `design.md`, `tasks.md` и `specs/pool-workflow-execution-core/spec.md`.
+  - для cross-tenant и unknown `run_id` внешняя response-модель неразличима (`404 RUN_NOT_FOUND`);
+  - изменения runtime-семантики считаются валидными только при синхронном обновлении `proposal.md`, `design.md`, `tasks.md`, `specs/pool-workflow-execution-core/spec.md`, `execution-consumers-registry.yaml` и `odata-compatibility-profile.yaml`.
 - Запретить удаление `workflows` до миграции всех consumers на unified execution core.
 - Зафиксировать де-комиссию `workflows` только через preflight с реестром consumers и критерием готовности миграции.
 
@@ -91,7 +109,8 @@
   - `pool-odata-publication` (domain publication contract; runtime semantics ссылаются на execution source-of-truth)
 - Prerequisites:
   - foundation задачи из `add-intercompany-pool-distribution-module` (catalog/data/contracts/UI baseline) должны быть завершены или зафиксированы как входной baseline.
-  - OData compatibility profile зафиксирован как source-of-truth артефакт `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.md`; production rollout unified publication запрещён при отсутствии утверждённого profile entry для целевой конфигурации, без фиксации `profile_version` в release-артефакте или при несовместимости media-type policy profile с compatibility mode целевой ИБ.
+  - OData compatibility profile зафиксирован как source-of-truth артефакт `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.yaml`; production rollout unified publication запрещён при отсутствии утверждённого profile entry для целевой конфигурации, без фиксации `profile_version` в release-артефакте или при несовместимости media-type policy profile с compatibility mode целевой ИБ.
+  - `execution-consumers-registry` поддерживается в machine-readable виде (`execution-consumers-registry.yaml`) и валидируется в CI preflight.
 - Affected code (high-level):
   - `orchestrator/apps/intercompany_pools/**`
   - `orchestrator/apps/templates/workflow/**`

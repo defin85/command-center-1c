@@ -64,6 +64,10 @@
 - `POST /api/v2/pools/runs/{run_id}/confirm-publication`;
 - `POST /api/v2/pools/runs/{run_id}/abort-publication`.
 
+Система ДОЛЖНА (SHALL) требовать `Idempotency-Key` header для `confirm-publication` и `abort-publication`.
+
+Система ДОЛЖНА (SHALL) дедуплицировать команды по ключу `(run_id, command_type, idempotency_key)` и возвращать deterministic replay без side effects.
+
 Система ДОЛЖНА (SHALL) применять эти команды только к safe-run (`approval_required=true`); для `unsafe` команда ДОЛЖНА (SHALL) возвращать business conflict.
 
 Система ДОЛЖНА (SHALL) трактовать идемпотентность команд как отсутствие побочных эффектов (включая duplicate enqueue) при повторном вызове; response class (`202`/`200`/`409`) определяется детерминированной state-matrix.
@@ -73,6 +77,19 @@
 - **WHEN** оператор повторно вызывает `confirm-publication`
 - **THEN** состояние run не расходится с предыдущим результатом
 - **AND** дополнительная публикационная задача не ставится в очередь повторно
+
+#### Scenario: Повтор команды с тем же Idempotency-Key возвращает replay без побочных эффектов
+- **GIVEN** `confirm-publication` уже принят с конкретным `Idempotency-Key`
+- **WHEN** клиент повторяет тот же запрос с тем же `Idempotency-Key`
+- **THEN** система возвращает deterministic replay исходного outcome (`202` или `200`)
+- **AND** состояние run и очередь задач не меняются
+
+#### Scenario: Отсутствие Idempotency-Key отклоняется как некорректный запрос
+- **GIVEN** оператор вызывает `confirm-publication` или `abort-publication`
+- **AND** header `Idempotency-Key` отсутствует
+- **WHEN** система валидирует команду
+- **THEN** возвращается `400 Bad Request`
+- **AND** состояние run не изменяется
 
 #### Scenario: Команда на terminal run отклоняется бизнес-ошибкой
 - **GIVEN** run находится в terminal status (`published`, `partial_success` или `failed`)
@@ -96,6 +113,7 @@
 
 ### Requirement: Safe commands MUST иметь полную state-matrix без неявных интерпретаций
 Система ДОЛЖНА (SHALL) применять следующую state-matrix команд:
+- общая precondition: header `Idempotency-Key` обязателен; при отсутствии -> `400 Bad Request`;
 - `confirm-publication`:
   - `approval_state=awaiting_approval` и facade `validated/awaiting_approval` -> `202 Accepted` и enqueue публикации;
   - `approval_state=approved` и facade `validated/queued` или `publishing` -> `200 OK` idempotent no-op;
@@ -139,7 +157,7 @@
 Система ДОЛЖНА (SHALL) возвращать для `409 Conflict` на `confirm-publication` / `abort-publication` единый payload:
 - `error_code` (stable machine code),
 - `error_message` (human-readable text),
-- `conflict_reason` (enum: `not_safe_run`, `awaiting_pre_publish`, `publication_started`, `terminal_state`, `cross_tenant`),
+- `conflict_reason` (enum: `not_safe_run`, `awaiting_pre_publish`, `publication_started`, `terminal_state`, `idempotency_key_reused`),
 - `retryable` (boolean),
 - `run_id`.
 
@@ -149,18 +167,60 @@
 - **THEN** HTTP ответ равен `409 Conflict`
 - **AND** тело ответа содержит `error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`
 
+#### Scenario: Reuse Idempotency-Key с несовместимой командой возвращает idempotency_key_reused
+- **GIVEN** ключ `Idempotency-Key` уже использован для другой семантики команды того же run
+- **WHEN** клиент повторно отправляет команду с тем же ключом
+- **THEN** система возвращает `409 Conflict`
+- **AND** `conflict_reason` равно `idempotency_key_reused`
+
+### Requirement: Safe commands MUST использовать Variant A pipeline (transactional command log + transactional outbox)
+Система ДОЛЖНА (SHALL) обрабатывать `confirm-publication` и `abort-publication` через транзакционный Variant A pipeline:
+- `pool_run_command_log` как канонический storage outcome safe-команды (`run_id`, `command_type`, `idempotency_key`, command result class, response snapshot, CAS outcome, timestamps);
+- `pool_run_command_outbox` как канонический storage side-effect intents (enqueue publication/cancel execution), публикуемых только после commit;
+- single-winner CAS для конкурентных safe-команд на одном run (`approval_state`, `publication_step_state`, `terminal_reason`) с детерминированным outcome проигравшей команды.
+
+Система НЕ ДОЛЖНА (SHALL NOT) выполнять direct enqueue/cancel side effects из HTTP request path до фиксации транзакции command log/outbox.
+
+Система ДОЛЖНА (SHALL) обеспечивать deterministic replay по `(run_id, command_type, idempotency_key)` через сохранённый response snapshot без повторных side effects.
+
+#### Scenario: Успешный confirm фиксирует command outcome и outbox атомарно
+- **GIVEN** `approval_state=awaiting_approval`
+- **WHEN** оператор вызывает `confirm-publication` с новым `Idempotency-Key`
+- **THEN** система в одной транзакции выполняет CAS-переход, сохраняет запись в `pool_run_command_log` и создаёт запись в `pool_run_command_outbox`
+- **AND** ответ `202 Accepted` возвращается только после commit
+
+#### Scenario: Outbox side effect публикуется только после commit
+- **GIVEN** создана pending запись `pool_run_command_outbox`
+- **WHEN** outbox-dispatcher обрабатывает очередь
+- **THEN** side effect (`enqueue publication` или `cancel execution`) публикуется в `commands:worker:workflows` только для committed записи
+- **AND** при сбое dispatcher допускается idempotent повтор без duplicate business effect
+
+#### Scenario: Гонка confirm и abort разрешается single-winner CAS
+- **GIVEN** два оператора почти одновременно вызывают `confirm-publication` и `abort-publication` для одного run
+- **WHEN** система применяет Variant A CAS-правило
+- **THEN** только одна команда выигрывает переход состояния и получает side effect intent в outbox
+- **AND** проигравшая команда получает детерминированный conflict/no-op outcome без изменения состояния
+
+#### Scenario: Replay по тому же ключу возвращает сохранённый snapshot
+- **GIVEN** safe-команда уже зафиксирована в `pool_run_command_log`
+- **WHEN** клиент повторяет тот же запрос с тем же `Idempotency-Key`
+- **THEN** система возвращает сохранённый response snapshot
+- **AND** не создаёт новую outbox-запись и не выполняет duplicate side effect
+
 ### Requirement: Pool status projection MUST быть канонической и детерминированной
 Система ДОЛЖНА (SHALL) использовать единый mapping статусов между workflow runtime и pools facade:
 - `pool:draft` — только до создания workflow run;
-- `workflow:(pending|running) + approval_required=true + approved_at is null + approval_state=preparing -> pool:validated` с `status_reason=preparing`;
-- `workflow:pending + approval_required=true + approved_at is null + approval_state=awaiting_approval -> pool:validated` с `status_reason=awaiting_approval`;
-- `workflow:pending + (approval_required=false OR approved_at is not null) -> pool:validated` с `status_reason=queued`;
-- `workflow:running + (approval_required=false OR approved_at is not null) -> pool:publishing`;
+- `approval_required=true + approved_at is null + approval_state=preparing -> pool:validated` с `status_reason=preparing` (workflow status может быть `pending` или `running`);
+- `approval_required=true + approved_at is null + approval_state=awaiting_approval -> pool:validated` с `status_reason=awaiting_approval`;
+- `publication_odata` не started + (`approval_required=false OR approved_at is not null`) + `workflow.status in {pending, running} -> pool:validated` с `status_reason=queued`;
+- `publication_odata` started + (`approval_required=false` OR `approved_at is not null`) -> pool:publishing;
 - `workflow:completed + failed_targets=0 -> pool:published`;
 - `workflow:completed + failed_targets>0 -> pool:partial_success`;
 - `workflow:failed|cancelled -> pool:failed`.
 
 Система ДОЛЖНА (SHALL) использовать `status_reason` только для `pool:validated` с допустимыми значениями `preparing|awaiting_approval|queued`; для остальных pool-статусов `status_reason` ДОЛЖЕН (SHALL) быть `null`.
+
+Система ДОЛЖНА (SHALL) считать `approval_state`, `approved_at`, `publication_odata started/not started` primary сигналами проекции; `workflow.status` ДОЛЖЕН (SHALL) быть secondary сигналом.
 
 #### Scenario: Завершение workflow с failed targets даёт partial_success
 - **GIVEN** workflow run завершён со статусом `completed`
@@ -188,7 +248,7 @@
 - **AND** поле `status_reason` равно `preparing`
 
 #### Scenario: Для non-validated статусов status_reason отсутствует
-- **GIVEN** workflow run находится в состоянии `running`
+- **GIVEN** шаг `publication_odata` уже started
 - **AND** (`approval_required=false` ИЛИ `approved_at is not null`)
 - **WHEN** клиент запрашивает pool run details
 - **THEN** фасад возвращает статус `publishing`
@@ -244,6 +304,18 @@
 - **WHEN** пользователь tenant `B` запрашивает детали этого run
 - **THEN** система отклоняет запрос как недоступный в текущем tenant context
 - **AND** данные workflow provenance не раскрываются
+
+### Requirement: Tenant confidentiality MUST использовать fail-closed внешний ответ
+Система ДОЛЖНА (SHALL) возвращать одинаковый внешний результат для unknown `run_id` и cross-tenant access (`404 RUN_NOT_FOUND`) без раскрытия причины в response payload.
+
+Система МОЖЕТ (MAY) логировать внутреннюю причину (`cross_tenant`) только во внутренних audit/security логах.
+
+#### Scenario: Unknown и cross-tenant run_id неразличимы снаружи
+- **GIVEN** клиент вызывает `GET /api/v2/pools/runs/{run_id}` или safe-команду
+- **AND** `run_id` либо отсутствует, либо принадлежит другому tenant
+- **WHEN** система формирует HTTP response
+- **THEN** клиент получает одинаковый `404 RUN_NOT_FOUND`
+- **AND** внешнее тело не содержит признаков `cross_tenant`
 
 ### Requirement: Workflow tenant model MUST быть совместим с multi-consumer runtime
 Система ДОЛЖНА (SHALL) расширить `WorkflowExecution` полями `tenant_id` и `execution_consumer`.
@@ -329,7 +401,9 @@
 ### Requirement: OData publication rollout MUST быть gated совместимым profile
 Система ДОЛЖНА (SHALL) включать unified publication в production только после фиксации compatibility profile для поддерживаемых 1С-конфигураций (endpoint/posting fields).
 
-Compatibility profile ДОЛЖЕН (SHALL) храниться как source-of-truth артефакт `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.md`.
+Compatibility profile ДОЛЖЕН (SHALL) храниться как machine-readable source-of-truth артефакт `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.yaml`.
+
+Система ДОЛЖНА (SHALL) валидировать `odata-compatibility-profile.yaml` по schema `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.schema.yaml` в preflight/CI.
 
 Система ДОЛЖНА (SHALL) фиксировать используемую `profile_version` compatibility profile в release-артефакте rollout.
 
@@ -346,7 +420,7 @@ Compatibility profile ДОЛЖЕН (SHALL) храниться как source-of-t
 #### Scenario: Rollout фиксирует profile_version
 - **GIVEN** production rollout unified publication прошёл preflight
 - **WHEN** формируется release-артефакт
-- **THEN** артефакт содержит конкретную `profile_version` из `odata-compatibility-profile.md`
+- **THEN** артефакт содержит конкретную `profile_version` из `odata-compatibility-profile.yaml`
 
 #### Scenario: Legacy compatibility mode блокирует rollout без отдельной approved записи
 - **GIVEN** целевая ИБ работает в compatibility mode `<=8.3.7`
@@ -426,6 +500,10 @@ Compatibility profile ДОЛЖЕН (SHALL) храниться как source-of-t
 ### Requirement: Migration MUST сохранять historical runs и идемпотентность
 Система ДОЛЖНА (SHALL) обеспечить миграцию/совместимость, при которой historical pool runs остаются читаемыми, а доменный idempotency key продолжает предотвращать дубли исполнения.
 
+Система ДОЛЖНА (SHALL) выполнять cutover через dual-write и dual-read до достижения критериев стабилизации.
+
+Система ДОЛЖНА (SHALL) иметь rollback criteria и rollback-path, позволяющий вернуть execution routing на legacy path без отката миграций схемы.
+
 #### Scenario: Historical run читается после включения unified execution
 - **GIVEN** run был создан до перевода исполнения на workflow runtime
 - **WHEN** оператор открывает run details после релиза
@@ -437,6 +515,12 @@ Compatibility profile ДОЛЖЕН (SHALL) храниться как source-of-t
 - **WHEN** пользователь повторно инициирует запуск с тем же ключом
 - **THEN** система выполняет upsert существующего набора результатов
 - **AND** дубликаты документов/публикаций не создаются
+
+#### Scenario: Rollback возвращает routing без потери связей
+- **GIVEN** после cutover обнаружена блокирующая деградация по SLO или tenant boundary
+- **WHEN** команда запускает rollback-path
+- **THEN** create/start routing возвращается на legacy execution path
+- **AND** linkage `pool_run <-> workflow_run` и данные dual-write сохраняются для последующего расследования
 
 ### Requirement: Runtime source-of-truth MUST быть единым между change-ами
 Система ДОЛЖНА (SHALL) трактовать runtime-семантику `pool-distribution-runs` и `pool-odata-publication` через требования этого capability.
@@ -452,7 +536,9 @@ Foundation change `add-intercompany-pool-distribution-module` ДОЛЖЕН (SHAL
 ### Requirement: Workflows decommission MUST быть запрещён до полной миграции consumers
 Система НЕ ДОЛЖНА (SHALL NOT) удалять `workflows` runtime до подтверждённой миграции всех потребителей execution-core (включая pools) на общий контракт исполнения.
 
-Система ДОЛЖНА (SHALL) выполнять decommission preflight на основе реестра consumers (`execution_consumers_registry`) и блокировать удаление при наличии хотя бы одного `migrated=false`.
+Система ДОЛЖНА (SHALL) выполнять decommission preflight на основе machine-readable реестра consumers `openspec/changes/refactor-unify-pools-workflow-execution-core/execution-consumers-registry.yaml` и блокировать удаление при наличии хотя бы одного `migrated=false`.
+
+Система ДОЛЖНА (SHALL) валидировать `execution-consumers-registry.yaml` по schema `openspec/changes/refactor-unify-pools-workflow-execution-core/execution-consumers-registry.schema.yaml` до выполнения decommission preflight.
 
 #### Scenario: Попытка удаления workflows блокируется preflight-проверкой
 - **GIVEN** не все execution consumers мигрированы на unified execution core
@@ -461,7 +547,7 @@ Foundation change `add-intercompany-pool-distribution-module` ДОЛЖЕН (SHAL
 - **AND** удаление runtime не выполняется
 
 #### Scenario: Decommission разрешается только после полного статуса migrated=true
-- **GIVEN** preflight читает `execution_consumers_registry`
+- **GIVEN** preflight читает `execution-consumers-registry.yaml`
 - **AND** каждый consumer имеет `migrated=true`
 - **WHEN** запускается decommission plan
 - **THEN** preflight возвращает `Go`
