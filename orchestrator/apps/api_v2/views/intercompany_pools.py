@@ -437,14 +437,17 @@ def _serialize_attempt(attempt: PoolPublicationAttempt) -> dict[str, Any]:
         "run_id": str(attempt.run_id),
         "target_database_id": str(attempt.target_database_id),
         "attempt_number": attempt.attempt_number,
+        "attempt_timestamp": attempt.started_at,
         "status": attempt.status,
         "entity_name": attempt.entity_name,
         "documents_count": attempt.documents_count,
         "external_document_identity": attempt.external_document_identity,
         "identity_strategy": attempt.identity_strategy,
+        "publication_identity_strategy": attempt.identity_strategy,
         "posted": attempt.posted,
         "http_status": attempt.http_status,
         "error_code": attempt.error_code,
+        "domain_error_code": attempt.error_code,
         "error_message": attempt.error_message,
         "request_summary": attempt.request_summary,
         "response_summary": attempt.response_summary,
@@ -544,14 +547,17 @@ class PoolPublicationAttemptSerializer(serializers.Serializer):
     run_id = serializers.UUIDField()
     target_database_id = serializers.CharField()
     attempt_number = serializers.IntegerField()
+    attempt_timestamp = serializers.DateTimeField(required=False)
     status = serializers.CharField()
     entity_name = serializers.CharField()
     documents_count = serializers.IntegerField()
     external_document_identity = serializers.CharField(required=False, allow_blank=True)
     identity_strategy = serializers.CharField(required=False, allow_blank=True)
+    publication_identity_strategy = serializers.CharField(required=False, allow_blank=True)
     posted = serializers.BooleanField()
     http_status = serializers.IntegerField(required=False, allow_null=True)
     error_code = serializers.CharField(required=False, allow_blank=True)
+    domain_error_code = serializers.CharField(required=False, allow_blank=True)
     error_message = serializers.CharField(required=False, allow_blank=True)
     request_summary = serializers.JSONField(required=False)
     response_summary = serializers.JSONField(required=False)

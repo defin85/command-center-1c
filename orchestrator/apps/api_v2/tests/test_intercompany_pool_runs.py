@@ -486,6 +486,9 @@ def test_get_pool_run_returns_details(
     assert payload["run"]["provenance"]["retry_chain"] == []
     assert len(payload["publication_attempts"]) == 1
     assert payload["publication_attempts"][0]["target_database_id"] == str(database.id)
+    assert payload["publication_attempts"][0]["domain_error_code"] == "network"
+    assert payload["publication_attempts"][0]["attempt_timestamp"] is not None
+    assert payload["publication_attempts"][0]["publication_identity_strategy"] == ""
     assert any(event["event_type"] == "run.test_event" for event in payload["audit_events"])
 
 
