@@ -1,35 +1,35 @@
-## 1. Каталог организаций и пулов
-- [ ] 1.1 Спроектировать модели `Organization`, `OrganizationPool`, версии узлов/рёбер с `effective_from/to`.
-- [ ] 1.2 Реализовать инварианты графа: DAG, один root, multi-parent только для верхнего уровня.
-- [ ] 1.3 Реализовать связь `организация <-> ИБ` как `1:1`.
-- [ ] 1.4 Реализовать внешний sync/refresh контур для master-справочника организаций.
+## Scope Boundary
+Этот change закрывает только фундамент `pools` (catalog/data/contracts/UI foundation), который не конфликтует с unified runtime.
 
-## 2. Движок расчёта распределения
-- [ ] 2.1 Реализовать top-down алгоритм с ограничениями ребра (`weight/min/max`) и детерминированным `seed`.
-- [ ] 2.2 Реализовать правило округления с переносом остатка на последнего child узла.
-- [ ] 2.3 Реализовать bottom-up импорт из XLSX/JSON по настраиваемым публичным шаблонам.
-- [ ] 2.4 Реализовать диагностику неизвестных ИНН без автоматической остановки run.
-- [ ] 2.5 Реализовать строгую сверку баланса и формирование агрегатного+детального отчёта.
+Execution runtime задачи (фактический запуск run, lifecycle orchestration, provenance/status projection, unified retry/audit semantics) передаются в `refactor-unify-pools-workflow-execution-core`.
 
-## 3. Run lifecycle, идемпотентность и аудит
-- [ ] 3.1 Реализовать состояния run: `draft -> validated -> publishing -> partial_success|published|failed`.
-- [ ] 3.2 Реализовать safe/unsafe режимы публикации.
-- [ ] 3.3 Реализовать idempotency key `pool_id + period + direction + source_hash`.
-- [ ] 3.4 Реализовать upsert-семантику повторного run по тому же ключу.
-- [ ] 3.5 Реализовать полный audit trail run/попыток публикации/решений пользователя.
+## 1. Каталог организаций и пулов (foundation)
+- [x] 1.1 Зафиксировать модели `Organization`, `OrganizationPool`, версии узлов/рёбер с `effective_from/to`.
+- [x] 1.2 Зафиксировать инварианты графа: DAG, один root, multi-parent только для верхнего уровня.
+- [x] 1.3 Зафиксировать связь `организация <-> ИБ` как `1:1`.
+- [x] 1.4 Довести внешний sync/refresh контур для master-справочника организаций.
+- [x] 1.5 Добавить внешний API для каталога организаций (list/details/upsert/sync trigger) в tenant scope.
 
-## 4. Публикация через OData
-- [ ] 4.1 Реализовать публикацию документов 1С через OData с последующим проведением.
-- [ ] 4.2 Реализовать partial success и повторную дозапись только failed-частей.
-- [ ] 4.3 Реализовать ретраи с `max_attempts=5` и настраиваемым интервалом (дефолтный потолок 120 секунд).
-- [ ] 4.4 Провести technical spike по внешнему идентификатору документа (GUID через OData vs fallback стратегия), зафиксировать решение в design/spec.
+## 2. API foundation для пулов и шаблонов
+- [x] 2.1 Довести endpoint каталога пулов и графа структуры на дату.
+- [x] 2.2 Довести endpoint'ы публичных шаблонов импорта (XLSX/JSON) с опциональной workflow-привязкой.
+- [x] 2.3 Сохранить совместимый facade `pools/runs*` как доменный API surface без фиксации отдельного runtime исполнения.
 
-## 5. API и UI
-- [ ] 5.1 Добавить внешние endpoint'ы run/start, status/details, retry failed.
-- [ ] 5.2 Добавить endpoint'ы и UI для публичных шаблонов импорта (XLSX/JSON), с опциональной привязкой к workflow.
-- [ ] 5.3 Добавить UI для графа пула, dry-run отчёта, публикации и экрана дозаписи.
+## 3. Контракты и совместимость
+- [x] 3.1 Обновить `contracts/orchestrator/openapi.yaml` и связанные контракты для фактических `/api/v2/pools/*` endpoint'ов.
+- [x] 3.2 Синхронизировать proxy/client generation, если требуется по контрактному пайплайну проекта.
+- [x] 3.3 Добавить API regression тесты по обновлённому pools surface.
+
+## 4. UI foundation
+- [x] 4.1 Добавить UI для каталога организаций/пулов с tenant-aware фильтрацией.
+- [x] 4.2 Довести UI графа пула как read-oriented представление структуры по дате.
+- [x] 4.3 Довести UI шаблонов импорта (XLSX/JSON) с workflow binding.
+
+## 5. Handoff в unified runtime
+- [x] 5.1 Явно зафиксировать перенос execution-пунктов в `refactor-unify-pools-workflow-execution-core`.
+- [x] 5.2 Зафиксировать migration-совместимость: текущий `pools/runs*` API остаётся фасадом до завершения refactor.
 
 ## 6. Качество и валидация
-- [ ] 6.1 Добавить unit/integration тесты для графа, расчёта, идемпотентности, публикации и ретраев.
-- [ ] 6.2 Добавить API contract/regression тесты для новых внешних endpoint'ов.
-- [ ] 6.3 Прогнать `openspec validate add-intercompany-pool-distribution-module --strict --no-interactive`.
+- [x] 6.1 Добавить unit/integration тесты для каталога, графа и sync.
+- [x] 6.2 Добавить API contract/regression тесты для foundation endpoint'ов.
+- [x] 6.3 Прогнать `openspec validate add-intercompany-pool-distribution-module --strict --no-interactive`.

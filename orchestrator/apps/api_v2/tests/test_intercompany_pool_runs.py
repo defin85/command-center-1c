@@ -11,6 +11,7 @@ from apps.databases.models import Database
 from apps.databases.odata import ODataRequestError
 from apps.intercompany_pools.models import (
     Organization,
+    OrganizationStatus,
     OrganizationPool,
     PoolEdgeVersion,
     PoolNodeVersion,
@@ -98,6 +99,158 @@ def test_pool_run_endpoints_require_authentication(pool: OrganizationPool) -> No
         format="json",
     )
     assert create_response.status_code in [401, 403]
+
+
+@pytest.mark.django_db
+def test_list_organizations_endpoint_filters_by_status_and_query(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    db = _create_database(tenant=default_tenant, name="pool-org-list-db")
+    Organization.objects.create(
+        tenant=default_tenant,
+        database=db,
+        name="Alpha Org",
+        full_name="Alpha Organization",
+        inn="710000000001",
+        status=OrganizationStatus.ACTIVE,
+    )
+    Organization.objects.create(
+        tenant=default_tenant,
+        name="Beta Org",
+        full_name="Beta Organization",
+        inn="710000000002",
+        status=OrganizationStatus.INACTIVE,
+    )
+
+    response = authenticated_client.get("/api/v2/pools/organizations/?status=active&query=alpha")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 1
+    assert payload["organizations"][0]["inn"] == "710000000001"
+    assert payload["organizations"][0]["database_id"] == str(db.id)
+
+
+@pytest.mark.django_db
+def test_get_organization_returns_pool_bindings(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    organization = Organization.objects.create(
+        tenant=default_tenant,
+        name="Binding Org",
+        inn="720000000001",
+    )
+    PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=organization,
+        effective_from=date(2026, 1, 1),
+        is_root=False,
+    )
+
+    response = authenticated_client.get(f"/api/v2/pools/organizations/{organization.id}/")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["organization"]["id"] == str(organization.id)
+    assert payload["organization"]["inn"] == "720000000001"
+    assert len(payload["pool_bindings"]) == 1
+    assert payload["pool_bindings"][0]["pool_id"] == str(pool.id)
+    assert payload["pool_bindings"][0]["pool_code"] == pool.code
+
+
+@pytest.mark.django_db
+def test_upsert_organization_creates_updates_and_enforces_database_uniqueness(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    db1 = _create_database(tenant=default_tenant, name="pool-org-upsert-db-1")
+    db2 = _create_database(tenant=default_tenant, name="pool-org-upsert-db-2")
+
+    create_response = authenticated_client.post(
+        "/api/v2/pools/organizations/upsert/",
+        {
+            "inn": "730000000001",
+            "name": "Create Org",
+            "status": "active",
+            "database_id": str(db1.id),
+        },
+        format="json",
+    )
+    assert create_response.status_code == 201
+    create_payload = create_response.json()
+    assert create_payload["created"] is True
+    created_id = create_payload["organization"]["id"]
+
+    update_response = authenticated_client.post(
+        "/api/v2/pools/organizations/upsert/",
+        {
+            "organization_id": created_id,
+            "inn": "730000000001",
+            "name": "Updated Org",
+            "status": "inactive",
+            "database_id": str(db1.id),
+        },
+        format="json",
+    )
+    assert update_response.status_code == 200
+    update_payload = update_response.json()
+    assert update_payload["created"] is False
+    assert update_payload["organization"]["name"] == "Updated Org"
+    assert update_payload["organization"]["status"] == "inactive"
+
+    Organization.objects.create(
+        tenant=default_tenant,
+        database=db2,
+        name="DB2 owner",
+        inn="730000000002",
+    )
+    conflict_response = authenticated_client.post(
+        "/api/v2/pools/organizations/upsert/",
+        {
+            "inn": "730000000003",
+            "name": "Conflict Org",
+            "status": "active",
+            "database_id": str(db2.id),
+        },
+        format="json",
+    )
+    assert conflict_response.status_code == 400
+    assert conflict_response.json()["error"]["code"] == "DATABASE_ALREADY_LINKED"
+
+
+@pytest.mark.django_db
+def test_sync_organizations_catalog_endpoint_returns_stats(
+    authenticated_client: APIClient,
+) -> None:
+    create_response = authenticated_client.post(
+        "/api/v2/pools/organizations/sync/",
+        {
+            "rows": [
+                {"inn": "740000000001", "name": "Sync Org A"},
+                {"inn": "740000000002", "name": "Sync Org B", "status": "inactive"},
+            ]
+        },
+        format="json",
+    )
+    assert create_response.status_code == 200
+    create_payload = create_response.json()
+    assert create_payload["stats"] == {"created": 2, "updated": 0, "skipped": 0}
+    assert create_payload["total_rows"] == 2
+
+    update_response = authenticated_client.post(
+        "/api/v2/pools/organizations/sync/",
+        {
+            "rows": [
+                {"inn": "740000000001", "name": "Sync Org A Updated"},
+                {"inn": "740000000002", "name": "Sync Org B", "status": "inactive"},
+            ]
+        },
+        format="json",
+    )
+    assert update_response.status_code == 200
+    update_payload = update_response.json()
+    assert update_payload["stats"] == {"created": 0, "updated": 1, "skipped": 1}
 
 
 @pytest.mark.django_db
@@ -283,6 +436,54 @@ def test_list_schema_templates_returns_public_by_default(
 
 
 @pytest.mark.django_db
+def test_list_schema_templates_supports_format_and_visibility_filters(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    json_public_active = PoolSchemaTemplate.objects.create(
+        tenant=default_tenant,
+        code="json-public-active",
+        name="JSON Public Active",
+        format=PoolSchemaTemplateFormat.JSON,
+        is_public=True,
+        is_active=True,
+        schema={"columns": {"inn": "inn", "amount": "amount"}},
+    )
+    PoolSchemaTemplate.objects.create(
+        tenant=default_tenant,
+        code="json-public-inactive",
+        name="JSON Public Inactive",
+        format=PoolSchemaTemplateFormat.JSON,
+        is_public=True,
+        is_active=False,
+        schema={"columns": {"inn": "inn", "amount": "amount"}},
+    )
+    xlsx_private_active = PoolSchemaTemplate.objects.create(
+        tenant=default_tenant,
+        code="xlsx-private-active",
+        name="XLSX Private Active",
+        format=PoolSchemaTemplateFormat.XLSX,
+        is_public=False,
+        is_active=True,
+        schema={"columns": {"inn": "inn", "amount": "amount"}},
+    )
+
+    filtered = authenticated_client.get(
+        "/api/v2/pools/schema-templates/?format=json&is_public=true&is_active=true"
+    )
+    assert filtered.status_code == 200
+    filtered_payload = filtered.json()
+    assert filtered_payload["count"] == 1
+    assert filtered_payload["templates"][0]["id"] == str(json_public_active.id)
+
+    private_only = authenticated_client.get("/api/v2/pools/schema-templates/?is_public=false")
+    assert private_only.status_code == 200
+    private_payload = private_only.json()
+    assert private_payload["count"] == 1
+    assert private_payload["templates"][0]["id"] == str(xlsx_private_active.id)
+
+
+@pytest.mark.django_db
 def test_create_schema_template_with_optional_workflow_binding(
     authenticated_client: APIClient,
 ) -> None:
@@ -313,6 +514,57 @@ def test_create_schema_template_with_optional_workflow_binding(
     )
     assert duplicate.status_code == 400
     assert duplicate.json()["error"]["code"] == "DUPLICATE_TEMPLATE_CODE"
+
+
+@pytest.mark.django_db
+def test_graph_endpoint_filters_versions_by_requested_date(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    root_org = Organization.objects.create(tenant=default_tenant, name="Root Date", inn="750000000001")
+    jan_org = Organization.objects.create(tenant=default_tenant, name="Jan Child", inn="750000000002")
+    feb_org = Organization.objects.create(tenant=default_tenant, name="Feb Child", inn="750000000003")
+    root_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=root_org,
+        effective_from=date(2026, 1, 1),
+        is_root=True,
+    )
+    jan_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=jan_org,
+        effective_from=date(2026, 1, 1),
+    )
+    feb_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=feb_org,
+        effective_from=date(2026, 2, 1),
+    )
+    PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=root_node,
+        child_node=jan_node,
+        effective_from=date(2026, 1, 1),
+    )
+    PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=root_node,
+        child_node=feb_node,
+        effective_from=date(2026, 2, 1),
+    )
+
+    january_response = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-15")
+    assert january_response.status_code == 200
+    january_payload = january_response.json()
+    assert len(january_payload["nodes"]) == 2
+    assert len(january_payload["edges"]) == 1
+
+    february_response = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-02-15")
+    assert february_response.status_code == 200
+    february_payload = february_response.json()
+    assert len(february_payload["nodes"]) == 3
+    assert len(february_payload["edges"]) == 2
 
 
 @pytest.mark.django_db
@@ -354,6 +606,43 @@ def test_list_pools_and_graph_endpoint(
     assert len(graph_payload["nodes"]) == 2
     assert len(graph_payload["edges"]) == 1
     assert any(node["is_root"] for node in graph_payload["nodes"])
+
+
+@pytest.mark.django_db
+def test_create_pool_run_with_schema_template_keeps_facade_status_draft(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    template = PoolSchemaTemplate.objects.create(
+        tenant=default_tenant,
+        code="json-run-template",
+        name="JSON Run Template",
+        format=PoolSchemaTemplateFormat.JSON,
+        is_public=True,
+        schema={"columns": {"inn": "inn", "amount": "amount"}},
+    )
+
+    response = authenticated_client.post(
+        "/api/v2/pools/runs/",
+        {
+            "pool_id": str(pool.id),
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "source_hash": "facade-template-hash",
+            "mode": "unsafe",
+            "schema_template_id": str(template.id),
+            "seed": 42,
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["created"] is True
+    assert payload["run"]["schema_template_id"] == str(template.id)
+    assert payload["run"]["seed"] == 42
+    assert payload["run"]["status"] == PoolRun.STATUS_DRAFT
 
 
 @pytest.mark.django_db

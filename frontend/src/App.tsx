@@ -41,6 +41,7 @@ const RuntimeSettingsPage = lazy(loadRuntimeSettingsPage)
 
 const loadTimelineSettingsPage = () => import('./pages/Settings/TimelineSettingsPage').then((m) => ({ default: m.TimelineSettingsPage }))
 const TimelineSettingsPage = lazy(loadTimelineSettingsPage)
+const PoolCatalogPage = lazy(() => import('./pages/Pools/PoolCatalogPage').then((m) => ({ default: m.PoolCatalogPage })))
 const PoolSchemaTemplatesPage = lazy(() => import('./pages/Pools/PoolSchemaTemplatesPage').then((m) => ({ default: m.PoolSchemaTemplatesPage })))
 const PoolRunsPage = lazy(() => import('./pages/Pools/PoolRunsPage').then((m) => ({ default: m.PoolRunsPage })))
 
@@ -308,6 +309,13 @@ function App() {
                     <ProtectedRoute authToken={authToken}>
                       <MainLayout>
                         <LazyBoundary><PoolSchemaTemplatesPage /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/pools/catalog" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><PoolCatalogPage /></LazyBoundary>
                       </MainLayout>
                     </ProtectedRoute>
                   } />

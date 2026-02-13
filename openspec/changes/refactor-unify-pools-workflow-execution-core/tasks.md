@@ -1,3 +1,8 @@
+## 0. Зависимости и перенос scope
+- [x] 0.1 Зафиксировать prerequisite: foundation из `add-intercompany-pool-distribution-module` (catalog/data/contracts/UI baseline) доступен как входной baseline.
+- [x] 0.2 Принять deferred execution scope из `add-intercompany-pool-distribution-module` и убрать дубли/расщепление ответственности между change-ами.
+- [x] 0.3 Зафиксировать cross-reference между change-ами в proposal/design/tasks.
+
 ## 1. Spec и контрактная фиксация
 - [ ] 1.1 Зафиксировать в OpenSpec, что execution runtime для `pools` = `workflows`.
 - [ ] 1.2 Уточнить API-контракт `pools/runs`: явная связь с workflow run reference и статусной проекцией.
@@ -25,4 +30,4 @@
 ## 6. Качество и валидация
 - [ ] 6.1 Добавить unit/integration тесты на compiler, статусную проекцию, идемпотентность и retry.
 - [ ] 6.2 Добавить API regression тесты на совместимость `pools/runs*`.
-- [ ] 6.3 Прогнать `openspec validate refactor-unify-pools-workflow-execution-core --strict --no-interactive`.
+- [x] 6.3 Прогнать `openspec validate refactor-unify-pools-workflow-execution-core --strict --no-interactive`.

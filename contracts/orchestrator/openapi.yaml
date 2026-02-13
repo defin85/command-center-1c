@@ -2668,8 +2668,8 @@ paths:
   /api/v2/extensions/apply/:
     post:
       operationId: v2_extensions_apply_create
-      description: Apply planned manual operation for extensions with drift check
-        (observed vs base snapshot hash).
+      description: Apply extensions manual operation for planned databases with drift
+        check.
       summary: Extensions manual-operation apply
       tags:
       - v2
@@ -2697,11 +2697,7 @@ paths:
                 description: Unspecified response body
           description: ''
         '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: 'Validation error. Codes: `PLAN_INVALID_LEGACY`, `VALIDATION_ERROR`.'
+          description: Validation error
         '401':
           description: Unauthorized
         '403':
@@ -2897,6 +2893,122 @@ paths:
         description: Optional tenant context selector. If omitted, tenant is resolved
           via user preference or first membership. For staff users, omission may return
           cross-tenant results on some endpoints.
+  /api/v2/extensions/manual-operation-bindings/:
+    get:
+      operationId: v2_extensions_manual_operation_bindings_retrieve
+      description: List preferred template bindings for manual operations in current
+        tenant.
+      summary: List preferred manual operation bindings
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualOperationBindingListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/extensions/manual-operation-bindings/{manual_operation}/:
+    put:
+      operationId: v2_extensions_manual_operation_bindings_update
+      description: Upsert preferred template binding for the manual operation.
+      summary: Upsert preferred manual operation binding
+      parameters:
+      - in: path
+        name: manual_operation
+        schema:
+          type: string
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualOperationBindingUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ManualOperationBindingUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ManualOperationBindingUpsertRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualOperationBindingResponse'
+          description: ''
+        '400':
+          description: Validation/configuration error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+    delete:
+      operationId: v2_extensions_manual_operation_bindings_destroy
+      description: Delete preferred template binding for the manual operation.
+      summary: Delete preferred manual operation binding
+      parameters:
+      - in: path
+        name: manual_operation
+        schema:
+          type: string
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualOperationBindingDeleteResponse'
+          description: ''
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
   /api/v2/extensions/overview/:
     get:
       operationId: v2_extensions_overview_retrieve
@@ -3030,137 +3142,11 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
-  /api/v2/extensions/manual-operation-bindings/:
-    get:
-      operationId: v2_extensions_manual_operation_bindings_retrieve
-      description: List preferred template bindings for manual operations in current
-        tenant.
-      summary: List preferred manual operation bindings
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ManualOperationBindingListResponse'
-          description: ''
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-      parameters:
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-  /api/v2/extensions/manual-operation-bindings/{manual_operation}/:
-    put:
-      operationId: v2_extensions_manual_operation_bindings_update
-      description: Upsert preferred template binding for the manual operation.
-      summary: Upsert preferred manual operation binding
-      parameters:
-      - in: path
-        name: manual_operation
-        schema:
-          $ref: '#/components/schemas/ManualOperationKey'
-        required: true
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-      tags:
-      - v2
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ManualOperationBindingUpsertRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ManualOperationBindingUpsertRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ManualOperationBindingUpsertRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ManualOperationBindingResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: 'Validation/configuration error. Codes: `INVALID_PARAMETER`,
-            `CONFIGURATION_ERROR`.'
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
-    delete:
-      operationId: v2_extensions_manual_operation_bindings_destroy
-      description: Delete preferred template binding for the manual operation.
-      summary: Delete preferred manual operation binding
-      parameters:
-      - in: path
-        name: manual_operation
-        schema:
-          $ref: '#/components/schemas/ManualOperationKey'
-        required: true
-      - name: X-CC1C-Tenant-ID
-        in: header
-        required: false
-        schema:
-          type: string
-          format: uuid
-        description: Optional tenant context selector. If omitted, tenant is resolved
-          via user preference or first membership. For staff users, omission may return
-          cross-tenant results on some endpoints.
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ManualOperationBindingDeleteResponse'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: 'Validation error. Codes: `INVALID_PARAMETER`.'
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
   /api/v2/extensions/plan/:
     post:
       operationId: v2_extensions_plan_create
-      description: Build manual-operation plan for extensions (captures base snapshot
-        hashes per database and resolves template by explicit override or preferred
-        binding).
+      description: Build plan for extensions manual operation (captures base snapshot
+        hashes per database).
       summary: Extensions manual-operation plan
       tags:
       - v2
@@ -3186,12 +3172,7 @@ paths:
                 $ref: '#/components/schemas/ExtensionsPlanResponse'
           description: ''
         '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-          description: 'Validation/configuration error. Codes: `INVALID_PARAMETER`,
-            `MISSING_TEMPLATE_BINDING`, `CONFIGURATION_ERROR`, `VALIDATION_ERROR`.'
+          description: Validation/configuration error
         '401':
           description: Unauthorized
         '403':
@@ -3546,33 +3527,9 @@ paths:
     get:
       operationId: v2_operation_catalog_exposures_retrieve
       summary: List operation exposures
-      tags:
-      - v2
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OperationCatalogExposureListResponse'
-          description: ''
-        '400':
-          description: Validation error
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden
       parameters:
       - in: query
-        name: surface
-        schema:
-          type: string
-          enum:
-          - template
-        description: template. Any other value is rejected.
-      - in: query
-        name: tenant_id
+        name: alias
         schema:
           type: string
       - in: query
@@ -3580,27 +3537,10 @@ paths:
         schema:
           type: string
       - in: query
-        name: status
-        schema:
-          type: string
-      - in: query
-        name: alias
-        schema:
-          type: string
-      - in: query
-        name: search
-        schema:
-          type: string
-      - in: query
         name: filters
         schema:
           type: string
         description: JSON object with server-side filters
-      - in: query
-        name: sort
-        schema:
-          type: string
-        description: JSON object with server-side sort config
       - in: query
         name: include
         schema:
@@ -3614,6 +3554,28 @@ paths:
         name: offset
         schema:
           type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: sort
+        schema:
+          type: string
+        description: JSON object with server-side sort config
+      - in: query
+        name: status
+        schema:
+          type: string
+      - in: query
+        name: surface
+        schema:
+          type: string
+        description: template. Any other value is rejected.
+      - in: query
+        name: tenant_id
+        schema:
+          type: string
       - name: X-CC1C-Tenant-ID
         in: header
         required: false
@@ -3623,6 +3585,23 @@ paths:
         description: Optional tenant context selector. If omitted, tenant is resolved
           via user preference or first membership. For staff users, omission may return
           cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationCatalogExposureListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '400':
+          description: Validation error
     post:
       operationId: v2_operation_catalog_exposures_create
       summary: Upsert operation exposure
@@ -4645,6 +4624,565 @@ paths:
       responses:
         '200':
           description: Subscription updated
+        '401':
+          description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/pools/:
+    get:
+      operationId: v2_pools_list
+      summary: List organization pools
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationPoolListResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/pools/{pool_id}/graph/:
+    get:
+      operationId: v2_pools_graph_get
+      summary: Get active pool graph by date
+      parameters:
+      - in: path
+        name: pool_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolGraphResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/pools/organizations/:
+    get:
+      operationId: v2_pools_organizations_list
+      summary: List organizations in pools catalog
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationListResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/pools/organizations/{organization_id}/:
+    get:
+      operationId: v2_pools_organizations_get
+      summary: Get organization details from pools catalog
+      parameters:
+      - in: path
+        name: organization_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/pools/organizations/sync/:
+    post:
+      operationId: v2_pools_organizations_sync
+      summary: Sync organizations catalog
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationSyncRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OrganizationSyncRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OrganizationSyncRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationSyncResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/pools/organizations/upsert/:
+    post:
+      operationId: v2_pools_organizations_upsert
+      summary: Create or update organization in pools catalog
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OrganizationUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OrganizationUpsertRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationUpsertResponse'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationUpsertResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/pools/runs/:
+    get:
+      operationId: v2_pools_runs_list
+      summary: List pool runs
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRunListResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+    post:
+      operationId: v2_pools_runs_create
+      summary: Create or upsert pool run
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolRunCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolRunCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolRunCreateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRunCreateResponse'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRunCreateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/pools/runs/{run_id}/:
+    get:
+      operationId: v2_pools_runs_get
+      summary: Get pool run status and details
+      parameters:
+      - in: path
+        name: run_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRunDetailResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/pools/runs/{run_id}/report/:
+    get:
+      operationId: v2_pools_runs_report_get
+      summary: Get pool run dry-run/report payload
+      parameters:
+      - in: path
+        name: run_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRunReportResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/pools/runs/{run_id}/retry/:
+    post:
+      operationId: v2_pools_runs_retry
+      summary: Retry failed publication targets for pool run
+      parameters:
+      - in: path
+        name: run_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolRunRetryRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolRunRetryRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolRunRetryRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRunRetryResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+  /api/v2/pools/schema-templates/:
+    get:
+      operationId: v2_pools_schema_templates_list
+      summary: List public pool schema templates
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolSchemaTemplateListResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+    post:
+      operationId: v2_pools_schema_templates_create
+      summary: Create pool schema template
+      tags:
+      - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolSchemaTemplateCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolSchemaTemplateCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolSchemaTemplateCreateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolSchemaTemplateCreateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
         '401':
           description: Unauthorized
       parameters:
@@ -8199,8 +8737,8 @@ paths:
   /api/v2/templates/sync-from-registry/:
     post:
       operationId: v2_templates_sync_from_registry_create
-      description: Synchronize OperationTemplate records with the in-code operation
-        registry. Requires templates.manage_operation_template.
+      description: Synchronize template exposures (`OperationExposure` + `OperationDefinition`)
+        with the in-code operation registry. Requires templates.manage_operation_template.
       summary: Sync templates from registry
       tags:
       - v2
@@ -10165,7 +10703,7 @@ components:
           description: User who created operation
           maxLength: 255
         metadata:
-          $ref: '#/components/schemas/BatchOperationMetadata'
+          description: Additional metadata
         created_at:
           type: string
           format: date-time
@@ -10201,62 +10739,6 @@ components:
       - tasks
       - total_tasks
       - updated_at
-    BatchOperationMetadata:
-      type: object
-      description: |
-        Additional operation metadata.
-
-        For post-cutover template-based operations, `template_id` (alias) and
-        `template_exposure_id` (UUID) are emitted together as a strict wire contract,
-        with `template_exposure_revision` for deterministic drift diagnostics.
-        Historical records may contain only `template_id`.
-      properties:
-        template_id:
-          type: string
-          nullable: true
-          description: Template alias (`operation_exposure.alias`) for template-based operations.
-        template_exposure_id:
-          type: string
-          format: uuid
-          nullable: true
-          description: Exposure UUID (`operation_exposure.id`) for template-based operations.
-        template_exposure_revision:
-          type: integer
-          nullable: true
-          minimum: 1
-          description: Monotonic exposure revision (`OperationExposure.exposure_revision`) captured at enqueue time.
-        execution_source:
-          type: string
-          nullable: true
-          description: Operation execution source marker (e.g., template_manual_operation).
-        manual_operation:
-          type: string
-          nullable: true
-        result_contract:
-          type: string
-          nullable: true
-        mapping_spec_ref:
-          type: object
-          additionalProperties: {}
-          nullable: true
-        strict_requested:
-          type: boolean
-          nullable: true
-        snapshot_source:
-          type: string
-          nullable: true
-        snapshot_kinds:
-          type: array
-          items:
-            type: string
-          nullable: true
-        execution_plan:
-          $ref: '#/components/schemas/ExecutionPlan'
-        bindings:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExecutionBinding'
-      additionalProperties: {}
     BulkDeleteResponse:
       type: object
       properties:
@@ -10341,7 +10823,6 @@ components:
           type: array
           items:
             type: string
-            format: uuid
         level:
           type: string
         notes:
@@ -10443,7 +10924,6 @@ components:
           type: array
           items:
             type: string
-            format: uuid
         reason:
           type: string
       required:
@@ -13488,65 +13968,6 @@ components:
       - name
       - unknown_count
       - versions
-    ManualOperationKey:
-      enum:
-      - extensions.sync
-      - extensions.set_flags
-      type: string
-      description: |-
-        * `extensions.sync` - extensions.sync
-        * `extensions.set_flags` - extensions.set_flags
-      x-spec-enum-id: e7d8f4f7f9f11ea4
-    ManualOperationBinding:
-      type: object
-      properties:
-        manual_operation:
-          $ref: '#/components/schemas/ManualOperationKey'
-        template_id:
-          type: string
-        updated_by:
-          type: string
-          nullable: true
-        updated_at:
-          type: string
-          format: date-time
-      required:
-      - manual_operation
-      - template_id
-      - updated_at
-    ManualOperationBindingDeleteResponse:
-      type: object
-      properties:
-        deleted:
-          type: boolean
-        manual_operation:
-          $ref: '#/components/schemas/ManualOperationKey'
-      required:
-      - deleted
-      - manual_operation
-    ManualOperationBindingListResponse:
-      type: object
-      properties:
-        bindings:
-          type: array
-          items:
-            $ref: '#/components/schemas/ManualOperationBinding'
-      required:
-      - bindings
-    ManualOperationBindingResponse:
-      type: object
-      properties:
-        binding:
-          $ref: '#/components/schemas/ManualOperationBinding'
-      required:
-      - binding
-    ManualOperationBindingUpsertRequest:
-      type: object
-      properties:
-        template_id:
-          type: string
-      required:
-      - template_id
     ExtensionsPlanRequest:
       type: object
       properties:
@@ -13558,7 +13979,7 @@ components:
           maxItems: 500
           minItems: 1
         manual_operation:
-          $ref: '#/components/schemas/ManualOperationKey'
+          type: string
         template_id:
           type: string
           nullable: true
@@ -13578,25 +13999,9 @@ components:
         plan_id:
           type: string
           format: uuid
-        preconditions:
-          type: object
-          additionalProperties:
-            type: object
-            properties:
-              hash:
-                type: string
-              at:
-                type: string
-                format: date-time
-                nullable: true
-            required:
-            - hash
-        execution_plan:
-          $ref: '#/components/schemas/ExecutionPlan'
-        bindings:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExecutionBinding'
+        preconditions: {}
+        execution_plan: {}
+        bindings: {}
       required:
       - plan_id
       - preconditions
@@ -14245,6 +14650,56 @@ components:
       required:
       - loop_node_id
       - mode
+    ManualOperationBinding:
+      type: object
+      properties:
+        manual_operation:
+          type: string
+        template_id:
+          type: string
+        updated_by:
+          type: string
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - manual_operation
+      - template_id
+      - updated_at
+    ManualOperationBindingDeleteResponse:
+      type: object
+      properties:
+        deleted:
+          type: boolean
+        manual_operation:
+          type: string
+      required:
+      - deleted
+      - manual_operation
+    ManualOperationBindingListResponse:
+      type: object
+      properties:
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManualOperationBinding'
+      required:
+      - bindings
+    ManualOperationBindingResponse:
+      type: object
+      properties:
+        binding:
+          $ref: '#/components/schemas/ManualOperationBinding'
+      required:
+      - binding
+    ManualOperationBindingUpsertRequest:
+      type: object
+      properties:
+        template_id:
+          type: string
+      required:
+      - template_id
     MappingSpec:
       type: object
       properties:
@@ -14375,11 +14830,6 @@ components:
           format: uuid
         surface:
           type: string
-          enum:
-          - template
-          description: |-
-            * `template` - template
-          x-spec-enum-id: c3a7128a2d6f4b68
         alias:
           type: string
         tenant_id:
@@ -14406,11 +14856,6 @@ components:
           type: string
         operation_type:
           type: string
-        executor_kind:
-          type: string
-        executor_command_id:
-          type: string
-          nullable: true
         target_entity:
           type: string
         template_data: {}
@@ -14423,6 +14868,11 @@ components:
         template_exposure_revision:
           type: integer
           minimum: 1
+        executor_kind:
+          type: string
+        executor_command_id:
+          type: string
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -14709,6 +15159,32 @@ components:
           $ref: '#/components/schemas/OperationErrorDetail'
       required:
       - error
+    OperationIO:
+      type: object
+      description: Serializer for OperationIO Pydantic model.
+      properties:
+        mode:
+          enum:
+          - implicit_legacy
+          - explicit_strict
+          type: string
+          x-spec-enum-id: 60b12cac5eb4e268
+          default: implicit_legacy
+          description: |-
+            Data-flow mode for operation node
+
+            * `implicit_legacy` - implicit_legacy
+            * `explicit_strict` - explicit_strict
+        input_mapping:
+          type: object
+          additionalProperties:
+            type: string
+          description: 'Input mapping: target_path -> source_path'
+        output_mapping:
+          type: object
+          additionalProperties:
+            type: string
+          description: 'Output mapping: target_path -> source_path'
     OperationListResponse:
       type: object
       description: Response for list_operations endpoint.
@@ -14806,6 +15282,39 @@ components:
       - percent
       - processing
       - total
+    OperationRef:
+      type: object
+      description: Serializer for OperationRef Pydantic model.
+      properties:
+        alias:
+          type: string
+          description: OperationExposure alias for template surface
+          maxLength: 200
+          minLength: 1
+        binding_mode:
+          enum:
+          - alias_latest
+          - pinned_exposure
+          type: string
+          x-spec-enum-id: b190d4b6dc3651f2
+          default: alias_latest
+          description: |-
+            Binding mode
+
+            * `alias_latest` - alias_latest
+            * `pinned_exposure` - pinned_exposure
+        template_exposure_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Pinned OperationExposure ID (required for pinned_exposure)
+        template_exposure_revision:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Pinned OperationExposure revision (required for pinned_exposure)
+      required:
+      - alias
     OperationStreamStatus:
       type: object
       description: Response for operation stream status.
@@ -14949,6 +15458,166 @@ components:
       - message
       - unchanged
       - updated
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        database_id:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        full_name:
+          type: string
+        inn:
+          type: string
+        kpp:
+          type: string
+        status:
+          type: string
+        external_ref:
+          type: string
+        metadata: {}
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - inn
+      - name
+      - status
+      - tenant_id
+    OrganizationDetailResponse:
+      type: object
+      properties:
+        organization:
+          $ref: '#/components/schemas/Organization'
+        pool_bindings:
+          type: array
+          items: {}
+      required:
+      - organization
+    OrganizationListResponse:
+      type: object
+      properties:
+        organizations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Organization'
+        count:
+          type: integer
+      required:
+      - count
+      - organizations
+    OrganizationPool:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        is_active:
+          type: boolean
+        metadata: {}
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - code
+      - id
+      - is_active
+      - name
+    OrganizationPoolListResponse:
+      type: object
+      properties:
+        pools:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrganizationPool'
+        count:
+          type: integer
+      required:
+      - count
+      - pools
+    OrganizationSyncRequest:
+      type: object
+      properties:
+        rows:
+          type: array
+          items: {}
+      required:
+      - rows
+    OrganizationSyncResponse:
+      type: object
+      properties:
+        stats: {}
+        total_rows:
+          type: integer
+      required:
+      - stats
+      - total_rows
+    OrganizationUpsertRequest:
+      type: object
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        inn:
+          type: string
+          maxLength: 12
+        name:
+          type: string
+          maxLength: 255
+        full_name:
+          type: string
+          default: ''
+        kpp:
+          type: string
+          default: ''
+        status:
+          enum:
+          - active
+          - inactive
+          - archived
+          type: string
+          description: |-
+            * `active` - active
+            * `inactive` - inactive
+            * `archived` - archived
+          x-spec-enum-id: a20c200db15932ca
+        database_id:
+          type: string
+          format: uuid
+          nullable: true
+        external_ref:
+          type: string
+          default: ''
+        metadata: {}
+      required:
+      - inn
+      - name
+    OrganizationUpsertResponse:
+      type: object
+      properties:
+        organization:
+          $ref: '#/components/schemas/Organization'
+        created:
+          type: boolean
+      required:
+      - created
+      - organization
     ParallelConfig:
       type: object
       description: Serializer for ParallelConfig Pydantic model.
@@ -15031,6 +15700,463 @@ components:
       - failed_count
       - pending_count
       - poison_count
+    PoolGraphEdge:
+      type: object
+      properties:
+        edge_version_id:
+          type: string
+          format: uuid
+        parent_node_version_id:
+          type: string
+          format: uuid
+        child_node_version_id:
+          type: string
+          format: uuid
+        weight:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,6}(?:\.\d{0,6})?$
+        min_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,16}(?:\.\d{0,2})?$
+          nullable: true
+        max_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,16}(?:\.\d{0,2})?$
+          nullable: true
+      required:
+      - child_node_version_id
+      - edge_version_id
+      - parent_node_version_id
+      - weight
+    PoolGraphNode:
+      type: object
+      properties:
+        node_version_id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        inn:
+          type: string
+        name:
+          type: string
+        is_root:
+          type: boolean
+      required:
+      - inn
+      - is_root
+      - name
+      - node_version_id
+      - organization_id
+    PoolGraphResponse:
+      type: object
+      properties:
+        pool_id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolGraphNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolGraphEdge'
+      required:
+      - date
+      - edges
+      - nodes
+      - pool_id
+    PoolPublicationAttempt:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        run_id:
+          type: string
+          format: uuid
+        target_database_id:
+          type: string
+        attempt_number:
+          type: integer
+        status:
+          type: string
+        entity_name:
+          type: string
+        documents_count:
+          type: integer
+        external_document_identity:
+          type: string
+        identity_strategy:
+          type: string
+        posted:
+          type: boolean
+        http_status:
+          type: integer
+          nullable: true
+        error_code:
+          type: string
+        error_message:
+          type: string
+        request_summary: {}
+        response_summary: {}
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - attempt_number
+      - documents_count
+      - entity_name
+      - id
+      - posted
+      - run_id
+      - status
+      - target_database_id
+    PoolRun:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        pool_id:
+          type: string
+          format: uuid
+        schema_template_id:
+          type: string
+          format: uuid
+          nullable: true
+        mode:
+          type: string
+        direction:
+          type: string
+        status:
+          type: string
+        period_start:
+          type: string
+          format: date
+        period_end:
+          type: string
+          format: date
+          nullable: true
+        source_hash:
+          type: string
+        idempotency_key:
+          type: string
+        seed:
+          type: integer
+          nullable: true
+        validation_summary: {}
+        publication_summary: {}
+        diagnostics: {}
+        last_error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        validated_at:
+          type: string
+          format: date-time
+          nullable: true
+        publication_confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+        publishing_started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - direction
+      - id
+      - idempotency_key
+      - mode
+      - period_start
+      - pool_id
+      - source_hash
+      - status
+      - tenant_id
+    PoolRunAuditEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        event_type:
+          type: string
+        status_before:
+          type: string
+        status_after:
+          type: string
+        payload: {}
+        actor_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - event_type
+      - id
+    PoolRunCreateRequest:
+      type: object
+      properties:
+        pool_id:
+          type: string
+          format: uuid
+        direction:
+          enum:
+          - top_down
+          - bottom_up
+          type: string
+          description: |-
+            * `top_down` - top_down
+            * `bottom_up` - bottom_up
+          x-spec-enum-id: d9ebd7a9e5097372
+        period_start:
+          type: string
+          format: date
+        period_end:
+          type: string
+          format: date
+          nullable: true
+        source_hash:
+          type: string
+          default: ''
+        mode:
+          enum:
+          - safe
+          - unsafe
+          type: string
+          description: |-
+            * `safe` - safe
+            * `unsafe` - unsafe
+          x-spec-enum-id: 7203601382e63e68
+          default: safe
+        schema_template_id:
+          type: string
+          format: uuid
+          nullable: true
+        seed:
+          type: integer
+          nullable: true
+        validation_summary: {}
+        diagnostics:
+          type: array
+          items: {}
+      required:
+      - direction
+      - period_start
+      - pool_id
+    PoolRunCreateResponse:
+      type: object
+      properties:
+        run:
+          $ref: '#/components/schemas/PoolRun'
+        created:
+          type: boolean
+      required:
+      - created
+      - run
+    PoolRunDetailResponse:
+      type: object
+      properties:
+        run:
+          $ref: '#/components/schemas/PoolRun'
+        publication_attempts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolPublicationAttempt'
+        audit_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolRunAuditEvent'
+      required:
+      - audit_events
+      - publication_attempts
+      - run
+    PoolRunListResponse:
+      type: object
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolRun'
+        count:
+          type: integer
+      required:
+      - count
+      - runs
+    PoolRunReportResponse:
+      type: object
+      properties:
+        run:
+          $ref: '#/components/schemas/PoolRun'
+        publication_attempts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolPublicationAttempt'
+        validation_summary: {}
+        publication_summary: {}
+        diagnostics: {}
+        attempts_by_status: {}
+      required:
+      - publication_attempts
+      - run
+    PoolRunRetryRequest:
+      type: object
+      properties:
+        entity_name:
+          type: string
+          maxLength: 255
+        documents_by_database:
+          type: object
+          additionalProperties:
+            type: array
+            items: {}
+        max_attempts:
+          type: integer
+          maximum: 5
+          minimum: 1
+          default: 5
+        retry_interval_seconds:
+          type: integer
+          maximum: 120
+          minimum: 0
+          default: 0
+        external_key_field:
+          type: string
+          default: ExternalRunKey
+      required:
+      - documents_by_database
+      - entity_name
+    PoolRunRetryResponse:
+      type: object
+      properties:
+        run:
+          $ref: '#/components/schemas/PoolRun'
+        summary:
+          $ref: '#/components/schemas/PublicationSummary'
+      required:
+      - run
+      - summary
+    PoolSchemaTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        format:
+          type: string
+        is_public:
+          type: boolean
+        is_active:
+          type: boolean
+        schema: {}
+        metadata: {}
+        workflow_template_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - code
+      - format
+      - id
+      - is_active
+      - is_public
+      - name
+      - tenant_id
+    PoolSchemaTemplateCreateRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          maxLength: 64
+          pattern: ^[-a-zA-Z0-9_]+$
+        name:
+          type: string
+          maxLength: 255
+        format:
+          enum:
+          - xlsx
+          - json
+          type: string
+          description: |-
+            * `xlsx` - xlsx
+            * `json` - json
+          x-spec-enum-id: 576543d83e3852b5
+        is_public:
+          type: boolean
+          default: true
+        is_active:
+          type: boolean
+          default: true
+        schema: {}
+        metadata: {}
+        workflow_template_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - code
+      - format
+      - name
+    PoolSchemaTemplateCreateResponse:
+      type: object
+      properties:
+        template:
+          $ref: '#/components/schemas/PoolSchemaTemplate'
+      required:
+      - template
+    PoolSchemaTemplateListResponse:
+      type: object
+      properties:
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolSchemaTemplate'
+        count:
+          type: integer
+      required:
+      - count
+      - templates
     PreviewMappingRequest:
       type: object
       properties:
@@ -15077,6 +16203,22 @@ components:
       required:
       - metrics
       - service
+    PublicationSummary:
+      type: object
+      properties:
+        total_targets:
+          type: integer
+        succeeded_targets:
+          type: integer
+        failed_targets:
+          type: integer
+        max_attempts:
+          type: integer
+      required:
+      - failed_targets
+      - max_attempts
+      - succeeded_targets
+      - total_targets
     RbacErrorDetail:
       type: object
       properties:
@@ -17008,57 +18150,15 @@ components:
           nullable: true
           description: Template ID for Operation nodes
         operation_ref:
-          type: object
+          allOf:
+          - $ref: '#/components/schemas/OperationRef'
           nullable: true
           description: OperationExposure binding for Operation nodes
-          properties:
-            alias:
-              type: string
-              minLength: 1
-              maxLength: 200
-              description: OperationExposure alias for template surface
-            binding_mode:
-              type: string
-              enum:
-              - alias_latest
-              - pinned_exposure
-              description: Binding mode
-            template_exposure_id:
-              type: string
-              format: uuid
-              nullable: true
-              description: Pinned OperationExposure ID (required for pinned_exposure)
-            template_exposure_revision:
-              type: integer
-              minimum: 1
-              nullable: true
-              description: Pinned OperationExposure revision (required for pinned_exposure)
-          required:
-          - alias
-          - binding_mode
         io:
-          type: object
+          allOf:
+          - $ref: '#/components/schemas/OperationIO'
           nullable: true
           description: Operation node data-flow contract
-          properties:
-            mode:
-              type: string
-              enum:
-              - implicit_legacy
-              - explicit_strict
-              description: Data-flow mode for operation node
-            input_mapping:
-              type: object
-              additionalProperties:
-                type: string
-              description: "Input mapping: target_path -> source_path"
-            output_mapping:
-              type: object
-              additionalProperties:
-                type: string
-              description: "Output mapping: target_path -> source_path"
-          required:
-          - mode
         config:
           $ref: '#/components/schemas/NodeConfig'
         parallel_config:
@@ -17510,7 +18610,6 @@ components:
       - valid
     _SetFlagsApplyMask:
       type: object
-      additionalProperties: false
       properties:
         active:
           type: boolean
@@ -17524,7 +18623,6 @@ components:
       - unsafe_action_protection
     _SetFlagsValues:
       type: object
-      additionalProperties: false
       properties:
         active:
           type: boolean

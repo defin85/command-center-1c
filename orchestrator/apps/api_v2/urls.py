@@ -120,6 +120,10 @@ urlpatterns = [
     # Intercompany Pools
     # ========================================================================
     path('pools/', intercompany_pools.list_organization_pools, name='pools-list'),
+    path('pools/organizations/', intercompany_pools.list_organizations, name='pools-organizations-list'),
+    path('pools/organizations/upsert/', intercompany_pools.upsert_organization, name='pools-organizations-upsert'),
+    path('pools/organizations/sync/', intercompany_pools.sync_organizations_catalog, name='pools-organizations-sync'),
+    path('pools/organizations/<uuid:organization_id>/', intercompany_pools.get_organization, name='pools-organizations-get'),
     path('pools/<uuid:pool_id>/graph/', intercompany_pools.get_pool_graph, name='pools-graph'),
     path('pools/runs/', intercompany_pools.create_pool_run, name='pools-run-create'),
     path('pools/runs/<uuid:run_id>/', intercompany_pools.get_pool_run, name='pools-run-get'),

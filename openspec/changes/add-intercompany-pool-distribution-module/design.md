@@ -12,18 +12,19 @@
 
 ## Goals / Non-Goals
 - Goals:
-  - Реализовать каталог организаций и пулов с временной версионностью.
-  - Реализовать top-down и bottom-up расчёты с детерминируемым результатом по `seed`.
-  - Реализовать run lifecycle, идемпотентность и аудит.
-  - Реализовать публикацию документов в 1С через OData с дозаписью failed-частей.
-  - Реализовать сводный и детализированный отчёты сверки.
+  - Закрыть foundation домена: каталог организаций, каталоги пулов и версионный граф.
+  - Закрыть foundation API/UI: graph view, schema templates, tenant-aware каталог.
+  - Синхронизировать public contract `/api/v2/pools/*` с фактической реализацией.
+  - Подготовить совместимый фасад для последующего unified execution.
 - Non-Goals:
   - Поддержка всех внешних форматов файлов в первом релизе.
   - Сложная многослойная RBAC-модель сверх базовых ролей модуля.
+  - Финализация отдельного `pools` runtime исполнения в этом change.
   - Отказ от OData в пользу других каналов публикации.
 
 ## Decisions
 - Decision: Модуль реализуется как отдельный bounded context внутри orchestrator (отдельные модели/API/сервисы), но использует общую инфраструктуру auth/RBAC/audit.
+- Decision: Этот change фиксирует только foundation слой (catalog/data/contracts/UI foundation), не расширяя standalone runtime исполнения.
 - Decision: Ограничения распределения (`min/max/weight`) являются каноническими на уровне ребра `parent -> child`; узловые дефолты допускаются только как шаблон заполнения.
 - Decision: Идемпотентный ключ run:
   - `pool_id + period + direction + source_hash`.
@@ -41,6 +42,7 @@
   - primary: стабильный GUID документа из OData (`_IDRRef` или `Ref_Key`);
   - fallback: `ExternalRunKey` (детерминированный ключ вида `runkey-<sha256[:32]>` от `run_id + target_database_id + document_kind + period`).
   - выбранная стратегия и итоговый идентификатор фиксируются в audit trail run.
+- Decision: Все execution/runtime задачи (фактический run execution, lifecycle orchestration, workflow provenance, unified retry/audit projection) передаются в `refactor-unify-pools-workflow-execution-core`.
 
 ## Domain Model (Target)
 - `Organization`:
@@ -115,3 +117,4 @@
 
 ## Open Questions
 - Подтвердить конкретные OData endpoint и поля для запуска проведения документа на поддерживаемых конфигурациях 1С.
+- Нужен ли отдельный lightweight read-model для каталога организаций в UI до завершения unified runtime refactor.

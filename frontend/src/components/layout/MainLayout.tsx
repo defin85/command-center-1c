@@ -135,6 +135,11 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       label: 'Templates',
     },
     {
+      key: '/pools/catalog',
+      icon: <FileTextOutlined />,
+      label: 'Pool Catalog',
+    },
+    {
       key: '/pools/runs',
       icon: <FileTextOutlined />,
       label: 'Pool Runs',

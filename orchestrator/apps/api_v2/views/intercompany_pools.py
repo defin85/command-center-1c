@@ -14,7 +14,11 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.api_v2.serializers.common import ErrorResponseSerializer
+from apps.databases.models import Database
 from apps.intercompany_pools.models import (
+    Organization,
+    OrganizationStatus,
     OrganizationPool,
     PoolPublicationAttempt,
     PoolEdgeVersion,
@@ -26,6 +30,7 @@ from apps.intercompany_pools.models import (
     PoolSchemaTemplate,
     PoolSchemaTemplateFormat,
 )
+from apps.intercompany_pools.sync import sync_organizations
 from apps.intercompany_pools.publication import (
     MAX_PUBLICATION_ATTEMPTS,
     MAX_RETRY_INTERVAL_SECONDS,
@@ -185,6 +190,23 @@ def _serialize_schema_template(template: PoolSchemaTemplate) -> dict[str, Any]:
     }
 
 
+def _serialize_organization(organization: Organization) -> dict[str, Any]:
+    return {
+        "id": str(organization.id),
+        "tenant_id": str(organization.tenant_id),
+        "database_id": str(organization.database_id) if organization.database_id else None,
+        "name": organization.name,
+        "full_name": organization.full_name,
+        "inn": organization.inn,
+        "kpp": organization.kpp,
+        "status": organization.status,
+        "external_ref": organization.external_ref,
+        "metadata": organization.metadata if isinstance(organization.metadata, dict) else {},
+        "created_at": organization.created_at,
+        "updated_at": organization.updated_at,
+    }
+
+
 class PoolRunSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     tenant_id = serializers.UUIDField()
@@ -338,6 +360,62 @@ class PoolSchemaTemplateCreateResponseSerializer(serializers.Serializer):
     template = PoolSchemaTemplateSerializer()
 
 
+class OrganizationSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    tenant_id = serializers.UUIDField()
+    database_id = serializers.UUIDField(required=False, allow_null=True)
+    name = serializers.CharField()
+    full_name = serializers.CharField(required=False, allow_blank=True)
+    inn = serializers.CharField()
+    kpp = serializers.CharField(required=False, allow_blank=True)
+    status = serializers.CharField()
+    external_ref = serializers.CharField(required=False, allow_blank=True)
+    metadata = serializers.JSONField(required=False)
+    created_at = serializers.DateTimeField(required=False)
+    updated_at = serializers.DateTimeField(required=False)
+
+
+class OrganizationListResponseSerializer(serializers.Serializer):
+    organizations = OrganizationSerializer(many=True)
+    count = serializers.IntegerField()
+
+
+class OrganizationDetailResponseSerializer(serializers.Serializer):
+    organization = OrganizationSerializer()
+    pool_bindings = serializers.ListField(child=serializers.JSONField(), required=False)
+
+
+class OrganizationUpsertRequestSerializer(serializers.Serializer):
+    organization_id = serializers.UUIDField(required=False)
+    inn = serializers.CharField(max_length=12)
+    name = serializers.CharField(max_length=255)
+    full_name = serializers.CharField(required=False, allow_blank=True, default="")
+    kpp = serializers.CharField(required=False, allow_blank=True, default="")
+    status = serializers.ChoiceField(choices=OrganizationStatus.values, required=False)
+    database_id = serializers.UUIDField(required=False, allow_null=True)
+    external_ref = serializers.CharField(required=False, allow_blank=True, default="")
+    metadata = serializers.JSONField(required=False, default=dict)
+
+    def validate_metadata(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("metadata must be an object")
+        return value
+
+
+class OrganizationUpsertResponseSerializer(serializers.Serializer):
+    organization = OrganizationSerializer()
+    created = serializers.BooleanField()
+
+
+class OrganizationSyncRequestSerializer(serializers.Serializer):
+    rows = serializers.ListField(child=serializers.JSONField(), allow_empty=False)
+
+
+class OrganizationSyncResponseSerializer(serializers.Serializer):
+    stats = serializers.JSONField()
+    total_rows = serializers.IntegerField()
+
+
 class OrganizationPoolSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     code = serializers.CharField()
@@ -385,13 +463,9 @@ class PoolRunReportResponseSerializer(serializers.Serializer):
     attempts_by_status = serializers.JSONField(required=False)
 
 
-class ErrorResponseSerializer(serializers.Serializer):
-    success = serializers.BooleanField()
-    error = serializers.JSONField()
-
-
 @extend_schema(
     tags=["v2"],
+    operation_id="v2_pools_runs_create",
     summary="Create or upsert pool run",
     request=PoolRunCreateRequestSerializer,
     responses={
@@ -405,6 +479,7 @@ class ErrorResponseSerializer(serializers.Serializer):
 )
 @extend_schema(
     tags=["v2"],
+    operation_id="v2_pools_runs_list",
     summary="List pool runs",
     responses={
         200: PoolRunListResponseSerializer,
@@ -499,6 +574,303 @@ def create_pool_run(request):
 
 @extend_schema(
     tags=["v2"],
+    operation_id="v2_pools_organizations_list",
+    summary="List organizations in pools catalog",
+    responses={
+        200: OrganizationListResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_organizations(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _error(
+            code="TENANT_CONTEXT_REQUIRED",
+            message="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    queryset = Organization.objects.filter(tenant_id=tenant_id).select_related("database")
+    status_value = str(request.query_params.get("status", "")).strip().lower()
+    if status_value:
+        if status_value not in OrganizationStatus.values:
+            return _error(
+                code="VALIDATION_ERROR",
+                message=f"Unsupported status '{status_value}'.",
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+            )
+        queryset = queryset.filter(status=status_value)
+
+    query = str(request.query_params.get("query", "")).strip()
+    if query:
+        queryset = queryset.filter(
+            Q(name__icontains=query)
+            | Q(full_name__icontains=query)
+            | Q(inn__icontains=query)
+            | Q(kpp__icontains=query)
+        )
+
+    linked_raw = request.query_params.get("database_linked")
+    if linked_raw is not None:
+        is_linked = str(linked_raw).strip().lower() in {"1", "true", "yes"}
+        if is_linked:
+            queryset = queryset.filter(database_id__isnull=False)
+        else:
+            queryset = queryset.filter(database_id__isnull=True)
+
+    limit = _parse_limit(request.query_params.get("limit"), default=100, max_value=500)
+    organizations = list(queryset.order_by("name", "inn")[:limit])
+    payload = {
+        "organizations": [_serialize_organization(item) for item in organizations],
+        "count": len(organizations),
+    }
+    return Response(payload, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_organizations_get",
+    summary="Get organization details from pools catalog",
+    responses={
+        200: OrganizationDetailResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        404: ErrorResponseSerializer,
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_organization(request, organization_id: UUID):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _error(
+            code="TENANT_CONTEXT_REQUIRED",
+            message="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    organization = Organization.objects.filter(id=organization_id, tenant_id=tenant_id).select_related("database").first()
+    if organization is None:
+        return _error(
+            code="ORGANIZATION_NOT_FOUND",
+            message="Organization not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    pool_bindings = list(
+        PoolNodeVersion.objects.select_related("pool")
+        .filter(organization=organization)
+        .order_by("-effective_from", "pool__code", "pool_id")
+    )
+    payload = {
+        "organization": _serialize_organization(organization),
+        "pool_bindings": [
+            {
+                "pool_id": str(binding.pool_id),
+                "pool_code": binding.pool.code,
+                "pool_name": binding.pool.name,
+                "is_root": binding.is_root,
+                "effective_from": binding.effective_from,
+                "effective_to": binding.effective_to,
+            }
+            for binding in pool_bindings
+        ],
+    }
+    return Response(payload, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_organizations_upsert",
+    summary="Create or update organization in pools catalog",
+    request=OrganizationUpsertRequestSerializer,
+    responses={
+        200: OrganizationUpsertResponseSerializer,
+        201: OrganizationUpsertResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        404: ErrorResponseSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upsert_organization(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _error(
+            code="TENANT_CONTEXT_REQUIRED",
+            message="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = OrganizationUpsertRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return Response(
+            {"success": False, "error": serializer.errors},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = serializer.validated_data
+    organization = None
+    organization_id = data.get("organization_id")
+    if organization_id:
+        organization = Organization.objects.filter(id=organization_id, tenant_id=tenant_id).first()
+        if organization is None:
+            return _error(
+                code="ORGANIZATION_NOT_FOUND",
+                message="Organization not found in current tenant context.",
+                status_code=http_status.HTTP_404_NOT_FOUND,
+            )
+    if organization is None:
+        organization = Organization.objects.filter(tenant_id=tenant_id, inn=data["inn"]).first()
+
+    if organization is not None and organization.inn != data["inn"]:
+        if Organization.objects.filter(tenant_id=tenant_id, inn=data["inn"]).exclude(id=organization.id).exists():
+            return _error(
+                code="DUPLICATE_ORGANIZATION_INN",
+                message="Organization with this INN already exists in current tenant.",
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+            )
+
+    database = None
+    if "database_id" in data:
+        database_id = data.get("database_id")
+        if database_id is not None:
+            database = Database.objects.filter(id=database_id, tenant_id=tenant_id).first()
+            if database is None:
+                return _error(
+                    code="DATABASE_NOT_FOUND",
+                    message="Database not found in current tenant context.",
+                    status_code=http_status.HTTP_404_NOT_FOUND,
+                )
+            conflict_qs = Organization.objects.filter(tenant_id=tenant_id, database=database)
+            if organization is not None:
+                conflict_qs = conflict_qs.exclude(id=organization.id)
+            if conflict_qs.exists():
+                return _error(
+                    code="DATABASE_ALREADY_LINKED",
+                    message="Database is already linked to another organization.",
+                    status_code=http_status.HTTP_400_BAD_REQUEST,
+                )
+
+    created = organization is None
+    status_value = data.get("status", organization.status if organization else OrganizationStatus.ACTIVE)
+    metadata_value = data.get("metadata", organization.metadata if organization else {})
+    full_name = data.get("full_name", organization.full_name if organization else "")
+    kpp = data.get("kpp", organization.kpp if organization else "")
+    external_ref = data.get("external_ref", organization.external_ref if organization else "")
+    database_value = database if "database_id" in data else (organization.database if organization else None)
+
+    try:
+        if created:
+            organization = Organization.objects.create(
+                tenant_id=tenant_id,
+                database=database_value,
+                name=data["name"],
+                full_name=full_name,
+                inn=data["inn"],
+                kpp=kpp,
+                status=status_value,
+                external_ref=external_ref,
+                metadata=metadata_value,
+            )
+        else:
+            changed_fields: list[str] = []
+            updates = {
+                "database": database_value,
+                "name": data["name"],
+                "full_name": full_name,
+                "inn": data["inn"],
+                "kpp": kpp,
+                "status": status_value,
+                "external_ref": external_ref,
+                "metadata": metadata_value,
+            }
+            for field_name, value in updates.items():
+                if getattr(organization, field_name) != value:
+                    setattr(organization, field_name, value)
+                    changed_fields.append(field_name)
+            if changed_fields:
+                organization.save(update_fields=[*changed_fields, "updated_at"])
+    except IntegrityError:
+        return _error(
+            code="DUPLICATE_ORGANIZATION_INN",
+            message="Organization with this INN already exists in current tenant.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    payload = {
+        "organization": _serialize_organization(organization),
+        "created": created,
+    }
+    response_status = http_status.HTTP_201_CREATED if created else http_status.HTTP_200_OK
+    return Response(payload, status=response_status)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_organizations_sync",
+    summary="Sync organizations catalog",
+    request=OrganizationSyncRequestSerializer,
+    responses={
+        200: OrganizationSyncResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def sync_organizations_catalog(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _error(
+            code="TENANT_CONTEXT_REQUIRED",
+            message="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = OrganizationSyncRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return Response(
+            {"success": False, "error": serializer.errors},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    tenant = Tenant.objects.filter(id=tenant_id).first()
+    if tenant is None:
+        return _error(
+            code="TENANT_NOT_FOUND",
+            message="Tenant context is invalid.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    rows = serializer.validated_data["rows"]
+    try:
+        stats = sync_organizations(tenant=tenant, rows=rows)
+    except DjangoValidationError as exc:
+        return _error(
+            code="VALIDATION_ERROR",
+            message=_validation_message(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    payload = {
+        "stats": {
+            "created": stats.created,
+            "updated": stats.updated,
+            "skipped": stats.skipped,
+        },
+        "total_rows": len(rows),
+    }
+    return Response(payload, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_list",
     summary="List organization pools",
     responses={
         200: OrganizationPoolListResponseSerializer,
@@ -541,6 +913,7 @@ def list_organization_pools(request):
 
 @extend_schema(
     tags=["v2"],
+    operation_id="v2_pools_graph_get",
     summary="Get active pool graph by date",
     responses={
         200: PoolGraphResponseSerializer,
@@ -625,6 +998,7 @@ def get_pool_graph(request, pool_id: UUID):
 
 @extend_schema(
     tags=["v2"],
+    operation_id="v2_pools_runs_report_get",
     summary="Get pool run dry-run/report payload",
     responses={
         200: PoolRunReportResponseSerializer,
@@ -678,6 +1052,7 @@ def get_pool_run_report(request, run_id: UUID):
 
 @extend_schema(
     tags=["v2"],
+    operation_id="v2_pools_schema_templates_list",
     summary="List public pool schema templates",
     responses={
         200: PoolSchemaTemplateListResponseSerializer,
@@ -688,6 +1063,7 @@ def get_pool_run_report(request, run_id: UUID):
 )
 @extend_schema(
     tags=["v2"],
+    operation_id="v2_pools_schema_templates_create",
     summary="Create pool schema template",
     request=PoolSchemaTemplateCreateRequestSerializer,
     responses={
@@ -778,6 +1154,7 @@ def list_or_create_schema_templates(request):
 
 @extend_schema(
     tags=["v2"],
+    operation_id="v2_pools_runs_get",
     summary="Get pool run status and details",
     responses={
         200: PoolRunDetailResponseSerializer,
@@ -828,6 +1205,7 @@ def get_pool_run(request, run_id: UUID):
 
 @extend_schema(
     tags=["v2"],
+    operation_id="v2_pools_runs_retry",
     summary="Retry failed publication targets for pool run",
     request=PoolRunRetryRequestSerializer,
     responses={

@@ -26,6 +26,32 @@ export type OrganizationPool = {
   updated_at: string
 }
 
+export type OrganizationStatus = 'active' | 'inactive' | 'archived'
+
+export type Organization = {
+  id: string
+  tenant_id: string
+  database_id: string | null
+  name: string
+  full_name: string
+  inn: string
+  kpp: string
+  status: OrganizationStatus
+  external_ref: string
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type OrganizationPoolBinding = {
+  pool_id: string
+  pool_code: string
+  pool_name: string
+  is_root: boolean
+  effective_from: string
+  effective_to: string | null
+}
+
 export type PoolRun = {
   id: string
   tenant_id: string
@@ -107,6 +133,13 @@ export type ListPoolRunsParams = {
   limit?: number
 }
 
+export type ListOrganizationsParams = {
+  status?: OrganizationStatus
+  query?: string
+  databaseLinked?: boolean
+  limit?: number
+}
+
 export type CreatePoolRunPayload = {
   pool_id: string
   direction: 'top_down' | 'bottom_up'
@@ -126,6 +159,22 @@ export type RetryPoolRunPayload = {
   max_attempts?: number
   retry_interval_seconds?: number
   external_key_field?: string
+}
+
+export type UpsertOrganizationPayload = {
+  organization_id?: string
+  inn: string
+  name: string
+  full_name?: string
+  kpp?: string
+  status?: OrganizationStatus
+  database_id?: string | null
+  external_ref?: string
+  metadata?: Record<string, unknown>
+}
+
+export type SyncOrganizationsPayload = {
+  rows: Array<Record<string, unknown>>
 }
 
 export async function listPoolSchemaTemplates(
@@ -166,6 +215,61 @@ export async function listOrganizationPools(): Promise<OrganizationPool[]> {
     { skipGlobalError: true }
   )
   return response.data.pools ?? []
+}
+
+export async function listOrganizations(
+  params: ListOrganizationsParams = {}
+): Promise<Organization[]> {
+  const query: Record<string, string | number> = {}
+  if (params.status) {
+    query.status = params.status
+  }
+  if (params.query) {
+    query.query = params.query
+  }
+  if (typeof params.databaseLinked === 'boolean') {
+    query.database_linked = params.databaseLinked ? 'true' : 'false'
+  }
+  if (params.limit) {
+    query.limit = params.limit
+  }
+  const response = await apiClient.get<{ organizations: Organization[] }>(
+    '/api/v2/pools/organizations/',
+    { params: query, skipGlobalError: true }
+  )
+  return response.data.organizations ?? []
+}
+
+export async function getOrganization(
+  organizationId: string
+): Promise<{ organization: Organization; pool_bindings: OrganizationPoolBinding[] }> {
+  const response = await apiClient.get<{ organization: Organization; pool_bindings: OrganizationPoolBinding[] }>(
+    `/api/v2/pools/organizations/${organizationId}/`,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function upsertOrganization(
+  payload: UpsertOrganizationPayload
+): Promise<{ organization: Organization; created: boolean }> {
+  const response = await apiClient.post<{ organization: Organization; created: boolean }>(
+    '/api/v2/pools/organizations/upsert/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function syncOrganizationsCatalog(
+  payload: SyncOrganizationsPayload
+): Promise<{ stats: { created: number; updated: number; skipped: number }; total_rows: number }> {
+  const response = await apiClient.post<{ stats: { created: number; updated: number; skipped: number }; total_rows: number }>(
+    '/api/v2/pools/organizations/sync/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
 }
 
 export async function getPoolGraph(poolId: string, targetDate?: string): Promise<PoolGraph> {

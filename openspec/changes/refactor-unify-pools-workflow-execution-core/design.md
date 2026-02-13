@@ -8,11 +8,14 @@
 
 Проблема: если `pools` развивать как отдельный runtime, появляется дублирование lifecycle/retry/audit и divergence в операционном управлении.
 
+После пересмотра scope в `add-intercompany-pool-distribution-module`, тот change закрывает только foundation (catalog/data/contracts/UI baseline), а execution-часть намеренно переносится сюда.
+
 ## Goals / Non-Goals
 - Goals:
   - Единый runtime для всех многошаговых операций над ИБ.
   - `pools` как domain facade/DSL без собственного оркестратора.
   - Прозрачная трассировка `pool run -> workflow run -> step diagnostics`.
+  - Консолидация deferred execution scope из `add-intercompany-pool-distribution-module`.
 - Non-Goals:
   - Big-bang удаление `workflows`.
   - Перепроектирование доменной математики распределения.
@@ -24,6 +27,7 @@
 - Decision: publication service (OData) исполняется как adapter шага в workflow graph.
 - Decision: идемпотентность `pool` домена сохраняется и маппится в workflow metadata/idempotency.
 - Decision: удаление `workflows` запрещено до завершения миграции всех runtime consumers.
+- Decision: foundation задачи (catalog/data/contracts/UI baseline) не дублируются в этом change и считаются внешним входом из `add-intercompany-pool-distribution-module`.
 
 ## Execution Mapping (Target)
 - `PoolTemplate` -> compiler -> `WorkflowTemplate`.
