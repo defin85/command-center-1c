@@ -1,7 +1,12 @@
+> Scope note: В рамках `add-intercompany-pool-distribution-module` этот capability фиксирует доменный/facade контракт (`/api/v2/pools/runs*`, поля, инварианты, idempotency).  
+> Фактическая runtime-оркестрация (start lifecycle, status projection, retry orchestration, workflow provenance) реализуется в `refactor-unify-pools-workflow-execution-core`.
+
 ## ADDED Requirements
 ### Requirement: Distribution runs MUST поддерживать фиксированный lifecycle и режимы безопасности
 Система ДОЛЖНА (SHALL) поддерживать lifecycle run в состояниях:
 - `draft -> validated -> publishing -> partial_success|published|failed`.
+
+В рамках этого change данный lifecycle фиксируется как внешний доменный контракт facade; источник исполнения и проекции статусов определяется unified runtime change.
 
 Система ДОЛЖНА (SHALL) поддерживать режимы:
 - `safe`: публикация после проверок и явного решения пользователя,
@@ -63,6 +68,8 @@
 - запуска run,
 - чтения статуса/деталей run,
 - повторной дозаписи failed-частей.
+
+Фактическая реализация execution-path для этих endpoint'ов ДОЛЖНА (SHALL) быть перенесена и зафиксирована в `refactor-unify-pools-workflow-execution-core`.
 
 #### Scenario: Внешний клиент выполняет дозапись failed-частей
 - **GIVEN** run завершился в `partial_success`

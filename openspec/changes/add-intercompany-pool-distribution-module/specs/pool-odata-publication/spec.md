@@ -1,3 +1,6 @@
+> Scope note: В рамках `add-intercompany-pool-distribution-module` этот capability фиксирует контракт publication на уровне доменной модели и API facade.  
+> Runtime-исполнение публикации (workflow-step orchestration, retries, provenance projection) реализуется в `refactor-unify-pools-workflow-execution-core`.
+
 ## ADDED Requirements
 ### Requirement: Publication MUST использовать OData documents + posting flow
 Система ДОЛЖНА (SHALL) публиковать результаты run в ИБ через OData на уровне документов 1С и инициировать проведение документа в 1С.
@@ -13,6 +16,8 @@
 Система ДОЛЖНА (SHALL) поддерживать частично успешную публикацию (`partial_success`) и повторную дозапись failed-частей.
 
 Система ДОЛЖНА (SHALL) поддерживать retry policy с `max_attempts=5` и настраиваемым интервалом повторов (дефолтный потолок 120 секунд).
+
+В рамках этого change retry policy фиксируется как доменный контракт; execution-реализация ретраев и статусной проекции переносится в unified runtime change.
 
 #### Scenario: Неуспешная публикация дозаписывается ретраями
 - **GIVEN** публикация в части ИБ завершилась ошибкой

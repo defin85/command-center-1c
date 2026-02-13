@@ -31,11 +31,13 @@
   - Повторный run по тому же ключу обновляет существующие документы/результаты, не создавая дубликаты.
 - Decision: Состояния run:
   - `draft -> validated -> publishing -> partial_success|published|failed`.
+  - В этом change фиксируются как vocabulary facade/API; source-of-truth для runtime-проекции задаётся в `refactor-unify-pools-workflow-execution-core`.
 - Decision: Safe/unsafe режимы:
   - `safe`: обязательные pre-publish проверки + ручное подтверждение публикации;
   - `unsafe`: пропуск стадии подтверждения пользователем.
 - Decision: Публикация выполняется через документы 1С (не прямые записи регистров), с последующим проведением документа на стороне 1С.
 - Decision: Частичный успех допустим; для failed-частей используется дозапись с ретраями (`max_attempts=5`, настраиваемый интервал, верхняя граница дефолта 120 секунд).
+  - В этом change фиксируется доменный контракт; runtime-исполнение retry/publishing делегировано в `refactor-unify-pools-workflow-execution-core`.
 - Decision: Внешний API предоставляется сразу в первом релизе: запуск run, просмотр статуса, повторная дозапись.
 - Decision: XLSX-шаблоны являются публичными переиспользуемыми шаблонами (не жёстко привязаны к периоду); допускается опциональная привязка к workflow.
 - Decision: Внешний идентификатор документа для OData upsert выбирается strategy-based resolver:

@@ -18,7 +18,8 @@
 - Зафиксировать и довести foundation API/UI:
   - каталог пулов и граф структуры по дате;
   - публичные шаблоны импорта (XLSX/JSON) с опциональной workflow-привязкой;
-  - совместимый фасад `pools/runs*` на уровне API-контракта без фиксации отдельного runtime.
+  - совместимый фасад `pools/runs*` на уровне API-контракта без фиксации отдельного runtime;
+  - `pool-distribution-runs` и `pool-odata-publication` в этом change трактуются как facade/domain contract, а не как реализация execution runtime.
 - Обновить `contracts/**` для фактически поддерживаемого surface `/api/v2/pools/*`.
 - Явно передать execution-область в `refactor-unify-pools-workflow-execution-core`:
   - фактическое исполнение run,
