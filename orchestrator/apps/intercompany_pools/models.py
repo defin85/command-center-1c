@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.db.models import F, Q
@@ -11,6 +12,23 @@ from django_fsm import FSMField, transition
 
 
 User = get_user_model()
+DEFAULT_POOL_RUN_COMMAND_LOG_RETENTION_DAYS = 30
+
+
+def get_pool_run_command_log_expires_at():
+    retention_days_raw = getattr(
+        settings,
+        "POOL_RUN_COMMAND_LOG_RETENTION_DAYS",
+        DEFAULT_POOL_RUN_COMMAND_LOG_RETENTION_DAYS,
+    )
+    try:
+        retention_days = int(retention_days_raw)
+    except (TypeError, ValueError):
+        retention_days = DEFAULT_POOL_RUN_COMMAND_LOG_RETENTION_DAYS
+
+    if retention_days < 1:
+        retention_days = 1
+    return timezone.now() + timedelta(days=retention_days)
 
 
 class OrganizationStatus(models.TextChoices):
@@ -406,6 +424,75 @@ class PoolRunAuditEvent(models.Model):
 
     def __str__(self) -> str:
         return f"{self.run_id}:{self.event_type}@{self.created_at.isoformat()}"
+
+
+class PoolRunCommandType(models.TextChoices):
+    CONFIRM_PUBLICATION = "confirm_publication", "Confirm Publication"
+    ABORT_PUBLICATION = "abort_publication", "Abort Publication"
+
+
+class PoolRunCommandResultClass(models.TextChoices):
+    ACCEPTED = "accepted", "Accepted"
+    NOOP = "noop", "No-op"
+    CONFLICT = "conflict", "Conflict"
+    BAD_REQUEST = "bad_request", "Bad Request"
+    ERROR = "error", "Error"
+
+
+class PoolRunCommandCasOutcome(models.TextChoices):
+    WON = "won", "Won"
+    LOST = "lost", "Lost"
+    NOT_APPLICABLE = "not_applicable", "Not Applicable"
+
+
+class PoolRunCommandLog(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    run = models.ForeignKey(PoolRun, on_delete=models.CASCADE, related_name="command_logs")
+    tenant = models.ForeignKey("tenancy.Tenant", on_delete=models.CASCADE, related_name="pool_run_command_logs")
+    command_type = models.CharField(max_length=32, choices=PoolRunCommandType.choices, db_index=True)
+    idempotency_key = models.CharField(max_length=128)
+    command_fingerprint = models.CharField(max_length=128, blank=True, default="")
+    result_class = models.CharField(max_length=32, choices=PoolRunCommandResultClass.choices)
+    cas_outcome = models.CharField(
+        max_length=32,
+        choices=PoolRunCommandCasOutcome.choices,
+        default=PoolRunCommandCasOutcome.NOT_APPLICABLE,
+    )
+    response_status_code = models.PositiveSmallIntegerField(default=200)
+    response_snapshot = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_pool_run_command_logs",
+    )
+    replay_count = models.PositiveIntegerField(default=0)
+    last_replayed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    expires_at = models.DateTimeField(default=get_pool_run_command_log_expires_at, db_index=True)
+
+    class Meta:
+        db_table = "pool_run_command_log"
+        indexes = [
+            models.Index(fields=["run", "command_type", "-created_at"]),
+            models.Index(fields=["tenant", "command_type", "-created_at"]),
+            models.Index(fields=["run", "idempotency_key"]),
+            models.Index(fields=["expires_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["run", "command_type", "idempotency_key"],
+                name="uniq_pool_run_command_log_scope",
+            ),
+            models.CheckConstraint(
+                condition=~Q(idempotency_key=""),
+                name="chk_pool_run_command_log_nonempty_key",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.run_id}:{self.command_type}:{self.idempotency_key}"
 
 
 class PoolPublicationAttemptStatus(models.TextChoices):
