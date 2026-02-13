@@ -32,7 +32,7 @@ Rollout ДОЛЖЕН (SHALL) быть заблокирован (`No-Go`), есл
 ## Supported Configurations
 | configuration_id | configuration_version_range | document_upsert_endpoint_pattern | document_posting_operation | document_identity_fields_priority | external_run_key_field | known_limitations | profile_entry_version | source_reference | verification_status | verified_at | verified_by |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| (to be filled) | (to be filled) | (to be filled) | (to be filled) | Ref_Key -> _IDRRef -> ExternalRunKey | (to be filled) | (to be filled) | v1 | (to be filled) | draft | - | - |
+| 1c-accounting-3.0-standard-odata | 3.0.x (tenant-specific patch-level) | `/odata/standard.odata/Document_IntercompanyPoolDistribution` | `PATCH Document_IntercompanyPoolDistribution(guid'{Ref_Key}')` body: `{"Posted": true}` | Ref_Key -> _IDRRef -> ExternalRunKey | ExternalRunKey | Для posting обязателен GUID; при fallback identity сначала выполняется lookup по `ExternalRunKey` | v1 | `orchestrator/apps/intercompany_pools/publication.py`; `orchestrator/apps/intercompany_pools/tests/test_publication.py`; `contracts/orchestrator/openapi.yaml` | verified | 2026-02-13 | automated-test-baseline |
 
 ## Rollout Gate
 `publication_odata` rollout in production разрешён только если:
@@ -49,6 +49,16 @@ Rollout ДОЛЖЕН (SHALL) быть заблокирован (`No-Go`), есл
   - обновлять `profile_entry_version` затронутых строк;
   - добавлять `source_reference` на проверяющий артефакт.
 - Для неоднозначных расхождений с источниками документации решение принимается в пользу более консервативного режима (`No-Go`) до подтверждения profile.
+
+## Verification Policy
+- `draft`:
+  - есть только проектный контракт без подтверждения кодом/тестами.
+- `verified`:
+  - endpoint/posting-паттерн подтверждён кодом и автоматизированными тестами;
+  - есть `source_reference` на реализацию и тесты.
+- `approved`:
+  - дополнительно к `verified` выполнена проверка на целевой production-like конфигурации 1С;
+  - есть подтверждённый rollout протокол и владелец-аппрувер (platform/pools).
 
 ## Change Log
 | profile_version | date | summary |
