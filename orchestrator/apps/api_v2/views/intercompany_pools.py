@@ -25,10 +25,20 @@ from apps.intercompany_pools.models import (
     PoolNodeVersion,
     PoolRun,
     PoolRunAuditEvent,
+    PoolRunCommandResultClass,
+    PoolRunCommandType,
     PoolRunDirection,
     PoolRunMode,
     PoolSchemaTemplate,
     PoolSchemaTemplateFormat,
+)
+from apps.intercompany_pools.safe_commands import (
+    CONFLICT_REASON_AWAITING_PRE_PUBLISH,
+    CONFLICT_REASON_IDEMPOTENCY_KEY_REUSED,
+    CONFLICT_REASON_NOT_SAFE_RUN,
+    CONFLICT_REASON_PUBLICATION_STARTED,
+    CONFLICT_REASON_TERMINAL_STATE,
+    process_pool_run_safe_command,
 )
 from apps.intercompany_pools.sync import sync_organizations
 from apps.intercompany_pools.publication import (
@@ -78,6 +88,36 @@ def _error(*, code: str, message: str, status_code: int) -> Response:
         },
         status=status_code,
     )
+
+
+def _safe_command_conflict_payload(*, run_id: UUID, conflict_reason: str | None) -> dict[str, Any]:
+    reason = str(conflict_reason or "").strip().lower()
+    code_map = {
+        CONFLICT_REASON_NOT_SAFE_RUN: ("NOT_SAFE_RUN", "Safe command is not allowed for this run."),
+        CONFLICT_REASON_AWAITING_PRE_PUBLISH: (
+            "AWAITING_PRE_PUBLISH",
+            "Pre-publish этап ещё выполняется, команда пока недоступна.",
+        ),
+        CONFLICT_REASON_PUBLICATION_STARTED: (
+            "PUBLICATION_STARTED",
+            "Publication уже началась, команда больше недоступна.",
+        ),
+        CONFLICT_REASON_TERMINAL_STATE: ("TERMINAL_STATE", "Run уже находится в terminal state."),
+        CONFLICT_REASON_IDEMPOTENCY_KEY_REUSED: (
+            "IDEMPOTENCY_KEY_REUSED",
+            "Idempotency-Key уже использован для другой семантики команды.",
+        ),
+    }
+    error_code, error_message = code_map.get(reason, ("COMMAND_CONFLICT", "Команда недоступна в текущем состоянии run."))
+    retryable = reason in {CONFLICT_REASON_AWAITING_PRE_PUBLISH}
+    return {
+        "success": False,
+        "error_code": error_code,
+        "error_message": error_message,
+        "conflict_reason": reason or CONFLICT_REASON_TERMINAL_STATE,
+        "retryable": retryable,
+        "run_id": str(run_id),
+    }
 
 
 def _resolve_tenant_id(request) -> str | None:
@@ -145,6 +185,10 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
         workflow_input_context=workflow_input_context,
         approval_state=approval_state,
     )
+    terminal_reason = _resolve_terminal_reason(
+        run=run,
+        workflow_input_context=workflow_input_context,
+    )
     projected_status, status_reason = _project_pool_status(
         run=run,
         workflow_status=workflow_status,
@@ -171,6 +215,7 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
         "workflow_status": workflow_status,
         "approval_state": approval_state,
         "publication_step_state": publication_step_state,
+        "terminal_reason": terminal_reason,
         "execution_backend": execution_backend,
         "workflow_template_name": run.workflow_template_name or None,
         "seed": run.seed,
@@ -279,6 +324,17 @@ def _resolve_publication_step_state(
     if workflow_state == WorkflowExecution.STATUS_COMPLETED:
         return PUBLICATION_STEP_STATE_COMPLETED
     return PUBLICATION_STEP_STATE_QUEUED
+
+
+def _resolve_terminal_reason(
+    *,
+    run: PoolRun,
+    workflow_input_context: dict[str, Any],
+) -> str | None:
+    if not run.workflow_execution_id:
+        return None
+    raw_reason = str(workflow_input_context.get("terminal_reason") or "").strip().lower()
+    return raw_reason or None
 
 
 def _has_context_value(value: Any) -> bool:
@@ -444,6 +500,7 @@ class PoolRunSerializer(serializers.Serializer):
     workflow_status = serializers.CharField(required=False, allow_null=True)
     approval_state = serializers.CharField(required=False, allow_null=True)
     publication_step_state = serializers.CharField(required=False, allow_null=True)
+    terminal_reason = serializers.CharField(required=False, allow_null=True)
     execution_backend = serializers.CharField(required=False, allow_null=True)
     workflow_template_name = serializers.CharField(required=False, allow_null=True)
     seed = serializers.IntegerField(required=False, allow_null=True)
@@ -550,6 +607,22 @@ class PublicationSummarySerializer(serializers.Serializer):
 class PoolRunRetryResponseSerializer(serializers.Serializer):
     run = PoolRunSerializer()
     summary = PublicationSummarySerializer()
+
+
+class PoolRunSafeCommandResponseSerializer(serializers.Serializer):
+    run = PoolRunSerializer()
+    command_type = serializers.CharField()
+    result = serializers.CharField()
+    replayed = serializers.BooleanField()
+
+
+class PoolRunSafeCommandConflictSerializer(serializers.Serializer):
+    success = serializers.BooleanField()
+    error_code = serializers.CharField()
+    error_message = serializers.CharField()
+    conflict_reason = serializers.CharField()
+    retryable = serializers.BooleanField()
+    run_id = serializers.UUIDField()
 
 
 class PoolSchemaTemplateSerializer(serializers.Serializer):
@@ -1433,6 +1506,116 @@ def get_pool_run(request, run_id: UUID):
         "audit_events": [_serialize_audit_event(item) for item in audit_events],
     }
     return Response(payload, status=http_status.HTTP_200_OK)
+
+
+def _handle_pool_run_safe_command(
+    *,
+    request,
+    run_id: UUID,
+    command_type: str,
+) -> Response:
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _error(
+            code="TENANT_CONTEXT_REQUIRED",
+            message="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    run = PoolRun.objects.filter(id=run_id, tenant_id=tenant_id).first()
+    if run is None:
+        return _error(
+            code="RUN_NOT_FOUND",
+            message="Pool run not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    idempotency_key = str(
+        request.headers.get("Idempotency-Key")
+        or request.META.get("HTTP_IDEMPOTENCY_KEY")
+        or ""
+    ).strip()
+    if not idempotency_key:
+        return _error(
+            code="IDEMPOTENCY_KEY_REQUIRED",
+            message="Idempotency-Key header is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        outcome = process_pool_run_safe_command(
+            run_id=run.id,
+            command_type=command_type,
+            idempotency_key=idempotency_key,
+            requested_by=request.user if getattr(request, "user", None) and request.user.is_authenticated else None,
+        )
+    except ValueError as exc:
+        return _error(
+            code="VALIDATION_ERROR",
+            message=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    if outcome.result_class == PoolRunCommandResultClass.CONFLICT:
+        return Response(
+            _safe_command_conflict_payload(run_id=run.id, conflict_reason=outcome.conflict_reason),
+            status=http_status.HTTP_409_CONFLICT,
+        )
+
+    run_refresh = PoolRun.objects.get(id=run.id)
+    payload = {
+        "run": _serialize_run(run_refresh),
+        "command_type": command_type,
+        "result": "accepted" if outcome.result_class == PoolRunCommandResultClass.ACCEPTED else "noop",
+        "replayed": outcome.replayed,
+    }
+    return Response(payload, status=outcome.response_status_code)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_runs_confirm_publication",
+    summary="Confirm safe-mode publication for pool run",
+    responses={
+        200: PoolRunSafeCommandResponseSerializer,
+        202: PoolRunSafeCommandResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        404: ErrorResponseSerializer,
+        409: PoolRunSafeCommandConflictSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def confirm_pool_run_publication(request, run_id: UUID):
+    return _handle_pool_run_safe_command(
+        request=request,
+        run_id=run_id,
+        command_type=PoolRunCommandType.CONFIRM_PUBLICATION,
+    )
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_runs_abort_publication",
+    summary="Abort safe-mode publication for pool run",
+    responses={
+        200: PoolRunSafeCommandResponseSerializer,
+        202: PoolRunSafeCommandResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        404: ErrorResponseSerializer,
+        409: PoolRunSafeCommandConflictSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def abort_pool_run_publication(request, run_id: UUID):
+    return _handle_pool_run_safe_command(
+        request=request,
+        run_id=run_id,
+        command_type=PoolRunCommandType.ABORT_PUBLICATION,
+    )
 
 
 @extend_schema(

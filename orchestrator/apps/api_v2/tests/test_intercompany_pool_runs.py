@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import User
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.databases.models import Database
@@ -20,6 +21,8 @@ from apps.intercompany_pools.models import (
     PoolPublicationAttemptStatus,
     PoolRun,
     PoolRunAuditEvent,
+    PoolRunCommandLog,
+    PoolRunCommandOutbox,
     PoolRunDirection,
     PoolRunMode,
     PoolSchemaTemplate,
@@ -473,6 +476,7 @@ def test_get_pool_run_returns_details(
     payload = response.json()
     assert payload["run"]["id"] == str(run.id)
     assert payload["run"]["status"] == PoolRun.STATUS_VALIDATED
+    assert payload["run"]["terminal_reason"] is None
     assert len(payload["publication_attempts"]) == 1
     assert payload["publication_attempts"][0]["target_database_id"] == str(database.id)
     assert any(event["event_type"] == "run.test_event" for event in payload["audit_events"])
@@ -665,6 +669,230 @@ def test_get_pool_run_projects_running_approved_with_started_publication_state_t
     assert payload["run"]["approval_state"] == "approved"
     assert payload["run"]["publication_step_state"] == "started"
     assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_RUNNING
+
+
+@pytest.mark.django_db
+def test_get_pool_run_returns_terminal_reason_from_workflow_input_context(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = PoolRun.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        direction=PoolRunDirection.BOTTOM_UP,
+        period_start=date(2026, 1, 1),
+        mode=PoolRunMode.SAFE,
+    )
+    run.mark_validated(summary={"rows": 1}, diagnostics=[])
+    run.save(update_fields=["status", "validated_at", "validation_summary", "diagnostics", "updated_at"])
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_CANCELLED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": True,
+            "approval_state": "approved",
+            "approved_at": timezone.now().isoformat(),
+            "publication_step_state": "queued",
+            "terminal_reason": "aborted_by_operator",
+        },
+    )
+
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["status"] == PoolRun.STATUS_FAILED
+    assert payload["run"]["terminal_reason"] == "aborted_by_operator"
+
+
+@pytest.mark.django_db
+def test_confirm_publication_requires_idempotency_key_header(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = PoolRun.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        direction=PoolRunDirection.BOTTOM_UP,
+        period_start=date(2026, 1, 1),
+        mode=PoolRunMode.SAFE,
+    )
+    run.mark_validated(summary={"rows": 1}, diagnostics=[])
+    run.save(update_fields=["status", "validated_at", "validation_summary", "diagnostics", "updated_at"])
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": True,
+            "approval_state": "awaiting_approval",
+            "approved_at": None,
+            "publication_step_state": "not_enqueued",
+        },
+    )
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/confirm-publication/",
+        {},
+        format="json",
+    )
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "IDEMPOTENCY_KEY_REQUIRED"
+
+
+@pytest.mark.django_db
+def test_confirm_publication_returns_accepted_and_deterministic_replay(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = PoolRun.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        direction=PoolRunDirection.BOTTOM_UP,
+        period_start=date(2026, 1, 1),
+        mode=PoolRunMode.SAFE,
+    )
+    run.mark_validated(summary={"rows": 1}, diagnostics=[])
+    run.save(update_fields=["status", "validated_at", "validation_summary", "diagnostics", "updated_at"])
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": True,
+            "approval_state": "awaiting_approval",
+            "approved_at": None,
+            "publication_step_state": "not_enqueued",
+        },
+    )
+
+    first = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/confirm-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="confirm-key-1",
+    )
+    replay = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/confirm-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="confirm-key-1",
+    )
+
+    assert first.status_code == 202
+    first_payload = first.json()
+    assert first_payload["result"] == "accepted"
+    assert first_payload["replayed"] is False
+
+    assert replay.status_code == 202
+    replay_payload = replay.json()
+    assert replay_payload["result"] == "accepted"
+    assert replay_payload["replayed"] is True
+
+    assert PoolRunCommandLog.objects.filter(run=run).count() == 1
+    assert PoolRunCommandOutbox.objects.filter(run=run).count() == 1
+
+
+@pytest.mark.django_db
+def test_abort_publication_after_confirm_pending_outbox_returns_single_winner_conflict(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = PoolRun.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        direction=PoolRunDirection.BOTTOM_UP,
+        period_start=date(2026, 1, 1),
+        mode=PoolRunMode.SAFE,
+    )
+    run.mark_validated(summary={"rows": 1}, diagnostics=[])
+    run.save(update_fields=["status", "validated_at", "validation_summary", "diagnostics", "updated_at"])
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": True,
+            "approval_state": "awaiting_approval",
+            "approved_at": None,
+            "publication_step_state": "not_enqueued",
+        },
+    )
+
+    confirm = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/confirm-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="confirm-key-2",
+    )
+    abort = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/abort-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="abort-key-2",
+    )
+
+    assert confirm.status_code == 202
+    assert abort.status_code == 409
+    abort_payload = abort.json()
+    assert abort_payload["conflict_reason"] == "terminal_state"
+    assert abort_payload["error_code"] == "TERMINAL_STATE"
+
+    outbox_entries = list(PoolRunCommandOutbox.objects.filter(run=run))
+    assert len(outbox_entries) == 1
+
+
+@pytest.mark.django_db
+def test_confirm_publication_with_reused_key_from_other_command_returns_idempotency_conflict(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = PoolRun.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        direction=PoolRunDirection.BOTTOM_UP,
+        period_start=date(2026, 1, 1),
+        mode=PoolRunMode.SAFE,
+    )
+    run.mark_validated(summary={"rows": 1}, diagnostics=[])
+    run.save(update_fields=["status", "validated_at", "validation_summary", "diagnostics", "updated_at"])
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": True,
+            "approval_state": "awaiting_approval",
+            "approved_at": None,
+            "publication_step_state": "not_enqueued",
+        },
+    )
+
+    abort = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/abort-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="shared-key",
+    )
+    confirm = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/confirm-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="shared-key",
+    )
+
+    assert abort.status_code == 202
+    assert confirm.status_code == 409
+    confirm_payload = confirm.json()
+    assert confirm_payload["conflict_reason"] == "idempotency_key_reused"
+    assert confirm_payload["error_code"] == "IDEMPOTENCY_KEY_REUSED"
 
 
 @pytest.mark.django_db

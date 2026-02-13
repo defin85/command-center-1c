@@ -51,11 +51,11 @@
 - [ ] 3.2 Сохранить доменную идемпотентность (`pool_id + period + direction + source_hash`) и прокинуть её в workflow idempotency/metadata.
 - [ ] 3.3 Обеспечить, что publication service (OData) вызывается как step adapter внутри workflow, а не как отдельный orchestrator runtime.
 - [ ] 3.4 Добавить provenance block в `/pools/runs*` (`workflow_run_id`, `workflow_status`, `execution_backend`, `retry_chain`).
-- [ ] 3.5 Добавить `status_reason` для статуса `validated` (`preparing`, `awaiting_approval`, `queued`) и команды фасада `confirm-publication`/`abort-publication`.
+- [x] 3.5 Добавить `status_reason` для статуса `validated` (`preparing`, `awaiting_approval`, `queued`) и команды фасада `confirm-publication`/`abort-publication`.
 - [ ] 3.6 Зафиксировать nullable/legacy правила provenance для historical run (`execution_backend=legacy_pool_runtime`).
 - [ ] 3.7 Вернуть канонический набор полей diagnostics по попыткам публикации в API facade.
 - [ ] 3.8 Поддержать compatibility `workflow_binding` на import templates как optional compiler hint без отдельного runtime-смысла.
-- [ ] 3.9 Добавить в API details поля `approval_state` и `terminal_reason` для unified execution с nullable-совместимостью для legacy.
+- [x] 3.9 Добавить в API details поля `approval_state` и `terminal_reason` для unified execution с nullable-совместимостью для legacy.
 - [ ] 3.10 Обеспечить fail-closed поведение facade API: cross-tenant/unknown `run_id` возвращает одинаковый `404 RUN_NOT_FOUND` без утечки причины.
 
 ## 4. Миграция и совместимость

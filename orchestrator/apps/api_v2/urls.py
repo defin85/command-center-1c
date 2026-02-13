@@ -127,6 +127,16 @@ urlpatterns = [
     path('pools/<uuid:pool_id>/graph/', intercompany_pools.get_pool_graph, name='pools-graph'),
     path('pools/runs/', intercompany_pools.create_pool_run, name='pools-run-create'),
     path('pools/runs/<uuid:run_id>/', intercompany_pools.get_pool_run, name='pools-run-get'),
+    path(
+        'pools/runs/<uuid:run_id>/confirm-publication/',
+        intercompany_pools.confirm_pool_run_publication,
+        name='pools-run-confirm-publication',
+    ),
+    path(
+        'pools/runs/<uuid:run_id>/abort-publication/',
+        intercompany_pools.abort_pool_run_publication,
+        name='pools-run-abort-publication',
+    ),
     path('pools/runs/<uuid:run_id>/report/', intercompany_pools.get_pool_run_report, name='pools-run-report'),
     path('pools/runs/<uuid:run_id>/retry/', intercompany_pools.retry_pool_run_failed, name='pools-run-retry'),
     path('pools/schema-templates/', intercompany_pools.list_or_create_schema_templates, name='pools-schema-templates'),
