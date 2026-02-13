@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Col,
+  Descriptions,
   Form,
   Input,
   InputNumber,
@@ -20,6 +21,8 @@ import ReactFlow, { Background, Controls, MiniMap, type Edge, type Node } from '
 import 'reactflow/dist/style.css'
 
 import {
+  abortPoolRunPublication,
+  confirmPoolRunPublication,
   createPoolRun,
   getPoolGraph,
   getPoolRunReport,
@@ -28,8 +31,11 @@ import {
   retryPoolRunFailed,
   type OrganizationPool,
   type PoolGraph,
+  type PoolPublicationAttemptDiagnostics,
   type PoolRun,
   type PoolRunReport,
+  type PoolRunSafeCommandConflict,
+  type PoolRunSafeCommandType,
 } from '../../api/intercompanyPools'
 
 const { Title, Text } = Typography
@@ -58,10 +64,49 @@ const DEFAULT_RETRY_DOCUMENTS_JSON = JSON.stringify(
   2
 )
 
+const STATUS_COLORS: Record<string, string> = {
+  draft: 'default',
+  validated: 'processing',
+  publishing: 'processing',
+  published: 'success',
+  partial_success: 'warning',
+  failed: 'error',
+}
+
+const STATUS_REASON_COLORS: Record<string, string> = {
+  preparing: 'gold',
+  awaiting_approval: 'orange',
+  queued: 'blue',
+}
+
+const APPROVAL_STATE_COLORS: Record<string, string> = {
+  preparing: 'gold',
+  awaiting_approval: 'orange',
+  approved: 'green',
+  not_required: 'cyan',
+}
+
+const PUBLICATION_STEP_COLORS: Record<string, string> = {
+  not_enqueued: 'default',
+  queued: 'blue',
+  started: 'processing',
+  completed: 'success',
+}
+
 const formatDate = (value: string | null | undefined) => {
   if (!value) return '-'
   return new Date(value).toLocaleString()
 }
+
+const formatShortId = (value: string | null | undefined) => {
+  if (!value) return '-'
+  return value.slice(0, 8)
+}
+
+const getStatusColor = (status: string) => STATUS_COLORS[status] ?? 'default'
+const getStatusReasonColor = (statusReason: string) => STATUS_REASON_COLORS[statusReason] ?? 'default'
+const getApprovalStateColor = (approvalState: string) => APPROVAL_STATE_COLORS[approvalState] ?? 'default'
+const getPublicationStepColor = (stepState: string) => PUBLICATION_STEP_COLORS[stepState] ?? 'default'
 
 const parseDocumentsPayload = (raw: string): Record<string, Array<Record<string, unknown>>> => {
   let parsed: unknown
@@ -154,6 +199,37 @@ const buildFlowLayout = (graph: PoolGraph | null): { nodes: Node[]; edges: Edge[
   return { nodes: flowNodes, edges: flowEdges }
 }
 
+const generateIdempotencyKey = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `pool-safe-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+const parseSafeCommandConflict = (error: unknown): PoolRunSafeCommandConflict | null => {
+  if (!error || typeof error !== 'object') return null
+  const response = (error as { response?: { data?: unknown } }).response
+  const payload = response?.data
+  if (!payload || typeof payload !== 'object') return null
+
+  const candidate = payload as Partial<PoolRunSafeCommandConflict>
+  if (
+    typeof candidate.error_code === 'string'
+    && typeof candidate.error_message === 'string'
+    && typeof candidate.conflict_reason === 'string'
+  ) {
+    return {
+      success: Boolean(candidate.success),
+      error_code: candidate.error_code,
+      error_message: candidate.error_message,
+      conflict_reason: candidate.conflict_reason,
+      retryable: Boolean(candidate.retryable),
+      run_id: String(candidate.run_id ?? ''),
+    }
+  }
+  return null
+}
+
 export function PoolRunsPage() {
   const { message } = AntApp.useApp()
   const [pools, setPools] = useState<OrganizationPool[]>([])
@@ -169,6 +245,7 @@ export function PoolRunsPage() {
   const [loadingReport, setLoadingReport] = useState(false)
   const [creatingRun, setCreatingRun] = useState(false)
   const [retrying, setRetrying] = useState(false)
+  const [safeActionLoading, setSafeActionLoading] = useState<PoolRunSafeCommandType | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [createForm] = Form.useForm<CreateRunFormValues>()
   const [retryForm] = Form.useForm<RetryFormValues>()
@@ -177,6 +254,13 @@ export function PoolRunsPage() {
     () => runs.find((item) => item.id === selectedRunId) ?? null,
     [runs, selectedRunId]
   )
+
+  const runDetails = useMemo(() => {
+    if (report?.run && report.run.id === selectedRunId) {
+      return report.run
+    }
+    return selectedRun
+  }, [report, selectedRun, selectedRunId])
 
   const flow = useMemo(() => buildFlowLayout(graph), [graph])
 
@@ -215,13 +299,18 @@ export function PoolRunsPage() {
   const loadRuns = useCallback(async () => {
     if (!selectedPoolId) {
       setRuns([])
+      setSelectedRunId(null)
       return
     }
     setLoadingRuns(true)
     try {
       const data = await listPoolRuns({ poolId: selectedPoolId, limit: 100 })
       setRuns(data)
-      if (!selectedRunId && data.length > 0) {
+      if (data.length === 0) {
+        setSelectedRunId(null)
+        return
+      }
+      if (!selectedRunId || !data.some((item) => item.id === selectedRunId)) {
         setSelectedRunId(data[0].id)
       }
     } catch {
@@ -299,7 +388,7 @@ export function PoolRunsPage() {
         source_hash: values.source_hash?.trim() || '',
         mode: values.mode,
       })
-      message.success(payload.created ? 'Run created' : 'Run reused by idempotency key')
+      message.success(payload.created ? 'Run создан' : 'Run переиспользован по idempotency key')
       await loadRuns()
       setSelectedRunId(payload.run.id)
     } catch {
@@ -337,15 +426,57 @@ export function PoolRunsPage() {
         retry_interval_seconds: values.retry_interval_seconds,
         documents_by_database: documentsByDatabase,
       })
-      message.success('Retry completed')
+      message.success('Retry завершён')
       await loadRuns()
       await loadReport()
     } catch {
-      setError('Retry failed.')
+      setError('Retry завершился ошибкой.')
     } finally {
       setRetrying(false)
     }
   }, [loadReport, loadRuns, message, retryForm, selectedRunId])
+
+  const handleSafeCommand = useCallback(async (commandType: PoolRunSafeCommandType) => {
+    if (!selectedRunId || !runDetails) {
+      setError('Выберите safe run для команды публикации.')
+      return
+    }
+    if (runDetails.mode !== 'safe') {
+      setError('Команды confirm/abort доступны только для safe run.')
+      return
+    }
+
+    const idempotencyKey = generateIdempotencyKey()
+    setSafeActionLoading(commandType)
+    setError(null)
+    try {
+      const response = commandType === 'confirm-publication'
+        ? await confirmPoolRunPublication(selectedRunId, idempotencyKey)
+        : await abortPoolRunPublication(selectedRunId, idempotencyKey)
+      const commandLabel = commandType === 'confirm-publication' ? 'Confirm publication' : 'Abort publication'
+      if (response.result === 'accepted') {
+        message.success(`${commandLabel}: accepted`)
+      } else {
+        message.info(`${commandLabel}: idempotent replay`)
+      }
+      await loadRuns()
+      await loadReport()
+      setSelectedRunId(response.run.id)
+    } catch (err) {
+      const conflict = parseSafeCommandConflict(err)
+      if (conflict) {
+        setError(`${conflict.error_message} (${conflict.conflict_reason})`)
+      } else {
+        setError(
+          commandType === 'confirm-publication'
+            ? 'Не удалось выполнить confirm-publication.'
+            : 'Не удалось выполнить abort-publication.'
+        )
+      }
+    } finally {
+      setSafeActionLoading(null)
+    }
+  }, [loadReport, loadRuns, message, runDetails, selectedRunId])
 
   const runColumns: ColumnsType<PoolRun> = useMemo(
     () => [
@@ -354,27 +485,62 @@ export function PoolRunsPage() {
         dataIndex: 'id',
         key: 'id',
         width: 220,
-        render: (value: string) => <Text code>{value.slice(0, 8)}</Text>,
+        render: (value: string, record) => (
+          <Space size={4} wrap>
+            <Text code>{formatShortId(value)}</Text>
+            <Tag color={record.mode === 'safe' ? 'geekblue' : 'default'}>{record.mode}</Tag>
+          </Space>
+        ),
       },
       {
         title: 'Status',
         dataIndex: 'status',
         key: 'status',
-        width: 140,
-        render: (value: string) => {
-          let color = 'default'
-          if (value === 'published') color = 'success'
-          if (value === 'partial_success') color = 'warning'
-          if (value === 'failed') color = 'error'
-          if (value === 'publishing') color = 'processing'
-          return <Tag color={color}>{value}</Tag>
-        },
+        width: 220,
+        render: (_value, record) => (
+          <Space size={4} wrap>
+            <Tag color={getStatusColor(record.status)}>{record.status}</Tag>
+            {record.status_reason && (
+              <Tag color={getStatusReasonColor(record.status_reason)}>{record.status_reason}</Tag>
+            )}
+          </Space>
+        ),
       },
       {
-        title: 'Direction',
-        dataIndex: 'direction',
-        key: 'direction',
-        width: 120,
+        title: 'Approval',
+        key: 'approval',
+        width: 220,
+        render: (_value, record) => (
+          <Space size={4} wrap>
+            {record.approval_state ? (
+              <Tag color={getApprovalStateColor(record.approval_state)}>{record.approval_state}</Tag>
+            ) : (
+              <Tag>n/a</Tag>
+            )}
+            {record.publication_step_state ? (
+              <Tag color={getPublicationStepColor(record.publication_step_state)}>{record.publication_step_state}</Tag>
+            ) : null}
+          </Space>
+        ),
+      },
+      {
+        title: 'Workflow',
+        key: 'workflow',
+        width: 240,
+        render: (_value, record) => {
+          const workflowRunId = record.provenance?.workflow_run_id ?? record.workflow_execution_id
+          const workflowStatus = record.provenance?.workflow_status ?? record.workflow_status
+          const executionBackend = record.provenance?.execution_backend ?? record.execution_backend
+          return (
+            <Space direction="vertical" size={2}>
+              <Text code>{formatShortId(workflowRunId)}</Text>
+              <Space size={4} wrap>
+                {workflowStatus ? <Tag color="processing">{workflowStatus}</Tag> : <Tag>legacy</Tag>}
+                {executionBackend ? <Tag>{executionBackend}</Tag> : null}
+              </Space>
+            </Space>
+          )
+        },
       },
       {
         title: 'Period',
@@ -392,6 +558,91 @@ export function PoolRunsPage() {
     []
   )
 
+  const publicationAttemptColumns: ColumnsType<PoolPublicationAttemptDiagnostics> = useMemo(
+    () => [
+      {
+        title: 'Target DB',
+        dataIndex: 'target_database_id',
+        key: 'target_database_id',
+        width: 180,
+        render: (value: string) => <Text code>{formatShortId(value)}</Text>,
+      },
+      {
+        title: 'Status',
+        dataIndex: 'status',
+        key: 'status',
+        width: 130,
+        render: (value: string) => (
+          <Tag color={value === 'success' ? 'success' : value === 'failed' ? 'error' : 'processing'}>
+            {value}
+          </Tag>
+        ),
+      },
+      {
+        title: 'Attempt',
+        dataIndex: 'attempt_number',
+        key: 'attempt_number',
+        width: 90,
+      },
+      {
+        title: 'Timestamp',
+        dataIndex: 'attempt_timestamp',
+        key: 'attempt_timestamp',
+        width: 180,
+        render: (value?: string) => formatDate(value ?? null),
+      },
+      {
+        title: 'Identity',
+        key: 'identity',
+        width: 220,
+        render: (_value, record) => (
+          <Space direction="vertical" size={0}>
+            <Text>{record.publication_identity_strategy || record.identity_strategy || '-'}</Text>
+            <Text type="secondary">{record.external_document_identity || '-'}</Text>
+          </Space>
+        ),
+      },
+      {
+        title: 'Error',
+        key: 'error',
+        render: (_value, record) => {
+          const code = record.domain_error_code || record.error_code || '-'
+          const messageText = record.error_message || '-'
+          return (
+            <Space direction="vertical" size={0}>
+              <Text>{code}</Text>
+              <Text type="secondary">{messageText}</Text>
+            </Space>
+          )
+        },
+      },
+    ],
+    []
+  )
+
+  const workflowRunId = runDetails?.provenance?.workflow_run_id ?? runDetails?.workflow_execution_id ?? null
+  const workflowStatus = runDetails?.provenance?.workflow_status ?? runDetails?.workflow_status ?? null
+  const executionBackend = runDetails?.provenance?.execution_backend ?? runDetails?.execution_backend ?? null
+  const retryChain = runDetails?.provenance?.retry_chain ?? []
+
+  const isSafeRun = runDetails?.mode === 'safe'
+  const isPublishedOrPartial = runDetails?.status === 'published' || runDetails?.status === 'partial_success'
+  const isTerminalNonAbortFailed = runDetails?.status === 'failed' && runDetails?.terminal_reason !== 'aborted_by_operator'
+  const canConfirm = Boolean(
+    isSafeRun
+    && runDetails
+    && runDetails.approval_state !== 'not_required'
+    && !isPublishedOrPartial
+    && runDetails.status !== 'failed'
+  )
+  const canAbort = Boolean(
+    isSafeRun
+    && runDetails
+    && runDetails.approval_state !== 'not_required'
+    && !isPublishedOrPartial
+    && !isTerminalNonAbortFailed
+  )
+
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <div>
@@ -399,7 +650,7 @@ export function PoolRunsPage() {
           Pool Runs
         </Title>
         <Text type="secondary">
-          Граф пула, dry-run report, публикация и экран дозаписи failed-целей.
+          Единая модель статусов/provenance для run, прозрачная диагностика workflow и safe-команды.
         </Text>
       </div>
 
@@ -487,30 +738,125 @@ export function PoolRunsPage() {
               rowSelection={{
                 type: 'radio',
                 selectedRowKeys: selectedRunId ? [selectedRunId] : [],
-                onChange: (keys) => setSelectedRunId(String(keys[0])),
+                onChange: (keys) => setSelectedRunId(keys[0] ? String(keys[0]) : null),
               }}
             />
           </Card>
         </Col>
       </Row>
 
-      <Card title="Dry-run / Publication Report" loading={loadingReport}>
-        {!selectedRun && (
+      <Card title="Execution Provenance / Report" loading={loadingReport}>
+        {!runDetails && (
           <Text type="secondary">Select a run to inspect report.</Text>
         )}
-        {selectedRun && report && (
+        {runDetails && report && (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Space size="small">
-              <Tag color="blue">run: {selectedRun.id.slice(0, 8)}</Tag>
-              <Tag color="processing">{selectedRun.status}</Tag>
+            <Space size="small" wrap>
+              <Tag color="blue">run: {formatShortId(runDetails.id)}</Tag>
+              <Tag color={getStatusColor(runDetails.status)}>{runDetails.status}</Tag>
+              {runDetails.status_reason && <Tag color={getStatusReasonColor(runDetails.status_reason)}>{runDetails.status_reason}</Tag>}
               <Tag>attempts: {report.publication_attempts.length}</Tag>
+              {Object.entries(report.attempts_by_status ?? {}).map(([status, count]) => (
+                <Tag key={status}>{status}: {count}</Tag>
+              ))}
             </Space>
+
+            <Descriptions bordered size="small" column={2}>
+              <Descriptions.Item label="Workflow Run" span={1}>
+                <Text code data-testid="pool-runs-provenance-workflow-id">{workflowRunId ?? '-'}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Workflow Status" span={1}>
+                {workflowStatus ? <Tag color="processing">{workflowStatus}</Tag> : <Text type="secondary">legacy</Text>}
+              </Descriptions.Item>
+              <Descriptions.Item label="Execution Backend" span={1}>
+                <Text>{executionBackend ?? '-'}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Workflow Template" span={1}>
+                <Text>{runDetails.workflow_template_name ?? '-'}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Approval State" span={1}>
+                {runDetails.approval_state ? (
+                  <Tag color={getApprovalStateColor(runDetails.approval_state)}>{runDetails.approval_state}</Tag>
+                ) : (
+                  <Text type="secondary">n/a</Text>
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label="Publication Step" span={1}>
+                {runDetails.publication_step_state ? (
+                  <Tag color={getPublicationStepColor(runDetails.publication_step_state)}>{runDetails.publication_step_state}</Tag>
+                ) : (
+                  <Text type="secondary">n/a</Text>
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label="Terminal Reason" span={2}>
+                <Text>{runDetails.terminal_reason ?? '-'}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Retry Chain" span={2}>
+                <Space size={4} wrap>
+                  {retryChain.length > 0 ? retryChain.map((item) => <Tag key={item}>{formatShortId(item)}</Tag>) : <Text type="secondary">empty</Text>}
+                </Space>
+              </Descriptions.Item>
+            </Descriptions>
+
+            <Text strong>Publication Attempts</Text>
+            <Table
+              rowKey="id"
+              size="small"
+              columns={publicationAttemptColumns}
+              dataSource={report.publication_attempts}
+              pagination={{ pageSize: 5 }}
+            />
+
             <Text strong>Validation Summary</Text>
             <TextArea readOnly rows={4} value={JSON.stringify(report.validation_summary ?? {}, null, 2)} />
             <Text strong>Publication Summary</Text>
             <TextArea readOnly rows={4} value={JSON.stringify(report.publication_summary ?? {}, null, 2)} />
-            <Text strong>Diagnostics</Text>
-            <TextArea readOnly rows={5} value={JSON.stringify(report.diagnostics ?? [], null, 2)} />
+            <Text strong>Step Diagnostics</Text>
+            <TextArea readOnly rows={6} value={JSON.stringify(report.diagnostics ?? [], null, 2)} />
+          </Space>
+        )}
+      </Card>
+
+      <Card
+        title="Safe Mode Actions"
+        extra={<Text type="secondary">`Idempotency-Key` генерируется автоматически на каждый action.</Text>}
+      >
+        {!runDetails && <Text type="secondary">Выберите run для управления safe-публикацией.</Text>}
+        {runDetails && runDetails.mode !== 'safe' && (
+          <Alert type="info" showIcon message="Этот run создан в unsafe режиме: confirm/abort недоступны." />
+        )}
+        {runDetails && runDetails.mode === 'safe' && (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Space wrap>
+              <Tag color="geekblue">safe</Tag>
+              {runDetails.status_reason ? <Tag color={getStatusReasonColor(runDetails.status_reason)}>{runDetails.status_reason}</Tag> : null}
+              {runDetails.approval_state ? <Tag color={getApprovalStateColor(runDetails.approval_state)}>{runDetails.approval_state}</Tag> : null}
+              {runDetails.publication_step_state ? <Tag color={getPublicationStepColor(runDetails.publication_step_state)}>{runDetails.publication_step_state}</Tag> : null}
+            </Space>
+            <Text type="secondary">
+              Для safe run ожидаемые pre-publish фазы: `preparing` и `awaiting_approval`.
+              `confirm-publication` переводит run к enqueue публикации, `abort-publication` завершает его без публикации (если publication step ещё не started).
+            </Text>
+            <Space>
+              <Button
+                type="primary"
+                data-testid="pool-runs-safe-confirm"
+                loading={safeActionLoading === 'confirm-publication'}
+                disabled={!canConfirm}
+                onClick={() => void handleSafeCommand('confirm-publication')}
+              >
+                Confirm publication
+              </Button>
+              <Button
+                danger
+                data-testid="pool-runs-safe-abort"
+                loading={safeActionLoading === 'abort-publication'}
+                disabled={!canAbort}
+                onClick={() => void handleSafeCommand('abort-publication')}
+              >
+                Abort publication
+              </Button>
+            </Space>
           </Space>
         )}
       </Card>

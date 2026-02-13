@@ -52,18 +52,65 @@ export type OrganizationPoolBinding = {
   effective_to: string | null
 }
 
+export type PoolRunMode = 'safe' | 'unsafe'
+export type PoolRunStatus = 'draft' | 'validated' | 'publishing' | 'published' | 'partial_success' | 'failed'
+export type PoolRunStatusReason = 'preparing' | 'awaiting_approval' | 'queued' | null
+export type PoolRunApprovalState = 'not_required' | 'preparing' | 'awaiting_approval' | 'approved' | null
+export type PoolRunPublicationStepState = 'not_enqueued' | 'queued' | 'started' | 'completed' | null
+
+export type PoolRunProvenance = {
+  workflow_run_id: string | null
+  workflow_status: string | null
+  execution_backend: 'workflow_core' | 'legacy_pool_runtime' | string
+  retry_chain: string[]
+  legacy_reference?: string | null
+}
+
+export type PoolPublicationAttemptDiagnostics = {
+  id: string
+  run_id: string
+  target_database_id: string
+  attempt_number: number
+  attempt_timestamp?: string
+  status: string
+  entity_name: string
+  documents_count: number
+  external_document_identity?: string
+  identity_strategy?: string
+  publication_identity_strategy?: string
+  posted: boolean
+  http_status?: number | null
+  error_code?: string
+  domain_error_code?: string
+  error_message?: string
+  request_summary?: Record<string, unknown>
+  response_summary?: Record<string, unknown>
+  started_at?: string
+  finished_at?: string | null
+  created_at?: string
+}
+
 export type PoolRun = {
   id: string
   tenant_id: string
   pool_id: string
   schema_template_id: string | null
-  mode: string
+  mode: PoolRunMode
   direction: string
-  status: string
+  status: PoolRunStatus
+  status_reason: PoolRunStatusReason
   period_start: string
   period_end: string | null
   source_hash: string
   idempotency_key: string
+  workflow_execution_id: string | null
+  workflow_status: string | null
+  approval_state: PoolRunApprovalState
+  publication_step_state: PoolRunPublicationStepState
+  terminal_reason: string | null
+  execution_backend: string | null
+  provenance: PoolRunProvenance
+  workflow_template_name: string | null
   seed: number | null
   validation_summary: Record<string, unknown>
   publication_summary: Record<string, unknown>
@@ -79,11 +126,29 @@ export type PoolRun = {
 
 export type PoolRunReport = {
   run: PoolRun
-  publication_attempts: Array<Record<string, unknown>>
+  publication_attempts: PoolPublicationAttemptDiagnostics[]
   validation_summary: Record<string, unknown>
   publication_summary: Record<string, unknown>
   diagnostics: unknown[]
   attempts_by_status: Record<string, number>
+}
+
+export type PoolRunSafeCommandType = 'confirm-publication' | 'abort-publication'
+
+export type PoolRunSafeCommandResponse = {
+  run: PoolRun
+  command_type: string
+  result: 'accepted' | 'noop'
+  replayed: boolean
+}
+
+export type PoolRunSafeCommandConflict = {
+  success: boolean
+  error_code: string
+  error_message: string
+  conflict_reason: string
+  retryable: boolean
+  run_id: string
 }
 
 export type PoolGraphNode = {
@@ -321,4 +386,38 @@ export async function retryPoolRunFailed(runId: string, payload: RetryPoolRunPay
     { skipGlobalError: true }
   )
   return response.data
+}
+
+async function executePoolRunSafeCommand(
+  runId: string,
+  commandType: PoolRunSafeCommandType,
+  idempotencyKey: string
+): Promise<PoolRunSafeCommandResponse> {
+  const route =
+    commandType === 'confirm-publication'
+      ? `/api/v2/pools/runs/${runId}/confirm-publication/`
+      : `/api/v2/pools/runs/${runId}/abort-publication/`
+  const response = await apiClient.post<PoolRunSafeCommandResponse>(
+    route,
+    {},
+    {
+      headers: { 'Idempotency-Key': idempotencyKey },
+      skipGlobalError: true,
+    }
+  )
+  return response.data
+}
+
+export async function confirmPoolRunPublication(
+  runId: string,
+  idempotencyKey: string
+): Promise<PoolRunSafeCommandResponse> {
+  return executePoolRunSafeCommand(runId, 'confirm-publication', idempotencyKey)
+}
+
+export async function abortPoolRunPublication(
+  runId: string,
+  idempotencyKey: string
+): Promise<PoolRunSafeCommandResponse> {
+  return executePoolRunSafeCommand(runId, 'abort-publication', idempotencyKey)
 }

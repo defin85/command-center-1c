@@ -63,6 +63,30 @@ const parseJsonObject = (text: string, fieldLabel: string): Record<string, unkno
   return parsed as Record<string, unknown>
 }
 
+const resolveWorkflowBindingHint = (metadata: Record<string, unknown>): string | null => {
+  const raw = metadata.workflow_binding
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null
+  }
+  const binding = raw as Record<string, unknown>
+  const bindingTemplateId = typeof binding.workflow_template_id === 'string'
+    ? binding.workflow_template_id.trim()
+    : ''
+  const bindingVersion = typeof binding.version === 'string' ? binding.version.trim() : ''
+  const bindingLabel = typeof binding.label === 'string' ? binding.label.trim() : ''
+
+  if (bindingTemplateId) {
+    if (bindingVersion) {
+      return `${bindingTemplateId} (${bindingVersion})`
+    }
+    return bindingTemplateId
+  }
+  if (bindingLabel) {
+    return bindingLabel
+  }
+  return JSON.stringify(binding)
+}
+
 export function PoolSchemaTemplatesPage() {
   const { message } = AntApp.useApp()
   const [templates, setTemplates] = useState<PoolSchemaTemplate[]>([])
@@ -195,11 +219,37 @@ export function PoolSchemaTemplatesPage() {
         ),
       },
       {
-        title: 'Workflow Binding',
+        title: 'Unified Workflow',
         dataIndex: 'workflow_template_id',
         key: 'workflow_template_id',
-        width: 250,
-        render: (value: string | null) => (value ? <Text code>{value}</Text> : <Text type="secondary">not bound</Text>),
+        width: 280,
+        render: (value: string | null) => (
+          value
+            ? (
+              <Space size={4}>
+                <Tag color="blue">template</Tag>
+                <Text code>{value}</Text>
+              </Space>
+            )
+            : <Text type="secondary">not linked</Text>
+        ),
+      },
+      {
+        title: 'workflow_binding hint',
+        key: 'workflow_binding_hint',
+        width: 320,
+        render: (_value, record) => {
+          const hint = resolveWorkflowBindingHint(record.metadata ?? {})
+          if (!hint) {
+            return <Text type="secondary">absent</Text>
+          }
+          return (
+            <Space size={4} data-testid="pool-template-workflow-binding-hint">
+              <Tag color="gold">compat</Tag>
+              <Text code>{hint}</Text>
+            </Space>
+          )
+        },
       },
       {
         title: 'Updated',
@@ -219,9 +269,16 @@ export function PoolSchemaTemplatesPage() {
           Pool Schema Templates
         </Title>
         <Text type="secondary">
-          Публичные XLSX/JSON шаблоны для bottom-up импорта с опциональной привязкой к workflow.
+          Публичные XLSX/JSON шаблоны для bottom-up импорта. `workflow_binding` в metadata поддерживается как
+          compatibility hint компилятора и не является отдельным runtime.
         </Text>
       </div>
+
+      <Alert
+        type="info"
+        showIcon
+        message="Unified execution source-of-truth: workflow execution provenance в /pools/runs. Поле workflow_binding на template используется только как optional compiler hint."
+      />
 
       <Card>
         <Space size="middle" wrap>

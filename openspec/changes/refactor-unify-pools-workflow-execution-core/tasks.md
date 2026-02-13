@@ -70,9 +70,9 @@
 - [x] 4.9 Зафиксировать и внедрить операционные SLI для Variant A (`command_log write errors`, `outbox lag`, `dispatch retry saturation`) как rollback trigger.
 
 ## 5. Frontend
-- [ ] 5.1 Адаптировать `/pools/runs` и `/pools/templates` к unified status/provenance модели.
-- [ ] 5.2 Показать прозрачный execution provenance (workflow run reference, step diagnostics) в pool UI.
-- [ ] 5.3 Добавить UI для `safe` режима: `preparing`/`awaiting_approval`, действия `confirm-publication` и `abort-publication`.
+- [x] 5.1 Адаптировать `/pools/runs` и `/pools/templates` к unified status/provenance модели.
+- [x] 5.2 Показать прозрачный execution provenance (workflow run reference, step diagnostics) в pool UI.
+- [x] 5.3 Добавить UI для `safe` режима: `preparing`/`awaiting_approval`, действия `confirm-publication` и `abort-publication`.
 
 ## 6. Качество и валидация
 - [ ] 6.1 Добавить unit/integration тесты на compiler, статусную проекцию, идемпотентность и retry.
