@@ -9,31 +9,49 @@
 - [ ] 1.3 Зафиксировать migration/compatibility требования для исторических run-ов и audit.
 - [ ] 1.4 Зафиксировать канонический status mapping `pool <-> workflow` без двусмысленностей.
 - [ ] 1.5 Зафиксировать tenant boundary контракт (`pool_run.tenant_id == workflow_execution.tenant_id`).
+- [ ] 1.6 Зафиксировать `safe/unsafe` approval gate как явный контракт (`confirm-publication` / `abort-publication`) без второго runtime.
+- [ ] 1.7 Зафиксировать подстатусы `validated` через `status_reason` (`awaiting_approval`, `queued`).
+- [ ] 1.8 Зафиксировать retry-контракт полностью: `max_attempts_total=5`, конфигурируемый интервал, cap 120 секунд.
+- [ ] 1.9 Зафиксировать OData identity strategy (`GUID` primary, `ExternalRunKey` fallback) и канонический diagnostic payload.
+- [ ] 1.10 Зафиксировать source-of-truth правило между change-ами и preflight-контракт decommission.
 
 ## 2. Backend: execution-core интеграция
-- [ ] 2.1 Реализовать compiler `PoolTemplate -> WorkflowTemplate/ExecutionPlan` с детерминированным mapping шагов.
+- [ ] 2.1 Реализовать compiler `PoolImportSchemaTemplate + run_context -> PoolExecutionPlan/WorkflowTemplate` с детерминированным mapping шагов.
 - [ ] 2.2 Реализовать запуск `Pool Run` через workflow runtime (enqueue, lifecycle, retry policy, provenance).
 - [ ] 2.3 Реализовать status projection из workflow run в pool-доменные статусы без потери диагностики.
 - [ ] 2.4 Реализовать publication retry contract: `max_attempts_total=5`, retry только failed subset.
 - [ ] 2.5 Зафиксировать queueing contract phase 1: `commands:worker:workflows`, `priority=normal`.
+- [ ] 2.6 Реализовать approval gate в workflow graph (`safe`: ожидание confirm, `unsafe`: auto-confirm).
+- [ ] 2.7 Добавить и применить поля `workflow_execution.tenant_id` и `workflow_execution.execution_consumer` с правилом обязательности для `pools`.
+- [ ] 2.8 Реализовать validator/normalizer `retry_interval_seconds` с верхней границей 120 секунд.
+- [ ] 2.9 Реализовать strategy-based resolver внешнего document identity в шаге `publication_odata`.
 
 ## 3. Backend: pools как domain facade
 - [ ] 3.1 Сохранить `pools/*` API как фасад над unified execution core.
 - [ ] 3.2 Сохранить доменную идемпотентность (`pool_id + period + direction + source_hash`) и прокинуть её в workflow idempotency/metadata.
 - [ ] 3.3 Обеспечить, что publication service (OData) вызывается как step adapter внутри workflow, а не как отдельный orchestrator runtime.
 - [ ] 3.4 Добавить provenance block в `/pools/runs*` (`workflow_run_id`, `workflow_status`, `execution_backend`, `retry_chain`).
+- [ ] 3.5 Добавить `status_reason` для статуса `validated` и команды фасада `confirm-publication`/`abort-publication`.
+- [ ] 3.6 Зафиксировать nullable/legacy правила provenance для historical run (`execution_backend=legacy_pool_runtime`).
+- [ ] 3.7 Вернуть канонический набор полей diagnostics по попыткам публикации в API facade.
 
 ## 4. Миграция и совместимость
 - [ ] 4.1 Добавить миграцию/бекфилл связей `pool_run -> workflow_run` для существующих/переходных записей.
 - [ ] 4.2 Обеспечить чтение historical runs/details/audit через единый view без регрессий UI/API.
 - [ ] 4.3 Подготовить deprecation-plan для legacy execution path в `pools` (без немедленного удаления `workflows`).
 - [ ] 4.4 Добавить tenant linkage/backfill для workflow execution записей, связанных с pools.
+- [ ] 4.5 Добавить `execution_consumers_registry` и preflight-проверку готовности к decommission `workflows`.
+- [ ] 4.6 Зафиксировать переходный режим для non-pools consumers с `tenant_id=null` до их миграции.
 
 ## 5. Frontend
 - [ ] 5.1 Адаптировать `/pools/runs` и `/pools/templates` к unified status/provenance модели.
 - [ ] 5.2 Показать прозрачный execution provenance (workflow run reference, step diagnostics) в pool UI.
+- [ ] 5.3 Добавить UI для `safe` режима: `awaiting_approval`, действия `confirm-publication` и `abort-publication`.
 
 ## 6. Качество и валидация
 - [ ] 6.1 Добавить unit/integration тесты на compiler, статусную проекцию, идемпотентность и retry.
 - [ ] 6.2 Добавить API regression тесты на совместимость `pools/runs*`.
-- [x] 6.3 Прогнать `openspec validate refactor-unify-pools-workflow-execution-core --strict --no-interactive`.
+- [ ] 6.3 Добавить тесты `safe/unsafe` approval gate и `status_reason` проекции.
+- [ ] 6.4 Добавить тесты retry interval clamp (<=120), OData identity strategy и diagnostic fields.
+- [ ] 6.5 Добавить тесты decommission preflight (`Go/No-Go`) на базе `execution_consumers_registry`.
+- [x] 6.6 Прогнать `openspec validate refactor-unify-pools-workflow-execution-core --strict --no-interactive`.
