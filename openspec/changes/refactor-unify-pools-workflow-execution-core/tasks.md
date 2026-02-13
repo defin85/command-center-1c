@@ -14,6 +14,8 @@
 - [ ] 1.8 Зафиксировать retry-контракт полностью: `max_attempts_total=5`, конфигурируемый интервал, cap 120 секунд.
 - [ ] 1.9 Зафиксировать OData identity strategy (`GUID` primary, `ExternalRunKey` fallback) и канонический diagnostic payload.
 - [ ] 1.10 Зафиксировать source-of-truth правило между change-ами и preflight-контракт decommission.
+- [ ] 1.11 Зафиксировать API-контракт safe-команд (`POST /pools/runs/{run_id}/confirm-publication`, `POST /pools/runs/{run_id}/abort-publication`) с idempotency/error моделью.
+- [ ] 1.12 Зафиксировать lineage-семантику provenance (`workflow_run_id` как root, `workflow_status` как active attempt, структура `retry_chain`, nullable `legacy_reference`).
 
 ## 2. Backend: execution-core интеграция
 - [ ] 2.1 Реализовать compiler `PoolImportSchemaTemplate + run_context -> PoolExecutionPlan/WorkflowTemplate` с детерминированным mapping шагов.
@@ -25,6 +27,7 @@
 - [ ] 2.7 Добавить и применить поля `workflow_execution.tenant_id` и `workflow_execution.execution_consumer` с правилом обязательности для `pools`.
 - [ ] 2.8 Реализовать validator/normalizer `retry_interval_seconds` с верхней границей 120 секунд.
 - [ ] 2.9 Реализовать strategy-based resolver внешнего document identity в шаге `publication_odata`.
+- [ ] 2.10 Реализовать safe-flow порядок шагов: pre-publish (`prepare_input`, `distribution_calculation`, `reconciliation_report`) до `approval_gate`, публикация только после confirm.
 
 ## 3. Backend: pools как domain facade
 - [ ] 3.1 Сохранить `pools/*` API как фасад над unified execution core.
@@ -34,6 +37,7 @@
 - [ ] 3.5 Добавить `status_reason` для статуса `validated` и команды фасада `confirm-publication`/`abort-publication`.
 - [ ] 3.6 Зафиксировать nullable/legacy правила provenance для historical run (`execution_backend=legacy_pool_runtime`).
 - [ ] 3.7 Вернуть канонический набор полей diagnostics по попыткам публикации в API facade.
+- [ ] 3.8 Поддержать compatibility `workflow_binding` на import templates как optional compiler hint без отдельного runtime-смысла.
 
 ## 4. Миграция и совместимость
 - [ ] 4.1 Добавить миграцию/бекфилл связей `pool_run -> workflow_run` для существующих/переходных записей.
@@ -54,4 +58,5 @@
 - [ ] 6.3 Добавить тесты `safe/unsafe` approval gate и `status_reason` проекции.
 - [ ] 6.4 Добавить тесты retry interval clamp (<=120), OData identity strategy и diagnostic fields.
 - [ ] 6.5 Добавить тесты decommission preflight (`Go/No-Go`) на базе `execution_consumers_registry`.
-- [x] 6.6 Прогнать `openspec validate refactor-unify-pools-workflow-execution-core --strict --no-interactive`.
+- [ ] 6.6 Добавить API/интеграционные тесты на idempotency команд confirm/abort и provenance retry-lineage.
+- [x] 6.7 Прогнать `openspec validate refactor-unify-pools-workflow-execution-core --strict --no-interactive`.

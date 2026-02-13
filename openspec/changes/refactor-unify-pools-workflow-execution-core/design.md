@@ -17,17 +17,20 @@
 
 ## Terms
 - `PoolImportSchemaTemplate`: публичный XLSX/JSON шаблон импорта (domain-level).
+- `workflow_binding`: optional metadata на import template из foundation-change; в unified runtime используется только как hint для compiler.
 - `PoolExecutionPlan`: скомпилированный workflow-compatible graph для конкретного run-контекста.
-- `status_reason`: подстатус facade-модели (`awaiting_approval`, `queued`, `running`, `completed`, `failed`).
+- `status_reason`: подстатус facade-модели только для `validated` (`awaiting_approval`, `queued`); для остальных статусов `null`.
 
 ## Decisions
 - Decision: `workflows` является execution-core для `pools`.
 - Decision: source-of-truth для runtime-семантики `pools/runs*` задаётся этим change; `add-intercompany-pool-distribution-module` остаётся source-of-truth для foundation/domain vocabulary.
 - Decision: терминология разделяется:
   - `PoolImportSchemaTemplate` не тождественен `WorkflowTemplate`;
+  - `workflow_binding` на template сохраняется как optional compatibility hint для compiler и не является runtime source-of-truth;
   - compiler создаёт `PoolExecutionPlan` детерминированно из `pool_id + period + direction + source_hash + template_version`.
 - Decision: `safe/unsafe` реализуются внутри workflow runtime, без второго оркестратора:
-  - `safe`: workflow run создаётся в `pending` с `approval_required=true`, публикационные шаги не enqueue до явного подтверждения;
+  - `safe`: workflow run создаётся в `pending` с `approval_required=true`; pre-publish шаги (`prepare_input`, `distribution_calculation`, `reconciliation_report`) выполняются до ручного решения оператора;
+  - в `safe` режиме только `publication_odata` блокируется до `confirm-publication`;
   - `unsafe`: `approved_at` проставляется автоматически на create/start path;
   - явные команды фасада: `confirm-publication` и `abort-publication`.
 - Decision: canonical status mapping фиксируется и обязателен для API:
@@ -45,9 +48,14 @@
   - cross-tenant доступ к workflow provenance запрещён.
 - Decision: идемпотентность `pool` домена сохраняется и прокидывается в workflow metadata/idempotency.
 - Decision: retry-контракт фиксируется полностью:
-  - `max_attempts_total=5` (включая initial attempt);
+  - `max_attempts_total=5` (включая initial attempt), эквивалентно foundation-контракту `max_attempts=5`;
   - `retry_interval_seconds` конфигурируем (`run override > template default > system default`);
   - эффективный интервал ограничен 120 секундами.
+- Decision: provenance/retry lineage фиксируется явно:
+  - `workflow_run_id` в facade указывает на root workflow execution chain (первая попытка);
+  - `workflow_status` отражает активную попытку (последний элемент `retry_chain`);
+  - `retry_chain` для unified execution всегда содержит минимум initial attempt и далее retry-attempts с parent linkage;
+  - для legacy/historical run `retry_chain` может быть пустым.
 - Decision: queueing phase 1 фиксируется:
   - stream: `commands:worker:workflows`;
   - execution priority: `normal` по умолчанию;
@@ -85,29 +93,49 @@
 - `published`: завершено без failed targets.
 - `partial_success`: завершено с failed targets.
 - `failed`: workflow завершился `failed` или `cancelled` (включая `abort-publication`).
+- `status_reason`: применяется только для `validated`; для остальных facade-статусов возвращается `null`.
 
 ## Execution Mapping (Target)
 - `PoolImportSchemaTemplate` + run context -> compiler -> `PoolExecutionPlan` -> `WorkflowTemplate`.
+- `workflow_binding` (если присутствует) используется только как optional compiler hint.
 - `PoolRun(start)`:
   - `unsafe`: create workflow run + auto-approval + enqueue;
-  - `safe`: create workflow run (`approval_required=true`) без publication enqueue до confirm command.
+  - `safe`: create workflow run (`approval_required=true`), выполнить pre-publish шаги, затем ждать confirm/abort; `publication_odata` enqueue только после confirm command.
 - Workflow steps:
   - `prepare_input` (source/template validation),
-  - `approval_gate` (safe only; resume by `confirm-publication`),
   - `distribution_calculation` (top-down/bottom-up),
-  - `publication_odata` (document upsert + posting),
-  - `reconciliation_report` (balance checks + artifacts).
+  - `reconciliation_report` (balance checks + artifacts),
+  - `approval_gate` (safe only; resume by `confirm-publication`),
+  - `publication_odata` (document upsert + posting).
 
 ## Provenance Contract (API)
 - Базовые поля (всегда присутствуют в payload):
-  - `workflow_run_id` (nullable),
-  - `workflow_status` (nullable),
+  - `workflow_run_id` (nullable; root execution chain id),
+  - `workflow_status` (nullable; статус active attempt),
   - `execution_backend` (`workflow_core` | `legacy_pool_runtime`),
-  - `retry_chain` (array, может быть пустым).
+  - `retry_chain` (array; для unified всегда содержит минимум initial attempt).
+- Элемент `retry_chain[]`:
+  - `workflow_run_id`,
+  - `parent_workflow_run_id` (nullable для initial attempt),
+  - `attempt_number`,
+  - `attempt_kind` (`initial` | `retry`),
+  - `status`.
 - Для unified execution дополнительно обязательны:
   - `publication_identity_strategy`,
   - `publication_external_document_id`,
   - `publication_attempts[]` с каноническими diagnostic fields.
+- Для historical/legacy execution дополнительно допустимы:
+  - `legacy_reference` (nullable),
+  - `retry_chain=[]`.
+
+## Facade Commands Contract
+- `POST /api/v2/pools/runs/{run_id}/confirm-publication`:
+  - переводит `safe` run из `awaiting_approval` в `queued`/`publishing`;
+  - повторный вызов идемпотентен и не создаёт duplicate enqueue.
+- `POST /api/v2/pools/runs/{run_id}/abort-publication`:
+  - завершает run как `failed` через workflow `cancelled`;
+  - повторный вызов идемпотентен.
+- Для terminal run (`published|partial_success|failed`) команды confirm/abort возвращают business conflict без изменения состояния.
 
 ## Decommission Preflight Contract
 - Перед любым `workflows` decommission запускается preflight:
@@ -118,14 +146,15 @@
 
 ## Migration Plan
 1. Добавить поля `pool_run.workflow_execution_id`, `workflow_execution.tenant_id`, `workflow_execution.execution_consumer`.
-2. Добавить serializer/openapi контракт для status_reason и provenance nullable-правил.
+2. Добавить serializer/openapi контракт для status_reason, provenance lineage и команд confirm/abort.
 3. Добавить status projection service с canonical mapping и reason-кодами.
-4. Перевести create/start path `pools/runs` на workflow runtime с `safe/unsafe` approval gate.
+4. Перевести create/start path `pools/runs` на workflow runtime с `safe/unsafe` approval gate и pre-publish шагами до ручного решения.
 5. Добавить confirm/abort команды фасада для safe-mode.
 6. Перевести retry path на failed-subset re-execution через workflow runtime.
-7. Включить dual-read для historical/legacy runs и нормализацию legacy provenance.
+7. Включить dual-read для historical/legacy runs и нормализацию legacy provenance (`legacy_reference`, nullable workflow поля).
 8. Выполнить backfill `pool_run -> workflow_run` и tenant linkage для `execution_consumer=pools`.
-9. После стабилизации выключить legacy pool-local execution path.
+9. Нормализовать foundation template metadata (`workflow_binding`) как compiler hint без изменения публичного API surface.
+10. После стабилизации выключить legacy pool-local execution path.
 
 ## Risks / Trade-offs
 - Риск: усложнение facade API из-за approval команд.

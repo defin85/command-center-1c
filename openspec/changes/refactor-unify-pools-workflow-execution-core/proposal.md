@@ -13,10 +13,11 @@
 - Зафиксировать `workflows` как единственный runtime для многошагового исполнения (`Template/Run/Step`, retry, audit, status lifecycle, queueing).
 - Зафиксировать `pools` как domain facade + compiler и снять терминологическую неоднозначность:
   - `PoolImportSchemaTemplate` (XLSX/JSON) остаётся доменным артефактом импорта;
+  - совместимость с foundation-термином `workflow binding` сохраняется: binding трактуется как optional metadata hint для compiler, а не как отдельный runtime execution-template;
   - `PoolExecutionPlan` компилируется детерминированно из run-контекста (`pool`, период, направление, template version, source hash) в workflow-compatible graph;
   - `Pool Run` создаётся/выполняется через workflow runtime с сохранением pool-доменной идентичности.
 - Зафиксировать явный approval gate для `safe` режима:
-  - `safe`: создаётся `workflow_run` со статусом `pending` и `approval_required=true`, публикационные шаги не enqueue до явной команды подтверждения;
+  - `safe`: создаётся `workflow_run` со статусом `pending` и `approval_required=true`; pre-publish шаги (`prepare_input`, `distribution_calculation`, `reconciliation_report`) выполняются до ожидания решения оператора; `publication_odata` не enqueue до явной команды подтверждения;
   - `unsafe`: подтверждение проставляется автоматически при старте run;
   - команда подтверждения/остановки публикации выносится в явный API-контракт (`confirm-publication` / `abort-publication`).
 - Зафиксировать канонический mapping статусов (без open-ended интерпретаций):
@@ -33,7 +34,7 @@
   - `PoolRun.tenant_id` и `WorkflowExecution.tenant_id` обязаны совпадать;
   - создание/чтение workflow-run вне tenant-контекста pool-run запрещено.
 - Зафиксировать единую retry-семантику для публикации:
-  - доменный контракт `max_attempts_total=5` (включая initial attempt);
+  - доменный контракт `max_attempts_total=5` (включая initial attempt), совместимый с foundation формулировкой `max_attempts=5`;
   - `retry_interval_seconds` конфигурируем, но эффективный интервал не может превышать 120 секунд;
   - компилятор маппит это в workflow step policy (initial attempt + bounded retries);
   - endpoint retry на facade повторно исполняет только failed subset через workflow runtime.
@@ -53,7 +54,12 @@
 - Ввести совместимый API переход:
   - `/pools/runs*` остаётся доменным API,
   - но фактическое исполнение и статусная модель резолвятся через workflow run reference;
-  - API обязан возвращать provenance block (`workflow_run_id`, `workflow_status`, `execution_backend`, `retry_chain`) как для unified, так и для legacy исторических run (с оговорённой nullable-семантикой).
+  - API обязан возвращать provenance block (`workflow_run_id`, `workflow_status`, `execution_backend`, `retry_chain`) как для unified, так и для legacy исторических run (с оговорённой nullable-семантикой), где `workflow_run_id` = root execution chain, а текущая попытка определяется через `retry_chain`;
+  - для historical run допускается optional `legacy_reference`, если он доступен в источнике данных.
+- Зафиксировать явный API-контракт safe-команд:
+  - `POST /api/v2/pools/runs/{run_id}/confirm-publication`;
+  - `POST /api/v2/pools/runs/{run_id}/abort-publication`;
+  - команды идемпотентны и не должны приводить к duplicate enqueue.
 - Зафиксировать единый source-of-truth: execution-runtime семантика `pool-distribution-runs` и `pool-odata-publication` резолвится этим change, а `add-intercompany-pool-distribution-module` остаётся источником domain vocabulary/foundation.
 - Запретить удаление `workflows` до миграции всех consumers на unified execution core.
 - Зафиксировать де-комиссию `workflows` только через preflight с реестром consumers и критерием готовности миграции.

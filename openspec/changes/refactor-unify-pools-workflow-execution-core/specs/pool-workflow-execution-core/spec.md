@@ -25,6 +25,8 @@
 - `confirm-publication` — разрешает переход к публикационным шагам;
 - `abort-publication` — завершает исполнение без публикации.
 
+Система ДОЛЖНА (SHALL) завершать pre-publish этап (`prepare_input`, `distribution_calculation`, `reconciliation_report`) до ожидания ручного решения в `safe` режиме.
+
 #### Scenario: Подтверждение публикации переводит safe run в очередь исполнения
 - **GIVEN** pool run находится в `safe` режиме и ожидает подтверждения
 - **WHEN** оператор отправляет команду `confirm-publication`
@@ -37,6 +39,31 @@
 - **THEN** связанный workflow run помечается `cancelled`
 - **AND** facade проецирует итоговый pool status как `failed`
 
+#### Scenario: Safe run предоставляет pre-publish диагностику до подтверждения
+- **GIVEN** run запущен в `safe` режиме
+- **WHEN** pre-publish этап завершён
+- **THEN** оператор получает diagnostics/артефакты проверки до публикации
+- **AND** `publication_odata` не enqueue до `confirm-publication`
+
+### Requirement: Safe commands MUST быть выражены явными идемпотентными API-операциями
+Система ДОЛЖНА (SHALL) поддерживать команды безопасного режима как отдельные endpoint'ы:
+- `POST /api/v2/pools/runs/{run_id}/confirm-publication`;
+- `POST /api/v2/pools/runs/{run_id}/abort-publication`.
+
+Повторный вызов команды в том же run-state ДОЛЖЕН (SHALL) быть идемпотентным и НЕ ДОЛЖЕН (SHALL NOT) вызывать duplicate enqueue.
+
+#### Scenario: Повторный confirm не создаёт дублирующий enqueue
+- **GIVEN** `confirm-publication` уже успешно выполнен для `safe` run
+- **WHEN** оператор повторно вызывает `confirm-publication`
+- **THEN** состояние run не расходится с предыдущим результатом
+- **AND** дополнительная публикационная задача не ставится в очередь повторно
+
+#### Scenario: Команда на terminal run отклоняется бизнес-ошибкой
+- **GIVEN** run уже находится в terminal status (`published`, `partial_success` или `failed`)
+- **WHEN** оператор вызывает `confirm-publication` или `abort-publication`
+- **THEN** система возвращает business conflict
+- **AND** состояние run не изменяется
+
 ### Requirement: Pool status projection MUST быть канонической и детерминированной
 Система ДОЛЖНА (SHALL) использовать единый mapping статусов между workflow runtime и pools facade:
 - `pool:draft` — только до создания workflow run;
@@ -46,6 +73,8 @@
 - `workflow:completed + failed_targets=0 -> pool:published`;
 - `workflow:completed + failed_targets>0 -> pool:partial_success`;
 - `workflow:failed|cancelled -> pool:failed`.
+
+Система ДОЛЖНА (SHALL) использовать `status_reason` только для `pool:validated`; для остальных pool-статусов `status_reason` ДОЛЖЕН (SHALL) быть `null`.
 
 #### Scenario: Завершение workflow с failed targets даёт partial_success
 - **GIVEN** workflow run завершён со статусом `completed`
@@ -61,6 +90,12 @@
 - **WHEN** клиент запрашивает pool run details
 - **THEN** фасад возвращает статус `validated`
 - **AND** поле `status_reason` равно `awaiting_approval`
+
+#### Scenario: Для non-validated статусов status_reason отсутствует
+- **GIVEN** workflow run находится в состоянии `running`
+- **WHEN** клиент запрашивает pool run details
+- **THEN** фасад возвращает статус `publishing`
+- **AND** `status_reason` равен `null`
 
 ### Requirement: Tenant boundary MUST сохраняться между pool и workflow run
 Система ДОЛЖНА (SHALL) обеспечивать tenant-изоляцию при запуске, чтении и retry:
@@ -93,26 +128,37 @@
 
 Система ДОЛЖНА (SHALL) иметь детерминированный compiler `PoolImportSchemaTemplate + run_context -> PoolExecutionPlan`.
 
+Система ДОЛЖНА (SHALL) трактовать foundation-поле `workflow_binding` на import template как optional compiler hint и НЕ ДОЛЖНА (SHALL NOT) трактовать его как отдельный runtime execution-template.
+
 #### Scenario: Одинаковый pool template компилируется детерминированно
 - **GIVEN** одинаковые версия import template, входные параметры, период и `source_hash`
 - **WHEN** выполняется компиляция execution plan
 - **THEN** структура workflow graph и binding mapping совпадают
 - **AND** runtime provenance может быть воспроизведён для диагностики
 
+#### Scenario: Legacy template с workflow_binding остаётся совместимым
+- **GIVEN** import template был создан в foundation-change и содержит `workflow_binding`
+- **WHEN** запускается unified execution
+- **THEN** template принимается без изменения публичного API
+- **AND** `workflow_binding` используется только как hint для compiler
+
 ### Requirement: Pools API MUST предоставлять domain facade над workflow run
 Система ДОЛЖНА (SHALL) сохранять `pools/runs*` как доменный API, но статус, retries и diagnostics ДОЛЖНЫ (SHALL) проецироваться из workflow runtime.
 
 Ответы facade ДОЛЖНЫ (SHALL) содержать provenance block минимум с полями:
-- `workflow_run_id`,
-- `workflow_status`,
+- `workflow_run_id` (root execution chain id),
+- `workflow_status` (статус active attempt),
 - `execution_backend`,
-- `retry_chain` (или эквивалент ссылки на цепочку retry).
+- `retry_chain`.
+
+Для unified execution `retry_chain` ДОЛЖЕН (SHALL) содержать минимум initial attempt и хранить lineage попыток (минимум `workflow_run_id`, `parent_workflow_run_id`, `attempt_number`, `attempt_kind`, `status`).
 
 Для historical run без workflow linkage provenance block ДОЛЖЕН (SHALL) оставаться совместимым:
 - `workflow_run_id=null`,
 - `workflow_status=null`,
 - `execution_backend=legacy_pool_runtime`,
-- `retry_chain=[]` (или фактическая legacy цепочка, если доступна).
+- `retry_chain=[]` (или фактическая legacy цепочка, если доступна),
+- `legacy_reference` (nullable, при наличии).
 
 #### Scenario: Pool details отражает workflow provenance
 - **GIVEN** pool run связан с workflow run
@@ -125,6 +171,12 @@
 - **WHEN** клиент запрашивает детали run
 - **THEN** API возвращает provenance block с `execution_backend=legacy_pool_runtime`
 - **AND** `workflow_run_id` и `workflow_status` равны `null`
+
+#### Scenario: Retry lineage отражает root и активную попытку
+- **GIVEN** run был перезапущен через retry endpoint и имеет несколько workflow попыток
+- **WHEN** клиент запрашивает детали run
+- **THEN** `workflow_run_id` указывает на initial/root workflow run
+- **AND** `workflow_status` соответствует последней (active) попытке в `retry_chain`
 
 ### Requirement: OData publication MUST исполняться как workflow step adapter
 Система ДОЛЖНА (SHALL) вызывать publication service (OData) как шаг workflow execution graph, а не как отдельный orchestrator runtime.
@@ -167,6 +219,8 @@
 ### Requirement: Publication retry contract MUST быть единым для pools и workflow runtime
 Система ДОЛЖНА (SHALL) поддерживать доменный контракт `max_attempts_total=5` (включая initial attempt) для публикации в OData.
 
+Контракт ДОЛЖЕН (SHALL) быть семантически эквивалентен foundation-формулировке `max_attempts=5`.
+
 Система ДОЛЖНА (SHALL) поддерживать `retry_interval_seconds` как конфигурируемый параметр, при этом эффективный интервал НЕ ДОЛЖЕН (SHALL NOT) превышать 120 секунд.
 
 Система ДОЛЖНА (SHALL) исполнять retry endpoint `POST /pools/runs/{run_id}/retry` только для failed subset, не дублируя успешные цели.
@@ -198,6 +252,7 @@
 - **AND** подтверждение ещё не выполнено
 - **WHEN** оператор запрашивает состояние очереди
 - **THEN** publication step отсутствует в worker queue
+- **AND** pre-publish шаги могут быть уже выполнены или находиться в обработке
 - **AND** после `confirm-publication` publication step enqueue в `commands:worker:workflows`
 
 ### Requirement: Migration MUST сохранять historical runs и идемпотентность
