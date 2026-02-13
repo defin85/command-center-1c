@@ -41,7 +41,7 @@
 - [x] 2.9 Реализовать strategy-based resolver внешнего document identity в шаге `publication_odata`.
 - [x] 2.10 Реализовать safe-flow порядок шагов: pre-publish (`prepare_input`, `distribution_calculation`, `reconciliation_report`) до `approval_gate`, публикация только после confirm.
 - [x] 2.11 Реализовать `approval_state` lifecycle (`preparing -> awaiting_approval -> approved/not_required`) и детерминированную status projection для safe-flow.
-- [ ] 2.12 Реализовать и хранить `publication_step_state` в runtime metadata для детерминированной проекции `validated/queued -> publishing`.
+- [x] 2.12 Реализовать и хранить `publication_step_state` в runtime metadata для детерминированной проекции `validated/queued -> publishing`.
 - [ ] 2.13 Реализовать таблицу `pool_run_command_log` для `Idempotency-Key` (scope `(run_id, command_type, key)`, deterministic replay, response snapshot, TTL/retention).
 - [ ] 2.14 Реализовать таблицу `pool_run_command_outbox` и dispatcher в `commands:worker:workflows` (at-least-once + idempotent republish + retry/backoff).
 - [ ] 2.15 Реализовать single-winner CAS для гонки `confirm-publication` vs `abort-publication` на одном run без duplicate side effects.

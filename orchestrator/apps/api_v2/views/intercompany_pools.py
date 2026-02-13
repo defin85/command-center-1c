@@ -47,11 +47,23 @@ APPROVAL_STATE_PREPARING = "preparing"
 APPROVAL_STATE_AWAITING_APPROVAL = "awaiting_approval"
 APPROVAL_STATE_APPROVED = "approved"
 
+PUBLICATION_STEP_STATE_NOT_ENQUEUED = "not_enqueued"
+PUBLICATION_STEP_STATE_QUEUED = "queued"
+PUBLICATION_STEP_STATE_STARTED = "started"
+PUBLICATION_STEP_STATE_COMPLETED = "completed"
+
 _VALID_APPROVAL_STATES = {
     APPROVAL_STATE_NOT_REQUIRED,
     APPROVAL_STATE_PREPARING,
     APPROVAL_STATE_AWAITING_APPROVAL,
     APPROVAL_STATE_APPROVED,
+}
+
+_VALID_PUBLICATION_STEP_STATES = {
+    PUBLICATION_STEP_STATE_NOT_ENQUEUED,
+    PUBLICATION_STEP_STATE_QUEUED,
+    PUBLICATION_STEP_STATE_STARTED,
+    PUBLICATION_STEP_STATE_COMPLETED,
 }
 
 
@@ -127,10 +139,17 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
         workflow_status=workflow_status,
         workflow_input_context=workflow_input_context,
     )
+    publication_step_state = _resolve_publication_step_state(
+        run=run,
+        workflow_status=workflow_status,
+        workflow_input_context=workflow_input_context,
+        approval_state=approval_state,
+    )
     projected_status, status_reason = _project_pool_status(
         run=run,
         workflow_status=workflow_status,
         approval_state=approval_state,
+        publication_step_state=publication_step_state,
     )
     execution_backend = run.execution_backend or (
         "workflow_core" if run.workflow_execution_id else "legacy_pool_runtime"
@@ -151,6 +170,7 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
         "workflow_execution_id": str(run.workflow_execution_id) if run.workflow_execution_id else None,
         "workflow_status": workflow_status,
         "approval_state": approval_state,
+        "publication_step_state": publication_step_state,
         "execution_backend": execution_backend,
         "workflow_template_name": run.workflow_template_name or None,
         "seed": run.seed,
@@ -220,6 +240,47 @@ def _resolve_approval_state(
     return APPROVAL_STATE_PREPARING
 
 
+def _resolve_publication_step_state(
+    *,
+    run: PoolRun,
+    workflow_status: str | None,
+    workflow_input_context: dict[str, Any],
+    approval_state: str | None,
+) -> str | None:
+    if not run.workflow_execution_id:
+        return None
+
+    workflow_state = str(workflow_status or "").strip().lower()
+    raw_state = str(workflow_input_context.get("publication_step_state") or "").strip().lower()
+
+    if raw_state in _VALID_PUBLICATION_STEP_STATES:
+        if (
+            raw_state == PUBLICATION_STEP_STATE_NOT_ENQUEUED
+            and approval_state in {APPROVAL_STATE_APPROVED, APPROVAL_STATE_NOT_REQUIRED}
+        ):
+            return PUBLICATION_STEP_STATE_QUEUED
+        if (
+            raw_state in {PUBLICATION_STEP_STATE_NOT_ENQUEUED, PUBLICATION_STEP_STATE_QUEUED}
+            and run.publishing_started_at is not None
+        ):
+            return PUBLICATION_STEP_STATE_STARTED
+        if (
+            raw_state != PUBLICATION_STEP_STATE_COMPLETED
+            and workflow_state == WorkflowExecution.STATUS_COMPLETED
+            and approval_state in {APPROVAL_STATE_APPROVED, APPROVAL_STATE_NOT_REQUIRED}
+        ):
+            return PUBLICATION_STEP_STATE_COMPLETED
+        return raw_state
+
+    if run.publishing_started_at is not None:
+        return PUBLICATION_STEP_STATE_STARTED
+    if approval_state in {APPROVAL_STATE_PREPARING, APPROVAL_STATE_AWAITING_APPROVAL}:
+        return PUBLICATION_STEP_STATE_NOT_ENQUEUED
+    if workflow_state == WorkflowExecution.STATUS_COMPLETED:
+        return PUBLICATION_STEP_STATE_COMPLETED
+    return PUBLICATION_STEP_STATE_QUEUED
+
+
 def _has_context_value(value: Any) -> bool:
     if value is None:
         return False
@@ -233,6 +294,7 @@ def _project_pool_status(
     run: PoolRun,
     workflow_status: str | None,
     approval_state: str | None,
+    publication_step_state: str | None,
 ) -> tuple[str, str | None]:
     status = run.status
     status_reason: str | None = None
@@ -260,6 +322,12 @@ def _project_pool_status(
         }:
             return PoolRun.STATUS_VALIDATED, status_reason
 
+    if (
+        publication_step_state == PUBLICATION_STEP_STATE_STARTED
+        and approval_state in {APPROVAL_STATE_APPROVED, APPROVAL_STATE_NOT_REQUIRED}
+    ):
+        return PoolRun.STATUS_PUBLISHING, None
+
     if workflow_state == WorkflowExecution.STATUS_COMPLETED:
         if failed_targets > 0:
             return PoolRun.STATUS_PARTIAL_SUCCESS, None
@@ -270,7 +338,7 @@ def _project_pool_status(
         WorkflowExecution.STATUS_RUNNING,
         "queued",
     }:
-        if run.publishing_started_at is not None:
+        if publication_step_state == PUBLICATION_STEP_STATE_STARTED:
             return PoolRun.STATUS_PUBLISHING, None
         return PoolRun.STATUS_VALIDATED, "queued"
 
@@ -375,6 +443,7 @@ class PoolRunSerializer(serializers.Serializer):
     workflow_execution_id = serializers.UUIDField(required=False, allow_null=True)
     workflow_status = serializers.CharField(required=False, allow_null=True)
     approval_state = serializers.CharField(required=False, allow_null=True)
+    publication_step_state = serializers.CharField(required=False, allow_null=True)
     execution_backend = serializers.CharField(required=False, allow_null=True)
     workflow_template_name = serializers.CharField(required=False, allow_null=True)
     seed = serializers.IntegerField(required=False, allow_null=True)

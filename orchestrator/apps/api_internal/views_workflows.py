@@ -13,6 +13,11 @@ APPROVAL_STATE_PREPARING = "preparing"
 APPROVAL_STATE_AWAITING_APPROVAL = "awaiting_approval"
 APPROVAL_STATE_APPROVED = "approved"
 
+PUBLICATION_STEP_STATE_NOT_ENQUEUED = "not_enqueued"
+PUBLICATION_STEP_STATE_QUEUED = "queued"
+PUBLICATION_STEP_STATE_STARTED = "started"
+PUBLICATION_STEP_STATE_COMPLETED = "completed"
+
 
 @exclude_schema
 @api_view(["GET"])
@@ -123,7 +128,7 @@ def update_workflow_execution_status(request):
         else:
             return Response({"success": False, "error": "Unsupported status"}, status=status.HTTP_400_BAD_REQUEST)
 
-        _advance_pools_approval_state_on_status_update(execution=execution, target_status=target_status)
+        _advance_pools_runtime_metadata_on_status_update(execution=execution, target_status=target_status)
         execution.save()
 
     except Exception:
@@ -135,10 +140,8 @@ def update_workflow_execution_status(request):
     return Response({"success": True, "execution_id": str(execution.id), "status": execution.status})
 
 
-def _advance_pools_approval_state_on_status_update(*, execution, target_status: str) -> None:
+def _advance_pools_runtime_metadata_on_status_update(*, execution, target_status: str) -> None:
     if execution.execution_consumer != "pools":
-        return
-    if target_status != execution.STATUS_COMPLETED:
         return
 
     input_context = execution.input_context if isinstance(execution.input_context, dict) else {}
@@ -149,16 +152,35 @@ def _advance_pools_approval_state_on_status_update(*, execution, target_status: 
     approved_at = input_context.get("approved_at")
     raw_state = str(input_context.get("approval_state") or "").strip().lower()
 
-    next_state = raw_state
+    next_approval_state = raw_state
     if approval_required and not approved_at:
-        if raw_state in {"", APPROVAL_STATE_PREPARING}:
-            next_state = APPROVAL_STATE_AWAITING_APPROVAL
+        if target_status == execution.STATUS_COMPLETED and raw_state in {"", APPROVAL_STATE_PREPARING}:
+            next_approval_state = APPROVAL_STATE_AWAITING_APPROVAL
     elif approval_required and approved_at:
-        next_state = APPROVAL_STATE_APPROVED
+        next_approval_state = APPROVAL_STATE_APPROVED
     elif not approval_required:
-        next_state = APPROVAL_STATE_NOT_REQUIRED
+        next_approval_state = APPROVAL_STATE_NOT_REQUIRED
 
-    if next_state and next_state != raw_state:
+    raw_publication_state = str(input_context.get("publication_step_state") or "").strip().lower()
+    next_publication_state = raw_publication_state
+    if approval_required and not approved_at:
+        if raw_publication_state == "":
+            next_publication_state = PUBLICATION_STEP_STATE_NOT_ENQUEUED
+    else:
+        if raw_publication_state in {"", PUBLICATION_STEP_STATE_NOT_ENQUEUED}:
+            next_publication_state = PUBLICATION_STEP_STATE_QUEUED
+        if target_status == execution.STATUS_RUNNING:
+            next_publication_state = PUBLICATION_STEP_STATE_STARTED
+        elif target_status == execution.STATUS_COMPLETED:
+            next_publication_state = PUBLICATION_STEP_STATE_COMPLETED
+
+    if (
+        next_approval_state != raw_state
+        or next_publication_state != raw_publication_state
+    ):
         updated_context = dict(input_context)
-        updated_context["approval_state"] = next_state
+        if next_approval_state:
+            updated_context["approval_state"] = next_approval_state
+        if next_publication_state:
+            updated_context["publication_step_state"] = next_publication_state
         execution.input_context = updated_context

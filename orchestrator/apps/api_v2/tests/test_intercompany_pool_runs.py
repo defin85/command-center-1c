@@ -348,6 +348,7 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
     assert first_payload["run"]["workflow_execution_id"] is not None
     assert first_payload["run"]["workflow_status"] == "pending"
     assert first_payload["run"]["approval_state"] == "preparing"
+    assert first_payload["run"]["publication_step_state"] == "not_enqueued"
     assert first_payload["run"]["execution_backend"] == "workflow_core"
 
     assert second.status_code == 200
@@ -366,6 +367,7 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
     assert workflow_execution.tenant_id == run.tenant_id
     assert workflow_execution.input_context.get("approved_at") is None
     assert workflow_execution.input_context.get("approval_state") == "preparing"
+    assert workflow_execution.input_context.get("publication_step_state") == "not_enqueued"
 
 
 @pytest.mark.django_db
@@ -499,6 +501,7 @@ def test_get_pool_run_projects_safe_pending_workflow_to_validated_preparing(
             "approval_required": True,
             "approval_state": "preparing",
             "approved_at": None,
+            "publication_step_state": "not_enqueued",
         },
     )
 
@@ -508,6 +511,7 @@ def test_get_pool_run_projects_safe_pending_workflow_to_validated_preparing(
     assert payload["run"]["status"] == PoolRun.STATUS_VALIDATED
     assert payload["run"]["status_reason"] == "preparing"
     assert payload["run"]["approval_state"] == "preparing"
+    assert payload["run"]["publication_step_state"] == "not_enqueued"
     assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_PENDING
 
 
@@ -553,6 +557,7 @@ def test_get_pool_run_projects_safe_completed_unapproved_workflow_to_validated_a
             "approval_required": True,
             "approval_state": "preparing",
             "approved_at": None,
+            "publication_step_state": "not_enqueued",
         },
     )
 
@@ -562,7 +567,104 @@ def test_get_pool_run_projects_safe_completed_unapproved_workflow_to_validated_a
     assert payload["run"]["status"] == PoolRun.STATUS_VALIDATED
     assert payload["run"]["status_reason"] == "awaiting_approval"
     assert payload["run"]["approval_state"] == "awaiting_approval"
+    assert payload["run"]["publication_step_state"] == "not_enqueued"
     assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_COMPLETED
+
+
+@pytest.mark.django_db
+def test_get_pool_run_projects_running_approved_with_queued_publication_state_to_validated_queued(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = PoolRun.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        direction=PoolRunDirection.BOTTOM_UP,
+        period_start=date(2026, 1, 1),
+        mode=PoolRunMode.SAFE,
+    )
+    run.mark_validated(summary={"rows": 1}, diagnostics=[])
+    run.confirm_publication()
+    run.save(
+        update_fields=[
+            "status",
+            "validated_at",
+            "validation_summary",
+            "diagnostics",
+            "publication_confirmed_at",
+            "publication_confirmed_by",
+            "updated_at",
+        ]
+    )
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_RUNNING,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": True,
+            "approval_state": "approved",
+            "approved_at": run.publication_confirmed_at.isoformat(),
+            "publication_step_state": "queued",
+        },
+    )
+
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["status"] == PoolRun.STATUS_VALIDATED
+    assert payload["run"]["status_reason"] == "queued"
+    assert payload["run"]["approval_state"] == "approved"
+    assert payload["run"]["publication_step_state"] == "queued"
+    assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_RUNNING
+
+
+@pytest.mark.django_db
+def test_get_pool_run_projects_running_approved_with_started_publication_state_to_publishing(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = PoolRun.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        direction=PoolRunDirection.BOTTOM_UP,
+        period_start=date(2026, 1, 1),
+        mode=PoolRunMode.SAFE,
+    )
+    run.mark_validated(summary={"rows": 1}, diagnostics=[])
+    run.confirm_publication()
+    run.save(
+        update_fields=[
+            "status",
+            "validated_at",
+            "validation_summary",
+            "diagnostics",
+            "publication_confirmed_at",
+            "publication_confirmed_by",
+            "updated_at",
+        ]
+    )
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_RUNNING,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": True,
+            "approval_state": "approved",
+            "approved_at": run.publication_confirmed_at.isoformat(),
+            "publication_step_state": "started",
+        },
+    )
+
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["status"] == PoolRun.STATUS_PUBLISHING
+    assert payload["run"]["status_reason"] is None
+    assert payload["run"]["approval_state"] == "approved"
+    assert payload["run"]["publication_step_state"] == "started"
+    assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_RUNNING
 
 
 @pytest.mark.django_db
@@ -893,6 +995,7 @@ def test_create_pool_run_with_schema_template_uses_workflow_runtime(
     assert payload["run"]["status"] == PoolRun.STATUS_VALIDATED
     assert payload["run"]["workflow_execution_id"] is not None
     assert payload["run"]["approval_state"] == "not_required"
+    assert payload["run"]["publication_step_state"] == "queued"
     assert payload["run"]["execution_backend"] == "workflow_core"
     workflow_execution = WorkflowExecution.objects.get(id=payload["run"]["workflow_execution_id"])
     assert workflow_execution.execution_consumer == "pools"
@@ -901,6 +1004,7 @@ def test_create_pool_run_with_schema_template_uses_workflow_runtime(
     assert run.publication_confirmed_at is not None
     assert workflow_execution.input_context.get("approved_at") is not None
     assert workflow_execution.input_context.get("approval_state") == "not_required"
+    assert workflow_execution.input_context.get("publication_step_state") == "queued"
 
 
 @pytest.mark.django_db

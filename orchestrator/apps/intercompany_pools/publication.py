@@ -13,6 +13,7 @@ from django_fsm import TransitionNotAllowed
 
 from apps.databases.models import Database
 from apps.databases.odata import ODataRequestError, session_manager
+from apps.templates.workflow.models import WorkflowExecution
 
 from .external_identity import (
     ExternalIdentityContext,
@@ -36,6 +37,18 @@ class PublicationSummary:
 
 MAX_PUBLICATION_ATTEMPTS = 5
 MAX_RETRY_INTERVAL_SECONDS = 120
+
+PUBLICATION_STEP_STATE_NOT_ENQUEUED = "not_enqueued"
+PUBLICATION_STEP_STATE_QUEUED = "queued"
+PUBLICATION_STEP_STATE_STARTED = "started"
+PUBLICATION_STEP_STATE_COMPLETED = "completed"
+
+_VALID_PUBLICATION_STEP_STATES = {
+    PUBLICATION_STEP_STATE_NOT_ENQUEUED,
+    PUBLICATION_STEP_STATE_QUEUED,
+    PUBLICATION_STEP_STATE_STARTED,
+    PUBLICATION_STEP_STATE_COMPLETED,
+}
 
 
 def publish_run_documents(
@@ -139,6 +152,7 @@ def _ensure_run_in_publishing_state(run: PoolRun) -> None:
     except TransitionNotAllowed as exc:
         raise ValidationError("Run cannot start publishing in current mode/state.") from exc
     run.save(update_fields=save_fields)
+    _set_workflow_publication_step_state(run=run, state=PUBLICATION_STEP_STATE_STARTED)
 
 
 def _finish_run_publication(*, run: PoolRun, summary: PublicationSummary) -> None:
@@ -151,11 +165,13 @@ def _finish_run_publication(*, run: PoolRun, summary: PublicationSummary) -> Non
     if summary.failed_targets == 0:
         run.mark_published(summary=payload)
         run.save(update_fields=["status", "publication_summary", "completed_at", "updated_at"])
+        _set_workflow_publication_step_state(run=run, state=PUBLICATION_STEP_STATE_COMPLETED)
         return
 
     if summary.succeeded_targets > 0:
         run.mark_partial_success(summary=payload)
         run.save(update_fields=["status", "publication_summary", "completed_at", "updated_at"])
+        _set_workflow_publication_step_state(run=run, state=PUBLICATION_STEP_STATE_COMPLETED)
         return
 
     run.mark_failed(error="publication_failed_all_targets", summary=payload)
@@ -168,6 +184,34 @@ def _finish_run_publication(*, run: PoolRun, summary: PublicationSummary) -> Non
             "updated_at",
         ]
     )
+    _set_workflow_publication_step_state(run=run, state=PUBLICATION_STEP_STATE_COMPLETED)
+
+
+def _set_workflow_publication_step_state(*, run: PoolRun, state: str) -> None:
+    if state not in _VALID_PUBLICATION_STEP_STATES:
+        return
+    if not run.workflow_execution_id:
+        return
+
+    execution = (
+        WorkflowExecution.objects.filter(
+            id=run.workflow_execution_id,
+            execution_consumer="pools",
+        )
+        .only("id", "input_context")
+        .first()
+    )
+    if execution is None:
+        return
+
+    input_context = execution.input_context if isinstance(execution.input_context, dict) else {}
+    if input_context.get("publication_step_state") == state:
+        return
+
+    updated_context = dict(input_context)
+    updated_context["publication_step_state"] = state
+    execution.input_context = updated_context
+    execution.save(update_fields=["input_context"])
 
 
 def _publish_target_with_retries(

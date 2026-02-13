@@ -22,6 +22,7 @@ from apps.intercompany_pools.publication import (
     publish_run_documents,
     retry_failed_run_documents,
 )
+from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate, WorkflowType
 from apps.tenancy.models import Tenant
 
 
@@ -58,12 +59,58 @@ def _create_validated_run(*, tenant: Tenant, pool: OrganizationPool) -> PoolRun:
     return run
 
 
+def _attach_workflow_execution_to_run(*, run: PoolRun) -> None:
+    template = WorkflowTemplate.objects.create(
+        name=f"pool-publication-{run.id.hex[:8]}",
+        description="",
+        workflow_type=WorkflowType.SEQUENTIAL,
+        dag_structure={
+            "nodes": [
+                {
+                    "id": "publication_odata",
+                    "name": "Publication OData",
+                    "type": "operation",
+                    "template_id": "pool.publication_odata",
+                }
+            ],
+            "edges": [],
+        },
+        is_valid=True,
+        is_active=True,
+    )
+    execution = template.create_execution(
+        {
+            "pool_run_id": str(run.id),
+            "approval_required": run.mode == "safe",
+            "approval_state": "approved",
+            "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
+            "publication_step_state": "queued",
+        },
+        tenant=run.tenant,
+        execution_consumer="pools",
+    )
+    run.workflow_execution_id = execution.id
+    run.workflow_status = execution.status
+    run.execution_backend = "workflow_core"
+    run.workflow_template_name = template.name
+    run.save(
+        update_fields=[
+            "workflow_execution_id",
+            "workflow_status",
+            "execution_backend",
+            "workflow_template_name",
+            "updated_at",
+        ]
+    )
+
+
 @pytest.mark.django_db
 def test_publish_run_documents_success_with_posting(publication_context: dict[str, object]) -> None:
     tenant = publication_context["tenant"]
     pool = publication_context["pool"]
     database = publication_context["database"]
     run = _create_validated_run(tenant=tenant, pool=pool)
+    _attach_workflow_execution_to_run(run=run)
     entity_name = "Document_IntercompanyPoolDistribution"
     client = MagicMock()
     client.get_entities.return_value = []
@@ -104,6 +151,9 @@ def test_publish_run_documents_success_with_posting(publication_context: dict[st
     event_types = list(PoolRunAuditEvent.objects.filter(run=run).values_list("event_type", flat=True))
     assert "run.publication_attempt_success" in event_types
     assert "run.published" in event_types
+
+    workflow_execution = WorkflowExecution.objects.get(id=run.workflow_execution_id)
+    assert workflow_execution.input_context.get("publication_step_state") == "completed"
 
 
 @pytest.mark.django_db

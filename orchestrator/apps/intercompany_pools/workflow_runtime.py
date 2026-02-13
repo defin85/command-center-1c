@@ -24,6 +24,11 @@ APPROVAL_STATE_PREPARING = "preparing"
 APPROVAL_STATE_AWAITING_APPROVAL = "awaiting_approval"
 APPROVAL_STATE_APPROVED = "approved"
 
+PUBLICATION_STEP_STATE_NOT_ENQUEUED = "not_enqueued"
+PUBLICATION_STEP_STATE_QUEUED = "queued"
+PUBLICATION_STEP_STATE_STARTED = "started"
+PUBLICATION_STEP_STATE_COMPLETED = "completed"
+
 
 @dataclass(frozen=True)
 class PoolWorkflowStartResult:
@@ -193,6 +198,7 @@ def _build_input_context(*, run: PoolRun) -> dict[str, Any]:
         "approval_required": run.mode == PoolRunMode.SAFE,
         "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
         "approval_state": _resolve_approval_state_for_input_context(run=run),
+        "publication_step_state": _resolve_publication_step_state_for_input_context(run=run),
     }
 
 
@@ -202,6 +208,14 @@ def _resolve_approval_state_for_input_context(*, run: PoolRun) -> str:
     if run.publication_confirmed_at is not None:
         return APPROVAL_STATE_APPROVED
     return APPROVAL_STATE_PREPARING
+
+
+def _resolve_publication_step_state_for_input_context(*, run: PoolRun) -> str:
+    if run.mode == PoolRunMode.SAFE and run.publication_confirmed_at is None:
+        return PUBLICATION_STEP_STATE_NOT_ENQUEUED
+    if run.publishing_started_at is not None:
+        return PUBLICATION_STEP_STATE_STARTED
+    return PUBLICATION_STEP_STATE_QUEUED
 
 
 def _build_execution_plan_snapshot(
