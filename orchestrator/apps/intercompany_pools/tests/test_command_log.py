@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from unittest.mock import patch
 
 import pytest
 from django.utils import timezone
@@ -172,3 +173,25 @@ def test_cleanup_expired_pool_run_command_logs_deletes_only_expired_entries(run_
     assert deleted == 1
     assert not PoolRunCommandLog.objects.filter(id=expired.id).exists()
     assert PoolRunCommandLog.objects.filter(id=active.id).exists()
+
+
+@pytest.mark.django_db
+def test_record_pool_run_command_outcome_records_write_error_metric_on_storage_failure(
+    run_fixture: PoolRun,
+) -> None:
+    with (
+        patch("apps.intercompany_pools.command_log.record_pool_run_command_log_write_error") as record_error,
+        patch("apps.intercompany_pools.command_log.PoolRunCommandLog.objects.create", side_effect=RuntimeError("db down")),
+    ):
+        with pytest.raises(RuntimeError, match="db down"):
+            record_pool_run_command_outcome(
+                run=run_fixture,
+                command_type=PoolRunCommandType.CONFIRM_PUBLICATION,
+                idempotency_key="metrics-write-error",
+                command_fingerprint="awaiting_approval",
+                result_class=PoolRunCommandResultClass.ACCEPTED,
+                response_status_code=202,
+                response_snapshot={"status": "accepted"},
+            )
+
+    record_error.assert_called_once_with("RuntimeError")

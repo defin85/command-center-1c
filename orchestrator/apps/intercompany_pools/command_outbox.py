@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -8,6 +9,10 @@ from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
 
+from apps.operations.prometheus_metrics import (
+    set_pool_run_command_outbox_lag_seconds,
+    set_pool_run_command_outbox_retry_saturation,
+)
 from apps.operations.redis_client import redis_client
 
 from .models import (
@@ -22,6 +27,10 @@ from .models import (
 DEFAULT_OUTBOX_DISPATCH_BATCH_SIZE = 100
 DEFAULT_OUTBOX_RETRY_BASE_SECONDS = 5
 DEFAULT_OUTBOX_RETRY_CAP_SECONDS = 120
+OUTBOX_RETRY_SATURATION_THRESHOLD_ATTEMPTS = 5
+
+
+logger = logging.getLogger(__name__)
 
 
 class PoolRunCommandOutboxConflict(ValueError):
@@ -166,6 +175,8 @@ def dispatch_pool_run_command_outbox(
             dispatched_at=dispatch_now,
         )
 
+    _record_variant_a_sli_metrics(now=dispatch_now)
+
     return PoolRunCommandOutboxDispatchStats(
         claimed=len(claimed),
         dispatched=dispatched_count,
@@ -268,6 +279,33 @@ def _mark_dispatch_failure(
         outbox.last_error = error_message
         outbox.next_retry_at = failed_at + timedelta(seconds=backoff_seconds)
         outbox.save(update_fields=["last_error_code", "last_error", "next_retry_at", "updated_at"])
+
+
+def _record_variant_a_sli_metrics(*, now: datetime) -> None:
+    try:
+        pending_entries = PoolRunCommandOutbox.objects.filter(status=PoolRunCommandOutboxStatus.PENDING)
+        total_pending = pending_entries.count()
+        saturated_pending = pending_entries.filter(
+            dispatch_attempts__gte=OUTBOX_RETRY_SATURATION_THRESHOLD_ATTEMPTS
+        ).count()
+        saturation_ratio = (saturated_pending / total_pending) if total_pending else 0.0
+        set_pool_run_command_outbox_retry_saturation(
+            saturation_ratio,
+            saturated_pending=saturated_pending,
+            total_pending=total_pending,
+        )
+
+        oldest_next_retry_at = (
+            pending_entries.order_by("next_retry_at")
+            .values_list("next_retry_at", flat=True)
+            .first()
+        )
+        lag_seconds = 0.0
+        if oldest_next_retry_at is not None:
+            lag_seconds = max((now - oldest_next_retry_at).total_seconds(), 0.0)
+        set_pool_run_command_outbox_lag_seconds(lag_seconds)
+    except Exception as exc:
+        logger.debug("Failed to record pool_run outbox SLI metrics: %s", exc)
 
 
 def _calculate_retry_backoff_seconds(

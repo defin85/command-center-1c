@@ -8,6 +8,8 @@ from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
 
+from apps.operations.prometheus_metrics import record_pool_run_command_log_write_error
+
 from .models import (
     PoolRun,
     PoolRunCommandCasOutcome,
@@ -59,53 +61,24 @@ def record_pool_run_command_outcome(
     replay_time = now or timezone.now()
     payload_snapshot = response_snapshot if isinstance(response_snapshot, dict) else {}
 
-    with transaction.atomic():
-        existing_cross_command = (
-            PoolRunCommandLog.objects.select_for_update()
-            .filter(run=run, idempotency_key=normalized_key)
-            .exclude(command_type=command_type)
-            .order_by("id")
-            .first()
-        )
-        if existing_cross_command is not None:
-            raise PoolRunCommandIdempotencyConflict(
-                message="Idempotency key already used for another command type.",
-                existing_entry=existing_cross_command,
-            )
-
-        existing = (
-            PoolRunCommandLog.objects.select_for_update()
-            .filter(
-                run=run,
-                command_type=command_type,
-                idempotency_key=normalized_key,
-            )
-            .first()
-        )
-        if existing is not None:
-            if existing.command_fingerprint != normalized_fingerprint:
-                raise PoolRunCommandIdempotencyConflict(
-                    message="Idempotency key reused with incompatible command fingerprint.",
-                    existing_entry=existing,
+    try:
+        with transaction.atomic():
+            existing_cross_command = (
+                PoolRunCommandLog.objects.select_for_update()
+                .filter(
+                    run=run,
+                    idempotency_key=normalized_key,
                 )
-            return _mark_replay(existing=existing, replay_time=replay_time)
-
-        try:
-            created = PoolRunCommandLog.objects.create(
-                run=run,
-                tenant_id=run.tenant_id,
-                command_type=command_type,
-                idempotency_key=normalized_key,
-                command_fingerprint=normalized_fingerprint,
-                result_class=result_class,
-                cas_outcome=cas_outcome,
-                response_status_code=response_status_code,
-                response_snapshot=payload_snapshot,
-                created_by=created_by,
+                .exclude(command_type=command_type)
+                .order_by("id")
+                .first()
             )
-            return PoolRunCommandLogWriteResult(entry=created, replayed=False)
-        except IntegrityError:
-            # Handles race on the uniqueness scope (run, command_type, idempotency_key).
+            if existing_cross_command is not None:
+                raise PoolRunCommandIdempotencyConflict(
+                    message="Idempotency key already used for another command type.",
+                    existing_entry=existing_cross_command,
+                )
+
             existing = (
                 PoolRunCommandLog.objects.select_for_update()
                 .filter(
@@ -115,14 +88,51 @@ def record_pool_run_command_outcome(
                 )
                 .first()
             )
-            if existing is None:
-                raise
-            if existing.command_fingerprint != normalized_fingerprint:
-                raise PoolRunCommandIdempotencyConflict(
-                    message="Idempotency key reused with incompatible command fingerprint.",
-                    existing_entry=existing,
+            if existing is not None:
+                if existing.command_fingerprint != normalized_fingerprint:
+                    raise PoolRunCommandIdempotencyConflict(
+                        message="Idempotency key reused with incompatible command fingerprint.",
+                        existing_entry=existing,
+                    )
+                return _mark_replay(existing=existing, replay_time=replay_time)
+
+            try:
+                created = PoolRunCommandLog.objects.create(
+                    run=run,
+                    tenant_id=run.tenant_id,
+                    command_type=command_type,
+                    idempotency_key=normalized_key,
+                    command_fingerprint=normalized_fingerprint,
+                    result_class=result_class,
+                    cas_outcome=cas_outcome,
+                    response_status_code=response_status_code,
+                    response_snapshot=payload_snapshot,
+                    created_by=created_by,
                 )
-            return _mark_replay(existing=existing, replay_time=replay_time)
+                return PoolRunCommandLogWriteResult(entry=created, replayed=False)
+            except IntegrityError:
+                # Handles race on the uniqueness scope (run, command_type, idempotency_key).
+                existing = (
+                    PoolRunCommandLog.objects.select_for_update()
+                    .filter(
+                        run=run,
+                        command_type=command_type,
+                        idempotency_key=normalized_key,
+                    )
+                    .first()
+                )
+                if existing is None:
+                    raise
+                if existing.command_fingerprint != normalized_fingerprint:
+                    raise PoolRunCommandIdempotencyConflict(
+                        message="Idempotency key reused with incompatible command fingerprint.",
+                        existing_entry=existing,
+                    )
+                return _mark_replay(existing=existing, replay_time=replay_time)
+    except Exception as exc:
+        if not isinstance(exc, (PoolRunCommandIdempotencyConflict, ValueError)):
+            record_pool_run_command_log_write_error(type(exc).__name__)
+        raise
 
 
 def cleanup_expired_pool_run_command_logs(*, now: datetime | None = None, batch_size: int = 1000) -> int:

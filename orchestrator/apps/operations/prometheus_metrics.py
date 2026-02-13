@@ -240,6 +240,41 @@ admin_actions_total = Counter(
 )
 
 # =============================================================================
+# Pools Variant A (command_log + outbox) SLI Metrics
+# =============================================================================
+
+pool_run_command_log_write_errors_total = Counter(
+    'cc1c_orchestrator_pool_run_command_log_write_errors_total',
+    'Total pool_run command_log write errors',
+    ['error_type']
+)
+
+pool_run_command_outbox_lag_seconds = Gauge(
+    'cc1c_orchestrator_pool_run_command_outbox_lag_seconds',
+    'Current lag in seconds for oldest pending pool_run command outbox entry'
+)
+
+pool_run_command_outbox_retry_saturation_ratio = Gauge(
+    'cc1c_orchestrator_pool_run_command_outbox_retry_saturation_ratio',
+    'Ratio of pending pool_run outbox entries above retry saturation threshold'
+)
+
+pool_run_command_outbox_pending_total = Gauge(
+    'cc1c_orchestrator_pool_run_command_outbox_pending_total',
+    'Current total pending pool_run command outbox entries'
+)
+
+pool_run_command_outbox_retry_saturated_pending_total = Gauge(
+    'cc1c_orchestrator_pool_run_command_outbox_retry_saturated_pending_total',
+    'Current pending pool_run outbox entries above retry saturation threshold'
+)
+
+pool_run_command_outbox_retry_saturation_events_total = Counter(
+    'cc1c_orchestrator_pool_run_command_outbox_retry_saturation_events_total',
+    'Total observed pool_run outbox retry saturation events'
+)
+
+# =============================================================================
 # Event Subscriber (Redis Streams) Metrics
 # =============================================================================
 
@@ -453,6 +488,39 @@ def record_admin_action(action: str, outcome: str) -> None:
         outcome: 'success' | 'error'
     """
     admin_actions_total.labels(action=action, outcome=outcome).inc()
+
+
+def record_pool_run_command_log_write_error(error_type: str) -> None:
+    """Record command_log write error for Variant A rollback trigger SLI."""
+    normalized_error_type = str(error_type or "unknown").strip()[:64] or "unknown"
+    pool_run_command_log_write_errors_total.labels(error_type=normalized_error_type).inc()
+
+
+def set_pool_run_command_outbox_lag_seconds(lag_seconds: float) -> None:
+    """Set current outbox lag in seconds for Variant A rollback trigger SLI."""
+    safe_lag = max(0.0, float(lag_seconds or 0.0))
+    pool_run_command_outbox_lag_seconds.set(safe_lag)
+
+
+def set_pool_run_command_outbox_retry_saturation(
+    ratio: float,
+    *,
+    saturated_pending: int,
+    total_pending: int,
+) -> None:
+    """Set current retry saturation metrics for Variant A rollback trigger SLI."""
+    safe_total_pending = max(0, int(total_pending or 0))
+    safe_saturated_pending = max(0, int(saturated_pending or 0))
+    normalized_ratio = 0.0
+    if safe_total_pending > 0:
+        normalized_ratio = max(0.0, min(1.0, float(ratio or 0.0)))
+
+    pool_run_command_outbox_pending_total.set(safe_total_pending)
+    pool_run_command_outbox_retry_saturated_pending_total.set(safe_saturated_pending)
+    pool_run_command_outbox_retry_saturation_ratio.set(normalized_ratio)
+
+    if safe_saturated_pending > 0:
+        pool_run_command_outbox_retry_saturation_events_total.inc()
 
 
 def record_api_v2_duration(endpoint: str, status: str, duration: float) -> None:

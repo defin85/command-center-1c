@@ -65,9 +65,9 @@
 - [x] 4.4 Добавить tenant linkage/backfill для workflow execution записей, связанных с pools.
 - [x] 4.5 Добавить `execution-consumers-registry.yaml` (+ `execution-consumers-registry.schema.yaml`) и preflight-проверку готовности к decommission `workflows`.
 - [x] 4.6 Зафиксировать переходный режим для non-pools consumers с `tenant_id=null` до их миграции.
-- [ ] 4.7 Поддерживать и версионировать `odata-compatibility-profile.yaml` (+ `odata-compatibility-profile.schema.yaml`) как prerequisite rollout.
-- [ ] 4.8 Внедрить dual-write/dual-read cutover-план и зафиксировать rollback criteria/runbook (SLO, tenant boundary, projection drift).
-- [ ] 4.9 Зафиксировать и внедрить операционные SLI для Variant A (`command_log write errors`, `outbox lag`, `dispatch retry saturation`) как rollback trigger.
+- [x] 4.7 Поддерживать и версионировать `odata-compatibility-profile.yaml` (+ `odata-compatibility-profile.schema.yaml`) как prerequisite rollout.
+- [x] 4.8 Внедрить dual-write/dual-read cutover-план и зафиксировать rollback criteria/runbook (SLO, tenant boundary, projection drift).
+- [x] 4.9 Зафиксировать и внедрить операционные SLI для Variant A (`command_log write errors`, `outbox lag`, `dispatch retry saturation`) как rollback trigger.
 
 ## 5. Frontend
 - [ ] 5.1 Адаптировать `/pools/runs` и `/pools/templates` к unified status/provenance модели.

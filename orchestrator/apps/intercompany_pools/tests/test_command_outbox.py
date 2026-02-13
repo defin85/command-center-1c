@@ -188,3 +188,51 @@ def test_dispatch_pool_run_command_outbox_retries_with_backoff_and_republish(run
     second_payload = enqueue.call_args_list[1].args[0]
     assert first_payload == outbox.message_payload
     assert second_payload == outbox.message_payload
+
+
+@pytest.mark.django_db
+def test_dispatch_pool_run_command_outbox_records_variant_a_sli_metrics(run_fixture: PoolRun) -> None:
+    now = timezone.now()
+    claimed = PoolRunCommandOutbox.objects.create(
+        run=run_fixture,
+        tenant_id=run_fixture.tenant_id,
+        intent_type=PoolRunCommandOutboxIntent.ENQUEUE_WORKFLOW_EXECUTION,
+        message_payload={
+            "operation_id": str(run_fixture.id),
+            "operation_type": "execute_workflow",
+            "execution_config": {"idempotency_key": str(run_fixture.id)},
+        },
+        dispatch_attempts=0,
+        next_retry_at=now - timedelta(seconds=1),
+    )
+    saturated_pending = PoolRunCommandOutbox.objects.create(
+        run=run_fixture,
+        tenant_id=run_fixture.tenant_id,
+        intent_type=PoolRunCommandOutboxIntent.CANCEL_WORKFLOW_EXECUTION,
+        message_payload={
+            "operation_id": str(run_fixture.id),
+            "operation_type": "cancel_workflow",
+        },
+        dispatch_attempts=5,
+        next_retry_at=now - timedelta(minutes=5),
+    )
+
+    with (
+        patch("apps.intercompany_pools.command_outbox.redis_client.enqueue_operation_stream", return_value="1702389123999-0"),
+        patch("apps.intercompany_pools.command_outbox.set_pool_run_command_outbox_lag_seconds") as set_lag,
+        patch("apps.intercompany_pools.command_outbox.set_pool_run_command_outbox_retry_saturation") as set_saturation,
+    ):
+        result = dispatch_pool_run_command_outbox(now=now, batch_size=1)
+
+    assert result.claimed == 1
+    assert result.dispatched == 1
+    assert result.failed == 0
+
+    claimed.refresh_from_db()
+    saturated_pending.refresh_from_db()
+    assert claimed.status == PoolRunCommandOutboxStatus.DISPATCHED
+    assert saturated_pending.status == PoolRunCommandOutboxStatus.PENDING
+
+    lag_seconds = float(set_lag.call_args.args[0])
+    assert lag_seconds >= 0.0
+    set_saturation.assert_called_once_with(1.0, saturated_pending=1, total_pending=1)

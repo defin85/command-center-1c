@@ -9,7 +9,7 @@ Rollout ДОЛЖЕН (SHALL) быть заблокирован (`No-Go`), есл
 
 ## Ownership and Versioning
 - Owner: `platform + pools` (совместная ответственность за актуальность profile и rollout gate).
-- Текущая версия профиля: `0.4.1-draft`.
+- Текущая версия профиля: `0.4.2-draft`.
 - Версионирование: `MAJOR.MINOR.PATCH`.
   - `MAJOR`: несовместимое изменение schema/profile policy.
   - `MINOR`: добавление новой конфигурации или нового поддерживаемого паттерна endpoint/posting.
@@ -82,6 +82,7 @@ Rollout ДОЛЖЕН (SHALL) быть заблокирован (`No-Go`), есл
 ## Change Log
 | profile_version | date | summary |
 | --- | --- | --- |
+| 0.4.2-draft | 2026-02-13 | Added automated preflight command for schema + media-type/compatibility-mode Go/No-Go validation and release `profile_version` pin check. |
 | 0.4.1-draft | 2026-02-13 | Aligned profile with KB 17.4.7/17.4.8/17.4.9 and added explicit compatibility-mode/media-type preflight gate. |
 | 0.4.0-draft | 2026-02-13 | Confirmed runtime JSON write compatibility for BP 3.0 baseline and promoted target entry to approved; replaced false Atom-only constraint. |
 | 0.3.0-draft | 2026-02-13 | Added real BP 3.0 baseline entry from Sokolniki metadata/probe and documented write-format constraint (Atom XML required). |

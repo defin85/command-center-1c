@@ -1,5 +1,5 @@
-profile_version: 0.4.1-draft
-generated_at: "2026-02-13T20:45:00Z"
+profile_version: 0.4.2-draft
+generated_at: "2026-02-13T23:55:00Z"
 owner: platform-plus-pools
 kb_references:
   - https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_8.3.23_Developer_Guide/Chapter_17._Integration_with_external_systems/17.4._Standard_OData_interface/17.4.7._JSON_format/
