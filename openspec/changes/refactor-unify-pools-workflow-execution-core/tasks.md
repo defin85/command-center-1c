@@ -16,9 +16,9 @@
 - [ ] 1.8 Зафиксировать retry-контракт полностью: `max_attempts_total=5`, конфигурируемый интервал, cap 120 секунд.
 - [ ] 1.9 Зафиксировать OData identity strategy (`GUID` primary, `ExternalRunKey` fallback) и канонический diagnostic payload.
 - [ ] 1.10 Зафиксировать source-of-truth правило между change-ами и preflight-контракт decommission.
-- [ ] 1.11 Зафиксировать API-контракт safe-команд (`POST /api/v2/pools/runs/{run_id}/confirm-publication`, `POST /api/v2/pools/runs/{run_id}/abort-publication`) с idempotency/error моделью и запретом `abort` после старта `publication_odata`.
+- [ ] 1.11 Зафиксировать API-контракт safe-команд (`POST /api/v2/pools/runs/{run_id}/confirm-publication`, `POST /api/v2/pools/runs/{run_id}/abort-publication`) с idempotency/error моделью, safe-only применимостью и запретом `abort` после старта `publication_odata`.
 - [ ] 1.12 Зафиксировать lineage-семантику provenance (`workflow_run_id` как root, `workflow_status` как active attempt, структура `retry_chain`, nullable `legacy_reference`).
-- [ ] 1.13 Зафиксировать state-matrix `confirm/abort` по всем ключевым состояниям (`preparing`, `awaiting_approval`, `queued`, `publishing`, terminal) без implicit интерпретаций.
+- [ ] 1.13 Зафиксировать state-matrix `confirm/abort` по всем ключевым состояниям (`approval_state` + facade-status: `validated/*`, `publishing`, terminal) без implicit интерпретаций.
 - [ ] 1.14 Зафиксировать `approval_state` как runtime source-of-truth и обязательное поле unified API details.
 
 ## 2. Backend: execution-core интеграция

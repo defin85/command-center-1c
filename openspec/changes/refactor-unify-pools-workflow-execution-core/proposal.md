@@ -55,13 +55,14 @@
 - Ввести совместимый API переход:
   - `/pools/runs*` остаётся доменным API,
   - но фактическое исполнение и статусная модель резолвятся через workflow run reference;
-  - API обязан возвращать provenance block (`workflow_run_id`, `workflow_status`, `execution_backend`, `retry_chain`) как для unified, так и для legacy исторических run (с оговорённой nullable-семантикой), где `workflow_run_id` = root execution chain, а текущая попытка определяется через `retry_chain`;
+  - API обязан возвращать provenance block (`workflow_run_id`, `workflow_status`, `approval_state`, `terminal_reason`, `execution_backend`, `retry_chain`) как для unified, так и для legacy исторических run (с оговорённой nullable-семантикой), где `workflow_run_id` = root execution chain, а текущая попытка определяется через `retry_chain`;
   - для historical run допускается optional `legacy_reference`, если он доступен в источнике данных.
 - Зафиксировать явный API-контракт safe-команд:
   - `POST /api/v2/pools/runs/{run_id}/confirm-publication`;
   - `POST /api/v2/pools/runs/{run_id}/abort-publication`;
+  - команды применимы только к safe-run (`approval_required=true`); для `unsafe` возвращается business conflict;
   - семантическая идемпотентность команд означает отсутствие изменения состояния при повторе и запрет duplicate enqueue; конкретный response class (`2xx`/`409`) задаётся детерминированной state-matrix;
-  - `confirm-publication` допустим только из `approval_state=awaiting_approval`, повтор в `queued|publishing` возвращает idempotent no-op;
+  - `confirm-publication` допустим только из `approval_state=awaiting_approval`; повтор в facade-состояниях `validated/queued` или `publishing` возвращает idempotent no-op;
   - `abort-publication` допустим только до старта шага `publication_odata`, после старта публикации должен возвращаться business conflict;
   - повторный `abort-publication` допускается как idempotent no-op только для run c `terminal_reason=aborted_by_operator`.
 - Зафиксировать contract source-of-truth для `approval_state`:

@@ -83,9 +83,10 @@
   - `attempt_timestamp`.
 - Decision: `pools/runs*` остаётся доменным API-слоем и хранит reference на workflow run + provenance block.
 - Decision: команды safe-mode имеют явную conflict-модель:
+  - команды применимы только к safe-run (`approval_required=true`); для `unsafe` (`approval_state=not_required`) возвращается business conflict;
   - семантическая идемпотентность = no side effects + no duplicate enqueue; response class определяется state-matrix;
   - `confirm-publication` допустим только из `approval_state=awaiting_approval`;
-  - повторный `confirm-publication` в `queued|publishing` возвращает idempotent no-op;
+  - повторный `confirm-publication` в facade-состояниях `validated/queued` или `publishing` возвращает idempotent no-op;
   - `abort-publication` допустим только до старта шага `publication_odata`;
   - повторный `abort-publication` допустим как idempotent no-op только при `terminal_reason=aborted_by_operator`;
   - во всех остальных terminal/non-eligible состояниях команды возвращают business conflict.
@@ -169,8 +170,8 @@
 ## Facade Commands Contract
 - `POST /api/v2/pools/runs/{run_id}/confirm-publication`:
   - допустим из `approval_state=awaiting_approval`, переводит run в `queued`/`publishing`;
-  - повторный вызов в `queued|publishing` идемпотентен и не создаёт duplicate enqueue;
-  - в `preparing` и terminal-состояниях возвращает business conflict.
+  - повторный вызов в facade-состояниях `validated/queued` или `publishing` идемпотентен и не создаёт duplicate enqueue;
+  - в `approval_state=preparing|not_required` и terminal-состояниях возвращает business conflict.
 - `POST /api/v2/pools/runs/{run_id}/abort-publication`:
   - завершает run как `failed` через workflow `cancelled`, если `publication_odata` ещё не начат;
   - повторный вызов идемпотентен только если `terminal_reason=aborted_by_operator`.
@@ -179,12 +180,13 @@
 
 ## Command State-Matrix
 - `confirm-publication`:
-  - `approval_state=awaiting_approval`: `2xx`, enqueue publication.
-  - `approval_state in {queued,publishing}`: `2xx`, idempotent no-op.
-  - `approval_state=preparing`: `409` business conflict.
+  - `approval_state=awaiting_approval` и facade `validated/awaiting_approval`: `2xx`, enqueue publication.
+  - `approval_state=approved` и facade `validated/queued|publishing`: `2xx`, idempotent no-op.
+  - `approval_state in {preparing,not_required}`: `409` business conflict.
   - terminal states: `409` business conflict.
 - `abort-publication`:
-  - `approval_state in {preparing,awaiting_approval,queued}` и `publication_odata` not started: `2xx`, cancel execution.
+  - `approval_required=true` + facade `validated/preparing|validated/awaiting_approval|validated/queued` и `publication_odata` not started: `2xx`, cancel execution.
+  - `approval_state=not_required` (`unsafe`): `409` business conflict.
   - `publication_odata` started: `409` business conflict.
   - terminal + `terminal_reason=aborted_by_operator`: `2xx`, idempotent no-op.
   - остальные terminal states: `409` business conflict.

@@ -64,6 +64,8 @@
 - `POST /api/v2/pools/runs/{run_id}/confirm-publication`;
 - `POST /api/v2/pools/runs/{run_id}/abort-publication`.
 
+Система ДОЛЖНА (SHALL) применять эти команды только к safe-run (`approval_required=true`); для `unsafe` команда ДОЛЖНА (SHALL) возвращать business conflict.
+
 Система ДОЛЖНА (SHALL) трактовать идемпотентность команд как отсутствие побочных эффектов (включая duplicate enqueue) при повторном вызове; response class (`2xx`/`409`) определяется детерминированной state-matrix.
 
 #### Scenario: Повторный confirm не создаёт дублирующий enqueue
@@ -95,12 +97,13 @@
 ### Requirement: Safe commands MUST иметь полную state-matrix без неявных интерпретаций
 Система ДОЛЖНА (SHALL) применять следующую state-matrix команд:
 - `confirm-publication`:
-  - `approval_state=awaiting_approval` -> `2xx` и enqueue публикации;
-  - `approval_state in {queued,publishing}` -> `2xx` idempotent no-op;
-  - `approval_state=preparing` -> `409` business conflict;
+  - `approval_state=awaiting_approval` и facade `validated/awaiting_approval` -> `2xx` и enqueue публикации;
+  - `approval_state=approved` и facade `validated/queued` или `publishing` -> `2xx` idempotent no-op;
+  - `approval_state in {preparing,not_required}` -> `409` business conflict;
   - terminal state -> `409` business conflict.
 - `abort-publication`:
-  - `approval_state in {preparing,awaiting_approval,queued}` и `publication_odata` не начат -> `2xx` и отмена run;
+  - `approval_required=true` + facade `validated/preparing`, `validated/awaiting_approval` или `validated/queued` и `publication_odata` не начат -> `2xx` и отмена run;
+  - `approval_state=not_required` (`unsafe`) -> `409` business conflict;
   - `publication_odata` уже начат -> `409` business conflict;
   - terminal + `terminal_reason=aborted_by_operator` -> `2xx` idempotent no-op;
   - остальные terminal state -> `409` business conflict.
@@ -111,12 +114,20 @@
 - **THEN** система возвращает business conflict
 - **AND** состояние run не изменяется
 
-#### Scenario: Confirm в queued возвращает idempotent no-op
+#### Scenario: Confirm в validated queued возвращает idempotent no-op
 - **GIVEN** публикация уже подтверждена
-- **AND** run находится в `approval_state=queued`
+- **AND** `approval_state=approved`
+- **AND** facade возвращает `validated` с `status_reason=queued`
 - **WHEN** оператор повторно вызывает `confirm-publication`
 - **THEN** система возвращает idempotent no-op
 - **AND** дополнительный enqueue не создаётся
+
+#### Scenario: Abort для unsafe run отклоняется как неразрешённая команда
+- **GIVEN** run запущен в `unsafe` режиме
+- **AND** `approval_state=not_required`
+- **WHEN** оператор вызывает `abort-publication`
+- **THEN** система возвращает business conflict
+- **AND** состояние run не изменяется
 
 ### Requirement: Pool status projection MUST быть канонической и детерминированной
 Система ДОЛЖНА (SHALL) использовать единый mapping статусов между workflow runtime и pools facade:
@@ -187,6 +198,12 @@
 ### Requirement: Approval state MUST быть каноническим runtime-полем и возвращаться в API
 Система ДОЛЖНА (SHALL) хранить `approval_state` как source-of-truth в metadata workflow execution и использовать его в status projection.
 
+Система ДОЛЖНА (SHALL) использовать ограниченный enum `approval_state`:
+- `not_required`,
+- `preparing`,
+- `awaiting_approval`,
+- `approved`.
+
 Система ДОЛЖНА (SHALL) возвращать `approval_state` в `GET /api/v2/pools/runs/{run_id}` для unified execution.
 
 Для historical/legacy run поле `approval_state` МОЖЕТ (MAY) быть `null`.
@@ -248,6 +265,8 @@
 Ответы facade ДОЛЖНЫ (SHALL) содержать provenance block минимум с полями:
 - `workflow_run_id` (root execution chain id),
 - `workflow_status` (статус active attempt),
+- `approval_state` (runtime approval phase; nullable для legacy),
+- `terminal_reason` (nullable; обязателен для terminal unified execution),
 - `execution_backend`,
 - `retry_chain`.
 
