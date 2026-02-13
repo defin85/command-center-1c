@@ -44,6 +44,7 @@
   - primary: стабильный GUID документа из OData (`_IDRRef` или `Ref_Key`);
   - fallback: `ExternalRunKey` (детерминированный ключ вида `runkey-<sha256[:32]>` от `run_id + target_database_id + document_kind + period`).
   - выбранная стратегия и итоговый идентификатор фиксируются в audit trail run.
+- Decision: Вопрос совместимости OData endpoint/posting fields закрывается отдельным execution source-of-truth артефактом `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.md`; foundation change на него ссылается и не переопределяет.
 - Decision: Все execution/runtime задачи (фактический run execution, lifecycle orchestration, workflow provenance, unified retry/audit projection) передаются в `refactor-unify-pools-workflow-execution-core`.
 
 ## Domain Model (Target)
@@ -111,12 +112,11 @@
 
 ## Risks / Trade-offs
 - Риск несовместимости способа внешней идентификации документов 1С через OData.
-  - Mitigation: обязательный technical spike + адаптер стратегии идентификатора.
+  - Mitigation: strategy-based resolver + обязательный compatibility profile (`openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.md`) как rollout-gate.
 - Риск несходимости при ошибках входных данных (неизвестные ИНН).
   - Mitigation: явная диагностика на уровне строки и ручное подтверждение решения.
 - Риск повторной записи в частично успешных run.
   - Mitigation: строгий idempotency key и upsert-поведение.
 
 ## Open Questions
-- Подтвердить конкретные OData endpoint и поля для запуска проведения документа на поддерживаемых конфигурациях 1С.
 - Нужен ли отдельный lightweight read-model для каталога организаций в UI до завершения unified runtime refactor.

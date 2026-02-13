@@ -66,7 +66,7 @@
 
 Система ДОЛЖНА (SHALL) применять эти команды только к safe-run (`approval_required=true`); для `unsafe` команда ДОЛЖНА (SHALL) возвращать business conflict.
 
-Система ДОЛЖНА (SHALL) трактовать идемпотентность команд как отсутствие побочных эффектов (включая duplicate enqueue) при повторном вызове; response class (`2xx`/`409`) определяется детерминированной state-matrix.
+Система ДОЛЖНА (SHALL) трактовать идемпотентность команд как отсутствие побочных эффектов (включая duplicate enqueue) при повторном вызове; response class (`202`/`200`/`409`) определяется детерминированной state-matrix.
 
 #### Scenario: Повторный confirm не создаёт дублирующий enqueue
 - **GIVEN** `confirm-publication` уже успешно выполнен для `safe` run
@@ -97,15 +97,15 @@
 ### Requirement: Safe commands MUST иметь полную state-matrix без неявных интерпретаций
 Система ДОЛЖНА (SHALL) применять следующую state-matrix команд:
 - `confirm-publication`:
-  - `approval_state=awaiting_approval` и facade `validated/awaiting_approval` -> `2xx` и enqueue публикации;
-  - `approval_state=approved` и facade `validated/queued` или `publishing` -> `2xx` idempotent no-op;
+  - `approval_state=awaiting_approval` и facade `validated/awaiting_approval` -> `202 Accepted` и enqueue публикации;
+  - `approval_state=approved` и facade `validated/queued` или `publishing` -> `200 OK` idempotent no-op;
   - `approval_state in {preparing,not_required}` -> `409` business conflict;
   - terminal state -> `409` business conflict.
 - `abort-publication`:
-  - `approval_required=true` + facade `validated/preparing`, `validated/awaiting_approval` или `validated/queued` и `publication_odata` не начат -> `2xx` и отмена run;
+  - `approval_required=true` + facade `validated/preparing`, `validated/awaiting_approval` или `validated/queued` и `publication_odata` не начат -> `202 Accepted` и отмена run;
   - `approval_state=not_required` (`unsafe`) -> `409` business conflict;
   - `publication_odata` уже начат -> `409` business conflict;
-  - terminal + `terminal_reason=aborted_by_operator` -> `2xx` idempotent no-op;
+  - terminal + `terminal_reason=aborted_by_operator` -> `200 OK` idempotent no-op;
   - остальные terminal state -> `409` business conflict.
 
 #### Scenario: Confirm в preparing отклоняется до завершения pre-publish
@@ -122,12 +122,32 @@
 - **THEN** система возвращает idempotent no-op
 - **AND** дополнительный enqueue не создаётся
 
+#### Scenario: Confirm из awaiting_approval возвращает 202 Accepted
+- **GIVEN** run находится в `approval_state=awaiting_approval`
+- **WHEN** оператор вызывает `confirm-publication`
+- **THEN** система возвращает `202 Accepted`
+- **AND** publication step ставится в очередь единожды
+
 #### Scenario: Abort для unsafe run отклоняется как неразрешённая команда
 - **GIVEN** run запущен в `unsafe` режиме
 - **AND** `approval_state=not_required`
 - **WHEN** оператор вызывает `abort-publication`
 - **THEN** система возвращает business conflict
 - **AND** состояние run не изменяется
+
+### Requirement: Safe command conflicts MUST возвращать канонический error payload
+Система ДОЛЖНА (SHALL) возвращать для `409 Conflict` на `confirm-publication` / `abort-publication` единый payload:
+- `error_code` (stable machine code),
+- `error_message` (human-readable text),
+- `conflict_reason` (enum: `not_safe_run`, `awaiting_pre_publish`, `publication_started`, `terminal_state`, `cross_tenant`),
+- `retryable` (boolean),
+- `run_id`.
+
+#### Scenario: Конфликт команды возвращает каноническую структуру ошибки
+- **GIVEN** команда `confirm-publication` вызвана в `approval_state=preparing`
+- **WHEN** система отклоняет команду
+- **THEN** HTTP ответ равен `409 Conflict`
+- **AND** тело ответа содержит `error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`
 
 ### Requirement: Pool status projection MUST быть канонической и детерминированной
 Система ДОЛЖНА (SHALL) использовать единый mapping статусов между workflow runtime и pools facade:
@@ -309,6 +329,10 @@
 ### Requirement: OData publication rollout MUST быть gated совместимым profile
 Система ДОЛЖНА (SHALL) включать unified publication в production только после фиксации compatibility profile для поддерживаемых 1С-конфигураций (endpoint/posting fields).
 
+Compatibility profile ДОЛЖЕН (SHALL) храниться как source-of-truth артефакт `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.md`.
+
+Система ДОЛЖНА (SHALL) фиксировать используемую `profile_version` compatibility profile в release-артефакте rollout.
+
 При отсутствии согласованного profile система НЕ ДОЛЖНА (SHALL NOT) выполнять production rollout publication-step.
 
 #### Scenario: Production rollout блокируется без согласованного OData profile
@@ -316,6 +340,11 @@
 - **WHEN** выполняется preflight rollout unified publication
 - **THEN** rollout блокируется как `No-Go`
 - **AND** команда получает явный блокирующий reason
+
+#### Scenario: Rollout фиксирует profile_version
+- **GIVEN** production rollout unified publication прошёл preflight
+- **WHEN** формируется release-артефакт
+- **THEN** артефакт содержит конкретную `profile_version` из `odata-compatibility-profile.md`
 
 ### Requirement: OData external document identity MUST использовать strategy-based resolver
 Система ДОЛЖНА (SHALL) поддерживать strategy-based resolver идентификатора внешнего документа:

@@ -20,6 +20,7 @@
 - [ ] 1.12 Зафиксировать lineage-семантику provenance (`workflow_run_id` как root, `workflow_status` как active attempt, структура `retry_chain`, nullable `legacy_reference`).
 - [ ] 1.13 Зафиксировать state-matrix `confirm/abort` по всем ключевым состояниям (`approval_state` + facade-status: `validated/*`, `publishing`, terminal) без implicit интерпретаций.
 - [ ] 1.14 Зафиксировать `approval_state` как runtime source-of-truth и обязательное поле unified API details.
+- [ ] 1.15 Зафиксировать явные HTTP response-коды safe-команд (`202`, `200`, `409`) и канонический error payload (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`).
 
 ## 2. Backend: execution-core интеграция
 - [ ] 2.1 Реализовать compiler `PoolImportSchemaTemplate + run_context -> PoolExecutionPlan/WorkflowTemplate` с детерминированным mapping шагов.
@@ -52,6 +53,7 @@
 - [ ] 4.4 Добавить tenant linkage/backfill для workflow execution записей, связанных с pools.
 - [ ] 4.5 Добавить `execution_consumers_registry` и preflight-проверку готовности к decommission `workflows`.
 - [ ] 4.6 Зафиксировать переходный режим для non-pools consumers с `tenant_id=null` до их миграции.
+- [ ] 4.7 Поддерживать и версионировать `odata-compatibility-profile.md` (конфигурация -> endpoint/posting fields/identifier strategy) как prerequisite rollout.
 
 ## 5. Frontend
 - [ ] 5.1 Адаптировать `/pools/runs` и `/pools/templates` к unified status/provenance модели.
@@ -67,4 +69,5 @@
 - [ ] 6.6 Добавить API/интеграционные тесты на idempotency команд confirm/abort и provenance retry-lineage.
 - [x] 6.7 Прогнать `openspec validate refactor-unify-pools-workflow-execution-core --strict --no-interactive`.
 - [x] 6.8 Выполнить anti-drift self-check: подтвердить, что инварианты state machine согласованы между `proposal/design/spec/tasks`.
-- [ ] 6.9 Добавить контрактные тесты command state-matrix (`confirm/abort`: `2xx` vs `409`) и idempotent-replay кейса `aborted_by_operator`.
+- [ ] 6.9 Добавить контрактные тесты command state-matrix (`confirm/abort`: `202|200|409`) и idempotent-replay кейса `aborted_by_operator`.
+- [ ] 6.10 Добавить API contract-тесты на error payload safe-команд (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`) и точные HTTP-коды (`202|200|409`).

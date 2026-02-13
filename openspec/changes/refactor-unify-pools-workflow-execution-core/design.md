@@ -90,6 +90,12 @@
   - `abort-publication` допустим только до старта шага `publication_odata`;
   - повторный `abort-publication` допустим как idempotent no-op только при `terminal_reason=aborted_by_operator`;
   - во всех остальных terminal/non-eligible состояниях команды возвращают business conflict.
+- Decision: safe-команды имеют явный HTTP-контракт:
+  - `confirm-publication` (`approval_state=awaiting_approval`) -> `202 Accepted`;
+  - `confirm-publication` idempotent replay (`validated/queued|publishing`) -> `200 OK`;
+  - `abort-publication` до старта `publication_odata` -> `202 Accepted`;
+  - `abort-publication` idempotent replay (`terminal_reason=aborted_by_operator`) -> `200 OK`;
+  - invalid command-state -> `409 Conflict` с каноническим error payload.
 - Decision: для historical/legacy runs без workflow-link возвращается совместимый provenance:
   - `workflow_run_id=null`,
   - `workflow_status=null`,
@@ -112,6 +118,7 @@
 - Invariant 8: при конфликте формулировок runtime приоритет имеет `pool-workflow-execution-core/spec.md`; foundation change используется только как domain vocabulary.
 - Invariant 9: `approval_state` хранится как runtime source-of-truth в workflow metadata и возвращается facade API для unified execution.
 - Invariant 10: state-matrix для `confirm/abort` не может оставаться неявной или частичной.
+- Invariant 11: `409 Conflict` для safe-команд возвращает канонический error payload (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`).
 
 ## Change Synchronization Rule
 - Любая правка runtime-семантики в этом change ДОЛЖНА обновлять в одном коммите:
@@ -180,22 +187,31 @@
 
 ## Command State-Matrix
 - `confirm-publication`:
-  - `approval_state=awaiting_approval` и facade `validated/awaiting_approval`: `2xx`, enqueue publication.
-  - `approval_state=approved` и facade `validated/queued|publishing`: `2xx`, idempotent no-op.
+  - `approval_state=awaiting_approval` и facade `validated/awaiting_approval`: `202 Accepted`, enqueue publication.
+  - `approval_state=approved` и facade `validated/queued|publishing`: `200 OK`, idempotent no-op.
   - `approval_state in {preparing,not_required}`: `409` business conflict.
   - terminal states: `409` business conflict.
 - `abort-publication`:
-  - `approval_required=true` + facade `validated/preparing|validated/awaiting_approval|validated/queued` и `publication_odata` not started: `2xx`, cancel execution.
+  - `approval_required=true` + facade `validated/preparing|validated/awaiting_approval|validated/queued` и `publication_odata` not started: `202 Accepted`, cancel execution.
   - `approval_state=not_required` (`unsafe`): `409` business conflict.
   - `publication_odata` started: `409` business conflict.
-  - terminal + `terminal_reason=aborted_by_operator`: `2xx`, idempotent no-op.
+  - terminal + `terminal_reason=aborted_by_operator`: `200 OK`, idempotent no-op.
   - остальные terminal states: `409` business conflict.
 
+## Command Error Model (409 Conflict)
+- OpenAPI response schema для `confirm-publication` / `abort-publication`:
+  - `error_code` (string, stable machine code),
+  - `error_message` (string, human-readable),
+  - `conflict_reason` (enum: `not_safe_run`, `awaiting_pre_publish`, `publication_started`, `terminal_state`, `cross_tenant`),
+  - `retryable` (boolean),
+  - `run_id` (string/uuid).
+
 ## External Dependency Gate
-- Unified publication rollout в production разрешён только после фиксации OData compatibility profile:
+- Unified publication rollout в production разрешён только после фиксации OData compatibility profile (source-of-truth: `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.md`):
   - список поддерживаемых endpoint/posting fields на конфигурацию 1С;
   - документированная стратегия fallback на `ExternalRunKey`;
-  - подтверждённый результат technical spike из foundation change open question.
+  - подтверждённая верификация profile (`verification_status=approved`) для каждой целевой конфигурации;
+  - release-артефакт фиксирует конкретную `profile_version`.
 
 ## Decommission Preflight Contract
 - Перед любым `workflows` decommission запускается preflight:

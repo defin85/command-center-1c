@@ -61,10 +61,16 @@
   - `POST /api/v2/pools/runs/{run_id}/confirm-publication`;
   - `POST /api/v2/pools/runs/{run_id}/abort-publication`;
   - команды применимы только к safe-run (`approval_required=true`); для `unsafe` возвращается business conflict;
-  - семантическая идемпотентность команд означает отсутствие изменения состояния при повторе и запрет duplicate enqueue; конкретный response class (`2xx`/`409`) задаётся детерминированной state-matrix;
-  - `confirm-publication` допустим только из `approval_state=awaiting_approval`; повтор в facade-состояниях `validated/queued` или `publishing` возвращает idempotent no-op;
-  - `abort-publication` допустим только до старта шага `publication_odata`, после старта публикации должен возвращаться business conflict;
-  - повторный `abort-publication` допускается как idempotent no-op только для run c `terminal_reason=aborted_by_operator`.
+  - семантическая идемпотентность команд означает отсутствие изменения состояния при повторе и запрет duplicate enqueue; response class детерминирован state-matrix (`202`/`200`/`409`);
+  - `confirm-publication` допустим только из `approval_state=awaiting_approval`: первый вызов возвращает `202 Accepted` (enqueue publication), повтор в facade-состояниях `validated/queued` или `publishing` возвращает `200 OK` idempotent no-op;
+  - `abort-publication` допустим только до старта шага `publication_odata`: первый вызов возвращает `202 Accepted` (cancel execution), повторный `abort-publication` для run c `terminal_reason=aborted_by_operator` возвращает `200 OK` idempotent no-op;
+  - `abort-publication` после старта `publication_odata` всегда возвращает business conflict.
+- Зафиксировать канонический error payload для `409 Conflict` на safe-командах:
+  - `error_code`,
+  - `error_message`,
+  - `conflict_reason` (`not_safe_run|awaiting_pre_publish|publication_started|terminal_state|cross_tenant`),
+  - `retryable`,
+  - `run_id`.
 - Зафиксировать contract source-of-truth для `approval_state`:
   - `approval_state` хранится в workflow execution metadata как каноническое runtime-поле;
   - `GET /api/v2/pools/runs/{run_id}` возвращает `approval_state` для unified execution (`nullable` для legacy run).
@@ -85,7 +91,7 @@
   - `pool-odata-publication` (domain publication contract; runtime semantics ссылаются на execution source-of-truth)
 - Prerequisites:
   - foundation задачи из `add-intercompany-pool-distribution-module` (catalog/data/contracts/UI baseline) должны быть завершены или зафиксированы как входной baseline.
-  - `add-intercompany-pool-distribution-module`: open question по OData endpoint/posting fields должен быть закрыт согласованным compatibility profile до включения unified publication в production.
+  - OData compatibility profile зафиксирован как source-of-truth артефакт `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.md`; production rollout unified publication запрещён при отсутствии утверждённого profile entry для целевой конфигурации и без фиксации `profile_version` в release-артефакте.
 - Affected code (high-level):
   - `orchestrator/apps/intercompany_pools/**`
   - `orchestrator/apps/templates/workflow/**`
