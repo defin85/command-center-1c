@@ -7,7 +7,7 @@ Rollout ДОЛЖЕН (SHALL) быть заблокирован (`No-Go`), есл
 
 ## Ownership and Versioning
 - Owner: `platform + pools` (совместная ответственность за актуальность profile и rollout gate).
-- Текущая версия профиля: `0.2.0-draft`.
+- Текущая версия профиля: `0.3.0-draft`.
 - Версионирование: `MAJOR.MINOR.PATCH`.
   - `MAJOR`: несовместимое изменение schema/profile policy.
   - `MINOR`: добавление новой конфигурации или нового поддерживаемого паттерна endpoint/posting.
@@ -33,7 +33,7 @@ Rollout ДОЛЖЕН (SHALL) быть заблокирован (`No-Go`), есл
 | configuration_id | configuration_version_range | document_upsert_endpoint_pattern | document_posting_operation | document_identity_fields_priority | external_run_key_field | known_limitations | profile_entry_version | source_reference | verification_status | verified_at | verified_by |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | cc1c-internal-test-double-intercompany-doc | n/a (internal test baseline) | `/odata/standard.odata/Document_IntercompanyPoolDistribution` | `PATCH Document_IntercompanyPoolDistribution(guid'{Ref_Key}')` body: `{"Posted": true}` | Ref_Key -> _IDRRef -> ExternalRunKey | ExternalRunKey | Используется в автотестах как internal test-double; в типовой БП 3.0 такой document entity может отсутствовать | v1 | `orchestrator/apps/intercompany_pools/publication.py`; `orchestrator/apps/intercompany_pools/tests/test_publication.py`; `contracts/orchestrator/openapi.yaml` | verified | 2026-02-13 | automated-test-baseline |
-| 1c-accounting-3.0-standard-odata | 3.0.x (target production line) | `TBD after target metadata audit (e.g. Document_РеализацияТоваровУслуг)` | `TBD after target posting contract confirmation` | Ref_Key -> _IDRRef -> ExternalRunKey | ExternalRunKey (or mapped extension field) | В целевой БП 3.0 отсутствует `Document_IntercompanyPoolDistribution`; требуется маппинг доменной публикации на доступный document endpoint и отдельный production-like прогон | v1 | `docs/ODATA_INTEGRATION.md`; target metadata/protocol pending | draft | - | - |
+| 1c-accounting-3.0-standard-odata | 3.0.x (Sokolniki_7714476359 baseline) | `/odata/standard.odata/Document_РеализацияТоваровУслуг` | `PATCH Document_РеализацияТоваровУслуг(guid'{Ref_Key}')` with Atom XML `<d:Posted>true</d:Posted>` | Ref_Key -> _IDRRef -> ExternalRunKey | ExternalRunKey (or mapped extension field) | JSON write payload for document upsert/posting is rejected on this base; DELETE may require elevated rights (`Последовательность.ДокументыОрганизаций`) | v2 | `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-verification-2026-02-13-sokolniki.md` | verified | 2026-02-13 | manual-production-like-check |
 
 ## Rollout Gate
 `publication_odata` rollout in production разрешён только если:
@@ -60,6 +60,7 @@ Rollout ДОЛЖЕН (SHALL) быть заблокирован (`No-Go`), есл
 - `approved`:
   - дополнительно к `verified` выполнена проверка на целевой production-like конфигурации 1С;
   - есть подтверждённый rollout протокол и владелец-аппрувер (platform/pools).
+  - runtime-path публикации совместим с transport/format требованиями записи целевой конфигурации.
 
 ## Target Eligibility Rule
 - Статус `verified` на internal test-double записи НЕ является основанием для production rollout.
@@ -68,5 +69,6 @@ Rollout ДОЛЖЕН (SHALL) быть заблокирован (`No-Go`), есл
 ## Change Log
 | profile_version | date | summary |
 | --- | --- | --- |
+| 0.3.0-draft | 2026-02-13 | Added real BP 3.0 baseline entry from Sokolniki metadata/probe and documented write-format constraint (Atom XML required). |
 | 0.2.0-draft | 2026-02-13 | Split internal test baseline vs target BP 3.0; downgraded target entry to draft until real metadata mapping and production-like verification. |
 | 0.1.0-draft | 2026-02-13 | Initial profile contract, rollout gate, schema and versioning rules. |
