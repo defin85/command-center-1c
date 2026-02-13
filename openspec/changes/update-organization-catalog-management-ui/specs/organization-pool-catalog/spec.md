@@ -4,6 +4,8 @@
 
 UI ДОЛЖЕН (SHALL) использовать существующий контракт upsert и сохранять доменные инварианты каталога (включая уникальность связи `organization <-> database` как `1:1`).
 
+В рамках этого change оператор трактуется как авторизованный пользователь с доступом к `/pools/catalog` в текущей модели авторизации; change НЕ ДОЛЖЕН (SHALL NOT) вводить новую backend RBAC-модель.
+
 #### Scenario: Оператор создаёт организацию через UI
 - **GIVEN** у пользователя есть активный tenant context
 - **WHEN** оператор открывает форму создания организации и заполняет обязательные поля (`inn`, `name`)
@@ -19,7 +21,11 @@ UI ДОЛЖЕН (SHALL) использовать существующий кон
 ### Requirement: Organization sync UI MUST поддерживать bulk-синхронизацию с preflight и отчётом результата
 Система ДОЛЖНА (SHALL) предоставлять операторский UI для bulk-синхронизации каталога организаций через существующий sync endpoint.
 
+В рамках MVP sync UI ДОЛЖЕН (SHALL) принимать JSON payload `rows[]`; расширенная file-ingest поддержка (CSV/XLSX parsing) НЕ ДОЛЖНА (SHALL NOT) считаться обязательной частью этого change.
+
 Перед отправкой payload система ДОЛЖНА (SHALL) выполнять базовые preflight-проверки структуры и обязательных полей, чтобы блокировать заведомо некорректные данные до backend round-trip.
+
+Система ДОЛЖНА (SHALL) ограничивать размер одного sync submit на уровне UI (MVP limit: не более 1000 строк).
 
 #### Scenario: Некорректная строка блокирует запуск sync на клиенте
 - **GIVEN** оператор загрузил/вставил bulk payload c пустым `inn` или `name`
@@ -33,8 +39,16 @@ UI ДОЛЖЕН (SHALL) использовать существующий кон
 - **THEN** система показывает `created`, `updated`, `skipped`, `total_rows`
 - **AND** каталог организаций обновляется в текущем tenant context
 
+#### Scenario: Payload превышает UI-лимит sync
+- **GIVEN** оператор подготовил payload более 1000 строк
+- **WHEN** оператор запускает preflight/submit
+- **THEN** система не отправляет запрос sync
+- **AND** интерфейс показывает ошибку о превышении лимита размера batch
+
 ### Requirement: Mutating actions MUST быть tenant-safe в UI каталога организаций
-Система ДОЛЖНА (SHALL) блокировать mutating действия в UI каталога организаций при отсутствии активного tenant context для пользователя, которому доступно staff-управление.
+Система ДОЛЖНА (SHALL) блокировать mutating действия в UI каталога организаций для staff-пользователей при отсутствии явно выбранного tenant context (`active_tenant_id`) как защиту от случайных cross-tenant мутаций.
+
+Для non-staff пользователей этот UI guard НЕ ДОЛЖЕН (SHALL NOT) добавлять дополнительную блокировку поверх server-resolved tenant context и backend authorization.
 
 Система ДОЛЖНА (SHALL) показывать явное предупреждение о причине блокировки и о необходимости выбрать активный tenant перед mutating операциями.
 
@@ -44,3 +58,14 @@ UI ДОЛЖЕН (SHALL) использовать существующий кон
 - **THEN** кнопки `Add/Edit/Sync` недоступны
 - **AND** интерфейс отображает предупреждение с объяснением ограничения
 
+### Requirement: Organization catalog UI MUST прозрачно отображать доменные и валидационные ошибки mutating API
+Система ДОЛЖНА (SHALL) отображать понятные operator-facing сообщения для backend ошибок:
+`DATABASE_ALREADY_LINKED`, `DUPLICATE_ORGANIZATION_INN`, `DATABASE_NOT_FOUND`, `ORGANIZATION_NOT_FOUND`, `TENANT_NOT_FOUND`, `TENANT_CONTEXT_REQUIRED`, `VALIDATION_ERROR`.
+
+Система ДОЛЖНА (SHALL) поддерживать отображение field-level serializer errors и fallback-обработку неизвестной ошибки без потери контекста текущей операции.
+
+#### Scenario: Backend возвращает field-level ошибку валидации
+- **GIVEN** оператор отправляет некорректные данные формы
+- **WHEN** backend возвращает `success=false` и field-level `error`
+- **THEN** UI показывает ошибку рядом с соответствующим полем или в явном списке полей
+- **AND** оператор может исправить данные без потери введённого контента

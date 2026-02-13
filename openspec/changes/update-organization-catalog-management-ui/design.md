@@ -5,6 +5,7 @@
   - tenant-scoped проверка `database_id`;
   - уникальность связи `organization <-> database` как `1:1`.
 - Цель change: закрыть UX/операционный разрыв без расширения backend-контракта.
+- В проекте tenant context на backend может быть резолвлен без явного заголовка за счёт membership/preference; UI guard для staff нужен как дополнительный safety layer, а не как замена backend авторизации.
 
 ## Goals / Non-Goals
 - Goals:
@@ -14,6 +15,7 @@
 - Non-Goals:
   - Проектировать новый ingestion pipeline “прямой импорт из ИБ”.
   - Менять контракт `POST /api/v2/pools/organizations/upsert/` и `POST /api/v2/pools/organizations/sync/`.
+  - Вводить новую backend RBAC-модель для этого capability.
 
 ## Decisions
 ### Decision 1: Reuse existing `/pools/catalog` page as single operator workspace
@@ -30,14 +32,15 @@
   - bulk sync не требует отдельной страницы на первом этапе.
 - Следствие:
   - create/edit: один form contract под payload `upsert`;
-  - sync: модалка с вводом payload (JSON/file), preflight и отчётом результата.
+  - sync: модалка с вводом payload `rows[]` в JSON (MVP без обязательной поддержки CSV/XLSX), preflight и отчётом результата.
 
 ### Decision 3: Tenant-safe guard в UI для mutating действий
 - Почему:
   - mutating API требует корректный tenant context;
   - уменьшает риск неявных cross-tenant мутаций у staff-пользователей.
 - Следствие:
-  - при отсутствии `active_tenant_id` mutating controls disabled;
+  - для staff при отсутствии `active_tenant_id` mutating controls disabled;
+  - для non-staff mutating controls не блокируются этим guard и опираются на server-resolved tenant context;
   - показывается warning с причиной и инструкцией выбрать tenant.
 
 ### Decision 4: Preflight-валидация ограничивается базовыми проверками
@@ -49,6 +52,7 @@
   - обязательные `inn`/`name` в каждой строке;
   - допустимые `status` (`active|inactive|archived`);
   - базовая проверка формата `database_id` (если задан).
+  - ограничение `rows` в одном submit (MVP: до 1000 строк, configurable константой UI).
 
 ### Decision 5: Явный error mapping backend-кодов в UI
 - Почему:
@@ -57,8 +61,19 @@
   - `DATABASE_ALREADY_LINKED`
   - `DUPLICATE_ORGANIZATION_INN`
   - `DATABASE_NOT_FOUND`
+  - `ORGANIZATION_NOT_FOUND`
+  - `TENANT_NOT_FOUND`
   - `VALIDATION_ERROR`
   - `TENANT_CONTEXT_REQUIRED`
+  - field-level serializer errors (`success=false`, `error={field: [...]}`) и fallback для неизвестных ошибок.
+
+### Decision 6: Явная authz-граница change
+- Почему:
+  - в текущей системе доступ к `/pools/catalog` уже определяется существующим auth flow;
+  - change должен оставаться минимальным и не менять backend permission model.
+- Следствие:
+  - оператор в рамках change = авторизованный пользователь с доступом к странице;
+  - усиление role/capability-модели выносится в отдельный change при отдельном запросе.
 
 ## Alternatives Considered
 - Отдельная новая страница “Organizations Admin”:
@@ -74,7 +89,7 @@
 - Риск: preflight может не поймать все доменные ошибки.
   - Митигация: backend остаётся финальным валидатором, UI показывает детальные доменные ошибки.
 - Риск: bulk sync с большим payload ухудшит UX.
-  - Митигация: стартово ограничить размер payload и дать прозрачный отчёт результата.
+  - Митигация: стартово ограничить размер payload (`<=1000 rows`) и дать прозрачный отчёт результата.
 - Риск: недостаточное тестовое покрытие mutating сценариев.
   - Митигация: добавить browser smoke и unit-тесты для error mapping/preflight.
 
@@ -84,4 +99,3 @@
 3. Добавить preflight + error mapping.
 4. Добавить frontend тесты ключевых сценариев.
 5. Провести валидацию OpenSpec change и подготовить к apply stage.
-
