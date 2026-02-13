@@ -16,10 +16,12 @@
   - Введение отдельной queue-инфраструктуры для pools в phase 1.
 
 ## Terms
-- `PoolImportSchemaTemplate`: публичный XLSX/JSON шаблон импорта (domain-level).
+- `PoolSchemaTemplate`: foundation-название публичного XLSX/JSON шаблона импорта (`add-intercompany-pool-distribution-module`).
+- `PoolImportSchemaTemplate`: execution-core термин для той же сущности, что `PoolSchemaTemplate` (алиас без нового публичного контракта).
 - `workflow_binding`: optional metadata на import template из foundation-change; в unified runtime используется только как hint для compiler.
 - `PoolExecutionPlan`: скомпилированный workflow-compatible graph для конкретного run-контекста.
-- `status_reason`: подстатус facade-модели только для `validated` (`awaiting_approval`, `queued`); для остальных статусов `null`.
+- `approval_state`: техническая фаза safe-flow (`not_required`, `preparing`, `awaiting_approval`, `approved`), используемая для детерминированной проекции статуса.
+- `status_reason`: подстатус facade-модели только для `validated` (`preparing`, `awaiting_approval`, `queued`); для остальных статусов `null`.
 
 ## Decisions
 - Decision: `workflows` является execution-core для `pools`.
@@ -29,15 +31,16 @@
   - `workflow_binding` на template сохраняется как optional compatibility hint для compiler и не является runtime source-of-truth;
   - compiler создаёт `PoolExecutionPlan` детерминированно из `pool_id + period + direction + source_hash + template_version`.
 - Decision: `safe/unsafe` реализуются внутри workflow runtime, без второго оркестратора:
-  - `safe`: workflow run создаётся в `pending` с `approval_required=true`; pre-publish шаги (`prepare_input`, `distribution_calculation`, `reconciliation_report`) выполняются до ручного решения оператора;
+  - `safe`: workflow run создаётся с `approval_required=true`, `approval_state=preparing`; pre-publish шаги (`prepare_input`, `distribution_calculation`, `reconciliation_report`) выполняются до ручного решения оператора; после завершения pre-publish run переходит в `approval_state=awaiting_approval`;
   - в `safe` режиме только `publication_odata` блокируется до `confirm-publication`;
-  - `unsafe`: `approved_at` проставляется автоматически на create/start path;
+  - `unsafe`: `approval_state=not_required`, `approved_at` проставляется автоматически на create/start path;
   - явные команды фасада: `confirm-publication` и `abort-publication`.
 - Decision: canonical status mapping фиксируется и обязателен для API:
   - `draft` — run создан, workflow run ещё не создан;
-  - `validated` + `status_reason=awaiting_approval` — `workflow.status=pending`, `approval_required=true`, `approved_at is null`;
+  - `validated` + `status_reason=preparing` — `workflow.status in {pending, running}`, `approval_required=true`, `approved_at is null`, `approval_state=preparing`;
+  - `validated` + `status_reason=awaiting_approval` — `workflow.status=pending`, `approval_required=true`, `approved_at is null`, `approval_state=awaiting_approval`;
   - `validated` + `status_reason=queued` — `workflow.status=pending`, `approval_required=false` или `approved_at is not null`;
-  - `publishing` — `workflow.status=running`;
+  - `publishing` — `workflow.status=running`, `approval_required=false` или `approved_at is not null`;
   - `published` — `workflow.status=completed` и `failed_targets=0`;
   - `partial_success` — `workflow.status=completed` и `failed_targets>0`;
   - `failed` — `workflow.status in {failed, cancelled}`.
@@ -74,6 +77,10 @@
   - `attempt_number`,
   - `attempt_timestamp`.
 - Decision: `pools/runs*` остаётся доменным API-слоем и хранит reference на workflow run + provenance block.
+- Decision: команды safe-mode имеют явную conflict-модель:
+  - `confirm-publication` идемпотентен в состояниях после подтверждения и не создаёт duplicate enqueue;
+  - `abort-publication` допустим только до старта шага `publication_odata`;
+  - после старта `publication_odata` команда `abort-publication` возвращает business conflict.
 - Decision: для historical/legacy runs без workflow-link возвращается совместимый provenance:
   - `workflow_run_id=null`,
   - `workflow_status=null`,
@@ -87,20 +94,22 @@
 
 ## Status Projection Contract
 - `draft`: pool run существует, workflow run ещё не создан.
+- `validated/preparing`: pre-publish шаги ещё выполняются или ставятся в очередь до точки ручного решения.
 - `validated/awaiting_approval`: workflow run создан, ожидает явного решения пользователя.
 - `validated/queued`: workflow run готов к исполнению и находится в очереди.
-- `publishing`: workflow step execution активен.
+- `publishing`: workflow исполняется в фазе публикации/дозаписи после автоматического или ручного подтверждения.
 - `published`: завершено без failed targets.
 - `partial_success`: завершено с failed targets.
 - `failed`: workflow завершился `failed` или `cancelled` (включая `abort-publication`).
-- `status_reason`: применяется только для `validated`; для остальных facade-статусов возвращается `null`.
+- `status_reason`: применяется только для `validated`; допустимые значения `preparing|awaiting_approval|queued`.
+- Для остальных facade-статусов `status_reason` возвращается `null`.
 
 ## Execution Mapping (Target)
 - `PoolImportSchemaTemplate` + run context -> compiler -> `PoolExecutionPlan` -> `WorkflowTemplate`.
 - `workflow_binding` (если присутствует) используется только как optional compiler hint.
 - `PoolRun(start)`:
   - `unsafe`: create workflow run + auto-approval + enqueue;
-  - `safe`: create workflow run (`approval_required=true`), выполнить pre-publish шаги, затем ждать confirm/abort; `publication_odata` enqueue только после confirm command.
+  - `safe`: create workflow run (`approval_required=true`, `approval_state=preparing`), выполнить pre-publish шаги, перейти в `approval_state=awaiting_approval`, затем ждать confirm/abort; `publication_odata` enqueue только после confirm command.
 - Workflow steps:
   - `prepare_input` (source/template validation),
   - `distribution_calculation` (top-down/bottom-up),
@@ -133,9 +142,10 @@
   - переводит `safe` run из `awaiting_approval` в `queued`/`publishing`;
   - повторный вызов идемпотентен и не создаёт duplicate enqueue.
 - `POST /api/v2/pools/runs/{run_id}/abort-publication`:
-  - завершает run как `failed` через workflow `cancelled`;
-  - повторный вызов идемпотентен.
+  - завершает run как `failed` через workflow `cancelled`, если `publication_odata` ещё не начат;
+  - повторный вызов идемпотентен, если run уже отменён этим же действием.
 - Для terminal run (`published|partial_success|failed`) команды confirm/abort возвращают business conflict без изменения состояния.
+- Для run, где уже начат `publication_odata`, `abort-publication` возвращает business conflict без изменения состояния.
 
 ## Decommission Preflight Contract
 - Перед любым `workflows` decommission запускается preflight:
@@ -147,7 +157,7 @@
 ## Migration Plan
 1. Добавить поля `pool_run.workflow_execution_id`, `workflow_execution.tenant_id`, `workflow_execution.execution_consumer`.
 2. Добавить serializer/openapi контракт для status_reason, provenance lineage и команд confirm/abort.
-3. Добавить status projection service с canonical mapping и reason-кодами.
+3. Добавить status projection service с canonical mapping, reason-кодами и `approval_state`.
 4. Перевести create/start path `pools/runs` на workflow runtime с `safe/unsafe` approval gate и pre-publish шагами до ручного решения.
 5. Добавить confirm/abort команды фасада для safe-mode.
 6. Перевести retry path на failed-subset re-execution через workflow runtime.

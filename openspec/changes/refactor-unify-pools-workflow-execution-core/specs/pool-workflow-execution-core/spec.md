@@ -16,8 +16,9 @@
 - **GIVEN** пользователь инициирует запуск `/api/v2/pools/runs`
 - **AND** run запрошен в режиме `safe`
 - **WHEN** система принимает валидный запрос
-- **THEN** создаётся workflow run со статусом `pending`
-- **AND** run помечается как `approval_required=true`
+- **THEN** создаётся workflow run с `approval_required=true` и `approval_state=preparing`
+- **AND** выполняются pre-publish шаги до ручного решения оператора
+- **AND** после завершения pre-publish run переходит в `approval_state=awaiting_approval`
 - **AND** публикационные шаги НЕ запускаются до явной команды подтверждения
 
 ### Requirement: Safe mode MUST иметь явный approval gate
@@ -26,6 +27,12 @@
 - `abort-publication` — завершает исполнение без публикации.
 
 Система ДОЛЖНА (SHALL) завершать pre-publish этап (`prepare_input`, `distribution_calculation`, `reconciliation_report`) до ожидания ручного решения в `safe` режиме.
+
+Система ДОЛЖНА (SHALL) фиксировать фазу safe-flow через `approval_state`:
+- `preparing` — pre-publish этап ещё выполняется;
+- `awaiting_approval` — pre-publish завершён, run ожидает ручное решение;
+- `approved` — подтверждение публикации получено;
+- `not_required` — для `unsafe` режима.
 
 #### Scenario: Подтверждение публикации переводит safe run в очередь исполнения
 - **GIVEN** pool run находится в `safe` режиме и ожидает подтверждения
@@ -44,6 +51,13 @@
 - **WHEN** pre-publish этап завершён
 - **THEN** оператор получает diagnostics/артефакты проверки до публикации
 - **AND** `publication_odata` не enqueue до `confirm-publication`
+
+#### Scenario: Во время pre-publish safe run проецируется как validated preparing
+- **GIVEN** run запущен в `safe` режиме
+- **AND** pre-publish шаги ещё выполняются
+- **WHEN** клиент запрашивает детали run
+- **THEN** фасад возвращает статус `validated`
+- **AND** поле `status_reason` равно `preparing`
 
 ### Requirement: Safe commands MUST быть выражены явными идемпотентными API-операциями
 Система ДОЛЖНА (SHALL) поддерживать команды безопасного режима как отдельные endpoint'ы:
@@ -64,17 +78,24 @@
 - **THEN** система возвращает business conflict
 - **AND** состояние run не изменяется
 
+#### Scenario: Abort после старта publication_odata отклоняется бизнес-ошибкой
+- **GIVEN** `publication_odata` уже начал исполнение
+- **WHEN** оператор вызывает `abort-publication`
+- **THEN** система возвращает business conflict
+- **AND** состояние run не изменяется
+
 ### Requirement: Pool status projection MUST быть канонической и детерминированной
 Система ДОЛЖНА (SHALL) использовать единый mapping статусов между workflow runtime и pools facade:
 - `pool:draft` — только до создания workflow run;
-- `workflow:pending + approval_required=true + approved_at is null -> pool:validated` с `status_reason=awaiting_approval`;
+- `workflow:(pending|running) + approval_required=true + approved_at is null + approval_state=preparing -> pool:validated` с `status_reason=preparing`;
+- `workflow:pending + approval_required=true + approved_at is null + approval_state=awaiting_approval -> pool:validated` с `status_reason=awaiting_approval`;
 - `workflow:pending + (approval_required=false OR approved_at is not null) -> pool:validated` с `status_reason=queued`;
-- `workflow:running -> pool:publishing`;
+- `workflow:running + (approval_required=false OR approved_at is not null) -> pool:publishing`;
 - `workflow:completed + failed_targets=0 -> pool:published`;
 - `workflow:completed + failed_targets>0 -> pool:partial_success`;
 - `workflow:failed|cancelled -> pool:failed`.
 
-Система ДОЛЖНА (SHALL) использовать `status_reason` только для `pool:validated`; для остальных pool-статусов `status_reason` ДОЛЖЕН (SHALL) быть `null`.
+Система ДОЛЖНА (SHALL) использовать `status_reason` только для `pool:validated` с допустимыми значениями `preparing|awaiting_approval|queued`; для остальных pool-статусов `status_reason` ДОЛЖЕН (SHALL) быть `null`.
 
 #### Scenario: Завершение workflow с failed targets даёт partial_success
 - **GIVEN** workflow run завершён со статусом `completed`
@@ -86,13 +107,24 @@
 #### Scenario: Pending workflow с approval_required проецируется как validated awaiting_approval
 - **GIVEN** workflow run создан со статусом `pending`
 - **AND** `approval_required=true`
+- **AND** `approval_state=awaiting_approval`
 - **AND** подтверждение публикации ещё не получено
 - **WHEN** клиент запрашивает pool run details
 - **THEN** фасад возвращает статус `validated`
 - **AND** поле `status_reason` равно `awaiting_approval`
 
+#### Scenario: Safe pre-publish в running проецируется как validated preparing
+- **GIVEN** workflow run находится в состоянии `running`
+- **AND** `approval_required=true`
+- **AND** `approved_at is null`
+- **AND** `approval_state=preparing`
+- **WHEN** клиент запрашивает pool run details
+- **THEN** фасад возвращает статус `validated`
+- **AND** поле `status_reason` равно `preparing`
+
 #### Scenario: Для non-validated статусов status_reason отсутствует
 - **GIVEN** workflow run находится в состоянии `running`
+- **AND** (`approval_required=false` ИЛИ `approved_at is not null`)
 - **WHEN** клиент запрашивает pool run details
 - **THEN** фасад возвращает статус `publishing`
 - **AND** `status_reason` равен `null`
@@ -123,7 +155,7 @@
 
 ### Requirement: Import templates и execution plan MUST быть разделены терминологически и технически
 Система ДОЛЖНА (SHALL) использовать разделённые сущности:
-- `PoolImportSchemaTemplate` как доменный шаблон XLSX/JSON импорта;
+- `PoolImportSchemaTemplate` как execution-core термин для доменного шаблона импорта (`PoolSchemaTemplate` из foundation change);
 - `PoolExecutionPlan` как runtime artifact, полученный компилятором для workflow graph.
 
 Система ДОЛЖНА (SHALL) иметь детерминированный compiler `PoolImportSchemaTemplate + run_context -> PoolExecutionPlan`.
@@ -223,7 +255,7 @@
 
 Система ДОЛЖНА (SHALL) поддерживать `retry_interval_seconds` как конфигурируемый параметр, при этом эффективный интервал НЕ ДОЛЖЕН (SHALL NOT) превышать 120 секунд.
 
-Система ДОЛЖНА (SHALL) исполнять retry endpoint `POST /pools/runs/{run_id}/retry` только для failed subset, не дублируя успешные цели.
+Система ДОЛЖНА (SHALL) исполнять retry endpoint `POST /api/v2/pools/runs/{run_id}/retry` только для failed subset, не дублируя успешные цели.
 
 #### Scenario: Retry повторно исполняет только failed subset
 - **GIVEN** pool run имеет `partial_success` и набор failed targets

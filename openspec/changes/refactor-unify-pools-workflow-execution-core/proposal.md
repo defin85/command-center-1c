@@ -12,19 +12,20 @@
 ## What Changes
 - Зафиксировать `workflows` как единственный runtime для многошагового исполнения (`Template/Run/Step`, retry, audit, status lifecycle, queueing).
 - Зафиксировать `pools` как domain facade + compiler и снять терминологическую неоднозначность:
-  - `PoolImportSchemaTemplate` (XLSX/JSON) остаётся доменным артефактом импорта;
+  - `PoolImportSchemaTemplate` (термин execution-core; алиас foundation-сущности `PoolSchemaTemplate`) остаётся доменным артефактом импорта;
   - совместимость с foundation-термином `workflow binding` сохраняется: binding трактуется как optional metadata hint для compiler, а не как отдельный runtime execution-template;
   - `PoolExecutionPlan` компилируется детерминированно из run-контекста (`pool`, период, направление, template version, source hash) в workflow-compatible graph;
   - `Pool Run` создаётся/выполняется через workflow runtime с сохранением pool-доменной идентичности.
 - Зафиксировать явный approval gate для `safe` режима:
-  - `safe`: создаётся `workflow_run` со статусом `pending` и `approval_required=true`; pre-publish шаги (`prepare_input`, `distribution_calculation`, `reconciliation_report`) выполняются до ожидания решения оператора; `publication_odata` не enqueue до явной команды подтверждения;
-  - `unsafe`: подтверждение проставляется автоматически при старте run;
+  - `safe`: создаётся `workflow_run` с `approval_required=true` и явной фазой `approval_state=preparing`; pre-publish шаги (`prepare_input`, `distribution_calculation`, `reconciliation_report`) выполняются до ожидания решения оператора, после чего run переходит в `approval_state=awaiting_approval`; `publication_odata` не enqueue до явной команды подтверждения;
+  - `unsafe`: `approval_state=not_required`, подтверждение (`approved_at`) проставляется автоматически при старте run;
   - команда подтверждения/остановки публикации выносится в явный API-контракт (`confirm-publication` / `abort-publication`).
 - Зафиксировать канонический mapping статусов (без open-ended интерпретаций):
   - `pool:draft` — локально создан run до создания `workflow_run`;
-  - `workflow:pending + approval_required=true + approved_at is null -> pool:validated` (`status_reason=awaiting_approval`);
+  - `workflow:(pending|running) + approval_required=true + approved_at is null + approval_state=preparing -> pool:validated` (`status_reason=preparing`);
+  - `workflow:pending + approval_required=true + approved_at is null + approval_state=awaiting_approval -> pool:validated` (`status_reason=awaiting_approval`);
   - `workflow:pending + (approval_required=false OR approved_at is not null) -> pool:validated` (`status_reason=queued`);
-  - `workflow:running -> pool:publishing`;
+  - `workflow:running + (approval_required=false OR approved_at is not null) -> pool:publishing`;
   - `workflow:completed + failed_targets=0 -> pool:published`;
   - `workflow:completed + failed_targets>0 -> pool:partial_success`;
   - `workflow:failed|cancelled -> pool:failed`.
@@ -59,7 +60,8 @@
 - Зафиксировать явный API-контракт safe-команд:
   - `POST /api/v2/pools/runs/{run_id}/confirm-publication`;
   - `POST /api/v2/pools/runs/{run_id}/abort-publication`;
-  - команды идемпотентны и не должны приводить к duplicate enqueue.
+  - команды идемпотентны и не должны приводить к duplicate enqueue;
+  - `abort-publication` разрешён только до старта шага `publication_odata`, после старта публикации должен возвращаться business conflict.
 - Зафиксировать единый source-of-truth: execution-runtime семантика `pool-distribution-runs` и `pool-odata-publication` резолвится этим change, а `add-intercompany-pool-distribution-module` остаётся источником domain vocabulary/foundation.
 - Запретить удаление `workflows` до миграции всех consumers на unified execution core.
 - Зафиксировать де-комиссию `workflows` только через preflight с реестром consumers и критерием готовности миграции.
