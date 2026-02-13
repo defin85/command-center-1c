@@ -1,0 +1,66 @@
+profile_version: 0.4.2-draft
+generated_at: "2026-02-13T23:55:00Z"
+owner: platform-plus-pools
+kb_references:
+  - https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_8.3.23_Developer_Guide/Chapter_17._Integration_with_external_systems/17.4._Standard_OData_interface/17.4.7._JSON_format/
+  - https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_8.3.23_Developer_Guide/Chapter_17._Integration_with_external_systems/17.4._Standard_OData_interface/17.4.8._Methods_of_accessing_data/
+  - https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_8.3.23_Developer_Guide/Chapter_17._Integration_with_external_systems/17.4._Standard_OData_interface/17.4.9._Methods_of_modifying_data/
+entries:
+  - configuration_id: cc1c-internal-test-double-intercompany-doc
+    configuration_version_range: n/a
+    document_upsert_endpoint_pattern: /odata/standard.odata/Document_IntercompanyPoolDistribution
+    document_posting_operation: "PATCH Document_IntercompanyPoolDistribution(guid'{Ref_Key}') body: {\"Posted\": true}"
+    document_identity_fields_priority:
+      - Ref_Key
+      - _IDRRef
+      - ExternalRunKey
+    external_run_key_field: ExternalRunKey
+    known_limitations: "Internal test-double only; target production configuration may not expose this entity"
+    profile_entry_version: v1
+    source_references:
+      - orchestrator/apps/intercompany_pools/publication.py
+      - orchestrator/apps/intercompany_pools/tests/test_publication.py
+      - contracts/orchestrator/openapi.yaml
+    verification_status: verified
+    verified_at: "2026-02-13"
+    verified_by: automated-test-baseline
+    media_type_policy:
+      default_write_content_type: application/json;odata=nometadata
+      accepts:
+        - application/json;odata=nometadata
+      rejects: []
+      legacy_mode_le_8_3_7:
+        supported: false
+        required_policy_note: dedicated approved legacy entry is required
+  - configuration_id: 1c-accounting-3.0-standard-odata
+    configuration_version_range: 3.0.x
+    document_upsert_endpoint_pattern: /odata/standard.odata/Document_РеализацияТоваровУслуг
+    document_posting_operation: "PATCH Document_РеализацияТоваровУслуг(guid'{Ref_Key}') body: {\"Posted\": true}"
+    document_identity_fields_priority:
+      - Ref_Key
+      - _IDRRef
+      - ExternalRunKey
+    external_run_key_field: ExternalRunKey
+    known_limitations: "DELETE may require elevated rights; legacy compatibility mode <=8.3.7 requires dedicated approved media-type policy"
+    profile_entry_version: v4
+    source_references:
+      - openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-verification-2026-02-13-sokolniki.md
+      - orchestrator/apps/databases/odata/client.py
+    verification_status: approved
+    verified_at: "2026-02-13"
+    verified_by: production-like-check-sokolniki-7714476359
+    media_type_policy:
+      default_write_content_type: application/json;odata=nometadata
+      accepts:
+        - application/json;odata=nometadata
+        - application/atom+xml;type=entry
+      rejects:
+        - application/json;odata=verbose
+      legacy_mode_le_8_3_7:
+        supported: false
+        required_policy_note: legacy entry with approved write policy is required before rollout
+rollout_gate:
+  require_approved_entry: true
+  require_profile_version_in_release: true
+  block_on_incompatible_media_type_policy: true
+  ci_check_id: validate-odata-compatibility-profile

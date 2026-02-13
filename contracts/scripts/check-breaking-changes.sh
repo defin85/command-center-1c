@@ -26,6 +26,7 @@ if ! git rev-parse --git-dir > /dev/null 2>&1; then
     echo -e "${RED}Error: Not a git repository${NC}"
     exit 1
 fi
+GIT_ROOT="$(git rev-parse --show-toplevel)"
 
 # Check if oasdiff is installed
 if ! command -v oasdiff &> /dev/null; then
@@ -54,6 +55,7 @@ fi
 check_spec_breaking_changes() {
     local spec_path="$1"
     local service_name="$2"
+    local spec_rel_path
 
     echo -e "${BLUE}Checking $service_name...${NC}"
 
@@ -65,7 +67,12 @@ check_spec_breaking_changes() {
 
     # Get the spec from base commit
     local base_spec_content
-    base_spec_content=$(git show "$BASE_COMMIT:$spec_path" 2>/dev/null)
+    if [[ "$spec_path" == "$GIT_ROOT/"* ]]; then
+        spec_rel_path="${spec_path#$GIT_ROOT/}"
+    else
+        spec_rel_path="$spec_path"
+    fi
+    base_spec_content=$(git show "$BASE_COMMIT:$spec_rel_path" 2>/dev/null)
 
     if [[ -z "$base_spec_content" ]]; then
         echo -e "  ${GREEN}✓ New API spec (no breaking changes possible)${NC}"
@@ -101,6 +108,16 @@ check_spec_breaking_changes() {
 
 # Check all specs
 FAILED=0
+
+# orchestrator (fail-fast)
+if [[ -f "$CONTRACTS_DIR/orchestrator/openapi.yaml" ]]; then
+    if ! check_spec_breaking_changes "$CONTRACTS_DIR/orchestrator/openapi.yaml" "orchestrator"; then
+        echo ""
+        echo -e "${RED}Fail-fast: breaking changes detected in orchestrator contract${NC}"
+        exit 1
+    fi
+    echo ""
+fi
 
 # api-gateway (if exists)
 if [[ -f "$CONTRACTS_DIR/api-gateway/openapi.yaml" ]]; then

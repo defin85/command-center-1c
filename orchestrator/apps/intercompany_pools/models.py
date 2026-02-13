@@ -429,6 +429,7 @@ class PoolRunAuditEvent(models.Model):
 class PoolRunCommandType(models.TextChoices):
     CONFIRM_PUBLICATION = "confirm_publication", "Confirm Publication"
     ABORT_PUBLICATION = "abort_publication", "Abort Publication"
+    RETRY_PUBLICATION = "retry_publication", "Retry Publication"
 
 
 class PoolRunCommandResultClass(models.TextChoices):

@@ -6,11 +6,11 @@ import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 
 import { getV2 } from '../../api/generated'
-import type { ManualOperationKey } from '../../api/generated/model/manualOperationKey'
 import { useClusters } from '../../api/queries/clusters'
 import { useDatabases } from '../../api/queries/databases'
 import { useMe } from '../../api/queries/me'
 import {
+  type ManualOperationKey,
   useDeleteManualOperationBinding,
   useManualOperationBindings,
   useUpsertManualOperationBinding,

@@ -34,6 +34,7 @@ import {
   type PoolPublicationAttemptDiagnostics,
   type PoolRun,
   type PoolRunReport,
+  type PoolRunRetryChainAttempt,
   type PoolRunSafeCommandConflict,
   type PoolRunSafeCommandType,
 } from '../../api/intercompanyPools'
@@ -107,6 +108,16 @@ const getStatusColor = (status: string) => STATUS_COLORS[status] ?? 'default'
 const getStatusReasonColor = (statusReason: string) => STATUS_REASON_COLORS[statusReason] ?? 'default'
 const getApprovalStateColor = (approvalState: string) => APPROVAL_STATE_COLORS[approvalState] ?? 'default'
 const getPublicationStepColor = (stepState: string) => PUBLICATION_STEP_COLORS[stepState] ?? 'default'
+const getWorkflowAttemptKindColor = (attemptKind: string) => (
+  attemptKind === 'initial' ? 'blue' : attemptKind === 'retry' ? 'cyan' : 'default'
+)
+const getWorkflowExecutionStatusColor = (status: string) => (
+  status === 'completed'
+    ? 'success'
+    : status === 'failed' || status === 'cancelled'
+      ? 'error'
+      : 'processing'
+)
 
 const parseDocumentsPayload = (raw: string): Record<string, Array<Record<string, unknown>>> => {
   let parsed: unknown
@@ -420,17 +431,30 @@ export function PoolRunsPage() {
     setRetrying(true)
     setError(null)
     try {
-      await retryPoolRunFailed(selectedRunId, {
+      const idempotencyKey = generateIdempotencyKey()
+      const response = await retryPoolRunFailed(selectedRunId, {
         entity_name: values.entity_name,
         max_attempts: values.max_attempts,
         retry_interval_seconds: values.retry_interval_seconds,
         documents_by_database: documentsByDatabase,
-      })
-      message.success('Retry завершён')
+      }, idempotencyKey)
+      const summary = response.retry_target_summary
+      const enqueuedTargets = summary?.enqueued_targets ?? 0
+      const failedTargets = summary?.failed_targets ?? 0
+      if (response.accepted) {
+        message.success(`Retry accepted: ${enqueuedTargets}/${failedTargets} failed targets enqueued`)
+      } else {
+        message.warning('Retry request was not accepted by workflow runtime.')
+      }
       await loadRuns()
       await loadReport()
-    } catch {
-      setError('Retry завершился ошибкой.')
+    } catch (err) {
+      const conflict = parseSafeCommandConflict(err)
+      if (conflict) {
+        setError(`${conflict.error_message} (${conflict.conflict_reason})`)
+      } else {
+        setError('Retry завершился ошибкой.')
+      }
     } finally {
       setRetrying(false)
     }
@@ -607,11 +631,15 @@ export function PoolRunsPage() {
         key: 'error',
         render: (_value, record) => {
           const code = record.domain_error_code || record.error_code || '-'
-          const messageText = record.error_message || '-'
+          const messageText = record.domain_error_message || record.error_message || '-'
+          const httpStatusValue = record.http_error?.status ?? record.http_status
+          const transportMessage = record.transport_error?.message ?? null
           return (
             <Space direction="vertical" size={0}>
               <Text>{code}</Text>
               <Text type="secondary">{messageText}</Text>
+              {httpStatusValue ? <Text type="secondary">HTTP {httpStatusValue}</Text> : null}
+              {transportMessage ? <Text type="secondary">{transportMessage}</Text> : null}
             </Space>
           )
         },
@@ -792,9 +820,26 @@ export function PoolRunsPage() {
                 <Text>{runDetails.terminal_reason ?? '-'}</Text>
               </Descriptions.Item>
               <Descriptions.Item label="Retry Chain" span={2}>
-                <Space size={4} wrap>
-                  {retryChain.length > 0 ? retryChain.map((item) => <Tag key={item}>{formatShortId(item)}</Tag>) : <Text type="secondary">empty</Text>}
-                </Space>
+                {retryChain.length > 0 ? (
+                  <Space direction="vertical" size={4}>
+                    {retryChain.map((item: PoolRunRetryChainAttempt) => (
+                      <Space key={item.workflow_run_id} size={4} wrap>
+                        <Tag color={getWorkflowAttemptKindColor(item.attempt_kind)}>
+                          #{item.attempt_number} {item.attempt_kind}
+                        </Tag>
+                        <Tag color={getWorkflowExecutionStatusColor(item.status)}>{item.status}</Tag>
+                        <Text code>{formatShortId(item.workflow_run_id)}</Text>
+                        {item.parent_workflow_run_id ? (
+                          <Text type="secondary">parent: {formatShortId(item.parent_workflow_run_id)}</Text>
+                        ) : (
+                          <Text type="secondary">root</Text>
+                        )}
+                      </Space>
+                    ))}
+                  </Space>
+                ) : (
+                  <Text type="secondary">empty</Text>
+                )}
               </Descriptions.Item>
             </Descriptions>
 

@@ -8,7 +8,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.operations.services import OperationsService
-from apps.templates.workflow.models import WorkflowTemplate
+from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate
 
 from .models import PoolRun, PoolRunMode, PoolSchemaTemplate, PoolSchemaTemplateFormat
 from .workflow_compiler import PoolWorkflowRunContext, compile_pool_execution_plan
@@ -29,6 +29,9 @@ PUBLICATION_STEP_STATE_QUEUED = "queued"
 PUBLICATION_STEP_STATE_STARTED = "started"
 PUBLICATION_STEP_STATE_COMPLETED = "completed"
 
+ATTEMPT_KIND_INITIAL = "initial"
+ATTEMPT_KIND_RETRY = "retry"
+
 
 @dataclass(frozen=True)
 class PoolWorkflowStartResult:
@@ -38,6 +41,16 @@ class PoolWorkflowStartResult:
     enqueue_status: str
     enqueue_error: str | None
     created_execution: bool
+
+
+@dataclass(frozen=True)
+class PoolWorkflowRetryStartResult:
+    run: PoolRun
+    execution_id: str
+    operation_id: str | None
+    enqueue_success: bool
+    enqueue_status: str
+    enqueue_error: str | None
 
 
 def start_pool_run_workflow_execution(
@@ -108,13 +121,21 @@ def start_pool_run_workflow_execution(
             tenant=locked_run.tenant,
             execution_consumer="pools",
         )
+        execution.input_context = _with_lineage_metadata(
+            input_context=execution.input_context,
+            execution_id=str(execution.id),
+            root_workflow_run_id=str(execution.id),
+            parent_workflow_run_id=None,
+            attempt_number=1,
+            attempt_kind=ATTEMPT_KIND_INITIAL,
+        )
         execution.execution_plan = _build_execution_plan_snapshot(
             run=locked_run,
             plan=plan,
             workflow_template=workflow_template,
         )
         execution.bindings = _build_execution_bindings(plan=plan)
-        execution.save(update_fields=["execution_plan", "bindings"])
+        execution.save(update_fields=["input_context", "execution_plan", "bindings"])
 
         locked_run.workflow_execution_id = execution.id
         locked_run.workflow_status = execution.status
@@ -187,6 +208,154 @@ def start_pool_run_workflow_execution(
     )
 
 
+def start_pool_run_retry_workflow_execution(
+    *,
+    run: PoolRun,
+    retry_request: dict[str, Any],
+    requested_by: User | None = None,
+) -> PoolWorkflowRetryStartResult:
+    with transaction.atomic():
+        locked_run = PoolRun.objects.select_for_update().get(id=run.id)
+        if not locked_run.workflow_execution_id:
+            raise ValueError("Pool run is not linked to workflow execution.")
+
+        parent_execution = (
+            locked_run.workflow_execution_id
+            and WorkflowExecution.objects.filter(
+                id=locked_run.workflow_execution_id,
+                execution_consumer="pools",
+            )
+            .only("id", "input_context")
+            .first()
+        )
+        if parent_execution is None:
+            raise ValueError("Linked workflow execution is unavailable for retry.")
+
+        parent_input_context = (
+            parent_execution.input_context if isinstance(parent_execution.input_context, dict) else {}
+        )
+        root_workflow_run_id = str(
+            parent_input_context.get("root_workflow_run_id") or parent_execution.id
+        )
+        parent_workflow_run_id = str(parent_execution.id)
+        next_attempt_number = _parse_context_attempt_number(
+            parent_input_context.get("attempt_number")
+        ) + 1
+
+        schema_template = locked_run.schema_template or _get_or_create_default_schema_template(locked_run)
+        plan = compile_pool_execution_plan(
+            schema_template=schema_template,
+            run_context=PoolWorkflowRunContext(
+                pool_id=str(locked_run.pool_id),
+                period_start=locked_run.period_start,
+                period_end=locked_run.period_end,
+                direction=locked_run.direction,
+                mode=locked_run.mode,
+                source_hash=locked_run.source_hash,
+            ),
+        )
+        workflow_template = _resolve_or_create_workflow_template(plan=plan, requested_by=requested_by)
+
+        retry_input_context = _build_input_context(run=locked_run)
+        retry_input_context["retry_request"] = _summarize_retry_request(retry_request)
+        execution = workflow_template.create_execution(
+            retry_input_context,
+            tenant=locked_run.tenant,
+            execution_consumer="pools",
+        )
+        execution.input_context = _with_lineage_metadata(
+            input_context=execution.input_context,
+            execution_id=str(execution.id),
+            root_workflow_run_id=root_workflow_run_id,
+            parent_workflow_run_id=parent_workflow_run_id,
+            attempt_number=next_attempt_number,
+            attempt_kind=ATTEMPT_KIND_RETRY,
+        )
+        execution.execution_plan = _build_execution_plan_snapshot(
+            run=locked_run,
+            plan=plan,
+            workflow_template=workflow_template,
+        )
+        execution.bindings = _build_execution_bindings(plan=plan)
+        execution.save(update_fields=["input_context", "execution_plan", "bindings"])
+
+        locked_run.workflow_execution_id = execution.id
+        locked_run.workflow_status = execution.status
+        locked_run.execution_backend = "workflow_core"
+        locked_run.workflow_template_name = workflow_template.name
+        locked_run.save(
+            update_fields=[
+                "workflow_execution_id",
+                "workflow_status",
+                "execution_backend",
+                "workflow_template_name",
+                "updated_at",
+            ]
+        )
+        locked_run.add_audit_event(
+            event_type="run.retry_workflow_execution_linked",
+            actor=requested_by,
+            status_before=locked_run.status,
+            status_after=locked_run.status,
+            payload={
+                "workflow_execution_id": str(execution.id),
+                "parent_workflow_run_id": parent_workflow_run_id,
+                "root_workflow_run_id": root_workflow_run_id,
+                "attempt_number": next_attempt_number,
+            },
+        )
+
+    execution_id = str(locked_run.workflow_execution_id)
+    enqueue_result = OperationsService.enqueue_workflow_execution(
+        execution_id=execution_id,
+        workflow_config={
+            "pool_run_id": str(run.id),
+            "pool_run_idempotency_key": run.idempotency_key,
+            "execution_consumer": "pools",
+            "priority": "normal",
+            "idempotency_key": execution_id,
+        },
+    )
+
+    run_refresh = PoolRun.objects.get(id=run.id)
+    if enqueue_result.success:
+        run_refresh.workflow_status = "queued"
+        run_refresh.save(update_fields=["workflow_status", "updated_at"])
+        run_refresh.add_audit_event(
+            event_type="run.retry_workflow_execution_enqueued",
+            actor=requested_by,
+            status_before=run_refresh.status,
+            status_after=run_refresh.status,
+            payload={
+                "workflow_execution_id": execution_id,
+                "operation_id": enqueue_result.operation_id,
+                "enqueue_status": enqueue_result.status,
+            },
+        )
+    else:
+        run_refresh.add_audit_event(
+            event_type="run.retry_workflow_execution_enqueue_failed",
+            actor=requested_by,
+            status_before=run_refresh.status,
+            status_after=run_refresh.status,
+            payload={
+                "workflow_execution_id": execution_id,
+                "enqueue_status": enqueue_result.status,
+                "error": enqueue_result.error,
+                "error_code": enqueue_result.error_code,
+            },
+        )
+
+    return PoolWorkflowRetryStartResult(
+        run=run_refresh,
+        execution_id=execution_id,
+        operation_id=enqueue_result.operation_id or None,
+        enqueue_success=enqueue_result.success,
+        enqueue_status=enqueue_result.status,
+        enqueue_error=enqueue_result.error,
+    )
+
+
 def _build_input_context(*, run: PoolRun) -> dict[str, Any]:
     return {
         "pool_run_id": str(run.id),
@@ -202,6 +371,54 @@ def _build_input_context(*, run: PoolRun) -> dict[str, Any]:
         "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
         "approval_state": _resolve_approval_state_for_input_context(run=run),
         "publication_step_state": _resolve_publication_step_state_for_input_context(run=run),
+    }
+
+
+def _with_lineage_metadata(
+    *,
+    input_context: dict[str, Any] | None,
+    execution_id: str,
+    root_workflow_run_id: str,
+    parent_workflow_run_id: str | None,
+    attempt_number: int,
+    attempt_kind: str,
+) -> dict[str, Any]:
+    context = dict(input_context or {})
+    context["workflow_run_id"] = execution_id
+    context["root_workflow_run_id"] = root_workflow_run_id
+    context["parent_workflow_run_id"] = parent_workflow_run_id
+    context["attempt_number"] = int(attempt_number)
+    context["attempt_kind"] = str(attempt_kind or ATTEMPT_KIND_INITIAL)
+    return context
+
+
+def _parse_context_attempt_number(raw_attempt_number: object) -> int:
+    try:
+        value = int(raw_attempt_number)
+    except (TypeError, ValueError):
+        return 1
+    if value < 1:
+        return 1
+    return value
+
+
+def _summarize_retry_request(retry_request: dict[str, Any]) -> dict[str, Any]:
+    payload = retry_request if isinstance(retry_request, dict) else {}
+    target_ids = sorted(str(key) for key in (payload.get("documents_by_database") or {}).keys())
+    documents_by_database = payload.get("documents_by_database") or {}
+    documents_total = 0
+    if isinstance(documents_by_database, dict):
+        for documents in documents_by_database.values():
+            if isinstance(documents, list):
+                documents_total += len(documents)
+    return {
+        "entity_name": str(payload.get("entity_name") or "").strip(),
+        "requested_target_ids": target_ids,
+        "requested_targets_count": len(target_ids),
+        "requested_documents_count": documents_total,
+        "max_attempts": payload.get("max_attempts"),
+        "retry_interval_seconds": payload.get("retry_interval_seconds"),
+        "external_key_field": str(payload.get("external_key_field") or "").strip(),
     }
 
 

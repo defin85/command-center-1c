@@ -2,10 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { getV2 } from '../generated'
 import type { ManualOperationBinding } from '../generated/model/manualOperationBinding'
-import type { ManualOperationKey } from '../generated/model/manualOperationKey'
 import { queryKeys } from './queryKeys'
 
 const api = getV2()
+
+export type ManualOperationKey = 'extensions.sync' | 'extensions.set_flags'
 
 export function useManualOperationBindings() {
   return useQuery({

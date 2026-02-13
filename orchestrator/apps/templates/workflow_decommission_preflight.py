@@ -7,18 +7,11 @@ import yaml
 from django.db.models import Count, Q
 from jsonschema import Draft202012Validator
 
+from apps.templates.pool_workflow_artifacts import resolve_execution_consumers_registry_paths
 from apps.templates.workflow.models import WorkflowExecution
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-REGISTRY_PATH = (
-    REPO_ROOT
-    / "openspec/changes/refactor-unify-pools-workflow-execution-core/execution-consumers-registry.yaml"
-)
-REGISTRY_SCHEMA_PATH = (
-    REPO_ROOT
-    / "openspec/changes/refactor-unify-pools-workflow-execution-core/execution-consumers-registry.schema.yaml"
-)
+REGISTRY_PATH, REGISTRY_SCHEMA_PATH = resolve_execution_consumers_registry_paths()
 
 
 def _load_yaml_file(path: Path) -> dict[str, Any]:
@@ -39,10 +32,15 @@ def _schema_errors(*, schema: dict[str, Any], registry: dict[str, Any]) -> list[
     return errors
 
 
-def run_workflow_decommission_preflight() -> dict[str, Any]:
+def run_workflow_decommission_preflight(
+    *,
+    release_registry_version: str | None = None,
+) -> dict[str, Any]:
     registry = _load_yaml_file(REGISTRY_PATH)
     schema = _load_yaml_file(REGISTRY_SCHEMA_PATH)
     schema_errors = _schema_errors(schema=schema, registry=registry)
+    registry_version = str(registry.get("registry_version") or "").strip()
+    release_registry_version_normalized = str(release_registry_version or "").strip()
 
     consumers_payload = registry.get("consumers")
     consumers = consumers_payload if isinstance(consumers_payload, list) else []
@@ -130,13 +128,39 @@ def run_workflow_decommission_preflight() -> dict[str, Any]:
         },
     ]
 
+    decommission_policy = (
+        registry.get("decommission_policy")
+        if isinstance(registry.get("decommission_policy"), dict)
+        else {}
+    )
+    require_release_registry_version = bool(
+        decommission_policy.get("require_registry_version_in_release", False)
+    )
+    release_registry_version_ok = (
+        (bool(release_registry_version_normalized) and release_registry_version_normalized == registry_version)
+        if require_release_registry_version
+        else (
+            (not release_registry_version_normalized)
+            or release_registry_version_normalized == registry_version
+        )
+    )
+    checks.append(
+        {
+            "key": "release_registry_version",
+            "ok": release_registry_version_ok,
+            "required_in_release": require_release_registry_version,
+            "expected_registry_version": registry_version,
+            "release_registry_version": release_registry_version_normalized or None,
+        }
+    )
+
     decision = "go" if all(bool(item.get("ok")) for item in checks) else "no_go"
     return {
         "decision": decision,
         "registry": {
             "path": str(REGISTRY_PATH),
             "schema_path": str(REGISTRY_SCHEMA_PATH),
-            "registry_version": registry.get("registry_version"),
+            "registry_version": registry_version,
             "owner": registry.get("owner"),
         },
         "runtime": {

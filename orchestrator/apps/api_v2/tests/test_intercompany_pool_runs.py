@@ -10,7 +10,6 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.databases.models import Database
-from apps.databases.odata import ODataRequestError
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationStatus,
@@ -23,12 +22,12 @@ from apps.intercompany_pools.models import (
     PoolRunAuditEvent,
     PoolRunCommandLog,
     PoolRunCommandOutbox,
+    PoolRunCommandType,
     PoolRunDirection,
     PoolRunMode,
     PoolSchemaTemplate,
     PoolSchemaTemplateFormat,
 )
-from apps.intercompany_pools.publication import publish_run_documents
 from apps.operations.services import EnqueueResult
 from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate, WorkflowType
 from apps.tenancy.models import Tenant, TenantMember
@@ -431,6 +430,11 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
     assert workflow_execution.input_context.get("approval_state") == "preparing"
     assert workflow_execution.input_context.get("publication_step_state") == "not_enqueued"
     assert workflow_execution.input_context.get("pool_run_idempotency_key") == run.idempotency_key
+    assert workflow_execution.input_context.get("workflow_run_id") == str(workflow_execution.id)
+    assert workflow_execution.input_context.get("root_workflow_run_id") == str(workflow_execution.id)
+    assert workflow_execution.input_context.get("parent_workflow_run_id") is None
+    assert workflow_execution.input_context.get("attempt_number") == 1
+    assert workflow_execution.input_context.get("attempt_kind") == "initial"
 
 
 @pytest.mark.django_db
@@ -544,11 +548,105 @@ def test_get_pool_run_returns_details(
     assert payload["run"]["provenance"]["execution_backend"] == "legacy_pool_runtime"
     assert payload["run"]["provenance"]["retry_chain"] == []
     assert len(payload["publication_attempts"]) == 1
-    assert payload["publication_attempts"][0]["target_database_id"] == str(database.id)
-    assert payload["publication_attempts"][0]["domain_error_code"] == "network"
-    assert payload["publication_attempts"][0]["attempt_timestamp"] is not None
-    assert payload["publication_attempts"][0]["publication_identity_strategy"] == ""
+    attempt_payload = payload["publication_attempts"][0]
+    assert attempt_payload["target_database_id"] == str(database.id)
+    assert attempt_payload["attempt_timestamp"] is not None
+    assert attempt_payload["payload_summary"] == {
+        "documents_count": 1,
+        "entity_name": "Document_IntercompanyPoolDistribution",
+    }
+    assert attempt_payload["http_error"] is None
+    assert attempt_payload["transport_error"] == {
+        "code": "network",
+        "message": "temporary error",
+    }
+    assert attempt_payload["domain_error_code"] == "network"
+    assert attempt_payload["domain_error_message"] == "temporary error"
+    assert attempt_payload["publication_identity_strategy"] == ""
     assert any(event["event_type"] == "run.test_event" for event in payload["audit_events"])
+
+
+@pytest.mark.django_db
+def test_get_pool_run_serializes_http_error_in_canonical_diagnostics(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    database = _create_database(tenant=default_tenant, name="pool-api-http-error-db")
+    PoolPublicationAttempt.objects.create(
+        run=run,
+        tenant=default_tenant,
+        target_database=database,
+        attempt_number=1,
+        status=PoolPublicationAttemptStatus.FAILED,
+        entity_name="Document_IntercompanyPoolDistribution",
+        documents_count=2,
+        posted=False,
+        http_status=503,
+        error_code="ODataRequestError",
+        error_message="gateway timeout",
+        request_summary={"documents_count": 2},
+    )
+
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert response.status_code == 200
+    payload = response.json()
+    attempt_payload = payload["publication_attempts"][0]
+    assert attempt_payload["payload_summary"] == {
+        "documents_count": 2,
+        "entity_name": "Document_IntercompanyPoolDistribution",
+        "requested_documents_count": 2,
+    }
+    assert attempt_payload["http_error"] == {
+        "status": 503,
+        "code": "ODataRequestError",
+        "message": "gateway timeout",
+    }
+    assert attempt_payload["transport_error"] is None
+    assert attempt_payload["domain_error_code"] == "ODataRequestError"
+    assert attempt_payload["domain_error_message"] == "gateway timeout"
+    assert attempt_payload["error_code"] == "ODataRequestError"
+    assert attempt_payload["error_message"] == "gateway timeout"
+
+
+@pytest.mark.django_db
+def test_get_pool_run_redacts_traceback_and_sensitive_diagnostics(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    database = _create_database(tenant=default_tenant, name="pool-api-redaction-db")
+    sensitive_error = (
+        f"Traceback (most recent call last): File \"worker.py\", line 42, "
+        f"password=super-secret token=abc123 tenant={default_tenant.id}"
+    )
+    PoolPublicationAttempt.objects.create(
+        run=run,
+        tenant=default_tenant,
+        target_database=database,
+        attempt_number=1,
+        status=PoolPublicationAttemptStatus.FAILED,
+        entity_name="Document_IntercompanyPoolDistribution",
+        documents_count=1,
+        posted=False,
+        error_code="ODataRequestError",
+        error_message=sensitive_error,
+    )
+
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert response.status_code == 200
+    payload = response.json()
+    attempt_payload = payload["publication_attempts"][0]
+    assert attempt_payload["domain_error_message"] == "internal_error"
+    assert attempt_payload["transport_error"] == {
+        "code": "ODataRequestError",
+        "message": "internal_error",
+    }
+    assert str(default_tenant.id) not in attempt_payload["domain_error_message"]
+    assert "super-secret" not in attempt_payload["domain_error_message"]
+    assert "abc123" not in attempt_payload["domain_error_message"]
 
 
 @pytest.mark.django_db
@@ -587,8 +685,94 @@ def test_get_pool_run_resolves_transition_workflow_link_without_persisted_relati
     assert payload["run"]["execution_backend"] == "workflow_core"
     assert payload["run"]["provenance"]["workflow_run_id"] == str(execution.id)
     assert payload["run"]["provenance"]["workflow_status"] == WorkflowExecution.STATUS_RUNNING
+    assert payload["run"]["provenance"]["retry_chain"] == [
+        {
+            "workflow_run_id": str(execution.id),
+            "parent_workflow_run_id": None,
+            "attempt_number": 1,
+            "attempt_kind": "initial",
+            "status": WorkflowExecution.STATUS_RUNNING,
+        }
+    ]
     assert payload["run"]["status"] == PoolRun.STATUS_PUBLISHING
     assert any(event["event_type"] == "run.transition_only_event" for event in payload["audit_events"])
+
+
+@pytest.mark.django_db
+def test_get_pool_run_builds_deterministic_lineage_for_multiple_workflow_attempts(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    initial_execution = _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": False,
+            "approval_state": "not_required",
+            "publication_step_state": "completed",
+        },
+        link_run=False,
+    )
+    initial_execution.input_context = {
+        **(initial_execution.input_context or {}),
+        "workflow_run_id": str(initial_execution.id),
+        "root_workflow_run_id": str(initial_execution.id),
+        "parent_workflow_run_id": None,
+        "attempt_number": 1,
+        "attempt_kind": "initial",
+    }
+    initial_execution.save(update_fields=["input_context"])
+
+    retry_execution = _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_RUNNING,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": False,
+            "approval_state": "not_required",
+            "publication_step_state": "started",
+        },
+        link_run=False,
+    )
+    retry_execution.input_context = {
+        **(retry_execution.input_context or {}),
+        "workflow_run_id": str(retry_execution.id),
+        "root_workflow_run_id": str(initial_execution.id),
+        "parent_workflow_run_id": str(initial_execution.id),
+        "attempt_number": 2,
+        "attempt_kind": "retry",
+    }
+    retry_execution.save(update_fields=["input_context"])
+
+    run_state = PoolRun.objects.get(id=run.id)
+    assert run_state.workflow_execution_id is None
+
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["workflow_execution_id"] == str(retry_execution.id)
+    assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_RUNNING
+    assert payload["run"]["provenance"]["workflow_run_id"] == str(initial_execution.id)
+    assert payload["run"]["provenance"]["workflow_status"] == WorkflowExecution.STATUS_RUNNING
+    assert payload["run"]["provenance"]["retry_chain"] == [
+        {
+            "workflow_run_id": str(initial_execution.id),
+            "parent_workflow_run_id": None,
+            "attempt_number": 1,
+            "attempt_kind": "initial",
+            "status": WorkflowExecution.STATUS_COMPLETED,
+        },
+        {
+            "workflow_run_id": str(retry_execution.id),
+            "parent_workflow_run_id": str(initial_execution.id),
+            "attempt_number": 2,
+            "attempt_kind": "retry",
+            "status": WorkflowExecution.STATUS_RUNNING,
+        },
+    ]
 
 
 @pytest.mark.django_db
@@ -620,6 +804,15 @@ def test_list_runs_resolves_transition_workflow_link_without_persisted_relation(
     assert run_payload["execution_backend"] == "workflow_core"
     assert run_payload["provenance"]["workflow_run_id"] == str(execution.id)
     assert run_payload["provenance"]["workflow_status"] == WorkflowExecution.STATUS_PENDING
+    assert run_payload["provenance"]["retry_chain"] == [
+        {
+            "workflow_run_id": str(execution.id),
+            "parent_workflow_run_id": None,
+            "attempt_number": 1,
+            "attempt_kind": "initial",
+            "status": WorkflowExecution.STATUS_PENDING,
+        }
+    ]
 
 
 @pytest.mark.django_db
@@ -660,7 +853,15 @@ def test_get_pool_run_projects_safe_pending_workflow_to_validated_preparing(
     assert payload["run"]["provenance"]["workflow_run_id"] == str(run.workflow_execution_id)
     assert payload["run"]["provenance"]["workflow_status"] == WorkflowExecution.STATUS_PENDING
     assert payload["run"]["provenance"]["execution_backend"] == "workflow_core"
-    assert payload["run"]["provenance"]["retry_chain"] == [str(run.workflow_execution_id)]
+    assert payload["run"]["provenance"]["retry_chain"] == [
+        {
+            "workflow_run_id": str(run.workflow_execution_id),
+            "parent_workflow_run_id": None,
+            "attempt_number": 1,
+            "attempt_kind": "initial",
+            "status": WorkflowExecution.STATUS_PENDING,
+        }
+    ]
 
 
 @pytest.mark.django_db
@@ -1341,88 +1542,228 @@ def test_confirm_publication_cross_tenant_and_unknown_run_are_indistinguishable(
 
 
 @pytest.mark.django_db
-def test_retry_pool_run_failed_endpoint_retries_only_failed_targets(
+def test_retry_pool_run_failed_endpoint_returns_accepted_workflow_reference_and_avoids_direct_publication(
     authenticated_client: APIClient,
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
     run = _create_validated_run(tenant=default_tenant, pool=pool)
-    db_success = _create_database(tenant=default_tenant, name="pool-api-retry-db-success")
-    db_failed = _create_database(tenant=default_tenant, name="pool-api-retry-db-failed")
-    entity_name = "Document_IntercompanyPoolDistribution"
+    db_one = _create_database(tenant=default_tenant, name="pool-api-retry-db-one")
+    db_two = _create_database(tenant=default_tenant, name="pool-api-retry-db-two")
+    initial_execution = _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={"pool_run_id": str(run.id)},
+    )
+    PoolPublicationAttempt.objects.create(
+        run=run,
+        tenant=default_tenant,
+        target_database=db_one,
+        attempt_number=1,
+        status=PoolPublicationAttemptStatus.SUCCESS,
+        entity_name="Document_IntercompanyPoolDistribution",
+        documents_count=1,
+        posted=True,
+    )
+    PoolPublicationAttempt.objects.create(
+        run=run,
+        tenant=default_tenant,
+        target_database=db_two,
+        attempt_number=1,
+        status=PoolPublicationAttemptStatus.FAILED,
+        entity_name="Document_IntercompanyPoolDistribution",
+        documents_count=1,
+        posted=False,
+        error_code="network",
+        error_message="temporary network error",
+    )
 
-    success_client = MagicMock()
-    success_client.get_entities.return_value = []
-    success_client.create_entity.return_value = {"Ref_Key": "11111111-1111-1111-1111-111111111111"}
-
-    failed_client = MagicMock()
-    failed_client.get_entities.side_effect = ODataRequestError("target down", status_code=502)
-
-    def _get_initial_client(*, base_id: str, **kwargs):  # noqa: ARG001
-        if base_id == str(db_success.id):
-            return success_client
-        if base_id == str(db_failed.id):
-            return failed_client
-        raise AssertionError(f"Unexpected base_id: {base_id}")
-
-    with patch("apps.intercompany_pools.publication.session_manager.get_client", side_effect=_get_initial_client):
-        first_summary = publish_run_documents(
-            run=run,
-            entity_name=entity_name,
-            documents_by_database={
-                str(db_success.id): [{"Amount": "60.00"}],
-                str(db_failed.id): [{"Amount": "40.00"}],
-            },
-            max_attempts=1,
-        )
-
-    assert first_summary.succeeded_targets == 1
-    assert first_summary.failed_targets == 1
-
-    recovered_client = MagicMock()
-    recovered_client.get_entities.return_value = []
-    recovered_client.create_entity.return_value = {"Ref_Key": "22222222-2222-2222-2222-222222222222"}
-
-    def _get_retry_client(*, base_id: str, **kwargs):  # noqa: ARG001
-        if base_id == str(db_success.id):
-            raise AssertionError("Successful target should not be retried")
-        if base_id == str(db_failed.id):
-            return recovered_client
-        raise AssertionError(f"Unexpected base_id: {base_id}")
-
-    with patch("apps.intercompany_pools.publication.session_manager.get_client", side_effect=_get_retry_client):
+    with (
+        patch(
+            "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+            return_value=EnqueueResult(success=True, operation_id="retry-op-1", status="queued"),
+        ) as enqueue,
+        patch(
+            "apps.intercompany_pools.publication.retry_failed_run_documents",
+            side_effect=AssertionError("Direct publication retry must not be called from API path"),
+        ) as direct_retry,
+    ):
         response = authenticated_client.post(
             f"/api/v2/pools/runs/{run.id}/retry/",
             {
-                "entity_name": entity_name,
+                "entity_name": "Document_IntercompanyPoolDistribution",
                 "documents_by_database": {
-                    str(db_success.id): [{"Amount": "999.00"}],
-                    str(db_failed.id): [{"Amount": "40.00"}],
+                    str(db_one.id): [{"Amount": "100.00"}, {"Amount": "110.00"}],
+                    str(db_two.id): [{"Amount": "90.00"}],
                 },
                 "max_attempts": 1,
             },
             format="json",
         )
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     payload = response.json()
-    assert payload["summary"]["total_targets"] == 1
-    assert payload["summary"]["succeeded_targets"] == 1
-    assert payload["summary"]["failed_targets"] == 0
-    assert payload["run"]["status"] == PoolRun.STATUS_PUBLISHED
+    assert payload["accepted"] is True
+    assert payload["operation_id"] == "retry-op-1"
+    assert payload["retry_target_summary"] == {
+        "requested_targets": 2,
+        "requested_documents": 3,
+        "failed_targets": 1,
+        "enqueued_targets": 1,
+        "skipped_successful_targets": 1,
+    }
+    assert payload["workflow_execution_id"] != str(initial_execution.id)
+    enqueue.assert_called_once()
+    direct_retry.assert_not_called()
 
-    assert PoolPublicationAttempt.objects.filter(
+    run_reloaded = PoolRun.objects.get(id=run.id)
+    assert str(run_reloaded.workflow_execution_id) == payload["workflow_execution_id"]
+    assert run_reloaded.workflow_status == "queued"
+    retry_execution = WorkflowExecution.objects.get(id=run_reloaded.workflow_execution_id)
+    assert retry_execution.input_context.get("attempt_kind") == "retry"
+    assert retry_execution.input_context.get("attempt_number") == 2
+    assert retry_execution.input_context.get("parent_workflow_run_id") == str(initial_execution.id)
+    retry_request = retry_execution.input_context.get("retry_request")
+    assert isinstance(retry_request, dict)
+    assert retry_request.get("requested_target_ids") == [str(db_two.id)]
+    assert retry_request.get("requested_targets_count") == 1
+    assert retry_request.get("requested_documents_count") == 1
+
+
+@pytest.mark.django_db
+def test_retry_pool_run_failed_endpoint_replays_idempotency_key_without_duplicate_enqueue(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    failed_db = _create_database(tenant=default_tenant, name="pool-api-retry-replay-failed-db")
+    _attach_workflow_execution_to_run(
         run=run,
-        target_database=db_success,
-        status=PoolPublicationAttemptStatus.SUCCESS,
-    ).count() == 1
-    failed_attempts = list(
-        PoolPublicationAttempt.objects.filter(run=run, target_database=db_failed).order_by("attempt_number")
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={"pool_run_id": str(run.id)},
     )
-    assert [attempt.status for attempt in failed_attempts] == [
-        PoolPublicationAttemptStatus.FAILED,
-        PoolPublicationAttemptStatus.SUCCESS,
-    ]
+    PoolPublicationAttempt.objects.create(
+        run=run,
+        tenant=default_tenant,
+        target_database=failed_db,
+        attempt_number=1,
+        status=PoolPublicationAttemptStatus.FAILED,
+        entity_name="Document_IntercompanyPoolDistribution",
+        documents_count=1,
+        posted=False,
+        error_code="network",
+        error_message="temporary network error",
+    )
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="retry-op-replay", status="queued"),
+    ) as enqueue:
+        first = authenticated_client.post(
+            f"/api/v2/pools/runs/{run.id}/retry/",
+            {
+                "entity_name": "Document_IntercompanyPoolDistribution",
+                "documents_by_database": {
+                    str(failed_db.id): [{"Amount": "100.00"}],
+                },
+                "max_attempts": 1,
+            },
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="retry-replay-key-1",
+        )
+        replay = authenticated_client.post(
+            f"/api/v2/pools/runs/{run.id}/retry/",
+            {
+                "entity_name": "Document_IntercompanyPoolDistribution",
+                "documents_by_database": {
+                    str(failed_db.id): [{"Amount": "100.00"}],
+                },
+                "max_attempts": 1,
+            },
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="retry-replay-key-1",
+        )
+
+    assert first.status_code == 202
+    assert replay.status_code == 202
+    assert replay.json() == first.json()
+    enqueue.assert_called_once()
+    logs = list(
+        PoolRunCommandLog.objects.filter(
+            run=run,
+            command_type=PoolRunCommandType.RETRY_PUBLICATION,
+        )
+    )
+    assert len(logs) == 1
+    assert logs[0].replay_count == 1
+
+
+@pytest.mark.django_db
+def test_retry_pool_run_failed_endpoint_reused_key_with_different_payload_returns_conflict(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    failed_db = _create_database(tenant=default_tenant, name="pool-api-retry-reuse-failed-db")
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={"pool_run_id": str(run.id)},
+    )
+    PoolPublicationAttempt.objects.create(
+        run=run,
+        tenant=default_tenant,
+        target_database=failed_db,
+        attempt_number=1,
+        status=PoolPublicationAttemptStatus.FAILED,
+        entity_name="Document_IntercompanyPoolDistribution",
+        documents_count=1,
+        posted=False,
+        error_code="network",
+        error_message="temporary network error",
+    )
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="retry-op-reuse", status="queued"),
+    ) as enqueue:
+        first = authenticated_client.post(
+            f"/api/v2/pools/runs/{run.id}/retry/",
+            {
+                "entity_name": "Document_IntercompanyPoolDistribution",
+                "documents_by_database": {
+                    str(failed_db.id): [{"Amount": "100.00"}],
+                },
+                "max_attempts": 1,
+            },
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="retry-reuse-key-1",
+        )
+        reused = authenticated_client.post(
+            f"/api/v2/pools/runs/{run.id}/retry/",
+            {
+                "entity_name": "Document_IntercompanyPoolDistribution",
+                "documents_by_database": {
+                    str(failed_db.id): [{"Amount": "100.00"}],
+                },
+                "max_attempts": 2,
+            },
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="retry-reuse-key-1",
+        )
+
+    assert first.status_code == 202
+    assert reused.status_code == 409
+    _assert_safe_command_conflict_payload(
+        reused.json(),
+        run_id=run.id,
+        expected_code="IDEMPOTENCY_KEY_REUSED",
+        expected_reason="idempotency_key_reused",
+        expected_retryable=False,
+    )
+    enqueue.assert_called_once()
 
 
 @pytest.mark.django_db

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import re
 from datetime import date
 from typing import Any
 from uuid import UUID
@@ -21,16 +23,22 @@ from apps.intercompany_pools.models import (
     OrganizationStatus,
     OrganizationPool,
     PoolPublicationAttempt,
+    PoolPublicationAttemptStatus,
     PoolEdgeVersion,
     PoolNodeVersion,
     PoolRun,
     PoolRunAuditEvent,
+    PoolRunCommandLog,
     PoolRunCommandResultClass,
     PoolRunCommandType,
     PoolRunDirection,
     PoolRunMode,
     PoolSchemaTemplate,
     PoolSchemaTemplateFormat,
+)
+from apps.intercompany_pools.command_log import (
+    PoolRunCommandIdempotencyConflict,
+    record_pool_run_command_outcome,
 )
 from apps.intercompany_pools.safe_commands import (
     CONFLICT_REASON_AWAITING_PRE_PUBLISH,
@@ -44,10 +52,12 @@ from apps.intercompany_pools.sync import sync_organizations
 from apps.intercompany_pools.publication import (
     MAX_PUBLICATION_ATTEMPTS,
     MAX_RETRY_INTERVAL_SECONDS,
-    retry_failed_run_documents,
 )
 from apps.intercompany_pools.runs import upsert_pool_run
-from apps.intercompany_pools.workflow_runtime import start_pool_run_workflow_execution
+from apps.intercompany_pools.workflow_runtime import (
+    start_pool_run_retry_workflow_execution,
+    start_pool_run_workflow_execution,
+)
 from apps.templates.workflow.models import WorkflowExecution
 from apps.tenancy.authentication import TENANT_HEADER
 from apps.tenancy.models import Tenant
@@ -75,6 +85,18 @@ _VALID_PUBLICATION_STEP_STATES = {
     PUBLICATION_STEP_STATE_STARTED,
     PUBLICATION_STEP_STATE_COMPLETED,
 }
+
+ATTEMPT_KIND_INITIAL = "initial"
+ATTEMPT_KIND_RETRY = "retry"
+_VALID_ATTEMPT_KINDS = {ATTEMPT_KIND_INITIAL, ATTEMPT_KIND_RETRY}
+
+_SENSITIVE_TOKEN_PATTERN = re.compile(
+    r"(?i)\b(password|passwd|pwd|token|authorization|secret)\b\s*[:=]\s*([^\s,;]+)"
+)
+_UUID_PATTERN = re.compile(
+    r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
+    re.IGNORECASE,
+)
 
 
 def _error(*, code: str, message: str, status_code: int) -> Response:
@@ -172,6 +194,44 @@ def _parse_limit(raw: str | None, *, default: int = 50, max_value: int = 200) ->
     return min(value, max_value)
 
 
+def _collect_failed_target_ids_for_retry(*, run: PoolRun) -> list[str]:
+    latest_status_by_database: dict[str, str] = {}
+    attempts = (
+        PoolPublicationAttempt.objects.filter(run=run)
+        .order_by("target_database_id", "attempt_number", "created_at")
+        .only("target_database_id", "status")
+    )
+    for attempt in attempts:
+        latest_status_by_database[str(attempt.target_database_id)] = attempt.status
+    return sorted(
+        database_id
+        for database_id, status in latest_status_by_database.items()
+        if status == PoolPublicationAttemptStatus.FAILED
+    )
+
+
+def _build_retry_command_fingerprint(
+    *,
+    entity_name: str,
+    target_ids: list[str],
+    max_attempts: int,
+    retry_interval_seconds: int,
+    external_key_field: str,
+) -> str:
+    fingerprint_payload = "|".join(
+        [
+            "v1",
+            f"entity={entity_name}",
+            f"targets={','.join(target_ids)}",
+            f"max_attempts={max_attempts}",
+            f"retry_interval_seconds={retry_interval_seconds}",
+            f"external_key_field={external_key_field}",
+        ]
+    )
+    digest = hashlib.sha256(fingerprint_payload.encode("utf-8")).hexdigest()
+    return f"v1:{digest}"
+
+
 def _serialize_run(run: PoolRun) -> dict[str, Any]:
     workflow_status, workflow_input_context = _resolve_workflow_projection_context(run)
     approval_state = _resolve_approval_state(
@@ -265,40 +325,130 @@ def _resolve_workflow_projection_context(run: PoolRun) -> tuple[str | None, dict
     return resolved_status, workflow_input_context
 
 
-def _resolve_workflow_execution_for_projection(run: PoolRun) -> dict[str, Any] | None:
-    execution_fields = ("id", "status", "input_context", "tenant_id", "workflow_template__name")
-    if run.workflow_execution_id:
-        execution = (
-            WorkflowExecution.objects.filter(id=run.workflow_execution_id)
-            .values(*execution_fields)
-            .first()
-        )
-        if execution:
-            return execution
+def _parse_positive_int(raw_value: object) -> int | None:
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None
+    if value < 1:
+        return None
+    return value
 
+
+def _normalize_attempt_kind(raw_attempt_kind: object) -> str | None:
+    attempt_kind = str(raw_attempt_kind or "").strip().lower()
+    if attempt_kind in _VALID_ATTEMPT_KINDS:
+        return attempt_kind
+    return None
+
+
+def _normalize_workflow_run_id(raw_workflow_run_id: object) -> str | None:
+    token = str(raw_workflow_run_id or "").strip()
+    if not token:
+        return None
+    try:
+        UUID(token)
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return token
+
+
+def _workflow_execution_projection_fields() -> tuple[str, ...]:
+    return (
+        "id",
+        "status",
+        "input_context",
+        "tenant_id",
+        "workflow_template__name",
+        "started_at",
+    )
+
+
+def _load_transition_workflow_candidates_for_run(run: PoolRun) -> list[dict[str, Any]]:
+    execution_fields = _workflow_execution_projection_fields()
     transition_candidates = list(
         WorkflowExecution.objects.filter(
             execution_consumer="pools",
             input_context__pool_run_id=str(run.id),
         )
         .values(*execution_fields)
-        .order_by("id")
+        .order_by("started_at", "id")
     )
-    if not transition_candidates:
-        return None
+    if run.workflow_execution_id and all(
+        candidate.get("id") != run.workflow_execution_id for candidate in transition_candidates
+    ):
+        linked_execution = (
+            WorkflowExecution.objects.filter(id=run.workflow_execution_id)
+            .values(*execution_fields)
+            .first()
+        )
+        if linked_execution:
+            transition_candidates.append(linked_execution)
+    return transition_candidates
 
+
+def _select_tenant_scoped_workflow_candidates(
+    *,
+    run: PoolRun,
+    transition_candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     exact_tenant_candidates = [
-        candidate for candidate in transition_candidates if candidate.get("tenant_id") == run.tenant_id
+        candidate
+        for candidate in transition_candidates
+        if candidate.get("tenant_id") == run.tenant_id
     ]
-    if len(exact_tenant_candidates) == 1:
-        return exact_tenant_candidates[0]
-    if len(exact_tenant_candidates) > 1:
-        return None
+    if exact_tenant_candidates:
+        return exact_tenant_candidates
 
-    null_tenant_candidates = [candidate for candidate in transition_candidates if candidate.get("tenant_id") is None]
-    if len(transition_candidates) == 1 and len(null_tenant_candidates) == 1:
-        return null_tenant_candidates[0]
-    return None
+    null_tenant_candidates = [
+        candidate for candidate in transition_candidates if candidate.get("tenant_id") is None
+    ]
+    cross_tenant_candidates = [
+        candidate
+        for candidate in transition_candidates
+        if candidate.get("tenant_id") not in {None, run.tenant_id}
+    ]
+    if null_tenant_candidates and not cross_tenant_candidates:
+        return null_tenant_candidates
+    return []
+
+
+def _execution_attempt_number(candidate: dict[str, Any]) -> int | None:
+    input_context = candidate.get("input_context")
+    if not isinstance(input_context, dict):
+        return None
+    return _parse_positive_int(input_context.get("attempt_number"))
+
+
+def _execution_sort_key_for_active(candidate: dict[str, Any]) -> tuple[int, str, str]:
+    attempt_number = _execution_attempt_number(candidate) or 0
+    started_at = candidate.get("started_at")
+    started_at_sort = started_at.isoformat() if started_at else ""
+    execution_id = str(candidate.get("id") or "")
+    return (attempt_number, started_at_sort, execution_id)
+
+
+def _select_active_workflow_execution_candidate(
+    *,
+    run: PoolRun,
+    candidates: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if not candidates:
+        return None
+    if run.workflow_execution_id:
+        for candidate in candidates:
+            if candidate.get("id") == run.workflow_execution_id:
+                return candidate
+    return sorted(candidates, key=_execution_sort_key_for_active)[-1]
+
+
+def _resolve_workflow_execution_for_projection(run: PoolRun) -> dict[str, Any] | None:
+    transition_candidates = _load_transition_workflow_candidates_for_run(run=run)
+    scoped_candidates = _select_tenant_scoped_workflow_candidates(
+        run=run,
+        transition_candidates=transition_candidates,
+    )
+    return _select_active_workflow_execution_candidate(run=run, candidates=scoped_candidates)
 
 
 def _resolve_approval_state(
@@ -383,17 +533,90 @@ def _resolve_terminal_reason(
     return raw_reason or None
 
 
+def _execution_sort_key_for_lineage(candidate: dict[str, Any]) -> tuple[int, str, str]:
+    attempt_number = _execution_attempt_number(candidate)
+    attempt_sort = attempt_number if attempt_number is not None else 10**9
+    started_at = candidate.get("started_at")
+    started_at_sort = started_at.isoformat() if started_at else ""
+    execution_id = str(candidate.get("id") or "")
+    return (attempt_sort, started_at_sort, execution_id)
+
+
+def _build_retry_chain_from_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    retry_chain: list[dict[str, Any]] = []
+    ordered_candidates = sorted(candidates, key=_execution_sort_key_for_lineage)
+    previous_workflow_run_id: str | None = None
+    next_attempt_number = 1
+    root_workflow_run_id: str | None = None
+
+    for candidate in ordered_candidates:
+        workflow_run_id = _normalize_workflow_run_id(candidate.get("id"))
+        if not workflow_run_id:
+            continue
+
+        input_context = candidate.get("input_context")
+        context = input_context if isinstance(input_context, dict) else {}
+        explicit_root_workflow_run_id = _normalize_workflow_run_id(
+            context.get("root_workflow_run_id")
+        )
+        if root_workflow_run_id is None:
+            root_workflow_run_id = explicit_root_workflow_run_id or workflow_run_id
+
+        explicit_attempt_number = _parse_positive_int(context.get("attempt_number"))
+        attempt_number = explicit_attempt_number if explicit_attempt_number is not None else next_attempt_number
+        if attempt_number < next_attempt_number:
+            attempt_number = next_attempt_number
+
+        if previous_workflow_run_id is None:
+            attempt_number = 1
+            attempt_kind = ATTEMPT_KIND_INITIAL
+            parent_workflow_run_id = None
+        else:
+            attempt_kind = _normalize_attempt_kind(context.get("attempt_kind")) or ATTEMPT_KIND_RETRY
+            parent_workflow_run_id = (
+                _normalize_workflow_run_id(context.get("parent_workflow_run_id"))
+                or previous_workflow_run_id
+            )
+
+        status_value = str(candidate.get("status") or "").strip() or WorkflowExecution.STATUS_PENDING
+        retry_chain.append(
+            {
+                "workflow_run_id": workflow_run_id,
+                "parent_workflow_run_id": parent_workflow_run_id,
+                "attempt_number": attempt_number,
+                "attempt_kind": attempt_kind,
+                "status": status_value,
+            }
+        )
+        previous_workflow_run_id = workflow_run_id
+        next_attempt_number = attempt_number + 1
+
+    return retry_chain
+
+
 def _build_run_provenance(
     *,
     run: PoolRun,
     workflow_status: str | None,
     execution_backend: str,
 ) -> dict[str, Any]:
-    workflow_run_id = str(run.workflow_execution_id) if run.workflow_execution_id else None
-    retry_chain = [workflow_run_id] if workflow_run_id else []
+    transition_candidates = _load_transition_workflow_candidates_for_run(run=run)
+    scoped_candidates = _select_tenant_scoped_workflow_candidates(
+        run=run,
+        transition_candidates=transition_candidates,
+    )
+    retry_chain = _build_retry_chain_from_candidates(scoped_candidates)
+
+    workflow_run_id = retry_chain[0]["workflow_run_id"] if retry_chain else None
+    active_status = str(workflow_status or run.workflow_status or "").strip()
+    if not active_status and retry_chain:
+        active_status = str(retry_chain[-1].get("status") or "").strip()
+    if workflow_run_id and not active_status:
+        active_status = WorkflowExecution.STATUS_PENDING
+
     return {
         "workflow_run_id": workflow_run_id,
-        "workflow_status": workflow_status,
+        "workflow_status": active_status or None,
         "execution_backend": execution_backend,
         "retry_chain": retry_chain,
     }
@@ -471,24 +694,111 @@ def _project_pool_status(
     return status, status_reason
 
 
+def _sanitize_diagnostics_message(raw_message: object) -> str:
+    message = str(raw_message or "").strip()
+    if not message:
+        return ""
+
+    compact = " ".join(message.split())
+    lowered = compact.lower()
+    has_stack_trace_hint = (
+        "traceback" in lowered
+        or "stack trace" in lowered
+        or ('file "' in lowered and " line " in lowered)
+    )
+    if has_stack_trace_hint:
+        return "internal_error"
+
+    redacted = _SENSITIVE_TOKEN_PATTERN.sub(r"\1=[REDACTED]", compact)
+    redacted = _UUID_PATTERN.sub("[REDACTED_ID]", redacted)
+    if len(redacted) > 512:
+        return f"{redacted[:509]}..."
+    return redacted
+
+
+def _build_attempt_payload_summary(attempt: PoolPublicationAttempt) -> dict[str, Any]:
+    payload_summary: dict[str, Any] = {
+        "documents_count": attempt.documents_count,
+        "entity_name": attempt.entity_name,
+    }
+    request_summary = attempt.request_summary if isinstance(attempt.request_summary, dict) else {}
+    requested_count = _parse_positive_int(request_summary.get("documents_count"))
+    if requested_count is not None:
+        payload_summary["requested_documents_count"] = requested_count
+    response_summary = attempt.response_summary if isinstance(attempt.response_summary, dict) else {}
+    posted = response_summary.get("posted")
+    if isinstance(posted, bool):
+        payload_summary["posted"] = posted
+    return payload_summary
+
+
+def _build_attempt_http_error(
+    *,
+    http_status_value: int | None,
+    domain_error_code: str,
+    domain_error_message: str,
+) -> dict[str, Any] | None:
+    if http_status_value is None:
+        return None
+    payload: dict[str, Any] = {"status": int(http_status_value)}
+    if domain_error_code:
+        payload["code"] = domain_error_code
+    if domain_error_message:
+        payload["message"] = domain_error_message
+    return payload
+
+
+def _build_attempt_transport_error(
+    *,
+    http_status_value: int | None,
+    domain_error_code: str,
+    domain_error_message: str,
+) -> dict[str, Any] | None:
+    if http_status_value is not None:
+        return None
+    if not domain_error_code and not domain_error_message:
+        return None
+    payload: dict[str, Any] = {}
+    if domain_error_code:
+        payload["code"] = domain_error_code
+    if domain_error_message:
+        payload["message"] = domain_error_message
+    return payload
+
+
 def _serialize_attempt(attempt: PoolPublicationAttempt) -> dict[str, Any]:
+    domain_error_code = str(attempt.error_code or "").strip()
+    domain_error_message = _sanitize_diagnostics_message(attempt.error_message)
+    http_status_value = attempt.http_status
     return {
         "id": str(attempt.id),
         "run_id": str(attempt.run_id),
         "target_database_id": str(attempt.target_database_id),
         "attempt_number": attempt.attempt_number,
-        "attempt_timestamp": attempt.started_at,
+        "attempt_timestamp": attempt.started_at or attempt.created_at,
         "status": attempt.status,
         "entity_name": attempt.entity_name,
         "documents_count": attempt.documents_count,
+        "payload_summary": _build_attempt_payload_summary(attempt),
+        "http_error": _build_attempt_http_error(
+            http_status_value=http_status_value,
+            domain_error_code=domain_error_code,
+            domain_error_message=domain_error_message,
+        ),
+        "transport_error": _build_attempt_transport_error(
+            http_status_value=http_status_value,
+            domain_error_code=domain_error_code,
+            domain_error_message=domain_error_message,
+        ),
+        "domain_error_code": domain_error_code,
+        "domain_error_message": domain_error_message,
         "external_document_identity": attempt.external_document_identity,
         "identity_strategy": attempt.identity_strategy,
         "publication_identity_strategy": attempt.identity_strategy,
         "posted": attempt.posted,
-        "http_status": attempt.http_status,
-        "error_code": attempt.error_code,
-        "domain_error_code": attempt.error_code,
-        "error_message": attempt.error_message,
+        "http_status": http_status_value,
+        "error_code": domain_error_code,
+        "error_message": domain_error_message,
         "request_summary": attempt.request_summary,
         "response_summary": attempt.response_summary,
         "started_at": attempt.started_at,
@@ -548,6 +858,22 @@ def _serialize_organization(organization: Organization) -> dict[str, Any]:
     }
 
 
+class PoolRunRetryChainAttemptSerializer(serializers.Serializer):
+    workflow_run_id = serializers.UUIDField()
+    parent_workflow_run_id = serializers.UUIDField(required=False, allow_null=True)
+    attempt_number = serializers.IntegerField(min_value=1)
+    attempt_kind = serializers.ChoiceField(choices=[ATTEMPT_KIND_INITIAL, ATTEMPT_KIND_RETRY])
+    status = serializers.CharField()
+
+
+class PoolRunProvenanceSerializer(serializers.Serializer):
+    workflow_run_id = serializers.UUIDField(required=False, allow_null=True)
+    workflow_status = serializers.CharField(required=False, allow_null=True)
+    execution_backend = serializers.CharField()
+    retry_chain = PoolRunRetryChainAttemptSerializer(many=True)
+    legacy_reference = serializers.CharField(required=False, allow_null=True)
+
+
 class PoolRunSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     tenant_id = serializers.UUIDField()
@@ -567,7 +893,7 @@ class PoolRunSerializer(serializers.Serializer):
     publication_step_state = serializers.CharField(required=False, allow_null=True)
     terminal_reason = serializers.CharField(required=False, allow_null=True)
     execution_backend = serializers.CharField(required=False, allow_null=True)
-    provenance = serializers.JSONField(required=False)
+    provenance = PoolRunProvenanceSerializer(required=False)
     workflow_template_name = serializers.CharField(required=False, allow_null=True)
     seed = serializers.IntegerField(required=False, allow_null=True)
     validation_summary = serializers.JSONField(required=False)
@@ -587,17 +913,21 @@ class PoolPublicationAttemptSerializer(serializers.Serializer):
     run_id = serializers.UUIDField()
     target_database_id = serializers.CharField()
     attempt_number = serializers.IntegerField()
-    attempt_timestamp = serializers.DateTimeField(required=False)
+    attempt_timestamp = serializers.DateTimeField(required=False, allow_null=True)
     status = serializers.CharField()
     entity_name = serializers.CharField()
     documents_count = serializers.IntegerField()
+    payload_summary = serializers.JSONField(required=False)
+    http_error = serializers.JSONField(required=False, allow_null=True)
+    transport_error = serializers.JSONField(required=False, allow_null=True)
+    domain_error_code = serializers.CharField(required=False, allow_blank=True)
+    domain_error_message = serializers.CharField(required=False, allow_blank=True)
     external_document_identity = serializers.CharField(required=False, allow_blank=True)
     identity_strategy = serializers.CharField(required=False, allow_blank=True)
     publication_identity_strategy = serializers.CharField(required=False, allow_blank=True)
     posted = serializers.BooleanField()
     http_status = serializers.IntegerField(required=False, allow_null=True)
     error_code = serializers.CharField(required=False, allow_blank=True)
-    domain_error_code = serializers.CharField(required=False, allow_blank=True)
     error_message = serializers.CharField(required=False, allow_blank=True)
     request_summary = serializers.JSONField(required=False)
     response_summary = serializers.JSONField(required=False)
@@ -666,16 +996,19 @@ class PoolRunRetryRequestSerializer(serializers.Serializer):
     external_key_field = serializers.CharField(required=False, default="ExternalRunKey")
 
 
-class PublicationSummarySerializer(serializers.Serializer):
-    total_targets = serializers.IntegerField()
-    succeeded_targets = serializers.IntegerField()
+class PoolRunRetryTargetSummarySerializer(serializers.Serializer):
+    requested_targets = serializers.IntegerField()
+    requested_documents = serializers.IntegerField()
     failed_targets = serializers.IntegerField()
-    max_attempts = serializers.IntegerField()
+    enqueued_targets = serializers.IntegerField()
+    skipped_successful_targets = serializers.IntegerField()
 
 
-class PoolRunRetryResponseSerializer(serializers.Serializer):
-    run = PoolRunSerializer()
-    summary = PublicationSummarySerializer()
+class PoolRunRetryAcceptedResponseSerializer(serializers.Serializer):
+    accepted = serializers.BooleanField()
+    workflow_execution_id = serializers.UUIDField()
+    operation_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    retry_target_summary = PoolRunRetryTargetSummarySerializer()
 
 
 class PoolRunSafeCommandResponseSerializer(serializers.Serializer):
@@ -1693,10 +2026,11 @@ def abort_pool_run_publication(request, run_id: UUID):
     summary="Retry failed publication targets for pool run",
     request=PoolRunRetryRequestSerializer,
     responses={
-        200: PoolRunRetryResponseSerializer,
+        202: PoolRunRetryAcceptedResponseSerializer,
         400: ErrorResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         404: ErrorResponseSerializer,
+        409: PoolRunSafeCommandConflictSerializer,
     },
 )
 @api_view(["POST"])
@@ -1725,31 +2059,150 @@ def retry_pool_run_failed(request, run_id: UUID):
             status=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    data = serializer.validated_data
+    if not run.workflow_execution_id:
+        return _error(
+            code="RUN_NOT_LINKED",
+            message="Pool run is not linked to workflow execution.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = dict(serializer.validated_data)
+    documents_by_database = data.get("documents_by_database") or {}
+    requested_targets = len(documents_by_database)
+    requested_documents = sum(
+        len(documents)
+        for documents in documents_by_database.values()
+        if isinstance(documents, list)
+    )
+
+    failed_target_ids = _collect_failed_target_ids_for_retry(run=run)
+    if not failed_target_ids:
+        return _error(
+            code="NO_FAILED_TARGETS",
+            message="Pool run has no failed targets to retry.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    failed_target_set = set(failed_target_ids)
+    filtered_documents_by_database = {
+        str(database_id): documents
+        for database_id, documents in documents_by_database.items()
+        if str(database_id) in failed_target_set
+    }
+    missing_failed_targets = sorted(failed_target_set - set(filtered_documents_by_database))
+    if missing_failed_targets:
+        return _error(
+            code="MISSING_FAILED_TARGETS",
+            message=f"Missing documents for failed targets: {', '.join(missing_failed_targets)}",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    retry_target_summary = {
+        "requested_targets": requested_targets,
+        "requested_documents": requested_documents,
+        "failed_targets": len(failed_target_ids),
+        "enqueued_targets": len(filtered_documents_by_database),
+        "skipped_successful_targets": max(0, requested_targets - len(filtered_documents_by_database)),
+    }
+
+    retry_command_log: PoolRunCommandLog | None = None
+    idempotency_key = str(request.META.get("HTTP_IDEMPOTENCY_KEY") or "").strip()
+    if idempotency_key:
+        command_fingerprint = _build_retry_command_fingerprint(
+            entity_name=str(data.get("entity_name") or ""),
+            target_ids=sorted(filtered_documents_by_database.keys()),
+            max_attempts=int(data.get("max_attempts", MAX_PUBLICATION_ATTEMPTS)),
+            retry_interval_seconds=int(data.get("retry_interval_seconds", 0)),
+            external_key_field=str(data.get("external_key_field") or "ExternalRunKey"),
+        )
+        pending_snapshot = {
+            "accepted": True,
+            "workflow_execution_id": str(run.workflow_execution_id),
+            "operation_id": None,
+            "retry_target_summary": retry_target_summary,
+        }
+        try:
+            write_result = record_pool_run_command_outcome(
+                run=run,
+                command_type=PoolRunCommandType.RETRY_PUBLICATION,
+                idempotency_key=idempotency_key,
+                command_fingerprint=command_fingerprint,
+                result_class=PoolRunCommandResultClass.ACCEPTED,
+                response_status_code=http_status.HTTP_202_ACCEPTED,
+                response_snapshot=pending_snapshot,
+                created_by=request.user if getattr(request, "user", None) and request.user.is_authenticated else None,
+            )
+        except PoolRunCommandIdempotencyConflict:
+            return Response(
+                _safe_command_conflict_payload(
+                    run_id=run.id,
+                    conflict_reason=CONFLICT_REASON_IDEMPOTENCY_KEY_REUSED,
+                ),
+                status=http_status.HTTP_409_CONFLICT,
+            )
+
+        if write_result.replayed:
+            snapshot = (
+                write_result.entry.response_snapshot
+                if isinstance(write_result.entry.response_snapshot, dict)
+                else pending_snapshot
+            )
+            replay_payload = {
+                "accepted": bool(snapshot.get("accepted", True)),
+                "workflow_execution_id": str(snapshot.get("workflow_execution_id") or run.workflow_execution_id),
+                "operation_id": snapshot.get("operation_id"),
+                "retry_target_summary": (
+                    snapshot.get("retry_target_summary")
+                    if isinstance(snapshot.get("retry_target_summary"), dict)
+                    else retry_target_summary
+                ),
+            }
+            return Response(
+                replay_payload,
+                status=int(write_result.entry.response_status_code or http_status.HTTP_202_ACCEPTED),
+            )
+        retry_command_log = write_result.entry
+
+    data["documents_by_database"] = filtered_documents_by_database
     try:
-        summary = retry_failed_run_documents(
+        retry_result = start_pool_run_retry_workflow_execution(
             run=run,
-            entity_name=data["entity_name"],
-            documents_by_database=data["documents_by_database"],
-            max_attempts=data.get("max_attempts", MAX_PUBLICATION_ATTEMPTS),
-            retry_interval_seconds=data.get("retry_interval_seconds", 0),
-            external_key_field=data.get("external_key_field", "ExternalRunKey"),
+            retry_request=data,
+            requested_by=request.user if getattr(request, "user", None) and request.user.is_authenticated else None,
         )
     except (ValueError, DjangoValidationError) as exc:
+        if retry_command_log is not None:
+            retry_command_log.result_class = PoolRunCommandResultClass.BAD_REQUEST
+            retry_command_log.response_status_code = http_status.HTTP_400_BAD_REQUEST
+            retry_command_log.response_snapshot = {"accepted": False, "error": _validation_message(exc)}
+            retry_command_log.save(
+                update_fields=[
+                    "result_class",
+                    "response_status_code",
+                    "response_snapshot",
+                ]
+            )
         return _error(
             code="VALIDATION_ERROR",
             message=_validation_message(exc),
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    run_fresh = PoolRun.objects.get(id=run.id)
     payload = {
-        "run": _serialize_run(run_fresh),
-        "summary": {
-            "total_targets": summary.total_targets,
-            "succeeded_targets": summary.succeeded_targets,
-            "failed_targets": summary.failed_targets,
-            "max_attempts": summary.max_attempts,
-        },
+        "accepted": bool(retry_result.enqueue_success),
+        "workflow_execution_id": retry_result.execution_id,
+        "operation_id": retry_result.operation_id,
+        "retry_target_summary": retry_target_summary,
     }
-    return Response(payload, status=http_status.HTTP_200_OK)
+    if retry_command_log is not None:
+        retry_command_log.result_class = PoolRunCommandResultClass.ACCEPTED
+        retry_command_log.response_status_code = http_status.HTTP_202_ACCEPTED
+        retry_command_log.response_snapshot = payload
+        retry_command_log.save(
+            update_fields=[
+                "result_class",
+                "response_status_code",
+                "response_snapshot",
+            ]
+        )
+    return Response(payload, status=http_status.HTTP_202_ACCEPTED)

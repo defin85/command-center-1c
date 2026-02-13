@@ -91,11 +91,17 @@ def test_backfill_pool_run_workflow_links_apply_links_run_and_metadata() -> None
     assert reloaded.workflow_status == execution.status
     assert reloaded.execution_backend == "workflow_core"
     assert reloaded.workflow_template_name == execution.workflow_template.name
+    execution_refreshed = WorkflowExecution.objects.get(id=execution.id)
+    assert execution_refreshed.input_context["workflow_run_id"] == str(execution.id)
+    assert execution_refreshed.input_context["root_workflow_run_id"] == str(execution.id)
+    assert execution_refreshed.input_context["parent_workflow_run_id"] is None
+    assert execution_refreshed.input_context["attempt_number"] == 1
+    assert execution_refreshed.input_context["attempt_kind"] == "initial"
     assert "runs_linked: 1" in output
 
 
 @pytest.mark.django_db
-def test_backfill_pool_run_workflow_links_skips_ambiguous_candidates() -> None:
+def test_backfill_pool_run_workflow_links_builds_deterministic_lineage_for_multiple_attempts() -> None:
     run = _create_pool_run()
     execution_one = _create_workflow_execution_for_run(run=run)
     execution_two = _create_workflow_execution_for_run(run=run)
@@ -106,6 +112,37 @@ def test_backfill_pool_run_workflow_links_skips_ambiguous_candidates() -> None:
     output = out.getvalue()
 
     reloaded = PoolRun.objects.get(id=run.id)
+    assert reloaded.workflow_execution_id == execution_two.id
+    assert reloaded.workflow_status == execution_two.status
+    assert reloaded.execution_backend == "workflow_core"
+
+    first = WorkflowExecution.objects.get(id=execution_one.id)
+    second = WorkflowExecution.objects.get(id=execution_two.id)
+    assert first.input_context["attempt_number"] == 1
+    assert first.input_context["attempt_kind"] == "initial"
+    assert first.input_context["parent_workflow_run_id"] is None
+    assert first.input_context["root_workflow_run_id"] == str(execution_one.id)
+    assert second.input_context["attempt_number"] == 2
+    assert second.input_context["attempt_kind"] == "retry"
+    assert second.input_context["parent_workflow_run_id"] == str(execution_one.id)
+    assert second.input_context["root_workflow_run_id"] == str(execution_one.id)
+    assert "runs_ambiguous: 0" in output
+    assert "runs_linked: 1" in output
+
+
+@pytest.mark.django_db
+def test_backfill_pool_run_workflow_links_skips_cross_tenant_only_candidates() -> None:
+    run = _create_pool_run()
+    foreign_tenant = Tenant.objects.create(slug=f"wf-backfill-foreign-{uuid4().hex[:8]}", name="WF Backfill Foreign")
+    execution_cross_tenant = _create_workflow_execution_for_run(run=run)
+    execution_cross_tenant.tenant = foreign_tenant
+    execution_cross_tenant.save(update_fields=["tenant"])
+
+    out = io.StringIO()
+    call_command("backfill_pool_run_workflow_links", stdout=out)
+    output = out.getvalue()
+
+    reloaded = PoolRun.objects.get(id=run.id)
     assert reloaded.workflow_execution_id is None
     assert reloaded.execution_backend == "legacy_pool_runtime"
-    assert "runs_ambiguous: 1" in output
+    assert "runs_cross_tenant_only: 1" in output

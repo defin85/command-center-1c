@@ -6,16 +6,9 @@ from typing import Any
 import yaml
 from jsonschema import Draft202012Validator
 
+from apps.templates.pool_workflow_artifacts import resolve_odata_compatibility_profile_paths
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-PROFILE_PATH = (
-    REPO_ROOT
-    / "openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.yaml"
-)
-PROFILE_SCHEMA_PATH = (
-    REPO_ROOT
-    / "openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.schema.yaml"
-)
+PROFILE_PATH, PROFILE_SCHEMA_PATH = resolve_odata_compatibility_profile_paths()
 _LEGACY_MODE_CUTOFF = (8, 3, 7)
 
 

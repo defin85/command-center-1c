@@ -58,7 +58,15 @@ function buildRun(overrides: Partial<PoolRun> = {}): PoolRun {
       workflow_run_id: '22222222-2222-2222-2222-222222222222',
       workflow_status: 'pending',
       execution_backend: 'workflow_core',
-      retry_chain: ['22222222-2222-2222-2222-222222222222'],
+      retry_chain: [
+        {
+          workflow_run_id: '22222222-2222-2222-2222-222222222222',
+          parent_workflow_run_id: null,
+          attempt_number: 1,
+          attempt_kind: 'initial',
+          status: 'pending',
+        },
+      ],
     },
     workflow_template_name: 'pool-template-v1',
     seed: null,
@@ -76,7 +84,10 @@ function buildRun(overrides: Partial<PoolRun> = {}): PoolRun {
   }
 }
 
-function buildReport(run: PoolRun): PoolRunReport {
+function buildReport(
+  run: PoolRun,
+  attemptOverrides: Record<string, unknown> = {}
+): PoolRunReport {
   return {
     run,
     publication_attempts: [
@@ -93,7 +104,9 @@ function buildReport(run: PoolRun): PoolRunReport {
         external_document_identity: 'ref-1',
         posted: false,
         domain_error_code: 'network',
+        domain_error_message: 'temporary error',
         error_message: 'temporary error',
+        ...attemptOverrides,
       },
     ],
     validation_summary: { rows: 5 },
@@ -142,7 +155,18 @@ describe('PoolRunsPage', () => {
     mockListPoolRuns.mockResolvedValue([run])
     mockGetPoolRunReport.mockResolvedValue(buildReport(run))
     mockCreatePoolRun.mockResolvedValue({ run, created: true })
-    mockRetryPoolRunFailed.mockResolvedValue({ run, summary: { failed_targets: 0 } })
+    mockRetryPoolRunFailed.mockResolvedValue({
+      accepted: true,
+      workflow_execution_id: '22222222-2222-2222-2222-222222222222',
+      operation_id: null,
+      retry_target_summary: {
+        requested_targets: 1,
+        requested_documents: 1,
+        failed_targets: 1,
+        enqueued_targets: 1,
+        skipped_successful_targets: 0,
+      },
+    })
     mockConfirmPoolRunPublication.mockResolvedValue({
       run,
       command_type: 'confirm-publication',
@@ -165,6 +189,7 @@ describe('PoolRunsPage', () => {
     )
     expect(screen.getAllByText('awaiting_approval').length).toBeGreaterThan(0)
     expect(screen.getAllByText('workflow_core').length).toBeGreaterThan(0)
+    expect(screen.getByText(/#1 initial/)).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled()
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
   })
@@ -184,5 +209,33 @@ describe('PoolRunsPage', () => {
     )
     const generatedKey = mockConfirmPoolRunPublication.mock.calls[0][1] as string
     expect(generatedKey.length).toBeGreaterThan(8)
+  })
+
+  it('renders legacy run with backward-compatible provenance and diagnostics aliases', async () => {
+    const legacyRun = buildRun({
+      mode: 'unsafe',
+      workflow_execution_id: null,
+      workflow_status: null,
+      execution_backend: 'legacy_pool_runtime',
+      provenance: {
+        workflow_run_id: null,
+        workflow_status: null,
+        execution_backend: 'legacy_pool_runtime',
+        retry_chain: [],
+      },
+    })
+    mockListPoolRuns.mockResolvedValue([legacyRun])
+    mockGetPoolRunReport.mockResolvedValue(
+      buildReport(legacyRun, {
+        domain_error_message: '',
+        error_message: 'legacy alias message',
+      })
+    )
+
+    renderPage()
+
+    expect(await screen.findByTestId('pool-runs-provenance-workflow-id')).toHaveTextContent('-')
+    expect(screen.getAllByText('legacy').length).toBeGreaterThan(0)
+    expect(screen.getByText('legacy alias message')).toBeInTheDocument()
   })
 })

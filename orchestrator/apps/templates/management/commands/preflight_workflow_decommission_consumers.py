@@ -24,12 +24,20 @@ class Command(BaseCommand):
             action="store_true",
             help="Fail with non-zero exit code when decision is No-Go.",
         )
+        parser.add_argument(
+            "--release-registry-version",
+            required=False,
+            help="Registry version fixed in release artifact.",
+        )
 
     def handle(self, *args, **options):
         as_json = bool(options.get("json"))
         strict = bool(options.get("strict"))
+        release_registry_version = options.get("release_registry_version")
         try:
-            report = run_workflow_decommission_preflight()
+            report = run_workflow_decommission_preflight(
+                release_registry_version=release_registry_version
+            )
         except (ProgrammingError, OperationalError) as exc:
             raise CommandError(
                 "Workflow tables are unavailable. Run migrations first: `python manage.py migrate`."

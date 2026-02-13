@@ -58,23 +58,46 @@ export type PoolRunStatusReason = 'preparing' | 'awaiting_approval' | 'queued' |
 export type PoolRunApprovalState = 'not_required' | 'preparing' | 'awaiting_approval' | 'approved' | null
 export type PoolRunPublicationStepState = 'not_enqueued' | 'queued' | 'started' | 'completed' | null
 
+export type PoolRunRetryChainAttempt = {
+  workflow_run_id: string
+  parent_workflow_run_id: string | null
+  attempt_number: number
+  attempt_kind: 'initial' | 'retry' | string
+  status: string
+}
+
 export type PoolRunProvenance = {
   workflow_run_id: string | null
   workflow_status: string | null
   execution_backend: 'workflow_core' | 'legacy_pool_runtime' | string
-  retry_chain: string[]
+  retry_chain: PoolRunRetryChainAttempt[]
   legacy_reference?: string | null
 }
+
+export type PoolPublicationAttemptHttpError = {
+  status: number
+  code?: string
+  message?: string
+} | null
+
+export type PoolPublicationAttemptTransportError = {
+  code?: string
+  message?: string
+} | null
 
 export type PoolPublicationAttemptDiagnostics = {
   id: string
   run_id: string
   target_database_id: string
   attempt_number: number
-  attempt_timestamp?: string
+  attempt_timestamp?: string | null
   status: string
   entity_name: string
   documents_count: number
+  payload_summary?: Record<string, unknown>
+  http_error?: PoolPublicationAttemptHttpError
+  transport_error?: PoolPublicationAttemptTransportError
+  domain_error_message?: string
   external_document_identity?: string
   identity_strategy?: string
   publication_identity_strategy?: string
@@ -149,6 +172,21 @@ export type PoolRunSafeCommandConflict = {
   conflict_reason: string
   retryable: boolean
   run_id: string
+}
+
+export type PoolRunRetryTargetSummary = {
+  requested_targets: number
+  requested_documents: number
+  failed_targets: number
+  enqueued_targets: number
+  skipped_successful_targets: number
+}
+
+export type PoolRunRetryAcceptedResponse = {
+  accepted: boolean
+  workflow_execution_id: string
+  operation_id: string | null
+  retry_target_summary: PoolRunRetryTargetSummary
 }
 
 export type PoolGraphNode = {
@@ -379,11 +417,18 @@ export async function getPoolRunReport(runId: string): Promise<PoolRunReport> {
   return response.data
 }
 
-export async function retryPoolRunFailed(runId: string, payload: RetryPoolRunPayload): Promise<{ run: PoolRun; summary: Record<string, number> }> {
-  const response = await apiClient.post<{ run: PoolRun; summary: Record<string, number> }>(
+export async function retryPoolRunFailed(
+  runId: string,
+  payload: RetryPoolRunPayload,
+  idempotencyKey?: string
+): Promise<PoolRunRetryAcceptedResponse> {
+  const response = await apiClient.post<PoolRunRetryAcceptedResponse>(
     `/api/v2/pools/runs/${runId}/retry/`,
     payload,
-    { skipGlobalError: true }
+    {
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+      skipGlobalError: true,
+    }
   )
   return response.data
 }

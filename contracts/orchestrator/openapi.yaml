@@ -5022,6 +5022,120 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
+  /api/v2/pools/runs/{run_id}/abort-publication/:
+    post:
+      operationId: v2_pools_runs_abort_publication
+      summary: Abort safe-mode publication for pool run
+      parameters:
+      - in: path
+        name: run_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRunSafeCommandResponse'
+          description: ''
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRunSafeCommandResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRunSafeCommandConflict'
+          description: ''
+  /api/v2/pools/runs/{run_id}/confirm-publication/:
+    post:
+      operationId: v2_pools_runs_confirm_publication
+      summary: Confirm safe-mode publication for pool run
+      parameters:
+      - in: path
+        name: run_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRunSafeCommandResponse'
+          description: ''
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRunSafeCommandResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRunSafeCommandConflict'
+          description: ''
   /api/v2/pools/runs/{run_id}/report/:
     get:
       operationId: v2_pools_runs_report_get
@@ -5098,11 +5212,11 @@ paths:
       security:
       - bearerAuth: []
       responses:
-        '200':
+        '202':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PoolRunRetryResponse'
+                $ref: '#/components/schemas/PoolRunRetryAcceptedResponse'
           description: ''
         '400':
           content:
@@ -5117,6 +5231,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRunSafeCommandConflict'
           description: ''
   /api/v2/pools/schema-templates/:
     get:
@@ -15787,15 +15907,30 @@ components:
           type: string
         attempt_number:
           type: integer
+        attempt_timestamp:
+          type: string
+          format: date-time
+          nullable: true
         status:
           type: string
         entity_name:
           type: string
         documents_count:
           type: integer
+        payload_summary: {}
+        http_error:
+          nullable: true
+        transport_error:
+          nullable: true
+        domain_error_code:
+          type: string
+        domain_error_message:
+          type: string
         external_document_identity:
           type: string
         identity_strategy:
+          type: string
+        publication_identity_strategy:
           type: string
         posted:
           type: boolean
@@ -15849,6 +15984,9 @@ components:
           type: string
         status:
           type: string
+        status_reason:
+          type: string
+          nullable: true
         period_start:
           type: string
           format: date
@@ -15860,6 +15998,30 @@ components:
           type: string
         idempotency_key:
           type: string
+        workflow_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+        workflow_status:
+          type: string
+          nullable: true
+        approval_state:
+          type: string
+          nullable: true
+        publication_step_state:
+          type: string
+          nullable: true
+        terminal_reason:
+          type: string
+          nullable: true
+        execution_backend:
+          type: string
+          nullable: true
+        provenance:
+          $ref: '#/components/schemas/PoolRunProvenance'
+        workflow_template_name:
+          type: string
+          nullable: true
         seed:
           type: integer
           nullable: true
@@ -16011,6 +16173,28 @@ components:
       required:
       - count
       - runs
+    PoolRunProvenance:
+      type: object
+      properties:
+        workflow_run_id:
+          type: string
+          format: uuid
+          nullable: true
+        workflow_status:
+          type: string
+          nullable: true
+        execution_backend:
+          type: string
+        retry_chain:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolRunRetryChainAttempt'
+        legacy_reference:
+          type: string
+          nullable: true
+      required:
+      - execution_backend
+      - retry_chain
     PoolRunReportResponse:
       type: object
       properties:
@@ -16027,6 +16211,52 @@ components:
       required:
       - publication_attempts
       - run
+    PoolRunRetryAcceptedResponse:
+      type: object
+      properties:
+        accepted:
+          type: boolean
+        workflow_execution_id:
+          type: string
+          format: uuid
+        operation_id:
+          type: string
+          nullable: true
+        retry_target_summary:
+          $ref: '#/components/schemas/PoolRunRetryTargetSummary'
+      required:
+      - accepted
+      - retry_target_summary
+      - workflow_execution_id
+    PoolRunRetryChainAttempt:
+      type: object
+      properties:
+        workflow_run_id:
+          type: string
+          format: uuid
+        parent_workflow_run_id:
+          type: string
+          format: uuid
+          nullable: true
+        attempt_number:
+          type: integer
+          minimum: 1
+        attempt_kind:
+          enum:
+          - initial
+          - retry
+          type: string
+          description: |-
+            * `initial` - initial
+            * `retry` - retry
+          x-spec-enum-id: c70f3fcb8a5eaa72
+        status:
+          type: string
+      required:
+      - attempt_kind
+      - attempt_number
+      - status
+      - workflow_run_id
     PoolRunRetryRequest:
       type: object
       properties:
@@ -16054,16 +16284,64 @@ components:
       required:
       - documents_by_database
       - entity_name
-    PoolRunRetryResponse:
+    PoolRunRetryTargetSummary:
+      type: object
+      properties:
+        requested_targets:
+          type: integer
+        requested_documents:
+          type: integer
+        failed_targets:
+          type: integer
+        enqueued_targets:
+          type: integer
+        skipped_successful_targets:
+          type: integer
+      required:
+      - enqueued_targets
+      - failed_targets
+      - requested_documents
+      - requested_targets
+      - skipped_successful_targets
+    PoolRunSafeCommandConflict:
+      type: object
+      properties:
+        success:
+          type: boolean
+        error_code:
+          type: string
+        error_message:
+          type: string
+        conflict_reason:
+          type: string
+        retryable:
+          type: boolean
+        run_id:
+          type: string
+          format: uuid
+      required:
+      - conflict_reason
+      - error_code
+      - error_message
+      - retryable
+      - run_id
+      - success
+    PoolRunSafeCommandResponse:
       type: object
       properties:
         run:
           $ref: '#/components/schemas/PoolRun'
-        summary:
-          $ref: '#/components/schemas/PublicationSummary'
+        command_type:
+          type: string
+        result:
+          type: string
+        replayed:
+          type: boolean
       required:
+      - command_type
+      - replayed
+      - result
       - run
-      - summary
     PoolSchemaTemplate:
       type: object
       properties:
@@ -16203,22 +16481,6 @@ components:
       required:
       - metrics
       - service
-    PublicationSummary:
-      type: object
-      properties:
-        total_targets:
-          type: integer
-        succeeded_targets:
-          type: integer
-        failed_targets:
-          type: integer
-        max_attempts:
-          type: integer
-      required:
-      - failed_targets
-      - max_attempts
-      - succeeded_targets
-      - total_targets
     RbacErrorDetail:
       type: object
       properties:

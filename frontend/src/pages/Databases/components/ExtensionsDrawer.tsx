@@ -6,8 +6,8 @@ import dayjs from 'dayjs'
 
 import { getV2 } from '../../../api/generated'
 import type { DatabaseExtensionsSnapshotResponse } from '../../../api/generated/model/databaseExtensionsSnapshotResponse'
-import type { ManualOperationKey } from '../../../api/generated/model/manualOperationKey'
 import {
+  type ManualOperationKey,
   useDeleteManualOperationBinding,
   useManualOperationBindings,
   useUpsertManualOperationBinding,
