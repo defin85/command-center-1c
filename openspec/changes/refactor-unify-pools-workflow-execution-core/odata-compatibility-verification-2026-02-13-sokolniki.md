@@ -24,11 +24,13 @@ Checked entity: `Document_РеализацияТоваровУслуг`
 - `GET .../Document_РеализацияТоваровУслуг?$top=1&$select=Ref_Key,Date,Posted,Number,DeletionMark` -> `200`
 
 2. Write format behavior:
-- `POST` with JSON payload -> rejected (`406 Not acceptable` or `500` parse error depending on headers)
-- `POST` with Atom XML (`application/atom+xml;type=entry`) -> `201 Created`
+- `POST` with JSON payload in runtime format (`Content-Type: application/json;odata=nometadata`, `Accept: application/json`) -> `201 Created`
+- `PATCH` with JSON payload in runtime format -> `200`
+- `POST` with incompatible JSON media type (`application/json;odata=verbose`) -> `406 Not acceptable`
+- `POST/PATCH` with Atom XML (`application/atom+xml;type=entry`) -> supported (`201/200`)
 
 3. Update:
-- `PATCH` by existing GUID with Atom XML -> `200`
+- `PATCH` by existing GUID with JSON runtime headers -> `200`
 
 4. Posting:
 - `PATCH` with `Posted=true` and `DeletionMark=false` -> `200`
@@ -41,9 +43,11 @@ Checked entity: `Document_РеализацияТоваровУслуг`
 - Test document was moved to safe state after probe:
   - `Posted=false`
   - `DeletionMark=true`
-- Test document GUID: `627f6408-08bb-11f1-8621-9c6b0063a0aa`
+- Test document GUIDs:
+  - `627f6408-08bb-11f1-8621-9c6b0063a0aa`
+  - `7516bd52-08be-11f1-8621-9c6b0063a0aa`
 
 ## Conclusion
 - Target BP 3.0 endpoint for publication can be based on `Document_РеализацияТоваровУслуг`.
-- Mandatory compatibility constraint: write operations require Atom XML payloads for this base.
-- Current generic JSON write path is not sufficient for this configuration and must be aligned before rollout approval.
+- Current runtime JSON write path (`application/json;odata=nometadata`) is compatible with this base for create/update/posting.
+- Atom XML can be used as compatibility fallback, but is not mandatory for this target baseline.
