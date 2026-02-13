@@ -198,6 +198,11 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
     execution_backend = run.execution_backend or (
         "workflow_core" if run.workflow_execution_id else "legacy_pool_runtime"
     )
+    provenance = _build_run_provenance(
+        run=run,
+        workflow_status=workflow_status,
+        execution_backend=execution_backend,
+    )
     return {
         "id": str(run.id),
         "tenant_id": str(run.tenant_id),
@@ -217,6 +222,7 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
         "publication_step_state": publication_step_state,
         "terminal_reason": terminal_reason,
         "execution_backend": execution_backend,
+        "provenance": provenance,
         "workflow_template_name": run.workflow_template_name or None,
         "seed": run.seed,
         "validation_summary": run.validation_summary,
@@ -335,6 +341,22 @@ def _resolve_terminal_reason(
         return None
     raw_reason = str(workflow_input_context.get("terminal_reason") or "").strip().lower()
     return raw_reason or None
+
+
+def _build_run_provenance(
+    *,
+    run: PoolRun,
+    workflow_status: str | None,
+    execution_backend: str,
+) -> dict[str, Any]:
+    workflow_run_id = str(run.workflow_execution_id) if run.workflow_execution_id else None
+    retry_chain = [workflow_run_id] if workflow_run_id else []
+    return {
+        "workflow_run_id": workflow_run_id,
+        "workflow_status": workflow_status,
+        "execution_backend": execution_backend,
+        "retry_chain": retry_chain,
+    }
 
 
 def _has_context_value(value: Any) -> bool:
@@ -502,6 +524,7 @@ class PoolRunSerializer(serializers.Serializer):
     publication_step_state = serializers.CharField(required=False, allow_null=True)
     terminal_reason = serializers.CharField(required=False, allow_null=True)
     execution_backend = serializers.CharField(required=False, allow_null=True)
+    provenance = serializers.JSONField(required=False)
     workflow_template_name = serializers.CharField(required=False, allow_null=True)
     seed = serializers.IntegerField(required=False, allow_null=True)
     validation_summary = serializers.JSONField(required=False)

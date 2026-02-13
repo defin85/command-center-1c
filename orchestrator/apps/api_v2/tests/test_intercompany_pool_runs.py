@@ -477,6 +477,10 @@ def test_get_pool_run_returns_details(
     assert payload["run"]["id"] == str(run.id)
     assert payload["run"]["status"] == PoolRun.STATUS_VALIDATED
     assert payload["run"]["terminal_reason"] is None
+    assert payload["run"]["provenance"]["workflow_run_id"] is None
+    assert payload["run"]["provenance"]["workflow_status"] is None
+    assert payload["run"]["provenance"]["execution_backend"] == "legacy_pool_runtime"
+    assert payload["run"]["provenance"]["retry_chain"] == []
     assert len(payload["publication_attempts"]) == 1
     assert payload["publication_attempts"][0]["target_database_id"] == str(database.id)
     assert any(event["event_type"] == "run.test_event" for event in payload["audit_events"])
@@ -517,6 +521,10 @@ def test_get_pool_run_projects_safe_pending_workflow_to_validated_preparing(
     assert payload["run"]["approval_state"] == "preparing"
     assert payload["run"]["publication_step_state"] == "not_enqueued"
     assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_PENDING
+    assert payload["run"]["provenance"]["workflow_run_id"] == str(run.workflow_execution_id)
+    assert payload["run"]["provenance"]["workflow_status"] == WorkflowExecution.STATUS_PENDING
+    assert payload["run"]["provenance"]["execution_backend"] == "workflow_core"
+    assert payload["run"]["provenance"]["retry_chain"] == [str(run.workflow_execution_id)]
 
 
 @pytest.mark.django_db
