@@ -56,7 +56,7 @@
 - [ ] 3.7 Вернуть канонический набор полей diagnostics по попыткам публикации в API facade.
 - [ ] 3.8 Поддержать compatibility `workflow_binding` на import templates как optional compiler hint без отдельного runtime-смысла.
 - [x] 3.9 Добавить в API details поля `approval_state` и `terminal_reason` для unified execution с nullable-совместимостью для legacy.
-- [ ] 3.10 Обеспечить fail-closed поведение facade API: cross-tenant/unknown `run_id` возвращает одинаковый `404 RUN_NOT_FOUND` без утечки причины.
+- [x] 3.10 Обеспечить fail-closed поведение facade API: cross-tenant/unknown `run_id` возвращает одинаковый `404 RUN_NOT_FOUND` без утечки причины.
 
 ## 4. Миграция и совместимость
 - [ ] 4.1 Добавить миграцию/бекфилл связей `pool_run -> workflow_run` для существующих/переходных записей.
