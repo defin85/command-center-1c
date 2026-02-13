@@ -37,6 +37,7 @@ from apps.intercompany_pools.publication import (
     retry_failed_run_documents,
 )
 from apps.intercompany_pools.runs import upsert_pool_run
+from apps.intercompany_pools.workflow_runtime import start_pool_run_workflow_execution
 from apps.tenancy.authentication import TENANT_HEADER
 from apps.tenancy.models import Tenant
 
@@ -119,6 +120,10 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
         "period_end": run.period_end,
         "source_hash": run.source_hash,
         "idempotency_key": run.idempotency_key,
+        "workflow_execution_id": str(run.workflow_execution_id) if run.workflow_execution_id else None,
+        "workflow_status": run.workflow_status or None,
+        "execution_backend": run.execution_backend or None,
+        "workflow_template_name": run.workflow_template_name or None,
         "seed": run.seed,
         "validation_summary": run.validation_summary,
         "publication_summary": run.publication_summary,
@@ -219,6 +224,10 @@ class PoolRunSerializer(serializers.Serializer):
     period_end = serializers.DateField(required=False, allow_null=True)
     source_hash = serializers.CharField()
     idempotency_key = serializers.CharField()
+    workflow_execution_id = serializers.UUIDField(required=False, allow_null=True)
+    workflow_status = serializers.CharField(required=False, allow_null=True)
+    execution_backend = serializers.CharField(required=False, allow_null=True)
+    workflow_template_name = serializers.CharField(required=False, allow_null=True)
     seed = serializers.IntegerField(required=False, allow_null=True)
     validation_summary = serializers.JSONField(required=False)
     publication_summary = serializers.JSONField(required=False)
@@ -564,8 +573,13 @@ def create_pool_run(request):
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
+    runtime_result = start_pool_run_workflow_execution(
+        run=result.run,
+        requested_by=request.user if request.user and request.user.is_authenticated else None,
+    )
+
     payload = {
-        "run": _serialize_run(result.run),
+        "run": _serialize_run(runtime_result.run),
         "created": result.created,
     }
     response_status = http_status.HTTP_201_CREATED if result.created else http_status.HTTP_200_OK

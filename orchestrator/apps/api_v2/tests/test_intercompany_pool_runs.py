@@ -18,11 +18,13 @@ from apps.intercompany_pools.models import (
     PoolPublicationAttempt,
     PoolPublicationAttemptStatus,
     PoolRun,
+    PoolRunAuditEvent,
     PoolRunDirection,
     PoolSchemaTemplate,
     PoolSchemaTemplateFormat,
 )
 from apps.intercompany_pools.publication import publish_run_documents
+from apps.operations.services import EnqueueResult
 from apps.tenancy.models import Tenant, TenantMember
 
 
@@ -268,20 +270,68 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
         "validation_summary": {"rows": 3},
         "diagnostics": [],
     }
-    first = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="op-1", status="queued"),
+    ) as enqueue:
+        first = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
+        second = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
+
     assert first.status_code == 201
     first_payload = first.json()
     assert first_payload["created"] is True
-    assert first_payload["run"]["status"] == PoolRun.STATUS_DRAFT
+    assert first_payload["run"]["status"] == PoolRun.STATUS_VALIDATED
+    assert first_payload["run"]["workflow_execution_id"] is not None
+    assert first_payload["run"]["workflow_status"] == "queued"
+    assert first_payload["run"]["execution_backend"] == "workflow_core"
 
-    second = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
     assert second.status_code == 200
     second_payload = second.json()
     assert second_payload["created"] is False
     assert second_payload["run"]["id"] == first_payload["run"]["id"]
+    assert second_payload["run"]["workflow_execution_id"] == first_payload["run"]["workflow_execution_id"]
+    enqueue.assert_called_once()
 
     run = PoolRun.objects.get(id=first_payload["run"]["id"])
     assert run.idempotency_key
+    assert run.workflow_execution_id is not None
+
+
+@pytest.mark.django_db
+def test_create_pool_run_endpoint_keeps_workflow_link_when_enqueue_fails(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    payload = {
+        "pool_id": str(pool.id),
+        "direction": PoolRunDirection.BOTTOM_UP,
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-31",
+        "source_hash": "enqueue-error",
+        "mode": "safe",
+    }
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=False,
+            operation_id="",
+            status="error",
+            error="redis down",
+            error_code="REDIS_UNAVAILABLE",
+        ),
+    ):
+        response = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["run"]["status"] == PoolRun.STATUS_VALIDATED
+    assert data["run"]["workflow_execution_id"] is not None
+    assert data["run"]["workflow_status"] == "pending"
+
+    run = PoolRun.objects.get(id=data["run"]["id"])
+    assert run.workflow_status == "pending"
+    assert run.workflow_execution_id is not None
+    assert PoolRunAuditEvent.objects.filter(run=run, event_type="run.workflow_execution_enqueue_failed").exists()
 
 
 @pytest.mark.django_db
@@ -609,7 +659,7 @@ def test_list_pools_and_graph_endpoint(
 
 
 @pytest.mark.django_db
-def test_create_pool_run_with_schema_template_keeps_facade_status_draft(
+def test_create_pool_run_with_schema_template_uses_workflow_runtime(
     authenticated_client: APIClient,
     default_tenant: Tenant,
     pool: OrganizationPool,
@@ -623,26 +673,32 @@ def test_create_pool_run_with_schema_template_keeps_facade_status_draft(
         schema={"columns": {"inn": "inn", "amount": "amount"}},
     )
 
-    response = authenticated_client.post(
-        "/api/v2/pools/runs/",
-        {
-            "pool_id": str(pool.id),
-            "direction": PoolRunDirection.BOTTOM_UP,
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "source_hash": "facade-template-hash",
-            "mode": "unsafe",
-            "schema_template_id": str(template.id),
-            "seed": 42,
-        },
-        format="json",
-    )
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="op-2", status="queued"),
+    ):
+        response = authenticated_client.post(
+            "/api/v2/pools/runs/",
+            {
+                "pool_id": str(pool.id),
+                "direction": PoolRunDirection.BOTTOM_UP,
+                "period_start": "2026-01-01",
+                "period_end": "2026-01-31",
+                "source_hash": "facade-template-hash",
+                "mode": "unsafe",
+                "schema_template_id": str(template.id),
+                "seed": 42,
+            },
+            format="json",
+        )
     assert response.status_code == 201
     payload = response.json()
     assert payload["created"] is True
     assert payload["run"]["schema_template_id"] == str(template.id)
     assert payload["run"]["seed"] == 42
-    assert payload["run"]["status"] == PoolRun.STATUS_DRAFT
+    assert payload["run"]["status"] == PoolRun.STATUS_VALIDATED
+    assert payload["run"]["workflow_execution_id"] is not None
+    assert payload["run"]["execution_backend"] == "workflow_core"
 
 
 @pytest.mark.django_db
