@@ -63,8 +63,8 @@
 - [x] 4.2 Обеспечить чтение historical runs/details/audit через единый view без регрессий UI/API.
 - [x] 4.3 Подготовить deprecation-plan для legacy execution path в `pools` (без немедленного удаления `workflows`).
 - [x] 4.4 Добавить tenant linkage/backfill для workflow execution записей, связанных с pools.
-- [ ] 4.5 Добавить `execution-consumers-registry.yaml` (+ `execution-consumers-registry.schema.yaml`) и preflight-проверку готовности к decommission `workflows`.
-- [ ] 4.6 Зафиксировать переходный режим для non-pools consumers с `tenant_id=null` до их миграции.
+- [x] 4.5 Добавить `execution-consumers-registry.yaml` (+ `execution-consumers-registry.schema.yaml`) и preflight-проверку готовности к decommission `workflows`.
+- [x] 4.6 Зафиксировать переходный режим для non-pools consumers с `tenant_id=null` до их миграции.
 - [ ] 4.7 Поддерживать и версионировать `odata-compatibility-profile.yaml` (+ `odata-compatibility-profile.schema.yaml`) как prerequisite rollout.
 - [ ] 4.8 Внедрить dual-write/dual-read cutover-план и зафиксировать rollback criteria/runbook (SLO, tenant boundary, projection drift).
 - [ ] 4.9 Зафиксировать и внедрить операционные SLI для Variant A (`command_log write errors`, `outbox lag`, `dispatch retry saturation`) как rollback trigger.

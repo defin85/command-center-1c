@@ -257,6 +257,7 @@
 - Перед любым `workflows` decommission запускается preflight:
   - читает `execution-consumers-registry.yaml`,
   - валидирует структуру по `execution-consumers-registry.schema.yaml`,
+  - учитывает `tenant_mode` consumer'а (`required|nullable_transition`) для переходного допуска `tenant_id=null` у non-pools записей,
   - валидирует, что каждый consumer имеет `migrated=true`,
   - формирует отчёт `Go/No-Go` с перечнем блокирующих consumers.
 - Без статуса `Go` удаление runtime не выполняется.

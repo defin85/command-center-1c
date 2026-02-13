@@ -26,6 +26,7 @@ properties:
       required:
         - consumer
         - migrated
+        - tenant_mode
         - migration_owner
         - migration_target
         - updated_at
@@ -35,6 +36,12 @@ properties:
           pattern: "^[a-z0-9_-]+$"
         migrated:
           type: boolean
+        tenant_mode:
+          type: string
+          enum:
+            - required
+            - nullable_transition
+            - nullable
         migration_owner:
           type: string
           minLength: 1
