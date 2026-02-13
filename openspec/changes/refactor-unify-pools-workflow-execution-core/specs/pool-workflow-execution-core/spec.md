@@ -64,7 +64,7 @@
 - `POST /api/v2/pools/runs/{run_id}/confirm-publication`;
 - `POST /api/v2/pools/runs/{run_id}/abort-publication`.
 
-Повторный вызов команды в том же run-state ДОЛЖЕН (SHALL) быть идемпотентным и НЕ ДОЛЖЕН (SHALL NOT) вызывать duplicate enqueue.
+Система ДОЛЖНА (SHALL) трактовать идемпотентность команд как отсутствие побочных эффектов (включая duplicate enqueue) при повторном вызове; response class (`2xx`/`409`) определяется детерминированной state-matrix.
 
 #### Scenario: Повторный confirm не создаёт дублирующий enqueue
 - **GIVEN** `confirm-publication` уже успешно выполнен для `safe` run
@@ -73,9 +73,17 @@
 - **AND** дополнительная публикационная задача не ставится в очередь повторно
 
 #### Scenario: Команда на terminal run отклоняется бизнес-ошибкой
-- **GIVEN** run уже находится в terminal status (`published`, `partial_success` или `failed`)
+- **GIVEN** run находится в terminal status (`published`, `partial_success` или `failed`)
+- **AND** `terminal_reason` не равен `aborted_by_operator`
 - **WHEN** оператор вызывает `confirm-publication` или `abort-publication`
 - **THEN** система возвращает business conflict
+- **AND** состояние run не изменяется
+
+#### Scenario: Повторный abort после operator-abort возвращает idempotent no-op
+- **GIVEN** run уже завершён через `abort-publication`
+- **AND** `terminal_reason=aborted_by_operator`
+- **WHEN** оператор повторно вызывает `abort-publication`
+- **THEN** система возвращает idempotent no-op
 - **AND** состояние run не изменяется
 
 #### Scenario: Abort после старта publication_odata отклоняется бизнес-ошибкой
@@ -83,6 +91,32 @@
 - **WHEN** оператор вызывает `abort-publication`
 - **THEN** система возвращает business conflict
 - **AND** состояние run не изменяется
+
+### Requirement: Safe commands MUST иметь полную state-matrix без неявных интерпретаций
+Система ДОЛЖНА (SHALL) применять следующую state-matrix команд:
+- `confirm-publication`:
+  - `approval_state=awaiting_approval` -> `2xx` и enqueue публикации;
+  - `approval_state in {queued,publishing}` -> `2xx` idempotent no-op;
+  - `approval_state=preparing` -> `409` business conflict;
+  - terminal state -> `409` business conflict.
+- `abort-publication`:
+  - `approval_state in {preparing,awaiting_approval,queued}` и `publication_odata` не начат -> `2xx` и отмена run;
+  - `publication_odata` уже начат -> `409` business conflict;
+  - terminal + `terminal_reason=aborted_by_operator` -> `2xx` idempotent no-op;
+  - остальные terminal state -> `409` business conflict.
+
+#### Scenario: Confirm в preparing отклоняется до завершения pre-publish
+- **GIVEN** run находится в `approval_state=preparing`
+- **WHEN** оператор вызывает `confirm-publication`
+- **THEN** система возвращает business conflict
+- **AND** состояние run не изменяется
+
+#### Scenario: Confirm в queued возвращает idempotent no-op
+- **GIVEN** публикация уже подтверждена
+- **AND** run находится в `approval_state=queued`
+- **WHEN** оператор повторно вызывает `confirm-publication`
+- **THEN** система возвращает idempotent no-op
+- **AND** дополнительный enqueue не создаётся
 
 ### Requirement: Pool status projection MUST быть канонической и детерминированной
 Система ДОЛЖНА (SHALL) использовать единый mapping статусов между workflow runtime и pools facade:
@@ -149,6 +183,19 @@
 - **WHEN** клиент запрашивает детали run
 - **THEN** фасад возвращает статус `publishing`
 - **AND** `status_reason` равен `null`
+
+### Requirement: Approval state MUST быть каноническим runtime-полем и возвращаться в API
+Система ДОЛЖНА (SHALL) хранить `approval_state` как source-of-truth в metadata workflow execution и использовать его в status projection.
+
+Система ДОЛЖНА (SHALL) возвращать `approval_state` в `GET /api/v2/pools/runs/{run_id}` для unified execution.
+
+Для historical/legacy run поле `approval_state` МОЖЕТ (MAY) быть `null`.
+
+#### Scenario: Unified run details содержит approval_state
+- **GIVEN** run исполняется через `workflow_core`
+- **WHEN** клиент запрашивает `GET /api/v2/pools/runs/{run_id}`
+- **THEN** ответ содержит поле `approval_state`
+- **AND** значение согласовано с runtime metadata workflow execution
 
 ### Requirement: Tenant boundary MUST сохраняться между pool и workflow run
 Система ДОЛЖНА (SHALL) обеспечивать tenant-изоляцию при запуске, чтении и retry:
@@ -239,6 +286,17 @@
 - **WHEN** workflow runtime применяет retry policy
 - **THEN** повторяются только failed step-attempts
 - **AND** статусы pool run и workflow run остаются согласованными
+
+### Requirement: OData publication rollout MUST быть gated совместимым profile
+Система ДОЛЖНА (SHALL) включать unified publication в production только после фиксации compatibility profile для поддерживаемых 1С-конфигураций (endpoint/posting fields).
+
+При отсутствии согласованного profile система НЕ ДОЛЖНА (SHALL NOT) выполнять production rollout publication-step.
+
+#### Scenario: Production rollout блокируется без согласованного OData profile
+- **GIVEN** compatibility profile для OData endpoint/posting fields не утверждён
+- **WHEN** выполняется preflight rollout unified publication
+- **THEN** rollout блокируется как `No-Go`
+- **AND** команда получает явный блокирующий reason
 
 ### Requirement: OData external document identity MUST использовать strategy-based resolver
 Система ДОЛЖНА (SHALL) поддерживать strategy-based resolver идентификатора внешнего документа:

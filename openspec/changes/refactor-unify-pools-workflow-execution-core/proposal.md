@@ -60,13 +60,19 @@
 - Зафиксировать явный API-контракт safe-команд:
   - `POST /api/v2/pools/runs/{run_id}/confirm-publication`;
   - `POST /api/v2/pools/runs/{run_id}/abort-publication`;
-  - команды идемпотентны и не должны приводить к duplicate enqueue;
-  - `abort-publication` разрешён только до старта шага `publication_odata`, после старта публикации должен возвращаться business conflict.
+  - семантическая идемпотентность команд означает отсутствие изменения состояния при повторе и запрет duplicate enqueue; конкретный response class (`2xx`/`409`) задаётся детерминированной state-matrix;
+  - `confirm-publication` допустим только из `approval_state=awaiting_approval`, повтор в `queued|publishing` возвращает idempotent no-op;
+  - `abort-publication` допустим только до старта шага `publication_odata`, после старта публикации должен возвращаться business conflict;
+  - повторный `abort-publication` допускается как idempotent no-op только для run c `terminal_reason=aborted_by_operator`.
+- Зафиксировать contract source-of-truth для `approval_state`:
+  - `approval_state` хранится в workflow execution metadata как каноническое runtime-поле;
+  - `GET /api/v2/pools/runs/{run_id}` возвращает `approval_state` для unified execution (`nullable` для legacy run).
 - Зафиксировать единый source-of-truth: execution-runtime семантика `pool-distribution-runs` и `pool-odata-publication` резолвится этим change, а `add-intercompany-pool-distribution-module` остаётся источником domain vocabulary/foundation.
 - Зафиксировать anti-drift архитектурные инварианты change:
   - `approval_required=true` и `approved_at is null` НЕ может проецироваться в `pool:publishing`;
   - `status_reason` допустим только для `pool:validated`;
   - `abort-publication` после старта `publication_odata` всегда `business conflict`;
+  - state-matrix `confirm/abort` обязателен и не допускает implicit интерпретаций;
   - изменения runtime-семантики считаются валидными только при синхронном обновлении `proposal.md`, `design.md`, `tasks.md` и `specs/pool-workflow-execution-core/spec.md`.
 - Запретить удаление `workflows` до миграции всех consumers на unified execution core.
 - Зафиксировать де-комиссию `workflows` только через preflight с реестром consumers и критерием готовности миграции.
@@ -78,6 +84,7 @@
   - `pool-odata-publication` (domain publication contract; runtime semantics ссылаются на execution source-of-truth)
 - Prerequisites:
   - foundation задачи из `add-intercompany-pool-distribution-module` (catalog/data/contracts/UI baseline) должны быть завершены или зафиксированы как входной baseline.
+  - `add-intercompany-pool-distribution-module`: open question по OData endpoint/posting fields должен быть закрыт согласованным compatibility profile до включения unified publication в production.
 - Affected code (high-level):
   - `orchestrator/apps/intercompany_pools/**`
   - `orchestrator/apps/templates/workflow/**`

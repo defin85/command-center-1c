@@ -22,6 +22,7 @@
 - `PoolExecutionPlan`: скомпилированный workflow-compatible graph для конкретного run-контекста.
 - `approval_state`: техническая фаза safe-flow (`not_required`, `preparing`, `awaiting_approval`, `approved`), используемая для детерминированной проекции статуса.
 - `status_reason`: подстатус facade-модели только для `validated` (`preparing`, `awaiting_approval`, `queued`); для остальных статусов `null`.
+- `terminal_reason`: причина terminal-status для facade (`completed`, `failed_runtime`, `aborted_by_operator`), используется для детерминированной матрицы повторных safe-команд.
 
 ## Decisions
 - Decision: `workflows` является execution-core для `pools`.
@@ -35,6 +36,10 @@
   - в `safe` режиме только `publication_odata` блокируется до `confirm-publication`;
   - `unsafe`: `approval_state=not_required`, `approved_at` проставляется автоматически на create/start path;
   - явные команды фасада: `confirm-publication` и `abort-publication`.
+- Decision: `approval_state` является runtime source-of-truth:
+  - хранится в metadata workflow execution;
+  - участвует в status projection как обязательный input;
+  - возвращается в `GET /api/v2/pools/runs/{run_id}` для unified execution (legacy: `null`).
 - Decision: canonical status mapping фиксируется и обязателен для API:
   - `draft` — run создан, workflow run ещё не создан;
   - `validated` + `status_reason=preparing` — `workflow.status in {pending, running}`, `approval_required=true`, `approved_at is null`, `approval_state=preparing`;
@@ -78,9 +83,12 @@
   - `attempt_timestamp`.
 - Decision: `pools/runs*` остаётся доменным API-слоем и хранит reference на workflow run + provenance block.
 - Decision: команды safe-mode имеют явную conflict-модель:
-  - `confirm-publication` идемпотентен в состояниях после подтверждения и не создаёт duplicate enqueue;
+  - семантическая идемпотентность = no side effects + no duplicate enqueue; response class определяется state-matrix;
+  - `confirm-publication` допустим только из `approval_state=awaiting_approval`;
+  - повторный `confirm-publication` в `queued|publishing` возвращает idempotent no-op;
   - `abort-publication` допустим только до старта шага `publication_odata`;
-  - после старта `publication_odata` команда `abort-publication` возвращает business conflict.
+  - повторный `abort-publication` допустим как idempotent no-op только при `terminal_reason=aborted_by_operator`;
+  - во всех остальных terminal/non-eligible состояниях команды возвращают business conflict.
 - Decision: для historical/legacy runs без workflow-link возвращается совместимый provenance:
   - `workflow_run_id=null`,
   - `workflow_status=null`,
@@ -101,6 +109,8 @@
 - Invariant 6: runtime endpoint retry фиксирован как `POST /api/v2/pools/runs/{run_id}/retry`.
 - Invariant 7: `PoolImportSchemaTemplate` трактуется как execution-core алиас foundation `PoolSchemaTemplate`, без нового публичного артефакта.
 - Invariant 8: при конфликте формулировок runtime приоритет имеет `pool-workflow-execution-core/spec.md`; foundation change используется только как domain vocabulary.
+- Invariant 9: `approval_state` хранится как runtime source-of-truth в workflow metadata и возвращается facade API для unified execution.
+- Invariant 10: state-matrix для `confirm/abort` не может оставаться неявной или частичной.
 
 ## Change Synchronization Rule
 - Любая правка runtime-семантики в этом change ДОЛЖНА обновлять в одном коммите:
@@ -138,6 +148,8 @@
 - Базовые поля (всегда присутствуют в payload):
   - `workflow_run_id` (nullable; root execution chain id),
   - `workflow_status` (nullable; статус active attempt),
+  - `approval_state` (nullable; mandatory for unified execution),
+  - `terminal_reason` (nullable; mandatory for terminal unified execution),
   - `execution_backend` (`workflow_core` | `legacy_pool_runtime`),
   - `retry_chain` (array; для unified всегда содержит минимум initial attempt).
 - Элемент `retry_chain[]`:
@@ -156,13 +168,32 @@
 
 ## Facade Commands Contract
 - `POST /api/v2/pools/runs/{run_id}/confirm-publication`:
-  - переводит `safe` run из `awaiting_approval` в `queued`/`publishing`;
-  - повторный вызов идемпотентен и не создаёт duplicate enqueue.
+  - допустим из `approval_state=awaiting_approval`, переводит run в `queued`/`publishing`;
+  - повторный вызов в `queued|publishing` идемпотентен и не создаёт duplicate enqueue;
+  - в `preparing` и terminal-состояниях возвращает business conflict.
 - `POST /api/v2/pools/runs/{run_id}/abort-publication`:
   - завершает run как `failed` через workflow `cancelled`, если `publication_odata` ещё не начат;
-  - повторный вызов идемпотентен, если run уже отменён этим же действием.
-- Для terminal run (`published|partial_success|failed`) команды confirm/abort возвращают business conflict без изменения состояния.
+  - повторный вызов идемпотентен только если `terminal_reason=aborted_by_operator`.
+- Для terminal run команды confirm/abort возвращают business conflict, кроме idempotent-replay случая `abort-publication` при `terminal_reason=aborted_by_operator`.
 - Для run, где уже начат `publication_odata`, `abort-publication` возвращает business conflict без изменения состояния.
+
+## Command State-Matrix
+- `confirm-publication`:
+  - `approval_state=awaiting_approval`: `2xx`, enqueue publication.
+  - `approval_state in {queued,publishing}`: `2xx`, idempotent no-op.
+  - `approval_state=preparing`: `409` business conflict.
+  - terminal states: `409` business conflict.
+- `abort-publication`:
+  - `approval_state in {preparing,awaiting_approval,queued}` и `publication_odata` not started: `2xx`, cancel execution.
+  - `publication_odata` started: `409` business conflict.
+  - terminal + `terminal_reason=aborted_by_operator`: `2xx`, idempotent no-op.
+  - остальные terminal states: `409` business conflict.
+
+## External Dependency Gate
+- Unified publication rollout в production разрешён только после фиксации OData compatibility profile:
+  - список поддерживаемых endpoint/posting fields на конфигурацию 1С;
+  - документированная стратегия fallback на `ExternalRunKey`;
+  - подтверждённый результат technical spike из foundation change open question.
 
 ## Decommission Preflight Contract
 - Перед любым `workflows` decommission запускается preflight:
