@@ -21,6 +21,7 @@
 - [ ] 1.13 Зафиксировать state-matrix `confirm/abort` по всем ключевым состояниям (`approval_state` + facade-status: `validated/*`, `publishing`, terminal) без implicit интерпретаций.
 - [ ] 1.14 Зафиксировать `approval_state` как runtime source-of-truth и обязательное поле unified API details.
 - [ ] 1.15 Зафиксировать явные HTTP response-коды safe-команд (`202`, `200`, `409`) и канонический error payload (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`).
+- [ ] 1.16 Зафиксировать preflight-gate совместимости `compatibility mode` целевой ИБ и media-type policy из OData profile (legacy `<=8.3.7` требует отдельной approved записи).
 
 ## 2. Backend: execution-core интеграция
 - [ ] 2.1 Реализовать compiler `PoolImportSchemaTemplate + run_context -> PoolExecutionPlan/WorkflowTemplate` с детерминированным mapping шагов.
@@ -71,3 +72,4 @@
 - [x] 6.8 Выполнить anti-drift self-check: подтвердить, что инварианты state machine согласованы между `proposal/design/spec/tasks`.
 - [ ] 6.9 Добавить контрактные тесты command state-matrix (`confirm/abort`: `202|200|409`) и idempotent-replay кейса `aborted_by_operator`.
 - [ ] 6.10 Добавить API contract-тесты на error payload safe-команд (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`) и точные HTTP-коды (`202|200|409`).
+- [ ] 6.11 Добавить preflight-тесты на блокировку rollout при несовместимости media-type policy profile и compatibility mode (`<=8.3.7` без legacy entry).

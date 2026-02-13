@@ -91,7 +91,7 @@
   - `pool-odata-publication` (domain publication contract; runtime semantics ссылаются на execution source-of-truth)
 - Prerequisites:
   - foundation задачи из `add-intercompany-pool-distribution-module` (catalog/data/contracts/UI baseline) должны быть завершены или зафиксированы как входной baseline.
-  - OData compatibility profile зафиксирован как source-of-truth артефакт `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.md`; production rollout unified publication запрещён при отсутствии утверждённого profile entry для целевой конфигурации и без фиксации `profile_version` в release-артефакте.
+  - OData compatibility profile зафиксирован как source-of-truth артефакт `openspec/changes/refactor-unify-pools-workflow-execution-core/odata-compatibility-profile.md`; production rollout unified publication запрещён при отсутствии утверждённого profile entry для целевой конфигурации, без фиксации `profile_version` в release-артефакте или при несовместимости media-type policy profile с compatibility mode целевой ИБ.
 - Affected code (high-level):
   - `orchestrator/apps/intercompany_pools/**`
   - `orchestrator/apps/templates/workflow/**`

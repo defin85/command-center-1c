@@ -119,6 +119,7 @@
 - Invariant 9: `approval_state` хранится как runtime source-of-truth в workflow metadata и возвращается facade API для unified execution.
 - Invariant 10: state-matrix для `confirm/abort` не может оставаться неявной или частичной.
 - Invariant 11: `409 Conflict` для safe-команд возвращает канонический error payload (`error_code`, `error_message`, `conflict_reason`, `retryable`, `run_id`).
+- Invariant 12: preflight rollout шага `publication_odata` обязан валидировать совместимость compatibility mode целевой ИБ и media-type policy из `odata-compatibility-profile.md`; для legacy mode (`<=8.3.7`) без отдельной approved записи rollout блокируется (`No-Go`).
 
 ## Change Synchronization Rule
 - Любая правка runtime-семантики в этом change ДОЛЖНА обновлять в одном коммите:

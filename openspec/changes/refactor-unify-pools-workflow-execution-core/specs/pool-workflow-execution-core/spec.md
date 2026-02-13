@@ -333,6 +333,8 @@ Compatibility profile ДОЛЖЕН (SHALL) храниться как source-of-t
 
 Система ДОЛЖНА (SHALL) фиксировать используемую `profile_version` compatibility profile в release-артефакте rollout.
 
+Система ДОЛЖНА (SHALL) выполнять preflight-проверку media-type policy из compatibility profile относительно compatibility mode целевой 1С-конфигурации.
+
 При отсутствии согласованного profile система НЕ ДОЛЖНА (SHALL NOT) выполнять production rollout publication-step.
 
 #### Scenario: Production rollout блокируется без согласованного OData profile
@@ -345,6 +347,13 @@ Compatibility profile ДОЛЖЕН (SHALL) храниться как source-of-t
 - **GIVEN** production rollout unified publication прошёл preflight
 - **WHEN** формируется release-артефакт
 - **THEN** артефакт содержит конкретную `profile_version` из `odata-compatibility-profile.md`
+
+#### Scenario: Legacy compatibility mode блокирует rollout без отдельной approved записи
+- **GIVEN** целевая ИБ работает в compatibility mode `<=8.3.7`
+- **AND** approved profile entry не содержит явную legacy media-type policy
+- **WHEN** выполняется preflight rollout unified publication
+- **THEN** rollout блокируется как `No-Go`
+- **AND** команда получает блокирующий reason о несовместимости media-type policy
 
 ### Requirement: OData external document identity MUST использовать strategy-based resolver
 Система ДОЛЖНА (SHALL) поддерживать strategy-based resolver идентификатора внешнего документа:

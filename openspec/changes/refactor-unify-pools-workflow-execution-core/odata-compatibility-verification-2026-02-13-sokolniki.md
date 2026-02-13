@@ -26,7 +26,7 @@ Checked entity: `Document_РеализацияТоваровУслуг`
 2. Write format behavior:
 - `POST` with JSON payload in runtime format (`Content-Type: application/json;odata=nometadata`, `Accept: application/json`) -> `201 Created`
 - `PATCH` with JSON payload in runtime format -> `200`
-- `POST` with incompatible JSON media type (`application/json;odata=verbose`) -> `406 Not acceptable`
+- `POST` with legacy JSON media type (`application/json;odata=verbose`, KB path for compatibility mode `<=8.3.7`) on this baseline -> `406 Not acceptable`
 - `POST/PATCH` with Atom XML (`application/atom+xml;type=entry`) -> supported (`201/200`)
 
 3. Update:
@@ -39,6 +39,14 @@ Checked entity: `Document_РеализацияТоваровУслуг`
 5. Delete:
 - `DELETE` by existing GUID -> `500`, insufficient rights for sequence table (`Последовательность.ДокументыОрганизаций`)
 
+## KB Cross-Check (kb.1ci.com)
+- `17.4.9. Methods of modifying data` defines `POST` (create), `PATCH` (partial update), and `DELETE` semantics; observed `201/200` for create/update are aligned, and `DELETE` transport is available but blocked by rights on this user profile.
+  - https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_8.3.23_Developer_Guide/Chapter_17._Integration_with_external_systems/17.4._Standard_OData_interface/17.4.9._Methods_of_modifying_data/
+- `17.4.7. JSON format` lists JSON media-type variants and notes legacy constraint for `application/json;odata=verbose`; observed `406` for `verbose` confirms this baseline should use runtime JSON mode (`application/json;odata=nometadata`).
+  - https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_8.3.23_Developer_Guide/Chapter_17._Integration_with_external_systems/17.4._Standard_OData_interface/17.4.7._JSON_format/
+- `17.4.8. Methods of accessing data` is consistent with URL/key patterns used in this probe for entity reads and key-based addressing.
+  - https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_8.3.23_Developer_Guide/Chapter_17._Integration_with_external_systems/17.4._Standard_OData_interface/17.4.8._Methods_of_accessing_data/
+
 ## Safety / Cleanup
 - Test document was moved to safe state after probe:
   - `Posted=false`
@@ -50,4 +58,5 @@ Checked entity: `Document_РеализацияТоваровУслуг`
 ## Conclusion
 - Target BP 3.0 endpoint for publication can be based on `Document_РеализацияТоваровУслуг`.
 - Current runtime JSON write path (`application/json;odata=nometadata`) is compatible with this base for create/update/posting.
+- This baseline behaves as non-legacy for JSON write policy; rollout to legacy compatibility mode (`<=8.3.7`) requires a dedicated approved profile entry.
 - Atom XML can be used as compatibility fallback, but is not mandatory for this target baseline.
