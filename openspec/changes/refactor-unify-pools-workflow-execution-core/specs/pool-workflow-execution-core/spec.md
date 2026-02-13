@@ -129,6 +129,27 @@
 - **THEN** фасад возвращает статус `publishing`
 - **AND** `status_reason` равен `null`
 
+### Requirement: Safe-flow state machine MUST исключать архитектурно неоднозначные проекции
+Система ДОЛЖНА (SHALL) обеспечивать инварианты safe/unsafe state machine:
+- при `approval_required=true` и `approved_at is null` фасад НЕ ДОЛЖЕН (SHALL NOT) проецировать статус `publishing`;
+- `publishing` допустим только когда `approval_required=false` ИЛИ `approved_at is not null`;
+- `abort-publication` после старта шага `publication_odata` ДОЛЖЕН (SHALL) возвращать business conflict без изменения состояния.
+
+#### Scenario: Safe run без подтверждения не может быть publishing
+- **GIVEN** run находится в `safe` режиме
+- **AND** `approval_required=true`
+- **AND** `approved_at is null`
+- **WHEN** клиент запрашивает детали run
+- **THEN** фасад НЕ возвращает статус `publishing`
+- **AND** run остаётся в `validated` с `status_reason=preparing` или `status_reason=awaiting_approval`
+
+#### Scenario: Unsafe running run проецируется как publishing без approval ожидания
+- **GIVEN** run запущен в `unsafe` режиме
+- **AND** workflow run находится в состоянии `running`
+- **WHEN** клиент запрашивает детали run
+- **THEN** фасад возвращает статус `publishing`
+- **AND** `status_reason` равен `null`
+
 ### Requirement: Tenant boundary MUST сохраняться между pool и workflow run
 Система ДОЛЖНА (SHALL) обеспечивать tenant-изоляцию при запуске, чтении и retry:
 - `pool_run.tenant_id` и `workflow_execution.tenant_id` обязаны совпадать;

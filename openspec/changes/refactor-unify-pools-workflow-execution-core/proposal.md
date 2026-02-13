@@ -63,6 +63,11 @@
   - команды идемпотентны и не должны приводить к duplicate enqueue;
   - `abort-publication` разрешён только до старта шага `publication_odata`, после старта публикации должен возвращаться business conflict.
 - Зафиксировать единый source-of-truth: execution-runtime семантика `pool-distribution-runs` и `pool-odata-publication` резолвится этим change, а `add-intercompany-pool-distribution-module` остаётся источником domain vocabulary/foundation.
+- Зафиксировать anti-drift архитектурные инварианты change:
+  - `approval_required=true` и `approved_at is null` НЕ может проецироваться в `pool:publishing`;
+  - `status_reason` допустим только для `pool:validated`;
+  - `abort-publication` после старта `publication_odata` всегда `business conflict`;
+  - изменения runtime-семантики считаются валидными только при синхронном обновлении `proposal.md`, `design.md`, `tasks.md` и `specs/pool-workflow-execution-core/spec.md`.
 - Запретить удаление `workflows` до миграции всех consumers на unified execution core.
 - Зафиксировать де-комиссию `workflows` только через preflight с реестром consumers и критерием готовности миграции.
 

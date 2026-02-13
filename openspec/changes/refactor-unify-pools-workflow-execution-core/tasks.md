@@ -2,6 +2,7 @@
 - [x] 0.1 Зафиксировать prerequisite: foundation из `add-intercompany-pool-distribution-module` (catalog/data/contracts/UI baseline) доступен как входной baseline.
 - [x] 0.2 Принять deferred execution scope из `add-intercompany-pool-distribution-module` и убрать дубли/расщепление ответственности между change-ами.
 - [x] 0.3 Зафиксировать cross-reference между change-ами в proposal/design/tasks.
+- [x] 0.4 Зафиксировать anti-drift инварианты runtime state machine и правила синхронного обновления `proposal/design/tasks/spec`.
 
 ## 1. Spec и контрактная фиксация
 - [ ] 1.1 Зафиксировать в OpenSpec, что execution runtime для `pools` = `workflows`.
@@ -61,3 +62,4 @@
 - [ ] 6.5 Добавить тесты decommission preflight (`Go/No-Go`) на базе `execution_consumers_registry`.
 - [ ] 6.6 Добавить API/интеграционные тесты на idempotency команд confirm/abort и provenance retry-lineage.
 - [x] 6.7 Прогнать `openspec validate refactor-unify-pools-workflow-execution-core --strict --no-interactive`.
+- [x] 6.8 Выполнить anti-drift self-check: подтвердить, что инварианты state machine согласованы между `proposal/design/spec/tasks`.

@@ -92,6 +92,23 @@
   - source-of-truth: `execution_consumers_registry` с флагами миграции;
   - decommission разрешён только когда все consumers помечены `migrated=true`.
 
+## Architecture Invariants (Anti-Drift)
+- Invariant 1: `workflows` остаётся единственным runtime для `pools`; второй lifecycle в `intercompany_pools` запрещён.
+- Invariant 2: при `approval_required=true` и `approved_at is null` facade НЕ может возвращать `pool:publishing`.
+- Invariant 3: `safe` run проходит фазы `approval_state=preparing -> awaiting_approval -> approved`; `unsafe` использует `approval_state=not_required`.
+- Invariant 4: `status_reason` разрешён только для `pool:validated` и ограничен `preparing|awaiting_approval|queued`.
+- Invariant 5: `abort-publication` после старта шага `publication_odata` всегда возвращает business conflict.
+- Invariant 6: runtime endpoint retry фиксирован как `POST /api/v2/pools/runs/{run_id}/retry`.
+- Invariant 7: `PoolImportSchemaTemplate` трактуется как execution-core алиас foundation `PoolSchemaTemplate`, без нового публичного артефакта.
+- Invariant 8: при конфликте формулировок runtime приоритет имеет `pool-workflow-execution-core/spec.md`; foundation change используется только как domain vocabulary.
+
+## Change Synchronization Rule
+- Любая правка runtime-семантики в этом change ДОЛЖНА обновлять в одном коммите:
+  - `openspec/changes/refactor-unify-pools-workflow-execution-core/proposal.md`
+  - `openspec/changes/refactor-unify-pools-workflow-execution-core/design.md`
+  - `openspec/changes/refactor-unify-pools-workflow-execution-core/tasks.md`
+  - `openspec/changes/refactor-unify-pools-workflow-execution-core/specs/pool-workflow-execution-core/spec.md`
+
 ## Status Projection Contract
 - `draft`: pool run существует, workflow run ещё не создан.
 - `validated/preparing`: pre-publish шаги ещё выполняются или ставятся в очередь до точки ручного решения.
