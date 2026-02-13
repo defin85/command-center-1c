@@ -67,7 +67,11 @@ def start_pool_run_workflow_execution(
             ),
         )
         workflow_template = _resolve_or_create_workflow_template(plan=plan, requested_by=requested_by)
-        execution = workflow_template.create_execution(_build_input_context(run=locked_run))
+        execution = workflow_template.create_execution(
+            _build_input_context(run=locked_run),
+            tenant=locked_run.tenant,
+            execution_consumer="pools",
+        )
         execution.execution_plan = _build_execution_plan_snapshot(
             run=locked_run,
             plan=plan,

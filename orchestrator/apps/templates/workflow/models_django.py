@@ -213,12 +213,20 @@ class WorkflowTemplate(models.Model):
             self.is_valid = False
             raise ValueError(f"Workflow validation failed: {str(e)}")
 
-    def create_execution(self, input_context: Dict[str, Any]) -> "WorkflowExecution":
+    def create_execution(
+        self,
+        input_context: Dict[str, Any],
+        *,
+        tenant: Any | None = None,
+        execution_consumer: str = "legacy",
+    ) -> "WorkflowExecution":
         """
         Create a new execution instance from this template.
 
         Args:
             input_context: Initial context data for the workflow.
+            tenant: Tenant binding for execution (required for pools consumer).
+            execution_consumer: Runtime consumer name (pools/extensions/operations/...).
 
         Returns:
             WorkflowExecution: New execution instance in 'pending' state.
@@ -231,9 +239,15 @@ class WorkflowTemplate(models.Model):
         if not self.is_active:
             raise ValueError("Cannot execute inactive workflow template")
 
+        consumer = str(execution_consumer or "legacy").strip() or "legacy"
+        if consumer == "pools" and tenant is None:
+            raise ValueError("tenant is required for pools workflow execution")
+
         execution = WorkflowExecution.objects.create(
             workflow_template=self,
             input_context=input_context,
+            tenant=tenant,
+            execution_consumer=consumer,
             # status uses default=STATUS_PENDING (FSM protected field)
         )
         return execution
@@ -300,6 +314,19 @@ class WorkflowExecution(models.Model):
     workflow_template = models.ForeignKey(
         WorkflowTemplate, on_delete=models.PROTECT, related_name="executions"
     )
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="workflow_executions",
+        help_text="Tenant context for execution isolation",
+    )
+    execution_consumer = models.CharField(
+        max_length=64,
+        default="legacy",
+        help_text="Consumer that initiated execution (e.g. pools/extensions/operations)",
+    )
 
     # Execution data
     input_context = models.JSONField(default=dict, help_text="Initial input data for the workflow")
@@ -354,6 +381,12 @@ class WorkflowExecution(models.Model):
             models.Index(fields=["status", "-started_at"]),
             models.Index(fields=["workflow_template", "status"]),
             models.Index(fields=["trace_id"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(execution_consumer="pools") | Q(tenant__isnull=False),
+                name="workflow_exec_pools_tenant_required",
+            )
         ]
 
     def __str__(self) -> str:

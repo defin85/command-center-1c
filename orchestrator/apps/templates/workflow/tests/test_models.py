@@ -202,6 +202,14 @@ class TestWorkflowTemplate:
         assert simple_workflow_template.is_valid is True  # Fixed: is_valid is on template, not execution
 
     @pytest.mark.django_db
+    def test_workflow_template_create_execution_requires_tenant_for_pools_consumer(
+        self, simple_workflow_template
+    ):
+        """Pools consumer must be tenant-bound."""
+        with pytest.raises(ValueError, match="tenant is required for pools workflow execution"):
+            simple_workflow_template.create_execution({}, execution_consumer="pools")
+
+    @pytest.mark.django_db
     def test_workflow_template_create_execution_invalid_template(self, admin_user):
         """Test creating execution from invalid template fails."""
         invalid_template = WorkflowTemplate.objects.create(

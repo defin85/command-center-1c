@@ -64,7 +64,11 @@ def _attach_workflow_execution_to_run(*, run: PoolRun, status: str) -> WorkflowE
         is_valid=True,
         is_active=True,
     )
-    execution = template.create_execution({"pool_run_id": str(run.id)})
+    execution = template.create_execution(
+        {"pool_run_id": str(run.id)},
+        tenant=run.tenant,
+        execution_consumer="pools",
+    )
     update_fields = ["workflow_execution_id", "workflow_status", "execution_backend", "workflow_template_name", "updated_at"]
     if status == WorkflowExecution.STATUS_RUNNING:
         execution.start()
@@ -350,6 +354,9 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
     run = PoolRun.objects.get(id=first_payload["run"]["id"])
     assert run.idempotency_key
     assert run.workflow_execution_id is not None
+    workflow_execution = WorkflowExecution.objects.get(id=run.workflow_execution_id)
+    assert workflow_execution.execution_consumer == "pools"
+    assert workflow_execution.tenant_id == run.tenant_id
 
 
 @pytest.mark.django_db
@@ -387,6 +394,40 @@ def test_create_pool_run_endpoint_keeps_workflow_link_when_enqueue_fails(
     assert run.workflow_status == "pending"
     assert run.workflow_execution_id is not None
     assert PoolRunAuditEvent.objects.filter(run=run, event_type="run.workflow_execution_enqueue_failed").exists()
+
+
+@pytest.mark.django_db
+def test_create_pool_run_enqueues_to_workflow_stream_with_normal_priority(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    payload = {
+        "pool_id": str(pool.id),
+        "direction": PoolRunDirection.BOTTOM_UP,
+        "period_start": "2026-01-01",
+        "source_hash": "queue-contract",
+        "mode": "safe",
+    }
+    with (
+        patch("apps.operations.services.operations_service.workflow.redis_client") as mock_redis_client,
+        patch("apps.operations.services.operations_service.workflow.event_publisher") as mock_event_publisher,
+    ):
+        mock_redis_client.STREAM_WORKFLOWS = "commands:worker:workflows"
+        mock_redis_client.enqueue_operation_stream.return_value = "1702389123456-0"
+
+        response = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
+
+    assert response.status_code == 201
+    run_payload = response.json()["run"]
+    assert run_payload["workflow_execution_id"] is not None
+
+    mock_redis_client.enqueue_operation_stream.assert_called_once()
+    call_args = mock_redis_client.enqueue_operation_stream.call_args
+    message = call_args.args[0]
+    assert call_args.kwargs["stream_name"] == "commands:worker:workflows"
+    assert message["execution_config"]["priority"] == "normal"
+    assert message["operation_type"] == "execute_workflow"
+    mock_event_publisher.publish.assert_called_once()
 
 
 @pytest.mark.django_db
@@ -798,6 +839,9 @@ def test_create_pool_run_with_schema_template_uses_workflow_runtime(
     assert payload["run"]["status"] == PoolRun.STATUS_VALIDATED
     assert payload["run"]["workflow_execution_id"] is not None
     assert payload["run"]["execution_backend"] == "workflow_core"
+    workflow_execution = WorkflowExecution.objects.get(id=payload["run"]["workflow_execution_id"])
+    assert workflow_execution.execution_consumer == "pools"
+    assert workflow_execution.tenant_id == default_tenant.id
 
 
 @pytest.mark.django_db
