@@ -15,6 +15,7 @@ const mockUpsertOrganization = vi.fn()
 const mockSyncOrganizationsCatalog = vi.fn()
 const mockUseMe = vi.fn()
 const mockUseDatabases = vi.fn()
+const mockUseMyTenants = vi.fn()
 
 vi.mock('reactflow', () => ({
   default: ({ children }: { children?: ReactNode }) => <div data-testid="mock-reactflow">{children}</div>,
@@ -29,6 +30,10 @@ vi.mock('../../../api/queries/me', () => ({
 
 vi.mock('../../../api/queries/databases', () => ({
   useDatabases: (...args: unknown[]) => mockUseDatabases(...args),
+}))
+
+vi.mock('../../../api/queries/tenants', () => ({
+  useMyTenants: (...args: unknown[]) => mockUseMyTenants(...args),
 }))
 
 vi.mock('../../../api/intercompanyPools', () => ({
@@ -75,8 +80,12 @@ describe('PoolCatalogPage', () => {
     mockSyncOrganizationsCatalog.mockReset()
     mockUseMe.mockReset()
     mockUseDatabases.mockReset()
+    mockUseMyTenants.mockReset()
 
     mockUseMe.mockReturnValue({ data: { is_staff: false } })
+    mockUseMyTenants.mockReturnValue({
+      data: { active_tenant_id: null, tenants: [] },
+    })
     mockUseDatabases.mockReturnValue({
       data: {
         databases: [
@@ -140,6 +149,22 @@ describe('PoolCatalogPage', () => {
     expect(screen.getByTestId('pool-catalog-sync-orgs')).toBeEnabled()
   })
 
+  it('keeps mutating controls enabled for staff with tenant from server context', async () => {
+    mockUseMe.mockReturnValue({ data: { is_staff: true } })
+    mockUseMyTenants.mockReturnValue({
+      data: {
+        active_tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        tenants: [{ id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', slug: 'default', name: 'Default', role: 'owner' }],
+      },
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-add-org')).toBeEnabled()
+    expect(screen.getByTestId('pool-catalog-sync-orgs')).toBeEnabled()
+  })
+
   it('creates organization via drawer and reloads catalog', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
@@ -187,6 +212,68 @@ describe('PoolCatalogPage', () => {
     await waitFor(() => expect(mockListOrganizations).toHaveBeenCalledTimes(2))
   }, 15000)
 
+  it('shows mapped backend domain error for organization upsert and keeps form data', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockUpsertOrganization.mockRejectedValueOnce({
+      response: {
+        data: {
+          success: false,
+          error: {
+            code: 'DATABASE_ALREADY_LINKED',
+            message: 'Database is already linked',
+          },
+        },
+      },
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('pool-catalog-add-org'))
+    await user.clear(screen.getByLabelText('INN'))
+    await user.type(screen.getByLabelText('INN'), '730000000111')
+    await user.clear(screen.getByLabelText('Name'))
+    await user.type(screen.getByLabelText('Name'), 'Mapped Error Org')
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Выбранная база уже привязана к другой организации.')).toBeInTheDocument()
+    expect(screen.getByLabelText('INN')).toHaveValue('730000000111')
+    expect(screen.getByLabelText('Name')).toHaveValue('Mapped Error Org')
+  }, 15000)
+
+  it('applies field-level serializer errors to form fields on upsert', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockUpsertOrganization.mockRejectedValueOnce({
+      response: {
+        data: {
+          success: false,
+          error: {
+            inn: ['ИНН уже существует'],
+          },
+        },
+      },
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('pool-catalog-add-org'))
+    await user.clear(screen.getByLabelText('INN'))
+    await user.type(screen.getByLabelText('INN'), '730000000001')
+    await user.clear(screen.getByLabelText('Name'))
+    await user.type(screen.getByLabelText('Name'), 'Duplicate Org')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Проверьте корректность заполнения полей.')).toBeInTheDocument()
+    expect(await screen.findByText('ИНН уже существует')).toBeInTheDocument()
+    expect(screen.getByLabelText('INN')).toHaveValue('730000000001')
+  }, 15000)
+
   it('blocks sync submit when preflight validation fails', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
@@ -202,6 +289,58 @@ describe('PoolCatalogPage', () => {
 
     expect(await screen.findByText('Строка 1: поле inn обязательно.')).toBeInTheDocument()
     expect(mockSyncOrganizationsCatalog).not.toHaveBeenCalled()
+  }, 15000)
+
+  it('blocks sync submit when payload exceeds 1000 rows', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    const payload = JSON.stringify({
+      rows: Array.from({ length: 1001 }, (_, index) => ({
+        inn: `7300${String(index).padStart(8, '0')}`.slice(0, 12),
+        name: `Org ${index + 1}`,
+      })),
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('pool-catalog-sync-orgs'))
+    fireEvent.change(screen.getByTestId('pool-catalog-sync-input'), {
+      target: { value: payload },
+    })
+    await user.click(screen.getByRole('button', { name: 'Run sync' }))
+
+    expect(await screen.findByText('Превышен лимит batch: максимум 1000 строк.')).toBeInTheDocument()
+    expect(mockSyncOrganizationsCatalog).not.toHaveBeenCalled()
+  }, 15000)
+
+  it('shows field-level backend validation errors in sync modal', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockSyncOrganizationsCatalog.mockRejectedValueOnce({
+      response: {
+        data: {
+          success: false,
+          error: {
+            rows: ['Некорректный формат строки'],
+          },
+        },
+      },
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('pool-catalog-sync-orgs'))
+    fireEvent.change(screen.getByTestId('pool-catalog-sync-input'), {
+      target: { value: '{"rows":[{"inn":"730000000123","name":"Org"}]}' },
+    })
+    await user.click(screen.getByRole('button', { name: 'Run sync' }))
+
+    expect(await screen.findByText('Проверьте корректность заполнения полей.')).toBeInTheDocument()
+    expect(await screen.findByText('rows: Некорректный формат строки')).toBeInTheDocument()
   }, 15000)
 
   it('runs sync with valid payload and shows stats', async () => {

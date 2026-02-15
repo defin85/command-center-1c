@@ -23,6 +23,7 @@ import 'reactflow/dist/style.css'
 
 import { useDatabases } from '../../api/queries/databases'
 import { useMe } from '../../api/queries/me'
+import { useMyTenants } from '../../api/queries/tenants'
 import {
   getOrganization,
   getPoolGraph,
@@ -312,8 +313,11 @@ const parseSyncPayload = (input: string): SyncPreflightResult => {
 export function PoolCatalogPage() {
   const { message } = AntApp.useApp()
   const meQuery = useMe()
+  const hasAuthToken = Boolean(localStorage.getItem('auth_token'))
+  const myTenantsQuery = useMyTenants({ enabled: hasAuthToken })
   const isStaff = Boolean(meQuery.data?.is_staff)
-  const hasTenantContext = Boolean(localStorage.getItem('active_tenant_id'))
+  const activeTenantId = localStorage.getItem('active_tenant_id') || myTenantsQuery.data?.active_tenant_id || null
+  const hasTenantContext = Boolean(activeTenantId)
   const mutatingDisabled = isStaff && !hasTenantContext
   const databasesQuery = useDatabases({ filters: { limit: 500, offset: 0 } })
 
