@@ -36,19 +36,31 @@
 - **THEN** система возвращает существующий run по idempotency
 - **AND** дубликат run не создаётся
 
-### Requirement: Переход на run_input MUST быть backward-compatible для существующих run и legacy клиентов
-Система ДОЛЖНА (SHALL) сохранять читаемость historical run, созданных до появления `run_input`.
+### Requirement: Create-run API MUST удалить source_hash из публичного контракта
+Система ДОЛЖНА (SHALL) удалить поле `source_hash` из публичного контракта `POST /api/v2/pools/runs/` и из формулы idempotency key.
 
-На переходном этапе система ДОЛЖНА (SHALL) принимать legacy-путь с `source_hash` для совместимости старых клиентов, но `run_input` остаётся каноническим источником для нового create-run контракта.
+Система ДОЛЖНА (SHALL) сохранять читаемость historical run после удаления `source_hash` из create-path.
 
-#### Scenario: Historical run без run_input корректно возвращается в API
-- **GIVEN** в системе есть run, созданный до введения поля `run_input`
+#### Scenario: Запрос create-run с source_hash отклоняется как невалидный контракт
+- **GIVEN** клиент отправляет create-run с полем `source_hash`
+- **WHEN** backend валидирует payload по обновлённому контракту
+- **THEN** возвращается `400` с ошибкой валидации неизвестного/запрещённого поля
+- **AND** run не создаётся
+
+#### Scenario: Historical run остаётся читаемым после удаления source_hash из create-path
+- **GIVEN** в системе есть historical run, созданный до обновления контракта
 - **WHEN** клиент запрашивает список или детали run
 - **THEN** API возвращает run без ошибки десериализации
 - **AND** данные run доступны для UI мониторинга и safe-flow операций
 
-#### Scenario: Legacy create-run запрос не ломает API в переходный период
-- **GIVEN** клиент отправляет create-run по legacy-контракту без `run_input`
-- **WHEN** backend обрабатывает запрос в режиме совместимости
-- **THEN** запрос обрабатывается без `5xx` и с детерминированным idempotency поведением
-- **AND** поведение documented как временно совместимое до завершения миграции клиентов
+## MODIFIED Requirements
+### Requirement: Migration MUST сохранять historical runs и идемпотентность
+Система ДОЛЖНА (SHALL) выполнить миграцию так, чтобы historical pool runs оставались читаемыми, а create-run idempotency использовал canonicalized `run_input` fingerprint вместо legacy `source_hash`.
+
+Система ДОЛЖНА (SHALL) иметь rollback criteria и rollback-path для возврата execution routing без потери связей run/provenance.
+
+#### Scenario: Идемпотентный ключ после миграции вычисляется из canonicalized run_input
+- **GIVEN** клиент отправляет create-run с `run_input`
+- **WHEN** backend вычисляет idempotency fingerprint
+- **THEN** fingerprint зависит от canonicalized `run_input` и контекста запуска (`pool_id`, `period`, `direction`)
+- **AND** поле `source_hash` не участвует в вычислении

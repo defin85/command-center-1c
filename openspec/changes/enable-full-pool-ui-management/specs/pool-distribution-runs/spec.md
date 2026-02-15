@@ -44,3 +44,24 @@
 - **WHEN** оператор инициирует retry failed-целей из интерфейса
 - **THEN** UI вызывает retry endpoint
 - **AND** обновлённый статус run отображается в том же интерфейсе
+
+## MODIFIED Requirements
+### Requirement: Run execution MUST быть идемпотентным для одного ключа расчёта
+Система ДОЛЖНА (SHALL) использовать idempotency key на основе `pool_id + period + direction + canonicalized(run_input)`.
+
+Система НЕ ДОЛЖНА (SHALL NOT) использовать `source_hash` как часть публичного create-run контракта или как часть новой формулы idempotency key.
+
+Повторный запуск с тем же canonicalized `run_input` ДОЛЖЕН (SHALL) обновлять существующий набор результатов/документов (upsert), а не создавать дубликаты.
+
+#### Scenario: Повторный запуск с тем же run_input не создаёт дубликаты
+- **GIVEN** run уже выполнен для конкретного canonicalized `run_input`
+- **WHEN** пользователь запускает повторную обработку с тем же `run_input`
+- **THEN** существующие записи обновляются
+- **AND** новые дубликаты документов и строк распределения не появляются
+
+#### Scenario: Изменение run_input создаёт новый idempotent запуск
+- **GIVEN** пользователь повторно запускает run с теми же `pool_id`, `period`, `direction`
+- **AND** `run_input` отличается от предыдущего запуска
+- **WHEN** система вычисляет idempotency key
+- **THEN** key отличается от предыдущего
+- **AND** создаётся новый запуск, а не reuse старого

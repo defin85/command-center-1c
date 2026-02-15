@@ -45,7 +45,7 @@
 ### Decision 3: Idempotency fingerprint учитывает `run_input`
 - Fingerprint должен включать canonicalized `run_input`.
 - Изменение стартовой суммы или входных данных должно приводить к новому idempotency key.
-- На переходном этапе legacy `source_hash` допускается для обратной совместимости API, но не должен быть единственным источником идентификации входных данных в новой модели.
+- `source_hash` удаляется из публичного create-run контракта и не участвует в новой формуле idempotency.
 
 Почему:
 - Предотвращает ложное переиспользование run при разных входных данных.
@@ -58,7 +58,7 @@
 - Минимизирует миграцию UX и переиспользует существующую навигацию/контекст.
 
 ### Decision 5: Snapshot update защищается optimistic concurrency
-- Mutating update topology snapshot должен использовать optimistic concurrency (`If-Match`/version).
+- Mutating update topology snapshot должен использовать optimistic concurrency через обязательный `version` token в payload.
 - При конфликте версии backend возвращает `409` с доменным кодом, UI сохраняет введённые данные и предлагает перезагрузить актуальную версию.
 
 Почему:
@@ -67,13 +67,14 @@
 ## API/Model Considerations
 - API:
   - добавить mutating endpoint'ы для пула/топологии;
-  - расширить `PoolRunCreateRequest` полем `run_input`.
+  - расширить `PoolRunCreateRequest` полем `run_input` и удалить из него `source_hash`.
 - Model:
   - хранить `run_input` в run state (отдельным полем или каноническим под-объектом state-модели);
-  - обеспечить совместимость чтения historical runs без `run_input`.
+  - обеспечить читаемость historical runs после удаления `source_hash` из create-path API.
 - Idempotency:
   - canonicalization `run_input` должна быть детерминированной (стабильный JSON + нормализация денежных полей);
   - одинаковый semantically-equivalent payload должен давать одинаковый fingerprint.
+  - `source_hash` не используется в формуле нового idempotency key.
 - Workflow:
   - передавать `run_input` в input_context;
   - шаги `prepare_input` и `distribution_calculation` используют его как источник данных.
@@ -85,19 +86,20 @@
 ## Risks / Trade-offs
 - Риск роста сложности формы run при поддержке обеих направлений.
   - Mitigation: direction-specific UI блоки + строгая клиентская и серверная валидация.
-- Риск несовместимости при вводе `run_input` в существующие idempotency сценарии.
-  - Mitigation: явная backward-compatible миграция и тесты на старые/новые run.
+- Риск поломки старых клиентов из-за удаления `source_hash` из публичного create-run контракта.
+  - Mitigation: release notes + версия контрактов в OpenAPI + явный `400` с machine-readable ошибкой unsupported field.
 - Риск потери изменений топологии при конкурентном редактировании.
-  - Mitigation: optimistic concurrency (`If-Match`/version) + понятный `409` flow в UI.
+  - Mitigation: optimistic concurrency (`version` token) + понятный `409` flow в UI.
 - Риск регрессий в OpenAPI и generated clients.
   - Mitigation: contract-first обновление + parity tests + генерация в одном change.
 
 ## Migration Plan
-1. Обновить OpenAPI и backend сериализаторы/validators.
+1. Обновить OpenAPI и backend сериализаторы/validators (`run_input` обязателен по направлению, `source_hash` удалён из create-run контракта).
 2. Реализовать mutating API для pool/topology.
-3. Расширить frontend API слой и формы `/pools/catalog`, `/pools/runs`.
-4. Добавить тесты (backend/frontend/browser smoke).
-5. Включить feature в UI после прохождения валидации и тестов.
+3. Переключить idempotency вычисление на canonicalized `run_input` и удалить legacy ветки с `source_hash`.
+4. Расширить frontend API слой и формы `/pools/catalog`, `/pools/runs`.
+5. Добавить тесты (backend/frontend/browser smoke).
+6. Включить feature в UI после прохождения валидации и тестов.
 
 ## Open Questions
 - Нет блокирующих открытых вопросов.

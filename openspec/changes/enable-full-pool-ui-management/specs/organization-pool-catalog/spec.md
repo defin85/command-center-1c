@@ -39,7 +39,7 @@ UI ДОЛЖЕН (SHALL) использовать канонический backen
 - **AND** ручные вызовы из Postman/curl не требуются
 
 ### Requirement: Topology snapshot mutating MUST предотвращать lost update при конкурентном редактировании
-Система ДОЛЖНА (SHALL) поддерживать optimistic concurrency для mutating-операций topology snapshot через version token (`If-Match` или эквивалентный `version` в payload).
+Система ДОЛЖНА (SHALL) поддерживать optimistic concurrency для mutating-операций topology snapshot через обязательный `version` token в payload.
 
 При конфликте версий система ДОЛЖНА (SHALL) возвращать `409 Conflict` с machine-readable причиной, а UI ДОЛЖЕН (SHALL) сохранять введённые данные до повторной попытки.
 

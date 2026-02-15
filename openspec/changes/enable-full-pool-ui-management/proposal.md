@@ -18,9 +18,8 @@
   - сохранялся как часть доменной сущности запуска;
   - участвовал в idempotency fingerprint;
   - передавался в workflow input_context для шагов `prepare_input` и `distribution_calculation`.
-- Зафиксировать совместимость перехода на `run_input`:
-  - historical run без `run_input` остаются читаемыми в API/UI;
-  - на переходном этапе допускается legacy `source_hash`, но `run_input` является каноническим source-of-truth для нового fingerprint.
+- **BREAKING** Удалить `source_hash` из публичного create-run контракта и из формулы idempotency key.
+- Сохранить читаемость historical run в API/UI после удаления `source_hash` из внешнего контракта.
 - Сохранить и унифицировать end-to-end контроль safe flow в UI (`confirm-publication`, `abort-publication`, retry failed) без выхода в внешние API-клиенты.
 - Обновить OpenAPI и generated client/types под новый UI-сценарий.
 
@@ -29,6 +28,8 @@
   - `organization-pool-catalog`
   - `pool-distribution-runs`
   - `pool-workflow-execution-core`
+- Breaking API change:
+  - `POST /api/v2/pools/runs/` больше не принимает `source_hash`; клиенты обязаны передавать `run_input`.
 - Affected code (expected):
   - `frontend/src/pages/Pools/PoolCatalogPage.tsx`
   - `frontend/src/pages/Pools/PoolRunsPage.tsx`
@@ -44,4 +45,3 @@
 - Визуальный drag-and-drop редактор графа (в MVP допускается формо- и табличное редактирование топологии).
 - Изменение бизнес-правил распределения (алгоритм/формулы) вне текущих доменных спецификаций.
 - Отдельный «новый runtime» для pools: используется текущий unified workflow runtime.
-- Перевод старых клиентов на `run_input` в рамках одного релиза без переходного периода совместимости.
