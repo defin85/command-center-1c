@@ -86,7 +86,7 @@ def start_pool_run_workflow_execution(
                 period_end=locked_run.period_end,
                 direction=locked_run.direction,
                 mode=locked_run.mode,
-                source_hash=locked_run.source_hash,
+                run_input=locked_run.run_input if isinstance(locked_run.run_input, dict) else {},
             ),
         )
         save_fields = {
@@ -251,7 +251,7 @@ def start_pool_run_retry_workflow_execution(
                 period_end=locked_run.period_end,
                 direction=locked_run.direction,
                 mode=locked_run.mode,
-                source_hash=locked_run.source_hash,
+                run_input=locked_run.run_input if isinstance(locked_run.run_input, dict) else {},
             ),
         )
         workflow_template = _resolve_or_create_workflow_template(plan=plan, requested_by=requested_by)
@@ -366,7 +366,7 @@ def _build_input_context(*, run: PoolRun) -> dict[str, Any]:
         "mode": run.mode,
         "period_start": run.period_start.isoformat(),
         "period_end": run.period_end.isoformat() if run.period_end else None,
-        "source_hash": run.source_hash,
+        "run_input": run.run_input if isinstance(run.run_input, dict) else {},
         "approval_required": run.mode == PoolRunMode.SAFE,
         "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
         "approval_state": _resolve_approval_state_for_input_context(run=run),
@@ -456,7 +456,7 @@ def _build_execution_plan_snapshot(
             "mode": run.mode,
             "period_start": run.period_start.isoformat(),
             "period_end": run.period_end.isoformat() if run.period_end else None,
-            "source_hash": run.source_hash,
+            "run_input": run.run_input if isinstance(run.run_input, dict) else {},
         },
         "targets": {
             "entity": "pool_run",

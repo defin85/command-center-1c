@@ -20,7 +20,8 @@
     "test:browser:action-catalog": "playwright test tests/browser/action-catalog-ui.spec.ts",
     "test:browser:command-schemas": "playwright test tests/browser/command-schemas-ui.spec.ts",
     "test:browser:extensions": "playwright test tests/browser/extensions-ui.spec.ts",
-    "test:browser:forms": "playwright test tests/browser/form-field-ids.spec.ts"
+    "test:browser:forms": "playwright test tests/browser/form-field-ids.spec.ts",
+    "test:browser:pools-full-flow": "playwright test tests/browser/pools-full-flow-ui.spec.ts"
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",

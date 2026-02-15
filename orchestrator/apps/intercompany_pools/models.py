@@ -202,6 +202,7 @@ class PoolRun(models.Model):
     )
     period_start = models.DateField(db_index=True)
     period_end = models.DateField(null=True, blank=True)
+    run_input = models.JSONField(default=dict, blank=True)
     source_hash = models.CharField(max_length=64, blank=True, default="")
     idempotency_key = models.CharField(max_length=128, blank=True, default="", db_index=True)
     workflow_execution_id = models.UUIDField(null=True, blank=True, db_index=True)

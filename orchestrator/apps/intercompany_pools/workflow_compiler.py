@@ -28,11 +28,7 @@ class PoolWorkflowRunContext:
     period_end: date | None
     direction: str
     mode: str
-    source_hash: str = ""
-
-    @property
-    def normalized_source_hash(self) -> str:
-        return str(self.source_hash or "").strip().lower()
+    run_input: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -95,7 +91,7 @@ class PoolWorkflowCompiler:
             "period_end": run_context.period_end.isoformat() if run_context.period_end else None,
             "direction": run_context.direction,
             "mode": run_context.mode,
-            "source_hash": run_context.normalized_source_hash,
+            "run_input": run_context.run_input,
             "template_version": template_version,
             "workflow_binding_hint": self._resolve_workflow_binding_hint(schema_template),
             "dag_structure": dag_structure,
@@ -283,9 +279,9 @@ class PoolWorkflowCompiler:
                     "type": "string",
                     "enum": [PoolRunMode.SAFE, PoolRunMode.UNSAFE],
                 },
-                "source_hash": {"type": "string"},
+                "run_input": {"type": "object"},
             },
-            "required": ["pool_run_id", "pool_id", "period_start", "direction", "mode", "source_hash"],
+            "required": ["pool_run_id", "pool_id", "period_start", "direction", "mode", "run_input"],
         }
 
     @staticmethod

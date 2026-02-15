@@ -103,21 +103,30 @@ def test_build_pool_run_idempotency_key_is_deterministic(run_fixture: PoolRun) -
         period_start=run.period_start,
         period_end=run.period_end,
         direction=run.direction,
-        source_hash="ABC",
+        run_input={
+            "source_payload": [{"inn": "770000000001", "amount": "10.00"}],
+            "starting_amount": "100.0",
+        },
     )
     key2 = build_pool_run_idempotency_key(
         pool_id=str(run.pool_id),
         period_start=run.period_start,
         period_end=run.period_end,
         direction=run.direction,
-        source_hash="abc",
+        run_input={
+            "starting_amount": "100.00",
+            "source_payload": [{"amount": "10", "inn": "770000000001"}],
+        },
     )
     key3 = build_pool_run_idempotency_key(
         pool_id=str(run.pool_id),
         period_start=run.period_start,
         period_end=run.period_end,
         direction=run.direction,
-        source_hash="def",
+        run_input={
+            "source_payload": [{"inn": "770000000001", "amount": "99.00"}],
+            "starting_amount": "100.00",
+        },
     )
     assert key1 == key2
     assert key1 != key3
@@ -132,7 +141,7 @@ def test_upsert_pool_run_reuses_existing_run(run_fixture: PoolRun) -> None:
         direction=run.direction,
         period_start=run.period_start,
         period_end=run.period_end,
-        source_hash="file-hash-1",
+        run_input={"source_payload": [{"inn": "770000000001", "amount": "10.00"}]},
         mode=PoolRunMode.SAFE,
         validation_summary={"version": 1},
     )
@@ -142,7 +151,7 @@ def test_upsert_pool_run_reuses_existing_run(run_fixture: PoolRun) -> None:
         direction=run.direction,
         period_start=run.period_start,
         period_end=run.period_end,
-        source_hash="file-hash-1",
+        run_input={"source_payload": [{"inn": "770000000001", "amount": "10.00"}]},
         mode=PoolRunMode.UNSAFE,
         validation_summary={"version": 2},
     )
@@ -150,9 +159,10 @@ def test_upsert_pool_run_reuses_existing_run(run_fixture: PoolRun) -> None:
     assert first.created is True
     assert second.created is False
     assert first.run.id == second.run.id
-    state = PoolRun.objects.filter(id=second.run.id).values("mode", "validation_summary").get()
+    state = PoolRun.objects.filter(id=second.run.id).values("mode", "validation_summary", "run_input").get()
     assert state["mode"] == PoolRunMode.UNSAFE
     assert state["validation_summary"] == {"version": 2}
+    assert state["run_input"] == {"source_payload": [{"inn": "770000000001", "amount": "10.00"}]}
     event_types = list(
         PoolRunAuditEvent.objects.filter(run_id=second.run.id).values_list("event_type", flat=True)
     )

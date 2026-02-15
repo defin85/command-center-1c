@@ -9,14 +9,17 @@ import {
   Form,
   Input,
   InputNumber,
+  Radio,
   Row,
   Select,
   Space,
   Table,
   Tag,
   Typography,
+  Upload,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
+import { UploadOutlined } from '@ant-design/icons'
 import ReactFlow, { Background, Controls, MiniMap, type Edge, type Node } from 'reactflow'
 import 'reactflow/dist/style.css'
 
@@ -28,6 +31,7 @@ import {
   getPoolRunReport,
   listOrganizationPools,
   listPoolRuns,
+  listPoolSchemaTemplates,
   retryPoolRunFailed,
   type OrganizationPool,
   type PoolGraph,
@@ -37,6 +41,7 @@ import {
   type PoolRunRetryChainAttempt,
   type PoolRunSafeCommandConflict,
   type PoolRunSafeCommandType,
+  type PoolSchemaTemplate,
 } from '../../api/intercompanyPools'
 
 const { Title, Text } = Typography
@@ -47,7 +52,10 @@ type CreateRunFormValues = {
   period_end?: string
   direction: 'top_down' | 'bottom_up'
   mode: 'safe' | 'unsafe'
-  source_hash: string
+  starting_amount?: number
+  schema_template_id?: string
+  source_payload_json?: string
+  source_artifact_id?: string
 }
 
 type RetryFormValues = {
@@ -61,6 +69,12 @@ const DEFAULT_RETRY_DOCUMENTS_JSON = JSON.stringify(
   {
     "<database_id>": [{ Amount: '100.00' }],
   },
+  null,
+  2
+)
+
+const DEFAULT_BOTTOM_UP_SOURCE_PAYLOAD_JSON = JSON.stringify(
+  [{ inn: '730000000001', amount: '100.00' }],
   null,
   2
 )
@@ -94,6 +108,11 @@ const PUBLICATION_STEP_COLORS: Record<string, string> = {
   completed: 'success',
 }
 
+const INPUT_CONTRACT_COLORS: Record<string, string> = {
+  run_input_v1: 'green',
+  legacy_pre_run_input: 'orange',
+}
+
 const formatDate = (value: string | null | undefined) => {
   if (!value) return '-'
   return new Date(value).toLocaleString()
@@ -108,6 +127,7 @@ const getStatusColor = (status: string) => STATUS_COLORS[status] ?? 'default'
 const getStatusReasonColor = (statusReason: string) => STATUS_REASON_COLORS[statusReason] ?? 'default'
 const getApprovalStateColor = (approvalState: string) => APPROVAL_STATE_COLORS[approvalState] ?? 'default'
 const getPublicationStepColor = (stepState: string) => PUBLICATION_STEP_COLORS[stepState] ?? 'default'
+const getInputContractColor = (contractVersion: string) => INPUT_CONTRACT_COLORS[contractVersion] ?? 'default'
 const getWorkflowAttemptKindColor = (attemptKind: string) => (
   attemptKind === 'initial' ? 'blue' : attemptKind === 'retry' ? 'cyan' : 'default'
 )
@@ -144,6 +164,60 @@ const parseDocumentsPayload = (raw: string): Record<string, Array<Record<string,
     })
   }
   return result
+}
+
+const parseBottomUpSourcePayload = (raw: string): Record<string, unknown> | Array<Record<string, unknown>> => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('source_payload: invalid JSON')
+  }
+  if (!parsed || (typeof parsed !== 'object' && !Array.isArray(parsed))) {
+    throw new Error('source_payload: object or array expected')
+  }
+  if (!Array.isArray(parsed)) {
+    return parsed as Record<string, unknown>
+  }
+  return parsed.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error('source_payload: array items must be objects')
+    }
+    return item as Record<string, unknown>
+  })
+}
+
+const parseProblemDetailsMessage = (error: unknown): string | null => {
+  if (!error || typeof error !== 'object') return null
+  const response = (error as { response?: { data?: unknown } }).response
+  const payload = response?.data
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null
+  }
+  const detail = (payload as { detail?: unknown }).detail
+  if (typeof detail === 'string' && detail.trim().length > 0) {
+    return detail.trim()
+  }
+  return null
+}
+
+const resolveInputContractVersion = (run: PoolRun): string => {
+  if (run.input_contract_version) {
+    return run.input_contract_version
+  }
+  return run.run_input ? 'run_input_v1' : 'legacy_pre_run_input'
+}
+
+const summarizeRunInput = (run: PoolRun): string => {
+  if (!run.run_input || typeof run.run_input !== 'object') {
+    return 'null'
+  }
+  const keys = Object.keys(run.run_input)
+  if (keys.length === 0) {
+    return '{}'
+  }
+  const preview = keys.slice(0, 2).join(', ')
+  return keys.length > 2 ? `${preview}, +${keys.length - 2}` : preview
 }
 
 const buildFlowLayout = (graph: PoolGraph | null): { nodes: Node[]; edges: Edge[] } => {
@@ -244,6 +318,7 @@ const parseSafeCommandConflict = (error: unknown): PoolRunSafeCommandConflict | 
 export function PoolRunsPage() {
   const { message } = AntApp.useApp()
   const [pools, setPools] = useState<OrganizationPool[]>([])
+  const [schemaTemplates, setSchemaTemplates] = useState<PoolSchemaTemplate[]>([])
   const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null)
   const [graphDate, setGraphDate] = useState<string>(new Date().toISOString().slice(0, 10))
   const [graph, setGraph] = useState<PoolGraph | null>(null)
@@ -251,6 +326,7 @@ export function PoolRunsPage() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [report, setReport] = useState<PoolRunReport | null>(null)
   const [loadingPools, setLoadingPools] = useState(false)
+  const [loadingSchemaTemplates, setLoadingSchemaTemplates] = useState(false)
   const [loadingGraph, setLoadingGraph] = useState(false)
   const [loadingRuns, setLoadingRuns] = useState(false)
   const [loadingReport, setLoadingReport] = useState(false)
@@ -274,6 +350,7 @@ export function PoolRunsPage() {
   }, [report, selectedRun, selectedRunId])
 
   const flow = useMemo(() => buildFlowLayout(graph), [graph])
+  const createDirection = Form.useWatch('direction', createForm) ?? 'top_down'
 
   const loadPools = useCallback(async () => {
     setLoadingPools(true)
@@ -290,6 +367,18 @@ export function PoolRunsPage() {
       setLoadingPools(false)
     }
   }, [selectedPoolId])
+
+  const loadSchemaTemplates = useCallback(async () => {
+    setLoadingSchemaTemplates(true)
+    try {
+      const data = await listPoolSchemaTemplates({ isPublic: true, isActive: true })
+      setSchemaTemplates(data)
+    } catch {
+      setError('Не удалось загрузить шаблоны импорта.')
+    } finally {
+      setLoadingSchemaTemplates(false)
+    }
+  }, [])
 
   const loadGraph = useCallback(async () => {
     if (!selectedPoolId) {
@@ -349,7 +438,8 @@ export function PoolRunsPage() {
 
   useEffect(() => {
     void loadPools()
-  }, [loadPools])
+    void loadSchemaTemplates()
+  }, [loadPools, loadSchemaTemplates])
 
   useEffect(() => {
     void loadGraph()
@@ -364,9 +454,12 @@ export function PoolRunsPage() {
     createForm.setFieldsValue({
       period_start: new Date().toISOString().slice(0, 10),
       period_end: '',
-      direction: 'bottom_up',
+      direction: 'top_down',
       mode: 'safe',
-      source_hash: '',
+      starting_amount: 100,
+      schema_template_id: undefined,
+      source_payload_json: DEFAULT_BOTTOM_UP_SOURCE_PAYLOAD_JSON,
+      source_artifact_id: '',
     })
     retryForm.setFieldsValue({
       entity_name: 'Document_IntercompanyPoolDistribution',
@@ -391,19 +484,54 @@ export function PoolRunsPage() {
     setCreatingRun(true)
     setError(null)
     try {
+      const direction = values.direction
+      const runInput: Record<string, unknown> = {}
+      let schemaTemplateId: string | null | undefined = undefined
+
+      if (direction === 'top_down') {
+        const startingAmount = Number(values.starting_amount)
+        if (!Number.isFinite(startingAmount) || startingAmount <= 0) {
+          setError('top_down: starting amount должен быть положительным числом.')
+          return
+        }
+        runInput.starting_amount = startingAmount.toFixed(2)
+      } else {
+        const artifactId = values.source_artifact_id?.trim()
+        const sourcePayloadRaw = values.source_payload_json?.trim() || ''
+        if (sourcePayloadRaw.length > 0) {
+          runInput.source_payload = parseBottomUpSourcePayload(sourcePayloadRaw)
+        }
+        if (artifactId) {
+          runInput.source_artifact_id = artifactId
+        }
+        if (!Object.prototype.hasOwnProperty.call(runInput, 'source_payload') && !artifactId) {
+          setError('bottom_up: укажите source payload JSON или source artifact ID.')
+          return
+        }
+        schemaTemplateId = values.schema_template_id?.trim() || null
+      }
+
       const payload = await createPoolRun({
         pool_id: selectedPoolId,
-        direction: values.direction,
+        direction,
         period_start: values.period_start,
         period_end: values.period_end?.trim() || null,
-        source_hash: values.source_hash?.trim() || '',
+        run_input: runInput,
         mode: values.mode,
+        schema_template_id: schemaTemplateId,
       })
       message.success(payload.created ? 'Run создан' : 'Run переиспользован по idempotency key')
       await loadRuns()
       setSelectedRunId(payload.run.id)
-    } catch {
-      setError('Не удалось создать run.')
+    } catch (err) {
+      const problemDetail = parseProblemDetailsMessage(err)
+      if (problemDetail) {
+        setError(problemDetail)
+      } else if (err instanceof Error && err.message) {
+        setError(err.message)
+      } else {
+        setError('Не удалось создать run.')
+      }
     } finally {
       setCreatingRun(false)
     }
@@ -567,6 +695,20 @@ export function PoolRunsPage() {
         },
       },
       {
+        title: 'Input',
+        key: 'input',
+        width: 220,
+        render: (_value, record) => {
+          const contractVersion = resolveInputContractVersion(record)
+          return (
+            <Space direction="vertical" size={2}>
+              <Tag color={getInputContractColor(contractVersion)}>{contractVersion}</Tag>
+              <Text type="secondary">{summarizeRunInput(record)}</Text>
+            </Space>
+          )
+        },
+      },
+      {
         title: 'Period',
         key: 'period',
         render: (_value, record) => `${record.period_start}${record.period_end ? `..${record.period_end}` : ''}`,
@@ -708,35 +850,104 @@ export function PoolRunsPage() {
             </Button>
           </Space>
 
-          <Form form={createForm} layout="inline">
-            <Form.Item name="period_start" rules={[{ required: true, message: 'period_start required' }]}>
-              <Input type="date" style={{ width: 160 }} />
-            </Form.Item>
-            <Form.Item name="period_end">
-              <Input type="date" style={{ width: 160 }} />
-            </Form.Item>
-            <Form.Item name="direction" rules={[{ required: true }]}>
-              <Select
-                style={{ width: 140 }}
-                options={[
-                  { value: 'bottom_up', label: 'bottom_up' },
-                  { value: 'top_down', label: 'top_down' },
-                ]}
-              />
-            </Form.Item>
-            <Form.Item name="mode" rules={[{ required: true }]}>
-              <Select
-                style={{ width: 120 }}
-                options={[
-                  { value: 'safe', label: 'safe' },
-                  { value: 'unsafe', label: 'unsafe' },
-                ]}
-              />
-            </Form.Item>
-            <Form.Item name="source_hash">
-              <Input placeholder="source hash" style={{ width: 220 }} />
-            </Form.Item>
-            <Button type="primary" loading={creatingRun} onClick={() => void handleCreateRun()}>
+          <Form form={createForm} layout="vertical">
+            <Row gutter={12}>
+              <Col span={5}>
+                <Form.Item name="period_start" label="Period start" rules={[{ required: true }]}>
+                  <Input type="date" />
+                </Form.Item>
+              </Col>
+              <Col span={5}>
+                <Form.Item name="period_end" label="Period end">
+                  <Input type="date" />
+                </Form.Item>
+              </Col>
+              <Col span={4}>
+                <Form.Item name="direction" label="Direction" rules={[{ required: true }]}>
+                  <Radio.Group data-testid="pool-runs-create-direction" optionType="button" buttonStyle="solid">
+                    <Radio.Button value="top_down">top_down</Radio.Button>
+                    <Radio.Button value="bottom_up">bottom_up</Radio.Button>
+                  </Radio.Group>
+                </Form.Item>
+              </Col>
+              <Col span={4}>
+                <Form.Item name="mode" label="Mode" rules={[{ required: true }]}>
+                  <Select
+                    options={[
+                      { value: 'safe', label: 'safe' },
+                      { value: 'unsafe', label: 'unsafe' },
+                    ]}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={6}>
+                {createDirection === 'top_down' ? (
+                  <Form.Item
+                    name="starting_amount"
+                    label="Starting amount"
+                    rules={[
+                      { required: true, message: 'starting_amount required' },
+                      {
+                        validator: async (_rule, value) => {
+                          if (value == null || Number(value) <= 0) {
+                            throw new Error('starting_amount must be > 0')
+                          }
+                        },
+                      },
+                    ]}
+                  >
+                    <InputNumber data-testid="pool-runs-create-starting-amount" min={0.01} step={0.01} style={{ width: '100%' }} />
+                  </Form.Item>
+                ) : (
+                  <Form.Item name="schema_template_id" label="Schema template">
+                    <Select
+                      data-testid="pool-runs-create-schema-template"
+                      allowClear
+                      loading={loadingSchemaTemplates}
+                      placeholder="Optional template"
+                      options={schemaTemplates.map((item) => ({
+                        value: item.id,
+                        label: `${item.code} - ${item.name}`,
+                      }))}
+                    />
+                  </Form.Item>
+                )}
+              </Col>
+            </Row>
+
+            {createDirection === 'bottom_up' && (
+              <Row gutter={12}>
+                <Col span={16}>
+                  <Form.Item name="source_payload_json" label="Source payload JSON">
+                    <Input.TextArea data-testid="pool-runs-create-source-payload" rows={6} placeholder='[{"inn":"730000000001","amount":"100.00"}]' />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name="source_artifact_id" label="Source artifact ID">
+                    <Input data-testid="pool-runs-create-source-artifact" placeholder="artifact://..." />
+                  </Form.Item>
+                  <Upload
+                    accept=".json,application/json,text/plain"
+                    maxCount={1}
+                    showUploadList={false}
+                    beforeUpload={async (file) => {
+                      try {
+                        const text = await file.text()
+                        createForm.setFieldValue('source_payload_json', text)
+                        message.success('Source payload loaded from file.')
+                      } catch {
+                        message.error('Не удалось прочитать выбранный файл.')
+                      }
+                      return false
+                    }}
+                  >
+                    <Button icon={<UploadOutlined />}>Load payload file</Button>
+                  </Upload>
+                </Col>
+              </Row>
+            )}
+
+            <Button type="primary" loading={creatingRun} onClick={() => void handleCreateRun()} data-testid="pool-runs-create-submit">
               Create / Upsert Run
             </Button>
           </Form>
@@ -802,6 +1013,14 @@ export function PoolRunsPage() {
               <Descriptions.Item label="Workflow Template" span={1}>
                 <Text>{runDetails.workflow_template_name ?? '-'}</Text>
               </Descriptions.Item>
+              <Descriptions.Item label="Input Contract" span={1}>
+                <Tag color={getInputContractColor(resolveInputContractVersion(runDetails))}>
+                  {resolveInputContractVersion(runDetails)}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Run Input" span={1}>
+                <Text>{summarizeRunInput(runDetails)}</Text>
+              </Descriptions.Item>
               <Descriptions.Item label="Approval State" span={1}>
                 {runDetails.approval_state ? (
                   <Tag color={getApprovalStateColor(runDetails.approval_state)}>{runDetails.approval_state}</Tag>
@@ -842,6 +1061,14 @@ export function PoolRunsPage() {
                 )}
               </Descriptions.Item>
             </Descriptions>
+
+            <Text strong>Run Input</Text>
+            <TextArea
+              data-testid="pool-runs-run-input"
+              readOnly
+              rows={6}
+              value={JSON.stringify(runDetails.run_input ?? null, null, 2)}
+            />
 
             <Text strong>Publication Attempts</Text>
             <Table

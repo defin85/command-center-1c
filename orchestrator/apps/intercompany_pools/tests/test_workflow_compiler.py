@@ -41,7 +41,7 @@ def _create_context(
         period_end=date(2026, 1, 31),
         direction=direction,
         mode=mode,
-        source_hash="SOURCE-HASH-01",
+        run_input={"source_payload": [{"inn": "770000000001", "amount": "10.00"}]},
     )
 
 

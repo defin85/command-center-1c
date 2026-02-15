@@ -21,6 +21,7 @@ export type OrganizationPool = {
   id: string
   code: string
   name: string
+  description: string
   is_active: boolean
   metadata: Record<string, unknown>
   updated_at: string
@@ -124,7 +125,8 @@ export type PoolRun = {
   status_reason: PoolRunStatusReason
   period_start: string
   period_end: string | null
-  source_hash: string
+  run_input: Record<string, unknown> | null
+  input_contract_version?: string | null
   idempotency_key: string
   workflow_execution_id: string | null
   workflow_status: string | null
@@ -209,6 +211,7 @@ export type PoolGraphEdge = {
 export type PoolGraph = {
   pool_id: string
   date: string
+  version: string
   nodes: PoolGraphNode[]
   edges: PoolGraphEdge[]
 }
@@ -248,12 +251,44 @@ export type CreatePoolRunPayload = {
   direction: 'top_down' | 'bottom_up'
   period_start: string
   period_end?: string | null
-  source_hash?: string
+  run_input: Record<string, unknown>
   mode?: 'safe' | 'unsafe'
   schema_template_id?: string | null
   seed?: number | null
   validation_summary?: Record<string, unknown>
   diagnostics?: unknown[]
+}
+
+export type UpsertOrganizationPoolPayload = {
+  pool_id?: string
+  code: string
+  name: string
+  description?: string
+  is_active?: boolean
+  metadata?: Record<string, unknown>
+}
+
+export type PoolTopologySnapshotNodeInput = {
+  organization_id: string
+  is_root?: boolean
+  metadata?: Record<string, unknown>
+}
+
+export type PoolTopologySnapshotEdgeInput = {
+  parent_organization_id: string
+  child_organization_id: string
+  weight?: string
+  min_amount?: string | null
+  max_amount?: string | null
+  metadata?: Record<string, unknown>
+}
+
+export type UpsertPoolTopologySnapshotPayload = {
+  version: string
+  effective_from: string
+  effective_to?: string | null
+  nodes: PoolTopologySnapshotNodeInput[]
+  edges?: PoolTopologySnapshotEdgeInput[]
 }
 
 export type RetryPoolRunPayload = {
@@ -320,6 +355,17 @@ export async function listOrganizationPools(): Promise<OrganizationPool[]> {
   return response.data.pools ?? []
 }
 
+export async function upsertOrganizationPool(
+  payload: UpsertOrganizationPoolPayload
+): Promise<{ pool: OrganizationPool; created: boolean }> {
+  const response = await apiClient.post<{ pool: OrganizationPool; created: boolean }>(
+    '/api/v2/pools/upsert/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
 export async function listOrganizations(
   params: ListOrganizationsParams = {}
 ): Promise<Organization[]> {
@@ -380,6 +426,32 @@ export async function getPoolGraph(poolId: string, targetDate?: string): Promise
     params: targetDate ? { date: targetDate } : undefined,
     skipGlobalError: true,
   })
+  return response.data
+}
+
+export async function upsertPoolTopologySnapshot(
+  poolId: string,
+  payload: UpsertPoolTopologySnapshotPayload
+): Promise<{
+  pool_id: string
+  version: string
+  effective_from: string
+  effective_to: string | null
+  nodes_count: number
+  edges_count: number
+}> {
+  const response = await apiClient.post<{
+    pool_id: string
+    version: string
+    effective_from: string
+    effective_to: string | null
+    nodes_count: number
+    edges_count: number
+  }>(
+    `/api/v2/pools/${poolId}/topology-snapshot/upsert/`,
+    payload,
+    { skipGlobalError: true }
+  )
   return response.data
 }
 

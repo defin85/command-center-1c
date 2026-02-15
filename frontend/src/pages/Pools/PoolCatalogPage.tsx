@@ -9,10 +9,12 @@ import {
   Drawer,
   Form,
   Input,
+  InputNumber,
   Modal,
   Row,
   Select,
   Space,
+  Switch,
   Table,
   Tag,
   Typography,
@@ -30,12 +32,16 @@ import {
   listOrganizationPools,
   listOrganizations,
   syncOrganizationsCatalog,
+  upsertOrganizationPool,
   upsertOrganization,
+  upsertPoolTopologySnapshot,
   type Organization,
   type OrganizationPool,
   type OrganizationPoolBinding,
   type OrganizationStatus,
   type PoolGraph,
+  type PoolTopologySnapshotEdgeInput,
+  type PoolTopologySnapshotNodeInput,
 } from '../../api/intercompanyPools'
 
 const { Title, Text } = Typography
@@ -48,11 +54,14 @@ const STATUS_OPTIONS: OrganizationStatus[] = ['active', 'inactive', 'archived']
 const API_ERROR_MESSAGE_MAP: Record<string, string> = {
   DATABASE_ALREADY_LINKED: 'Выбранная база уже привязана к другой организации.',
   DUPLICATE_ORGANIZATION_INN: 'Организация с таким ИНН уже существует в текущем tenant.',
+  DUPLICATE_POOL_CODE: 'Пул с таким code уже существует в текущем tenant.',
   DATABASE_NOT_FOUND: 'База данных не найдена в текущем tenant context.',
+  POOL_NOT_FOUND: 'Пул не найден в текущем tenant context.',
   ORGANIZATION_NOT_FOUND: 'Организация не найдена в текущем tenant context.',
   TENANT_NOT_FOUND: 'Текущий tenant context невалиден.',
   TENANT_CONTEXT_REQUIRED: 'Для изменения каталога выберите активный tenant.',
-  VALIDATION_ERROR: 'Ошибка валидации данных синхронизации.',
+  TOPOLOGY_VERSION_CONFLICT: 'Топология уже была изменена другим оператором. Обновите граф и повторите сохранение.',
+  VALIDATION_ERROR: 'Проверьте корректность данных.',
 }
 
 type OrganizationFormValues = {
@@ -63,6 +72,33 @@ type OrganizationFormValues = {
   status: OrganizationStatus
   database_id?: string
   external_ref: string
+}
+
+type PoolFormValues = {
+  code: string
+  name: string
+  description: string
+  is_active: boolean
+}
+
+type TopologyNodeFormValue = {
+  organization_id?: string
+  is_root?: boolean
+}
+
+type TopologyEdgeFormValue = {
+  parent_organization_id?: string
+  child_organization_id?: string
+  weight?: number
+  min_amount?: number | null
+  max_amount?: number | null
+}
+
+type TopologyFormValues = {
+  effective_from: string
+  effective_to?: string
+  nodes: TopologyNodeFormValue[]
+  edges: TopologyEdgeFormValue[]
 }
 
 const ORGANIZATION_FORM_FIELDS: Array<keyof OrganizationFormValues> = [
@@ -199,11 +235,24 @@ const resolveApiError = (
       data?: {
         success?: boolean
         error?: unknown
-      }
+      } | Record<string, unknown>
     }
   } | null
 
-  const errorNode = err?.response?.data?.error
+  const responseData = err?.response?.data
+  if (responseData && typeof responseData === 'object' && !Array.isArray(responseData)) {
+    const maybeProblem = responseData as { code?: unknown; detail?: unknown; title?: unknown }
+    const problemCode = typeof maybeProblem.code === 'string' ? maybeProblem.code : ''
+    const problemDetail = typeof maybeProblem.detail === 'string' ? maybeProblem.detail.trim() : ''
+    if (problemCode || problemDetail) {
+      return {
+        message: (API_ERROR_MESSAGE_MAP[problemCode] ?? problemDetail) || fallbackMessage,
+        fieldErrors: {},
+      }
+    }
+  }
+
+  const errorNode = (responseData as { error?: unknown } | undefined)?.error
   if (errorNode && typeof errorNode === 'object' && !Array.isArray(errorNode)) {
     const structured = errorNode as { code?: unknown; message?: unknown }
     const code = typeof structured.code === 'string' ? structured.code : ''
@@ -310,6 +359,104 @@ const parseSyncPayload = (input: string): SyncPreflightResult => {
   return { rows, errors }
 }
 
+const formatOptionalDecimal = (value: number | null | undefined): string | null => {
+  if (value == null || Number.isNaN(value)) return null
+  return Number(value).toFixed(2)
+}
+
+const buildTopologyPreflight = (values: TopologyFormValues): {
+  payload: {
+    effective_from: string
+    effective_to?: string | null
+    nodes: PoolTopologySnapshotNodeInput[]
+    edges: PoolTopologySnapshotEdgeInput[]
+  } | null
+  errors: string[]
+} => {
+  const errors: string[] = []
+  const effectiveFrom = String(values.effective_from || '').trim()
+  const effectiveToRaw = String(values.effective_to || '').trim()
+  if (!effectiveFrom) {
+    errors.push('effective_from обязателен.')
+  }
+  if (effectiveToRaw && effectiveFrom && effectiveToRaw < effectiveFrom) {
+    errors.push('effective_to не может быть раньше effective_from.')
+  }
+
+  const nodesSource = Array.isArray(values.nodes) ? values.nodes : []
+  const nodes = nodesSource
+    .filter((item) => String(item.organization_id || '').trim().length > 0)
+    .map((item) => ({
+      organization_id: String(item.organization_id || '').trim(),
+      is_root: Boolean(item.is_root),
+      metadata: {},
+    }))
+  if (nodes.length === 0) {
+    errors.push('Добавьте хотя бы один topology node.')
+  }
+  const rootCount = nodes.filter((item) => item.is_root).length
+  if (nodes.length > 0 && rootCount === 0) {
+    errors.push('Отметьте хотя бы один root node.')
+  }
+  const nodeIds = nodes.map((item) => item.organization_id)
+  const duplicates = nodeIds.filter((item, index) => nodeIds.indexOf(item) !== index)
+  if (duplicates.length > 0) {
+    errors.push(`Найдены дубликаты organization_id в nodes: ${Array.from(new Set(duplicates)).join(', ')}`)
+  }
+  const allowedNodeIds = new Set(nodeIds)
+
+  const edgesSource = Array.isArray(values.edges) ? values.edges : []
+  const edges: PoolTopologySnapshotEdgeInput[] = []
+  edgesSource.forEach((edge, index) => {
+    const rowNo = index + 1
+    const parentId = String(edge.parent_organization_id || '').trim()
+    const childId = String(edge.child_organization_id || '').trim()
+    if (!parentId && !childId) {
+      return
+    }
+    if (!parentId || !childId) {
+      errors.push(`Edge #${rowNo}: parent и child обязательны.`)
+      return
+    }
+    if (parentId === childId) {
+      errors.push(`Edge #${rowNo}: parent и child не могут совпадать.`)
+      return
+    }
+    if (!allowedNodeIds.has(parentId) || !allowedNodeIds.has(childId)) {
+      errors.push(`Edge #${rowNo}: parent/child должны ссылаться на узлы из nodes.`)
+      return
+    }
+    const minAmount = formatOptionalDecimal(edge.min_amount)
+    const maxAmount = formatOptionalDecimal(edge.max_amount)
+    if (minAmount && maxAmount && Number(maxAmount) < Number(minAmount)) {
+      errors.push(`Edge #${rowNo}: max_amount должен быть >= min_amount.`)
+      return
+    }
+    edges.push({
+      parent_organization_id: parentId,
+      child_organization_id: childId,
+      weight: edge.weight == null ? '1' : String(edge.weight),
+      min_amount: minAmount,
+      max_amount: maxAmount,
+      metadata: {},
+    })
+  })
+
+  if (errors.length > 0 || !effectiveFrom) {
+    return { payload: null, errors }
+  }
+
+  return {
+    payload: {
+      effective_from: effectiveFrom,
+      effective_to: effectiveToRaw || null,
+      nodes,
+      edges,
+    },
+    errors,
+  }
+}
+
 export function PoolCatalogPage() {
   const { message } = AntApp.useApp()
   const meQuery = useMe()
@@ -322,6 +469,8 @@ export function PoolCatalogPage() {
   const databasesQuery = useDatabases({ filters: { limit: 500, offset: 0 } })
 
   const [organizationForm] = Form.useForm<OrganizationFormValues>()
+  const [poolForm] = Form.useForm<PoolFormValues>()
+  const [topologyForm] = Form.useForm<TopologyFormValues>()
 
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | null>(null)
@@ -346,6 +495,13 @@ export function PoolCatalogPage() {
   const [editingOrganization, setEditingOrganization] = useState<Organization | null>(null)
   const [organizationSubmitError, setOrganizationSubmitError] = useState<string | null>(null)
   const [isOrganizationSaving, setIsOrganizationSaving] = useState(false)
+  const [isPoolDrawerOpen, setIsPoolDrawerOpen] = useState(false)
+  const [poolDrawerMode, setPoolDrawerMode] = useState<'create' | 'edit'>('create')
+  const [poolSubmitError, setPoolSubmitError] = useState<string | null>(null)
+  const [isPoolSaving, setIsPoolSaving] = useState(false)
+  const [topologyPreflightErrors, setTopologyPreflightErrors] = useState<string[]>([])
+  const [topologySubmitError, setTopologySubmitError] = useState<string | null>(null)
+  const [isTopologySaving, setIsTopologySaving] = useState(false)
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false)
   const [syncInput, setSyncInput] = useState('{\n  "rows": []\n}')
   const [syncErrors, setSyncErrors] = useState<string[]>([])
@@ -356,6 +512,10 @@ export function PoolCatalogPage() {
     () => organizations.find((item) => item.id === selectedOrganizationId) ?? null,
     [organizations, selectedOrganizationId]
   )
+  const selectedPool = useMemo(
+    () => pools.find((item) => item.id === selectedPoolId) ?? null,
+    [pools, selectedPoolId]
+  )
 
   const databaseOptions = useMemo(() => {
     const databases = databasesQuery.data?.databases ?? []
@@ -364,6 +524,16 @@ export function PoolCatalogPage() {
       .filter((item) => item.value)
       .sort((left, right) => left.label.localeCompare(right.label))
   }, [databasesQuery.data?.databases])
+
+  const organizationOptions = useMemo(
+    () => organizations
+      .map((item) => ({
+        value: item.id,
+        label: `${item.name} (${item.inn})`,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label)),
+    [organizations]
+  )
 
   const flow = useMemo(() => buildFlowLayout(graph), [graph])
 
@@ -456,6 +626,17 @@ export function PoolCatalogPage() {
   useEffect(() => {
     void loadGraph()
   }, [loadGraph])
+
+  useEffect(() => {
+    topologyForm.setFieldsValue({
+      effective_from: new Date().toISOString().slice(0, 10),
+      effective_to: '',
+      nodes: [],
+      edges: [],
+    })
+    setTopologyPreflightErrors([])
+    setTopologySubmitError(null)
+  }, [selectedPoolId, topologyForm])
 
   const openCreateOrganizationDrawer = useCallback(() => {
     if (mutatingDisabled) return
@@ -559,6 +740,147 @@ export function PoolCatalogPage() {
     organizationDrawerMode,
     organizationForm,
   ])
+
+  const openCreatePoolDrawer = useCallback(() => {
+    if (mutatingDisabled) return
+    setPoolDrawerMode('create')
+    setPoolSubmitError(null)
+    poolForm.resetFields()
+    poolForm.setFieldsValue({
+      code: '',
+      name: '',
+      description: '',
+      is_active: true,
+    })
+    setIsPoolDrawerOpen(true)
+  }, [mutatingDisabled, poolForm])
+
+  const openEditPoolDrawer = useCallback(() => {
+    if (mutatingDisabled || !selectedPool) return
+    setPoolDrawerMode('edit')
+    setPoolSubmitError(null)
+    poolForm.resetFields()
+    poolForm.setFieldsValue({
+      code: selectedPool.code,
+      name: selectedPool.name,
+      description: selectedPool.description || '',
+      is_active: selectedPool.is_active,
+    })
+    setIsPoolDrawerOpen(true)
+  }, [mutatingDisabled, poolForm, selectedPool])
+
+  const closePoolDrawer = useCallback(() => {
+    if (isPoolSaving) return
+    setIsPoolDrawerOpen(false)
+    setPoolSubmitError(null)
+  }, [isPoolSaving])
+
+  const submitPool = useCallback(async () => {
+    if (mutatingDisabled) return
+    if (poolDrawerMode === 'edit' && !selectedPool) return
+    setPoolSubmitError(null)
+    try {
+      const values = await poolForm.validateFields()
+      setIsPoolSaving(true)
+      const response = await upsertOrganizationPool({
+        pool_id: poolDrawerMode === 'edit' ? selectedPool?.id : undefined,
+        code: values.code.trim(),
+        name: values.name.trim(),
+        description: values.description.trim(),
+        is_active: Boolean(values.is_active),
+        metadata: selectedPool?.metadata ?? {},
+      })
+      setSelectedPoolId(response.pool.id)
+      message.success(response.created ? 'Пул создан.' : 'Пул обновлён.')
+      setIsPoolDrawerOpen(false)
+      await loadPools()
+      await loadGraph()
+    } catch (err) {
+      if (
+        err
+        && typeof err === 'object'
+        && Array.isArray((err as { errorFields?: unknown }).errorFields)
+      ) {
+        return
+      }
+      const resolved = resolveApiError(
+        err,
+        poolDrawerMode === 'create'
+          ? 'Не удалось создать пул.'
+          : 'Не удалось обновить пул.'
+      )
+      setPoolSubmitError(resolved.message)
+    } finally {
+      setIsPoolSaving(false)
+    }
+  }, [loadGraph, loadPools, message, mutatingDisabled, poolDrawerMode, poolForm, selectedPool])
+
+  const toggleSelectedPoolActive = useCallback(async () => {
+    if (mutatingDisabled || !selectedPool) return
+    setPoolSubmitError(null)
+    setIsPoolSaving(true)
+    try {
+      await upsertOrganizationPool({
+        pool_id: selectedPool.id,
+        code: selectedPool.code,
+        name: selectedPool.name,
+        description: selectedPool.description || '',
+        is_active: !selectedPool.is_active,
+        metadata: selectedPool.metadata,
+      })
+      message.success(selectedPool.is_active ? 'Пул деактивирован.' : 'Пул активирован.')
+      await loadPools()
+      await loadGraph()
+    } catch (err) {
+      const resolved = resolveApiError(err, 'Не удалось изменить статус пула.')
+      setPoolSubmitError(resolved.message)
+    } finally {
+      setIsPoolSaving(false)
+    }
+  }, [loadGraph, loadPools, message, mutatingDisabled, selectedPool])
+
+  const submitTopologySnapshot = useCallback(async () => {
+    if (mutatingDisabled || !selectedPoolId) return
+    setTopologySubmitError(null)
+    setTopologyPreflightErrors([])
+    try {
+      const values = await topologyForm.validateFields()
+      const preflight = buildTopologyPreflight(values)
+      if (!preflight.payload) {
+        setTopologyPreflightErrors(preflight.errors)
+        return
+      }
+      setIsTopologySaving(true)
+      const effectiveFrom = preflight.payload.effective_from
+      let versionToken = String(graph?.version || '').trim()
+      if (!versionToken || graphDate !== effectiveFrom) {
+        const versionSnapshot = await getPoolGraph(selectedPoolId, effectiveFrom)
+        versionToken = String(versionSnapshot.version || '').trim()
+        if (graphDate === effectiveFrom) {
+          setGraph(versionSnapshot)
+        }
+      }
+      if (!versionToken) {
+        setTopologySubmitError('Не удалось определить актуальную версию topology snapshot. Обновите граф и повторите.')
+        return
+      }
+      await upsertPoolTopologySnapshot(selectedPoolId, { ...preflight.payload, version: versionToken })
+      message.success('Topology snapshot сохранён.')
+      await loadGraph()
+    } catch (err) {
+      if (
+        err
+        && typeof err === 'object'
+        && Array.isArray((err as { errorFields?: unknown }).errorFields)
+      ) {
+        return
+      }
+      const resolved = resolveApiError(err, 'Не удалось сохранить topology snapshot.')
+      setTopologySubmitError(resolved.message)
+    } finally {
+      setIsTopologySaving(false)
+    }
+  }, [graph, graphDate, loadGraph, message, mutatingDisabled, selectedPoolId, topologyForm])
 
   const openSyncModal = useCallback(() => {
     if (mutatingDisabled) return
@@ -681,6 +1003,46 @@ export function PoolCatalogPage() {
         key: 'effective_to',
         width: 120,
         render: (value: string | null) => value || 'open',
+      },
+    ],
+    []
+  )
+
+  const poolColumns: ColumnsType<OrganizationPool> = useMemo(
+    () => [
+      {
+        title: 'Code',
+        dataIndex: 'code',
+        key: 'code',
+        width: 180,
+        render: (value: string, record) => (
+          <Space direction="vertical" size={0}>
+            <Text code>{value}</Text>
+            <Text type="secondary">{record.name}</Text>
+          </Space>
+        ),
+      },
+      {
+        title: 'Description',
+        dataIndex: 'description',
+        key: 'description',
+        render: (value: string) => value || <Text type="secondary">-</Text>,
+      },
+      {
+        title: 'Status',
+        dataIndex: 'is_active',
+        key: 'is_active',
+        width: 120,
+        render: (value: boolean) => (
+          value ? <Tag color="success">active</Tag> : <Tag color="default">inactive</Tag>
+        ),
+      },
+      {
+        title: 'Updated',
+        dataIndex: 'updated_at',
+        key: 'updated_at',
+        width: 180,
+        render: (value: string) => formatDate(value),
       },
     ],
     []
@@ -825,6 +1187,232 @@ export function PoolCatalogPage() {
           </Row>
         </Card>
 
+        <Card title="Pools management" loading={loadingPools}>
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            {poolSubmitError && <Alert type="error" message={poolSubmitError} showIcon />}
+            <Space size="small" wrap>
+              <Select
+                value={selectedPoolId ?? undefined}
+                style={{ width: 320 }}
+                placeholder="Select pool"
+                options={pools.map((pool) => ({
+                  value: pool.id,
+                  label: `${pool.code} - ${pool.name}`,
+                }))}
+                onChange={(value) => setSelectedPoolId(value)}
+              />
+              <Button
+                type="primary"
+                onClick={openCreatePoolDrawer}
+                disabled={mutatingDisabled}
+                data-testid="pool-catalog-add-pool"
+              >
+                Add pool
+              </Button>
+              <Button
+                onClick={openEditPoolDrawer}
+                disabled={mutatingDisabled || !selectedPool}
+                data-testid="pool-catalog-edit-pool"
+              >
+                Edit pool
+              </Button>
+              <Button
+                onClick={() => { void toggleSelectedPoolActive() }}
+                disabled={mutatingDisabled || !selectedPool}
+                loading={isPoolSaving}
+                data-testid="pool-catalog-toggle-pool-active"
+              >
+                {selectedPool?.is_active ? 'Deactivate' : 'Activate'}
+              </Button>
+            </Space>
+
+            <Table
+              rowKey="id"
+              size="small"
+              columns={poolColumns}
+              dataSource={pools}
+              loading={loadingPools}
+              pagination={{ pageSize: 8 }}
+              rowSelection={{
+                type: 'radio',
+                selectedRowKeys: selectedPoolId ? [selectedPoolId] : [],
+                onChange: (keys) => setSelectedPoolId(keys[0] ? String(keys[0]) : null),
+              }}
+              onRow={(record) => ({
+                onClick: () => setSelectedPoolId(record.id),
+              })}
+            />
+          </Space>
+        </Card>
+
+        <Card title="Topology snapshot editor">
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            {!selectedPool && (
+              <Text type="secondary">Выберите пул, чтобы редактировать topology snapshot.</Text>
+            )}
+            {selectedPool && (
+              <Form form={topologyForm} layout="vertical">
+                <Row gutter={12}>
+                  <Col span={8}>
+                    <Form.Item name="effective_from" label="effective_from" rules={[{ required: true }]}>
+                      <Input type="date" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item name="effective_to" label="effective_to">
+                      <Input type="date" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item label="Pool">
+                      <Input value={`${selectedPool.code} - ${selectedPool.name}`} disabled />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <Text strong>Nodes</Text>
+                <Form.List name="nodes">
+                  {(fields, { add, remove }) => (
+                    <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                      {fields.map((field) => (
+                        <Row key={field.key} gutter={12} align="middle">
+                          <Col span={16}>
+                            <Form.Item
+                              name={[field.name, 'organization_id']}
+                              label={field.name === 0 ? 'Organization' : ''}
+                              style={{ marginBottom: 0 }}
+                            >
+                              <Select
+                                showSearch
+                                optionFilterProp="label"
+                                placeholder="Select organization"
+                                options={organizationOptions}
+                              />
+                            </Form.Item>
+                          </Col>
+                          <Col span={4}>
+                            <Form.Item
+                              name={[field.name, 'is_root']}
+                              valuePropName="checked"
+                              label={field.name === 0 ? 'Root' : ''}
+                              style={{ marginBottom: 0 }}
+                            >
+                              <Switch />
+                            </Form.Item>
+                          </Col>
+                          <Col span={4}>
+                            <Button danger onClick={() => remove(field.name)}>
+                              Remove
+                            </Button>
+                          </Col>
+                        </Row>
+                      ))}
+                      <Button
+                        onClick={() => add({ organization_id: undefined, is_root: false })}
+                        data-testid="pool-catalog-topology-add-node"
+                      >
+                        Add node
+                      </Button>
+                    </Space>
+                  )}
+                </Form.List>
+
+                <Text strong style={{ marginTop: 12 }}>Edges</Text>
+                <Form.List name="edges">
+                  {(fields, { add, remove }) => (
+                    <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                      {fields.map((field) => (
+                        <Row key={field.key} gutter={8} align="middle">
+                          <Col span={7}>
+                            <Form.Item
+                              name={[field.name, 'parent_organization_id']}
+                              label={field.name === 0 ? 'Parent' : ''}
+                              style={{ marginBottom: 0 }}
+                            >
+                              <Select options={organizationOptions} placeholder="Parent" />
+                            </Form.Item>
+                          </Col>
+                          <Col span={7}>
+                            <Form.Item
+                              name={[field.name, 'child_organization_id']}
+                              label={field.name === 0 ? 'Child' : ''}
+                              style={{ marginBottom: 0 }}
+                            >
+                              <Select options={organizationOptions} placeholder="Child" />
+                            </Form.Item>
+                          </Col>
+                          <Col span={3}>
+                            <Form.Item
+                              name={[field.name, 'weight']}
+                              label={field.name === 0 ? 'Weight' : ''}
+                              style={{ marginBottom: 0 }}
+                            >
+                              <InputNumber min={0.000001} step={0.1} style={{ width: '100%' }} />
+                            </Form.Item>
+                          </Col>
+                          <Col span={3}>
+                            <Form.Item
+                              name={[field.name, 'min_amount']}
+                              label={field.name === 0 ? 'Min' : ''}
+                              style={{ marginBottom: 0 }}
+                            >
+                              <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                            </Form.Item>
+                          </Col>
+                          <Col span={3}>
+                            <Form.Item
+                              name={[field.name, 'max_amount']}
+                              label={field.name === 0 ? 'Max' : ''}
+                              style={{ marginBottom: 0 }}
+                            >
+                              <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                            </Form.Item>
+                          </Col>
+                          <Col span={1}>
+                            <Button danger onClick={() => remove(field.name)}>x</Button>
+                          </Col>
+                        </Row>
+                      ))}
+                      <Button
+                        onClick={() => add({ weight: 1, min_amount: null, max_amount: null })}
+                        data-testid="pool-catalog-topology-add-edge"
+                      >
+                        Add edge
+                      </Button>
+                    </Space>
+                  )}
+                </Form.List>
+
+                {topologyPreflightErrors.length > 0 && (
+                  <Alert
+                    type="error"
+                    showIcon
+                    message="Preflight validation failed"
+                    description={(
+                      <ul style={{ margin: 0, paddingInlineStart: 18 }}>
+                        {topologyPreflightErrors.map((item, index) => (
+                          <li key={`${index}-${item}`}>{item}</li>
+                        ))}
+                      </ul>
+                    )}
+                  />
+                )}
+                {topologySubmitError && <Alert type="error" message={topologySubmitError} showIcon />}
+
+                <Button
+                  type="primary"
+                  onClick={() => { void submitTopologySnapshot() }}
+                  loading={isTopologySaving}
+                  disabled={mutatingDisabled}
+                  data-testid="pool-catalog-topology-save"
+                >
+                  Save topology snapshot
+                </Button>
+              </Form>
+            )}
+          </Space>
+        </Card>
+
         <Card title="Pools graph (read-only)" loading={loadingPools || loadingGraph}>
           <Space size="small" wrap style={{ marginBottom: 12 }}>
             <Select
@@ -933,6 +1521,61 @@ export function PoolCatalogPage() {
             </Form.Item>
             <Form.Item name="external_ref" label="External ref">
               <Input placeholder="Optional" />
+            </Form.Item>
+          </Form>
+        </Space>
+      </Drawer>
+
+      <Drawer
+        title={poolDrawerMode === 'create' ? 'Add pool' : 'Edit pool'}
+        width={520}
+        open={isPoolDrawerOpen}
+        onClose={closePoolDrawer}
+        destroyOnHidden
+        extra={(
+          <Space>
+            <Button onClick={closePoolDrawer} disabled={isPoolSaving}>
+              Cancel
+            </Button>
+            <Button
+              type="primary"
+              onClick={() => { void submitPool() }}
+              loading={isPoolSaving}
+              data-testid="pool-catalog-save-pool"
+            >
+              Save
+            </Button>
+          </Space>
+        )}
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          {poolSubmitError && <Alert type="error" message={poolSubmitError} showIcon />}
+          <Form form={poolForm} layout="vertical">
+            <Form.Item
+              name="code"
+              label="Code"
+              rules={[
+                { required: true, message: 'Code обязателен' },
+                { max: 64, message: 'Code должен быть не длиннее 64 символов' },
+              ]}
+            >
+              <Input placeholder="pool-main" />
+            </Form.Item>
+            <Form.Item
+              name="name"
+              label="Name"
+              rules={[
+                { required: true, message: 'Name обязателен' },
+                { max: 255, message: 'Name должен быть не длиннее 255 символов' },
+              ]}
+            >
+              <Input placeholder="Main intercompany pool" />
+            </Form.Item>
+            <Form.Item name="description" label="Description">
+              <Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} placeholder="Optional" />
+            </Form.Item>
+            <Form.Item name="is_active" label="Active" valuePropName="checked">
+              <Switch />
             </Form.Item>
           </Form>
         </Space>

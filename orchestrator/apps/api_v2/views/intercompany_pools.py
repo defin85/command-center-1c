@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Mapping
+from decimal import Decimal, InvalidOperation
 from datetime import date
 from typing import Any
 from uuid import UUID
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema
@@ -49,6 +51,7 @@ from apps.intercompany_pools.safe_commands import (
     process_pool_run_safe_command,
 )
 from apps.intercompany_pools.sync import sync_organizations
+from apps.intercompany_pools.validators import validate_pool_graph
 from apps.intercompany_pools.publication import (
     MAX_PUBLICATION_ATTEMPTS,
     MAX_RETRY_INTERVAL_SECONDS,
@@ -98,6 +101,10 @@ _UUID_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+RUN_INPUT_CONTRACT_VERSION_V1 = "run_input_v1"
+RUN_INPUT_CONTRACT_VERSION_LEGACY = "legacy_pre_run_input"
+TOPOLOGY_VERSION_TOKEN_PREFIX = "v1"
+
 
 def _error(*, code: str, message: str, status_code: int) -> Response:
     return Response(
@@ -109,6 +116,27 @@ def _error(*, code: str, message: str, status_code: int) -> Response:
             },
         },
         status=status_code,
+    )
+
+
+def _problem(
+    *,
+    code: str,
+    title: str,
+    detail: str,
+    status_code: int,
+    type_uri: str = "about:blank",
+) -> Response:
+    return Response(
+        {
+            "type": type_uri,
+            "title": title,
+            "status": int(status_code),
+            "detail": detail,
+            "code": code,
+        },
+        status=status_code,
+        content_type="application/problem+json",
     )
 
 
@@ -232,7 +260,96 @@ def _build_retry_command_fingerprint(
     return f"v1:{digest}"
 
 
+def _resolve_run_input_read_contract(*, run: PoolRun) -> tuple[dict[str, Any] | None, str]:
+    raw_run_input = run.run_input
+    legacy_source_hash = str(run.source_hash or "").strip()
+    if isinstance(raw_run_input, dict):
+        if raw_run_input or not legacy_source_hash:
+            return raw_run_input, RUN_INPUT_CONTRACT_VERSION_V1
+    return None, RUN_INPUT_CONTRACT_VERSION_LEGACY
+
+
+def _build_topology_version_token(
+    *,
+    active_nodes: list[PoolNodeVersion],
+    active_edges: list[PoolEdgeVersion],
+) -> str:
+    node_tokens = sorted(
+        "|".join(
+            [
+                str(node.id),
+                str(node.organization_id),
+                "1" if node.is_root else "0",
+                node.effective_from.isoformat(),
+                node.effective_to.isoformat() if node.effective_to else "",
+                node.updated_at.isoformat(),
+            ]
+        )
+        for node in active_nodes
+    )
+    edge_tokens = sorted(
+        "|".join(
+            [
+                str(edge.id),
+                str(edge.parent_node_id),
+                str(edge.child_node_id),
+                str(edge.weight),
+                str(edge.min_amount) if edge.min_amount is not None else "",
+                str(edge.max_amount) if edge.max_amount is not None else "",
+                edge.effective_from.isoformat(),
+                edge.effective_to.isoformat() if edge.effective_to else "",
+                edge.updated_at.isoformat(),
+            ]
+        )
+        for edge in active_edges
+    )
+    fingerprint_payload = "\n".join(
+        [
+            "nodes",
+            *node_tokens,
+            "edges",
+            *edge_tokens,
+        ]
+    )
+    digest = hashlib.sha256(fingerprint_payload.encode("utf-8")).hexdigest()
+    return f"{TOPOLOGY_VERSION_TOKEN_PREFIX}:{digest}"
+
+
+def _load_pool_graph_state(
+    *,
+    pool: OrganizationPool,
+    target_date: date,
+) -> tuple[list[PoolNodeVersion], list[PoolEdgeVersion]]:
+    active_nodes = list(
+        PoolNodeVersion.objects.select_related("organization")
+        .filter(pool=pool, effective_from__lte=target_date)
+        .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=target_date))
+        .order_by("-is_root", "organization__name")
+    )
+    active_node_ids = {str(node.id) for node in active_nodes}
+    active_edges_qs = (
+        PoolEdgeVersion.objects.select_related("parent_node__organization", "child_node__organization")
+        .filter(pool=pool, effective_from__lte=target_date)
+        .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=target_date))
+    )
+    if active_node_ids:
+        active_edges_qs = active_edges_qs.filter(
+            parent_node_id__in=active_node_ids,
+            child_node_id__in=active_node_ids,
+        )
+    else:
+        active_edges_qs = active_edges_qs.none()
+    active_edges = list(
+        active_edges_qs.order_by(
+            "parent_node__organization__name",
+            "child_node__organization__name",
+        )
+    )
+    return active_nodes, active_edges
+
+
 def _serialize_run(run: PoolRun) -> dict[str, Any]:
+    run_input, input_contract_version = _resolve_run_input_read_contract(run=run)
     workflow_status, workflow_input_context = _resolve_workflow_projection_context(run)
     approval_state = _resolve_approval_state(
         run=run,
@@ -274,7 +391,8 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
         "status_reason": status_reason,
         "period_start": run.period_start,
         "period_end": run.period_end,
-        "source_hash": run.source_hash,
+        "run_input": run_input,
+        "input_contract_version": input_contract_version,
         "idempotency_key": run.idempotency_key,
         "workflow_execution_id": str(run.workflow_execution_id) if run.workflow_execution_id else None,
         "workflow_status": workflow_status,
@@ -885,7 +1003,11 @@ class PoolRunSerializer(serializers.Serializer):
     status_reason = serializers.CharField(required=False, allow_null=True)
     period_start = serializers.DateField()
     period_end = serializers.DateField(required=False, allow_null=True)
-    source_hash = serializers.CharField()
+    run_input = serializers.JSONField(required=False, allow_null=True)
+    input_contract_version = serializers.ChoiceField(
+        choices=[RUN_INPUT_CONTRACT_VERSION_V1, RUN_INPUT_CONTRACT_VERSION_LEGACY],
+        required=False,
+    )
     idempotency_key = serializers.CharField()
     workflow_execution_id = serializers.UUIDField(required=False, allow_null=True)
     workflow_status = serializers.CharField(required=False, allow_null=True)
@@ -951,12 +1073,65 @@ class PoolRunCreateRequestSerializer(serializers.Serializer):
     direction = serializers.ChoiceField(choices=PoolRunDirection.values)
     period_start = serializers.DateField()
     period_end = serializers.DateField(required=False, allow_null=True)
-    source_hash = serializers.CharField(required=False, allow_blank=True, default="")
+    run_input = serializers.JSONField(required=False)
     mode = serializers.ChoiceField(choices=PoolRunMode.values, required=False, default=PoolRunMode.SAFE)
     schema_template_id = serializers.UUIDField(required=False, allow_null=True)
     seed = serializers.IntegerField(required=False, allow_null=True)
     validation_summary = serializers.JSONField(required=False, default=dict)
     diagnostics = serializers.ListField(child=serializers.JSONField(), required=False, default=list)
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            raise serializers.ValidationError("Invalid payload type. Expected object.")
+        unknown_fields = sorted({str(field) for field in data.keys() if str(field) not in self.fields})
+        if unknown_fields:
+            raise serializers.ValidationError({field: "Unknown field." for field in unknown_fields})
+        return super().to_internal_value(data)
+
+    def validate(self, attrs):
+        direction = attrs.get("direction")
+        run_input = attrs.get("run_input")
+
+        if not isinstance(run_input, dict):
+            raise serializers.ValidationError({"run_input": "run_input must be an object."})
+
+        if direction == PoolRunDirection.TOP_DOWN:
+            raw_starting_amount = run_input.get("starting_amount")
+            if raw_starting_amount in {None, ""}:
+                raise serializers.ValidationError(
+                    {"run_input": "top_down run_input must contain required field 'starting_amount'."}
+                )
+            try:
+                starting_amount = Decimal(str(raw_starting_amount))
+            except (InvalidOperation, TypeError, ValueError):
+                raise serializers.ValidationError(
+                    {"run_input": "top_down starting_amount must be a valid decimal value."}
+                ) from None
+            if starting_amount <= 0:
+                raise serializers.ValidationError(
+                    {"run_input": "top_down starting_amount must be greater than 0."}
+                )
+
+        if direction == PoolRunDirection.BOTTOM_UP:
+            source_payload = run_input.get("source_payload")
+            source_artifact_id = str(run_input.get("source_artifact_id") or "").strip()
+            has_source_payload = source_payload is not None
+            has_source_artifact = bool(source_artifact_id)
+            if not has_source_payload and not has_source_artifact:
+                raise serializers.ValidationError(
+                    {
+                        "run_input": (
+                            "bottom_up run_input must contain source_payload "
+                            "or source_artifact_id."
+                        )
+                    }
+                )
+            if has_source_payload and not isinstance(source_payload, (dict, list)):
+                raise serializers.ValidationError(
+                    {"run_input": "bottom_up source_payload must be object or array."}
+                )
+
+        return attrs
 
 
 class PoolRunCreateResponseSerializer(serializers.Serializer):
@@ -1122,6 +1297,7 @@ class OrganizationPoolSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     code = serializers.CharField()
     name = serializers.CharField()
+    description = serializers.CharField(required=False, allow_blank=True)
     is_active = serializers.BooleanField()
     metadata = serializers.JSONField(required=False)
     updated_at = serializers.DateTimeField(required=False)
@@ -1130,6 +1306,83 @@ class OrganizationPoolSerializer(serializers.Serializer):
 class OrganizationPoolListResponseSerializer(serializers.Serializer):
     pools = OrganizationPoolSerializer(many=True)
     count = serializers.IntegerField()
+
+
+class OrganizationPoolUpsertRequestSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField(required=False)
+    code = serializers.SlugField(max_length=64)
+    name = serializers.CharField(max_length=255)
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    is_active = serializers.BooleanField(required=False, default=True)
+    metadata = serializers.JSONField(required=False, default=dict)
+
+    def validate_metadata(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("metadata must be an object")
+        return value
+
+
+class OrganizationPoolUpsertResponseSerializer(serializers.Serializer):
+    pool = OrganizationPoolSerializer()
+    created = serializers.BooleanField()
+
+
+class PoolTopologySnapshotNodeInputSerializer(serializers.Serializer):
+    organization_id = serializers.UUIDField()
+    is_root = serializers.BooleanField(required=False, default=False)
+    metadata = serializers.JSONField(required=False, default=dict)
+
+    def validate_metadata(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("metadata must be an object")
+        return value
+
+
+class PoolTopologySnapshotEdgeInputSerializer(serializers.Serializer):
+    parent_organization_id = serializers.UUIDField()
+    child_organization_id = serializers.UUIDField()
+    weight = serializers.DecimalField(max_digits=12, decimal_places=6, required=False, default=1)
+    min_amount = serializers.DecimalField(max_digits=18, decimal_places=2, required=False, allow_null=True)
+    max_amount = serializers.DecimalField(max_digits=18, decimal_places=2, required=False, allow_null=True)
+    metadata = serializers.JSONField(required=False, default=dict)
+
+    def validate(self, attrs):
+        if attrs.get("parent_organization_id") == attrs.get("child_organization_id"):
+            raise serializers.ValidationError("Edge cannot reference the same organization as parent and child.")
+        min_amount = attrs.get("min_amount")
+        max_amount = attrs.get("max_amount")
+        if min_amount is not None and max_amount is not None and max_amount < min_amount:
+            raise serializers.ValidationError("max_amount must be greater than or equal to min_amount.")
+        return attrs
+
+    def validate_metadata(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("metadata must be an object")
+        return value
+
+
+class PoolTopologySnapshotUpsertRequestSerializer(serializers.Serializer):
+    version = serializers.CharField()
+    effective_from = serializers.DateField()
+    effective_to = serializers.DateField(required=False, allow_null=True)
+    nodes = PoolTopologySnapshotNodeInputSerializer(many=True, allow_empty=False)
+    edges = PoolTopologySnapshotEdgeInputSerializer(many=True, required=False, default=list)
+
+    def validate(self, attrs):
+        effective_from = attrs.get("effective_from")
+        effective_to = attrs.get("effective_to")
+        if effective_to is not None and effective_to < effective_from:
+            raise serializers.ValidationError("effective_to must be greater than or equal to effective_from.")
+        return attrs
+
+
+class PoolTopologySnapshotUpsertResponseSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    version = serializers.CharField()
+    effective_from = serializers.DateField()
+    effective_to = serializers.DateField(required=False, allow_null=True)
+    nodes_count = serializers.IntegerField()
+    edges_count = serializers.IntegerField()
 
 
 class PoolGraphNodeSerializer(serializers.Serializer):
@@ -1152,6 +1405,7 @@ class PoolGraphEdgeSerializer(serializers.Serializer):
 class PoolGraphResponseSerializer(serializers.Serializer):
     pool_id = serializers.UUIDField()
     date = serializers.DateField()
+    version = serializers.CharField()
     nodes = PoolGraphNodeSerializer(many=True)
     edges = PoolGraphEdgeSerializer(many=True)
 
@@ -1195,9 +1449,10 @@ class PoolRunReportResponseSerializer(serializers.Serializer):
 def create_pool_run(request):
     tenant_id = _resolve_tenant_id(request)
     if not tenant_id:
-        return _error(
+        return _problem(
             code="TENANT_CONTEXT_REQUIRED",
-            message="X-CC1C-Tenant-ID is required.",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
@@ -1219,17 +1474,20 @@ def create_pool_run(request):
 
     serializer = PoolRunCreateRequestSerializer(data=request.data or {})
     if not serializer.is_valid():
-        return Response(
-            {"success": False, "error": serializer.errors},
-            status=http_status.HTTP_400_BAD_REQUEST,
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
     data = serializer.validated_data
     pool = OrganizationPool.objects.filter(id=data["pool_id"], tenant_id=tenant_id).first()
     if pool is None:
-        return _error(
+        return _problem(
             code="POOL_NOT_FOUND",
-            message="Organization pool not found in current tenant context.",
+            title="Pool Not Found",
+            detail="Organization pool not found in current tenant context.",
             status_code=http_status.HTTP_404_NOT_FOUND,
         )
 
@@ -1238,9 +1496,10 @@ def create_pool_run(request):
     if schema_template_id:
         schema_template = PoolSchemaTemplate.objects.filter(id=schema_template_id, tenant_id=tenant_id).first()
         if schema_template is None:
-            return _error(
+            return _problem(
                 code="SCHEMA_TEMPLATE_NOT_FOUND",
-                message="Schema template not found in current tenant context.",
+                title="Schema Template Not Found",
+                detail="Schema template not found in current tenant context.",
                 status_code=http_status.HTTP_404_NOT_FOUND,
             )
 
@@ -1251,7 +1510,7 @@ def create_pool_run(request):
             direction=data["direction"],
             period_start=data["period_start"],
             period_end=data.get("period_end"),
-            source_hash=data.get("source_hash", ""),
+            run_input=data.get("run_input"),
             mode=data.get("mode", PoolRunMode.SAFE),
             schema_template=schema_template,
             seed=data.get("seed"),
@@ -1260,9 +1519,10 @@ def create_pool_run(request):
             diagnostics=data.get("diagnostics"),
         )
     except ValueError as exc:
-        return _error(
+        return _problem(
             code="VALIDATION_ERROR",
-            message=str(exc),
+            title="Validation Error",
+            detail=str(exc),
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
@@ -1607,6 +1867,7 @@ def list_organization_pools(request):
                 "id": str(pool.id),
                 "code": pool.code,
                 "name": pool.name,
+                "description": pool.description,
                 "is_active": pool.is_active,
                 "metadata": pool.metadata if isinstance(pool.metadata, dict) else {},
                 "updated_at": pool.updated_at,
@@ -1614,6 +1875,286 @@ def list_organization_pools(request):
             for pool in pools
         ],
         "count": len(pools),
+    }
+    return Response(payload, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_upsert",
+    summary="Create or update organization pool metadata",
+    request=OrganizationPoolUpsertRequestSerializer,
+    responses={
+        200: OrganizationPoolUpsertResponseSerializer,
+        201: OrganizationPoolUpsertResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        404: ErrorResponseSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upsert_organization_pool(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _problem(
+            code="TENANT_CONTEXT_REQUIRED",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = OrganizationPoolUpsertRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = serializer.validated_data
+    pool = None
+    pool_id = data.get("pool_id")
+    if pool_id:
+        pool = OrganizationPool.objects.filter(id=pool_id, tenant_id=tenant_id).first()
+        if pool is None:
+            return _problem(
+                code="POOL_NOT_FOUND",
+                title="Pool Not Found",
+                detail="Organization pool not found in current tenant context.",
+                status_code=http_status.HTTP_404_NOT_FOUND,
+            )
+    else:
+        pool = OrganizationPool.objects.filter(tenant_id=tenant_id, code=data["code"]).first()
+
+    created = pool is None
+    description_value = data.get("description", pool.description if pool else "")
+    metadata_value = data.get("metadata", pool.metadata if pool else {})
+    is_active_value = data.get("is_active", pool.is_active if pool else True)
+
+    try:
+        if created:
+            pool = OrganizationPool.objects.create(
+                tenant_id=tenant_id,
+                code=data["code"],
+                name=data["name"],
+                description=description_value,
+                is_active=is_active_value,
+                metadata=metadata_value,
+            )
+        else:
+            changed_fields: list[str] = []
+            updates = {
+                "code": data["code"],
+                "name": data["name"],
+                "description": description_value,
+                "is_active": is_active_value,
+                "metadata": metadata_value,
+            }
+            for field_name, value in updates.items():
+                if getattr(pool, field_name) != value:
+                    setattr(pool, field_name, value)
+                    changed_fields.append(field_name)
+            if changed_fields:
+                pool.save(update_fields=[*changed_fields, "updated_at"])
+    except IntegrityError:
+        return _problem(
+            code="DUPLICATE_POOL_CODE",
+            title="Duplicate Pool Code",
+            detail="Pool with this code already exists in current tenant.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    payload = {
+        "pool": {
+            "id": str(pool.id),
+            "code": pool.code,
+            "name": pool.name,
+            "description": pool.description,
+            "is_active": pool.is_active,
+            "metadata": pool.metadata if isinstance(pool.metadata, dict) else {},
+            "updated_at": pool.updated_at,
+        },
+        "created": created,
+    }
+    response_status = http_status.HTTP_201_CREATED if created else http_status.HTTP_200_OK
+    return Response(payload, status=response_status)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_topology_snapshot_upsert",
+    summary="Create or update topology snapshot for a pool",
+    request=PoolTopologySnapshotUpsertRequestSerializer,
+    responses={
+        200: PoolTopologySnapshotUpsertResponseSerializer,
+        400: ErrorResponseSerializer,
+        409: ErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        404: ErrorResponseSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upsert_pool_topology_snapshot(request, pool_id: UUID):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _problem(
+            code="TENANT_CONTEXT_REQUIRED",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    pool = OrganizationPool.objects.filter(id=pool_id, tenant_id=tenant_id).first()
+    if pool is None:
+        return _problem(
+            code="POOL_NOT_FOUND",
+            title="Pool Not Found",
+            detail="Organization pool not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    serializer = PoolTopologySnapshotUpsertRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = serializer.validated_data
+    version_token = str(data.get("version") or "").strip()
+    nodes_payload = list(data.get("nodes") or [])
+    edges_payload = list(data.get("edges") or [])
+    effective_from = data["effective_from"]
+    effective_to = data.get("effective_to")
+
+    active_nodes, active_edges = _load_pool_graph_state(pool=pool, target_date=effective_from)
+    current_version = _build_topology_version_token(
+        active_nodes=active_nodes,
+        active_edges=active_edges,
+    )
+    if version_token != current_version:
+        return _problem(
+            code="TOPOLOGY_VERSION_CONFLICT",
+            title="Topology Version Conflict",
+            detail=(
+                "Topology snapshot was changed by another session. "
+                "Reload graph data and retry with the latest version token."
+            ),
+            status_code=http_status.HTTP_409_CONFLICT,
+        )
+
+    organization_ids = [str(item["organization_id"]) for item in nodes_payload]
+    if len(set(organization_ids)) != len(organization_ids):
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail="Topology snapshot contains duplicate organization nodes.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    organizations = {
+        str(item.id): item
+        for item in Organization.objects.filter(id__in=organization_ids, tenant_id=tenant_id)
+    }
+    missing_org_ids = sorted(set(organization_ids) - set(organizations))
+    if missing_org_ids:
+        return _problem(
+            code="ORGANIZATION_NOT_FOUND",
+            title="Organization Not Found",
+            detail=f"Organizations not found in tenant context: {', '.join(missing_org_ids)}",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    edge_pairs: list[tuple[str, str]] = []
+    for edge in edges_payload:
+        parent_org_id = str(edge["parent_organization_id"])
+        child_org_id = str(edge["child_organization_id"])
+        if parent_org_id not in organizations or child_org_id not in organizations:
+            return _problem(
+                code="VALIDATION_ERROR",
+                title="Validation Error",
+                detail="Topology edges must reference organizations from nodes list.",
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+            )
+        edge_pairs.append((parent_org_id, child_org_id))
+
+    try:
+        validate_pool_graph(node_ids=list(organization_ids), edge_pairs=edge_pairs)
+    except DjangoValidationError as exc:
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=_validation_message(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    period_node_qs = PoolNodeVersion.objects.filter(pool=pool, effective_from=effective_from)
+    period_edge_qs = PoolEdgeVersion.objects.filter(pool=pool, effective_from=effective_from)
+    if effective_to is None:
+        period_node_qs = period_node_qs.filter(effective_to__isnull=True)
+        period_edge_qs = period_edge_qs.filter(effective_to__isnull=True)
+    else:
+        period_node_qs = period_node_qs.filter(effective_to=effective_to)
+        period_edge_qs = period_edge_qs.filter(effective_to=effective_to)
+
+    try:
+        with transaction.atomic():
+            period_edge_qs.delete()
+            period_node_qs.delete()
+
+            node_versions_by_org: dict[str, PoolNodeVersion] = {}
+            for node in nodes_payload:
+                org_id = str(node["organization_id"])
+                node_versions_by_org[org_id] = PoolNodeVersion.objects.create(
+                    pool=pool,
+                    organization=organizations[org_id],
+                    effective_from=effective_from,
+                    effective_to=effective_to,
+                    is_root=bool(node.get("is_root", False)),
+                    metadata=node.get("metadata") if isinstance(node.get("metadata"), dict) else {},
+                )
+
+            for edge in edges_payload:
+                parent_org_id = str(edge["parent_organization_id"])
+                child_org_id = str(edge["child_organization_id"])
+                PoolEdgeVersion.objects.create(
+                    pool=pool,
+                    parent_node=node_versions_by_org[parent_org_id],
+                    child_node=node_versions_by_org[child_org_id],
+                    effective_from=effective_from,
+                    effective_to=effective_to,
+                    weight=edge.get("weight", 1),
+                    min_amount=edge.get("min_amount"),
+                    max_amount=edge.get("max_amount"),
+                    metadata=edge.get("metadata") if isinstance(edge.get("metadata"), dict) else {},
+                )
+
+            pool.validate_graph(effective_from)
+    except (IntegrityError, DjangoValidationError, ValueError) as exc:
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=_validation_message(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    updated_nodes, updated_edges = _load_pool_graph_state(pool=pool, target_date=effective_from)
+
+    payload = {
+        "pool_id": str(pool.id),
+        "version": _build_topology_version_token(
+            active_nodes=updated_nodes,
+            active_edges=updated_edges,
+        ),
+        "effective_from": effective_from,
+        "effective_to": effective_to,
+        "nodes_count": len(nodes_payload),
+        "edges_count": len(edges_payload),
     }
     return Response(payload, status=http_status.HTTP_200_OK)
 
@@ -1658,26 +2199,14 @@ def get_pool_graph(request, pool_id: UUID):
     if target_date is None:
         target_date = timezone.localdate()
 
-    active_nodes = list(
-        PoolNodeVersion.objects.select_related("organization")
-        .filter(pool=pool, effective_from__lte=target_date)
-        .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=target_date))
-        .order_by("-is_root", "organization__name")
-    )
-    active_node_ids = {str(node.id) for node in active_nodes}
-    active_edges = list(
-        PoolEdgeVersion.objects.filter(pool=pool, effective_from__lte=target_date)
-        .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=target_date))
-        .order_by("parent_node_id", "child_node_id")
-    )
-    filtered_edges = [
-        edge
-        for edge in active_edges
-        if str(edge.parent_node_id) in active_node_ids and str(edge.child_node_id) in active_node_ids
-    ]
+    active_nodes, active_edges = _load_pool_graph_state(pool=pool, target_date=target_date)
     payload = {
         "pool_id": str(pool.id),
         "date": target_date,
+        "version": _build_topology_version_token(
+            active_nodes=active_nodes,
+            active_edges=active_edges,
+        ),
         "nodes": [
             {
                 "node_version_id": str(node.id),
@@ -1697,7 +2226,7 @@ def get_pool_graph(request, pool_id: UUID):
                 "min_amount": edge.min_amount,
                 "max_amount": edge.max_amount,
             }
-            for edge in filtered_edges
+            for edge in active_edges
         ],
     }
     return Response(payload, status=http_status.HTTP_200_OK)

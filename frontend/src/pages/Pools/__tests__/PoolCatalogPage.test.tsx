@@ -12,6 +12,8 @@ const mockGetOrganization = vi.fn()
 const mockListOrganizationPools = vi.fn()
 const mockGetPoolGraph = vi.fn()
 const mockUpsertOrganization = vi.fn()
+const mockUpsertOrganizationPool = vi.fn()
+const mockUpsertPoolTopologySnapshot = vi.fn()
 const mockSyncOrganizationsCatalog = vi.fn()
 const mockUseMe = vi.fn()
 const mockUseDatabases = vi.fn()
@@ -42,6 +44,8 @@ vi.mock('../../../api/intercompanyPools', () => ({
   listOrganizationPools: (...args: unknown[]) => mockListOrganizationPools(...args),
   getPoolGraph: (...args: unknown[]) => mockGetPoolGraph(...args),
   upsertOrganization: (...args: unknown[]) => mockUpsertOrganization(...args),
+  upsertOrganizationPool: (...args: unknown[]) => mockUpsertOrganizationPool(...args),
+  upsertPoolTopologySnapshot: (...args: unknown[]) => mockUpsertPoolTopologySnapshot(...args),
   syncOrganizationsCatalog: (...args: unknown[]) => mockSyncOrganizationsCatalog(...args),
 }))
 
@@ -77,6 +81,8 @@ describe('PoolCatalogPage', () => {
     mockListOrganizationPools.mockReset()
     mockGetPoolGraph.mockReset()
     mockUpsertOrganization.mockReset()
+    mockUpsertOrganizationPool.mockReset()
+    mockUpsertPoolTopologySnapshot.mockReset()
     mockSyncOrganizationsCatalog.mockReset()
     mockUseMe.mockReset()
     mockUseDatabases.mockReset()
@@ -106,6 +112,7 @@ describe('PoolCatalogPage', () => {
         id: '44444444-4444-4444-4444-444444444444',
         code: 'pool-1',
         name: 'Pool One',
+        description: 'Main pool',
         is_active: true,
         metadata: {},
         updated_at: '2026-01-01T00:00:00Z',
@@ -114,12 +121,33 @@ describe('PoolCatalogPage', () => {
     mockGetPoolGraph.mockResolvedValue({
       pool_id: '44444444-4444-4444-4444-444444444444',
       date: '2026-01-01',
+      version: 'v1:topology-initial',
       nodes: [],
       edges: [],
     })
     mockUpsertOrganization.mockResolvedValue({
       organization: baseOrganization,
       created: false,
+    })
+    mockUpsertOrganizationPool.mockResolvedValue({
+      pool: {
+        id: '44444444-4444-4444-4444-444444444444',
+        code: 'pool-1',
+        name: 'Pool One',
+        description: 'Main pool',
+        is_active: true,
+        metadata: {},
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+      created: false,
+    })
+    mockUpsertPoolTopologySnapshot.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      version: 'v1:topology-updated',
+      effective_from: '2026-01-01',
+      effective_to: null,
+      nodes_count: 0,
+      edges_count: 0,
     })
     mockSyncOrganizationsCatalog.mockResolvedValue({
       stats: { created: 1, updated: 0, skipped: 0 },
@@ -210,6 +238,139 @@ describe('PoolCatalogPage', () => {
       })
     )
     await waitFor(() => expect(mockListOrganizations).toHaveBeenCalledTimes(2))
+  }, 15000)
+
+  it('creates pool via drawer and reloads pools list', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockUpsertOrganizationPool.mockResolvedValueOnce({
+      pool: {
+        id: '66666666-6666-6666-6666-666666666666',
+        code: 'pool-2',
+        name: 'Pool Two',
+        description: 'Second pool',
+        is_active: true,
+        metadata: {},
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+      created: true,
+    })
+    mockListOrganizationPools
+      .mockResolvedValueOnce([
+        {
+          id: '44444444-4444-4444-4444-444444444444',
+          code: 'pool-1',
+          name: 'Pool One',
+          description: 'Main pool',
+          is_active: true,
+          metadata: {},
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: '44444444-4444-4444-4444-444444444444',
+          code: 'pool-1',
+          name: 'Pool One',
+          description: 'Main pool',
+          is_active: true,
+          metadata: {},
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: '66666666-6666-6666-6666-666666666666',
+          code: 'pool-2',
+          name: 'Pool Two',
+          description: 'Second pool',
+          is_active: true,
+          metadata: {},
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ])
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('pool-catalog-add-pool'))
+    await user.type(screen.getByLabelText('Code'), 'pool-2')
+    await user.type(screen.getByLabelText('Name'), 'Pool Two')
+    await user.type(screen.getByLabelText('Description'), 'Second pool')
+    await user.click(screen.getByTestId('pool-catalog-save-pool'))
+
+    await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
+    expect(mockUpsertOrganizationPool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: 'pool-2',
+        name: 'Pool Two',
+      })
+    )
+    await waitFor(() => expect(mockListOrganizationPools.mock.calls.length).toBeGreaterThanOrEqual(2))
+  }, 15000)
+
+  it('blocks topology save when preflight validation fails and keeps form input', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
+    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+
+    expect(await screen.findByText('Preflight validation failed')).toBeInTheDocument()
+    expect(await screen.findByText('Добавьте хотя бы один topology node.')).toBeInTheDocument()
+    expect(mockUpsertPoolTopologySnapshot).not.toHaveBeenCalled()
+  }, 15000)
+
+  it('sends topology version token and shows conflict error without clearing form data', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockUpsertPoolTopologySnapshot.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Topology Version Conflict',
+          status: 409,
+          detail: 'stale version token',
+          code: 'TOPOLOGY_VERSION_CONFLICT',
+        },
+      },
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
+
+    const topologyCard = screen.getByText('Topology snapshot editor').closest('.ant-card')
+    expect(topologyCard).toBeTruthy()
+
+    const nodeSelector = topologyCard?.querySelector('.ant-select .ant-select-selector')
+    expect(nodeSelector).toBeTruthy()
+    fireEvent.mouseDown(nodeSelector as Element)
+    fireEvent.click(await screen.findByText('Org One (730000000001)'))
+
+    const rootSwitch = topologyCard?.querySelector('button[role="switch"]')
+    expect(rootSwitch).toBeTruthy()
+    fireEvent.click(rootSwitch as Element)
+
+    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+
+    await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
+    expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledWith(
+      '44444444-4444-4444-4444-444444444444',
+      expect.objectContaining({
+        version: 'v1:topology-initial',
+      })
+    )
+    expect(
+      await screen.findByText(
+        'Топология уже была изменена другим оператором. Обновите граф и повторите сохранение.'
+      )
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('Org One (730000000001)').length).toBeGreaterThan(0)
   }, 15000)
 
   it('shows mapped backend domain error for organization upsert and keeps form data', async () => {

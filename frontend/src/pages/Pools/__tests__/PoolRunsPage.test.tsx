@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 
@@ -8,6 +8,7 @@ import type { PoolRun, PoolRunReport } from '../../../api/intercompanyPools'
 import { PoolRunsPage } from '../PoolRunsPage'
 
 const mockListOrganizationPools = vi.fn()
+const mockListPoolSchemaTemplates = vi.fn()
 const mockGetPoolGraph = vi.fn()
 const mockListPoolRuns = vi.fn()
 const mockGetPoolRunReport = vi.fn()
@@ -25,6 +26,7 @@ vi.mock('reactflow', () => ({
 
 vi.mock('../../../api/intercompanyPools', () => ({
   listOrganizationPools: (...args: unknown[]) => mockListOrganizationPools(...args),
+  listPoolSchemaTemplates: (...args: unknown[]) => mockListPoolSchemaTemplates(...args),
   getPoolGraph: (...args: unknown[]) => mockGetPoolGraph(...args),
   listPoolRuns: (...args: unknown[]) => mockListPoolRuns(...args),
   getPoolRunReport: (...args: unknown[]) => mockGetPoolRunReport(...args),
@@ -46,7 +48,8 @@ function buildRun(overrides: Partial<PoolRun> = {}): PoolRun {
     status_reason: 'awaiting_approval',
     period_start: '2026-01-01',
     period_end: null,
-    source_hash: 'src-1',
+    run_input: { source_payload: [{ inn: '730000000001', amount: '100.00' }] },
+    input_contract_version: 'run_input_v1',
     idempotency_key: 'idem-1',
     workflow_execution_id: '22222222-2222-2222-2222-222222222222',
     workflow_status: 'pending',
@@ -127,6 +130,7 @@ function renderPage() {
 describe('PoolRunsPage', () => {
   beforeEach(() => {
     mockListOrganizationPools.mockReset()
+    mockListPoolSchemaTemplates.mockReset()
     mockGetPoolGraph.mockReset()
     mockListPoolRuns.mockReset()
     mockGetPoolRunReport.mockReset()
@@ -141,14 +145,32 @@ describe('PoolRunsPage', () => {
         id: run.pool_id,
         code: 'pool-code',
         name: 'Pool name',
+        description: 'Main pool',
         is_active: true,
         metadata: {},
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ])
+    mockListPoolSchemaTemplates.mockResolvedValue([
+      {
+        id: '55555555-5555-5555-5555-555555555555',
+        tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        code: 'json-template',
+        name: 'JSON Template',
+        format: 'json',
+        is_public: true,
+        is_active: true,
+        schema: {},
+        metadata: {},
+        workflow_template_id: null,
+        created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
       },
     ])
     mockGetPoolGraph.mockResolvedValue({
       pool_id: run.pool_id,
       date: '2026-01-01',
+      version: 'v1:pool-runs-graph',
       nodes: [],
       edges: [],
     })
@@ -189,7 +211,11 @@ describe('PoolRunsPage', () => {
     )
     expect(screen.getAllByText('awaiting_approval').length).toBeGreaterThan(0)
     expect(screen.getAllByText('workflow_core').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('run_input_v1').length).toBeGreaterThan(0)
     expect(screen.getByText(/#1 initial/)).toBeInTheDocument()
+    expect((screen.getByTestId('pool-runs-run-input') as HTMLTextAreaElement).value).toContain(
+      '"source_payload"'
+    )
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled()
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
   })
@@ -214,6 +240,8 @@ describe('PoolRunsPage', () => {
   it('renders legacy run with backward-compatible provenance and diagnostics aliases', async () => {
     const legacyRun = buildRun({
       mode: 'unsafe',
+      run_input: null,
+      input_contract_version: 'legacy_pre_run_input',
       workflow_execution_id: null,
       workflow_status: null,
       execution_backend: 'legacy_pool_runtime',
@@ -236,6 +264,61 @@ describe('PoolRunsPage', () => {
 
     expect(await screen.findByTestId('pool-runs-provenance-workflow-id')).toHaveTextContent('-')
     expect(screen.getAllByText('legacy').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('legacy_pre_run_input').length).toBeGreaterThan(0)
+    expect(screen.getByTestId('pool-runs-run-input')).toHaveValue('null')
     expect(screen.getByText('legacy alias message')).toBeInTheDocument()
   })
+
+  it('submits top_down create-run payload with run_input and without source_hash', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    const submitButton = await screen.findByTestId('pool-runs-create-submit')
+    await user.click(submitButton)
+
+    await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
+    const payload = mockCreatePoolRun.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.direction).toBe('top_down')
+    expect(payload.run_input).toEqual({ starting_amount: '100.00' })
+    expect(payload).not.toHaveProperty('source_hash')
+  })
+
+  it('submits bottom_up create-run payload with source_payload and selected schema template', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    const bottomUpRadio = await screen.findByRole('radio', { name: 'bottom_up' })
+    const bottomUpLabel = bottomUpRadio.closest('label')
+    expect(bottomUpLabel).toBeTruthy()
+    fireEvent.click(bottomUpLabel as Element)
+
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: 'bottom_up' })).toBeChecked()
+    })
+    const sourcePayloadInput = await screen.findByLabelText('Source payload JSON')
+
+    const schemaSelect = screen.getByTestId('pool-runs-create-schema-template')
+    const schemaSelector = schemaSelect.querySelector('.ant-select-selector')
+    expect(schemaSelector).toBeTruthy()
+    fireEvent.mouseDown(schemaSelector as Element)
+    fireEvent.click(await screen.findByText('json-template - JSON Template'))
+    await waitFor(() => {
+      expect(schemaSelect).toHaveTextContent('json-template - JSON Template')
+    })
+
+    fireEvent.change(sourcePayloadInput, {
+      target: { value: '[{"inn":"730000000111","amount":"55.00"}]' },
+    })
+
+    await user.click(screen.getByTestId('pool-runs-create-submit'))
+
+    await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
+    const payload = mockCreatePoolRun.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.direction).toBe('bottom_up')
+    expect(payload.schema_template_id).toBe('55555555-5555-5555-5555-555555555555')
+    expect(payload.run_input).toEqual({
+      source_payload: [{ inn: '730000000111', amount: '55.00' }],
+    })
+    expect(payload).not.toHaveProperty('source_hash')
+  }, 15000)
 })

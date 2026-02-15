@@ -178,6 +178,18 @@ def _assert_safe_command_conflict_payload(
     assert payload["run_id"] == str(run_id)
 
 
+def _assert_problem_details_response(response, *, status_code: int, code: str) -> dict[str, object]:
+    assert response.status_code == status_code
+    assert response["Content-Type"].startswith("application/problem+json")
+    payload = response.json()
+    assert payload["status"] == status_code
+    assert payload["code"] == code
+    assert payload["type"] == "about:blank"
+    assert isinstance(payload["title"], str) and payload["title"]
+    assert isinstance(payload["detail"], str) and payload["detail"]
+    return payload
+
+
 @pytest.fixture
 def default_tenant() -> Tenant:
     tenant, _ = Tenant.objects.get_or_create(slug="default", defaults={"name": "Default"})
@@ -221,7 +233,7 @@ def test_pool_run_endpoints_require_authentication(pool: OrganizationPool) -> No
             "pool_id": str(pool.id),
             "direction": PoolRunDirection.BOTTOM_UP,
             "period_start": "2026-01-01",
-            "source_hash": "file-1",
+            "run_input": {"source_payload": []},
         },
         format="json",
     )
@@ -381,6 +393,294 @@ def test_sync_organizations_catalog_endpoint_returns_stats(
 
 
 @pytest.mark.django_db
+def test_upsert_pool_metadata_creates_updates_and_enforces_tenant_boundary(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    create_response = authenticated_client.post(
+        "/api/v2/pools/upsert/",
+        {
+            "code": "pool-meta",
+            "name": "Pool Metadata",
+            "description": "Initial pool metadata",
+            "is_active": True,
+            "metadata": {"domain": "intercompany"},
+        },
+        format="json",
+    )
+    assert create_response.status_code == 201
+    create_payload = create_response.json()
+    assert create_payload["created"] is True
+    pool_id = create_payload["pool"]["id"]
+
+    update_response = authenticated_client.post(
+        "/api/v2/pools/upsert/",
+        {
+            "pool_id": pool_id,
+            "code": "pool-meta",
+            "name": "Pool Metadata Updated",
+            "description": "Updated pool metadata",
+            "is_active": False,
+            "metadata": {"domain": "intercompany", "version": 2},
+        },
+        format="json",
+    )
+    assert update_response.status_code == 200
+    update_payload = update_response.json()
+    assert update_payload["created"] is False
+    assert update_payload["pool"]["name"] == "Pool Metadata Updated"
+    assert update_payload["pool"]["description"] == "Updated pool metadata"
+    assert update_payload["pool"]["is_active"] is False
+
+    pools_response = authenticated_client.get("/api/v2/pools/")
+    assert pools_response.status_code == 200
+    pools_payload = pools_response.json()
+    assert any(
+        item["id"] == pool_id
+        and item["description"] == "Updated pool metadata"
+        for item in pools_payload["pools"]
+    )
+
+    another_tenant = Tenant.objects.create(slug="pool-meta-other", name="Pool Meta Other")
+    another_user = User.objects.create_user(username="pool-meta-other-user", password="pass")
+    TenantMember.objects.create(
+        tenant=another_tenant,
+        user=another_user,
+        role=TenantMember.ROLE_ADMIN,
+    )
+    another_client = APIClient()
+    another_client.force_authenticate(user=another_user)
+    another_client.credentials(HTTP_X_CC1C_TENANT_ID=str(another_tenant.id))
+    cross_tenant_response = another_client.post(
+        "/api/v2/pools/upsert/",
+        {
+            "pool_id": pool_id,
+            "code": "pool-meta",
+            "name": "Cross tenant update",
+        },
+        format="json",
+    )
+    assert cross_tenant_response.status_code == 404
+    assert cross_tenant_response.json()["code"] == "POOL_NOT_FOUND"
+
+
+@pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_creates_graph_for_date(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    root_org = Organization.objects.create(tenant=default_tenant, name="Root Org", inn="741000000001")
+    middle_org = Organization.objects.create(tenant=default_tenant, name="Middle Org", inn="741000000002")
+    leaf_org = Organization.objects.create(tenant=default_tenant, name="Leaf Org", inn="741000000003")
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    current_version = graph_before.json()["version"]
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "effective_to": None,
+            "nodes": [
+                {"organization_id": str(root_org.id), "is_root": True},
+                {"organization_id": str(middle_org.id), "is_root": False},
+                {"organization_id": str(leaf_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(middle_org.id),
+                    "weight": "1.0",
+                },
+                {
+                    "parent_organization_id": str(middle_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "1.0",
+                },
+            ],
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["pool_id"] == str(pool.id)
+    assert payload["nodes_count"] == 3
+    assert payload["edges_count"] == 2
+    assert isinstance(payload["version"], str) and payload["version"]
+
+    graph_response = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-15")
+    assert graph_response.status_code == 200
+    graph_payload = graph_response.json()
+    assert isinstance(graph_payload["version"], str) and graph_payload["version"]
+    assert len(graph_payload["nodes"]) == 3
+    assert len(graph_payload["edges"]) == 2
+    assert any(node["is_root"] for node in graph_payload["nodes"])
+
+
+@pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_rejects_invalid_cycle(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    left_org = Organization.objects.create(tenant=default_tenant, name="Cycle Left", inn="742000000001")
+    right_org = Organization.objects.create(tenant=default_tenant, name="Cycle Right", inn="742000000002")
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    current_version = graph_before.json()["version"]
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "nodes": [
+                {"organization_id": str(left_org.id), "is_root": True},
+                {"organization_id": str(right_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(left_org.id),
+                    "child_organization_id": str(right_org.id),
+                    "weight": "1.0",
+                },
+                {
+                    "parent_organization_id": str(right_org.id),
+                    "child_organization_id": str(left_org.id),
+                    "weight": "1.0",
+                },
+            ],
+        },
+        format="json",
+    )
+    _assert_problem_details_response(response, status_code=400, code="VALIDATION_ERROR")
+
+
+@pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_rejects_stale_version_with_problem_details(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    root_org = Organization.objects.create(tenant=default_tenant, name="Version Root", inn="742000000011")
+    leaf_org = Organization.objects.create(tenant=default_tenant, name="Version Leaf", inn="742000000012")
+
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    stale_version = graph_before.json()["version"]
+
+    first_save = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": stale_version,
+            "effective_from": "2026-01-01",
+            "nodes": [
+                {"organization_id": str(root_org.id), "is_root": True},
+                {"organization_id": str(leaf_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "1.0",
+                },
+            ],
+        },
+        format="json",
+    )
+    assert first_save.status_code == 200
+
+    conflict = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": stale_version,
+            "effective_from": "2026-01-01",
+            "nodes": [
+                {"organization_id": str(root_org.id), "is_root": True},
+                {"organization_id": str(leaf_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "0.8",
+                },
+            ],
+        },
+        format="json",
+    )
+    payload = _assert_problem_details_response(
+        conflict,
+        status_code=409,
+        code="TOPOLOGY_VERSION_CONFLICT",
+    )
+    assert "latest version token" in payload["detail"]
+
+
+@pytest.mark.django_db
+def test_create_pool_run_rejects_top_down_without_starting_amount(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/runs/",
+        {
+            "pool_id": str(pool.id),
+            "direction": PoolRunDirection.TOP_DOWN,
+            "period_start": "2026-01-01",
+            "run_input": {},
+            "mode": "safe",
+        },
+        format="json",
+    )
+    payload = _assert_problem_details_response(response, status_code=400, code="VALIDATION_ERROR")
+    assert "run_input" in payload["detail"]
+
+
+@pytest.mark.django_db
+def test_create_pool_run_rejects_bottom_up_without_source_input(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/runs/",
+        {
+            "pool_id": str(pool.id),
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "run_input": {},
+            "mode": "safe",
+        },
+        format="json",
+    )
+    payload = _assert_problem_details_response(response, status_code=400, code="VALIDATION_ERROR")
+    assert "run_input" in payload["detail"]
+
+
+@pytest.mark.django_db
+def test_create_pool_run_rejects_legacy_source_hash_field_as_problem_details(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/runs/",
+        {
+            "pool_id": str(pool.id),
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "source_hash": "legacy-hash",
+            "mode": "safe",
+        },
+        format="json",
+    )
+    payload = _assert_problem_details_response(response, status_code=400, code="VALIDATION_ERROR")
+    assert "source_hash" in payload["detail"]
+
+
+@pytest.mark.django_db
 def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
     authenticated_client: APIClient,
     pool: OrganizationPool,
@@ -390,7 +690,7 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
         "direction": PoolRunDirection.BOTTOM_UP,
         "period_start": "2026-01-01",
         "period_end": "2026-01-31",
-        "source_hash": "same-file",
+        "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
         "mode": "safe",
         "validation_summary": {"rows": 3},
         "diagnostics": [],
@@ -447,7 +747,7 @@ def test_create_pool_run_endpoint_keeps_workflow_link_when_enqueue_fails(
         "direction": PoolRunDirection.BOTTOM_UP,
         "period_start": "2026-01-01",
         "period_end": "2026-01-31",
-        "source_hash": "enqueue-error",
+        "run_input": {"source_payload": [{"inn": "730000000001", "amount": "50.00"}]},
         "mode": "safe",
     }
     with patch(
@@ -483,7 +783,7 @@ def test_create_pool_run_enqueues_to_workflow_stream_with_normal_priority(
         "pool_id": str(pool.id),
         "direction": PoolRunDirection.BOTTOM_UP,
         "period_start": "2026-01-01",
-        "source_hash": "queue-contract",
+        "run_input": {"source_payload": [{"inn": "730000000001", "amount": "30.00"}]},
         "mode": "safe",
     }
     with (
@@ -564,6 +864,37 @@ def test_get_pool_run_returns_details(
     assert attempt_payload["domain_error_message"] == "temporary error"
     assert attempt_payload["publication_identity_strategy"] == ""
     assert any(event["event_type"] == "run.test_event" for event in payload["audit_events"])
+
+
+@pytest.mark.django_db
+def test_historical_run_read_contract_returns_nullable_run_input_and_legacy_contract_version(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    historical_run = PoolRun.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        direction=PoolRunDirection.BOTTOM_UP,
+        period_start=date(2025, 12, 1),
+        run_input={},
+        source_hash="legacy-source-hash",
+    )
+
+    list_response = authenticated_client.get(f"/api/v2/pools/runs/?pool_id={pool.id}&limit=10")
+    assert list_response.status_code == 200
+    list_payload = list_response.json()
+    historical_row = next(item for item in list_payload["runs"] if item["id"] == str(historical_run.id))
+    assert historical_row["run_input"] is None
+    assert historical_row["input_contract_version"] == "legacy_pre_run_input"
+    assert "source_hash" not in historical_row
+
+    details_response = authenticated_client.get(f"/api/v2/pools/runs/{historical_run.id}/")
+    assert details_response.status_code == 200
+    details_payload = details_response.json()
+    assert details_payload["run"]["run_input"] is None
+    assert details_payload["run"]["input_contract_version"] == "legacy_pre_run_input"
+    assert "source_hash" not in details_payload["run"]
 
 
 @pytest.mark.django_db
@@ -1994,7 +2325,7 @@ def test_create_pool_run_with_schema_template_uses_workflow_runtime(
                 "direction": PoolRunDirection.BOTTOM_UP,
                 "period_start": "2026-01-01",
                 "period_end": "2026-01-31",
-                "source_hash": "facade-template-hash",
+                "run_input": {"source_artifact_id": "artifact://pool-run-input"},
                 "mode": "unsafe",
                 "schema_template_id": str(template.id),
                 "seed": 42,
