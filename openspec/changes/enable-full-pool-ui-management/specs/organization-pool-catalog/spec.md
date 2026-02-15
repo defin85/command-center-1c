@@ -37,3 +37,15 @@ UI ДОЛЖЕН (SHALL) использовать канонический backen
 - **WHEN** он создаёт пул, сохраняет topology snapshot и открывает preview графа
 - **THEN** весь цикл выполняется через документированные `/api/v2/pools/*` endpoint'ы
 - **AND** ручные вызовы из Postman/curl не требуются
+
+### Requirement: Topology snapshot mutating MUST предотвращать lost update при конкурентном редактировании
+Система ДОЛЖНА (SHALL) поддерживать optimistic concurrency для mutating-операций topology snapshot через version token (`If-Match` или эквивалентный `version` в payload).
+
+При конфликте версий система ДОЛЖНА (SHALL) возвращать `409 Conflict` с machine-readable причиной, а UI ДОЛЖЕН (SHALL) сохранять введённые данные до повторной попытки.
+
+#### Scenario: Второй оператор получает конфликт версии при сохранении устаревшего snapshot
+- **GIVEN** два оператора редактируют один и тот же topology snapshot пула
+- **AND** первый оператор уже сохранил новую версию
+- **WHEN** второй оператор отправляет сохранение со старым version token
+- **THEN** backend возвращает `409 Conflict` с причиной конфликта версии
+- **AND** UI показывает оператору причину и не теряет введённые изменения

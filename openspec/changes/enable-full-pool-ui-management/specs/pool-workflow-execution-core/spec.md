@@ -21,6 +21,8 @@
 
 Система НЕ ДОЛЖНА (SHALL NOT) переиспользовать один и тот же run, если direction-specific входные данные различаются.
 
+Канонизация `run_input` ДОЛЖНА (SHALL) быть детерминированной: semantically-equivalent payload должен давать одинаковый fingerprint независимо от порядка ключей и форматирования JSON.
+
 #### Scenario: Изменение стартовой суммы создаёт новый idempotency fingerprint
 - **GIVEN** два запроса create-run с одинаковыми `pool_id`, `period`, `direction`
 - **AND** стартовая сумма в `run_input` различается
@@ -33,3 +35,20 @@
 - **WHEN** клиент повторяет create-run с теми же полями
 - **THEN** система возвращает существующий run по idempotency
 - **AND** дубликат run не создаётся
+
+### Requirement: Переход на run_input MUST быть backward-compatible для существующих run и legacy клиентов
+Система ДОЛЖНА (SHALL) сохранять читаемость historical run, созданных до появления `run_input`.
+
+На переходном этапе система ДОЛЖНА (SHALL) принимать legacy-путь с `source_hash` для совместимости старых клиентов, но `run_input` остаётся каноническим источником для нового create-run контракта.
+
+#### Scenario: Historical run без run_input корректно возвращается в API
+- **GIVEN** в системе есть run, созданный до введения поля `run_input`
+- **WHEN** клиент запрашивает список или детали run
+- **THEN** API возвращает run без ошибки десериализации
+- **AND** данные run доступны для UI мониторинга и safe-flow операций
+
+#### Scenario: Legacy create-run запрос не ломает API в переходный период
+- **GIVEN** клиент отправляет create-run по legacy-контракту без `run_input`
+- **WHEN** backend обрабатывает запрос в режиме совместимости
+- **THEN** запрос обрабатывается без `5xx` и с детерминированным idempotency поведением
+- **AND** поведение documented как временно совместимое до завершения миграции клиентов

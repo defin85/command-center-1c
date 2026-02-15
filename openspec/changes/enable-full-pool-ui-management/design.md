@@ -45,6 +45,7 @@
 ### Decision 3: Idempotency fingerprint учитывает `run_input`
 - Fingerprint должен включать canonicalized `run_input`.
 - Изменение стартовой суммы или входных данных должно приводить к новому idempotency key.
+- На переходном этапе legacy `source_hash` допускается для обратной совместимости API, но не должен быть единственным источником идентификации входных данных в новой модели.
 
 Почему:
 - Предотвращает ложное переиспользование run при разных входных данных.
@@ -56,6 +57,13 @@
 Почему:
 - Минимизирует миграцию UX и переиспользует существующую навигацию/контекст.
 
+### Decision 5: Snapshot update защищается optimistic concurrency
+- Mutating update topology snapshot должен использовать optimistic concurrency (`If-Match`/version).
+- При конфликте версии backend возвращает `409` с доменным кодом, UI сохраняет введённые данные и предлагает перезагрузить актуальную версию.
+
+Почему:
+- Убирает риск "lost update" при параллельной работе операторов над одним пулом.
+
 ## API/Model Considerations
 - API:
   - добавить mutating endpoint'ы для пула/топологии;
@@ -63,6 +71,9 @@
 - Model:
   - хранить `run_input` в run state (отдельным полем или каноническим под-объектом state-модели);
   - обеспечить совместимость чтения historical runs без `run_input`.
+- Idempotency:
+  - canonicalization `run_input` должна быть детерминированной (стабильный JSON + нормализация денежных полей);
+  - одинаковый semantically-equivalent payload должен давать одинаковый fingerprint.
 - Workflow:
   - передавать `run_input` в input_context;
   - шаги `prepare_input` и `distribution_calculation` используют его как источник данных.
@@ -76,6 +87,8 @@
   - Mitigation: direction-specific UI блоки + строгая клиентская и серверная валидация.
 - Риск несовместимости при вводе `run_input` в существующие idempotency сценарии.
   - Mitigation: явная backward-compatible миграция и тесты на старые/новые run.
+- Риск потери изменений топологии при конкурентном редактировании.
+  - Mitigation: optimistic concurrency (`If-Match`/version) + понятный `409` flow в UI.
 - Риск регрессий в OpenAPI и generated clients.
   - Mitigation: contract-first обновление + parity tests + генерация в одном change.
 

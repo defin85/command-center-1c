@@ -18,6 +18,9 @@
   - сохранялся как часть доменной сущности запуска;
   - участвовал в idempotency fingerprint;
   - передавался в workflow input_context для шагов `prepare_input` и `distribution_calculation`.
+- Зафиксировать совместимость перехода на `run_input`:
+  - historical run без `run_input` остаются читаемыми в API/UI;
+  - на переходном этапе допускается legacy `source_hash`, но `run_input` является каноническим source-of-truth для нового fingerprint.
 - Сохранить и унифицировать end-to-end контроль safe flow в UI (`confirm-publication`, `abort-publication`, retry failed) без выхода в внешние API-клиенты.
 - Обновить OpenAPI и generated client/types под новый UI-сценарий.
 
@@ -41,3 +44,4 @@
 - Визуальный drag-and-drop редактор графа (в MVP допускается формо- и табличное редактирование топологии).
 - Изменение бизнес-правил распределения (алгоритм/формулы) вне текущих доменных спецификаций.
 - Отдельный «новый runtime» для pools: используется текущий unified workflow runtime.
+- Перевод старых клиентов на `run_input` в рамках одного релиза без переходного периода совместимости.
