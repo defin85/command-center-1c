@@ -12,6 +12,12 @@
 - **THEN** run создаётся через `/api/v2/pools/runs/` с direction-specific входными данными
 - **AND** запуск не требует ручного формирования payload во внешнем API-клиенте
 
+#### Scenario: UI create-run payload не содержит source_hash
+- **GIVEN** оператор запускает run через `/pools/runs`
+- **WHEN** UI формирует payload для `POST /api/v2/pools/runs/`
+- **THEN** payload содержит `run_input` и не содержит `source_hash`
+- **AND** idempotency определяется содержимым `run_input`
+
 #### Scenario: Top-down стартовая сумма валидируется как денежное поле
 - **GIVEN** оператор выбрал направление `top_down`
 - **WHEN** оператор вводит отрицательное значение или нечисловой формат стартовой суммы
@@ -44,6 +50,12 @@
 - **WHEN** оператор инициирует retry failed-целей из интерфейса
 - **THEN** UI вызывает retry endpoint
 - **AND** обновлённый статус run отображается в том же интерфейсе
+
+#### Scenario: UI корректно отображает ошибки create-run в Problem Details формате
+- **GIVEN** backend отклонил create-run запрос
+- **WHEN** ответ возвращён как `application/problem+json`
+- **THEN** UI показывает `detail` оператору
+- **AND** использует machine-readable `code` для привязки к конкретному полю/действию
 
 ## MODIFIED Requirements
 ### Requirement: Run execution MUST быть идемпотентным для одного ключа расчёта

@@ -43,9 +43,28 @@ UI ДОЛЖЕН (SHALL) использовать канонический backen
 
 При конфликте версий система ДОЛЖНА (SHALL) возвращать `409 Conflict` с machine-readable причиной, а UI ДОЛЖЕН (SHALL) сохранять введённые данные до повторной попытки.
 
+Read endpoint topology snapshot ДОЛЖЕН (SHALL) возвращать актуальный `version` token, который UI использует при следующем mutating update.
+
 #### Scenario: Второй оператор получает конфликт версии при сохранении устаревшего snapshot
 - **GIVEN** два оператора редактируют один и тот же topology snapshot пула
 - **AND** первый оператор уже сохранил новую версию
 - **WHEN** второй оператор отправляет сохранение со старым version token
 - **THEN** backend возвращает `409 Conflict` с причиной конфликта версии
 - **AND** UI показывает оператору причину и не теряет введённые изменения
+
+#### Scenario: UI получает version token из read endpoint и успешно выполняет update
+- **GIVEN** оператор открыл topology snapshot в UI
+- **WHEN** UI запрашивает текущую версию структуры через read endpoint
+- **THEN** ответ содержит актуальный `version` token
+- **AND** этот token передаётся в mutating update запрос
+
+### Requirement: Topology mutating errors MUST использовать единый Problem Details контракт
+Система ДОЛЖНА (SHALL) возвращать ошибки topology mutating endpoint'ов в формате `application/problem+json`.
+
+Problem payload ДОЛЖЕН (SHALL) содержать поля `type`, `title`, `status`, `detail`, `code`.
+
+#### Scenario: Конфликт версии возвращается в Problem Details формате
+- **GIVEN** mutating update topology отклоняется из-за устаревшего `version` token
+- **WHEN** backend формирует ответ об ошибке
+- **THEN** response content-type равен `application/problem+json`
+- **AND** payload содержит `status=409` и machine-readable `code`

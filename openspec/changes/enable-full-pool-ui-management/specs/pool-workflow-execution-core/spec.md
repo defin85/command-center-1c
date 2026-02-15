@@ -23,6 +23,12 @@
 
 Канонизация `run_input` ДОЛЖНА (SHALL) быть детерминированной: semantically-equivalent payload должен давать одинаковый fingerprint независимо от порядка ключей и форматирования JSON.
 
+Профиль canonicalization ДОЛЖЕН (SHALL) включать:
+- лексикографическую сортировку ключей объектов;
+- сохранение порядка элементов массивов;
+- нормализацию денежных значений в fixed-scale decimal string;
+- сериализацию без зависимости от whitespace/formatting входного JSON.
+
 #### Scenario: Изменение стартовой суммы создаёт новый idempotency fingerprint
 - **GIVEN** два запроса create-run с одинаковыми `pool_id`, `period`, `direction`
 - **AND** стартовая сумма в `run_input` различается
@@ -36,10 +42,21 @@
 - **THEN** система возвращает существующий run по idempotency
 - **AND** дубликат run не создаётся
 
+#### Scenario: Семантически эквивалентный JSON даёт тот же fingerprint
+- **GIVEN** два create-run payload с одинаковым смыслом `run_input`, но разным порядком ключей
+- **WHEN** backend canonicalizes `run_input`
+- **THEN** вычисленный idempotency fingerprint совпадает
+- **AND** система не создаёт дублирующий run
+
 ### Requirement: Create-run API MUST удалить source_hash из публичного контракта
 Система ДОЛЖНА (SHALL) удалить поле `source_hash` из публичного контракта `POST /api/v2/pools/runs/` и из формулы idempotency key.
 
 Система ДОЛЖНА (SHALL) сохранять читаемость historical run после удаления `source_hash` из create-path.
+
+Публичный read-контракт run ДОЛЖЕН (SHALL) возвращать:
+- `run_input` как nullable поле;
+- `input_contract_version` (`run_input_v1` или `legacy_pre_run_input`);
+- без публичного поля `source_hash`.
 
 #### Scenario: Запрос create-run с source_hash отклоняется как невалидный контракт
 - **GIVEN** клиент отправляет create-run с полем `source_hash`
@@ -50,8 +67,20 @@
 #### Scenario: Historical run остаётся читаемым после удаления source_hash из create-path
 - **GIVEN** в системе есть historical run, созданный до обновления контракта
 - **WHEN** клиент запрашивает список или детали run
-- **THEN** API возвращает run без ошибки десериализации
+- **THEN** API возвращает run без ошибки десериализации с `run_input=null`
+- **AND** поле `input_contract_version` равно `legacy_pre_run_input`
 - **AND** данные run доступны для UI мониторинга и safe-flow операций
+
+### Requirement: Create-run validation errors MUST использовать Problem Details контракт
+Система ДОЛЖНА (SHALL) возвращать ошибки валидации create-run в формате `application/problem+json`.
+
+Problem payload ДОЛЖЕН (SHALL) содержать `type`, `title`, `status`, `detail`, `code`.
+
+#### Scenario: source_hash в create-run возвращает Problem Details ошибку
+- **GIVEN** клиент отправляет create-run с запрещённым полем `source_hash`
+- **WHEN** backend формирует ответ об ошибке
+- **THEN** response content-type равен `application/problem+json`
+- **AND** payload содержит `status=400` и machine-readable `code`
 
 ## MODIFIED Requirements
 ### Requirement: Migration MUST сохранять historical runs и идемпотентность
@@ -59,8 +88,16 @@
 
 Система ДОЛЖНА (SHALL) иметь rollback criteria и rollback-path для возврата execution routing без потери связей run/provenance.
 
+Система ДОЛЖНА (SHALL) сопровождать breaking удаление `source_hash` обновлением OpenAPI-примеров и release notes для интеграторов.
+
 #### Scenario: Идемпотентный ключ после миграции вычисляется из canonicalized run_input
 - **GIVEN** клиент отправляет create-run с `run_input`
 - **WHEN** backend вычисляет idempotency fingerprint
 - **THEN** fingerprint зависит от canonicalized `run_input` и контекста запуска (`pool_id`, `period`, `direction`)
 - **AND** поле `source_hash` не участвует в вычислении
+
+#### Scenario: Breaking cutover документирован для интеграторов
+- **GIVEN** система переходит на контракт без `source_hash`
+- **WHEN** публикуется новая версия OpenAPI
+- **THEN** release notes содержат migration guidance и обновлённые примеры create-run payload
+- **AND** интеграторы могут перейти на `run_input` без двусмысленности контракта

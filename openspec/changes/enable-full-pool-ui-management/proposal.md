@@ -9,7 +9,8 @@
 - Расширить функциональность `/pools/catalog` до полного управления пулами:
   - CRUD метаданных пула (`code`, `name`, `is_active`, `description`, `metadata`);
   - редактирование версионируемой топологии пула (узлы/рёбра с `effective_from/effective_to`);
-  - сохранение топологии атомарным snapshot-upsert с серверной валидацией DAG-инвариантов.
+  - сохранение топологии атомарным snapshot-upsert с серверной валидацией DAG-инвариантов;
+  - обязательный round-trip `version` token: read endpoint возвращает текущую версию snapshot, update endpoint требует её для optimistic concurrency.
 - Расширить `/pools/runs` до полного запуска распределения без ручных HTTP-клиентов:
   - direction-specific run input;
   - для `top_down` — обязательный ввод стартовой суммы пользователем;
@@ -19,7 +20,11 @@
   - участвовал в idempotency fingerprint;
   - передавался в workflow input_context для шагов `prepare_input` и `distribution_calculation`.
 - **BREAKING** Удалить `source_hash` из публичного create-run контракта и из формулы idempotency key.
-- Сохранить читаемость historical run в API/UI после удаления `source_hash` из внешнего контракта.
+- Сохранить читаемость historical run в API/UI после удаления `source_hash` из внешнего контракта:
+  - read contract возвращает `run_input` как nullable поле;
+  - read contract возвращает `input_contract_version` (`run_input_v1` или `legacy_pre_run_input`).
+- Зафиксировать deterministic canonicalization profile для `run_input` (stable key order, deterministic decimal normalization, без зависимости от formatting).
+- Унифицировать новые ошибки mutating/create-run endpoint'ов на `application/problem+json` с machine-readable `code`.
 - Сохранить и унифицировать end-to-end контроль safe flow в UI (`confirm-publication`, `abort-publication`, retry failed) без выхода в внешние API-клиенты.
 - Обновить OpenAPI и generated client/types под новый UI-сценарий.
 
@@ -30,6 +35,7 @@
   - `pool-workflow-execution-core`
 - Breaking API change:
   - `POST /api/v2/pools/runs/` больше не принимает `source_hash`; клиенты обязаны передавать `run_input`.
+  - run read-model удаляет `source_hash` из публичного payload и вводит `run_input` (nullable) + `input_contract_version`.
 - Affected code (expected):
   - `frontend/src/pages/Pools/PoolCatalogPage.tsx`
   - `frontend/src/pages/Pools/PoolRunsPage.tsx`
