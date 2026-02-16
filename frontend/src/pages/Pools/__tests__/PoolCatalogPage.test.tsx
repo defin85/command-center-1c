@@ -308,6 +308,46 @@ describe('PoolCatalogPage', () => {
     await waitFor(() => expect(mockListOrganizationPools.mock.calls.length).toBeGreaterThanOrEqual(2))
   }, 15000)
 
+  it('edits selected pool via drawer and sends pool_id in upsert payload', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await user.clear(screen.getByLabelText('Name'))
+    await user.type(screen.getByLabelText('Name'), 'Pool One Updated')
+    await user.click(screen.getByTestId('pool-catalog-save-pool'))
+
+    await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
+    expect(mockUpsertOrganizationPool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pool_id: '44444444-4444-4444-4444-444444444444',
+        code: 'pool-1',
+        name: 'Pool One Updated',
+      })
+    )
+  }, 15000)
+
+  it('deactivates selected pool via toggle action', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('pool-catalog-toggle-pool-active'))
+
+    await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
+    expect(mockUpsertOrganizationPool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pool_id: '44444444-4444-4444-4444-444444444444',
+        is_active: false,
+      })
+    )
+  }, 15000)
+
   it('blocks topology save when preflight validation fails and keeps form input', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
@@ -431,6 +471,40 @@ describe('PoolCatalogPage', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText('Проверьте корректность заполнения полей.')).toBeInTheDocument()
+    expect(await screen.findByText('ИНН уже существует')).toBeInTheDocument()
+    expect(screen.getByLabelText('INN')).toHaveValue('730000000001')
+  }, 15000)
+
+  it('applies field-level validation errors from problem+json payload on upsert', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockUpsertOrganization.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Validation Error',
+          status: 400,
+          detail: 'Organization payload validation failed.',
+          code: 'VALIDATION_ERROR',
+          errors: {
+            inn: ['ИНН уже существует'],
+          },
+        },
+      },
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('pool-catalog-add-org'))
+    await user.clear(screen.getByLabelText('INN'))
+    await user.type(screen.getByLabelText('INN'), '730000000001')
+    await user.clear(screen.getByLabelText('Name'))
+    await user.type(screen.getByLabelText('Name'), 'Duplicate Org')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Проверьте корректность данных.')).toBeInTheDocument()
     expect(await screen.findByText('ИНН уже существует')).toBeInTheDocument()
     expect(screen.getByLabelText('INN')).toHaveValue('730000000001')
   }, 15000)

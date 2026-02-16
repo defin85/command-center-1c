@@ -241,13 +241,22 @@ const resolveApiError = (
 
   const responseData = err?.response?.data
   if (responseData && typeof responseData === 'object' && !Array.isArray(responseData)) {
-    const maybeProblem = responseData as { code?: unknown; detail?: unknown; title?: unknown }
+    const maybeProblem = responseData as {
+      code?: unknown
+      detail?: unknown
+      title?: unknown
+      errors?: unknown
+    }
     const problemCode = typeof maybeProblem.code === 'string' ? maybeProblem.code : ''
     const problemDetail = typeof maybeProblem.detail === 'string' ? maybeProblem.detail.trim() : ''
-    if (problemCode || problemDetail) {
+    const problemFieldErrors = normalizeFieldErrors(maybeProblem.errors)
+    if (problemCode || problemDetail || Object.keys(problemFieldErrors).length > 0) {
+      const mappedMessage = API_ERROR_MESSAGE_MAP[problemCode] ?? problemDetail
       return {
-        message: (API_ERROR_MESSAGE_MAP[problemCode] ?? problemDetail) || fallbackMessage,
-        fieldErrors: {},
+        message: mappedMessage || (Object.keys(problemFieldErrors).length > 0
+          ? 'Проверьте корректность заполнения полей.'
+          : fallbackMessage),
+        fieldErrors: problemFieldErrors,
       }
     }
   }

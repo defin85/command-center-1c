@@ -4935,17 +4935,17 @@ paths:
           description: ''
         '400':
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ProblemDetailsError'
           description: ''
         '401':
           description: Unauthorized
         '404':
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ProblemDetailsError'
           description: ''
       parameters:
       - name: X-CC1C-Tenant-ID
@@ -16153,6 +16153,8 @@ components:
           format: date
           nullable: true
         run_input:
+          type: object
+          additionalProperties: {}
           nullable: true
         input_contract_version:
           enum:
@@ -16766,6 +16768,7 @@ components:
           type: string
         code:
           type: string
+        errors: {}
       required:
       - code
       - detail

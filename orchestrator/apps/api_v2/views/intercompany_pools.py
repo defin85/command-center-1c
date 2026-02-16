@@ -126,15 +126,19 @@ def _problem(
     detail: str,
     status_code: int,
     type_uri: str = "about:blank",
+    errors: Any | None = None,
 ) -> Response:
+    payload: dict[str, Any] = {
+        "type": type_uri,
+        "title": title,
+        "status": int(status_code),
+        "detail": detail,
+        "code": code,
+    }
+    if errors is not None:
+        payload["errors"] = errors
     return Response(
-        {
-            "type": type_uri,
-            "title": title,
-            "status": int(status_code),
-            "detail": detail,
-            "code": code,
-        },
+        payload,
         status=status_code,
         content_type="application/problem+json",
     )
@@ -1657,9 +1661,9 @@ def get_organization(request, organization_id: UUID):
     responses={
         200: OrganizationUpsertResponseSerializer,
         201: OrganizationUpsertResponseSerializer,
-        400: ErrorResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
         401: OpenApiResponse(description="Unauthorized"),
-        404: ErrorResponseSerializer,
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
     },
 )
 @api_view(["POST"])
@@ -1667,17 +1671,21 @@ def get_organization(request, organization_id: UUID):
 def upsert_organization(request):
     tenant_id = _resolve_tenant_id(request)
     if not tenant_id:
-        return _error(
+        return _problem(
             code="TENANT_CONTEXT_REQUIRED",
-            message="X-CC1C-Tenant-ID is required.",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
     serializer = OrganizationUpsertRequestSerializer(data=request.data or {})
     if not serializer.is_valid():
-        return Response(
-            {"success": False, "error": serializer.errors},
-            status=http_status.HTTP_400_BAD_REQUEST,
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail="Organization payload validation failed.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=serializer.errors,
         )
 
     data = serializer.validated_data
@@ -1686,9 +1694,10 @@ def upsert_organization(request):
     if organization_id:
         organization = Organization.objects.filter(id=organization_id, tenant_id=tenant_id).first()
         if organization is None:
-            return _error(
+            return _problem(
                 code="ORGANIZATION_NOT_FOUND",
-                message="Organization not found in current tenant context.",
+                title="Organization Not Found",
+                detail="Organization not found in current tenant context.",
                 status_code=http_status.HTTP_404_NOT_FOUND,
             )
     if organization is None:
@@ -1696,9 +1705,10 @@ def upsert_organization(request):
 
     if organization is not None and organization.inn != data["inn"]:
         if Organization.objects.filter(tenant_id=tenant_id, inn=data["inn"]).exclude(id=organization.id).exists():
-            return _error(
+            return _problem(
                 code="DUPLICATE_ORGANIZATION_INN",
-                message="Organization with this INN already exists in current tenant.",
+                title="Duplicate Organization INN",
+                detail="Organization with this INN already exists in current tenant.",
                 status_code=http_status.HTTP_400_BAD_REQUEST,
             )
 
@@ -1708,18 +1718,20 @@ def upsert_organization(request):
         if database_id is not None:
             database = Database.objects.filter(id=database_id, tenant_id=tenant_id).first()
             if database is None:
-                return _error(
+                return _problem(
                     code="DATABASE_NOT_FOUND",
-                    message="Database not found in current tenant context.",
+                    title="Database Not Found",
+                    detail="Database not found in current tenant context.",
                     status_code=http_status.HTTP_404_NOT_FOUND,
                 )
             conflict_qs = Organization.objects.filter(tenant_id=tenant_id, database=database)
             if organization is not None:
                 conflict_qs = conflict_qs.exclude(id=organization.id)
             if conflict_qs.exists():
-                return _error(
+                return _problem(
                     code="DATABASE_ALREADY_LINKED",
-                    message="Database is already linked to another organization.",
+                    title="Database Already Linked",
+                    detail="Database is already linked to another organization.",
                     status_code=http_status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -1763,9 +1775,10 @@ def upsert_organization(request):
             if changed_fields:
                 organization.save(update_fields=[*changed_fields, "updated_at"])
     except IntegrityError:
-        return _error(
+        return _problem(
             code="DUPLICATE_ORGANIZATION_INN",
-            message="Organization with this INN already exists in current tenant.",
+            title="Duplicate Organization INN",
+            detail="Organization with this INN already exists in current tenant.",
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 

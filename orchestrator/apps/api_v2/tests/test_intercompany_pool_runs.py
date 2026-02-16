@@ -354,8 +354,27 @@ def test_upsert_organization_creates_updates_and_enforces_database_uniqueness(
         },
         format="json",
     )
-    assert conflict_response.status_code == 400
-    assert conflict_response.json()["error"]["code"] == "DATABASE_ALREADY_LINKED"
+    _assert_problem_details_response(
+        conflict_response,
+        status_code=400,
+        code="DATABASE_ALREADY_LINKED",
+    )
+
+
+@pytest.mark.django_db
+def test_upsert_organization_validation_error_returns_problem_details_with_field_errors(
+    authenticated_client: APIClient,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/organizations/upsert/",
+        {
+            "name": "Missing INN",
+        },
+        format="json",
+    )
+    payload = _assert_problem_details_response(response, status_code=400, code="VALIDATION_ERROR")
+    assert isinstance(payload.get("errors"), dict)
+    assert "inn" in payload["errors"]
 
 
 @pytest.mark.django_db
@@ -729,6 +748,7 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
     assert workflow_execution.input_context.get("approved_at") is None
     assert workflow_execution.input_context.get("approval_state") == "preparing"
     assert workflow_execution.input_context.get("publication_step_state") == "not_enqueued"
+    assert workflow_execution.input_context.get("run_input") == payload["run_input"]
     assert workflow_execution.input_context.get("pool_run_idempotency_key") == run.idempotency_key
     assert workflow_execution.input_context.get("workflow_run_id") == str(workflow_execution.id)
     assert workflow_execution.input_context.get("root_workflow_run_id") == str(workflow_execution.id)
