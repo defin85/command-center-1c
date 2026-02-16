@@ -206,6 +206,38 @@ def test_inspect_pool_runtime_registry_returns_configured_entries(staff_client):
 
 
 @pytest.mark.django_db
+def test_sync_from_registry_can_include_pool_runtime_aliases(staff_client, isolated_registry):
+    expected_aliases = set(get_pool_runtime_template_aliases())
+    assert not OperationExposure.objects.filter(
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias__in=expected_aliases,
+        tenant__isnull=True,
+    ).exists()
+
+    resp = staff_client.post(
+        "/api/v2/templates/sync-from-registry/",
+        {"include_pool_runtime": True},
+        format="json",
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["created"] == len(expected_aliases)
+    assert payload["updated"] == 0
+    assert payload["unchanged"] == 0
+
+    rows = list(
+        OperationExposure.objects.filter(
+            surface=OperationExposure.SURFACE_TEMPLATE,
+            alias__in=expected_aliases,
+            tenant__isnull=True,
+        )
+    )
+    assert len(rows) == len(expected_aliases)
+    assert all(row.system_managed is True for row in rows)
+    assert all(row.domain == OperationExposure.DOMAIN_POOL_RUNTIME for row in rows)
+
+
+@pytest.mark.django_db
 def test_sync_from_registry_skips_system_managed_pool_runtime_aliases(staff_client, isolated_registry, monkeypatch):
     sync_pool_runtime_template_registry()
     exposure_before = OperationExposure.objects.get(

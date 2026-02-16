@@ -519,6 +519,12 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
       parameters:
       - name: X-CC1C-Tenant-ID
         in: header
@@ -3634,6 +3640,12 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
       parameters:
       - name: X-CC1C-Tenant-ID
         in: header
@@ -3679,6 +3691,12 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
         '404':
           description: Not found
   /api/v2/operation-catalog/exposures/{exposure_id}/publish/:
@@ -3716,6 +3734,12 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
         '404':
           description: Not found
   /api/v2/operation-catalog/migration-issues/:
@@ -9007,6 +9031,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+      parameters:
+      - name: X-CC1C-Tenant-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: Optional tenant context selector. If omitted, tenant is resolved
+          via user preference or first membership. For staff users, omission may return
+          cross-tenant results on some endpoints.
+  /api/v2/templates/pool-runtime-registry/:
+    get:
+      operationId: v2_templates_pool_runtime_registry_retrieve
+      description: Read-only diagnostics for system-managed pool runtime template aliases.
+      summary: Inspect pool runtime template registry
+      tags:
+      - v2
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRuntimeRegistryInspectResponse'
           description: ''
         '401':
           description: Unauthorized
@@ -15094,6 +15148,10 @@ components:
         capability_config: {}
         status:
           type: string
+        system_managed:
+          type: boolean
+        domain:
+          type: string
         operation_type:
           type: string
         target_entity:
@@ -15682,6 +15740,9 @@ components:
         dry_run:
           type: boolean
           default: false
+        include_pool_runtime:
+          type: boolean
+          default: false
     OperationTemplateSyncResponse:
       type: object
       properties:
@@ -15698,6 +15759,65 @@ components:
       - message
       - unchanged
       - updated
+    PoolRuntimeRegistryEntry:
+      type: object
+      properties:
+        alias:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+        issues:
+          type: array
+          items:
+            type: string
+        exposure_id:
+          type: string
+          format: uuid
+          nullable: true
+        exposure_revision:
+          type: integer
+          minimum: 1
+          nullable: true
+        operation_type:
+          type: string
+        target_entity:
+          type: string
+        is_active:
+          type: boolean
+        exposure_status:
+          type: string
+        system_managed:
+          type: boolean
+        domain:
+          type: string
+      required:
+      - alias
+      - domain
+      - exposure_status
+      - is_active
+      - issues
+      - label
+      - operation_type
+      - status
+      - system_managed
+      - target_entity
+    PoolRuntimeRegistryInspectResponse:
+      type: object
+      properties:
+        contract_version:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolRuntimeRegistryEntry'
+        count:
+          type: integer
+      required:
+      - contract_version
+      - count
+      - entries
     Organization:
       type: object
       properties:

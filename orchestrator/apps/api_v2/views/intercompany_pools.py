@@ -104,6 +104,12 @@ _UUID_PATTERN = re.compile(
 RUN_INPUT_CONTRACT_VERSION_V1 = "run_input_v1"
 RUN_INPUT_CONTRACT_VERSION_LEGACY = "legacy_pre_run_input"
 TOPOLOGY_VERSION_TOKEN_PREFIX = "v1"
+_POOL_RUNTIME_START_FAIL_CLOSED_CODES = {
+    "POOL_RUNTIME_TEMPLATE_NOT_CONFIGURED",
+    "POOL_RUNTIME_TEMPLATE_INACTIVE",
+    "TEMPLATE_DRIFT",
+    "POOL_RUNTIME_TEMPLATE_UNSUPPORTED_EXECUTOR",
+}
 
 
 def _error(*, code: str, message: str, status_code: int) -> Response:
@@ -204,6 +210,19 @@ def _validation_message(exc: Exception) -> str:
         if hasattr(exc, "message_dict") and exc.message_dict:
             return str(exc.message_dict)
     return str(exc)
+
+
+def _resolve_pool_runtime_start_error(exc: Exception) -> tuple[str, str]:
+    message = _validation_message(exc).strip()
+    if not message:
+        return "VALIDATION_ERROR", "Pool runtime workflow execution failed."
+
+    raw_code, has_separator, raw_detail = message.partition(":")
+    code = str(raw_code or "").strip().upper()
+    detail = str(raw_detail or "").strip()
+    if has_separator and code in _POOL_RUNTIME_START_FAIL_CLOSED_CODES:
+        return code, detail or message
+    return "VALIDATION_ERROR", message
 
 
 def _parse_date_param(raw: str | None, *, field_name: str) -> tuple[date | None, str | None]:
@@ -1530,10 +1549,24 @@ def create_pool_run(request):
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    runtime_result = start_pool_run_workflow_execution(
-        run=result.run,
-        requested_by=request.user if request.user and request.user.is_authenticated else None,
-    )
+    try:
+        runtime_result = start_pool_run_workflow_execution(
+            run=result.run,
+            requested_by=request.user if request.user and request.user.is_authenticated else None,
+        )
+    except (ValueError, DjangoValidationError) as exc:
+        error_code, detail = _resolve_pool_runtime_start_error(exc)
+        title = (
+            "Pool Runtime Configuration Error"
+            if error_code in _POOL_RUNTIME_START_FAIL_CLOSED_CODES
+            else "Validation Error"
+        )
+        return _problem(
+            code=error_code,
+            title=title,
+            detail=detail,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
 
     payload = {
         "run": _serialize_run(runtime_result.run),

@@ -16,6 +16,7 @@ from apps.core import permission_codes as perms
 from apps.intercompany_pools.runtime_template_registry import (
     get_pool_runtime_template_aliases,
     inspect_pool_runtime_template_registry,
+    sync_pool_runtime_template_registry,
 )
 from apps.operations.services.admin_action_audit import log_admin_action
 from apps.templates.models import OperationExposure
@@ -40,6 +41,7 @@ def _permission_denied(message: str):
 
 class OperationTemplateSyncRequestSerializer(serializers.Serializer):
     dry_run = serializers.BooleanField(required=False, default=False)
+    include_pool_runtime = serializers.BooleanField(required=False, default=False)
 
 
 class OperationTemplateSyncResponseSerializer(serializers.Serializer):
@@ -107,16 +109,17 @@ def sync_from_registry(request):
     request_serializer = OperationTemplateSyncRequestSerializer(data=request.data)
     request_serializer.is_valid(raise_exception=True)
     dry_run = request_serializer.validated_data.get('dry_run', False)
+    include_pool_runtime = request_serializer.validated_data.get('include_pool_runtime', False)
 
     registry = get_registry()
-    templates_data = registry.get_for_template_sync()
-    if not templates_data:
+    templates_data = list(registry.get_for_template_sync() or [])
+    if not templates_data and not include_pool_runtime:
         log_admin_action(
             request,
             action="templates.sync_from_registry",
             outcome="error",
             target_type="template_registry",
-            metadata={"dry_run": dry_run},
+            metadata={"dry_run": dry_run, "include_pool_runtime": include_pool_runtime},
             error_message="REGISTRY_EMPTY",
         )
         return Response({
@@ -157,7 +160,11 @@ def sync_from_registry(request):
             action="templates.sync_from_registry",
             outcome="error",
             target_type="template_registry",
-            metadata={"dry_run": dry_run, "validation_issue_count": len(validation_issues)},
+            metadata={
+                "dry_run": dry_run,
+                "include_pool_runtime": include_pool_runtime,
+                "validation_issue_count": len(validation_issues),
+            },
             error_message="VALIDATION_ERROR",
         )
         return Response(
@@ -241,11 +248,22 @@ def sync_from_registry(request):
                     is_active=defaults["is_active"],
                 )
 
+    def sync_pool_runtime_aliases() -> None:
+        nonlocal created, updated, unchanged
+        if not include_pool_runtime:
+            return
+        pool_runtime_result = sync_pool_runtime_template_registry(dry_run=dry_run)
+        created += int(pool_runtime_result.created)
+        updated += int(pool_runtime_result.updated)
+        unchanged += int(pool_runtime_result.unchanged)
+
     if dry_run:
         apply_sync()
+        sync_pool_runtime_aliases()
     else:
         with transaction.atomic():
             apply_sync()
+            sync_pool_runtime_aliases()
 
     if dry_run:
         message = "Dry run completed (no changes applied)"
@@ -259,6 +277,7 @@ def sync_from_registry(request):
         target_type="template_registry",
         metadata={
             "dry_run": dry_run,
+            "include_pool_runtime": include_pool_runtime,
             "created": created,
             "updated": updated,
             "unchanged": unchanged,

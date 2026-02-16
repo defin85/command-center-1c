@@ -174,6 +174,11 @@ const toErrorMessage = (error: unknown, fallback: string): string => {
   return fallback
 }
 
+const isSystemManagedPoolRuntimeTemplate = (template: TemplateRow): boolean => (
+  template.system_managed === true
+  && normalizeText(template.domain).toLowerCase() === 'pool_runtime'
+)
+
 function OperationTemplateListShell({
   canManageTemplate,
   canManageAnyTemplate,
@@ -337,36 +342,46 @@ function OperationTemplateListShell({
       title: 'Actions',
       key: 'actions',
       width: 180,
-      render: (_value, record) => (
-        <Space>
-          <Button
-            size="small"
-            disabled={!canManageTemplate(record.id)}
-            onClick={() => {
-              openEditTemplateModal(record)
-            }}
-          >
-            Edit
-          </Button>
-          <Popconfirm
-            title="Delete template?"
-            okText="Delete"
-            cancelText="Cancel"
-            onConfirm={() => {
-              void handleDeleteTemplate(record)
-            }}
-            disabled={!canManageTemplate(record.id)}
-          >
+      render: (_value, record) => {
+        const readOnlySystemTemplate = isSystemManagedPoolRuntimeTemplate(record)
+        const canMutateTemplate = canManageTemplate(record.id) && !readOnlySystemTemplate
+        const disabledReason = readOnlySystemTemplate
+          ? 'System-managed pool runtime template is read-only'
+          : undefined
+
+        return (
+          <Space>
             <Button
               size="small"
-              danger
-              disabled={!canManageTemplate(record.id)}
+              title={disabledReason}
+              disabled={!canMutateTemplate}
+              onClick={() => {
+                openEditTemplateModal(record)
+              }}
             >
-              Delete
+              Edit
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            <Popconfirm
+              title="Delete template?"
+              okText="Delete"
+              cancelText="Cancel"
+              onConfirm={() => {
+                void handleDeleteTemplate(record)
+              }}
+              disabled={!canMutateTemplate}
+            >
+              <Button
+                size="small"
+                danger
+                title={disabledReason}
+                disabled={!canMutateTemplate}
+              >
+                Delete
+              </Button>
+            </Popconfirm>
+          </Space>
+        )
+      },
     },
   ]), [canManageTemplate, handleDeleteTemplate, openEditTemplateModal])
 
@@ -459,6 +474,8 @@ function OperationTemplateListShell({
         template_exposure_id: templateExposureId,
         template_exposure_revision: templateExposureRevision,
         definition_id: String(exposure.definition_id || ''),
+        system_managed: exposure.system_managed === true,
+        domain: String(exposure.domain || ''),
       })
     }
 
@@ -577,7 +594,10 @@ function OperationTemplateListShell({
 
   const onSync = useCallback(async () => {
     try {
-      const result = await syncMutation.mutateAsync({ dry_run: dryRun })
+      const result = await syncMutation.mutateAsync({
+        dry_run: dryRun,
+        include_pool_runtime: true,
+      })
       message.success(`${result.message}: created=${result.created}, updated=${result.updated}, unchanged=${result.unchanged}`)
       setExposuresReloadTick((value) => value + 1)
     } catch (err) {

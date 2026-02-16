@@ -29,6 +29,8 @@ export interface OperationTemplate {
   definition_id?: string
   executor_kind?: string
   executor_command_id?: string | null
+  system_managed?: boolean
+  domain?: string
 }
 
 export interface OperationTemplateListResponse {
@@ -55,6 +57,7 @@ export interface OperationTemplateWrite {
 
 export interface OperationTemplateSyncRequest {
   dry_run?: boolean
+  include_pool_runtime?: boolean
 }
 
 export interface OperationTemplateSyncResponse {

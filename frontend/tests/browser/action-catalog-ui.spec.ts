@@ -32,6 +32,8 @@ type MockState = {
     description?: string
     is_active?: boolean
     command_id?: string
+    system_managed?: boolean
+    domain?: string
   }>
   actions?: Array<{
     id: string
@@ -167,6 +169,8 @@ async function setupApiMocks(page: Page, state: MockState) {
     operation_type?: string
     target_entity?: string
     template_data?: AnyRecord
+    system_managed?: boolean
+    domain?: string
   }): AnyRecord => {
     const exposure: AnyRecord = {
       id: payload.id ?? buildMockUuid(exposureSeq),
@@ -182,6 +186,8 @@ async function setupApiMocks(page: Page, state: MockState) {
       display_order: typeof payload.display_order === 'number' ? payload.display_order : 0,
       capability_config: isPlainObject(payload.capability_config) ? deepClone(payload.capability_config) : {},
       status: payload.status ?? 'draft',
+      system_managed: payload.system_managed === true,
+      domain: typeof payload.domain === 'string' ? payload.domain : '',
       operation_type: typeof payload.operation_type === 'string' ? payload.operation_type : undefined,
       target_entity: typeof payload.target_entity === 'string' ? payload.target_entity : undefined,
       template_data: isPlainObject(payload.template_data) ? deepClone(payload.template_data) : undefined,
@@ -199,6 +205,8 @@ async function setupApiMocks(page: Page, state: MockState) {
     description?: string
     is_active?: boolean
     command_id?: string
+    system_managed?: boolean
+    domain?: string
   }) => {
     const alias = typeof template.id === 'string' && template.id.trim()
       ? template.id.trim()
@@ -236,6 +244,8 @@ async function setupApiMocks(page: Page, state: MockState) {
       contexts: [],
       display_order: 0,
       status: template.is_active === false ? 'draft' : 'published',
+      system_managed: template.system_managed === true,
+      domain: typeof template.domain === 'string' ? template.domain : '',
       operation_type: 'designer_cli',
       target_entity: 'infobase',
       template_data: templateData,
@@ -935,6 +945,30 @@ test('Templates: non-staff с MANAGE по templates получает template co
 
   expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
   expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBe(0)
+})
+
+test('Templates: system-managed pool runtime template блокирует edit/delete controls', async ({ page }) => {
+  await setupAuth(page)
+  const callCounters: MockCounters = {}
+  await setupApiMocks(page, {
+    me: { id: 5, username: 'admin', is_staff: true },
+    templates: [{
+      id: 'pool.prepare_input',
+      name: 'Pool Prepare Input',
+      system_managed: true,
+      domain: 'pool_runtime',
+    }],
+    callCounters,
+  })
+
+  await page.goto('/templates', { waitUntil: 'domcontentloaded' })
+  const tableBody = page.locator('.ant-table-tbody:visible').first()
+  const row = tableBody.locator('tr').filter({ hasText: 'pool.prepare_input' }).first()
+
+  await expect(row).toBeVisible()
+  await expect(row.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled()
+  await expect(row.getByRole('button', { name: 'Delete', exact: true })).toBeDisabled()
+  expect(callCounters.poolRuntimeRegistryGets ?? 0).toBeGreaterThan(0)
 })
 
 test('Templates: единый editor shell работает только для template flow', async ({ page }) => {

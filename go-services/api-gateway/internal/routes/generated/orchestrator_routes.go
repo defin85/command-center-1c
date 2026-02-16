@@ -198,6 +198,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "GET", Path: "/system/health/", OperationID: "v2_system_health_retrieve"},
 	{Method: "GET", Path: "/system/me/", OperationID: "v2_system_me_retrieve"},
 	{Method: "POST", Path: "/templates/sync-from-registry/", OperationID: "v2_templates_sync_from_registry_create"},
+	{Method: "GET", Path: "/templates/pool-runtime-registry/", OperationID: "v2_templates_pool_runtime_registry_retrieve"},
 	{Method: "GET", Path: "/tenants/list-my-tenants/", OperationID: "v2_tenants_list_my_tenants_retrieve"},
 	{Method: "POST", Path: "/tenants/set-active/", OperationID: "v2_tenants_set_active_create"},
 	{Method: "POST", Path: "/ui/execution-plan/preview/", OperationID: "v2_ui_execution_plan_preview_create"},

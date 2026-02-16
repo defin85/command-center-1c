@@ -26,6 +26,8 @@ export type OperationCatalogExposure = {
   display_order?: number
   capability_config?: Record<string, unknown>
   status: 'draft' | 'published' | 'invalid' | string
+  system_managed?: boolean
+  domain?: string
   operation_type?: string
   target_entity?: string
   template_data?: Record<string, unknown>

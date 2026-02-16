@@ -795,6 +795,37 @@ def test_create_pool_run_endpoint_keeps_workflow_link_when_enqueue_fails(
 
 
 @pytest.mark.django_db
+def test_create_pool_run_returns_problem_details_for_pool_runtime_fail_closed_error(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    payload = {
+        "pool_id": str(pool.id),
+        "direction": PoolRunDirection.BOTTOM_UP,
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-31",
+        "run_input": {"source_payload": [{"inn": "730000000001", "amount": "50.00"}]},
+        "mode": "safe",
+    }
+
+    with patch(
+        "apps.api_v2.views.intercompany_pools.start_pool_run_workflow_execution",
+        side_effect=ValueError(
+            "POOL_RUNTIME_TEMPLATE_NOT_CONFIGURED: alias 'pool.prepare_input' is not configured"
+        ),
+    ):
+        response = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_RUNTIME_TEMPLATE_NOT_CONFIGURED",
+    )
+    assert problem["title"] == "Pool Runtime Configuration Error"
+    assert "pool.prepare_input" in problem["detail"]
+
+
+@pytest.mark.django_db
 def test_create_pool_run_enqueues_to_workflow_stream_with_normal_priority(
     authenticated_client: APIClient,
     pool: OrganizationPool,
