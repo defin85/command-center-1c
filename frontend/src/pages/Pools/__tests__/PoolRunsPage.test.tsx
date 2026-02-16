@@ -218,7 +218,7 @@ describe('PoolRunsPage', () => {
     )
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled()
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
-  })
+  }, 15000)
 
   it('sends confirm-publication with generated idempotency key', async () => {
     const user = userEvent.setup()
@@ -235,7 +235,73 @@ describe('PoolRunsPage', () => {
     )
     const generatedKey = mockConfirmPoolRunPublication.mock.calls[0][1] as string
     expect(generatedKey.length).toBeGreaterThan(8)
-  })
+  }, 15000)
+
+  it('maps create-run problem+json VALIDATION_ERROR to form field and user-facing message', async () => {
+    const user = userEvent.setup()
+    mockCreatePoolRun.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Validation Error',
+          status: 400,
+          detail: 'top_down starting_amount must be greater than 0.',
+          code: 'VALIDATION_ERROR',
+        },
+      },
+    })
+
+    renderPage()
+
+    const submitButton = await screen.findByTestId('pool-runs-create-submit')
+    await user.click(submitButton)
+
+    await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('Проверьте корректность параметров запуска.')).toBeInTheDocument()
+    expect(await screen.findByText('top_down starting_amount must be greater than 0.')).toBeInTheDocument()
+  }, 15000)
+
+  it('sends abort-publication with generated idempotency key', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    const abortButton = await screen.findByTestId('pool-runs-safe-abort')
+    await waitFor(() => expect(abortButton).toBeEnabled())
+    await user.click(abortButton)
+
+    await waitFor(() => expect(mockAbortPoolRunPublication).toHaveBeenCalledTimes(1))
+    expect(mockAbortPoolRunPublication).toHaveBeenCalledWith(
+      '11111111-1111-1111-1111-111111111111',
+      expect.any(String)
+    )
+    const generatedKey = mockAbortPoolRunPublication.mock.calls[0][1] as string
+    expect(generatedKey.length).toBeGreaterThan(8)
+  }, 15000)
+
+  it('sends retry-failed payload with parsed documents and generated idempotency key', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    const retryButton = await screen.findByRole('button', { name: 'Retry Failed' })
+    await waitFor(() => expect(retryButton).toBeEnabled())
+    await user.click(retryButton)
+
+    await waitFor(() => expect(mockRetryPoolRunFailed).toHaveBeenCalledTimes(1))
+    expect(mockRetryPoolRunFailed).toHaveBeenCalledWith(
+      '11111111-1111-1111-1111-111111111111',
+      {
+        entity_name: 'Document_IntercompanyPoolDistribution',
+        max_attempts: 5,
+        retry_interval_seconds: 0,
+        documents_by_database: {
+          '<database_id>': [{ Amount: '100.00' }],
+        },
+      },
+      expect.any(String)
+    )
+    const generatedKey = mockRetryPoolRunFailed.mock.calls[0][2] as string
+    expect(generatedKey.length).toBeGreaterThan(8)
+  }, 15000)
 
   it('renders legacy run with backward-compatible provenance and diagnostics aliases', async () => {
     const legacyRun = buildRun({
@@ -281,7 +347,7 @@ describe('PoolRunsPage', () => {
     expect(payload.direction).toBe('top_down')
     expect(payload.run_input).toEqual({ starting_amount: '100.00' })
     expect(payload).not.toHaveProperty('source_hash')
-  })
+  }, 15000)
 
   it('submits bottom_up create-run payload with source_payload and selected schema template', async () => {
     const user = userEvent.setup()

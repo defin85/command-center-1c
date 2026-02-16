@@ -79,6 +79,13 @@ const DEFAULT_BOTTOM_UP_SOURCE_PAYLOAD_JSON = JSON.stringify(
   2
 )
 
+const CREATE_RUN_PROBLEM_CODE_MESSAGES: Record<string, string> = {
+  VALIDATION_ERROR: 'Проверьте корректность параметров запуска.',
+  TENANT_CONTEXT_REQUIRED: 'Для запуска run требуется активный tenant context.',
+  POOL_NOT_FOUND: 'Пул не найден в текущем tenant context.',
+  SCHEMA_TEMPLATE_NOT_FOUND: 'Выбранный schema template недоступен в текущем tenant context.',
+}
+
 const STATUS_COLORS: Record<string, string> = {
   draft: 'default',
   validated: 'processing',
@@ -187,18 +194,58 @@ const parseBottomUpSourcePayload = (raw: string): Record<string, unknown> | Arra
   })
 }
 
-const parseProblemDetailsMessage = (error: unknown): string | null => {
+type ProblemDetailsPayload = {
+  code: string | null
+  detail: string | null
+  title: string | null
+  status: number | null
+}
+
+const parseProblemDetails = (error: unknown): ProblemDetailsPayload | null => {
   if (!error || typeof error !== 'object') return null
   const response = (error as { response?: { data?: unknown } }).response
   const payload = response?.data
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return null
   }
-  const detail = (payload as { detail?: unknown }).detail
-  if (typeof detail === 'string' && detail.trim().length > 0) {
-    return detail.trim()
+  const candidate = payload as {
+    code?: unknown
+    detail?: unknown
+    title?: unknown
+    status?: unknown
   }
-  return null
+  const hasKnownShape = (
+    typeof candidate.code === 'string'
+    || typeof candidate.detail === 'string'
+    || typeof candidate.title === 'string'
+    || typeof candidate.status === 'number'
+  )
+  if (!hasKnownShape) {
+    return null
+  }
+  return {
+    code: typeof candidate.code === 'string' ? candidate.code.trim() : null,
+    detail: typeof candidate.detail === 'string' ? candidate.detail.trim() : null,
+    title: typeof candidate.title === 'string' ? candidate.title.trim() : null,
+    status: typeof candidate.status === 'number' ? candidate.status : null,
+  }
+}
+
+const resolveCreateRunProblemMessage = (
+  problem: ProblemDetailsPayload,
+  fallbackMessage: string
+): string => {
+  const codeMessage = problem.code ? CREATE_RUN_PROBLEM_CODE_MESSAGES[problem.code] : undefined
+  if (codeMessage) {
+    return codeMessage
+  }
+  if (problem.detail && problem.detail.length > 0) {
+    return problem.detail
+  }
+  if (problem.title && problem.title.length > 0) {
+    return problem.title
+  }
+  return fallbackMessage
 }
 
 const resolveInputContractVersion = (run: PoolRun): string => {
@@ -475,8 +522,10 @@ export function PoolRunsPage() {
       return
     }
     let values: CreateRunFormValues
+    let direction: CreateRunFormValues['direction'] = 'top_down'
     try {
       values = await createForm.validateFields()
+      direction = values.direction
     } catch {
       return
     }
@@ -484,7 +533,6 @@ export function PoolRunsPage() {
     setCreatingRun(true)
     setError(null)
     try {
-      const direction = values.direction
       const runInput: Record<string, unknown> = {}
       let schemaTemplateId: string | null | undefined = undefined
 
@@ -524,9 +572,35 @@ export function PoolRunsPage() {
       await loadRuns()
       setSelectedRunId(payload.run.id)
     } catch (err) {
-      const problemDetail = parseProblemDetailsMessage(err)
-      if (problemDetail) {
-        setError(problemDetail)
+      const problem = parseProblemDetails(err)
+      if (problem) {
+        if (problem.code === 'VALIDATION_ERROR' && problem.detail) {
+          const normalizedDetail = problem.detail.toLowerCase()
+          const fieldErrors: Array<{ name: keyof CreateRunFormValues; errors: string[] }> = []
+
+          if (direction === 'top_down' && normalizedDetail.includes('starting_amount')) {
+            fieldErrors.push({ name: 'starting_amount', errors: [problem.detail] })
+          }
+          if (
+            direction === 'bottom_up'
+            && (
+              normalizedDetail.includes('source_payload')
+              || normalizedDetail.includes('source_artifact_id')
+              || normalizedDetail.includes('bottom_up run_input')
+            )
+          ) {
+            fieldErrors.push({ name: 'source_payload_json', errors: [problem.detail] })
+            fieldErrors.push({ name: 'source_artifact_id', errors: [problem.detail] })
+          }
+          if (normalizedDetail.includes('schema_template')) {
+            fieldErrors.push({ name: 'schema_template_id', errors: [problem.detail] })
+          }
+
+          if (fieldErrors.length > 0) {
+            createForm.setFields(fieldErrors)
+          }
+        }
+        setError(resolveCreateRunProblemMessage(problem, 'Не удалось создать run.'))
       } else if (err instanceof Error && err.message) {
         setError(err.message)
       } else {

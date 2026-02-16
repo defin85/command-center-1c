@@ -21,6 +21,16 @@ class ErrorResponseSerializer(serializers.Serializer):
     error = ErrorDetailSerializer()
 
 
+class ProblemDetailsErrorSerializer(serializers.Serializer):
+    """RFC 7807-style problem details response."""
+
+    type = serializers.CharField(default="about:blank")
+    title = serializers.CharField()
+    status = serializers.IntegerField()
+    detail = serializers.CharField()
+    code = serializers.CharField()
+
+
 class ExecutionBindingSerializer(serializers.Serializer):
     """
     Binding provenance for execution plan.

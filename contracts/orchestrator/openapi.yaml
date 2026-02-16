@@ -4759,23 +4759,23 @@ paths:
           description: ''
         '400':
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ProblemDetailsError'
           description: ''
         '409':
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ProblemDetailsError'
           description: ''
         '401':
           description: Unauthorized
         '404':
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ProblemDetailsError'
           description: ''
   /api/v2/pools/organizations/:
     get:
@@ -5024,17 +5024,17 @@ paths:
           description: ''
         '400':
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ProblemDetailsError'
           description: ''
         '401':
           description: Unauthorized
         '404':
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ProblemDetailsError'
           description: ''
       parameters:
       - name: X-CC1C-Tenant-ID
@@ -5413,17 +5413,17 @@ paths:
           description: ''
         '400':
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ProblemDetailsError'
           description: ''
         '401':
           description: Unauthorized
         '404':
           content:
-            application/json:
+            application/problem+json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ProblemDetailsError'
           description: ''
       parameters:
       - name: X-CC1C-Tenant-ID
@@ -16272,7 +16272,11 @@ components:
           type: string
           format: date
           nullable: true
-        run_input: {}
+        run_input:
+          oneOf:
+          - $ref: '#/components/schemas/PoolRunInputTopDown'
+          - $ref: '#/components/schemas/PoolRunInputBottomUp'
+          description: Direction-specific run input payload.
         mode:
           enum:
           - safe
@@ -16298,6 +16302,7 @@ components:
       - direction
       - period_start
       - pool_id
+      - run_input
     PoolRunCreateResponse:
       type: object
       properties:
@@ -16325,6 +16330,32 @@ components:
       - audit_events
       - publication_attempts
       - run
+    PoolRunInputBottomUp:
+      type: object
+      properties:
+        source_payload:
+          oneOf:
+          - type: object
+            additionalProperties: {}
+          - type: array
+            items:
+              type: object
+              additionalProperties: {}
+        source_artifact_id:
+          type: string
+      anyOf:
+      - required:
+        - source_payload
+      - required:
+        - source_artifact_id
+    PoolRunInputTopDown:
+      type: object
+      properties:
+        starting_amount:
+          type: string
+          format: decimal
+      required:
+      - starting_amount
     PoolRunListResponse:
       type: object
       properties:
@@ -16721,6 +16752,26 @@ components:
       - canonical
       - errors
       - ok
+    ProblemDetailsError:
+      type: object
+      properties:
+        type:
+          type: string
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        code:
+          type: string
+      required:
+      - code
+      - detail
+      - status
+      - title
+      - type
     PrometheusMetric:
       type: object
       description: Prometheus metrics for a service.

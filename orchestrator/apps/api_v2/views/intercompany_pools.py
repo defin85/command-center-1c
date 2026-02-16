@@ -18,7 +18,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.api_v2.serializers.common import ErrorResponseSerializer
+from apps.api_v2.serializers.common import ErrorResponseSerializer, ProblemDetailsErrorSerializer
 from apps.databases.models import Database
 from apps.intercompany_pools.models import (
     Organization,
@@ -1073,7 +1073,7 @@ class PoolRunCreateRequestSerializer(serializers.Serializer):
     direction = serializers.ChoiceField(choices=PoolRunDirection.values)
     period_start = serializers.DateField()
     period_end = serializers.DateField(required=False, allow_null=True)
-    run_input = serializers.JSONField(required=False)
+    run_input = serializers.JSONField(required=True)
     mode = serializers.ChoiceField(choices=PoolRunMode.values, required=False, default=PoolRunMode.SAFE)
     schema_template_id = serializers.UUIDField(required=False, allow_null=True)
     seed = serializers.IntegerField(required=False, allow_null=True)
@@ -1427,9 +1427,9 @@ class PoolRunReportResponseSerializer(serializers.Serializer):
     responses={
         200: PoolRunCreateResponseSerializer,
         201: PoolRunCreateResponseSerializer,
-        400: ErrorResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
         401: OpenApiResponse(description="Unauthorized"),
-        404: ErrorResponseSerializer,
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
     },
     methods=["POST"],
 )
@@ -1887,9 +1887,9 @@ def list_organization_pools(request):
     responses={
         200: OrganizationPoolUpsertResponseSerializer,
         201: OrganizationPoolUpsertResponseSerializer,
-        400: ErrorResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
         401: OpenApiResponse(description="Unauthorized"),
-        404: ErrorResponseSerializer,
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
     },
 )
 @api_view(["POST"])
@@ -1989,10 +1989,10 @@ def upsert_organization_pool(request):
     request=PoolTopologySnapshotUpsertRequestSerializer,
     responses={
         200: PoolTopologySnapshotUpsertResponseSerializer,
-        400: ErrorResponseSerializer,
-        409: ErrorResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        (409, "application/problem+json"): ProblemDetailsErrorSerializer,
         401: OpenApiResponse(description="Unauthorized"),
-        404: ErrorResponseSerializer,
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
     },
 )
 @api_view(["POST"])
