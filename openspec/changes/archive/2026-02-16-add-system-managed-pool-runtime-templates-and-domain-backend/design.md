@@ -26,6 +26,10 @@
   - `pool.reconciliation_report`
   - `pool.approval_gate`
   - `pool.publication_odata`
+- Реестр фиксируется contract version `pool_runtime.v1`:
+  - версия инвариантно задаёт required aliases и их semantics;
+  - introspection обязан возвращать `contract_version` и статус по каждому required alias;
+  - изменения списка alias или semantics выполняются только через новую contract version.
 - Registry синхронизируется bootstrap-процедурой в unified store (`OperationExposure/OperationDefinition`).
 - Эти templates помечаются как system-managed и не редактируются через публичный templates write API.
 
@@ -52,6 +56,11 @@
 ### Decision 4: Fail-closed при любых несоответствиях registry/binding
 - Missing alias, inactive exposure, revision mismatch, unsupported executor -> отказ до enqueue side-effects.
 - Ошибки получают стабильные machine-readable коды.
+- Канонический набор fail-closed кодов:
+  - `POOL_RUNTIME_TEMPLATE_NOT_CONFIGURED` — required alias отсутствует в registry или не резолвится при compile-time.
+  - `POOL_RUNTIME_TEMPLATE_INACTIVE` — pinned exposure найден, но неактивен/непубликован.
+  - `TEMPLATE_DRIFT` — pinned revision не совпадает с текущей ревизией exposure.
+  - `POOL_RUNTIME_TEMPLATE_UNSUPPORTED_EXECUTOR` — exposure ссылается на executor, не маршрутизируемый в `PoolDomainBackend`.
 
 Почему:
 - pool execution high-impact, silent fallback недопустим.

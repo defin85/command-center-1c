@@ -6,6 +6,7 @@ from django.contrib.contenttypes.models import ContentType
 from rest_framework.test import APIClient
 
 from apps.databases.models import PermissionLevel
+from apps.intercompany_pools.runtime_template_registry import sync_pool_runtime_template_registry
 from apps.runtime_settings.models import TenantRuntimeSettingOverride
 from apps.tenancy.models import Tenant
 from apps.templates.models import (
@@ -308,6 +309,8 @@ def test_operation_catalog_template_surface_allows_non_staff_with_view_scope(tem
     assert row["template_exposure_revision"] == int(exposure.exposure_revision)
     assert row["executor_kind"] == str(exposure.definition.executor_kind)
     assert row["executor_command_id"] == "infobase.extension.list"
+    assert row["system_managed"] is False
+    assert row["domain"] == ""
 
     resp_default = template_manager_client.get("/api/v2/operation-catalog/exposures/")
     assert resp_default.status_code == 200
@@ -387,6 +390,66 @@ def test_operation_catalog_template_surface_upsert_publish_and_delete_for_non_st
         alias="tpl-perm-manage",
         tenant__isnull=True,
     ).exists()
+
+
+@pytest.mark.django_db
+def test_operation_catalog_upsert_blocks_system_managed_pool_runtime_template(superuser_client):
+    sync_pool_runtime_template_registry()
+
+    response = superuser_client.post(
+        "/api/v2/operation-catalog/exposures/",
+        data={
+            "definition": {
+                "tenant_scope": "global",
+                "executor_kind": "workflow",
+                "executor_payload": {
+                    "operation_type": "pool.prepare_input",
+                    "target_entity": "pool_run",
+                    "template_data": {"pool_runtime": {"step_id": "prepare_input"}},
+                },
+                "contract_version": 1,
+            },
+            "exposure": {
+                "surface": "template",
+                "alias": "pool.prepare_input",
+                "name": "Should be blocked",
+                "description": "should be blocked",
+                "is_active": True,
+                "capability": "pools.runtime",
+                "contexts": [],
+                "display_order": 10,
+                "capability_config": {},
+                "status": "published",
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 409
+    payload = response.json()
+    assert payload["error"]["code"] == "SYSTEM_MANAGED_TEMPLATE_READ_ONLY"
+
+
+@pytest.mark.django_db
+def test_operation_catalog_publish_and_delete_block_system_managed_pool_runtime_template(superuser_client):
+    sync_pool_runtime_template_registry()
+    exposure = OperationExposure.objects.get(
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias="pool.prepare_input",
+        tenant__isnull=True,
+    )
+
+    publish_response = superuser_client.post(
+        f"/api/v2/operation-catalog/exposures/{exposure.id}/publish/",
+        data={},
+        format="json",
+    )
+    assert publish_response.status_code == 409
+    assert publish_response.json()["error"]["code"] == "SYSTEM_MANAGED_TEMPLATE_READ_ONLY"
+
+    delete_response = superuser_client.delete(f"/api/v2/operation-catalog/exposures/{exposure.id}/")
+    assert delete_response.status_code == 409
+    assert delete_response.json()["error"]["code"] == "SYSTEM_MANAGED_TEMPLATE_READ_ONLY"
 
 
 @pytest.mark.django_db

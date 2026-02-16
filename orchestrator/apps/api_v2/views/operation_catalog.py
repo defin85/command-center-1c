@@ -55,6 +55,13 @@ def _forbidden(message: str) -> Response:
     )
 
 
+def _conflict(code: str, message: str) -> Response:
+    return Response(
+        {"success": False, "error": {"code": code, "message": message}},
+        status=http_status.HTTP_409_CONFLICT,
+    )
+
+
 def _is_template_surface(surface: str) -> bool:
     return surface == OperationExposure.SURFACE_TEMPLATE
 
@@ -63,6 +70,25 @@ def _is_known_surface(surface: str | None) -> bool:
     if surface is None:
         return True
     return surface in {OperationExposure.SURFACE_TEMPLATE}
+
+
+def _is_system_managed_pool_runtime_template(exposure: OperationExposure | None) -> bool:
+    if exposure is None:
+        return False
+    if exposure.surface != OperationExposure.SURFACE_TEMPLATE:
+        return False
+    if exposure.tenant_id is not None:
+        return False
+    return bool(getattr(exposure, "system_managed", False)) and (
+        str(getattr(exposure, "domain", "") or "") == OperationExposure.DOMAIN_POOL_RUNTIME
+    )
+
+
+def _system_managed_pool_runtime_mutation_conflict() -> Response:
+    return _conflict(
+        "SYSTEM_MANAGED_TEMPLATE_READ_ONLY",
+        "System-managed pool runtime template is read-only.",
+    )
 
 
 def _template_view_allowed(user) -> bool:
@@ -92,6 +118,8 @@ _EXPOSURE_FILTER_FIELD_MAP: dict[str, str] = {
     "capability": "capability",
     "status": "status",
     "is_active": "is_active",
+    "system_managed": "system_managed",
+    "domain": "domain",
     "alias": "alias",
 }
 
@@ -103,11 +131,22 @@ _EXPOSURE_SORT_FIELD_MAP: dict[str, str] = {
     "capability": "capability",
     "status": "status",
     "is_active": "is_active",
+    "system_managed": "system_managed",
+    "domain": "domain",
     "updated_at": "updated_at",
     "alias": "alias",
 }
 
-_EXPOSURE_TEXT_FIELDS = {"name", "surface", "operation_type", "target_entity", "capability", "status", "alias"}
+_EXPOSURE_TEXT_FIELDS = {
+    "name",
+    "surface",
+    "operation_type",
+    "target_entity",
+    "capability",
+    "status",
+    "domain",
+    "alias",
+}
 
 
 def _parse_json_object_param(raw: Any, *, field_name: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -173,11 +212,11 @@ def _apply_exposure_filters(qs, filters_payload: dict[str, Any] | None):
         if isinstance(value, str) and not value.strip():
             continue
 
-        if key == "is_active":
+        if key in {"is_active", "system_managed"}:
             bool_value = _parse_bool(value)
             if bool_value is None:
                 continue
-            qs = qs.filter(is_active=bool_value)
+            qs = qs.filter(**{field_name: bool_value})
             continue
 
         if op == "contains" and key in _EXPOSURE_TEXT_FIELDS:
@@ -255,6 +294,8 @@ def _serialize_exposure(exposure: OperationExposure) -> dict[str, Any]:
         "display_order": exposure.display_order,
         "capability_config": exposure.capability_config if isinstance(exposure.capability_config, dict) else {},
         "status": exposure.status,
+        "system_managed": bool(getattr(exposure, "system_managed", False)),
+        "domain": str(getattr(exposure, "domain", "") or ""),
         "created_at": exposure.created_at,
         "updated_at": exposure.updated_at,
     }
@@ -312,6 +353,8 @@ class OperationCatalogExposureSerializer(serializers.Serializer):
     display_order = serializers.IntegerField(required=False)
     capability_config = serializers.JSONField(required=False)
     status = serializers.CharField()
+    system_managed = serializers.BooleanField(required=False)
+    domain = serializers.CharField(required=False, allow_blank=True)
     operation_type = serializers.CharField(required=False, allow_blank=True)
     target_entity = serializers.CharField(required=False, allow_blank=True)
     template_data = serializers.JSONField(required=False)
@@ -708,6 +751,15 @@ def _upsert_operation_exposure_impl(request):
         )
     if not exposure_payload["alias"]:
         exposure_payload["alias"] = _generate_template_alias(exposure_payload["name"])
+    existing_exposure = (
+        OperationExposure.objects.select_related("definition").filter(
+            surface=OperationExposure.SURFACE_TEMPLATE,
+            alias=exposure_payload["alias"],
+            tenant__isnull=True,
+        ).first()
+    )
+    if _is_system_managed_pool_runtime_template(existing_exposure):
+        return _system_managed_pool_runtime_mutation_conflict()
     if not _template_manage_allowed(request.user, exposure_payload["alias"]):
         return _forbidden("You do not have permission to manage templates.")
 
@@ -807,6 +859,8 @@ def publish_operation_exposure(request, exposure_id: str):
         )
     if _is_template_surface(exposure.surface) and not _template_manage_allowed(request.user, exposure.alias):
         return _forbidden("You do not have permission to manage templates.")
+    if _is_system_managed_pool_runtime_template(exposure):
+        return _system_managed_pool_runtime_mutation_conflict()
 
     definition_payload = exposure.definition.executor_payload if isinstance(exposure.definition.executor_payload, dict) else {}
     capability_config = exposure.capability_config if isinstance(exposure.capability_config, dict) else {}
@@ -902,6 +956,8 @@ def delete_operation_exposure(request, exposure_id: str):
         )
     if _is_template_surface(exposure.surface) and not _template_manage_allowed(request.user, exposure.alias):
         return _forbidden("You do not have permission to manage templates.")
+    if _is_system_managed_pool_runtime_template(exposure):
+        return _system_managed_pool_runtime_mutation_conflict()
 
     deleted = delete_template_exposure(template_id=exposure.alias)
     if deleted is None:

@@ -21,7 +21,14 @@ from apps.templates.template_runtime import TemplateResolveError, resolve_runtim
 from apps.templates.workflow.models import WorkflowExecution, WorkflowNode
 
 from .base import BaseNodeHandler, NodeExecutionMode, NodeExecutionResult
-from .backends import AbstractOperationBackend, CLIBackend, IBCMDBackend, ODataBackend, RASBackend
+from .backends import (
+    AbstractOperationBackend,
+    CLIBackend,
+    IBCMDBackend,
+    ODataBackend,
+    PoolDomainBackend,
+    RASBackend,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +67,7 @@ class OperationHandler(BaseNodeHandler):
         # RASBackend checked first (more specific), ODataBackend as fallback
         self._backends: List[AbstractOperationBackend] = [
             RASBackend(),
+            PoolDomainBackend(),
             IBCMDBackend(),
             CLIBackend(),
             ODataBackend(),
@@ -90,6 +98,10 @@ class OperationHandler(BaseNodeHandler):
         start_time = time.time()
         if mode is None:
             mode = NodeExecutionMode.SYNC
+        binding_mode = "alias_latest"
+        template_alias = str(getattr(node, "template_id", "") or "").strip()
+        template_exposure_id: Optional[str] = None
+        expected_exposure_revision: Optional[int] = None
 
         # Create step result for audit
         step_result = self._create_step_result(
@@ -201,6 +213,27 @@ class OperationHandler(BaseNodeHandler):
             # 4. Select backend based on operation_type
             backend = self._get_backend(template.operation_type)
 
+            if (
+                binding_mode == "pinned_exposure"
+                and self._is_pool_runtime_alias(template_alias)
+                and not isinstance(backend, PoolDomainBackend)
+            ):
+                error_msg = (
+                    "POOL_RUNTIME_TEMPLATE_UNSUPPORTED_EXECUTOR: "
+                    f"template alias '{template_alias}' resolved to operation_type "
+                    f"'{template.operation_type}' that is not handled by PoolDomainBackend"
+                )
+                logger.error(
+                    error_msg,
+                    extra={
+                        "node_id": node.id,
+                        "template_id": template_alias,
+                        "operation_type": template.operation_type,
+                        "backend": backend.__class__.__name__,
+                    },
+                )
+                return self._return_error(error_msg, step_result, start_time)
+
             logger.info(
                 f"Routing to {backend.__class__.__name__}",
                 extra={
@@ -238,7 +271,10 @@ class OperationHandler(BaseNodeHandler):
             return result
 
         except TemplateResolveError as exc:
-            error_msg = f"{exc.code}: {exc.message}"
+            code = exc.code
+            if binding_mode == "pinned_exposure" and self._is_pool_runtime_alias(template_alias):
+                code = self._map_pool_runtime_template_error_code(exc.code)
+            error_msg = f"{code}: {exc.message}"
             operation_ref = getattr(node, "operation_ref", None)
             template_alias = (
                 operation_ref.alias
@@ -329,6 +365,7 @@ class OperationHandler(BaseNodeHandler):
             f"No backend supports operation type: {operation_type}. "
             f"Available types: OData={ODataBackend.get_supported_types()}, "
             f"RAS={RASBackend.get_supported_types()}, "
+            f"POOL={PoolDomainBackend.get_supported_types()}, "
             f"IBCMD={IBCMDBackend.get_supported_types()}, "
             f"CLI={CLIBackend.get_supported_types()}"
         )
@@ -493,6 +530,18 @@ class OperationHandler(BaseNodeHandler):
         text = str(value or "").strip().lower()
         return text in {"1", "true", "yes", "on"}
 
+    @staticmethod
+    def _is_pool_runtime_alias(alias: str) -> bool:
+        return str(alias or "").strip().lower().startswith("pool.")
+
+    @staticmethod
+    def _map_pool_runtime_template_error_code(code: str) -> str:
+        mapping = {
+            "TEMPLATE_NOT_FOUND": "POOL_RUNTIME_TEMPLATE_NOT_CONFIGURED",
+            "TEMPLATE_NOT_PUBLISHED": "POOL_RUNTIME_TEMPLATE_INACTIVE",
+        }
+        return mapping.get(str(code or "").strip(), str(code or "").strip() or "TEMPLATE_INVALID")
+
     def _is_enforce_pinned_runtime_enabled(self, context: Dict[str, Any]) -> bool:
         tenant_id_raw = context.get("tenant_id") or context.get("tenant")
         tenant_id = str(tenant_id_raw or "").strip() or None
@@ -604,6 +653,7 @@ class OperationHandler(BaseNodeHandler):
         return {
             'odata': list(ODataBackend.get_supported_types()),
             'ras': list(RASBackend.get_supported_types()),
+            'pool_domain': list(PoolDomainBackend.get_supported_types()),
             'ibcmd': list(IBCMDBackend.get_supported_types()),
             'cli': list(CLIBackend.get_supported_types()),
         }

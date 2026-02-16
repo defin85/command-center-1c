@@ -16,6 +16,7 @@ from apps.templates.workflow.handlers.backends import (
     CLIBackend,
     IBCMDBackend,
     ODataBackend,
+    PoolDomainBackend,
     RASBackend,
     AbstractOperationBackend,
 )
@@ -103,6 +104,13 @@ class TestBackendRouting:
 
         assert isinstance(backend, IBCMDBackend)
 
+    def test_get_backend_returns_pool_domain_for_pool_runtime_alias(self):
+        """Test that pool runtime alias routes to PoolDomainBackend."""
+        handler = OperationHandler()
+        backend = handler._get_backend('pool.prepare_input')
+
+        assert isinstance(backend, PoolDomainBackend)
+
     def test_get_backend_raises_for_unknown_operation_type(self):
         """Test that unknown operation type raises ValueError."""
         handler = OperationHandler()
@@ -121,6 +129,7 @@ class TestBackendRouting:
         assert 'unknown_operation' in error_msg
         assert 'OData' in error_msg
         assert 'RAS' in error_msg
+        assert 'POOL' in error_msg
         assert 'IBCMD' in error_msg
         assert 'CLI' in error_msg
 
@@ -128,7 +137,7 @@ class TestBackendRouting:
         """Test that returned backends implement AbstractOperationBackend."""
         handler = OperationHandler()
 
-        for op_type in ['create', 'lock_scheduled_jobs', 'query', 'block_sessions', 'ibcmd_cli', 'designer_cli']:
+        for op_type in ['create', 'lock_scheduled_jobs', 'pool.prepare_input', 'query', 'block_sessions', 'ibcmd_cli', 'designer_cli']:
             backend = handler._get_backend(op_type)
             assert isinstance(backend, AbstractOperationBackend)
 
@@ -138,9 +147,10 @@ class TestBackendRouting:
 
         # RASBackend should be first in the list
         assert isinstance(handler._backends[0], RASBackend)
-        assert isinstance(handler._backends[1], IBCMDBackend)
-        assert isinstance(handler._backends[2], CLIBackend)
-        assert isinstance(handler._backends[3], ODataBackend)
+        assert isinstance(handler._backends[1], PoolDomainBackend)
+        assert isinstance(handler._backends[2], IBCMDBackend)
+        assert isinstance(handler._backends[3], CLIBackend)
+        assert isinstance(handler._backends[4], ODataBackend)
 
     def test_get_all_supported_types(self):
         """Test get_all_supported_types returns grouped operation types."""
@@ -148,6 +158,7 @@ class TestBackendRouting:
 
         assert 'odata' in all_types
         assert 'ras' in all_types
+        assert 'pool_domain' in all_types
         assert 'ibcmd' in all_types
         assert 'cli' in all_types
 
@@ -166,6 +177,10 @@ class TestBackendRouting:
         assert 'block_sessions' in ras_types
         assert 'unblock_sessions' in ras_types
 
+        pool_types = all_types['pool_domain']
+        assert 'pool.prepare_input' in pool_types
+        assert 'pool.publication_odata' in pool_types
+
         # Check IBCMD types
         ibcmd_types = all_types['ibcmd']
         assert 'ibcmd_cli' in ibcmd_types
@@ -176,6 +191,7 @@ class TestBackendRouting:
     def test_backend_supports_operation_type_method(self):
         """Test backend support checking via supports_operation_type."""
         ras_backend = RASBackend()
+        pool_backend = PoolDomainBackend()
         odata_backend = ODataBackend()
         ibcmd_backend = IBCMDBackend()
         cli_backend = CLIBackend()
@@ -188,6 +204,10 @@ class TestBackendRouting:
         assert odata_backend.supports_operation_type('create') is True
         assert odata_backend.supports_operation_type('lock_scheduled_jobs') is False
 
+        # Pool backend should support pool runtime aliases
+        assert pool_backend.supports_operation_type('pool.prepare_input') is True
+        assert pool_backend.supports_operation_type('create') is False
+
         # IBCMD should support ibcmd types
         assert ibcmd_backend.supports_operation_type('ibcmd_cli') is True
         assert ibcmd_backend.supports_operation_type('create') is False
@@ -199,23 +219,30 @@ class TestBackendRouting:
     def test_backend_get_supported_types_class_method(self):
         """Test get_supported_types class method on backends."""
         ras_types = RASBackend.get_supported_types()
+        pool_types = PoolDomainBackend.get_supported_types()
         odata_types = ODataBackend.get_supported_types()
         ibcmd_types = IBCMDBackend.get_supported_types()
         cli_types = CLIBackend.get_supported_types()
 
         # Both should return non-empty sets
         assert isinstance(ras_types, set)
+        assert isinstance(pool_types, set)
         assert isinstance(odata_types, set)
         assert isinstance(ibcmd_types, set)
         assert isinstance(cli_types, set)
         assert len(ras_types) > 0
+        assert len(pool_types) > 0
         assert len(odata_types) > 0
         assert len(ibcmd_types) > 0
         assert len(cli_types) > 0
 
         # Sets should not overlap
+        assert len(ras_types & pool_types) == 0
         assert len(ras_types & odata_types) == 0
         assert len(ras_types & ibcmd_types) == 0
+        assert len(pool_types & odata_types) == 0
+        assert len(pool_types & ibcmd_types) == 0
+        assert len(pool_types & cli_types) == 0
         assert len(odata_types & ibcmd_types) == 0
         assert len(cli_types & ras_types) == 0
         assert len(cli_types & odata_types) == 0

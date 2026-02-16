@@ -2,6 +2,10 @@ import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
+from apps.intercompany_pools.runtime_template_registry import (
+    get_pool_runtime_template_aliases,
+    sync_pool_runtime_template_registry,
+)
 from apps.templates.models import OperationExposure
 from apps.templates.operation_catalog_service import upsert_template_exposure
 from apps.templates.registry import get_registry
@@ -175,3 +179,72 @@ def test_list_templates_with_default_sort_returns_200(staff_client, isolated_reg
     data = resp.json()
     assert data["count"] == 1
     assert data["exposures"][0]["alias"] == "tpl-test-op-list"
+
+
+@pytest.mark.django_db
+def test_inspect_pool_runtime_registry_requires_staff(normal_client):
+    resp = normal_client.get("/api/v2/templates/pool-runtime-registry/")
+    assert resp.status_code == 403
+    payload = resp.json()
+    assert payload["error"]["code"] == "PERMISSION_DENIED"
+
+
+@pytest.mark.django_db
+def test_inspect_pool_runtime_registry_returns_configured_entries(staff_client):
+    sync_pool_runtime_template_registry()
+
+    resp = staff_client.get("/api/v2/templates/pool-runtime-registry/")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["contract_version"] == "pool_runtime.v1"
+    assert payload["count"] == len(get_pool_runtime_template_aliases())
+    aliases = {row["alias"] for row in payload["entries"]}
+    assert aliases == set(get_pool_runtime_template_aliases())
+    assert all(row["status"] == "configured" for row in payload["entries"])
+    assert all(row["system_managed"] is True for row in payload["entries"])
+    assert all(row["domain"] == OperationExposure.DOMAIN_POOL_RUNTIME for row in payload["entries"])
+
+
+@pytest.mark.django_db
+def test_sync_from_registry_skips_system_managed_pool_runtime_aliases(staff_client, isolated_registry, monkeypatch):
+    sync_pool_runtime_template_registry()
+    exposure_before = OperationExposure.objects.get(
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias="pool.prepare_input",
+        tenant__isnull=True,
+    )
+    old_label = exposure_before.label
+    old_revision = exposure_before.exposure_revision
+
+    monkeypatch.setattr(
+        isolated_registry,
+        "get_for_template_sync",
+        lambda: [
+            {
+                "id": "pool.prepare_input",
+                "name": "Should Not Override",
+                "description": "should not override",
+                "operation_type": "pool.prepare_input",
+                "target_entity": "pool_run",
+                "template_data": {},
+                "is_active": False,
+            }
+        ],
+    )
+
+    resp = staff_client.post("/api/v2/templates/sync-from-registry/", {}, format="json")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["created"] == 0
+    assert payload["updated"] == 0
+    assert payload["unchanged"] == 1
+
+    exposure_after = OperationExposure.objects.get(
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias="pool.prepare_input",
+        tenant__isnull=True,
+    )
+    assert exposure_after.label == old_label
+    assert exposure_after.exposure_revision == old_revision
+    assert exposure_after.system_managed is True
+    assert exposure_after.domain == OperationExposure.DOMAIN_POOL_RUNTIME

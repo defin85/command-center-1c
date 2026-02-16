@@ -13,6 +13,10 @@ from rest_framework.response import Response
 
 from apps.api_v2.serializers.common import ErrorResponseSerializer
 from apps.core import permission_codes as perms
+from apps.intercompany_pools.runtime_template_registry import (
+    get_pool_runtime_template_aliases,
+    inspect_pool_runtime_template_registry,
+)
 from apps.operations.services.admin_action_audit import log_admin_action
 from apps.templates.models import OperationExposure
 from apps.templates.operation_catalog_service import (
@@ -22,6 +26,9 @@ from apps.templates.operation_catalog_service import (
     validate_exposure_payload,
 )
 from apps.templates.registry import get_registry
+
+
+_SYSTEM_MANAGED_POOL_RUNTIME_ALIASES = set(get_pool_runtime_template_aliases())
 
 
 def _permission_denied(message: str):
@@ -40,6 +47,27 @@ class OperationTemplateSyncResponseSerializer(serializers.Serializer):
     updated = serializers.IntegerField()
     unchanged = serializers.IntegerField()
     message = serializers.CharField()
+
+
+class PoolRuntimeRegistryEntrySerializer(serializers.Serializer):
+    alias = serializers.CharField()
+    label = serializers.CharField()
+    status = serializers.CharField()
+    issues = serializers.ListField(child=serializers.CharField())
+    exposure_id = serializers.UUIDField(required=False, allow_null=True)
+    exposure_revision = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    operation_type = serializers.CharField()
+    target_entity = serializers.CharField()
+    is_active = serializers.BooleanField()
+    exposure_status = serializers.CharField()
+    system_managed = serializers.BooleanField()
+    domain = serializers.CharField()
+
+
+class PoolRuntimeRegistryInspectResponseSerializer(serializers.Serializer):
+    contract_version = serializers.CharField()
+    entries = PoolRuntimeRegistryEntrySerializer(many=True)
+    count = serializers.IntegerField()
 
 
 @extend_schema(
@@ -101,6 +129,9 @@ def sync_from_registry(request):
 
     validation_issues: list[dict] = []
     for data in templates_data:
+        template_id = str(data.get("id") or "").strip()
+        if template_id in _SYSTEM_MANAGED_POOL_RUNTIME_ALIASES:
+            continue
         operation_type = str(data.get("operation_type") or "").strip()
         validation_errors = validate_exposure_payload(
             executor_kind=normalize_executor_kind(operation_type),
@@ -115,7 +146,7 @@ def sync_from_registry(request):
         if validation_errors:
             validation_issues.append(
                 {
-                    "template_id": str(data.get("id") or ""),
+                    "template_id": template_id,
                     "operation_type": operation_type,
                     "errors": validation_errors,
                 }
@@ -150,6 +181,9 @@ def sync_from_registry(request):
 
         for data in templates_data:
             template_id = data['id']
+            if template_id in _SYSTEM_MANAGED_POOL_RUNTIME_ALIASES:
+                unchanged += 1
+                continue
             defaults = {
                 'name': data.get('name', ''),
                 'description': data.get('description', ''),
@@ -168,6 +202,13 @@ def sync_from_registry(request):
                 )
                 .first()
             )
+            if (
+                exposure is not None
+                and bool(getattr(exposure, "system_managed", False))
+                and str(getattr(exposure, "domain", "") or "") == OperationExposure.DOMAIN_POOL_RUNTIME
+            ):
+                unchanged += 1
+                continue
             if exposure is None:
                 created += 1
                 if not dry_run:
@@ -230,3 +271,44 @@ def sync_from_registry(request):
         'unchanged': unchanged,
         'message': message,
     })
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Inspect pool runtime template registry",
+    description="Read-only diagnostics for system-managed pool runtime template aliases.",
+    responses={
+        200: PoolRuntimeRegistryInspectResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden"),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def inspect_pool_runtime_registry(request):
+    if not getattr(request.user, "is_staff", False):
+        return _permission_denied("Staff only")
+
+    entries = inspect_pool_runtime_template_registry()
+    payload = {
+        "contract_version": "pool_runtime.v1",
+        "entries": [
+            {
+                "alias": item.alias,
+                "label": item.label,
+                "status": item.status,
+                "issues": list(item.issues),
+                "exposure_id": item.exposure_id,
+                "exposure_revision": item.exposure_revision,
+                "operation_type": item.operation_type,
+                "target_entity": item.target_entity,
+                "is_active": item.is_active,
+                "exposure_status": item.exposure_status,
+                "system_managed": item.system_managed,
+                "domain": item.domain,
+            }
+            for item in entries
+        ],
+        "count": len(entries),
+    }
+    return Response(payload)

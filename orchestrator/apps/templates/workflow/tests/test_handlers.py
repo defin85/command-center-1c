@@ -12,6 +12,7 @@ Tests cover:
 
 import pytest
 from unittest.mock import Mock, patch
+from uuid import uuid4
 
 from apps.runtime_settings.models import RuntimeSetting
 from apps.templates.models import OperationDefinition, OperationExposure
@@ -40,10 +41,13 @@ def _create_template_exposure(
     contract_version: int = 1,
     is_active: bool = True,
     status: str = OperationExposure.STATUS_PUBLISHED,
+    executor_kind: str = OperationDefinition.EXECUTOR_DESIGNER_CLI,
+    system_managed: bool = False,
+    domain: str = "",
 ) -> OperationExposure:
     definition = OperationDefinition.objects.create(
         tenant_scope="global",
-        executor_kind=OperationDefinition.EXECUTOR_DESIGNER_CLI,
+        executor_kind=executor_kind,
         executor_payload={
             "operation_type": operation_type,
             "target_entity": target_entity,
@@ -66,6 +70,8 @@ def _create_template_exposure(
         display_order=0,
         capability_config={},
         status=status,
+        system_managed=system_managed,
+        domain=domain,
     )
 
 
@@ -316,6 +322,156 @@ class TestOperationHandler:
         assert result.success is False
         assert (result.error or "").startswith("TEMPLATE_DRIFT:")
         mock_renderer.render.assert_not_called()
+
+    def test_operation_handler_pool_pinned_missing_maps_not_configured(self, workflow_execution):
+        node = WorkflowNode(
+            id="pool-missing",
+            name="Pool Missing Exposure",
+            type="operation",
+            operation_ref={
+                "alias": "pool.prepare_input",
+                "binding_mode": "pinned_exposure",
+                "template_exposure_id": str(uuid4()),
+                "template_exposure_revision": 1,
+            },
+        )
+
+        handler = OperationHandler()
+        result = handler.execute(node, {"dry_run": True}, workflow_execution)
+
+        assert result.success is False
+        assert (result.error or "").startswith("POOL_RUNTIME_TEMPLATE_NOT_CONFIGURED:")
+
+    def test_operation_handler_pool_pinned_inactive_maps_inactive_code(self, workflow_execution):
+        exposure = _create_template_exposure(
+            template_id="pool.prepare_input",
+            name="Pool Prepare Input",
+            operation_type="pool.prepare_input",
+            target_entity="pool_run",
+            template_data={"pool_runtime": {"step_id": "prepare_input"}},
+            contract_version=3,
+            is_active=False,
+            executor_kind=OperationDefinition.EXECUTOR_WORKFLOW,
+            system_managed=True,
+            domain=OperationExposure.DOMAIN_POOL_RUNTIME,
+        )
+
+        node = WorkflowNode(
+            id="pool-inactive",
+            name="Pool Inactive Exposure",
+            type="operation",
+            operation_ref={
+                "alias": "pool.prepare_input",
+                "binding_mode": "pinned_exposure",
+                "template_exposure_id": str(exposure.id),
+                "template_exposure_revision": 3,
+            },
+        )
+
+        handler = OperationHandler()
+        result = handler.execute(node, {"dry_run": True}, workflow_execution)
+
+        assert result.success is False
+        assert (result.error or "").startswith("POOL_RUNTIME_TEMPLATE_INACTIVE:")
+
+    def test_operation_handler_pool_pinned_routes_to_pool_backend_without_fallback(
+        self,
+        workflow_execution,
+    ):
+        exposure = _create_template_exposure(
+            template_id="pool.prepare_input",
+            name="Pool Prepare Input",
+            operation_type="pool.prepare_input",
+            target_entity="pool_run",
+            template_data={
+                "pool_runtime": {"step_id": "prepare_input"},
+                "options": {"target_scope": "global"},
+            },
+            contract_version=5,
+            executor_kind=OperationDefinition.EXECUTOR_WORKFLOW,
+            system_managed=True,
+            domain=OperationExposure.DOMAIN_POOL_RUNTIME,
+        )
+        node = WorkflowNode(
+            id="pool-route",
+            name="Pool Route",
+            type="operation",
+            operation_ref={
+                "alias": "pool.prepare_input",
+                "binding_mode": "pinned_exposure",
+                "template_exposure_id": str(exposure.id),
+                "template_exposure_revision": 5,
+            },
+        )
+        handler = OperationHandler()
+        mock_renderer = Mock()
+        mock_renderer.render.return_value = {
+            "pool_runtime": {"step_id": "prepare_input"},
+            "options": {"target_scope": "global"},
+        }
+        handler.renderer = mock_renderer
+
+        with (
+            patch("apps.templates.workflow.handlers.backends.pool_domain.PoolDomainBackend.execute") as pool_execute,
+            patch("apps.templates.workflow.handlers.backends.odata.ODataBackend.execute") as odata_execute,
+            patch("apps.templates.workflow.handlers.backends.cli.CLIBackend.execute") as cli_execute,
+            patch("apps.templates.workflow.handlers.backends.ibcmd.IBCMDBackend.execute") as ibcmd_execute,
+            patch("apps.templates.workflow.handlers.backends.ras.RASBackend.execute") as ras_execute,
+        ):
+            pool_execute.return_value = NodeExecutionResult(
+                success=True,
+                output={"backend": "pool_domain", "status": "ok"},
+                error=None,
+                mode=NodeExecutionMode.SYNC,
+                duration_seconds=0.0,
+            )
+            result = handler.execute(
+                node,
+                {"pool_run_id": str(uuid4()), "target_databases": ["db-1"]},
+                workflow_execution,
+            )
+
+        assert result.success is True
+        pool_execute.assert_called_once()
+        odata_execute.assert_not_called()
+        cli_execute.assert_not_called()
+        ibcmd_execute.assert_not_called()
+        ras_execute.assert_not_called()
+
+    def test_operation_handler_pool_pinned_unsupported_executor_fail_closed(self, workflow_execution):
+        exposure = _create_template_exposure(
+            template_id="pool.prepare_input",
+            name="Pool Prepare Input",
+            operation_type="query",
+            target_entity="pool_run",
+            template_data={"query": "SELECT 1"},
+            contract_version=2,
+            executor_kind=OperationDefinition.EXECUTOR_WORKFLOW,
+            system_managed=True,
+            domain=OperationExposure.DOMAIN_POOL_RUNTIME,
+        )
+        node = WorkflowNode(
+            id="pool-unsupported",
+            name="Pool Unsupported",
+            type="operation",
+            operation_ref={
+                "alias": "pool.prepare_input",
+                "binding_mode": "pinned_exposure",
+                "template_exposure_id": str(exposure.id),
+                "template_exposure_revision": 2,
+            },
+        )
+        handler = OperationHandler()
+        mock_renderer = Mock()
+        mock_renderer.render.return_value = {"query": "SELECT 1"}
+        handler.renderer = mock_renderer
+
+        with patch("apps.templates.workflow.handlers.backends.odata.ODataBackend.execute") as odata_execute:
+            result = handler.execute(node, {"target_databases": ["db-1"]}, workflow_execution)
+
+        assert result.success is False
+        assert (result.error or "").startswith("POOL_RUNTIME_TEMPLATE_UNSUPPORTED_EXECUTOR:")
+        odata_execute.assert_not_called()
 
     def test_operation_handler_success(self, admin_user, workflow_execution):
         """Test successful operation execution."""

@@ -200,3 +200,77 @@ def test_resolve_exposure_increments_revision_when_definition_changes():
         status=OperationExposure.STATUS_PUBLISHED,
     )
     assert exposure_same_definition.exposure_revision == 2
+
+
+@pytest.mark.django_db
+def test_resolve_exposure_supports_system_managed_domain_flags():
+    definition, _ = resolve_definition(
+        tenant_scope="global",
+        executor_kind="designer_cli",
+        executor_payload={
+            "kind": "designer_cli",
+            "driver": "cli",
+            "command_id": "infobase.extension.list",
+            "operation_type": "designer_cli",
+            "target_entity": "infobase",
+            "template_data": {"command_id": "infobase.extension.list"},
+        },
+        contract_version=1,
+    )
+
+    exposure, created = resolve_exposure(
+        definition=definition,
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias="tpl-system-managed",
+        tenant_id=None,
+        label="System managed template",
+        description="",
+        is_active=True,
+        capability="templates.designer_cli",
+        contexts=[],
+        display_order=0,
+        capability_config={},
+        status=OperationExposure.STATUS_PUBLISHED,
+        system_managed=True,
+        domain=OperationExposure.DOMAIN_POOL_RUNTIME,
+    )
+    assert created is True
+    assert exposure.system_managed is True
+    assert exposure.domain == OperationExposure.DOMAIN_POOL_RUNTIME
+
+    exposure_preserved, updated = resolve_exposure(
+        definition=definition,
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias="tpl-system-managed",
+        tenant_id=None,
+        label="System managed template updated",
+        description="",
+        is_active=True,
+        capability="templates.designer_cli",
+        contexts=[],
+        display_order=0,
+        capability_config={},
+        status=OperationExposure.STATUS_PUBLISHED,
+    )
+    assert updated is False
+    assert exposure_preserved.system_managed is True
+    assert exposure_preserved.domain == OperationExposure.DOMAIN_POOL_RUNTIME
+
+    exposure_unmanaged, _ = resolve_exposure(
+        definition=definition,
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias="tpl-system-managed",
+        tenant_id=None,
+        label="System managed template updated again",
+        description="",
+        is_active=True,
+        capability="templates.designer_cli",
+        contexts=[],
+        display_order=0,
+        capability_config={},
+        status=OperationExposure.STATUS_PUBLISHED,
+        system_managed=False,
+        domain="",
+    )
+    assert exposure_unmanaged.system_managed is False
+    assert exposure_unmanaged.domain == ""

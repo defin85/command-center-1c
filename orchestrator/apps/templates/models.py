@@ -119,6 +119,7 @@ class OperationExposure(models.Model):
     """Surface-specific publication bound to canonical operation definition."""
 
     SURFACE_TEMPLATE = "template"
+    DOMAIN_POOL_RUNTIME = "pool_runtime"
 
     SURFACE_CHOICES = [
         (SURFACE_TEMPLATE, "Template"),
@@ -157,6 +158,8 @@ class OperationExposure(models.Model):
     display_order = models.IntegerField(default=0)
     capability_config = models.JSONField(default=dict)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    system_managed = models.BooleanField(default=False)
+    domain = models.CharField(max_length=64, blank=True, default="")
     exposure_revision = models.PositiveIntegerField(default=1)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
@@ -180,6 +183,7 @@ class OperationExposure(models.Model):
             models.Index(fields=["surface", "status"], name="op_exp_surface_status_idx"),
             models.Index(fields=["tenant", "surface"], name="op_exp_tenant_surface_idx"),
             models.Index(fields=["capability", "status"], name="op_exp_cap_status_idx"),
+            models.Index(fields=["system_managed", "domain"], name="op_exp_sys_domain_idx"),
         ]
 
     def __str__(self) -> str:

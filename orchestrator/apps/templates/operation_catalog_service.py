@@ -73,6 +73,10 @@ def _positive_int(value: Any, *, default: int = 1) -> int:
     return parsed if parsed > 0 else default
 
 
+def _normalize_exposure_domain(value: Any) -> str:
+    return str(value or "").strip().lower()[:64]
+
+
 def _validate_template_runtime_contract(
     *,
     definition_payload: dict[str, Any],
@@ -254,6 +258,8 @@ def resolve_exposure(
     display_order: int,
     capability_config: dict[str, Any],
     status: str,
+    system_managed: bool | None = None,
+    domain: str | None = None,
 ) -> tuple[OperationExposure, bool]:
     qs = OperationExposure.objects.select_related("definition").filter(surface=surface, alias=alias)
     if tenant_id:
@@ -263,6 +269,8 @@ def resolve_exposure(
     exposure = qs.first()
     if exposure is None:
         initial_revision = _positive_int(getattr(definition, "contract_version", 1), default=1)
+        create_system_managed = bool(system_managed) if system_managed is not None else False
+        create_domain = _normalize_exposure_domain(domain) if domain is not None else ""
         exposure = OperationExposure.objects.create(
             definition=definition,
             surface=surface,
@@ -276,6 +284,8 @@ def resolve_exposure(
             display_order=int(display_order),
             capability_config=_clean_json(capability_config),
             status=status,
+            system_managed=create_system_managed,
+            domain=create_domain,
             exposure_revision=initial_revision,
         )
         return exposure, True
@@ -290,6 +300,10 @@ def resolve_exposure(
     exposure.display_order = int(display_order)
     exposure.capability_config = _clean_json(capability_config)
     exposure.status = status
+    if system_managed is not None:
+        exposure.system_managed = bool(system_managed)
+    if domain is not None:
+        exposure.domain = _normalize_exposure_domain(domain)
 
     next_revision = _positive_int(getattr(exposure, "exposure_revision", 1), default=1)
     if str(previous_definition_id or "") != str(definition.id):
@@ -308,6 +322,10 @@ def resolve_exposure(
         "status",
         "updated_at",
     ]
+    if system_managed is not None and "system_managed" not in update_fields:
+        update_fields.append("system_managed")
+    if domain is not None and "domain" not in update_fields:
+        update_fields.append("domain")
     if "exposure_revision" not in update_fields:
         update_fields.append("exposure_revision")
 
@@ -487,6 +505,8 @@ def serialize_template_exposure(exposure: OperationExposure) -> dict[str, Any]:
         "target_entity": str(payload.get("target_entity") or ""),
         "template_data": payload.get("template_data") if isinstance(payload.get("template_data"), dict) else {},
         "is_active": exposure.is_active,
+        "system_managed": bool(getattr(exposure, "system_managed", False)),
+        "domain": str(getattr(exposure, "domain", "") or ""),
         "created_at": exposure.created_at,
         "updated_at": exposure.updated_at,
     }

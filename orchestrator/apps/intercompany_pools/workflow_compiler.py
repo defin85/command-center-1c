@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
+from apps.templates.models import OperationExposure
 from apps.templates.workflow.models import WorkflowCategory, WorkflowTemplate, WorkflowType
 
 from .models import PoolRunDirection, PoolRunMode, PoolSchemaTemplate
@@ -36,6 +37,8 @@ class PoolExecutionPlanStep:
     node_id: str
     name: str
     operation_alias: str
+    template_exposure_id: str
+    template_exposure_revision: int
     timeout_seconds: int
     max_retries: int
 
@@ -134,21 +137,21 @@ class PoolWorkflowCompiler:
         )
 
         steps = [
-            PoolExecutionPlanStep(
+            self._make_step(
                 node_id="prepare_input",
                 name="Prepare Input",
                 operation_alias=_OP_PREPARE_INPUT,
                 timeout_seconds=300,
                 max_retries=0,
             ),
-            PoolExecutionPlanStep(
+            self._make_step(
                 node_id="distribution_calculation",
                 name="Distribution Calculation",
                 operation_alias=distribution_alias,
                 timeout_seconds=900,
                 max_retries=0,
             ),
-            PoolExecutionPlanStep(
+            self._make_step(
                 node_id="reconciliation_report",
                 name="Reconciliation Report",
                 operation_alias=_OP_RECONCILIATION,
@@ -159,7 +162,7 @@ class PoolWorkflowCompiler:
 
         if run_context.mode == PoolRunMode.SAFE:
             steps.append(
-                PoolExecutionPlanStep(
+                self._make_step(
                     node_id="approval_gate",
                     name="Approval Gate",
                     operation_alias=_OP_APPROVAL_GATE,
@@ -169,7 +172,7 @@ class PoolWorkflowCompiler:
             )
 
         steps.append(
-            PoolExecutionPlanStep(
+            self._make_step(
                 node_id="publication_odata",
                 name="Publication OData",
                 operation_alias=_OP_PUBLICATION,
@@ -178,6 +181,59 @@ class PoolWorkflowCompiler:
             )
         )
         return steps
+
+    def _make_step(
+        self,
+        *,
+        node_id: str,
+        name: str,
+        operation_alias: str,
+        timeout_seconds: int,
+        max_retries: int,
+    ) -> PoolExecutionPlanStep:
+        exposure_id, exposure_revision = self._resolve_pinned_template_binding(alias=operation_alias)
+        return PoolExecutionPlanStep(
+            node_id=node_id,
+            name=name,
+            operation_alias=operation_alias,
+            template_exposure_id=exposure_id,
+            template_exposure_revision=exposure_revision,
+            timeout_seconds=timeout_seconds,
+            max_retries=max_retries,
+        )
+
+    def _resolve_pinned_template_binding(self, *, alias: str) -> tuple[str, int]:
+        exposure = (
+            OperationExposure.objects.select_related("definition")
+            .filter(
+                surface=OperationExposure.SURFACE_TEMPLATE,
+                alias=alias,
+                tenant__isnull=True,
+                system_managed=True,
+                domain=OperationExposure.DOMAIN_POOL_RUNTIME,
+            )
+            .first()
+        )
+        if exposure is None:
+            raise ValueError(f"POOL_RUNTIME_TEMPLATE_NOT_CONFIGURED: alias '{alias}' is not configured")
+        if not bool(exposure.is_active) or exposure.status != OperationExposure.STATUS_PUBLISHED:
+            raise ValueError(f"POOL_RUNTIME_TEMPLATE_INACTIVE: alias '{alias}' is inactive or unpublished")
+        return str(exposure.id), self._resolve_exposure_revision(exposure)
+
+    @staticmethod
+    def _resolve_exposure_revision(exposure: OperationExposure) -> int:
+        try:
+            parsed = int(getattr(exposure, "exposure_revision", 0) or 0)
+        except (TypeError, ValueError):
+            parsed = 0
+        if parsed > 0:
+            return parsed
+        definition = getattr(exposure, "definition", None)
+        try:
+            fallback = int(getattr(definition, "contract_version", 1) or 1)
+        except (TypeError, ValueError):
+            fallback = 1
+        return fallback if fallback > 0 else 1
 
     @staticmethod
     def _build_dag_structure(
@@ -197,7 +253,9 @@ class PoolWorkflowCompiler:
                     "template_id": step.operation_alias,
                     "operation_ref": {
                         "alias": step.operation_alias,
-                        "binding_mode": "alias_latest",
+                        "binding_mode": "pinned_exposure",
+                        "template_exposure_id": step.template_exposure_id,
+                        "template_exposure_revision": step.template_exposure_revision,
                     },
                     "io": {
                         "mode": "implicit_legacy",

@@ -7,6 +7,7 @@ type MockCounters = {
   operationCatalogExposuresWithDefinitionsGets?: number
   operationCatalogActionExposuresGets?: number
   operationCatalogDefinitionsGets?: number
+  poolRuntimeRegistryGets?: number
   operationExposureHintsGets?: number
   validateCalls?: number
   upsertCalls?: number
@@ -781,6 +782,33 @@ async function setupApiMocks(page: Page, state: MockState) {
       })
     }
 
+    if (method === 'GET' && path === '/api/v2/templates/pool-runtime-registry/') {
+      counters.poolRuntimeRegistryGets = (counters.poolRuntimeRegistryGets ?? 0) + 1
+      if (!state.me?.is_staff) {
+        return fulfillJson(route, { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403)
+      }
+      return fulfillJson(route, {
+        contract_version: 'pool_runtime.v1',
+        entries: [
+          {
+            alias: 'pool.prepare_input',
+            label: 'Pool Prepare Input',
+            status: 'configured',
+            issues: [],
+            exposure_id: buildMockUuid(70_001),
+            exposure_revision: 1,
+            operation_type: 'pool.prepare_input',
+            target_entity: 'pool_run',
+            is_active: true,
+            exposure_status: 'published',
+            system_managed: true,
+            domain: 'pool_runtime',
+          },
+        ],
+        count: 1,
+      })
+    }
+
     if (method === 'POST' && path === '/api/v2/ui/execution-plan/preview/') {
       return fulfillJson(route, {
         execution_plan: {
@@ -814,11 +842,13 @@ test('Templates: staff работает в templates-only shell без action su
   await expect(tableBody).toContainText('Template One')
   await expect(tableBody).not.toContainText('extensions.list')
   await expect(page.getByTestId('action-catalog-add')).toHaveCount(0)
+  await expect(page.getByTestId('templates-pool-runtime-registry')).toBeVisible()
 
   expect(callCounters.operationCatalogExposuresGets ?? 0).toBeGreaterThan(0)
   expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
   expect(callCounters.operationCatalogExposuresWithDefinitionsGets ?? 0).toBe(0)
   expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBe(0)
+  expect(callCounters.poolRuntimeRegistryGets ?? 0).toBeGreaterThan(0)
   expect(callCounters.operationExposureHintsGets ?? 0).toBe(0)
   expect(callCounters.legacyTemplateCalls ?? 0).toBe(0)
   expect(callCounters.legacyActionHintsCalls ?? 0).toBe(0)
@@ -866,9 +896,11 @@ test('Templates: non-staff deep-link на template открывает templates-
   await expect(tableBody).toContainText('Viewer Template')
   await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
   await expect(page.getByRole('button', { name: 'New Template', exact: true })).toHaveCount(0)
+  await expect(page.getByTestId('templates-pool-runtime-registry')).toHaveCount(0)
 
   expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
   expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBe(0)
+  expect(callCounters.poolRuntimeRegistryGets ?? 0).toBe(0)
   expect(callCounters.operationExposureHintsGets ?? 0).toBe(0)
   expect(callCounters.legacyTemplateCalls ?? 0).toBe(0)
   expect(callCounters.legacyActionHintsCalls ?? 0).toBe(0)

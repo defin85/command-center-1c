@@ -64,6 +64,27 @@ export interface OperationTemplateSyncResponse {
   message: string
 }
 
+export interface PoolRuntimeRegistryEntry {
+  alias: string
+  label: string
+  status: string
+  issues: string[]
+  exposure_id?: string | null
+  exposure_revision?: number | null
+  operation_type: string
+  target_entity: string
+  is_active: boolean
+  exposure_status: string
+  system_managed: boolean
+  domain: string
+}
+
+export interface PoolRuntimeRegistryInspectResponse {
+  contract_version: string
+  entries: PoolRuntimeRegistryEntry[]
+  count: number
+}
+
 export interface OperationTemplateId {
   template_id: string
 }
@@ -374,6 +395,57 @@ export function useSyncTemplatesFromRegistry() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.templates.all })
     },
+  })
+}
+
+const normalizePoolRuntimeRegistryEntry = (value: unknown): PoolRuntimeRegistryEntry | null => {
+  if (!isPlainObject(value)) return null
+  const alias = String(value.alias || '').trim()
+  if (!alias) return null
+  return {
+    alias,
+    label: String(value.label || alias),
+    status: String(value.status || ''),
+    issues: Array.isArray(value.issues)
+      ? value.issues.filter((item): item is string => typeof item === 'string')
+      : [],
+    exposure_id: typeof value.exposure_id === 'string' ? value.exposure_id : null,
+    exposure_revision: typeof value.exposure_revision === 'number' ? value.exposure_revision : null,
+    operation_type: String(value.operation_type || ''),
+    target_entity: String(value.target_entity || ''),
+    is_active: value.is_active !== false,
+    exposure_status: String(value.exposure_status || ''),
+    system_managed: value.system_managed !== false,
+    domain: String(value.domain || ''),
+  }
+}
+
+const normalizePoolRuntimeRegistryResponse = (value: unknown): PoolRuntimeRegistryInspectResponse => {
+  const payload = isPlainObject(value) ? value : {}
+  const entries = Array.isArray(payload.entries)
+    ? payload.entries
+      .map((item) => normalizePoolRuntimeRegistryEntry(item))
+      .filter((item): item is PoolRuntimeRegistryEntry => item !== null)
+    : []
+  const contractVersion = String(payload.contract_version || '').trim()
+  return {
+    contract_version: contractVersion || 'pool_runtime.v1',
+    entries,
+    count: typeof payload.count === 'number' ? payload.count : entries.length,
+  }
+}
+
+export function usePoolRuntimeRegistryInspect(enabled: boolean) {
+  return useQuery({
+    queryKey: [...queryKeys.templates.all, 'pool-runtime-registry'],
+    enabled,
+    queryFn: async (): Promise<PoolRuntimeRegistryInspectResponse> => {
+      const response = await apiClient.get('/api/v2/templates/pool-runtime-registry/', {
+        skipGlobalError: true,
+      })
+      return normalizePoolRuntimeRegistryResponse(response.data)
+    },
+    staleTime: 60_000,
   })
 }
 

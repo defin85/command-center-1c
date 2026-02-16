@@ -11,6 +11,7 @@ from apps.operations.services import OperationsService
 from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate
 
 from .models import PoolRun, PoolRunMode, PoolSchemaTemplate, PoolSchemaTemplateFormat
+from .runtime_template_registry import sync_pool_runtime_template_registry
 from .workflow_compiler import PoolWorkflowRunContext, compile_pool_execution_plan
 
 
@@ -77,6 +78,7 @@ def start_pool_run_workflow_execution(
                 created_execution=False,
             )
 
+        sync_pool_runtime_template_registry()
         schema_template = locked_run.schema_template or _get_or_create_default_schema_template(locked_run)
         plan = compile_pool_execution_plan(
             schema_template=schema_template,
@@ -242,6 +244,7 @@ def start_pool_run_retry_workflow_execution(
             parent_input_context.get("attempt_number")
         ) + 1
 
+        sync_pool_runtime_template_registry()
         schema_template = locked_run.schema_template or _get_or_create_default_schema_template(locked_run)
         plan = compile_pool_execution_plan(
             schema_template=schema_template,
@@ -463,6 +466,7 @@ def _build_execution_plan_snapshot(
             "pool_id": str(run.pool_id),
             "approval_required": run.mode == PoolRunMode.SAFE,
         },
+        "operation_bindings": _build_operation_binding_snapshot(plan=plan),
     }
 
 
@@ -489,7 +493,42 @@ def _build_execution_bindings(*, plan) -> list[dict[str, Any]]:
                 "reason": "missing_source",
             }
         )
+    for step in getattr(plan, "steps", ()):
+        template_exposure_id = str(getattr(step, "template_exposure_id", "") or "").strip()
+        template_exposure_revision = getattr(step, "template_exposure_revision", None)
+        if not template_exposure_id or template_exposure_revision is None:
+            continue
+        bindings.append(
+            {
+                "target_ref": f"workflow.operation_ref.{step.node_id}",
+                "source_ref": f"operation_exposure:{template_exposure_id}@{template_exposure_revision}",
+                "resolve_at": "compile",
+                "sensitive": False,
+                "status": "applied",
+                "binding_mode": "pinned_exposure",
+                "alias": step.operation_alias,
+            }
+        )
     return bindings
+
+
+def _build_operation_binding_snapshot(*, plan) -> list[dict[str, Any]]:
+    snapshot: list[dict[str, Any]] = []
+    for step in getattr(plan, "steps", ()):
+        template_exposure_id = str(getattr(step, "template_exposure_id", "") or "").strip()
+        template_exposure_revision = getattr(step, "template_exposure_revision", None)
+        if not template_exposure_id or template_exposure_revision is None:
+            continue
+        snapshot.append(
+            {
+                "node_id": step.node_id,
+                "alias": step.operation_alias,
+                "binding_mode": "pinned_exposure",
+                "template_exposure_id": template_exposure_id,
+                "template_exposure_revision": int(template_exposure_revision),
+            }
+        )
+    return snapshot
 
 
 def _resolve_or_create_workflow_template(*, plan, requested_by: User | None) -> WorkflowTemplate:

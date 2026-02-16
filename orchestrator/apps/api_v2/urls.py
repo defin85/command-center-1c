@@ -295,6 +295,7 @@ urlpatterns = [
     # Templates
     # ========================================================================
     path('templates/sync-from-registry/', templates.sync_from_registry, name='sync-from-registry'),
+    path('templates/pool-runtime-registry/', templates.inspect_pool_runtime_registry, name='templates-pool-runtime-registry'),
 
     # ========================================================================
     # Unified Operation Catalog

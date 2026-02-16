@@ -13,6 +13,7 @@ import {
   buildTemplateOperationCatalogUpsertPayload,
   useCreateTemplate,
   useDeleteTemplate,
+  usePoolRuntimeRegistryInspect,
   useSyncTemplatesFromRegistry,
   useUpdateTemplate,
 } from '../../api/queries/templates'
@@ -176,9 +177,11 @@ const toErrorMessage = (error: unknown, fallback: string): string => {
 function OperationTemplateListShell({
   canManageTemplate,
   canManageAnyTemplate,
+  showPoolRuntimeDiagnostics,
 }: {
   canManageTemplate: (templateId: string) => boolean
   canManageAnyTemplate: boolean
+  showPoolRuntimeDiagnostics: boolean
 }) {
   const { message } = App.useApp()
   const [dryRun, setDryRun] = useState<boolean>(false)
@@ -209,6 +212,7 @@ function OperationTemplateListShell({
   const createMutation = useCreateTemplate()
   const updateMutation = useUpdateTemplate()
   const deleteMutation = useDeleteTemplate()
+  const poolRuntimeRegistryQuery = usePoolRuntimeRegistryInspect(showPoolRuntimeDiagnostics)
 
   const closeModal = useCallback(() => {
     setModalOpen(false)
@@ -467,6 +471,23 @@ function OperationTemplateListShell({
   const activeError = exposuresQuery.error
   const activeErrorStatus = (activeError as { response?: { status?: number } } | null)?.response?.status
   const showAccessWarning = activeErrorStatus === 403
+  const poolRuntimeRegistrySummary = useMemo(() => {
+    const entries = poolRuntimeRegistryQuery.data?.entries ?? []
+    const missingCount = entries.filter((entry) => entry.status === 'missing').length
+    const driftCount = entries.filter((entry) => entry.status === 'drift').length
+    const configuredCount = entries.filter((entry) => entry.status === 'configured').length
+    const issuePreview = entries
+      .filter((entry) => entry.status !== 'configured')
+      .slice(0, 3)
+      .map((entry) => `${entry.alias}: ${entry.issues.join(', ') || entry.status}`)
+    return {
+      configuredCount,
+      missingCount,
+      driftCount,
+      issuePreview,
+      contractVersion: poolRuntimeRegistryQuery.data?.contract_version || 'pool_runtime.v1',
+    }
+  }, [poolRuntimeRegistryQuery.data?.contract_version, poolRuntimeRegistryQuery.data?.entries])
 
   const modalTitle = useMemo(() => (
     editingTemplate ? 'Edit Template' : 'New Template'
@@ -601,6 +622,32 @@ function OperationTemplateListShell({
         />
       )}
 
+      {showPoolRuntimeDiagnostics && (
+        <Alert
+          data-testid="templates-pool-runtime-registry"
+          type={poolRuntimeRegistryQuery.isError || poolRuntimeRegistrySummary.missingCount > 0 || poolRuntimeRegistrySummary.driftCount > 0 ? 'warning' : 'success'}
+          message={poolRuntimeRegistryQuery.isLoading ? 'Pool runtime registry diagnostics: loading' : 'Pool runtime registry diagnostics'}
+          description={poolRuntimeRegistryQuery.isError ? (
+            'Failed to load pool runtime registry diagnostics.'
+          ) : (
+            <Space direction="vertical" size={2}>
+              <Text type="secondary">
+                {`contract_version=${poolRuntimeRegistrySummary.contractVersion}`}
+              </Text>
+              <Text type="secondary">
+                {`configured=${poolRuntimeRegistrySummary.configuredCount}, missing=${poolRuntimeRegistrySummary.missingCount}, drift=${poolRuntimeRegistrySummary.driftCount}`}
+              </Text>
+              {poolRuntimeRegistrySummary.issuePreview.length > 0 && (
+                <Text type="secondary">
+                  {`issues: ${poolRuntimeRegistrySummary.issuePreview.join(' | ')}`}
+                </Text>
+              )}
+            </Space>
+          )}
+          showIcon
+        />
+      )}
+
       <TableToolkit
         table={table}
         data={pagedRows.rows}
@@ -651,6 +698,7 @@ export function TemplatesPage() {
     <OperationTemplateListShell
       canManageTemplate={canManageTemplate}
       canManageAnyTemplate={canManageAnyTemplate}
+      showPoolRuntimeDiagnostics={isStaff}
     />
   )
 }
