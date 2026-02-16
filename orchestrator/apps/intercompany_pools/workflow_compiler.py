@@ -87,29 +87,24 @@ class PoolWorkflowCompiler:
         template_version = self._build_template_version(schema_template)
         steps = self._build_steps(run_context)
         dag_structure = self._build_dag_structure(steps, run_context=run_context)
-
-        plan_seed = {
-            "pool_id": str(run_context.pool_id),
-            "period_start": run_context.period_start.isoformat(),
-            "period_end": run_context.period_end.isoformat() if run_context.period_end else None,
-            "direction": run_context.direction,
-            "mode": run_context.mode,
-            "run_input": run_context.run_input,
-            "template_version": template_version,
-            "workflow_binding_hint": self._resolve_workflow_binding_hint(schema_template),
-            "dag_structure": dag_structure,
-        }
-        plan_key = self._sha256(self._canonical_json(plan_seed))
         workflow_binding_hint = self._resolve_workflow_binding_hint(schema_template)
-        workflow_name = self._build_workflow_name(run_context=run_context, plan_key=plan_key)
+
+        definition_seed = self._build_definition_seed(
+            run_context=run_context,
+            template_version=template_version,
+            workflow_binding_hint=workflow_binding_hint,
+            dag_structure=dag_structure,
+        )
+        definition_key = self._sha256(self._canonical_json(definition_seed))
+        workflow_name = self._build_workflow_name(run_context=run_context, definition_key=definition_key)
         workflow_description = (
             "Compiled pool execution workflow "
-            f"(plan_key={plan_key}, template_version={template_version}, mode={run_context.mode})"
+            f"(definition_key={definition_key}, template_version={template_version}, mode={run_context.mode})"
         )
         workflow_config = self._build_workflow_config(run_context.mode)
 
         return PoolExecutionPlan(
-            plan_key=plan_key,
+            plan_key=definition_key,
             plan_version=PLAN_VERSION,
             template_version=template_version,
             workflow_binding_hint=workflow_binding_hint,
@@ -128,6 +123,23 @@ class PoolWorkflowCompiler:
             raise ValueError(f"Unsupported direction '{run_context.direction}'")
         if run_context.mode not in PoolRunMode.values:
             raise ValueError(f"Unsupported mode '{run_context.mode}'")
+
+    @staticmethod
+    def _build_definition_seed(
+        *,
+        run_context: PoolWorkflowRunContext,
+        template_version: str,
+        workflow_binding_hint: str | None,
+        dag_structure: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "pool_id": str(run_context.pool_id),
+            "direction": run_context.direction,
+            "mode": run_context.mode,
+            "template_version": template_version,
+            "workflow_binding_hint": workflow_binding_hint,
+            "dag_structure": dag_structure,
+        }
 
     def _build_steps(self, run_context: PoolWorkflowRunContext) -> list[PoolExecutionPlanStep]:
         distribution_alias = (
@@ -307,9 +319,9 @@ class PoolWorkflowCompiler:
         return None
 
     @staticmethod
-    def _build_workflow_name(*, run_context: PoolWorkflowRunContext, plan_key: str) -> str:
+    def _build_workflow_name(*, run_context: PoolWorkflowRunContext, definition_key: str) -> str:
         pool_token = str(run_context.pool_id).replace("-", "")[:12]
-        prefix = f"pool-unified-{pool_token}-{run_context.direction}-{run_context.mode}-{plan_key[:16]}"
+        prefix = f"pool-unified-{pool_token}-{run_context.direction}-{run_context.mode}-{definition_key[:16]}"
         return prefix[:200]
 
     @staticmethod

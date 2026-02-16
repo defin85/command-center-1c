@@ -872,10 +872,11 @@ export function PoolRunsPage() {
   const isSafeRun = runDetails?.mode === 'safe'
   const isPublishedOrPartial = runDetails?.status === 'published' || runDetails?.status === 'partial_success'
   const isTerminalNonAbortFailed = runDetails?.status === 'failed' && runDetails?.terminal_reason !== 'aborted_by_operator'
+  const isSafePrePublishPreparing = isSafeRun && runDetails?.approval_state === 'preparing'
   const canConfirm = Boolean(
     isSafeRun
     && runDetails
-    && runDetails.approval_state !== 'not_required'
+    && runDetails.approval_state === 'awaiting_approval'
     && !isPublishedOrPartial
     && runDetails.status !== 'failed'
   )
@@ -1179,15 +1180,25 @@ export function PoolRunsPage() {
               {runDetails.approval_state ? <Tag color={getApprovalStateColor(runDetails.approval_state)}>{runDetails.approval_state}</Tag> : null}
               {runDetails.publication_step_state ? <Tag color={getPublicationStepColor(runDetails.publication_step_state)}>{runDetails.publication_step_state}</Tag> : null}
             </Space>
+            {isSafePrePublishPreparing && (
+              <Alert
+                type="info"
+                showIcon
+                message="Pre-publish ещё выполняется"
+                description="Safe run находится на этапе предпросмотра. Дождитесь состояния awaiting_approval, затем станет доступен Confirm publication."
+              />
+            )}
             <Text type="secondary">
-              Для safe run ожидаемые pre-publish фазы: `preparing` и `awaiting_approval`.
-              `confirm-publication` переводит run к enqueue публикации, `abort-publication` завершает его без публикации (если publication step ещё не started).
+              `preparing` — выполняется pre-publish (prepare/distribution/reconciliation/approval_gate).
+              `awaiting_approval` — pre-publish завершён и run ждёт ручного подтверждения.
+              Результаты предпросмотра смотрите выше: Validation Summary / Publication Summary / Step Diagnostics.
             </Text>
             <Space>
               <Button
                 type="primary"
                 data-testid="pool-runs-safe-confirm"
                 loading={safeActionLoading === 'confirm-publication'}
+                title={isSafePrePublishPreparing ? 'Доступно после завершения pre-publish (awaiting_approval)' : undefined}
                 disabled={!canConfirm}
                 onClick={() => void handleSafeCommand('confirm-publication')}
               >

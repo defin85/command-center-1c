@@ -14020,10 +14020,29 @@ components:
         input_context_masked:
           type: object
           additionalProperties: {}
+          default: {}
         targets:
           type: object
           additionalProperties: {}
           description: Execution targets summary (e.g., scope, database_ids count).
+          default: {}
+        definition:
+          type: object
+          additionalProperties: {}
+          description: Workflow definition provenance. Includes definition_key and resolved workflow template metadata.
+          default: {}
+        execution_snapshot:
+          type: object
+          additionalProperties: {}
+          description: Immutable run-specific workflow snapshot. Includes period/run_input/seed and lineage metadata.
+          default: {}
+        operation_bindings:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          description: Pinned operation exposure snapshot used by workflow nodes.
+          default: []
       required:
       - kind
     ExecutionPlanPreviewRequest:

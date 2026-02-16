@@ -34,16 +34,20 @@ def _create_schema_template(*, tenant: Tenant, code: str = "pool-template") -> P
 
 def _create_context(
     *,
+    pool_id: str | None = None,
+    period_start: date = date(2026, 1, 1),
+    period_end: date | None = date(2026, 1, 31),
     direction: str = PoolRunDirection.BOTTOM_UP,
     mode: str = PoolRunMode.SAFE,
+    run_input: dict | None = None,
 ) -> PoolWorkflowRunContext:
     return PoolWorkflowRunContext(
-        pool_id=str(uuid4()),
-        period_start=date(2026, 1, 1),
-        period_end=date(2026, 1, 31),
+        pool_id=pool_id or str(uuid4()),
+        period_start=period_start,
+        period_end=period_end,
         direction=direction,
         mode=mode,
-        run_input={"source_payload": [{"inn": "770000000001", "amount": "10.00"}]},
+        run_input=run_input if isinstance(run_input, dict) else {"source_payload": [{"inn": "770000000001", "amount": "10.00"}]},
     )
 
 
@@ -65,6 +69,37 @@ def test_compile_pool_execution_plan_is_deterministic() -> None:
     assert plan_1.template_version == plan_2.template_version
     assert plan_1.dag_structure == plan_2.dag_structure
     assert plan_1.workflow_template_name == plan_2.workflow_template_name
+
+
+@pytest.mark.django_db
+def test_compile_pool_execution_plan_reuses_definition_for_different_period_and_run_input() -> None:
+    tenant = Tenant.objects.create(slug=f"pool-reuse-{uuid4().hex[:8]}", name="Pool Reuse")
+    schema_template = _create_schema_template(tenant=tenant, code="reuse-template")
+    _sync_runtime_templates()
+
+    shared_pool_id = str(uuid4())
+    plan_1 = compile_pool_execution_plan(
+        schema_template=schema_template,
+        run_context=_create_context(
+            pool_id=shared_pool_id,
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+            run_input={"source_payload": [{"inn": "770000000001", "amount": "10.00"}]},
+        ),
+    )
+    plan_2 = compile_pool_execution_plan(
+        schema_template=schema_template,
+        run_context=_create_context(
+            pool_id=shared_pool_id,
+            period_start=date(2026, 2, 1),
+            period_end=date(2026, 2, 28),
+            run_input={"source_payload": [{"inn": "770000000999", "amount": "999.00"}]},
+        ),
+    )
+
+    assert plan_1.plan_key == plan_2.plan_key
+    assert plan_1.workflow_template_name == plan_2.workflow_template_name
+    assert plan_1.dag_structure == plan_2.dag_structure
 
 
 @pytest.mark.django_db
@@ -142,6 +177,37 @@ def test_compile_pool_execution_plan_uses_direction_specific_distribution_alias(
     assert top_down_alias == "pool.distribution_calculation.top_down"
     assert bottom_up_alias == "pool.distribution_calculation.bottom_up"
     assert top_down_alias != bottom_up_alias
+    assert top_down.plan_key != bottom_up.plan_key
+
+
+@pytest.mark.django_db
+def test_compile_pool_execution_plan_builds_new_definition_when_template_version_changes() -> None:
+    tenant = Tenant.objects.create(slug=f"pool-template-version-{uuid4().hex[:8]}", name="Pool Template Version")
+    schema_template = _create_schema_template(tenant=tenant, code="template-version")
+    _sync_runtime_templates()
+
+    shared_pool_id = str(uuid4())
+    plan_before = compile_pool_execution_plan(
+        schema_template=schema_template,
+        run_context=_create_context(pool_id=shared_pool_id),
+    )
+
+    schema_template.schema = {
+        "columns": {
+            "inn": "inn",
+            "amount": "amount",
+            "kpp": "kpp",
+        }
+    }
+    schema_template.save(update_fields=["schema"])
+
+    plan_after = compile_pool_execution_plan(
+        schema_template=schema_template,
+        run_context=_create_context(pool_id=shared_pool_id),
+    )
+
+    assert plan_before.plan_key != plan_after.plan_key
+    assert plan_before.workflow_template_name != plan_after.workflow_template_name
 
 
 @pytest.mark.django_db

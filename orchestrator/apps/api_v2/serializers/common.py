@@ -75,6 +75,28 @@ class ExecutionPlanSerializer(serializers.Serializer):
         default=dict,
         help_text="Execution targets summary (e.g., scope, database_ids count).",
     )
+    definition = serializers.DictField(
+        required=False,
+        default=dict,
+        help_text=(
+            "Workflow definition provenance. "
+            "Includes definition_key and resolved workflow template metadata."
+        ),
+    )
+    execution_snapshot = serializers.DictField(
+        required=False,
+        default=dict,
+        help_text=(
+            "Immutable run-specific workflow snapshot. "
+            "Includes period/run_input/seed and lineage metadata."
+        ),
+    )
+    operation_bindings = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        default=list,
+        help_text="Pinned operation exposure snapshot used by workflow nodes.",
+    )
 
 
 class ExecutionPlanWithBindingsSerializer(serializers.Serializer):

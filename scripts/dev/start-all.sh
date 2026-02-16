@@ -561,13 +561,19 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 6: Go Worker
+# Шаг 6: Go Workers (ops + workflows)
 ##############################################################################
-echo -e "${BLUE}[6/9] Запуск Go Worker...${NC}"
+echo -e "${BLUE}[6/9] Запуск Go Workers (ops + workflows)...${NC}"
 
 if ! start_service "worker"; then
     log_error "Не удалось запустить worker"
     cat "$LOGS_DIR/worker.log"
+    exit 1
+fi
+
+if ! start_service "worker-workflows"; then
+    log_error "Не удалось запустить worker-workflows"
+    cat "$LOGS_DIR/worker-workflows.log"
     exit 1
 fi
 echo ""

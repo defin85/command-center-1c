@@ -220,6 +220,23 @@ describe('PoolRunsPage', () => {
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
   }, 15000)
 
+  it('disables confirm while safe run is in pre-publish preparing state', async () => {
+    const preparingRun = buildRun({
+      status_reason: 'preparing',
+      approval_state: 'preparing',
+      publication_step_state: 'not_enqueued',
+      publication_confirmed_at: null,
+    })
+    mockListPoolRuns.mockResolvedValue([preparingRun])
+    mockGetPoolRunReport.mockResolvedValue(buildReport(preparingRun))
+
+    renderPage()
+
+    expect(await screen.findByText('Pre-publish ещё выполняется')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-runs-safe-confirm')).toBeDisabled()
+    expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
+  }, 15000)
+
   it('sends confirm-publication with generated idempotency key', async () => {
     const user = userEvent.setup()
     renderPage()

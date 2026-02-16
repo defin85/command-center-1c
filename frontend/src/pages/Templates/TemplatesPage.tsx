@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Alert, App, Button, Form, Popconfirm, Space, Switch, Typography } from 'antd'
+import { Alert, App, Button, Form, Popconfirm, Space, Switch, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import {
@@ -200,6 +200,8 @@ function OperationTemplateListShell({
   const fallbackColumnConfigs = useMemo(() => [
     { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
     { key: 'id', label: 'Alias', sortable: true, groupKey: 'core', groupLabel: 'Core' },
+    { key: 'system_managed', label: 'Managed', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
+    { key: 'domain', label: 'Domain', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
     { key: 'operation_type', label: 'Operation Type', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
     { key: 'executor_kind', label: 'Executor Kind', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
     { key: 'executor_command_id', label: 'Command ID', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
@@ -234,13 +236,21 @@ function OperationTemplateListShell({
   }, [])
 
   const openEditTemplateModal = useCallback((template: TemplateRow) => {
+    if (isSystemManagedPoolRuntimeTemplate(template)) {
+      message.warning('System-managed pool runtime template is read-only')
+      return
+    }
     setEditingTemplate(template)
     setEditorValues(buildTemplateEditorValues(template))
     setModalValidationErrors([])
     setModalOpen(true)
-  }, [])
+  }, [message])
 
   const handleDeleteTemplate = useCallback(async (template: TemplateRow) => {
+    if (isSystemManagedPoolRuntimeTemplate(template)) {
+      message.warning('System-managed pool runtime template is read-only')
+      return
+    }
     try {
       await deleteMutation.mutateAsync({ template_id: template.id })
       setExposuresReloadTick((value) => value + 1)
@@ -264,6 +274,23 @@ function OperationTemplateListShell({
           {renderCellText(record.id, { secondary: true, maxWidth: 260 })}
         </div>
       ),
+    },
+    {
+      title: 'Managed',
+      dataIndex: 'system_managed',
+      key: 'system_managed',
+      width: 190,
+      render: (_value, record) => {
+        if (isSystemManagedPoolRuntimeTemplate(record)) {
+          return (
+            <Space size={6}>
+              <Tag color="gold">system-managed</Tag>
+              {renderCellText(record.domain || 'pool_runtime', { code: true, maxWidth: 120 })}
+            </Space>
+          )
+        }
+        return <Tag>user-managed</Tag>
+      },
     },
     {
       title: 'Operation Type',

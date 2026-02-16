@@ -636,6 +636,10 @@ def list_operation_exposures(request):
         qs = qs.filter(
             Q(alias__in=user_template_aliases)
             | Q(alias__in=group_template_aliases)
+            | Q(
+                system_managed=True,
+                domain=OperationExposure.DOMAIN_POOL_RUNTIME,
+            )
         )
 
     qs = _apply_exposure_search(qs, search)

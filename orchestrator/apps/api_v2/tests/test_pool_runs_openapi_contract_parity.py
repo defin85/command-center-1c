@@ -5,6 +5,7 @@ from typing import Any
 
 import yaml
 
+from apps.api_v2.serializers.common import ExecutionPlanSerializer
 from apps.api_v2.views import intercompany_pools as pools_view
 
 
@@ -181,3 +182,14 @@ def test_pool_run_provenance_schema_uses_structured_retry_chain_model() -> None:
         "attempt_kind",
         "status",
     }.issubset(set(attempt_properties.keys()))
+
+
+def test_execution_plan_schema_covers_runtime_serializer_fields() -> None:
+    contract = _load_openapi_contract()
+    execution_plan_schema = _schema(contract, "ExecutionPlan")
+    properties = execution_plan_schema.get("properties")
+    assert isinstance(properties, dict)
+
+    runtime_fields = set(ExecutionPlanSerializer().fields.keys())
+    contract_fields = set(properties.keys())
+    assert runtime_fields.issubset(contract_fields)

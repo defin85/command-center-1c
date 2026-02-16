@@ -135,6 +135,7 @@ def start_pool_run_workflow_execution(
             run=locked_run,
             plan=plan,
             workflow_template=workflow_template,
+            execution_context=execution.input_context,
         )
         execution.bindings = _build_execution_bindings(plan=plan)
         execution.save(update_fields=["input_context", "execution_plan", "bindings"])
@@ -154,6 +155,7 @@ def start_pool_run_workflow_execution(
                 "workflow_execution_id": str(execution.id),
                 "workflow_template_name": workflow_template.name,
                 "plan_key": plan.plan_key,
+                "definition_key": plan.plan_key,
                 "approval_required": locked_run.mode == PoolRunMode.SAFE,
             },
         )
@@ -278,6 +280,7 @@ def start_pool_run_retry_workflow_execution(
             run=locked_run,
             plan=plan,
             workflow_template=workflow_template,
+            execution_context=execution.input_context,
         )
         execution.bindings = _build_execution_bindings(plan=plan)
         execution.save(update_fields=["input_context", "execution_plan", "bindings"])
@@ -305,6 +308,7 @@ def start_pool_run_retry_workflow_execution(
                 "parent_workflow_run_id": parent_workflow_run_id,
                 "root_workflow_run_id": root_workflow_run_id,
                 "attempt_number": next_attempt_number,
+                "definition_key": plan.plan_key,
             },
         )
 
@@ -446,11 +450,21 @@ def _build_execution_plan_snapshot(
     run: PoolRun,
     plan,
     workflow_template: WorkflowTemplate,
+    execution_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    run_input = run.run_input if isinstance(run.run_input, dict) else {}
+    execution_lineage = _build_execution_lineage_snapshot(execution_context=execution_context)
     return {
         "kind": "workflow",
         "plan_version": plan.plan_version,
         "workflow_id": str(workflow_template.id),
+        "definition": {
+            "definition_key": plan.plan_key,
+            "workflow_template_id": str(workflow_template.id),
+            "workflow_template_name": workflow_template.name,
+            "workflow_template_version": int(workflow_template.version_number or 1),
+            "template_version": plan.template_version,
+        },
         "input_context_masked": {
             "pool_run_id": str(run.id),
             "pool_id": str(run.pool_id),
@@ -459,7 +473,15 @@ def _build_execution_plan_snapshot(
             "mode": run.mode,
             "period_start": run.period_start.isoformat(),
             "period_end": run.period_end.isoformat() if run.period_end else None,
-            "run_input": run.run_input if isinstance(run.run_input, dict) else {},
+            "run_input": run_input,
+        },
+        "execution_snapshot": {
+            "pool_run_id": str(run.id),
+            "seed": run.seed,
+            "period_start": run.period_start.isoformat(),
+            "period_end": run.period_end.isoformat() if run.period_end else None,
+            "run_input": run_input,
+            "lineage": execution_lineage,
         },
         "targets": {
             "entity": "pool_run",
@@ -467,6 +489,24 @@ def _build_execution_plan_snapshot(
             "approval_required": run.mode == PoolRunMode.SAFE,
         },
         "operation_bindings": _build_operation_binding_snapshot(plan=plan),
+    }
+
+
+def _build_execution_lineage_snapshot(
+    *,
+    execution_context: dict[str, Any] | None,
+) -> dict[str, Any]:
+    context = execution_context if isinstance(execution_context, dict) else {}
+    return {
+        "workflow_run_id": str(context.get("workflow_run_id") or ""),
+        "root_workflow_run_id": str(context.get("root_workflow_run_id") or ""),
+        "parent_workflow_run_id": (
+            str(context.get("parent_workflow_run_id"))
+            if context.get("parent_workflow_run_id") is not None
+            else None
+        ),
+        "attempt_number": _parse_context_attempt_number(context.get("attempt_number")),
+        "attempt_kind": str(context.get("attempt_kind") or ATTEMPT_KIND_INITIAL),
     }
 
 

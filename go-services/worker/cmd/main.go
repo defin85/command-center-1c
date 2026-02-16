@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -460,7 +461,13 @@ func main() {
 
 	// Start Prometheus metrics and health endpoints
 	go func() {
-		metricsPort := ":9091"
+		metricsPort := strings.TrimSpace(os.Getenv("WORKER_METRICS_PORT"))
+		if metricsPort == "" {
+			metricsPort = "9091"
+		}
+		if !strings.HasPrefix(metricsPort, ":") {
+			metricsPort = ":" + metricsPort
+		}
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", promhttp.Handler())
 

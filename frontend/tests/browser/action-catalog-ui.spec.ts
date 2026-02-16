@@ -966,6 +966,8 @@ test('Templates: system-managed pool runtime template блокирует edit/de
   const row = tableBody.locator('tr').filter({ hasText: 'pool.prepare_input' }).first()
 
   await expect(row).toBeVisible()
+  await expect(row).toContainText('system-managed')
+  await expect(row).toContainText('pool_runtime')
   await expect(row.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled()
   await expect(row.getByRole('button', { name: 'Delete', exact: true })).toBeDisabled()
   expect(callCounters.poolRuntimeRegistryGets ?? 0).toBeGreaterThan(0)

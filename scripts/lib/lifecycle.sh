@@ -57,6 +57,7 @@ declare -gA SERVICE_CATEGORIES=(
     ["event-subscriber"]="python"
     ["api-gateway"]="go"
     ["worker"]="go"
+    ["worker-workflows"]="go"
     ["frontend"]="frontend"
     ["ras"]="external"
 )
@@ -67,12 +68,14 @@ declare -ga SERVICE_START_ORDER=(
     event-subscriber
     api-gateway
     worker
+    worker-workflows
     frontend
 )
 
 # Порядок остановки (обратный запуску)
 declare -ga SERVICE_STOP_ORDER=(
     frontend
+    worker-workflows
     worker
     api-gateway
     event-subscriber
@@ -92,6 +95,7 @@ declare -gA SERVICE_STOP_TIMEOUT=(
     ["event-subscriber"]=10
     ["api-gateway"]=10
     ["worker"]=15
+    ["worker-workflows"]=15
     ["frontend"]=5
     ["ras"]=10
 )
@@ -297,18 +301,23 @@ _start_python_service() {
 _start_go_service() {
     local service_name=$1
     local log_file="${LOGS_DIR:-logs}/${service_name}.log"
+    local effective_service_name="$service_name"
+    if [[ "$service_name" == "worker-workflows" ]]; then
+        effective_service_name="worker"
+    fi
+
     local binary_path
-    binary_path=$(get_binary_path "$service_name")
+    binary_path=$(get_binary_path "$effective_service_name")
 
     # Smart rebuild: проверяем нужна ли пересборка (если не отключено)
     if [[ "${SKIP_GO_REBUILD:-false}" != "true" ]]; then
         local rebuild_status
-        rebuild_status=$(detect_go_service_changes "$service_name")
+        rebuild_status=$(detect_go_service_changes "$effective_service_name")
 
         case "$rebuild_status" in
             REBUILD_NEEDED)
                 log_info "Обнаружены изменения в $service_name, пересборка..."
-                if ! _rebuild_go_service "$service_name"; then
+                if ! _rebuild_go_service "$effective_service_name"; then
                     log_error "Ошибка сборки $service_name"
                     return 1
                 fi
@@ -333,7 +342,22 @@ _start_go_service() {
     fi
 
     # Запуск
-    nohup "$binary_path" > "$log_file" 2>&1 &
+    if [[ "$service_name" == "worker-workflows" ]]; then
+        local worker_id="${WORKER_WORKFLOWS_ID:-worker-workflows-1}"
+        local stream_name="${WORKER_WORKFLOWS_STREAM_NAME:-commands:worker:workflows}"
+        local consumer_group="${WORKER_WORKFLOWS_CONSUMER_GROUP:-worker-workflows}"
+        local metrics_port="${WORKER_WORKFLOWS_METRICS_PORT:-9092}"
+        local scheduler_enabled="${WORKER_WORKFLOWS_ENABLE_SCHEDULER:-false}"
+        nohup env \
+            WORKER_ID="$worker_id" \
+            WORKER_STREAM_NAME="$stream_name" \
+            WORKER_CONSUMER_GROUP="$consumer_group" \
+            WORKER_METRICS_PORT="$metrics_port" \
+            ENABLE_GO_SCHEDULER="$scheduler_enabled" \
+            "$binary_path" > "$log_file" 2>&1 &
+    else
+        nohup "$binary_path" > "$log_file" 2>&1 &
+    fi
     LAST_SERVICE_PID=$!
     return 0
 }

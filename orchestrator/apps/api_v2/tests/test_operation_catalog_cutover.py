@@ -322,6 +322,28 @@ def test_operation_catalog_template_surface_allows_non_staff_with_view_scope(tem
 
 
 @pytest.mark.django_db
+def test_operation_catalog_template_surface_includes_system_managed_pool_runtime_for_viewers(
+    template_manager_client,
+):
+    sync_pool_runtime_template_registry()
+    user = User.objects.get(username="template_manager_non_staff")
+
+    assert not OperationExposurePermission.objects.filter(
+        user=user,
+        exposure__alias="pool.prepare_input",
+    ).exists()
+
+    resp_template = template_manager_client.get("/api/v2/operation-catalog/exposures/?surface=template")
+    assert resp_template.status_code == 200
+    template_rows = resp_template.json()["exposures"]
+    aliases = {row["alias"] for row in template_rows}
+    assert "pool.prepare_input" in aliases
+    row = next(item for item in template_rows if item["alias"] == "pool.prepare_input")
+    assert row["system_managed"] is True
+    assert row["domain"] == OperationExposure.DOMAIN_POOL_RUNTIME
+
+
+@pytest.mark.django_db
 def test_operation_catalog_template_surface_upsert_publish_and_delete_for_non_staff_manager(template_manager_client):
     user = User.objects.get(username="template_manager_non_staff")
     exposure, _ = upsert_template_exposure(
