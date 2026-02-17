@@ -30,6 +30,8 @@
 - `workflow:completed + (approval_required=true AND approved_at is null) -> pool:validated` с `status_reason=awaiting_approval`;
 - `workflow:completed + (approval_required=false OR approved_at is not null) + publication_step_state=completed + failed_targets=0 -> pool:published`;
 - `workflow:completed + (approval_required=false OR approved_at is not null) + publication_step_state=completed + failed_targets>0 -> pool:partial_success`;
+- `workflow:completed + execution_backend=legacy_pool_runtime + publication_step_state is null + failed_targets=0 -> pool:published`;
+- `workflow:completed + execution_backend=legacy_pool_runtime + publication_step_state is null + failed_targets>0 -> pool:partial_success`;
 - `workflow:completed + (approval_required=false OR approved_at is not null) + publication_step_state!=completed -> pool:failed`;
 - `workflow:failed|cancelled -> pool:failed`.
 
@@ -54,6 +56,15 @@
 - **THEN** фасад возвращает статус `validated`
 - **AND** поле `status_reason` равно `awaiting_approval`
 
+#### Scenario: Safe pre-publish в running проецируется как validated preparing
+- **GIVEN** workflow run находится в состоянии `running`
+- **AND** `approval_required=true`
+- **AND** `approved_at is null`
+- **AND** `approval_state=preparing`
+- **WHEN** клиент запрашивает pool run details
+- **THEN** фасад возвращает статус `validated`
+- **AND** поле `status_reason` равно `preparing`
+
 #### Scenario: Completed workflow без завершённого publication-step не может быть published
 - **GIVEN** workflow run имеет `status=completed`
 - **AND** (`approval_required=false` ИЛИ `approved_at is not null`)
@@ -61,6 +72,21 @@
 - **WHEN** клиент запрашивает pool run details
 - **THEN** фасад возвращает статус `failed`
 - **AND** фасад НЕ ДОЛЖЕН (SHALL NOT) возвращать статус `published`
+
+#### Scenario: Historical legacy run сохраняет прежнюю terminal-проекцию при неизвестном publication_step_state
+- **GIVEN** workflow run имеет `status=completed`
+- **AND** `execution_backend=legacy_pool_runtime`
+- **AND** `publication_step_state` отсутствует (`null`/пусто)
+- **WHEN** клиент запрашивает pool run details
+- **THEN** фасад использует legacy fallback по `failed_targets`
+- **AND** historical run остаётся читаемым без forced-перехода в `failed`
+
+#### Scenario: Для non-validated статусов status_reason отсутствует
+- **GIVEN** шаг `publication_odata` уже started
+- **AND** (`approval_required=false` ИЛИ `approved_at is not null`)
+- **WHEN** клиент запрашивает pool run details
+- **THEN** фасад возвращает статус `publishing`
+- **AND** `status_reason` равен `null`
 
 ### Requirement: Pool runtime MUST возвращать стабильные fail-closed коды ошибок
 Система ДОЛЖНА (SHALL) возвращать machine-readable коды ошибок для несоответствий registry/binding/executor в compile/runtime path.
@@ -71,6 +97,8 @@
 - `TEMPLATE_DRIFT` — pinned revision не совпадает с текущей ревизией exposure.
 - `POOL_RUNTIME_TEMPLATE_UNSUPPORTED_EXECUTOR` — executor pinned exposure не поддерживает `PoolDomainBackend`.
 - `WORKFLOW_OPERATION_EXECUTOR_NOT_CONFIGURED` — workflow worker не сконфигурирован для исполнения `pool.*` operation nodes.
+
+Система ДОЛЖНА (SHALL) передавать fail-closed `error_code` по цепочке `worker -> internal workflows status update -> facade diagnostics` без деградации до неструктурированного текста.
 
 #### Scenario: Inactive exposure блокирует исполнение node fail-closed
 - **GIVEN** node содержит pinned `template_exposure_id=<id>` и `template_exposure_revision=<r>`
@@ -86,6 +114,12 @@
 - **THEN** node завершается fail-closed
 - **AND** ошибка содержит код `WORKFLOW_OPERATION_EXECUTOR_NOT_CONFIGURED`
 
+#### Scenario: Fail-closed code сохраняется в execution diagnostics через internal status update
+- **GIVEN** worker завершает execution со статусом `failed` и `error_code=WORKFLOW_OPERATION_EXECUTOR_NOT_CONFIGURED`
+- **WHEN** worker вызывает internal `update-execution-status`
+- **THEN** orchestrator сохраняет machine-readable `error_code` для execution
+- **AND** pools facade возвращает тот же код в diagnostics/problem-details
+
 ## ADDED Requirements
 ### Requirement: Workflow status updater MUST не синтезировать publication_step_state из агрегатного workflow status
 Система ДОЛЖНА (SHALL) обновлять `publication_step_state` только на основании фактического исполнения publication-step (`pool.publication_odata`) и его доменного результата.
@@ -100,20 +134,61 @@
 - **THEN** `publication_step_state` остаётся в прежнем фактическом значении
 - **AND** система не создаёт ложный сигнал завершённой публикации
 
-### Requirement: Poolops и ODataops MUST переиспользовать единый OData transport слой
-Система ДОЛЖНА (SHALL) иметь общий переиспользуемый OData transport слой (`odata-core`) для драйверов `poolops` и `odataops`.
+### Requirement: Poolops bridge MUST иметь детерминированный runtime-контракт
+Система ДОЛЖНА (SHALL) исполнять bridge-вызовы `poolops` в Orchestrator domain runtime через внутренний аутентифицированный контракт с явными правилами:
+- обязательный internal auth;
+- передача tenant-scoped контекста (`tenant_id`, `pool_run_id`, `workflow_execution_id`, `node_id`);
+- передача pinned binding provenance (`operation_ref.binding_mode`, `template_exposure_id`, `template_exposure_revision`);
+- bounded timeout;
+- retry только для retryable ошибок (transport/`5xx`/`429`) с exponential backoff и jitter;
+- идемпотентный ключ шага (`workflow_execution_id + node_id + attempt`).
 
-Общий слой ДОЛЖЕН (SHALL) инкапсулировать как минимум:
-- auth/session management;
-- retry/backoff policy;
-- HTTP/domain error mapping;
-- batch/upsert helper-операции.
+#### Scenario: Повтор bridge-вызова publication шага не создаёт дублирующий side effect
+- **GIVEN** worker повторно отправляет bridge-вызов для того же шага `pool.publication_odata` (тот же `workflow_execution_id`, `node_id`, `attempt`)
+- **WHEN** Orchestrator получает повторный запрос с тем же step-idempotency key
+- **THEN** side effect публикации не дублируется
+- **AND** worker получает детерминированный ответ по исходной попытке
 
-`poolops` и `odataops` НЕ ДОЛЖНЫ (SHALL NOT) дублировать transport-логику вне `odata-core`, кроме тонких domain-specific адаптеров.
+#### Scenario: Bridge request несёт pinned provenance для deterministic runtime-проверок
+- **GIVEN** worker исполняет `pool.prepare_input` через `binding_mode=pinned_exposure`
+- **WHEN** формируется bridge-запрос в Orchestrator runtime
+- **THEN** запрос содержит `template_exposure_id` и `template_exposure_revision`
+- **AND** runtime не выполняет alias/fallback путь при несоответствии pinned binding
 
-#### Scenario: Publication step в poolops и generic create в odataops используют общий transport
-- **GIVEN** в worker включён shared `odata-core`
-- **WHEN** исполняется `pool.publication_odata` через `poolops` и `create` через `odataops`
-- **THEN** оба драйвера используют общий transport-контур для auth/session/retry/error mapping
-- **AND** доменная семантика шагов остаётся раздельной
-- **AND** переход не меняет публичный API-контракт pools facade
+### Requirement: Projection hardening rollout MUST быть staged для historical workflow_core run-ов
+Система ДОЛЖНА (SHALL) применять staged migration для `workflow_core` execution с `publication_step_state=null`.
+
+Система ДОЛЖНА (SHALL) использовать migration cutoff:
+- historical execution (до cutoff) МОЖЕТ (MAY) использовать legacy fallback по `failed_targets`;
+- execution начиная с cutoff НЕ ДОЛЖЕН (SHALL NOT) проецироваться в `published/partial_success` без `publication_step_state=completed`.
+
+#### Scenario: Historical workflow_core execution до cutoff сохраняет legacy terminal projection
+- **GIVEN** run имеет `execution_backend=workflow_core` и `workflow.status=completed`
+- **AND** `publication_step_state` отсутствует
+- **AND** execution относится к historical окну (до cutoff)
+- **WHEN** клиент запрашивает pool run details
+- **THEN** фасад использует migration fallback по `failed_targets`
+- **AND** historical run остаётся читаемым без forced перехода в `failed`
+
+#### Scenario: Новый workflow_core execution после cutoff fail-closed при отсутствии publication completion
+- **GIVEN** run имеет `execution_backend=workflow_core` и `workflow.status=completed`
+- **AND** execution создан после cutoff
+- **AND** `publication_step_state!=completed`
+- **WHEN** клиент запрашивает pool run details
+- **THEN** фасад возвращает `failed`
+- **AND** фасад НЕ возвращает `published` или `partial_success`
+
+### Requirement: Poolops execution path MUST быть наблюдаемым
+Система ДОЛЖНА (SHALL) публиковать наблюдаемые сигналы для `poolops` path:
+- маршрутизация operation node в `poolops`;
+- число retry bridge-вызова;
+- коды fail-closed ошибок;
+- latency bridge-вызовов.
+
+Система ДОЛЖНА (SHALL) трассировать повторные HTTP-вызовы bridge с признаком resend attempt.
+
+#### Scenario: Инцидент по publication_odata диагностируется через trace и метрики
+- **GIVEN** `pool.publication_odata` завершился fail-closed ошибкой
+- **WHEN** оператор анализирует telemetry
+- **THEN** видны route decision в `poolops`, retry count и финальный machine-readable error code
+- **AND** trace содержит атрибуты resend attempt для повторных bridge-запросов

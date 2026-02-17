@@ -10,7 +10,6 @@
 - Гарантировать исполнение `pool.*` только через domain path.
 - Убрать silent-skip для pool operation nodes.
 - Исключить ложный `published` при отсутствии реального publication-step результата.
-- Сконцентрировать OData transport-логику в одном переиспользуемом слое для `poolops` и `odataops`.
 - Сохранить текущую архитектуру streams и phased migration без big-bang переписывания.
 
 ## Non-Goals
@@ -35,6 +34,13 @@
 - минимальный риск drift между Python и Go реализациями;
 - обратимый поэтапный rollout.
 
+Bridge-контракт фиксируется как обязательный:
+- internal endpoint с `X-Internal-Token`/service auth;
+- обязательная tenant propagation (`tenant_id`, `pool_run_id`, `workflow_execution_id`, `node_id`);
+- передача pinned binding provenance (`operation_ref.binding_mode`, `template_exposure_id`, `template_exposure_revision`);
+- bounded timeout и retry только для retryable ошибок (transport/5xx/429);
+- идемпотентный ключ шага (`execution_id + node_id + attempt`) для защиты от дублей side effects.
+
 ### Decision 3: Fail-closed policy для pool operation nodes
 Для `pool.*` шагов:
 - отсутствие executor/adapter — это runtime error, не `completed`;
@@ -46,14 +52,25 @@
 
 Синтетическое проставление `publication_step_state` из агрегатного `workflow status` должно быть убрано; это убирает класс ложноположительных `published`.
 
-### Decision 5: Общий `odata-core` как transport shared-layer
-После стабилизации этапа с `poolops` вводится общий слой `odata-core`, который инкапсулирует:
-- управление OData-сессией и auth;
-- retry/backoff policy;
-- error mapping и нормализацию диагностики;
-- helpers для batch/upsert/posting вызовов.
+### Decision 5: Worker->Orchestrator статус-контракт должен переносить machine-readable `error_code`
+Fail-closed результат для `pool.*` не должен деградировать до текстовой ошибки между worker и Orchestrator.
 
-`poolops` и `odataops` используют этот слой, но сохраняют раздельную доменную ответственность.
+Фиксируем расширение internal status update контракта:
+- `error_code` как обязательное поле для fail-closed ошибок;
+- `error_message` как человекочитаемое пояснение;
+- опциональный `error_details` для диагностических данных без секретов.
+
+Это нужно для deterministic diagnostics в API и для стабильных triage/alarm правил.
+
+### Decision 6: Projection hardening выполняется через staged migration
+Нельзя одномоментно трактовать все `workflow_core + publication_step_state=null` как `failed`, иначе historical данные будут искажены.
+
+Фиксируем staged подход:
+- historical execution (до hardening cutoff) может использовать legacy fallback по `failed_targets`;
+- новые execution после cutoff должны строго следовать правилу `publication_step_state=completed` для `published/partial_success`.
+
+### Decision 7: Rollout fail-closed/poolops требует явного kill-switch
+Переход должен быть управляемым по feature flag/canary с возможностью быстрого возврата к предыдущему маршруту исполнения без отката схемы данных.
 
 ## Alternatives Considered
 ### A1. Расширить `odataops`/generic драйвер под `pool.*`
@@ -62,9 +79,6 @@
 ### A2. Сразу переписать pool domain steps в Go
 Отклонено для этого change: слишком широкий объём, высокий migration risk и дублирование логики на переходном этапе.
 
-### A3. Оставить `poolops` и `odataops` с дублированным OData transport-кодом
-Отклонено: растёт техдолг, сложнее поддерживать одинаковые retry/error semantics и фиксы протокольных дефектов.
-
 ## Risks / Trade-offs
 - Дополнительный hop между Go worker и Orchestrator domain runtime увеличивает latency.
   - Mitigation: таймауты, retry policy, метрики длительности per-step.
@@ -72,20 +86,20 @@
   - Mitigation: сохранить и проверить existing external identity/idempotency contract публикации.
 - Переходный период с mixed deployments.
   - Mitigation: feature-flagged rollout, canary на workflow workers, регрессионные integration tests.
-- Неполная консолидация `odata-core` может привести к частичному дублированию.
-  - Mitigation: миграция в два шага (сначала `poolops`, затем `odataops`) с обязательным удалением legacy transport-хелперов.
+- Жёсткая проекция без migration окна может перевести historical `workflow_core` run-ы в ложный `failed`.
+  - Mitigation: staged cutoff + migration/backfill тесты.
+- Потеря `error_code` между worker и API усложнит диагностику инцидентов.
+  - Mitigation: отдельный контрактный тест на propagation `WORKFLOW_OPERATION_EXECUTOR_NOT_CONFIGURED`.
 
 ## Migration Plan
-1. Добавить `poolops` execution path и wiring в workflow engine.
-2. Включить fail-closed для `pool.*` при отсутствии executor.
-3. Обновить API projection rules для terminal publication статусов.
-4. Убрать синтетические переходы `publication_step_state` из агрегатного `workflow status` updater.
-5. Прогнать интеграционные сценарии (включая run `500` / 3 org / создание документов).
-6. Ввести shared `odata-core` и переключить `poolops(publication_odata)` на него.
-7. Переключить `odataops` на shared `odata-core` и удалить дублирующие transport-компоненты.
-8. Включить rollout по feature flag/canary и затем сделать default.
+1. Зафиксировать/реализовать status update контракт (`error_code`, `error_message`, optional `error_details`) между worker и Orchestrator.
+2. Добавить `poolops` execution path и wiring в workflow engine.
+3. Включить fail-closed для `pool.*` при отсутствии executor.
+4. Зафиксировать и реализовать bridge-контракт (auth/tenant/pinned provenance/timeout/retry/idempotency/observability).
+5. Обновить API projection rules для terminal publication статусов и убрать синтетические переходы `publication_step_state`.
+6. Реализовать staged migration projection hardening для historical `workflow_core` executions (`publication_step_state=null`).
+7. Прогнать интеграционные/регрессионные сценарии (включая run `500` / 3 org / создание документов).
+8. Включить rollout по feature flag/canary, затем сделать default и закрыть migration window.
 
 ## Open Questions
-- Нужен ли отдельный внутренний endpoint для `poolops` bridge-вызова, или используется существующий internal workflow/domain execution endpoint.
-- Нужен ли отдельный error-code для проекции “workflow completed без publication-step результата” в API diagnostics.
-- Нужно ли фиксировать единый compatibility contract для `odata-core` (например, matrix по версиям 1С/OData) в отдельной спецификации.
+- Нужно ли выделить отдельный `error_code` для API-проекции случая `workflow=completed`, но `publication_step_state` отсутствует/не завершён.
