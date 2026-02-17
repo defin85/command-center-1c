@@ -90,6 +90,18 @@ SERVICE_CONFIG = {
             'degraded_p95_ms': 15_000,
         },
     },
+    'worker-workflows': {
+        'display_name': 'Worker Workflows',
+        'job_patterns': ['worker-workflows', 'worker_workflows'],
+        'namespace': 'cc1c',
+        'metrics_type': 'tasks',
+        'thresholds': {
+            'critical_error_rate': 0.10,
+            'degraded_error_rate': 0.01,
+            'critical_p95_ms': 60_000,
+            'degraded_p95_ms': 15_000,
+        },
+    },
     'orchestrator': {
         'display_name': 'Orchestrator',
         'job_patterns': ['orchestrator', 'django'],
@@ -140,8 +152,9 @@ SERVICE_TOPOLOGY = [
     ('orchestrator', 'redis'),
     ('orchestrator', 'minio'),
 
-    # Level 2 → 3: Worker gets tasks from Redis
+    # Level 2 → 3: Workers get tasks from Redis
     ('redis', 'worker'),  # Worker pulls from Redis queue
+    ('redis', 'worker-workflows'),  # Workflow worker pulls workflow stream
 
     # Level 2.5: Event Subscriber listens to Redis Streams
     ('redis', 'event-subscriber'),  # Event Subscriber consumes Redis Streams
@@ -150,6 +163,7 @@ SERVICE_TOPOLOGY = [
     # Level 3: Worker → Execution Layer (direct RAS/CLI tools)
     ('worker', 'ras-server'),
     ('worker', 'minio'),
+    ('worker-workflows', 'minio'),
 
     # Note: All adapters communicate via Redis Streams (Event-Driven Architecture)
     # Results flow: Adapters → Redis Streams (events:*) → Worker/Event Subscriber → PostgreSQL

@@ -4,7 +4,7 @@ CommandCenter1C - Service Configuration Generator
 
 Generates configuration files from config/services.json (Single Source of Truth):
 - generated/.env.services - Environment variables for all services
-- generated/ports.go - Go constants package
+- go-services/shared/ports/ports.go - Go constants package
 - generated/frontend.env - Vite environment variables (VITE_* prefixes)
 - generated/docker-compose.ports.yml - Docker Compose port mappings
 - docs/generated/PORTS.md - Auto-documentation
@@ -89,6 +89,7 @@ def validate_schema(config: dict, schema: dict) -> list[str]:
         "api-gateway",
         "orchestrator",
         "worker",
+        "worker-workflows",
     ]
     for svc in required_services:
         if svc not in services:

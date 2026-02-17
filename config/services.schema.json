@@ -24,9 +24,10 @@
         "frontend": { "$ref": "#/definitions/service" },
         "api-gateway": { "$ref": "#/definitions/service" },
         "orchestrator": { "$ref": "#/definitions/service" },
-        "worker": { "$ref": "#/definitions/service" }
+        "worker": { "$ref": "#/definitions/service" },
+        "worker-workflows": { "$ref": "#/definitions/service" }
       },
-      "required": ["frontend", "api-gateway", "orchestrator", "worker"]
+      "required": ["frontend", "api-gateway", "orchestrator", "worker", "worker-workflows"]
     },
     "infrastructure": {
       "type": "object",

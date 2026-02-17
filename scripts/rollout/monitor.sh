@@ -239,7 +239,7 @@ check_metrics_healthy() {
     fi
 
     # Check 4: Worker service healthy
-    if check_service_health "Worker" "http://localhost:9091/health"; then
+    if check_service_health "Worker" "http://localhost:${WORKER_PORT:-9191}/health"; then
         debug "  ✓ Worker service healthy"
     else
         warn "  ✗ Worker service unavailable"

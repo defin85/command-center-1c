@@ -73,7 +73,7 @@ check() {
 
 check_services_health() {
     # Check Worker is running
-    check_service_health "Worker" "http://localhost:9091/health"
+    check_service_health "Worker" "http://localhost:${WORKER_PORT:-9191}/health"
 }
 
 check_feature_flags() {

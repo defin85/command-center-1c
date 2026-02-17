@@ -143,11 +143,11 @@ metrics.UpdateQueueDepth("event_driven", 42)
 ## Endpoints
 
 ### Metrics Endpoint
-- **URL:** `http://localhost:9091/metrics`
+- **URL:** `http://localhost:9191/metrics`
 - **Format:** Prometheus text format
 - **Example:**
   ```bash
-  curl http://localhost:9091/metrics | grep worker_execution
+  curl http://localhost:9191/metrics | grep worker_execution
   ```
 
 ### Expected Output
@@ -242,7 +242,7 @@ Pre-configured alerts в `recording_rules.yml`:
 
 1. Проверить что Worker запущен:
    ```bash
-   curl http://localhost:9091/metrics
+   curl http://localhost:9191/metrics
    ```
 
 2. Проверить Prometheus targets:

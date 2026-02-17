@@ -188,7 +188,7 @@ curl -X POST "http://localhost:8088/api/v2/lock-infobase?cluster_id=...&infobase
 
 ```bash
 # Test Worker health
-curl http://localhost:9091/health
+curl http://localhost:9191/health
 # Expected: {"status":"ok", ...}
 ```
 

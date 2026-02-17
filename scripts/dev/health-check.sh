@@ -62,6 +62,7 @@ check_process "orchestrator"
 check_process "event-subscriber"
 check_process "api-gateway"
 check_process "worker"
+check_process "worker-workflows"
 check_process "ras"
 check_process "frontend"
 
@@ -124,6 +125,8 @@ fi
 check_http "Frontend" "$FRONTEND_URL"
 check_http "API Gateway" "http://localhost:8180/health"
 check_http "Orchestrator" "http://localhost:8200/health"
+check_http "Worker (ops)" "http://localhost:${WORKER_PORT:-9191}/health"
+check_http "Worker (flows)" "http://localhost:${WORKER_WORKFLOWS_METRICS_PORT:-9092}/health"
 
 echo ""
 
@@ -222,6 +225,8 @@ check_port() {
 check_port "$FRONTEND_PORT" "Frontend"
 check_port 8180 "API Gateway"
 check_port 8200 "Orchestrator"
+check_port "${WORKER_PORT:-9191}" "Worker (ops)"
+check_port "${WORKER_WORKFLOWS_METRICS_PORT:-9092}" "Worker (flows)"
 check_port 8188 "RAS Adapter"
 check_port "${RAS_PORT:-1539}" "RAS (1C Remote Admin)"
 check_port 5432 "PostgreSQL"
@@ -290,11 +295,11 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 
 # Подсчитать количество работающих сервисов
-TOTAL=6
 RUNNING=0
 
 # Week 4+: RAS Adapter is the only RAS service
-SERVICES=("orchestrator" "api-gateway" "worker" "ras" "frontend")
+SERVICES=("orchestrator" "event-subscriber" "api-gateway" "worker" "worker-workflows" "ras" "frontend")
+TOTAL=${#SERVICES[@]}
 
 for service in "${SERVICES[@]}"; do
     pid_file="$PIDS_DIR/${service}.pid"

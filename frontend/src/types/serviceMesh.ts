@@ -291,8 +291,9 @@ export const DEFAULT_SERVICE_POSITIONS: ServiceLayoutConfig = {
   // Level 3: Infrastructure + Worker (horizontal)
   postgresql: { x: 200, y: 410 },
   redis: { x: 400, y: 410 },
-  worker: { x: 600, y: 410 },
-  minio: { x: 800, y: 410 },
+  worker: { x: 560, y: 410 },
+  'worker-workflows': { x: 740, y: 410 },
+  minio: { x: 920, y: 410 },
 
   // Level 4: Worker children (bottom)
   'ras-server': { x: 200, y: 540 },
@@ -335,6 +336,12 @@ export const SERVICE_DISPLAY_CONFIG: Record<string, ServiceDisplayConfig> = {
     displayName: 'Worker',
     icon: 'thunderbolt',
     description: 'Go parallel task executor',
+  },
+  'worker-workflows': {
+    name: 'worker-workflows',
+    displayName: 'Worker Workflows',
+    icon: 'thunderbolt',
+    description: 'Go workflow stream executor',
   },
   'ras-server': {
     name: 'ras-server',
@@ -447,8 +454,10 @@ export const CONNECTION_TYPES: Record<string, ConnectionType> = {
   'orchestrator->postgresql': 'database',
   'orchestrator->redis': 'streams',
   'redis->worker': 'streams',
+  'redis->worker-workflows': 'streams',
   'redis->event-subscriber': 'streams',
   'event-subscriber->postgresql': 'database',
   'worker->ras-server': 'tcp',
+  'worker-workflows->minio': 'streams',
   // Results: services → Redis Streams (events:*) → Event Subscriber → PostgreSQL
 }

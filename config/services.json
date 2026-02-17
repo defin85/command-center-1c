@@ -33,7 +33,7 @@
       "description": "Django Orchestrator - Task management, Celery coordination"
     },
     "worker": {
-      "port": 9091,
+      "port": 9191,
       "host": {
         "docker": "worker",
         "local": "localhost"
@@ -41,6 +41,16 @@
       "health_path": "/health",
       "env_var": "WORKER_PORT",
       "description": "Go Worker - Parallel task processing"
+    },
+    "worker-workflows": {
+      "port": 9092,
+      "host": {
+        "docker": "worker-workflows",
+        "local": "localhost"
+      },
+      "health_path": "/health",
+      "env_var": "WORKER_WORKFLOWS_METRICS_PORT",
+      "description": "Go Worker Workflows - Workflow stream processing"
     }
   },
   "infrastructure": {

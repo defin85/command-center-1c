@@ -37,10 +37,18 @@ scrape_configs:
       - targets: ['localhost:8180']
     metrics_path: '/metrics'
 
-  # Worker (Go) - port 9091 (metrics endpoint)
+  # Worker (Go, ops) - port 9191 (metrics endpoint)
   - job_name: 'worker'
     static_configs:
-      - targets: ['localhost:9091']
+      - targets: ['localhost:9191']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # Worker Workflows (Go) - port 9092 (metrics endpoint)
+  - job_name: 'worker-workflows'
+    static_configs:
+      - targets: ['localhost:9092']
     metrics_path: '/metrics'
     scrape_interval: 15s
     scrape_timeout: 10s

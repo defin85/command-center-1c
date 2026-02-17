@@ -70,7 +70,7 @@ EOF
     log "Waiting for Worker to become healthy..."
     sleep 5
 
-    if ! check_service_health "Worker" "http://localhost:9091/health"; then
+    if ! check_service_health "Worker" "http://localhost:${WORKER_PORT:-9191}/health"; then
         error "Worker is not healthy after restart"
         error "Rolling back..."
         "$PROJECT_ROOT/scripts/rollback-event-driven.sh"

@@ -123,6 +123,7 @@ TYPE_MAP = {
     "api-gateway": "backend",
     "orchestrator": "backend",
     "worker": "backend",
+    "worker-workflows": "backend",
     "postgresql": "internal",
     "redis": "internal",
     "event-subscriber": "internal",

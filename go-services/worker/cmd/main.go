@@ -463,7 +463,10 @@ func main() {
 	go func() {
 		metricsPort := strings.TrimSpace(os.Getenv("WORKER_METRICS_PORT"))
 		if metricsPort == "" {
-			metricsPort = "9091"
+			metricsPort = strings.TrimSpace(os.Getenv("WORKER_PORT"))
+		}
+		if metricsPort == "" {
+			metricsPort = "9191"
 		}
 		if !strings.HasPrefix(metricsPort, ":") {
 			metricsPort = ":" + metricsPort

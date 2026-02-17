@@ -57,6 +57,7 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   'api-gateway': <GatewayOutlined />,
   orchestrator: <ApartmentOutlined />,
   worker: <ThunderboltOutlined />,
+  'worker-workflows': <ThunderboltOutlined />,
   postgresql: <DatabaseOutlined />,
   redis: <CloudServerOutlined />,
   'event-subscriber': <NotificationOutlined />,

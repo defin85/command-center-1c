@@ -3,6 +3,7 @@ export type ServiceName =
   | 'api-gateway'
   | 'orchestrator'
   | 'worker'
+  | 'worker-workflows'
   | 'minio'
 
 export interface KnownService {
@@ -44,7 +45,13 @@ export const KNOWN_SERVICES: KnownService[] = [
   {
     name: 'worker',
     title: 'Worker',
-    url: envUrl('VITE_WORKER_URL') ?? `http://${baseHost}:9091`,
+    url: envUrl('VITE_WORKER_URL') ?? `http://${baseHost}:9191`,
+    healthPath: '/health',
+  },
+  {
+    name: 'worker-workflows',
+    title: 'Worker Workflows',
+    url: envUrl('VITE_WORKER_WORKFLOWS_URL') ?? `http://${baseHost}:9092`,
     healthPath: '/health',
   },
   {

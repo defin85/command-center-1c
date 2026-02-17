@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
 // =============================================================================
 // Source: config/services.json
-// Generated: 2026-02-02 10:56:22
+// Generated: 2026-02-17 12:35:54
 // Mode: local
 // Generator: scripts/config/generate.py
 // =============================================================================
@@ -17,7 +17,8 @@ const (
 	Frontend = 15173
 	ApiGateway = 8180
 	Orchestrator = 8200
-	Worker = 9091
+	Worker = 9191
+	WorkerWorkflows = 9092
 )
 
 // Infrastructure ports
@@ -37,7 +38,7 @@ const (
 	DefaultFrontendURL = "http://localhost:15173"
 	DefaultApiGatewayURL = "http://localhost:8180"
 	DefaultOrchestratorURL = "http://localhost:8200"
-	DefaultWorkerURL = "http://localhost:9091"
+	DefaultWorkerURL = "http://localhost:9191"
 )
 
 // ServiceURLs maps service names to their URLs
@@ -45,7 +46,8 @@ var ServiceURLs = map[string]string{
 	"frontend": "http://localhost:15173",
 	"api-gateway": "http://localhost:8180",
 	"orchestrator": "http://localhost:8200",
-	"worker": "http://localhost:9091",
+	"worker": "http://localhost:9191",
+	"worker-workflows": "http://localhost:9092",
 }
 
 // ServiceHealthPaths maps service names to their health check paths
@@ -53,6 +55,7 @@ var ServiceHealthPaths = map[string]string{
 	"api-gateway": "/health",
 	"orchestrator": "/health",
 	"worker": "/health",
+	"worker-workflows": "/health",
 }
 
 // Address builders for http.ListenAndServe

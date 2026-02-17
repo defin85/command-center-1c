@@ -31,6 +31,7 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   'api-gateway': <GatewayOutlined />,
   orchestrator: <ApartmentOutlined />,
   worker: <ThunderboltOutlined />,
+  'worker-workflows': <ThunderboltOutlined />,
   'ras-server': <CloudServerOutlined />,
   'event-subscriber': <NotificationOutlined />,
   postgresql: <DatabaseOutlined />,

@@ -430,10 +430,16 @@ INSTALLATION_SERVICE_TIMEOUT = int(env(
 # OData runs inside worker (direct HTTP).
 
 # Worker Configuration
-# Port 9091 - Go Worker health endpoint
+# Port 9191 - Go Worker (operations) health endpoint
 WORKER_URL = env(
     'WORKER_URL',
-    default='http://localhost:9091'
+    default='http://localhost:9191'
+)
+
+# Port 9092 - Go Worker (workflows) health endpoint
+WORKER_WORKFLOWS_URL = env(
+    'WORKER_WORKFLOWS_URL',
+    default='http://localhost:9092'
 )
 
 # Default RAS Server address (used for new clusters)
