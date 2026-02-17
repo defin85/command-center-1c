@@ -30,6 +30,8 @@
 - `workflow:completed + (approval_required=true AND approved_at is null) -> pool:validated` с `status_reason=awaiting_approval`;
 - `workflow:completed + (approval_required=false OR approved_at is not null) + publication_step_state=completed + failed_targets=0 -> pool:published`;
 - `workflow:completed + (approval_required=false OR approved_at is not null) + publication_step_state=completed + failed_targets>0 -> pool:partial_success`;
+- `workflow:completed + execution_backend=workflow_core + publication_step_state is null + projection_timestamp < publication_hardening_cutoff + failed_targets=0 -> pool:published`;
+- `workflow:completed + execution_backend=workflow_core + publication_step_state is null + projection_timestamp < publication_hardening_cutoff + failed_targets>0 -> pool:partial_success`;
 - `workflow:completed + execution_backend=legacy_pool_runtime + publication_step_state is null + failed_targets=0 -> pool:published`;
 - `workflow:completed + execution_backend=legacy_pool_runtime + publication_step_state is null + failed_targets>0 -> pool:partial_success`;
 - `workflow:completed + (approval_required=false OR approved_at is not null) + publication_step_state!=completed -> pool:failed`;
@@ -97,6 +99,7 @@
 - `TEMPLATE_DRIFT` — pinned revision не совпадает с текущей ревизией exposure.
 - `POOL_RUNTIME_TEMPLATE_UNSUPPORTED_EXECUTOR` — executor pinned exposure не поддерживает `PoolDomainBackend`.
 - `WORKFLOW_OPERATION_EXECUTOR_NOT_CONFIGURED` — workflow worker не сконфигурирован для исполнения `pool.*` operation nodes.
+- `POOL_RUNTIME_ROUTE_DISABLED` — `poolops` route отключён runtime kill-switch и выполнение `pool.*` блокируется fail-closed.
 
 Система ДОЛЖНА (SHALL) передавать fail-closed `error_code` по цепочке `worker -> internal workflows status update -> facade diagnostics` без деградации до неструктурированного текста.
 
@@ -120,6 +123,13 @@
 - **THEN** orchestrator сохраняет machine-readable `error_code` для execution
 - **AND** pools facade возвращает тот же код в diagnostics/problem-details
 
+#### Scenario: Отключённый poolops route возвращает стабильный fail-closed код
+- **GIVEN** runtime kill-switch отключил `poolops` route
+- **AND** worker обрабатывает operation node с `operation_type=pool.publication_odata`
+- **WHEN** runtime выбирает execution path
+- **THEN** node завершается fail-closed без выполнения side effects
+- **AND** ошибка содержит код `POOL_RUNTIME_ROUTE_DISABLED`
+
 ## ADDED Requirements
 ### Requirement: Workflow status updater MUST не синтезировать publication_step_state из агрегатного workflow status
 Система ДОЛЖНА (SHALL) обновлять `publication_step_state` только на основании фактического исполнения publication-step (`pool.publication_odata`) и его доменного результата.
@@ -135,19 +145,37 @@
 - **AND** система не создаёт ложный сигнал завершённой публикации
 
 ### Requirement: Poolops bridge MUST иметь детерминированный runtime-контракт
-Система ДОЛЖНА (SHALL) исполнять bridge-вызовы `poolops` в Orchestrator domain runtime через внутренний аутентифицированный контракт с явными правилами:
+Система ДОЛЖНА (SHALL) исполнять bridge-вызовы `poolops` в Orchestrator domain runtime через canonical internal API endpoint `POST /api/v2/internal/workflows/execute-pool-runtime-step`, описанный в `contracts/orchestrator-internal/openapi.yaml`.
+
+Система ДОЛЖНА (SHALL) применять для endpoint детерминированный контракт:
 - обязательный internal auth;
-- передача tenant-scoped контекста (`tenant_id`, `pool_run_id`, `workflow_execution_id`, `node_id`);
-- передача pinned binding provenance (`operation_ref.binding_mode`, `template_exposure_id`, `template_exposure_revision`);
+- request schema с tenant-scoped контекстом (`tenant_id`, `pool_run_id`, `workflow_execution_id`, `node_id`, `operation_type`);
+- обязательная передача pinned binding provenance (`operation_ref.alias`, `operation_ref.binding_mode`, `operation_ref.template_exposure_id`, `operation_ref.template_exposure_revision`);
 - bounded timeout;
-- retry только для retryable ошибок (transport/`5xx`/`429`) с exponential backoff и jitter;
-- идемпотентный ключ шага (`workflow_execution_id + node_id + attempt`).
+- идемпотентный ключ шага (`workflow_execution_id + node_id + step_attempt`).
+
+Система ДОЛЖНА (SHALL) различать:
+- `step_attempt` (уровень workflow runtime retry semantics);
+- `transport_attempt` (повтор HTTP-запроса в рамках того же `step_attempt`).
+
+Система ДОЛЖНА (SHALL) переиспользовать один и тот же step-idempotency key для всех `transport_attempt` внутри одного `step_attempt`.
+
+Система ДОЛЖНА (SHALL) иметь явную status-matrix retry classification:
+- retryable: transport errors, HTTP `429`, HTTP `5xx`;
+- non-retryable: HTTP `400`, `401`, `404`, `409`.
 
 #### Scenario: Повтор bridge-вызова publication шага не создаёт дублирующий side effect
-- **GIVEN** worker повторно отправляет bridge-вызов для того же шага `pool.publication_odata` (тот же `workflow_execution_id`, `node_id`, `attempt`)
+- **GIVEN** worker повторно отправляет bridge-вызов для того же шага `pool.publication_odata` (тот же `workflow_execution_id`, `node_id`, `step_attempt`)
 - **WHEN** Orchestrator получает повторный запрос с тем же step-idempotency key
 - **THEN** side effect публикации не дублируется
 - **AND** worker получает детерминированный ответ по исходной попытке
+
+#### Scenario: Transport retry в пределах step_attempt использует тот же idempotency key
+- **GIVEN** шаг `pool.publication_odata` выполняется с `step_attempt=2`
+- **AND** первый HTTP-вызов завершился retryable ошибкой `503`
+- **WHEN** transport слой делает повторный HTTP-вызов для того же шага
+- **THEN** повторный запрос использует тот же step-idempotency key
+- **AND** новый idempotency key НЕ создаётся до перехода к следующему `step_attempt`
 
 #### Scenario: Bridge request несёт pinned provenance для deterministic runtime-проверок
 - **GIVEN** worker исполняет `pool.prepare_input` через `binding_mode=pinned_exposure`
@@ -155,10 +183,34 @@
 - **THEN** запрос содержит `template_exposure_id` и `template_exposure_revision`
 - **AND** runtime не выполняет alias/fallback путь при несоответствии pinned binding
 
+#### Scenario: Non-retryable конфликт bridge endpoint не ретраится
+- **GIVEN** Orchestrator bridge endpoint возвращает `409 Conflict` для шага `pool.approval_gate`
+- **WHEN** worker обрабатывает ответ bridge-вызова
+- **THEN** шаг завершается fail-closed без повторной отправки этого запроса
+- **AND** итоговая ошибка содержит machine-readable код причины
+
+### Requirement: Bridge/status update retry MUST иметь единственного владельца
+Система ДОЛЖНА (SHALL) выполнять retry для `poolops` bridge и `update-execution-status` только в одном слое transport path.
+
+Система НЕ ДОЛЖНА (SHALL NOT) применять stacked retry между workflow handler и HTTP client transport.
+
+Система ДОЛЖНА (SHALL) считать transport client единственным retry-owner для bridge/status update вызовов.
+
+#### Scenario: Временная ошибка не приводит к retry amplification
+- **GIVEN** bridge/status update path получает временную ошибку `503`
+- **WHEN** срабатывает retry policy
+- **THEN** количество фактических HTTP попыток ограничено single retry-owner policy
+- **AND** telemetry показывает один attempt counter без дублирующих retry-loop событий
+
 ### Requirement: Projection hardening rollout MUST быть staged для historical workflow_core run-ов
 Система ДОЛЖНА (SHALL) применять staged migration для `workflow_core` execution с `publication_step_state=null`.
 
-Система ДОЛЖНА (SHALL) использовать migration cutoff:
+Система ДОЛЖНА (SHALL) использовать migration cutoff из runtime setting `pools.projection.publication_hardening_cutoff_utc` (RFC3339 UTC).
+
+Система ДОЛЖНА (SHALL) вычислять `projection_timestamp` по формуле:
+- `coalesce(workflow_execution.started_at, workflow_execution.created_at, pool_run.created_at)`.
+
+Система ДОЛЖНА (SHALL) применять cutoff к `projection_timestamp`:
 - historical execution (до cutoff) МОЖЕТ (MAY) использовать legacy fallback по `failed_targets`;
 - execution начиная с cutoff НЕ ДОЛЖЕН (SHALL NOT) проецироваться в `published/partial_success` без `publication_step_state=completed`.
 
@@ -178,6 +230,37 @@
 - **THEN** фасад возвращает `failed`
 - **AND** фасад НЕ возвращает `published` или `partial_success`
 
+### Requirement: Projection fail-closed diagnostics MUST использовать стабильный внешний `code`
+Система ДОЛЖНА (SHALL) проецировать внутренний `error_code` в внешний Problem Details `code` без изменения значения.
+
+Система ДОЛЖНА (SHALL) использовать код `POOL_PUBLICATION_STEP_INCOMPLETE` для случая:
+- `workflow.status=completed`;
+- (`approval_required=false` ИЛИ `approved_at is not null`);
+- `publication_step_state!=completed`.
+
+#### Scenario: Completed workflow без completed publication-step возвращает стабильный code
+- **GIVEN** pool run имеет `workflow.status=completed`
+- **AND** publication-step не завершён (`publication_step_state!=completed`)
+- **WHEN** facade формирует diagnostics/problem details
+- **THEN** в Problem Details поле `code` равно `POOL_PUBLICATION_STEP_INCOMPLETE`
+- **AND** код не деградирует в generic `VALIDATION_ERROR` или неструктурированный текст
+
+### Requirement: Workflow execution diagnostics MUST хранить structured fail-closed поля
+Система ДОЛЖНА (SHALL) сохранять в `WorkflowExecution` structured поля диагностики ошибок исполнения:
+- `error_code` (machine-readable);
+- `error_details` (optional JSON, без секретов);
+- `error_message` (human-readable).
+
+Система ДОЛЖНА (SHALL) принимать `error_code`/`error_details` в internal `update-execution-status` и сохранять их без потери значения.
+
+#### Scenario: Internal status update сохраняет structured failure diagnostics
+- **GIVEN** worker отправляет `update-execution-status` со статусом `failed`
+- **AND** payload содержит `error_code=POOL_RUNTIME_ROUTE_DISABLED`
+- **AND** payload содержит `error_details` с диагностическим контекстом без секретов
+- **WHEN** orchestrator обрабатывает запрос
+- **THEN** `WorkflowExecution` сохраняет `error_code`, `error_details`, `error_message`
+- **AND** facade diagnostics использует тот же `error_code` в Problem Details поле `code`
+
 ### Requirement: Poolops execution path MUST быть наблюдаемым
 Система ДОЛЖНА (SHALL) публиковать наблюдаемые сигналы для `poolops` path:
 - маршрутизация operation node в `poolops`;
@@ -192,3 +275,32 @@
 - **WHEN** оператор анализирует telemetry
 - **THEN** видны route decision в `poolops`, retry count и финальный machine-readable error code
 - **AND** trace содержит атрибуты resend attempt для повторных bridge-запросов
+
+### Requirement: Workflow runtime model MUST сохранять `operation_ref` для pool operation nodes
+Система ДОЛЖНА (SHALL) сохранять и пробрасывать `operation_ref` в Go workflow runtime model и bridge payload для `pool.*` шагов.
+
+Система НЕ ДОЛЖНА (SHALL NOT) деградировать `operation_ref` до `template_id`-only semantics для pinned runtime path.
+
+#### Scenario: Pinned operation_ref проходит из DAG в bridge payload без потери полей
+- **GIVEN** operation node содержит `operation_ref(binding_mode=pinned_exposure, template_exposure_id, template_exposure_revision)`
+- **WHEN** worker исполняет шаг через `poolops` bridge
+- **THEN** bridge payload содержит `operation_ref.alias`, `binding_mode`, `template_exposure_id`, `template_exposure_revision`
+- **AND** runtime проверки drift/executor выполняются по переданному `operation_ref`
+
+### Requirement: Poolops rollout MUST быть управляемым feature-flag/canary + kill-switch
+Система ДОЛЖНА (SHALL) включать `poolops` route поэтапно через feature flag и canary rollout.
+
+Система ДОЛЖНА (SHALL) иметь kill-switch для быстрого отключения `poolops` route без rollback схем данных.
+
+Система НЕ ДОЛЖНА (SHALL NOT) возвращать `pool.*` execution в legacy silent-success маршрут при отключении `poolops` через kill-switch.
+
+Система ДОЛЖНА (SHALL) иметь независимые runtime controls для:
+- маршрутизации `poolops` execution path;
+- projection hardening (`publication_hardening_cutoff_utc` и связанные правила).
+
+#### Scenario: Kill-switch выключает poolops route без data rollback
+- **GIVEN** `poolops` route включён и обнаружена регрессия в runtime
+- **WHEN** оператор активирует kill-switch
+- **THEN** новые `pool.*` operation nodes НЕ выполняются через legacy silent-success маршрут
+- **AND** новые `pool.*` operation nodes завершаются fail-closed с machine-readable кодом
+- **AND** исторические данные не изменяются
