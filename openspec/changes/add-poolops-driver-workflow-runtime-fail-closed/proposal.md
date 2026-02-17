@@ -14,6 +14,9 @@
 - Зафиксировать canonical internal API-контракт bridge-вызова `poolops` (`path`, request/response schema, retryable/non-retryable статусы, idempotency semantics) в `contracts/orchestrator-internal/openapi.yaml`.
 - Зафиксировать single retry owner для bridge-вызовов (без stacked retry между `workflowops` handler и HTTP client transport).
 - Уточнить идемпотентность bridge-вызова: один `step_attempt` может иметь несколько transport retries с тем же idempotency key; новый key допускается только при новом `step_attempt`.
+- Зафиксировать поведение idempotency-конфликта: same key + different request fingerprint -> non-retryable `409` с `IDEMPOTENCY_KEY_CONFLICT`, без side effects.
+- Зафиксировать server-side context cross-check (`tenant_id`, `pool_run_id`, `workflow_execution_id`, `node_id`) с fail-closed кодом `POOL_RUNTIME_CONTEXT_MISMATCH`.
+- Зафиксировать retry policy для `429`/`5xx`: учет `Retry-After` и budget-bound retries (ограничение по deadline шага) с кодом `POOL_RUNTIME_BRIDGE_RETRY_BUDGET_EXHAUSTED` при исчерпании.
 - Обновить проекцию pool status: `published/partial_success` допускаются только после подтверждённого завершения publication-step, а не только по агрегатному `workflow:completed`.
 - Убрать синтетические переходы `publication_step_state` из агрегатного `workflow status`; source-of-truth для publication-step должен формироваться runtime шагом.
 - Зафиксировать explicit migration cutoff source (`runtime_settings` key `pools.projection.publication_hardening_cutoff_utc`, RFC3339 UTC) и формулу `projection_timestamp=coalesce(workflow_execution.started_at, workflow_execution.created_at, pool_run.created_at)`.
@@ -23,6 +26,8 @@
 - Добавить staged migration для projection hardening: historical `workflow_core` run-ы без `publication_step_state` не должны массово переходить в `failed` до завершения migration window/backfill.
 - Добавить rollout guardrails: feature-flag/canary + kill-switch для `poolops` маршрута с rollback-safe поведением и сохранением fail-closed инварианта (без возврата к silent-success маршруту).
 - Разделить runtime controls для маршрутизации и projection hardening: `poolops` route flag и hardening cutoff/flag должны управляться независимо.
+- Зафиксировать route-latching: execution path фиксируется при старте run; kill-switch влияет только на новые run-ы.
+- Зафиксировать ограничения безопасности для structured diagnostics: allowlist schema + redaction + лимит размера `error_details` (max 8 KiB).
 - Выполнять change как блокирующий прод-фикс `poolops + fail-closed + projection hardening`.
 
 ## Impact
@@ -46,9 +51,14 @@
   - contract tests для canonical bridge endpoint schema + retryable/non-retryable status matrix;
   - unit tests на single retry owner (без retry amplification в stacked слоях);
   - unit/contract tests на идемпотентность: transport retry не меняет step idempotency key, новый key появляется только на новом `step_attempt`;
+  - contract tests на idempotency conflict (`same key + different payload -> IDEMPOTENCY_KEY_CONFLICT`);
+  - contract/security tests на context mismatch (`POOL_RUNTIME_CONTEXT_MISMATCH`);
+  - retry policy tests: соблюдение `Retry-After`, корректное прекращение retry по deadline budget;
   - regression tests на kill-switch: `pool.*` не может завершаться `completed` через `execution_skipped=true`;
+  - rollout tests: in-flight run сохраняет latched route после включения kill-switch;
   - contract tests для передачи `error_code` по цепочке `worker -> internal workflows API -> pools facade diagnostics`;
   - contract tests для persistence `error_code`/`error_details` в `WorkflowExecution` и обратной выдачи в diagnostics;
+  - sanitization tests: `error_details` редактируется/ограничивается до 8 KiB;
   - regression tests для stable кода `POOL_PUBLICATION_STEP_INCOMPLETE` в Problem Details;
   - регрессионный test-case против ложного `published` без выполненного `publication_odata`;
   - migration tests для historical `workflow_core` run-ов с `publication_step_state=null` до/после hardening cutoff;

@@ -10,6 +10,11 @@
 - [ ] 1.9 Зафиксировать внешний diagnostics mapping: internal `error_code` -> Problem Details `code`, включая `POOL_PUBLICATION_STEP_INCOMPLETE`.
 - [ ] 1.10 Зафиксировать idempotency semantics: `step_attempt` vs `transport_attempt`, reuse idempotency key в рамках одного `step_attempt`.
 - [ ] 1.11 Зафиксировать rollout policy: kill-switch отключает `poolops` route без возврата в legacy silent-success path.
+- [ ] 1.12 Зафиксировать idempotency conflict policy: `same key + different fingerprint -> 409 IDEMPOTENCY_KEY_CONFLICT`.
+- [ ] 1.13 Зафиксировать server-side context cross-check policy (`tenant_id`/`pool_run_id`/`workflow_execution_id`/`node_id`) и код `POOL_RUNTIME_CONTEXT_MISMATCH`.
+- [ ] 1.14 Зафиксировать retry policy: `Retry-After` для `429` + deadline-bound retry budget + код `POOL_RUNTIME_BRIDGE_RETRY_BUDGET_EXHAUSTED`.
+- [ ] 1.15 Зафиксировать route-latching policy для in-flight execution при активации kill-switch.
+- [ ] 1.16 Зафиксировать security policy для `error_details` (allowlist schema, redaction, max 8 KiB).
 
 ## 2. Worker: poolops execution path
 - [ ] 2.1 Добавить `poolops`-драйвер/адаптер и wiring в workflow engine (`OperationExecutor` dependency injection).
@@ -20,6 +25,7 @@
 - [ ] 2.6 Обновить Go workflow runtime model/operation request для обязательного проброса `operation_ref` (`binding_mode`, `template_exposure_id`, `template_exposure_revision`) до bridge payload.
 - [ ] 2.7 Обновить worker->orchestrator client path для передачи `error_code`/`error_details` в `update-execution-status`.
 - [ ] 2.8 Добавить fail-closed guard для kill-switch (`POOL_RUNTIME_ROUTE_DISABLED`) без возврата к `execution_skipped`-success маршруту.
+- [ ] 2.9 Реализовать в bridge client соблюдение `Retry-After` и deadline-bound retry budget.
 
 ## 3. Orchestrator: projection hardening
 - [ ] 3.1 Обновить rules в pool run projection, чтобы исключить `published` при `workflow:completed` без подтверждённого publication-step результата.
@@ -30,12 +36,16 @@
 - [ ] 3.6 Добавить runtime setting `pools.projection.publication_hardening_cutoff_utc` (registry/default/docs) и использовать canonical projection timestamp.
 - [ ] 3.7 Возвращать `POOL_PUBLICATION_STEP_INCOMPLETE` в Problem Details `code` для кейса `workflow=completed` + `publication_step_state!=completed`.
 - [ ] 3.8 Добавить persistence structured diagnostics в `WorkflowExecution` (`error_code`, optional `error_details`) и миграцию схемы/контрактов.
+- [ ] 3.9 Реализовать server-side context cross-check (`tenant_id`/`pool_run_id`/`workflow_execution_id`/`node_id`) с fail-closed кодом `POOL_RUNTIME_CONTEXT_MISMATCH`.
+- [ ] 3.10 Реализовать idempotency fingerprint validation и `IDEMPOTENCY_KEY_CONFLICT` для same key + different payload.
+- [ ] 3.11 Реализовать sanitization/size-cap для `error_details` (allowlist + redaction + max 8 KiB).
 
 ## 4. Rollout
 - [ ] 4.1 Добавить feature flag для включения `poolops` route.
 - [ ] 4.2 Добавить canary rollout policy для части workflow workers.
 - [ ] 4.3 Добавить kill-switch для отключения `poolops` route в fail-closed режиме (без legacy silent-success fallback).
 - [ ] 4.4 Развести runtime controls для `poolops` routing и projection hardening (независимое управление).
+- [ ] 4.5 Зафиксировать/реализовать route-latching: переключение kill-switch не меняет execution path у уже запущенных run-ов.
 
 ## 5. Validation
 - [ ] 5.1 Unit tests: routing `pool.*`, fail-closed при отсутствии executor, отсутствие `execution_skipped`-success для pool path.
@@ -50,4 +60,9 @@
 - [ ] 5.10 Contract tests: transport retry в рамках одного `step_attempt` переиспользует тот же idempotency key.
 - [ ] 5.11 Regression tests: kill-switch возвращает `POOL_RUNTIME_ROUTE_DISABLED` и не допускает `execution_skipped`-success.
 - [ ] 5.12 Contract tests: `error_code`/`error_details` сохраняются в `WorkflowExecution` и возвращаются в facade diagnostics.
-- [ ] 5.13 Прогнать `openspec validate add-poolops-driver-workflow-runtime-fail-closed --strict --no-interactive`.
+- [ ] 5.13 Contract tests: same idempotency key + different payload возвращает `409`/`IDEMPOTENCY_KEY_CONFLICT`.
+- [ ] 5.14 Security/contract tests: context mismatch возвращает `409` + `POOL_RUNTIME_CONTEXT_MISMATCH`.
+- [ ] 5.15 Retry tests: `429` с `Retry-After` соблюдается; budget exhaustion завершает шаг с `POOL_RUNTIME_BRIDGE_RETRY_BUDGET_EXHAUSTED`.
+- [ ] 5.16 Rollout tests: kill-switch не переключает execution path у in-flight run (route-latching).
+- [ ] 5.17 Security tests: `error_details` редактируется и ограничивается `max 8 KiB`.
+- [ ] 5.18 Прогнать `openspec validate add-poolops-driver-workflow-runtime-fail-closed --strict --no-interactive`.

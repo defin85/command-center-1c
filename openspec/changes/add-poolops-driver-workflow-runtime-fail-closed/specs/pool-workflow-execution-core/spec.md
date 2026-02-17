@@ -100,6 +100,9 @@
 - `POOL_RUNTIME_TEMPLATE_UNSUPPORTED_EXECUTOR` — executor pinned exposure не поддерживает `PoolDomainBackend`.
 - `WORKFLOW_OPERATION_EXECUTOR_NOT_CONFIGURED` — workflow worker не сконфигурирован для исполнения `pool.*` operation nodes.
 - `POOL_RUNTIME_ROUTE_DISABLED` — `poolops` route отключён runtime kill-switch и выполнение `pool.*` блокируется fail-closed.
+- `POOL_RUNTIME_CONTEXT_MISMATCH` — bridge request содержит несогласованную tenant/run/execution/node связку.
+- `IDEMPOTENCY_KEY_CONFLICT` — повторный bridge request использует тот же idempotency key, но другой request fingerprint.
+- `POOL_RUNTIME_BRIDGE_RETRY_BUDGET_EXHAUSTED` — retry budget/deadline bridge-вызова исчерпан до успешного ответа.
 
 Система ДОЛЖНА (SHALL) передавать fail-closed `error_code` по цепочке `worker -> internal workflows status update -> facade diagnostics` без деградации до неструктурированного текста.
 
@@ -164,6 +167,20 @@
 - retryable: transport errors, HTTP `429`, HTTP `5xx`;
 - non-retryable: HTTP `400`, `401`, `404`, `409`.
 
+Система ДОЛЖНА (SHALL) валидировать tenant-scoped bridge-контекст на стороне Orchestrator:
+- `tenant_id` в request ДОЛЖЕН (SHALL) совпадать с tenant execution/run;
+- `pool_run_id` ДОЛЖЕН (SHALL) быть связан с `workflow_execution_id`;
+- `node_id` ДОЛЖЕН (SHALL) соответствовать исполняемому workflow step.
+
+Система ДОЛЖНА (SHALL) считать idempotency key конфликтом случай, когда:
+- key уже сохранён;
+- новый request имеет другой fingerprint (body/context/provenance).
+
+При idempotency key конфликте система ДОЛЖНА (SHALL):
+- вернуть non-retryable `409 Conflict`;
+- вернуть `error_code=IDEMPOTENCY_KEY_CONFLICT`;
+- не выполнять side effects.
+
 #### Scenario: Повтор bridge-вызова publication шага не создаёт дублирующий side effect
 - **GIVEN** worker повторно отправляет bridge-вызов для того же шага `pool.publication_odata` (тот же `workflow_execution_id`, `node_id`, `step_attempt`)
 - **WHEN** Orchestrator получает повторный запрос с тем же step-idempotency key
@@ -176,6 +193,20 @@
 - **WHEN** transport слой делает повторный HTTP-вызов для того же шага
 - **THEN** повторный запрос использует тот же step-idempotency key
 - **AND** новый idempotency key НЕ создаётся до перехода к следующему `step_attempt`
+
+#### Scenario: Повтор с тем же idempotency key и другим payload завершается конфликтом
+- **GIVEN** bridge-запрос для шага уже сохранён по step-idempotency key
+- **AND** новый запрос с тем же key имеет другой request fingerprint
+- **WHEN** Orchestrator получает повторный запрос
+- **THEN** Orchestrator возвращает `409 Conflict` без выполнения side effects
+- **AND** ответ содержит `error_code=IDEMPOTENCY_KEY_CONFLICT`
+
+#### Scenario: Tenant/run/execution mismatch блокируется fail-closed
+- **GIVEN** bridge-запрос содержит `tenant_id`, `pool_run_id`, `workflow_execution_id`, `node_id`
+- **AND** хотя бы одно соответствие контекста невалидно
+- **WHEN** Orchestrator валидирует bridge request
+- **THEN** Orchestrator возвращает non-retryable `409 Conflict` без выполнения side effects
+- **AND** ответ содержит `error_code=POOL_RUNTIME_CONTEXT_MISMATCH`
 
 #### Scenario: Bridge request несёт pinned provenance для deterministic runtime-проверок
 - **GIVEN** worker исполняет `pool.prepare_input` через `binding_mode=pinned_exposure`
@@ -196,11 +227,30 @@
 
 Система ДОЛЖНА (SHALL) считать transport client единственным retry-owner для bridge/status update вызовов.
 
+Система ДОЛЖНА (SHALL) учитывать `Retry-After` при HTTP `429`, если заголовок присутствует.
+
+Система ДОЛЖНА (SHALL) ограничивать retry budget дедлайном шага (`step timeout/deadline`) и НЕ ДОЛЖНА (SHALL NOT) делать retry после исчерпания бюджета.
+
+При исчерпании retry budget система ДОЛЖНА (SHALL) завершать шаг fail-closed с кодом `POOL_RUNTIME_BRIDGE_RETRY_BUDGET_EXHAUSTED`.
+
 #### Scenario: Временная ошибка не приводит к retry amplification
 - **GIVEN** bridge/status update path получает временную ошибку `503`
 - **WHEN** срабатывает retry policy
 - **THEN** количество фактических HTTP попыток ограничено single retry-owner policy
 - **AND** telemetry показывает один attempt counter без дублирующих retry-loop событий
+
+#### Scenario: 429 с Retry-After уважает серверный backoff
+- **GIVEN** bridge endpoint возвращает `429` с заголовком `Retry-After`
+- **WHEN** transport client планирует следующую retry-попытку
+- **THEN** retry выполняется не раньше интервала `Retry-After`
+- **AND** попытка всё равно подчиняется общему retry budget
+
+#### Scenario: Исчерпание retry budget завершает шаг fail-closed без дополнительных retry
+- **GIVEN** шаг `pool.publication_odata` получает последовательность retryable ошибок
+- **AND** суммарное время попыток достигло `step timeout/deadline`
+- **WHEN** transport client оценивает следующую попытку
+- **THEN** новая retry-попытка не выполняется
+- **AND** шаг завершается с кодом `POOL_RUNTIME_BRIDGE_RETRY_BUDGET_EXHAUSTED`
 
 ### Requirement: Projection hardening rollout MUST быть staged для historical workflow_core run-ов
 Система ДОЛЖНА (SHALL) применять staged migration для `workflow_core` execution с `publication_step_state=null`.
@@ -253,6 +303,11 @@
 
 Система ДОЛЖНА (SHALL) принимать `error_code`/`error_details` в internal `update-execution-status` и сохранять их без потери значения.
 
+Система ДОЛЖНА (SHALL) применять к `error_details` правила безопасности и объёма:
+- allowlist schema для диагностических полей;
+- ограничение размера persisted payload (max 8 KiB после сериализации);
+- обязательная redaction секретов до сохранения и выдачи наружу.
+
 #### Scenario: Internal status update сохраняет structured failure diagnostics
 - **GIVEN** worker отправляет `update-execution-status` со статусом `failed`
 - **AND** payload содержит `error_code=POOL_RUNTIME_ROUTE_DISABLED`
@@ -260,6 +315,12 @@
 - **WHEN** orchestrator обрабатывает запрос
 - **THEN** `WorkflowExecution` сохраняет `error_code`, `error_details`, `error_message`
 - **AND** facade diagnostics использует тот же `error_code` в Problem Details поле `code`
+
+#### Scenario: Опасные или слишком большие error_details санитизируются перед persistence
+- **GIVEN** worker передаёт `error_details` c потенциально чувствительными полями или объёмом больше 8 KiB
+- **WHEN** internal `update-execution-status` обрабатывает payload
+- **THEN** Orchestrator применяет redaction и обрезку по лимиту
+- **AND** в persistence/facade не попадают несанкционированные секреты
 
 ### Requirement: Poolops execution path MUST быть наблюдаемым
 Система ДОЛЖНА (SHALL) публиковать наблюдаемые сигналы для `poolops` path:
@@ -298,9 +359,19 @@
 - маршрутизации `poolops` execution path;
 - projection hardening (`publication_hardening_cutoff_utc` и связанные правила).
 
+Система ДОЛЖНА (SHALL) фиксировать route decision для execution при старте run (route-latching).
+
+Система ДОЛЖНА (SHALL) применять kill-switch к новым execution, не меняя execution path уже запущенных run-ов.
+
 #### Scenario: Kill-switch выключает poolops route без data rollback
 - **GIVEN** `poolops` route включён и обнаружена регрессия в runtime
 - **WHEN** оператор активирует kill-switch
 - **THEN** новые `pool.*` operation nodes НЕ выполняются через legacy silent-success маршрут
 - **AND** новые `pool.*` operation nodes завершаются fail-closed с machine-readable кодом
 - **AND** исторические данные не изменяются
+
+#### Scenario: In-flight run сохраняет ранее зафиксированный execution path после kill-switch
+- **GIVEN** workflow run уже стартовал и route decision зафиксирован как `poolops`
+- **WHEN** оператор активирует kill-switch во время выполнения этого run
+- **THEN** текущий run продолжает выполнение по зафиксированному execution path
+- **AND** kill-switch влияет только на новые run-ы
