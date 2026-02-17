@@ -170,6 +170,16 @@ For full workflow details: `bd prime`
 
 При ручной переиндексации использовать `force=true` и `ignorePatterns` ниже.
 
+Важно: для `claude-context` использовать один и тот же канонический абсолютный путь с завершающим `/`.
+
+- Рекомендованный корень в этом репозитории: `/home/egor/code/command-center-1c/`
+- Использовать этот путь одинаково во всех командах:
+  - `mcp__claude-context__index_codebase`
+  - `mcp__claude-context__get_indexing_status`
+  - `mcp__claude-context__clear_index`
+  - `mcp__claude-context__search_code`
+- Не смешивать варианты с `/` и без `/`: инструмент может воспринимать их как разные индексные ключи.
+
 Рекомендуемый профиль `ignorePatterns`:
 
 - `.git/**`
