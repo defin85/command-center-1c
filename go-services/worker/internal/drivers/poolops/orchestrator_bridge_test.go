@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/commandcenter1c/commandcenter/worker/internal/orchestrator"
+	"github.com/commandcenter1c/commandcenter/worker/internal/workflow/handlers"
 )
 
 type mockRuntimeStepAPI struct {
@@ -111,4 +112,21 @@ func TestOrchestratorBridgeClient_ExecutePoolRuntimeStep_PropagatesAPIError(t *t
 	})
 
 	assert.EqualError(t, err, "bridge call failed")
+}
+
+func TestOrchestratorBridgeClient_ExecutePoolRuntimeStep_MapsDeadlineExceededToRetryBudgetCode(t *testing.T) {
+	api := &mockRuntimeStepAPI{err: context.DeadlineExceeded}
+	client := NewOrchestratorBridgeClientWithAPI(api, zap.NewNop())
+
+	_, err := client.ExecutePoolRuntimeStep(context.Background(), &BridgeRequest{
+		OperationType: "pool.prepare_input",
+		ExecutionID:   "exec-1",
+		NodeID:        "node-1",
+	})
+
+	require.Error(t, err)
+	var opErr *handlers.OperationExecutionError
+	require.True(t, errors.As(err, &opErr))
+	assert.Equal(t, handlers.ErrorCodePoolRuntimeBridgeRetryBudgetExhausted, opErr.Code)
+	assert.Contains(t, opErr.Message, "retry budget exhausted")
 }

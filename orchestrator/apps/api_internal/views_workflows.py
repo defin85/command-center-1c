@@ -276,6 +276,31 @@ def _resolve_node_operation_type(node: dict[str, object]) -> str:
     return str(node.get("template_id") or "").strip()
 
 
+def _validate_node_operation_ref(
+    *,
+    node_id: str,
+    node_operation_ref: dict[str, object],
+    request_operation_ref: dict[str, object],
+) -> str | None:
+    expected_binding_mode = str(node_operation_ref.get("binding_mode") or "").strip()
+    expected_exposure_id = str(node_operation_ref.get("template_exposure_id") or "").strip()
+    expected_exposure_revision = str(node_operation_ref.get("template_exposure_revision") or "").strip()
+
+    # Enforce strict operation_ref matching only for pinned references.
+    if expected_binding_mode != "pinned_exposure" and not expected_exposure_id and not expected_exposure_revision:
+        return None
+
+    for field in ("alias", "binding_mode", "template_exposure_id", "template_exposure_revision"):
+        expected_raw = node_operation_ref.get(field)
+        expected = str(expected_raw or "").strip()
+        if not expected:
+            continue
+        actual = str(request_operation_ref.get(field) or "").strip()
+        if actual != expected:
+            return f"workflow node '{node_id}' expects operation_ref.{field}='{expected}', got '{actual}'"
+    return None
+
+
 def _validate_pool_runtime_bridge_context(
     *,
     execution,
@@ -283,6 +308,7 @@ def _validate_pool_runtime_bridge_context(
     tenant_id: str,
     node_id: str,
     operation_type: str,
+    operation_ref: dict[str, object],
 ) -> str | None:
     if str(execution.execution_consumer or "") != "pools":
         return f"workflow execution '{execution.id}' is not pool-scoped"
@@ -313,6 +339,20 @@ def _validate_pool_runtime_bridge_context(
             f"workflow node '{node_id}' expects operation '{expected_operation_type}', "
             f"got '{operation_type}'"
         )
+
+    current_node_id = str(execution.current_node_id or "").strip()
+    if current_node_id and current_node_id != node_id:
+        return f"workflow execution '{execution.id}' currently points to node '{current_node_id}', got '{node_id}'"
+
+    node_operation_ref = node.get("operation_ref")
+    if isinstance(node_operation_ref, dict):
+        operation_ref_mismatch = _validate_node_operation_ref(
+            node_id=node_id,
+            node_operation_ref=node_operation_ref,
+            request_operation_ref=operation_ref,
+        )
+        if operation_ref_mismatch:
+            return operation_ref_mismatch
 
     return None
 
@@ -424,6 +464,7 @@ def execute_pool_runtime_step_v2(request):
         tenant_id=tenant_id,
         node_id=node_id,
         operation_type=operation_type,
+        operation_ref=operation_ref,
     )
     if mismatch_details:
         return Response(

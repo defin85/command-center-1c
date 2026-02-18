@@ -50,6 +50,10 @@ type Client struct {
 	baseBackoff time.Duration
 }
 
+type transportAttemptSetter interface {
+	SetTransportAttempt(attempt int)
+}
+
 // ClientError represents an error from the Orchestrator API.
 type ClientError struct {
 	StatusCode int
@@ -152,15 +156,6 @@ func NewClientWithConfig(cfg ClientConfig) (*Client, error) {
 func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}, result interface{}) error {
 	url := c.baseURL + path
 
-	var bodyReader io.Reader
-	if body != nil {
-		bodyBytes, err := json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("failed to marshal request body: %w", err)
-		}
-		bodyReader = bytes.NewReader(bodyBytes)
-	}
-
 	var lastErr error
 	var nextRetryDelay time.Duration
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
@@ -183,12 +178,18 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 				return ctx.Err()
 			case <-time.After(backoff):
 			}
+		}
 
-			// Reset body reader for retry
-			if body != nil {
-				bodyBytes, _ := json.Marshal(body)
-				bodyReader = bytes.NewReader(bodyBytes)
+		var bodyReader io.Reader
+		if body != nil {
+			if setter, ok := body.(transportAttemptSetter); ok {
+				setter.SetTransportAttempt(attempt + 1)
 			}
+			bodyBytes, err := json.Marshal(body)
+			if err != nil {
+				return fmt.Errorf("failed to marshal request body: %w", err)
+			}
+			bodyReader = bytes.NewReader(bodyBytes)
 		}
 
 		req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)

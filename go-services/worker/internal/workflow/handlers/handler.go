@@ -66,6 +66,8 @@ const (
 	ErrorCodeWorkflowOperationExecutorNotConfigured = "WORKFLOW_OPERATION_EXECUTOR_NOT_CONFIGURED"
 	// ErrorCodePoolRuntimeRouteDisabled indicates poolops route is disabled by runtime guard.
 	ErrorCodePoolRuntimeRouteDisabled = "POOL_RUNTIME_ROUTE_DISABLED"
+	// ErrorCodePoolRuntimeBridgeRetryBudgetExhausted indicates bridge transport retries exhausted execution budget.
+	ErrorCodePoolRuntimeBridgeRetryBudgetExhausted = "POOL_RUNTIME_BRIDGE_RETRY_BUDGET_EXHAUSTED"
 )
 
 // OperationExecutionError is a machine-readable operation runtime error.

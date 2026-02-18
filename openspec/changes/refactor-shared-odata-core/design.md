@@ -1,18 +1,20 @@
 ## Context
-В `go-services/worker` OData transport concerns распределены по нескольким путям исполнения. Это создаёт риск несогласованных retry/error semantics между `odataops` и `poolops`, особенно для `publication_odata`.
+Сейчас OData transport concerns распределены между разными runtime-владельцами:
+- `odataops` использует worker OData transport;
+- `pool.publication_odata` выполняется в Orchestrator domain runtime с отдельным transport stack.
 
-В проекте уже есть доменные требования по публикации, diagnostics и retry-контракту (`pool-workflow-execution-core`, `pool-odata-publication`). Новый change должен стандартизировать транспортный слой, не меняя доменную семантику.
+При такой схеме растут риски drift по retry/error/auth/session semantics и повышается стоимость сопровождения. Пользователь выбрал стратегию Big-bang переноса вместо staged migration.
 
 ## Goals
-- Единый shared OData transport слой для `odataops` и `poolops`.
+- Единый shared OData transport слой в worker для `odataops` и `pool.publication_odata`.
 - Поведенческий паритет по retry/error/auth/session.
 - Наблюдаемость transport-поведения на уровне метрик и трейсинга.
-- Минимальный риск регрессий через поэтапную миграцию.
+- Атомарный cutover без длительного mixed-mode.
 
 ## Non-Goals
-- Рефакторинг бизнес-логики pool runtime шагов.
+- Рефакторинг всей pool domain state-machine.
 - Изменение публичных REST контрактов pools API.
-- Унификация всех worker-драйверов в общий супер-драйвер.
+- Перенос non-OData pool шагов в worker (`pool.prepare_input`, `pool.distribution_calculation.*`, `pool.reconciliation_report`, `pool.approval_gate`).
 
 ## Decisions
 ### Decision 1: Выделить `odata-core` как transport-only слой
@@ -25,50 +27,67 @@
 
 Доменные правила (`pool publication`, `generic CRUD`) остаются в соответствующих драйверах.
 
-### Decision 2: Миграция в два шага
-1. Подключить `poolops(publication_odata)` к `odata-core`.
-2. Подключить `odataops` к `odata-core` и удалить дубли.
+### Decision 2: Big-bang cutover в одном релизном окне
+Переключение на новый transport path выполняется атомарно:
+1. `odataops` и `pool.publication_odata` одновременно переходят на worker `odata-core`;
+2. legacy transport path для `pool.publication_odata` в Orchestrator выключается в том же релизе.
 
-Причина: `poolops` сейчас критичен для workflow-пути, и его стабилизация даст ранний сигнал о корректности shared слоя.
+В production НЕ допускается состояние, где только один из двух путей работает через новый `odata-core`.
 
-### Decision 3: Retry policy стандартизируется
+### Decision 3: Владелец OData transport для `pool.publication_odata` переносится в worker
+После cutover OData side effects публикации выполняются в worker `odata-core`.
+
+Orchestrator сохраняет:
+- bridge-контракт и доменную оркестрацию non-OData pool шагов;
+- lifecycle/projection/diagnostics semantics.
+
+### Decision 4: Retry policy стандартизируется
 `odata-core` использует bounded exponential backoff + jitter для retryable ошибок (transport errors, `5xx`, `429`) с ограниченным количеством попыток.
 
 Для non-retryable ошибок (`4xx` кроме `429`) повтор не выполняется.
 
-### Decision 4: Наблюдаемость обязательна
+### Decision 5: Наблюдаемость обязательна
 `odata-core` публикует единые telemetry-сигналы:
 - request latency;
 - retry count;
 - финальный status class/error code;
 - trace-атрибут resend attempt для повторных HTTP-запросов.
 
+### Decision 6: Cutover управляется единым release gate + rollback runbook
+Вместо per-driver production rollout используется единый Big-bang gate:
+- pre-cutover parity suite и staging rehearsal обязательны;
+- rollback допускается только как откат релиза целиком (без долгого dual-write/mixed-mode).
+
 ## Alternatives Considered
-### A1. Оставить независимые transport-пути в `poolops` и `odataops`
-Отклонено: неизбежный drift, дорогая поддержка, сложная диагностика.
+### A1. Staged migration (`poolops` first -> `odataops`)
+Отклонено: длительный mixed-mode и повышенная операционная сложность.
 
-### A2. Встроить pool domain семантику внутрь `odata-core`
-Отклонено: нарушает границы ответственности и усложняет reuse.
+### A2. Оставить независимые transport-пути
+Отклонено: drift, неоднородная telemetry и дорогая поддержка.
 
-### A3. Big-bang переключение обоих драйверов одновременно
-Отклонено: высокий rollback risk, сложнее локализовать регрессии.
+### A3. Перенести всю pool domain логику в worker в рамках этого change
+Отклонено: слишком большой blast radius и выход за scope transport refactor.
 
 ## Risks / Trade-offs
-- Риск изменения поведения retry в edge-кейсах.
-  - Mitigation: parity tests до/после для обоих драйверов и фиксированные retry-критерии.
-- Риск latency overhead от дополнительной абстракции.
-  - Mitigation: profiling + метрики p50/p95/p99, без дополнительных сетевых hops.
-- Риск частичной миграции с “полу-дублирующим” кодом.
-  - Mitigation: явный task на удаление legacy transport-компонентов.
+- Риск крупного blast radius в релизе.
+  - Mitigation: обязательные pre-cutover parity tests, staging rehearsal и freeze window.
+- Риск rollback под давлением инцидента.
+  - Mitigation: заранее подготовленный rollback runbook и автоматизированный smoke-check после отката.
+- Риск дрейфа доменной семантики публикации при смене transport owner.
+  - Mitigation: contract tests на diagnostics/idempotency/status projection и strict проверка `pool-workflow-execution-core`.
+- Риск регрессий по media-type совместимости 1С.
+  - Mitigation: compatibility profile checks (`odata-compatibility-profile`) как fail-closed gate перед cutover.
 
 ## Migration Plan
-1. Определить публичный интерфейс `odata-core` и контракт ошибок/ретраев.
-2. Реализовать адаптер для `poolops(publication_odata)`.
-3. Прогнать pool интеграционные сценарии (включая 500/3-org с созданием документов).
-4. Переключить `odataops` на `odata-core`.
-5. Прогнать parity/regression suite для CRUD + pool publication.
-6. Удалить legacy transport-дубли.
+1. Зафиксировать контракт Big-bang cutover в spec deltas (`worker-odata-transport-core`, `pool-workflow-execution-core`).
+2. Подготовить worker `odata-core` для двух путей (`odataops`, `pool.publication_odata`) и унифицировать retry/error/telemetry behavior.
+3. Подготовить/прогнать parity suite: old vs new transport behavior для CRUD + publication diagnostics/idempotency.
+4. Подготовить staging rehearsal и rollback drill (обязательные release gates).
+5. Выполнить Big-bang cutover в одном релизном окне:
+   - одновременно включить новый path для `odataops` и `pool.publication_odata`;
+   - выключить legacy publication OData transport в Orchestrator runtime.
+6. Прогнать post-cutover smoke + регрессию (включая сценарий run `500` на 3 организации).
+7. Удалить/деактивировать legacy transport-компоненты и зафиксировать финальную ownership-модель.
 
 ## Open Questions
-- Нужен ли отдельный runtime flag для постепенного включения `odata-core` per-driver.
-- Нужна ли отдельная метрика совместимости медиа-типов/версий из `odata-compatibility-profile` в runtime path.
+- Нужен ли жёсткий fail-closed код для запрета legacy publication path после cutover (вместо generic conflict).

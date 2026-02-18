@@ -219,6 +219,16 @@ type PoolRuntimeStepExecutionRequest struct {
 	Payload             map[string]interface{}   `json:"payload"`
 }
 
+// SetTransportAttempt updates transport attempt for retries in orchestrator HTTP client.
+func (r *PoolRuntimeStepExecutionRequest) SetTransportAttempt(attempt int) {
+	if r == nil {
+		return
+	}
+	if attempt > 0 {
+		r.TransportAttempt = attempt
+	}
+}
+
 // PoolRuntimeStepExecutionResponse represents response from pool runtime bridge endpoint.
 type PoolRuntimeStepExecutionResponse struct {
 	Success        bool                   `json:"success"`

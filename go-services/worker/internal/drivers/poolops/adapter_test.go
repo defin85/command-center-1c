@@ -215,6 +215,32 @@ func TestAdapter_ExecutePoolOperationRouteDecisionLatchedPerExecution(t *testing
 	assert.Equal(t, 2, bridge.callCount)
 }
 
+func TestAdapter_LatchRouteDecision_BindsRouteBeforeFirstPoolNode(t *testing.T) {
+	bridge := &mockBridgeClient{
+		res: &BridgeResponse{
+			Result: map[string]interface{}{"status": "ok"},
+		},
+	}
+	var routeEnabled atomic.Bool
+	routeEnabled.Store(true)
+
+	adapter := NewAdapterWithConfig(bridge, zap.NewNop(), AdapterConfig{
+		PoolRouteEnabledProvider: routeEnabled.Load,
+	})
+
+	latched := adapter.LatchRouteDecision("exec-1")
+	assert.True(t, latched)
+
+	routeEnabled.Store(false)
+	_, err := adapter.Execute(context.Background(), &handlers.OperationRequest{
+		OperationType: "pool.prepare_input",
+		ExecutionID:   "exec-1",
+		NodeID:        "node-1",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, bridge.callCount)
+}
+
 func TestAdapter_ExecutePoolOperationWithoutExecutionIDUsesCurrentRouteDecision(t *testing.T) {
 	bridge := &mockBridgeClient{
 		res: &BridgeResponse{

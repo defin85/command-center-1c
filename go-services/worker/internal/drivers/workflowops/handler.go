@@ -39,6 +39,7 @@ type WorkflowHandler struct {
 	logger          *zap.Logger
 	engine          *engine.Engine
 	timeline        tracing.TimelineRecorder
+	poolAdapter     *poolops.Adapter
 }
 
 // WorkflowHandlerConfig controls runtime behavior of workflow handler wiring.
@@ -74,16 +75,15 @@ func NewWorkflowHandler(
 	if workflowAdapter, ok := workflowClient.(*OrchestratorWorkflowClient); ok && workflowAdapter.Client() != nil {
 		bridgeClient = poolops.NewOrchestratorBridgeClient(workflowAdapter.Client(), logger)
 	}
-	eng.SetOperationExecutor(
-		poolops.NewAdapterWithConfig(
-			bridgeClient,
-			logger,
-			poolops.AdapterConfig{
-				PoolRouteEnabled:         cfg.PoolRouteEnabled,
-				PoolRouteEnabledProvider: cfg.PoolRouteEnabledProvider,
-			},
-		),
+	poolAdapter := poolops.NewAdapterWithConfig(
+		bridgeClient,
+		logger,
+		poolops.AdapterConfig{
+			PoolRouteEnabled:         cfg.PoolRouteEnabled,
+			PoolRouteEnabledProvider: cfg.PoolRouteEnabledProvider,
+		},
 	)
+	eng.SetOperationExecutor(poolAdapter)
 
 	return &WorkflowHandler{
 		workflowClient:  workflowClient,
@@ -92,6 +92,7 @@ func NewWorkflowHandler(
 		logger:          logger,
 		engine:          eng,
 		timeline:        timeline,
+		poolAdapter:     poolAdapter,
 	}, nil
 }
 
@@ -121,6 +122,8 @@ func (h *WorkflowHandler) ExecuteWorkflow(ctx context.Context, msg *models.Opera
 	h.timeline.Record(ctx, msg.OperationID, "workflow.execute.started", events.MergeMetadata(map[string]interface{}{
 		"execution_id": executionID,
 	}, workflowMetadata))
+
+	h.latchPoolRouteDecision(executionID)
 
 	h.logger.Info("executing workflow",
 		zap.String("execution_id", executionID),
@@ -441,6 +444,7 @@ func (h *WorkflowHandler) updateStatusWithRetry(
 
 func deriveStatusError(err error, fallbackCode string) (string, map[string]interface{}) {
 	code := fallbackCode
+	codeFromOperationError := false
 	if err == nil {
 		return code, nil
 	}
@@ -451,6 +455,7 @@ func deriveStatusError(err error, fallbackCode string) (string, map[string]inter
 	if errors.As(err, &opErr) {
 		if opErr.Code != "" {
 			code = opErr.Code
+			codeFromOperationError = true
 		}
 		if opErr.Message != "" {
 			details["operation_error"] = opErr.Message
@@ -470,7 +475,7 @@ func deriveStatusError(err error, fallbackCode string) (string, map[string]inter
 
 	var apiErr *orchestrator.ClientError
 	if errors.As(err, &apiErr) {
-		if code == "" && apiErr.Code != "" {
+		if !codeFromOperationError && apiErr.Code != "" {
 			code = apiErr.Code
 		}
 		details["http_status"] = apiErr.StatusCode
@@ -483,6 +488,13 @@ func deriveStatusError(err error, fallbackCode string) (string, map[string]inter
 		return code, nil
 	}
 	return code, details
+}
+
+func (h *WorkflowHandler) latchPoolRouteDecision(executionID string) {
+	if h == nil || h.poolAdapter == nil {
+		return
+	}
+	h.poolAdapter.LatchRouteDecision(executionID)
 }
 
 // Close releases handler resources.

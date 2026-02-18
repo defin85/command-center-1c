@@ -1,41 +1,50 @@
-# Change: Вынести общий OData transport core для `odataops` и `poolops`
+# Change: Big-bang перенос shared OData transport core для `odataops` и `pool.publication_odata`
 
 ## Why
-Сейчас OData-взаимодействие в worker реализовано фрагментарно: generic `odataops` использует один путь, а `poolops/publication_odata` формируется отдельным execution-path.
+Сейчас OData-взаимодействие разделено между двумя transport-владельцами: `odataops` в worker и `pool.publication_odata` в Orchestrator domain runtime.
 
-Это повышает риск drift по retry/error mapping/auth/session semantics, усложняет поддержку и увеличивает стоимость регрессий при изменениях OData-клиента.
+Это создаёт drift по retry/error mapping/auth/session semantics, увеличивает стоимость сопровождения и усложняет диагностику production-инцидентов.
 
-Нужен единый transport core, который переиспользуется обоими драйверами, при сохранении раздельной доменной логики.
+Нужен единый transport-owner в worker и одновременный cutover без длительного mixed-mode.
 
 ## What Changes
-- Ввести в worker выделенный shared слой `odata-core` для transport concerns:
+- Ввести в worker выделенный shared слой `odata-core` как единого владельца OData transport concerns:
   - auth/session management;
   - retry/backoff policy;
   - HTTP/domain error mapping;
   - batch/upsert/posting helpers.
-- Перевести `poolops(publication_odata)` на `odata-core` без изменения доменной state-machine семантики `pool-workflow-execution-core`.
-- Перевести `odataops` (`create|update|delete|query`) на тот же `odata-core` с сохранением текущего API/контракта operation result.
-- Зафиксировать обязательную telemetry-модель (маршрутизация, retries, resend_count, latency/error labels).
-- Удалить дублирующиеся transport-компоненты после полного переключения обоих драйверов.
+- **BREAKING**: выполнить Big-bang cutover в одном релизном окне:
+  - одновременно переключить `odataops` (`create|update|delete|query`) и `pool.publication_odata` на worker `odata-core`;
+  - отключить legacy OData transport path для `publication_odata` в Orchestrator runtime.
+- Сохранить доменные инварианты `pool-workflow-execution-core` (approval/state-machine/idempotency/diagnostics) без изменения публичного pools facade API.
+- Зафиксировать обязательную telemetry-модель (retries, resend_count, latency/error labels) и release-gates для Big-bang.
+- Удалить/деактивировать дублирующиеся transport-компоненты в рамках того же cutover.
 
 ## Impact
 - Affected specs:
   - `worker-odata-transport-core` (new capability)
   - `pool-workflow-execution-core`
+  - `pool-odata-publication` (контракт публикации должен остаться совместимым)
 - Affected code (expected):
   - `go-services/worker/internal/odata/*`
   - `go-services/worker/internal/drivers/odataops/*`
   - `go-services/worker/internal/drivers/poolops/*`
-  - `go-services/worker/internal/workflow/handlers/*` (только wiring/интерфейсы)
+  - `go-services/worker/internal/workflow/handlers/*`
+  - `orchestrator/apps/intercompany_pools/publication.py`
+  - `orchestrator/apps/intercompany_pools/pool_domain_steps.py`
+  - `orchestrator/apps/api_internal/views_workflows.py`
 - Validation:
   - parity tests для `odataops` и `poolops` на общих retry/error semantics;
+  - release rehearsal для Big-bang cutover + rollback drill;
   - интеграционный сценарий pool run `500` на 3 организации с созданием документов;
   - регрессии generic CRUD (create/update/delete/query).
 
 ## Dependencies
-- Рекомендуемая последовательность: после стабилизации change `add-poolops-driver-workflow-runtime-fail-closed` (минимум этапа с fail-closed и рабочим `publication_odata`).
+- Разрешено только после стабилизации change `add-poolops-driver-workflow-runtime-fail-closed`.
+- Требуется единое релизное окно (deployment freeze + rollback plan) для атомарного cutover.
 
 ## Non-Goals
 - Не меняем stream topology (`operations`/`workflows`) и queue routing.
 - Не меняем публичный API pools facade.
-- Не переносим доменную pool state-machine логику в generic OData слой.
+- Не переносим всю pool domain state-machine логику в generic OData слой.
+- Не переносим non-OData pool шаги (`pool.prepare_input`, `pool.distribution_calculation.*`, `pool.reconciliation_report`, `pool.approval_gate`) в этот change.

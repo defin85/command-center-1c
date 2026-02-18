@@ -2,6 +2,7 @@ package poolops
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/commandcenter1c/commandcenter/worker/internal/orchestrator"
+	"github.com/commandcenter1c/commandcenter/worker/internal/workflow/handlers"
 )
 
 const defaultBridgeTimeout = 30 * time.Second
@@ -81,6 +83,12 @@ func (c *OrchestratorBridgeClient) ExecutePoolRuntimeStep(
 
 	resp, err := c.api.ExecutePoolRuntimeStep(callCtx, request)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(callCtx.Err(), context.DeadlineExceeded) {
+			return nil, handlers.NewOperationExecutionError(
+				handlers.ErrorCodePoolRuntimeBridgeRetryBudgetExhausted,
+				fmt.Sprintf("pool runtime bridge retry budget exhausted: %v", err),
+			)
+		}
 		return nil, err
 	}
 	if resp == nil || resp.Result == nil {

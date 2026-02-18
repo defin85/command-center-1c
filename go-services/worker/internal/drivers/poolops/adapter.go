@@ -184,6 +184,11 @@ func (a *Adapter) poolRouteEnabledForExecution(executionID string) bool {
 	return current
 }
 
+// LatchRouteDecision persists current route decision for execution before first pool node.
+func (a *Adapter) LatchRouteDecision(executionID string) bool {
+	return a.poolRouteEnabledForExecution(executionID)
+}
+
 func (a *Adapter) poolRouteEnabled() bool {
 	if a.poolRouteEnabledProvider == nil {
 		return false

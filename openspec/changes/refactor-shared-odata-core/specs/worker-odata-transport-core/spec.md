@@ -1,6 +1,8 @@
 ## ADDED Requirements
 ### Requirement: Worker OData drivers MUST использовать единый transport core
-Система ДОЛЖНА (SHALL) предоставлять единый transport слой `odata-core`, который используется драйверами `odataops` и `poolops`.
+Система ДОЛЖНА (SHALL) предоставлять единый transport слой `odata-core`, который используется:
+- драйвером `odataops`;
+- execution path шага `pool.publication_odata`.
 
 `odata-core` ДОЛЖЕН (SHALL) инкапсулировать:
 - auth/session management;
@@ -16,6 +18,17 @@
 - **WHEN** формируются OData запросы
 - **THEN** оба драйвера используют `odata-core`
 - **AND** transport-поведение (auth/session/retry/error mapping) определяется единым кодом
+
+### Requirement: Big-bang migration MUST выполнять атомарный cutover
+Система ДОЛЖНА (SHALL) переключать `odataops` и `pool.publication_odata` на `odata-core` в одном релизном окне.
+
+Система НЕ ДОЛЖНА (SHALL NOT) допускать production mixed-mode, в котором только один из путей (`odataops` или `pool.publication_odata`) работает через новый transport core.
+
+#### Scenario: Cutover блокируется при mixed-mode конфигурации
+- **GIVEN** release-кандидат включает `odata-core` только для `odataops`
+- **WHEN** выполняется release gate проверки Big-bang
+- **THEN** cutover не считается валидным
+- **AND** релиз отклоняется до синхронного переключения обоих путей
 
 ### Requirement: OData retry policy MUST быть детерминированной и ограниченной
 Система ДОЛЖНА (SHALL) выполнять повторы только для retryable ошибок:
@@ -63,6 +76,17 @@
 - **WHEN** оператор анализирует trace/metrics
 - **THEN** видны resend attempts и общее число retry
 - **AND** финальный результат коррелируется с тем же operation context
+
+### Requirement: Legacy OData transport paths MUST быть отключены в рамках cutover
+Система ДОЛЖНА (SHALL) отключить legacy OData transport path для `pool.publication_odata` в Orchestrator runtime в том же релизе, где выполнен Big-bang cutover.
+
+Система НЕ ДОЛЖНА (SHALL NOT) оставлять активными два production transport-path для одного и того же publication side effect после cutover.
+
+#### Scenario: После cutover legacy publication transport недоступен
+- **GIVEN** Big-bang cutover завершён успешно
+- **WHEN** выполняется `pool.publication_odata`
+- **THEN** OData side effect исполняется только через worker `odata-core`
+- **AND** legacy Orchestrator transport path не используется
 
 ### Requirement: Migration на `odata-core` MUST сохранять внешний контракт драйверов
 Система ДОЛЖНА (SHALL) сохранить внешний контракт результатов `odataops` и `poolops` после переключения на `odata-core`.

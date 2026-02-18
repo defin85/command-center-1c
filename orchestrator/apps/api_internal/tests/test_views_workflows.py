@@ -591,6 +591,58 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertEqual(response.data["code"], "POOL_RUNTIME_CONTEXT_MISMATCH")
 
+    def test_execute_pool_runtime_step_returns_context_mismatch_for_current_node_mismatch(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        execution.current_node_id = "n2"
+        execution.save(update_fields=["current_node_id"])
+        payload = self._build_bridge_request_payload(
+            tenant_id=str(tenant.id),
+            pool_run_id=str(run.id),
+            workflow_execution_id=str(execution.id),
+            node_id="n1",
+        )
+
+        response = self.client.post(
+            "/api/v2/internal/workflows/execute-pool-runtime-step",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "POOL_RUNTIME_CONTEXT_MISMATCH")
+
+    def test_execute_pool_runtime_step_returns_context_mismatch_for_operation_ref_mismatch(self):
+        tenant, run, execution, template = self._create_pool_runtime_fixture()
+        dag = (
+            template.dag_structure.model_dump()
+            if hasattr(template.dag_structure, "model_dump")
+            else deepcopy(template.dag_structure)
+        )
+        dag["nodes"][0]["operation_ref"] = {
+            "alias": "pool.prepare_input",
+            "binding_mode": "pinned_exposure",
+            "template_exposure_id": str(uuid4()),
+            "template_exposure_revision": 7,
+        }
+        template.dag_structure = dag
+        template.save(update_fields=["dag_structure"])
+
+        payload = self._build_bridge_request_payload(
+            tenant_id=str(tenant.id),
+            pool_run_id=str(run.id),
+            workflow_execution_id=str(execution.id),
+        )
+        payload["operation_ref"]["template_exposure_revision"] = 1
+
+        response = self.client.post(
+            "/api/v2/internal/workflows/execute-pool-runtime-step",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "POOL_RUNTIME_CONTEXT_MISMATCH")
+
     def test_execute_pool_runtime_step_publication_odata_creates_publication_attempt_and_posts_documents(self):
         tenant, run, execution, template = self._create_pool_runtime_fixture()
         database = Database.objects.create(
