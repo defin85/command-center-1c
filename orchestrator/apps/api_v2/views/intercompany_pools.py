@@ -52,7 +52,7 @@ from apps.intercompany_pools.safe_commands import (
 )
 from apps.intercompany_pools.sync import sync_organizations
 from apps.intercompany_pools.validators import validate_pool_graph
-from apps.intercompany_pools.publication import (
+from apps.intercompany_pools.publication_policy import (
     MAX_PUBLICATION_ATTEMPTS,
     MAX_RETRY_INTERVAL_SECONDS,
 )

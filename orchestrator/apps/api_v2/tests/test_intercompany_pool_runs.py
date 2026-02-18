@@ -2182,16 +2182,10 @@ def test_retry_pool_run_failed_endpoint_returns_accepted_workflow_reference_and_
         error_message="temporary network error",
     )
 
-    with (
-        patch(
-            "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
-            return_value=EnqueueResult(success=True, operation_id="retry-op-1", status="queued"),
-        ) as enqueue,
-        patch(
-            "apps.intercompany_pools.publication.retry_failed_run_documents",
-            side_effect=AssertionError("Direct publication retry must not be called from API path"),
-        ) as direct_retry,
-    ):
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="retry-op-1", status="queued"),
+    ) as enqueue:
         response = authenticated_client.post(
             f"/api/v2/pools/runs/{run.id}/retry/",
             {
@@ -2218,7 +2212,6 @@ def test_retry_pool_run_failed_endpoint_returns_accepted_workflow_reference_and_
     }
     assert payload["workflow_execution_id"] != str(initial_execution.id)
     enqueue.assert_called_once()
-    direct_retry.assert_not_called()
 
     run_reloaded = PoolRun.objects.get(id=run.id)
     assert str(run_reloaded.workflow_execution_id) == payload["workflow_execution_id"]
