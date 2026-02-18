@@ -38,11 +38,11 @@
 - [x] 6.6 E2E регрессия: run `500` на 3 организации с публикацией документов.
 
 ## 7. Big-bang Cutover & Cleanup
-- [ ] 7.1 Выполнить атомарный cutover обоих путей (`odataops` + `pool.publication_odata`) в одном релизном окне.
+- [x] 7.1 Выполнить атомарный cutover обоих путей (`odataops` + `pool.publication_odata`) в одном релизном окне (локальный execution window подтверждён артефактом `2026-02-18-bigbang-cutover-local-window-report.md`).
 - [ ] 7.2 Подтвердить post-cutover smoke и стабильность по telemetry в agreed soak window.
 - [x] 7.3 Удалить/деактивировать legacy transport-компоненты и закрыть migration debt в том же change-set.
 - [x] 7.4 Прогнать `openspec validate refactor-shared-odata-core --strict --no-interactive` и приложить результаты в release evidence.
 
 Примечание к 7.1/7.2:
 - pre-release readiness подтверждена артефактами `2026-02-18-bigbang-cutover-execution-readiness.md` и `2026-02-18-post-cutover-smoke-soak-report.md`;
-- live cutover/smoke/soak требуют отдельного релизного окна и operator execution в staging/prod.
+- live smoke/soak для staging/prod остаются обязательными и требуют отдельного operator execution в agreed release window.
