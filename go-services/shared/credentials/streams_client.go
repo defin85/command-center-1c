@@ -27,6 +27,7 @@ type credentialsResponse struct {
 	CorrelationID string `json:"correlation_id"`
 	DatabaseID    string `json:"database_id"`
 	Success       bool   `json:"success"`
+	ErrorCode     string `json:"error_code,omitempty"`
 	Error         string `json:"error,omitempty"`
 
 	EncryptedData     string `json:"encrypted_data,omitempty"`
@@ -218,6 +219,9 @@ func (c *StreamsClient) request(ctx context.Context, databaseID string) (*creden
 	if strategy := DbmsAuthStrategyFromContext(ctx); strategy != "" {
 		requestPayload["dbms_auth_strategy"] = strategy
 	}
+	if purpose := CredentialsPurposeFromContext(ctx); purpose != "" {
+		requestPayload["credentials_purpose"] = purpose
+	}
 
 	// Publish request
 	if err := c.redisClient.XAdd(ctx, &redis.XAddArgs{
@@ -244,6 +248,12 @@ func (c *StreamsClient) request(ctx context.Context, databaseID string) (*creden
 			return nil, ErrStreamsCredentialsMalformed
 		}
 		if !resp.Success {
+			if resp.ErrorCode != "" && resp.Error != "" {
+				return nil, fmt.Errorf("%w: %s: %s", ErrStreamsCredentialsNotFound, resp.ErrorCode, resp.Error)
+			}
+			if resp.ErrorCode != "" {
+				return nil, fmt.Errorf("%w: %s", ErrStreamsCredentialsNotFound, resp.ErrorCode)
+			}
 			if resp.Error != "" {
 				return nil, fmt.Errorf("%w: %s", ErrStreamsCredentialsNotFound, resp.Error)
 			}
@@ -314,6 +324,9 @@ func (c *StreamsClient) handleMessage(ctx context.Context, streamName string, ms
 	}
 	if v, ok := msg.Values["error"].(string); ok {
 		resp.Error = v
+	}
+	if v, ok := msg.Values["error_code"].(string); ok {
+		resp.ErrorCode = v
 	}
 	if v, ok := msg.Values["encrypted_data"].(string); ok {
 		resp.EncryptedData = v

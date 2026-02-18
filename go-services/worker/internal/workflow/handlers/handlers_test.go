@@ -227,12 +227,21 @@ func TestOperationHandler(t *testing.T) {
 			},
 		}
 		execCtx = execCtx.Set("pool_runtime_publication_payload", fallbackPayload)
+		execCtx = execCtx.Set("publication_auth", map[string]interface{}{
+			"strategy":       "actor",
+			"actor_username": "alice",
+			"source":         "confirm_publication",
+		})
 
 		result, err := handler.HandleNode(context.Background(), node, execCtx)
 		require.NoError(t, err)
 		assert.Equal(t, executor.NodeStatusCompleted, result.Status)
 		require.NotNil(t, captured)
 		assert.Equal(t, fallbackPayload, captured.Payload)
+		require.NotNil(t, captured.PublicationAuth)
+		assert.Equal(t, "actor", captured.PublicationAuth.Strategy)
+		assert.Equal(t, "alice", captured.PublicationAuth.ActorUsername)
+		assert.Equal(t, "confirm_publication", captured.PublicationAuth.Source)
 	})
 
 	t.Run("supported types", func(t *testing.T) {

@@ -8,6 +8,8 @@ type ibAuthStrategyKey struct{}
 
 type dbmsAuthStrategyKey struct{}
 
+type credentialsPurposeKey struct{}
+
 // WithRequestedBy stores the CC username in context for credentials lookup.
 func WithRequestedBy(ctx context.Context, username string) context.Context {
 	if username == "" {
@@ -40,6 +42,18 @@ func WithDbmsAuthStrategy(ctx context.Context, strategy string) context.Context 
 	return context.WithValue(ctx, dbmsAuthStrategyKey{}, s)
 }
 
+// WithCredentialsPurpose stores request purpose (e.g. pool_publication_odata) for credentials lookup semantics.
+func WithCredentialsPurpose(ctx context.Context, purpose string) context.Context {
+	if ctx == nil {
+		return ctx
+	}
+	p := purpose
+	if p == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, credentialsPurposeKey{}, p)
+}
+
 // RequestedByFromContext returns the CC username stored in context, if any.
 func RequestedByFromContext(ctx context.Context) string {
 	if ctx == nil {
@@ -70,6 +84,18 @@ func DbmsAuthStrategyFromContext(ctx context.Context) string {
 		return ""
 	}
 	value := ctx.Value(dbmsAuthStrategyKey{})
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// CredentialsPurposeFromContext returns the stored credentials request purpose, if any.
+func CredentialsPurposeFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	value := ctx.Value(credentialsPurposeKey{})
 	if s, ok := value.(string); ok {
 		return s
 	}

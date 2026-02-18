@@ -3,10 +3,17 @@
 import uuid
 from unittest.mock import MagicMock, patch
 
+from django.contrib.auth import get_user_model
+
+from apps.databases.encryption import decrypt_credentials_from_transport
 from apps.databases.models import Database
+from apps.databases.models import InfobaseUserMapping
 from apps.operations.event_subscriber import EventSubscriber
 
 from ._event_subscriber_test_base import EventSubscriberBaseTestCase
+
+
+User = get_user_model()
 
 
 class EventSubscriberClusterInfoTest(EventSubscriberBaseTestCase):
@@ -93,6 +100,7 @@ class EventSubscriberClusterInfoTest(EventSubscriberBaseTestCase):
         self.assertEqual(response["database_id"], self.database.id)
         self.assertEqual(response["success"], "true")
         self.assertEqual(response["error"], "")
+        self.assertEqual(response["resolution_outcome"], "")
         self.assertNotEqual(response["encrypted_data"], "")
         self.assertNotEqual(response["nonce"], "")
         self.assertNotEqual(response["expires_at"], "")
@@ -123,6 +131,107 @@ class EventSubscriberClusterInfoTest(EventSubscriberBaseTestCase):
         self.assertEqual(response["nonce"], "")
         self.assertEqual(response["expires_at"], "")
         self.assertEqual(response["encryption_version"], "")
+
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_get_database_credentials_publication_actor_mapping_success(self, mock_redis_class):
+        operator = User.objects.create_user(
+            username=f"event-operator-{uuid.uuid4().hex[:8]}",
+            email=f"event-operator-{uuid.uuid4().hex[:8]}@example.test",
+        )
+        InfobaseUserMapping.objects.create(
+            database=self.database,
+            user=operator,
+            ib_username="odata_actor_user",
+            ib_password="odata_actor_pwd",
+            is_service=False,
+        )
+
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+        subscriber = EventSubscriber()
+
+        data = {
+            "correlation_id": "test-pub-actor-1",
+            "database_id": self.database.id,
+            "created_by": operator.username,
+            "ib_auth_strategy": "actor",
+            "credentials_purpose": "pool_publication_odata",
+            "timestamp": "2026-02-18T10:30:00Z",
+        }
+        subscriber.handle_get_database_credentials(data, "test-pub-actor-1")
+
+        response = mock_redis.xadd.call_args[0][1]
+        self.assertEqual(response["success"], "true")
+        self.assertEqual(response["resolution_outcome"], "actor_success")
+        encrypted_payload = {
+            "encrypted_data": response["encrypted_data"],
+            "nonce": response["nonce"],
+            "expires_at": response["expires_at"],
+            "encryption_version": response["encryption_version"],
+        }
+        credentials_payload = decrypt_credentials_from_transport(encrypted_payload)
+        self.assertEqual(credentials_payload["username"], "odata_actor_user")
+        self.assertEqual(credentials_payload["password"], "odata_actor_pwd")
+        self.assertEqual(credentials_payload["ib_username"], "odata_actor_user")
+        self.assertEqual(credentials_payload["ib_password"], "odata_actor_pwd")
+
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_get_database_credentials_publication_missing_mapping_fail_closed(self, mock_redis_class):
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+        subscriber = EventSubscriber()
+
+        data = {
+            "correlation_id": "test-pub-missing-1",
+            "database_id": self.database.id,
+            "created_by": "missing-user",
+            "ib_auth_strategy": "actor",
+            "credentials_purpose": "pool_publication_odata",
+            "timestamp": "2026-02-18T10:30:00Z",
+        }
+        subscriber.handle_get_database_credentials(data, "test-pub-missing-1")
+
+        response = mock_redis.xadd.call_args[0][1]
+        self.assertEqual(response["success"], "false")
+        self.assertEqual(response["error_code"], "ODATA_MAPPING_NOT_CONFIGURED")
+        self.assertEqual(response["resolution_outcome"], "missing_mapping")
+        self.assertIn("ODATA_MAPPING_NOT_CONFIGURED", response["error"])
+
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_get_database_credentials_publication_ambiguous_service_mapping_fail_closed(self, mock_redis_class):
+        InfobaseUserMapping.objects.create(
+            database=self.database,
+            user=None,
+            ib_username="svc_user_1",
+            ib_password="svc_pwd_1",
+            is_service=True,
+        )
+        InfobaseUserMapping.objects.create(
+            database=self.database,
+            user=None,
+            ib_username="svc_user_2",
+            ib_password="svc_pwd_2",
+            is_service=True,
+        )
+
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+        subscriber = EventSubscriber()
+
+        data = {
+            "correlation_id": "test-pub-ambiguous-1",
+            "database_id": self.database.id,
+            "ib_auth_strategy": "service",
+            "credentials_purpose": "pool_publication_odata",
+            "timestamp": "2026-02-18T10:30:00Z",
+        }
+        subscriber.handle_get_database_credentials(data, "test-pub-ambiguous-1")
+
+        response = mock_redis.xadd.call_args[0][1]
+        self.assertEqual(response["success"], "false")
+        self.assertEqual(response["error_code"], "ODATA_MAPPING_AMBIGUOUS")
+        self.assertEqual(response["resolution_outcome"], "ambiguous_mapping")
+        self.assertIn("ODATA_MAPPING_AMBIGUOUS", response["error"])
 
     @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
     def test_handle_get_cluster_info_database_not_found(self, mock_redis_class):
@@ -315,4 +424,3 @@ class EventSubscriberClusterInfoTest(EventSubscriberBaseTestCase):
     def test_subscriber_streams_includes_get_database_credentials(self, mock_redis_class):
         subscriber = EventSubscriber()
         self.assertIn("commands:orchestrator:get-database-credentials", subscriber.streams)
-

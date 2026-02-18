@@ -44,6 +44,10 @@ CONFLICT_REASON_PUBLICATION_STARTED = "publication_started"
 CONFLICT_REASON_TERMINAL_STATE = "terminal_state"
 CONFLICT_REASON_IDEMPOTENCY_KEY_REUSED = "idempotency_key_reused"
 
+PUBLICATION_AUTH_STRATEGY_ACTOR = "actor"
+PUBLICATION_AUTH_STRATEGY_SERVICE = "service"
+PUBLICATION_AUTH_SOURCE_CONFIRM_PUBLICATION = "confirm_publication"
+
 _VALID_APPROVAL_STATES = {
     APPROVAL_STATE_NOT_REQUIRED,
     APPROVAL_STATE_PREPARING,
@@ -137,6 +141,7 @@ def process_pool_run_safe_command(
             run=run,
             execution=execution,
             command_type=command_type,
+            requested_by=requested_by,
         )
 
         outbox_entry_id: int | None = None
@@ -274,7 +279,13 @@ def _has_pending_opposite_outbox(*, run: PoolRun, command_type: str) -> bool:
     ).exists()
 
 
-def _decide_command_outcome(*, run: PoolRun, execution: WorkflowExecution, command_type: str) -> dict[str, Any]:
+def _decide_command_outcome(
+    *,
+    run: PoolRun,
+    execution: WorkflowExecution,
+    command_type: str,
+    requested_by=None,
+) -> dict[str, Any]:
     approval_state = _resolve_approval_state(run=run, execution=execution)
     publication_step_state = _resolve_publication_step_state(run=run, execution=execution, approval_state=approval_state)
     terminal_reason = _resolve_terminal_reason(execution=execution)
@@ -319,6 +330,10 @@ def _decide_command_outcome(*, run: PoolRun, execution: WorkflowExecution, comma
             updates = {"approval_state": APPROVAL_STATE_APPROVED, "approved_at": timezone.now().isoformat()}
             if publication_step_state not in {PUBLICATION_STEP_STATE_STARTED, PUBLICATION_STEP_STATE_COMPLETED}:
                 updates["publication_step_state"] = PUBLICATION_STEP_STATE_QUEUED
+            updates["publication_auth"] = _build_publication_auth_context(
+                requested_by=requested_by,
+                source=PUBLICATION_AUTH_SOURCE_CONFIRM_PUBLICATION,
+            )
             return {
                 "result_class": PoolRunCommandResultClass.ACCEPTED,
                 "response_status_code": 202,
@@ -326,7 +341,10 @@ def _decide_command_outcome(*, run: PoolRun, execution: WorkflowExecution, comma
                 "cas_outcome": PoolRunCommandCasOutcome.WON,
                 "updates": updates,
                 "outbox_intent": PoolRunCommandOutboxIntent.ENQUEUE_WORKFLOW_EXECUTION,
-                "message_payload": _build_enqueue_workflow_message(execution_id=str(execution.id)),
+                "message_payload": _build_enqueue_workflow_message(
+                    execution_id=str(execution.id),
+                    requested_by=requested_by,
+                ),
             }
         if approval_state == APPROVAL_STATE_APPROVED:
             return {
@@ -387,7 +405,10 @@ def _decide_command_outcome(*, run: PoolRun, execution: WorkflowExecution, comma
             "cas_outcome": PoolRunCommandCasOutcome.WON,
             "updates": {"terminal_reason": TERMINAL_REASON_ABORTED_BY_OPERATOR},
             "outbox_intent": PoolRunCommandOutboxIntent.CANCEL_WORKFLOW_EXECUTION,
-            "message_payload": _build_cancel_workflow_message(execution_id=str(execution.id)),
+            "message_payload": _build_cancel_workflow_message(
+                execution_id=str(execution.id),
+                requested_by=requested_by,
+            ),
         }
     return {
         "result_class": PoolRunCommandResultClass.CONFLICT,
@@ -472,7 +493,8 @@ def _resolve_terminal_reason(*, execution: WorkflowExecution) -> str | None:
     return reason or None
 
 
-def _build_enqueue_workflow_message(*, execution_id: str) -> dict[str, Any]:
+def _build_enqueue_workflow_message(*, execution_id: str, requested_by=None) -> dict[str, Any]:
+    created_by = _resolve_request_actor_username(requested_by=requested_by) or "workflow_engine"
     data = {
         "execution_id": execution_id,
         "execution_consumer": "pools",
@@ -494,7 +516,7 @@ def _build_enqueue_workflow_message(*, execution_id: str) -> dict[str, Any]:
             "idempotency_key": execution_id,
         },
         "metadata": {
-            "created_by": "workflow_engine",
+            "created_by": created_by,
             "created_at": timezone.now().isoformat(),
             "template_id": None,
             "tags": ["workflow", "pools"],
@@ -502,7 +524,8 @@ def _build_enqueue_workflow_message(*, execution_id: str) -> dict[str, Any]:
     }
 
 
-def _build_cancel_workflow_message(*, execution_id: str) -> dict[str, Any]:
+def _build_cancel_workflow_message(*, execution_id: str, requested_by=None) -> dict[str, Any]:
+    created_by = _resolve_request_actor_username(requested_by=requested_by) or "workflow_engine"
     operation_id = f"{execution_id}:cancel"
     return {
         "version": OperationsService.VERSION,
@@ -520,9 +543,25 @@ def _build_cancel_workflow_message(*, execution_id: str) -> dict[str, Any]:
             "idempotency_key": operation_id,
         },
         "metadata": {
-            "created_by": "workflow_engine",
+            "created_by": created_by,
             "created_at": timezone.now().isoformat(),
             "template_id": None,
             "tags": ["workflow", "pools", "cancel"],
         },
     }
+
+
+def _build_publication_auth_context(*, requested_by, source: str) -> dict[str, str]:
+    actor_username = _resolve_request_actor_username(requested_by=requested_by)
+    strategy = PUBLICATION_AUTH_STRATEGY_ACTOR if actor_username else PUBLICATION_AUTH_STRATEGY_SERVICE
+    return {
+        "strategy": strategy,
+        "actor_username": actor_username if strategy == PUBLICATION_AUTH_STRATEGY_ACTOR else "",
+        "source": str(source or "").strip() or PUBLICATION_AUTH_SOURCE_CONFIRM_PUBLICATION,
+    }
+
+
+def _resolve_request_actor_username(*, requested_by) -> str:
+    if requested_by is None:
+        return ""
+    return str(getattr(requested_by, "username", "") or "").strip()

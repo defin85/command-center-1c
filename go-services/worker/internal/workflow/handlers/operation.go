@@ -170,6 +170,7 @@ func (h *OperationHandler) HandleNode(
 		TenantID:        tenantID,
 		PoolRunID:       poolRunID,
 		StepAttempt:     stepAttempt,
+		PublicationAuth: extractPublicationAuth(execCtx),
 	}
 
 	h.logger.Debug("Executing operation",
@@ -327,6 +328,38 @@ func getStepAttempt(execCtx *wfcontext.ExecutionContext, nodeID string) int {
 		return v
 	}
 	return 1
+}
+
+func extractPublicationAuth(execCtx *wfcontext.ExecutionContext) *PublicationAuth {
+	if execCtx == nil {
+		return nil
+	}
+	raw, ok := execCtx.Get("publication_auth")
+	if !ok {
+		return nil
+	}
+	payload, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	strategy := strings.ToLower(strings.TrimSpace(readContextString(payload["strategy"])))
+	actorUsername := strings.TrimSpace(readContextString(payload["actor_username"]))
+	source := strings.TrimSpace(readContextString(payload["source"]))
+	if strategy == "" && actorUsername == "" && source == "" {
+		return nil
+	}
+	return &PublicationAuth{
+		Strategy:      strategy,
+		ActorUsername: actorUsername,
+		Source:        source,
+	}
+}
+
+func readContextString(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", value)
 }
 
 // OperationNodeConfigFromJSON parses operation config from JSON.

@@ -32,6 +32,20 @@ const (
 	ErrorCodePoolRuntimePublicationCredentialsError     = "POOL_RUNTIME_PUBLICATION_CREDENTIALS_ERROR"
 	ErrorCodePoolRuntimePublicationTransportFailed      = "POOL_RUNTIME_PUBLICATION_ODATA_FAILED"
 	ErrorCodePoolRuntimePublicationCompatibilityBlocked = "POOL_RUNTIME_PUBLICATION_COMPATIBILITY_BLOCKED"
+	ErrorCodeODataMappingNotConfigured                  = "ODATA_MAPPING_NOT_CONFIGURED"
+	ErrorCodeODataMappingAmbiguous                      = "ODATA_MAPPING_AMBIGUOUS"
+	ErrorCodeODataPublicationAuthContextInvalid         = "ODATA_PUBLICATION_AUTH_CONTEXT_INVALID"
+)
+
+const (
+	publicationAuthStrategyActor        = "actor"
+	publicationAuthStrategyService      = "service"
+	publicationCredentialsPurpose       = "pool_publication_odata"
+	resolutionOutcomeActorSuccess       = "actor_success"
+	resolutionOutcomeServiceSuccess     = "service_success"
+	resolutionOutcomeMissingMapping     = "missing_mapping"
+	resolutionOutcomeAmbiguousMapping   = "ambiguous_mapping"
+	resolutionOutcomeInvalidAuthContext = "invalid_auth_context"
 )
 
 type publicationODataService interface {
@@ -91,6 +105,12 @@ type publicationTargetAttempt struct {
 
 type publicationTargetResult struct {
 	Attempts []publicationTargetAttempt
+}
+
+type publicationAuthContext struct {
+	Strategy      string
+	ActorUsername string
+	Source        string
 }
 
 func (r publicationTargetResult) attemptsCount() int {
@@ -162,6 +182,14 @@ func (t *ODataPublicationTransport) ExecutePublicationOData(
 			handlers.ErrorCodeWorkflowOperationExecutorNotConfigured,
 			"publication odata transport dependencies are not configured",
 		)
+	}
+	publicationAuth, err := parsePublicationAuthContext(req)
+	if err != nil {
+		t.logger.Warn("publication auth context validation failed",
+			zap.String("resolution_outcome", resolutionOutcomeInvalidAuthContext),
+			zap.Error(err),
+		)
+		return nil, err
 	}
 
 	publicationPayload := resolvePublicationPayload(req.Payload)
@@ -245,6 +273,7 @@ func (t *ODataPublicationTransport) ExecutePublicationOData(
 		targetResult, publishErr := t.publishTargetWithRetries(
 			ctx,
 			req,
+			publicationAuth,
 			databaseID,
 			entityName,
 			externalKeyField,
@@ -312,6 +341,7 @@ func (t *ODataPublicationTransport) ExecutePublicationOData(
 func (t *ODataPublicationTransport) publishTargetWithRetries(
 	ctx context.Context,
 	req *handlers.OperationRequest,
+	publicationAuth publicationAuthContext,
 	databaseID string,
 	entityName string,
 	externalKeyField string,
@@ -322,21 +352,43 @@ func (t *ODataPublicationTransport) publishTargetWithRetries(
 	result := publicationTargetResult{
 		Attempts: make([]publicationTargetAttempt, 0, maxAttempts),
 	}
-	creds, err := t.credsClient.Fetch(ctx, databaseID)
+	credsCtx := t.withPublicationCredentialsContext(ctx, publicationAuth)
+	creds, err := t.credsClient.Fetch(credsCtx, databaseID)
 	if err != nil {
+		errorCode := mapPublicationCredentialsErrorCode(err)
+		t.logger.Warn("publication credentials lookup failed",
+			zap.String("database_id", databaseID),
+			zap.String("error_code", errorCode),
+			zap.String("auth_strategy", publicationAuth.Strategy),
+			zap.String("auth_source", publicationAuth.Source),
+			zap.String("resolution_outcome", mapPublicationResolutionOutcome(errorCode, publicationAuth)),
+			zap.Error(err),
+		)
 		operationErr := handlers.NewOperationExecutionError(
-			ErrorCodePoolRuntimePublicationCredentialsError,
+			errorCode,
 			fmt.Sprintf("failed to fetch credentials for %s: %v", databaseID, err),
 		)
 		return result, newPublicationTransportFailure(operationErr, workerodata.NormalizeErrorCode(operationErr.Code))
 	}
-	if creds == nil || strings.TrimSpace(creds.ODataURL) == "" || strings.TrimSpace(creds.Username) == "" {
+	if creds == nil || strings.TrimSpace(creds.ODataURL) == "" || strings.TrimSpace(creds.Username) == "" || strings.TrimSpace(creds.Password) == "" {
+		t.logger.Warn("publication credentials lookup returned incomplete mapping",
+			zap.String("database_id", databaseID),
+			zap.String("auth_strategy", publicationAuth.Strategy),
+			zap.String("auth_source", publicationAuth.Source),
+			zap.String("resolution_outcome", resolutionOutcomeMissingMapping),
+		)
 		operationErr := handlers.NewOperationExecutionError(
-			ErrorCodePoolRuntimePublicationCredentialsError,
-			fmt.Sprintf("odata credentials are not configured for %s", databaseID),
+			ErrorCodeODataMappingNotConfigured,
+			fmt.Sprintf("odata mapping credentials are not configured for %s", databaseID),
 		)
 		return result, newPublicationTransportFailure(operationErr, workerodata.NormalizeErrorCode(operationErr.Code))
 	}
+	t.logger.Info("publication credentials lookup resolved",
+		zap.String("database_id", databaseID),
+		zap.String("auth_strategy", publicationAuth.Strategy),
+		zap.String("auth_source", publicationAuth.Source),
+		zap.String("resolution_outcome", mapPublicationResolutionOutcome("", publicationAuth)),
+	)
 
 	odataCreds := sharedodata.ODataCredentials{
 		BaseURL:  creds.ODataURL,
@@ -487,6 +539,92 @@ func (t *ODataPublicationTransport) readRetryInterval(value interface{}) (int, e
 		return 0, fmt.Errorf("retry_interval_seconds must be <= %d", t.cfg.MaxRetryIntervalSec)
 	}
 	return parsed, nil
+}
+
+func parsePublicationAuthContext(req *handlers.OperationRequest) (publicationAuthContext, error) {
+	if req == nil || req.PublicationAuth == nil {
+		return publicationAuthContext{}, handlers.NewOperationExecutionError(
+			ErrorCodeODataPublicationAuthContextInvalid,
+			"publication_auth context is required for pool.publication_odata",
+		)
+	}
+	strategy := strings.ToLower(strings.TrimSpace(req.PublicationAuth.Strategy))
+	actorUsername := strings.TrimSpace(req.PublicationAuth.ActorUsername)
+	source := strings.TrimSpace(req.PublicationAuth.Source)
+	if source == "" {
+		return publicationAuthContext{}, handlers.NewOperationExecutionError(
+			ErrorCodeODataPublicationAuthContextInvalid,
+			"publication_auth.source is required",
+		)
+	}
+	switch strategy {
+	case publicationAuthStrategyActor:
+		if actorUsername == "" {
+			return publicationAuthContext{}, handlers.NewOperationExecutionError(
+				ErrorCodeODataPublicationAuthContextInvalid,
+				"publication_auth.actor_username is required for actor strategy",
+			)
+		}
+	case publicationAuthStrategyService:
+		actorUsername = ""
+	default:
+		return publicationAuthContext{}, handlers.NewOperationExecutionError(
+			ErrorCodeODataPublicationAuthContextInvalid,
+			"publication_auth.strategy must be actor|service",
+		)
+	}
+	return publicationAuthContext{
+		Strategy:      strategy,
+		ActorUsername: actorUsername,
+		Source:        source,
+	}, nil
+}
+
+func (t *ODataPublicationTransport) withPublicationCredentialsContext(
+	ctx context.Context,
+	publicationAuth publicationAuthContext,
+) context.Context {
+	credsCtx := credentials.WithCredentialsPurpose(ctx, publicationCredentialsPurpose)
+	credsCtx = credentials.WithIbAuthStrategy(credsCtx, publicationAuth.Strategy)
+	if publicationAuth.Strategy == publicationAuthStrategyActor {
+		credsCtx = credentials.WithRequestedBy(credsCtx, publicationAuth.ActorUsername)
+	}
+	return credsCtx
+}
+
+func mapPublicationCredentialsErrorCode(err error) string {
+	if err == nil {
+		return ErrorCodePoolRuntimePublicationCredentialsError
+	}
+	message := strings.ToUpper(strings.TrimSpace(err.Error()))
+	switch {
+	case strings.Contains(message, ErrorCodeODataMappingAmbiguous):
+		return ErrorCodeODataMappingAmbiguous
+	case strings.Contains(message, ErrorCodeODataMappingNotConfigured):
+		return ErrorCodeODataMappingNotConfigured
+	case strings.Contains(message, ErrorCodeODataPublicationAuthContextInvalid):
+		return ErrorCodeODataPublicationAuthContextInvalid
+	default:
+		return ErrorCodePoolRuntimePublicationCredentialsError
+	}
+}
+
+func mapPublicationResolutionOutcome(
+	errorCode string,
+	publicationAuth publicationAuthContext,
+) string {
+	switch strings.TrimSpace(errorCode) {
+	case ErrorCodeODataMappingAmbiguous:
+		return resolutionOutcomeAmbiguousMapping
+	case ErrorCodeODataPublicationAuthContextInvalid:
+		return resolutionOutcomeInvalidAuthContext
+	case ErrorCodeODataMappingNotConfigured:
+		return resolutionOutcomeMissingMapping
+	}
+	if publicationAuth.Strategy == publicationAuthStrategyActor {
+		return resolutionOutcomeActorSuccess
+	}
+	return resolutionOutcomeServiceSuccess
 }
 
 func resolvePublicationPayload(payload map[string]interface{}) map[string]interface{} {

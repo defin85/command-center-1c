@@ -9,7 +9,7 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.databases.models import Database
+from apps.databases.models import Database, InfobaseUserMapping
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationStatus,
@@ -120,6 +120,29 @@ def _create_database(*, tenant: Tenant, name: str) -> Database:
         username="admin",
         password="secret",
     )
+
+
+def _attach_pool_target_database(
+    *,
+    tenant: Tenant,
+    pool: OrganizationPool,
+    period_start: date,
+) -> Database:
+    database = _create_database(tenant=tenant, name=f"pool-api-target-{uuid4().hex[:8]}")
+    organization = Organization.objects.create(
+        tenant=tenant,
+        database=database,
+        name=f"Org {uuid4().hex[:6]}",
+        inn=f"73{uuid4().hex[:10]}",
+        status=OrganizationStatus.ACTIVE,
+    )
+    PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=organization,
+        effective_from=period_start,
+        is_root=True,
+    )
+    return database
 
 
 def _create_run_with_execution_state(
@@ -824,6 +847,121 @@ def test_create_pool_run_returns_problem_details_for_pool_runtime_fail_closed_er
     )
     assert problem["title"] == "Pool Runtime Configuration Error"
     assert "pool.prepare_input" in problem["detail"]
+
+
+@pytest.mark.django_db
+def test_create_pool_run_returns_problem_details_for_missing_actor_mapping(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    _attach_pool_target_database(
+        tenant=default_tenant,
+        pool=pool,
+        period_start=date(2026, 1, 1),
+    )
+    payload = {
+        "pool_id": str(pool.id),
+        "direction": PoolRunDirection.BOTTOM_UP,
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-31",
+        "run_input": {"source_payload": [{"inn": "730000000001", "amount": "50.00"}]},
+        "mode": "safe",
+    }
+
+    response = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="ODATA_MAPPING_NOT_CONFIGURED",
+    )
+    assert problem["title"] == "Pool Runtime Configuration Error"
+    assert "/rbac" in problem["detail"]
+
+
+@pytest.mark.django_db
+def test_create_pool_run_returns_problem_details_for_ambiguous_actor_mapping(
+    authenticated_client: APIClient,
+    user: User,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    database = _attach_pool_target_database(
+        tenant=default_tenant,
+        pool=pool,
+        period_start=date(2026, 1, 1),
+    )
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=user,
+        ib_username="actor-1",
+        ib_password="pass-1",
+        is_service=False,
+    )
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=user,
+        ib_username="actor-2",
+        ib_password="pass-2",
+        is_service=False,
+    )
+    payload = {
+        "pool_id": str(pool.id),
+        "direction": PoolRunDirection.BOTTOM_UP,
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-31",
+        "run_input": {"source_payload": [{"inn": "730000000001", "amount": "50.00"}]},
+        "mode": "safe",
+    }
+
+    response = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="ODATA_MAPPING_AMBIGUOUS",
+    )
+    assert problem["title"] == "Pool Runtime Configuration Error"
+    assert "/rbac" in problem["detail"]
+
+
+@pytest.mark.django_db
+def test_create_pool_run_succeeds_when_actor_mapping_configured(
+    authenticated_client: APIClient,
+    user: User,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    database = _attach_pool_target_database(
+        tenant=default_tenant,
+        pool=pool,
+        period_start=date(2026, 1, 1),
+    )
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=user,
+        ib_username="actor-ok",
+        ib_password="actor-pass",
+        is_service=False,
+    )
+    payload = {
+        "pool_id": str(pool.id),
+        "direction": PoolRunDirection.BOTTOM_UP,
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-31",
+        "run_input": {"source_payload": [{"inn": "730000000001", "amount": "50.00"}]},
+        "mode": "safe",
+    }
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="op-with-mapping", status="queued"),
+    ):
+        response = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
+
+    assert response.status_code == 201
+    assert response.json()["run"]["workflow_execution_id"] is not None
 
 
 @pytest.mark.django_db

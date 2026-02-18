@@ -54,13 +54,19 @@ func (s *publicationTimelineSpy) GetTimeline(
 }
 
 type mockPublicationCredentialsFetcher struct {
-	cred            *credentials.DatabaseCredentials
-	err             error
-	credsByDatabase map[string]*credentials.DatabaseCredentials
-	errByDatabase   map[string]error
+	cred                   *credentials.DatabaseCredentials
+	err                    error
+	credsByDatabase        map[string]*credentials.DatabaseCredentials
+	errByDatabase          map[string]error
+	lastRequestedBy        string
+	lastIbAuthStrategy     string
+	lastCredentialsPurpose string
 }
 
 func (m *mockPublicationCredentialsFetcher) Fetch(ctx context.Context, databaseID string) (*credentials.DatabaseCredentials, error) {
+	m.lastRequestedBy = credentials.RequestedByFromContext(ctx)
+	m.lastIbAuthStrategy = credentials.IbAuthStrategyFromContext(ctx)
+	m.lastCredentialsPurpose = credentials.CredentialsPurposeFromContext(ctx)
 	if m.errByDatabase != nil {
 		if err, ok := m.errByDatabase[databaseID]; ok && err != nil {
 			return nil, err
@@ -72,6 +78,21 @@ func (m *mockPublicationCredentialsFetcher) Fetch(ctx context.Context, databaseI
 		}
 	}
 	return m.cred, m.err
+}
+
+func publicationAuthActorForTests() *handlers.PublicationAuth {
+	return &handlers.PublicationAuth{
+		Strategy:      "actor",
+		ActorUsername: "alice",
+		Source:        "confirm_publication",
+	}
+}
+
+func publicationAuthServiceForTests() *handlers.PublicationAuth {
+	return &handlers.PublicationAuth{
+		Strategy: "service",
+		Source:   "run_create",
+	}
 }
 
 type mockPublicationODataService struct {
@@ -147,9 +168,10 @@ func TestODataPublicationTransport_ExecutePublicationOData_Success(t *testing.T)
 	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
 
 	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
-		OperationType: "pool.publication_odata",
-		PoolRunID:     "run-1",
-		StepAttempt:   1,
+		OperationType:   "pool.publication_odata",
+		PoolRunID:       "run-1",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthActorForTests(),
 		Payload: map[string]interface{}{
 			"pool_runtime": map[string]interface{}{
 				"entity_name": "Document_IntercompanyPoolDistribution",
@@ -187,6 +209,9 @@ func TestODataPublicationTransport_ExecutePublicationOData_Success(t *testing.T)
 	assert.Equal(t, true, service.lastUpdateData["Posted"])
 	_, hasExternalRunKey := service.lastCreateData[defaultPublicationExternalKeyField]
 	assert.True(t, hasExternalRunKey)
+	assert.Equal(t, "alice", fetcher.lastRequestedBy)
+	assert.Equal(t, "actor", fetcher.lastIbAuthStrategy)
+	assert.Equal(t, publicationCredentialsPurpose, fetcher.lastCredentialsPurpose)
 }
 
 func TestODataPublicationTransport_ExecutePublicationOData_InvalidPayload(t *testing.T) {
@@ -195,7 +220,8 @@ func TestODataPublicationTransport_ExecutePublicationOData_InvalidPayload(t *tes
 	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
 
 	_, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
-		OperationType: "pool.publication_odata",
+		OperationType:   "pool.publication_odata",
+		PublicationAuth: publicationAuthServiceForTests(),
 		Payload: map[string]interface{}{
 			"pool_runtime": map[string]interface{}{
 				"documents_by_database": []interface{}{"invalid"},
@@ -207,6 +233,29 @@ func TestODataPublicationTransport_ExecutePublicationOData_InvalidPayload(t *tes
 	require.Error(t, err)
 	require.True(t, errors.As(err, &opErr))
 	assert.Equal(t, ErrorCodePoolRuntimePublicationPayloadInvalid, opErr.Code)
+}
+
+func TestODataPublicationTransport_ExecutePublicationOData_FailsClosedWithoutPublicationAuth(t *testing.T) {
+	fetcher := &mockPublicationCredentialsFetcher{}
+	service := &mockPublicationODataService{}
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	_, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationType: "pool.publication_odata",
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"documents_by_database": map[string]interface{}{
+					"db-1": []interface{}{map[string]interface{}{"Amount": "100.00"}},
+				},
+			},
+		},
+	})
+
+	require.Error(t, err)
+	var opErr *handlers.OperationExecutionError
+	require.True(t, errors.As(err, &opErr))
+	assert.Equal(t, ErrorCodeODataPublicationAuthContextInvalid, opErr.Code)
+	assert.Equal(t, 0, service.createCalls)
 }
 
 func TestODataPublicationTransport_ExecutePublicationOData_TransientErrorRetriesToBudget(t *testing.T) {
@@ -224,7 +273,8 @@ func TestODataPublicationTransport_ExecutePublicationOData_TransientErrorRetries
 	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
 
 	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
-		OperationType: "pool.publication_odata",
+		OperationType:   "pool.publication_odata",
+		PublicationAuth: publicationAuthServiceForTests(),
 		Payload: map[string]interface{}{
 			"pool_runtime": map[string]interface{}{
 				"max_attempts": float64(3),
@@ -278,7 +328,8 @@ func TestODataPublicationTransport_ExecutePublicationOData_PartialSuccess(t *tes
 	})
 
 	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
-		OperationType: "pool.publication_odata",
+		OperationType:   "pool.publication_odata",
+		PublicationAuth: publicationAuthServiceForTests(),
 		Payload: map[string]interface{}{
 			"pool_runtime": map[string]interface{}{
 				"documents_by_database": map[string]interface{}{
@@ -308,7 +359,8 @@ func TestODataPublicationTransport_ExecutePublicationOData_RejectsMaxAttemptsOut
 	})
 
 	_, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
-		OperationType: "pool.publication_odata",
+		OperationType:   "pool.publication_odata",
+		PublicationAuth: publicationAuthServiceForTests(),
 		Payload: map[string]interface{}{
 			"pool_runtime": map[string]interface{}{
 				"max_attempts": float64(6),
@@ -337,7 +389,8 @@ func TestODataPublicationTransport_ExecutePublicationOData_RejectsRetryIntervalO
 	})
 
 	_, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
-		OperationType: "pool.publication_odata",
+		OperationType:   "pool.publication_odata",
+		PublicationAuth: publicationAuthServiceForTests(),
 		Payload: map[string]interface{}{
 			"pool_runtime": map[string]interface{}{
 				"retry_interval_seconds": float64(121),
@@ -375,7 +428,8 @@ func TestODataPublicationTransport_ExecutePublicationOData_NormalizesFailedDatab
 	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
 
 	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
-		OperationType: "pool.publication_odata",
+		OperationType:   "pool.publication_odata",
+		PublicationAuth: publicationAuthServiceForTests(),
 		Payload: map[string]interface{}{
 			"pool_runtime": map[string]interface{}{
 				"documents_by_database": map[string]interface{}{
@@ -417,7 +471,8 @@ func TestODataPublicationTransport_ExecutePublicationOData_FailsClosedOnCompatib
 	})
 
 	_, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
-		OperationType: "pool.publication_odata",
+		OperationType:   "pool.publication_odata",
+		PublicationAuth: publicationAuthServiceForTests(),
 		Payload: map[string]interface{}{
 			"pool_runtime": map[string]interface{}{
 				"documents_by_database": map[string]interface{}{
@@ -472,12 +527,13 @@ func TestODataPublicationTransport_ExecutePublicationOData_EmitsTransportRetryTr
 	})
 
 	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
-		OperationID:   "op-transport-1",
-		OperationType: "pool.publication_odata",
-		ExecutionID:   "exec-1",
-		NodeID:        "publication_odata",
-		PoolRunID:     "run-1",
-		StepAttempt:   1,
+		OperationID:     "op-transport-1",
+		OperationType:   "pool.publication_odata",
+		ExecutionID:     "exec-1",
+		NodeID:          "publication_odata",
+		PoolRunID:       "run-1",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthServiceForTests(),
 		Payload: map[string]interface{}{
 			"pool_runtime": map[string]interface{}{
 				"max_attempts": float64(2),
@@ -524,6 +580,49 @@ func TestBuildExternalRunKey_ChangesAcrossAttempts(t *testing.T) {
 	second := buildExternalRunKey("run-1", "db-1", "Document_IntercompanyPoolDistribution", 2, 0)
 
 	assert.NotEqual(t, first, second)
+}
+
+func TestMapPublicationResolutionOutcome(t *testing.T) {
+	assert.Equal(
+		t,
+		"ambiguous_mapping",
+		mapPublicationResolutionOutcome(
+			ErrorCodeODataMappingAmbiguous,
+			publicationAuthContext{Strategy: publicationAuthStrategyActor},
+		),
+	)
+	assert.Equal(
+		t,
+		"missing_mapping",
+		mapPublicationResolutionOutcome(
+			ErrorCodeODataMappingNotConfigured,
+			publicationAuthContext{Strategy: publicationAuthStrategyActor},
+		),
+	)
+	assert.Equal(
+		t,
+		"invalid_auth_context",
+		mapPublicationResolutionOutcome(
+			ErrorCodeODataPublicationAuthContextInvalid,
+			publicationAuthContext{Strategy: publicationAuthStrategyActor},
+		),
+	)
+	assert.Equal(
+		t,
+		"actor_success",
+		mapPublicationResolutionOutcome(
+			"",
+			publicationAuthContext{Strategy: publicationAuthStrategyActor},
+		),
+	)
+	assert.Equal(
+		t,
+		"service_success",
+		mapPublicationResolutionOutcome(
+			"",
+			publicationAuthContext{Strategy: publicationAuthStrategyService},
+		),
+	)
 }
 
 func TestIsRetryablePublicationErr_Classifier(t *testing.T) {

@@ -1,4 +1,4 @@
-import { Button, Form, Input, Modal } from 'antd'
+import { Alert, Button, Form, Input, Modal } from 'antd'
 import type { FormInstance } from 'antd'
 
 import type { Database } from '../../../api/generated/model/database'
@@ -47,6 +47,13 @@ export function DatabaseCredentialsModal({
       ]}
     >
       <Form form={form} layout="vertical">
+        <Alert
+          type="info"
+          showIcon
+          message="Pool publication credentials now use RBAC mappings"
+          description="Для `pool.publication_odata` система использует OData user/password из /rbac → Infobase Users. Поля ниже остаются только для legacy сценариев."
+          style={{ marginBottom: 12 }}
+        />
         <Form.Item label="OData Username" name="username" htmlFor="database-credentials-username">
           <Input id="database-credentials-username" placeholder="Optional OData username" />
         </Form.Item>
@@ -60,4 +67,3 @@ export function DatabaseCredentialsModal({
     </Modal>
   )
 }
-

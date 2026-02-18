@@ -350,6 +350,15 @@ class PoolWorkflowCompiler:
                     "enum": [PoolRunMode.SAFE, PoolRunMode.UNSAFE],
                 },
                 "run_input": {"type": "object"},
+                "publication_auth": {
+                    "type": "object",
+                    "properties": {
+                        "strategy": {"type": "string", "enum": ["actor", "service"]},
+                        "actor_username": {"type": "string"},
+                        "source": {"type": "string"},
+                    },
+                    "required": ["strategy", "source"],
+                },
             },
             "required": ["pool_run_id", "pool_id", "period_start", "direction", "mode", "run_input"],
         }

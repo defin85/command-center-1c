@@ -31,6 +31,13 @@ type OperationExecutor interface {
 	Execute(ctx context.Context, req *OperationRequest) (map[string]interface{}, error)
 }
 
+// PublicationAuth defines publication credentials lookup context propagated from workflow execution input.
+type PublicationAuth struct {
+	Strategy      string `json:"strategy,omitempty"`
+	ActorUsername string `json:"actor_username,omitempty"`
+	Source        string `json:"source,omitempty"`
+}
+
 // OperationRequest represents a request to execute an operation.
 type OperationRequest struct {
 	// OperationID identifies top-level worker operation execution.
@@ -61,6 +68,8 @@ type OperationRequest struct {
 	StepAttempt int `json:"step_attempt,omitempty"`
 	// IdempotencyKey allows caller to force a stable key per step attempt.
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
+	// PublicationAuth carries actor/service provenance for pool.publication_odata credentials lookup.
+	PublicationAuth *PublicationAuth `json:"publication_auth,omitempty"`
 }
 
 const (

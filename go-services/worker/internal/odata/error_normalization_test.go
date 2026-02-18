@@ -69,6 +69,27 @@ func TestNormalizeErrorCode_PublicationCredentials(t *testing.T) {
 	}
 }
 
+func TestNormalizeErrorCode_PublicationMappingContractErrors(t *testing.T) {
+	testCases := []struct {
+		code  string
+		class string
+	}{
+		{code: "ODATA_MAPPING_NOT_CONFIGURED", class: ErrorClassValidation},
+		{code: "ODATA_MAPPING_AMBIGUOUS", class: ErrorClassConflict},
+		{code: "ODATA_PUBLICATION_AUTH_CONTEXT_INVALID", class: ErrorClassValidation},
+	}
+
+	for _, tc := range testCases {
+		normalized := NormalizeErrorCode(tc.code)
+		if normalized.Class != tc.class {
+			t.Fatalf("expected class %q for %s, got %q", tc.class, tc.code, normalized.Class)
+		}
+		if normalized.Retryable {
+			t.Fatalf("expected non-retryable mapping error for %s", tc.code)
+		}
+	}
+}
+
 func TestNormalizedErrorTelemetryLabels(t *testing.T) {
 	labels := NormalizeErrorCode(ErrorCategoryValidation).TelemetryLabels()
 	if labels["error_code"] != ErrorCategoryValidation {

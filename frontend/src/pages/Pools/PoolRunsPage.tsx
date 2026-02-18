@@ -84,6 +84,9 @@ const CREATE_RUN_PROBLEM_CODE_MESSAGES: Record<string, string> = {
   TENANT_CONTEXT_REQUIRED: 'Для запуска run требуется активный tenant context.',
   POOL_NOT_FOUND: 'Пул не найден в текущем tenant context.',
   SCHEMA_TEMPLATE_NOT_FOUND: 'Выбранный schema template недоступен в текущем tenant context.',
+  ODATA_MAPPING_NOT_CONFIGURED: 'Для target databases не настроены OData Infobase Users. Проверьте /rbac → Infobase Users.',
+  ODATA_MAPPING_AMBIGUOUS: 'Обнаружены неоднозначные OData Infobase Users mappings. Исправьте дубликаты в /rbac → Infobase Users.',
+  ODATA_PUBLICATION_AUTH_CONTEXT_INVALID: 'Некорректный publication auth context. Проверьте запуск run и настройки /rbac → Infobase Users.',
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -119,6 +122,12 @@ const INPUT_CONTRACT_COLORS: Record<string, string> = {
   run_input_v1: 'green',
   legacy_pre_run_input: 'orange',
 }
+
+const PUBLICATION_MAPPING_ERROR_CODES = new Set([
+  'ODATA_MAPPING_NOT_CONFIGURED',
+  'ODATA_MAPPING_AMBIGUOUS',
+  'ODATA_PUBLICATION_AUTH_CONTEXT_INVALID',
+])
 
 const formatDate = (value: string | null | undefined) => {
   if (!value) return '-'
@@ -854,6 +863,9 @@ export function PoolRunsPage() {
             <Space direction="vertical" size={0}>
               <Text>{code}</Text>
               <Text type="secondary">{messageText}</Text>
+              {PUBLICATION_MAPPING_ERROR_CODES.has(code) ? (
+                <Text type="secondary">Remediation: /rbac - Infobase Users</Text>
+              ) : null}
               {httpStatusValue ? <Text type="secondary">HTTP {httpStatusValue}</Text> : null}
               {transportMessage ? <Text type="secondary">{transportMessage}</Text> : null}
             </Space>
@@ -926,6 +938,13 @@ export function PoolRunsPage() {
           </Space>
 
           <Form form={createForm} layout="vertical">
+            <Alert
+              type="info"
+              showIcon
+              message="Pool publication OData credentials source: /rbac"
+              description="`odata_url` берётся из Databases, а OData user/password для публикации — из /rbac → Infobase Users (actor/service mapping)."
+              style={{ marginBottom: 12 }}
+            />
             <Row gutter={12}>
               <Col span={5}>
                 <Form.Item name="period_start" label="Period start" rules={[{ required: true }]}>

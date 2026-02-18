@@ -4,6 +4,40 @@ from typing import Any, Dict
 from .runtime import logger
 
 
+PUBLICATION_CREDENTIALS_PURPOSE = "pool_publication_odata"
+IB_AUTH_STRATEGY_ACTOR = "actor"
+IB_AUTH_STRATEGY_SERVICE = "service"
+_VALID_IB_AUTH_STRATEGIES = {IB_AUTH_STRATEGY_ACTOR, IB_AUTH_STRATEGY_SERVICE, "none", ""}
+
+ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED = "ODATA_MAPPING_NOT_CONFIGURED"
+ERROR_CODE_ODATA_MAPPING_AMBIGUOUS = "ODATA_MAPPING_AMBIGUOUS"
+ERROR_CODE_ODATA_PUBLICATION_AUTH_CONTEXT_INVALID = "ODATA_PUBLICATION_AUTH_CONTEXT_INVALID"
+RESOLUTION_OUTCOME_ACTOR_SUCCESS = "actor_success"
+RESOLUTION_OUTCOME_SERVICE_SUCCESS = "service_success"
+RESOLUTION_OUTCOME_MISSING_MAPPING = "missing_mapping"
+RESOLUTION_OUTCOME_AMBIGUOUS_MAPPING = "ambiguous_mapping"
+RESOLUTION_OUTCOME_INVALID_AUTH_CONTEXT = "invalid_auth_context"
+
+ERROR_CODE_TO_RESOLUTION_OUTCOME = {
+    ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED: RESOLUTION_OUTCOME_MISSING_MAPPING,
+    ERROR_CODE_ODATA_MAPPING_AMBIGUOUS: RESOLUTION_OUTCOME_AMBIGUOUS_MAPPING,
+    ERROR_CODE_ODATA_PUBLICATION_AUTH_CONTEXT_INVALID: RESOLUTION_OUTCOME_INVALID_AUTH_CONTEXT,
+}
+
+
+class CredentialsResolutionError(Exception):
+    def __init__(self, *, code: str, message: str):
+        super().__init__(message)
+        self.code = str(code or "").strip()
+        self.message = str(message or "").strip()
+
+    @property
+    def response_error(self) -> str:
+        if self.code and self.message:
+            return f"{self.code}: {self.message}"
+        return self.code or self.message
+
+
 class CommandHandlersMixin:
     def handle_get_cluster_info(self, data: Dict[str, Any], correlation_id: str) -> None:
         from apps.databases.models import Database
@@ -117,7 +151,11 @@ class CommandHandlersMixin:
         request_correlation_id = data.get("correlation_id", correlation_id)
         database_id = data.get("database_id", "")
         created_by = (data.get("created_by") or "").strip()
+        credentials_purpose = str(data.get("credentials_purpose") or "").strip().lower()
+        publication_mapping_only = credentials_purpose == PUBLICATION_CREDENTIALS_PURPOSE
         ib_auth_strategy = str(data.get("ib_auth_strategy") or "").strip().lower()
+        if ib_auth_strategy not in _VALID_IB_AUTH_STRATEGIES:
+            ib_auth_strategy = ""
         dbms_auth_strategy = str(data.get("dbms_auth_strategy") or "").strip().lower()
         if dbms_auth_strategy not in {"actor", "service", ""}:
             dbms_auth_strategy = ""
@@ -133,6 +171,8 @@ class CommandHandlersMixin:
             "database_id": database_id,
             "success": "false",
             "error": "",
+            "error_code": "",
+            "resolution_outcome": "",
             "encrypted_data": "",
             "nonce": "",
             "expires_at": "",
@@ -148,27 +188,68 @@ class CommandHandlersMixin:
                 self._publish_database_credentials_response(response)
                 return
 
+            odata_username = database.username
+            odata_password = database.password
             ib_username = ""
             ib_password = ""
-            if ib_auth_strategy == "service":
-                mapping = (
-                    InfobaseUserMapping.objects.filter(
+            if publication_mapping_only:
+                try:
+                    mapping = self._resolve_publication_infobase_mapping(
                         database=database,
-                        is_service=True,
-                        user__isnull=True,
-                    ).first()
+                        created_by=created_by,
+                        ib_auth_strategy=ib_auth_strategy,
+                        user_model=get_user_model(),
+                        infobase_mapping_model=InfobaseUserMapping,
+                    )
+                except CredentialsResolutionError as resolution_error:
+                    response["error_code"] = resolution_error.code
+                    response["error"] = resolution_error.response_error
+                    response["resolution_outcome"] = ERROR_CODE_TO_RESOLUTION_OUTCOME.get(
+                        resolution_error.code,
+                        RESOLUTION_OUTCOME_MISSING_MAPPING,
+                    )
+                    logger.warning(
+                        (
+                            "Publication credentials mapping lookup failed: "
+                            "database_id=%s, strategy=%s, created_by=%s, code=%s, resolution_outcome=%s"
+                        ),
+                        database_id,
+                        ib_auth_strategy,
+                        created_by,
+                        resolution_error.code,
+                        response["resolution_outcome"],
+                    )
+                    self._publish_database_credentials_response(response)
+                    return
+                odata_username = mapping.ib_username
+                odata_password = mapping.ib_password
+                ib_username = mapping.ib_username
+                ib_password = mapping.ib_password
+                response["resolution_outcome"] = (
+                    RESOLUTION_OUTCOME_ACTOR_SUCCESS
+                    if ib_auth_strategy == IB_AUTH_STRATEGY_ACTOR
+                    else RESOLUTION_OUTCOME_SERVICE_SUCCESS
                 )
-                if mapping:
-                    ib_username = mapping.ib_username
-                    ib_password = mapping.ib_password
-            elif created_by:
-                user_model = get_user_model()
-                user = user_model.objects.filter(username=created_by).first()
-                if user:
-                    mapping = InfobaseUserMapping.objects.filter(database=database, user=user).first()
+            else:
+                if ib_auth_strategy == IB_AUTH_STRATEGY_SERVICE:
+                    mapping = (
+                        InfobaseUserMapping.objects.filter(
+                            database=database,
+                            is_service=True,
+                            user__isnull=True,
+                        ).first()
+                    )
                     if mapping:
                         ib_username = mapping.ib_username
                         ib_password = mapping.ib_password
+                elif created_by:
+                    user_model = get_user_model()
+                    user = user_model.objects.filter(username=created_by).first()
+                    if user:
+                        mapping = InfobaseUserMapping.objects.filter(database=database, user=user).first()
+                        if mapping:
+                            ib_username = mapping.ib_username
+                            ib_password = mapping.ib_password
 
             db_user = ""
             db_password = ""
@@ -213,8 +294,8 @@ class CommandHandlersMixin:
             credentials_dict = {
                 "database_id": str(database.id),
                 "odata_url": database.odata_url,
-                "username": database.username,
-                "password": database.password,
+                "username": odata_username,
+                "password": odata_password,
                 "ib_username": ib_username,
                 "ib_password": ib_password,
                 "dbms": (database.metadata or {}).get("dbms", ""),
@@ -280,12 +361,83 @@ class CommandHandlersMixin:
             response["nonce"] = encrypted_payload.get("nonce", "")
             response["expires_at"] = encrypted_payload.get("expires_at", "")
             response["encryption_version"] = encrypted_payload.get("encryption_version", "")
+            if response["resolution_outcome"]:
+                logger.info(
+                    (
+                        "Publication credentials mapping resolved: "
+                        "database_id=%s, strategy=%s, created_by=%s, resolution_outcome=%s"
+                    ),
+                    database_id,
+                    ib_auth_strategy,
+                    created_by,
+                    response["resolution_outcome"],
+                )
 
         except Exception as e:
             response["error"] = f"Internal error: {str(e)}"
             logger.error("Error handling get-database-credentials: %s", e, exc_info=True)
 
         self._publish_database_credentials_response(response)
+
+    def _resolve_publication_infobase_mapping(
+        self,
+        *,
+        database,
+        created_by: str,
+        ib_auth_strategy: str,
+        user_model,
+        infobase_mapping_model,
+    ):
+        strategy = str(ib_auth_strategy or "").strip().lower()
+        if strategy not in {IB_AUTH_STRATEGY_ACTOR, IB_AUTH_STRATEGY_SERVICE}:
+            raise CredentialsResolutionError(
+                code=ERROR_CODE_ODATA_PUBLICATION_AUTH_CONTEXT_INVALID,
+                message="ib_auth_strategy must be actor|service for pool publication credentials lookup",
+            )
+
+        if strategy == IB_AUTH_STRATEGY_ACTOR:
+            actor = str(created_by or "").strip()
+            if not actor:
+                raise CredentialsResolutionError(
+                    code=ERROR_CODE_ODATA_PUBLICATION_AUTH_CONTEXT_INVALID,
+                    message="created_by is required when ib_auth_strategy=actor",
+                )
+            user = user_model.objects.filter(username=actor).only("id").first()
+            if user is None:
+                raise CredentialsResolutionError(
+                    code=ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
+                    message=f"infobase user mapping is not configured for created_by={actor}",
+                )
+            queryset = infobase_mapping_model.objects.filter(database=database, user=user)
+        else:
+            queryset = infobase_mapping_model.objects.filter(
+                database=database,
+                is_service=True,
+                user__isnull=True,
+            )
+
+        candidates = list(queryset.only("id", "ib_username", "ib_password")[:2])
+        if not candidates:
+            raise CredentialsResolutionError(
+                code=ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
+                message=(
+                    "service infobase user mapping is not configured"
+                    if strategy == IB_AUTH_STRATEGY_SERVICE
+                    else f"infobase user mapping is not configured for created_by={created_by}"
+                ),
+            )
+        if len(candidates) > 1:
+            raise CredentialsResolutionError(
+                code=ERROR_CODE_ODATA_MAPPING_AMBIGUOUS,
+                message="multiple infobase user mappings found for publication auth context",
+            )
+        mapping = candidates[0]
+        if not str(mapping.ib_username or "").strip() or not str(mapping.ib_password or "").strip():
+            raise CredentialsResolutionError(
+                code=ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
+                message="infobase mapping must contain non-empty username and password for publication auth",
+            )
+        return mapping
 
     def _publish_database_credentials_response(self, response: Dict[str, str]) -> None:
         response_stream = "events:orchestrator:database-credentials-response"

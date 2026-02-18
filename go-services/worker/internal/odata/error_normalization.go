@@ -149,6 +149,12 @@ func classifyFromCode(code string) (string, bool) {
 	switch normalizedCode {
 	case ErrorCategoryAuth, "CREDENTIALS_ERROR", "POOL_RUNTIME_PUBLICATION_CREDENTIALS_ERROR":
 		return ErrorClassAuth, false
+	case "ODATA_MAPPING_NOT_CONFIGURED":
+		return ErrorClassValidation, false
+	case "ODATA_MAPPING_AMBIGUOUS":
+		return ErrorClassConflict, false
+	case "ODATA_PUBLICATION_AUTH_CONTEXT_INVALID":
+		return ErrorClassValidation, false
 	case ErrorCategoryNotFound:
 		return ErrorClassNotFound, false
 	case ErrorCategoryValidation, "POOL_RUNTIME_PUBLICATION_PAYLOAD_INVALID":

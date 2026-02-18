@@ -5,6 +5,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
+from django.contrib.auth import get_user_model
 
 from apps.intercompany_pools.models import (
     OrganizationPool,
@@ -24,6 +25,9 @@ from apps.intercompany_pools.safe_commands import (
 )
 from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate, WorkflowType
 from apps.tenancy.models import Tenant
+
+
+User = get_user_model()
 
 
 def _create_safe_run_with_awaiting_approval_execution() -> PoolRun:
@@ -91,11 +95,16 @@ def _create_safe_run_with_awaiting_approval_execution() -> PoolRun:
 @pytest.mark.django_db
 def test_safe_commands_confirm_then_abort_keeps_single_winner_outbox() -> None:
     run = _create_safe_run_with_awaiting_approval_execution()
+    operator = User.objects.create_user(
+        username=f"safe-operator-{uuid4().hex[:8]}",
+        email=f"safe-operator-{uuid4().hex[:8]}@example.test",
+    )
 
     confirm = process_pool_run_safe_command(
         run_id=run.id,
         command_type=PoolRunCommandType.CONFIRM_PUBLICATION,
         idempotency_key="confirm-race-1",
+        requested_by=operator,
     )
     abort = process_pool_run_safe_command(
         run_id=run.id,
@@ -115,6 +124,16 @@ def test_safe_commands_confirm_then_abort_keeps_single_winner_outbox() -> None:
     outbox_entries = list(PoolRunCommandOutbox.objects.filter(run=run).order_by("id"))
     assert len(outbox_entries) == 1
     assert outbox_entries[0].intent_type == PoolRunCommandOutboxIntent.ENQUEUE_WORKFLOW_EXECUTION
+    metadata = (outbox_entries[0].message_payload or {}).get("metadata") or {}
+    assert metadata.get("created_by") == operator.username
+
+    execution = WorkflowExecution.objects.get(id=run.workflow_execution_id)
+    publication_auth = execution.input_context.get("publication_auth")
+    assert publication_auth == {
+        "strategy": "actor",
+        "actor_username": operator.username,
+        "source": "confirm_publication",
+    }
 
 
 @pytest.mark.django_db

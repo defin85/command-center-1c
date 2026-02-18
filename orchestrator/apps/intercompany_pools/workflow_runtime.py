@@ -11,6 +11,12 @@ from apps.operations.services import OperationsService
 from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate
 
 from .models import PoolRun, PoolRunMode, PoolSchemaTemplate, PoolSchemaTemplateFormat
+from .publication_auth_mapping import (
+    PUBLICATION_AUTH_STRATEGY_ACTOR,
+    PUBLICATION_AUTH_STRATEGY_SERVICE,
+    build_publication_auth_fail_closed_error,
+    evaluate_publication_auth_coverage,
+)
 from .runtime_template_registry import sync_pool_runtime_template_registry
 from .workflow_compiler import PoolWorkflowRunContext, compile_pool_execution_plan
 
@@ -32,6 +38,10 @@ PUBLICATION_STEP_STATE_COMPLETED = "completed"
 
 ATTEMPT_KIND_INITIAL = "initial"
 ATTEMPT_KIND_RETRY = "retry"
+
+PUBLICATION_AUTH_SOURCE_RUN_CREATE = "run_create"
+PUBLICATION_AUTH_SOURCE_CONFIRM_PUBLICATION = "confirm_publication"
+PUBLICATION_AUTH_SOURCE_RETRY_PUBLICATION = "retry_publication"
 
 
 @dataclass(frozen=True)
@@ -78,6 +88,8 @@ def start_pool_run_workflow_execution(
                 created_execution=False,
             )
 
+        _validate_publication_auth_mapping_for_run(run=locked_run, requested_by=requested_by)
+
         sync_pool_runtime_template_registry()
         schema_template = locked_run.schema_template or _get_or_create_default_schema_template(locked_run)
         plan = compile_pool_execution_plan(
@@ -119,7 +131,11 @@ def start_pool_run_workflow_execution(
 
         workflow_template = _resolve_or_create_workflow_template(plan=plan, requested_by=requested_by)
         execution = workflow_template.create_execution(
-            _build_input_context(run=locked_run),
+            _build_input_context(
+                run=locked_run,
+                requested_by=requested_by,
+                publication_auth_source=PUBLICATION_AUTH_SOURCE_RUN_CREATE,
+            ),
             tenant=locked_run.tenant,
             execution_consumer="pools",
         )
@@ -235,6 +251,8 @@ def start_pool_run_retry_workflow_execution(
         if parent_execution is None:
             raise ValueError("Linked workflow execution is unavailable for retry.")
 
+        _validate_publication_auth_mapping_for_run(run=locked_run, requested_by=requested_by)
+
         parent_input_context = (
             parent_execution.input_context if isinstance(parent_execution.input_context, dict) else {}
         )
@@ -261,7 +279,12 @@ def start_pool_run_retry_workflow_execution(
         )
         workflow_template = _resolve_or_create_workflow_template(plan=plan, requested_by=requested_by)
 
-        retry_input_context = _build_input_context(run=locked_run)
+        retry_input_context = _build_input_context(
+            run=locked_run,
+            requested_by=requested_by,
+            publication_auth_source=PUBLICATION_AUTH_SOURCE_RETRY_PUBLICATION,
+            fallback_publication_auth=parent_input_context.get("publication_auth"),
+        )
         retry_input_context["retry_request"] = _summarize_retry_request(retry_request)
         retry_input_context["pool_runtime_publication_payload"] = _build_retry_publication_payload(
             retry_request
@@ -366,7 +389,13 @@ def start_pool_run_retry_workflow_execution(
     )
 
 
-def _build_input_context(*, run: PoolRun) -> dict[str, Any]:
+def _build_input_context(
+    *,
+    run: PoolRun,
+    requested_by: User | None = None,
+    publication_auth_source: str = PUBLICATION_AUTH_SOURCE_RUN_CREATE,
+    fallback_publication_auth: object | None = None,
+) -> dict[str, Any]:
     return {
         "pool_run_id": str(run.id),
         "pool_run_idempotency_key": run.idempotency_key,
@@ -381,7 +410,93 @@ def _build_input_context(*, run: PoolRun) -> dict[str, Any]:
         "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
         "approval_state": _resolve_approval_state_for_input_context(run=run),
         "publication_step_state": _resolve_publication_step_state_for_input_context(run=run),
+        "publication_auth": _build_publication_auth_context(
+            requested_by=requested_by,
+            source=publication_auth_source,
+            fallback=fallback_publication_auth,
+        ),
     }
+
+
+def _build_publication_auth_context(
+    *,
+    requested_by: User | None,
+    source: str,
+    fallback: object | None = None,
+) -> dict[str, str]:
+    fallback_context = _normalize_publication_auth_context(fallback)
+    actor_username = _resolve_actor_username(requested_by=requested_by)
+    if actor_username:
+        strategy = PUBLICATION_AUTH_STRATEGY_ACTOR
+    elif fallback_context is not None:
+        strategy = fallback_context["strategy"]
+        if strategy == PUBLICATION_AUTH_STRATEGY_ACTOR:
+            actor_username = fallback_context["actor_username"]
+    else:
+        strategy = PUBLICATION_AUTH_STRATEGY_SERVICE
+
+    normalized_source = str(source or "").strip()
+    if not normalized_source and fallback_context is not None:
+        normalized_source = fallback_context["source"]
+    if not normalized_source:
+        normalized_source = PUBLICATION_AUTH_SOURCE_RUN_CREATE
+
+    return {
+        "strategy": strategy,
+        "actor_username": actor_username if strategy == PUBLICATION_AUTH_STRATEGY_ACTOR else "",
+        "source": normalized_source,
+    }
+
+
+def _normalize_publication_auth_context(raw: object | None) -> dict[str, str] | None:
+    if not isinstance(raw, dict):
+        return None
+    strategy = str(raw.get("strategy") or "").strip().lower()
+    if strategy not in {
+        PUBLICATION_AUTH_STRATEGY_ACTOR,
+        PUBLICATION_AUTH_STRATEGY_SERVICE,
+    }:
+        return None
+    actor_username = str(raw.get("actor_username") or "").strip()
+    if strategy == PUBLICATION_AUTH_STRATEGY_ACTOR and not actor_username:
+        return None
+    source = str(raw.get("source") or "").strip()
+    return {
+        "strategy": strategy,
+        "actor_username": actor_username if strategy == PUBLICATION_AUTH_STRATEGY_ACTOR else "",
+        "source": source,
+    }
+
+
+def _resolve_actor_username(*, requested_by: User | None) -> str:
+    if requested_by is None:
+        return ""
+    return str(getattr(requested_by, "username", "") or "").strip()
+
+
+def _validate_publication_auth_mapping_for_run(
+    *,
+    run: PoolRun,
+    requested_by: User | None,
+) -> None:
+    actor_username = _resolve_actor_username(requested_by=requested_by)
+    strategy = (
+        PUBLICATION_AUTH_STRATEGY_ACTOR
+        if actor_username
+        else PUBLICATION_AUTH_STRATEGY_SERVICE
+    )
+    coverage = evaluate_publication_auth_coverage(
+        pool=run.pool,
+        target_date=run.period_start,
+        strategy=strategy,
+        actor_username=actor_username,
+    )
+    if not coverage.has_gaps:
+        return
+    error_code, detail = build_publication_auth_fail_closed_error(coverage)
+    if not error_code:
+        return
+    raise ValueError(f"{error_code}: {detail}")
 
 
 def _with_lineage_metadata(
@@ -483,6 +598,11 @@ def _build_execution_plan_snapshot(
 ) -> dict[str, Any]:
     run_input = run.run_input if isinstance(run.run_input, dict) else {}
     execution_lineage = _build_execution_lineage_snapshot(execution_context=execution_context)
+    publication_auth = _normalize_publication_auth_context(
+        (execution_context or {}).get("publication_auth")
+        if isinstance(execution_context, dict)
+        else None
+    )
     return {
         "kind": "workflow",
         "plan_version": plan.plan_version,
@@ -503,6 +623,7 @@ def _build_execution_plan_snapshot(
             "period_start": run.period_start.isoformat(),
             "period_end": run.period_end.isoformat() if run.period_end else None,
             "run_input": run_input,
+            "publication_auth": publication_auth,
         },
         "execution_snapshot": {
             "pool_run_id": str(run.id),
@@ -510,6 +631,7 @@ def _build_execution_plan_snapshot(
             "period_start": run.period_start.isoformat(),
             "period_end": run.period_end.isoformat() if run.period_end else None,
             "run_input": run_input,
+            "publication_auth": publication_auth,
             "lineage": execution_lineage,
         },
         "targets": {
