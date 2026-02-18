@@ -16,12 +16,28 @@ func NewOrchestratorWorkflowClient(client *orchestrator.Client) *OrchestratorWor
 	return &OrchestratorWorkflowClient{client: client}
 }
 
+// Client returns underlying orchestrator client for internal bridge calls.
+func (a *OrchestratorWorkflowClient) Client() *orchestrator.Client {
+	return a.client
+}
+
 // GetWorkflowExecution fetches workflow execution from Orchestrator.
 func (a *OrchestratorWorkflowClient) GetWorkflowExecution(ctx context.Context, executionID string) (*orchestrator.WorkflowExecutionData, error) {
 	return a.client.GetWorkflowExecution(ctx, executionID)
 }
 
 // UpdateWorkflowExecutionStatus updates workflow execution status in Orchestrator.
-func (a *OrchestratorWorkflowClient) UpdateWorkflowExecutionStatus(ctx context.Context, executionID, status, errorMessage string) error {
-	return a.client.UpdateWorkflowExecutionStatus(ctx, executionID, status, errorMessage)
+func (a *OrchestratorWorkflowClient) UpdateWorkflowExecutionStatus(
+	ctx context.Context,
+	executionID, status, errorMessage, errorCode string,
+	errorDetails map[string]interface{},
+) error {
+	return a.client.UpdateWorkflowExecutionStatus(
+		ctx,
+		executionID,
+		status,
+		errorMessage,
+		errorCode,
+		errorDetails,
+	)
 }

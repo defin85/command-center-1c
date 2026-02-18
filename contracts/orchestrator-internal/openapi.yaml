@@ -499,6 +499,58 @@ paths:
         '409': {$ref: '#/components/responses/Conflict'}
         '500': {$ref: '#/components/responses/InternalServerError'}
 
+  /api/v2/internal/workflows/execute-pool-runtime-step:
+    post:
+      summary: Исполнение pool runtime шага через domain bridge
+      description: |
+        Canonical bridge endpoint для исполнения `pool.*` operation nodes из workflow worker.
+
+        Retry classification matrix:
+        - retryable: transport errors, HTTP 429, HTTP 5xx;
+        - non-retryable: HTTP 400, HTTP 401, HTTP 404, HTTP 409.
+      operationId: executePoolRuntimeStepV2
+      tags: [workflows]
+      security: [{ApiKeyAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolRuntimeStepExecutionRequest'
+      responses:
+        '200':
+          description: |
+            Шаг обработан успешно (включая идемпотентный replay ранее завершённой попытки).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolRuntimeStepExecutionResponse'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: |
+            Non-retryable конфликт контекста или идемпотентности:
+            - `POOL_RUNTIME_CONTEXT_MISMATCH`
+            - `IDEMPOTENCY_KEY_CONFLICT`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                contextMismatch:
+                  summary: Несогласованный tenant/run/execution/node контекст
+                  value:
+                    error: "Bridge context does not match execution scope"
+                    code: "POOL_RUNTIME_CONTEXT_MISMATCH"
+                idempotencyConflict:
+                  summary: Тот же idempotency key, но другой fingerprint
+                  value:
+                    error: "Idempotency key conflict"
+                    code: "IDEMPOTENCY_KEY_CONFLICT"
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '500': {$ref: '#/components/responses/InternalServerError'}
+
   # Timeline
   /api/v2/internal/get-operation-timeline:
     post:
@@ -1227,8 +1279,16 @@ components:
         status:
           type: string
           enum: [pending, running, completed, failed, cancelled]
+        error_code:
+          type: string
+          description: Machine-readable код ошибки fail-closed исполнения
         error_message:
           type: string
+        error_details:
+          type: object
+          description: |
+            Structured diagnostics (allowlist + redaction + size cap на server-side).
+          additionalProperties: true
         result:
           type: object
           additionalProperties: true
@@ -1248,6 +1308,134 @@ components:
         status:
           type: string
           enum: [pending, running, completed, failed, cancelled]
+        error_code:
+          type: string
+
+    PoolRuntimeOperationRef:
+      type: object
+      required:
+        - alias
+        - binding_mode
+        - template_exposure_id
+        - template_exposure_revision
+      properties:
+        alias:
+          type: string
+          description: Канонический alias runtime operation binding
+        binding_mode:
+          type: string
+          enum: [required_alias, pinned_exposure]
+          description: Режим привязки operation template в runtime
+        template_exposure_id:
+          type: string
+          format: uuid
+          description: Pinned template exposure UUID
+        template_exposure_revision:
+          type: integer
+          minimum: 1
+          description: Pinned exposure revision для drift-check
+
+    PoolRuntimeStepExecutionRequest:
+      type: object
+      required:
+        - tenant_id
+        - pool_run_id
+        - workflow_execution_id
+        - node_id
+        - operation_type
+        - operation_ref
+        - step_attempt
+        - transport_attempt
+        - idempotency_key
+        - payload
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        pool_run_id:
+          type: string
+          format: uuid
+        workflow_execution_id:
+          type: string
+          format: uuid
+        node_id:
+          type: string
+        operation_type:
+          type: string
+          example: pool.publication_odata
+        operation_ref:
+          $ref: '#/components/schemas/PoolRuntimeOperationRef'
+        step_attempt:
+          type: integer
+          minimum: 1
+          description: Попытка шага на уровне workflow runtime semantics
+        transport_attempt:
+          type: integer
+          minimum: 1
+          description: |
+            Транспортная попытка внутри одного step_attempt.
+            ДОЛЖНА переиспользовать тот же idempotency_key.
+        idempotency_key:
+          type: string
+          minLength: 8
+          maxLength: 255
+          description: Идемпотентный ключ шага (stable внутри step_attempt)
+        step_deadline_utc:
+          type: string
+          format: date-time
+          description: Дедлайн шага для budget-bound retry policy
+        payload:
+          type: object
+          additionalProperties: true
+
+    PoolRuntimeStepExecutionResponse:
+      type: object
+      required:
+        - success
+        - workflow_execution_id
+        - pool_run_id
+        - node_id
+        - step_attempt
+        - transport_attempt
+        - idempotency_key
+        - status
+      properties:
+        success:
+          type: boolean
+        workflow_execution_id:
+          type: string
+          format: uuid
+        pool_run_id:
+          type: string
+          format: uuid
+        node_id:
+          type: string
+        step_attempt:
+          type: integer
+          minimum: 1
+        transport_attempt:
+          type: integer
+          minimum: 1
+        idempotency_key:
+          type: string
+        status:
+          type: string
+          enum: [completed, failed]
+        side_effect_applied:
+          type: boolean
+          description: false для идемпотентного replay без повторного side effect
+        idempotency_replayed:
+          type: boolean
+        result:
+          type: object
+          additionalProperties: true
+        error_code:
+          type: string
+        error_message:
+          type: string
+        error_details:
+          type: object
+          additionalProperties: true
 
     # ============================================================================
     # FAILED EVENTS SCHEMAS (Event Replay System)
@@ -1774,3 +1962,19 @@ components:
           example:
             error: "Execution is not running"
             code: "CONFLICT"
+
+    TooManyRequests:
+      description: Превышен лимит запросов, используйте Retry-After
+      headers:
+        Retry-After:
+          description: Seconds to wait before next retry
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Rate limit exceeded"
+            code: "RATE_LIMITED"

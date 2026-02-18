@@ -4,7 +4,7 @@ import hashlib
 import re
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
-from datetime import date
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 from typing import Any
 from uuid import UUID
 
@@ -62,6 +62,7 @@ from apps.intercompany_pools.workflow_runtime import (
     start_pool_run_workflow_execution,
 )
 from apps.templates.workflow.models import WorkflowExecution
+from apps.runtime_settings.effective import get_effective_runtime_setting
 from apps.tenancy.authentication import TENANT_HEADER
 from apps.tenancy.models import Tenant
 
@@ -110,6 +111,8 @@ _POOL_RUNTIME_START_FAIL_CLOSED_CODES = {
     "TEMPLATE_DRIFT",
     "POOL_RUNTIME_TEMPLATE_UNSUPPORTED_EXECUTOR",
 }
+POOL_PROJECTION_HARDENING_CUTOFF_KEY = "pools.projection.publication_hardening_cutoff_utc"
+POOL_PUBLICATION_STEP_INCOMPLETE_CODE = "POOL_PUBLICATION_STEP_INCOMPLETE"
 
 
 def _error(*, code: str, message: str, status_code: int) -> Response:
@@ -371,9 +374,21 @@ def _load_pool_graph_state(
     return active_nodes, active_edges
 
 
-def _serialize_run(run: PoolRun) -> dict[str, Any]:
+def _serialize_run(
+    run: PoolRun,
+    *,
+    publication_hardening_cutoff_utc: datetime | None = None,
+) -> dict[str, Any]:
     run_input, input_contract_version = _resolve_run_input_read_contract(run=run)
-    workflow_status, workflow_input_context = _resolve_workflow_projection_context(run)
+    (
+        workflow_status,
+        workflow_input_context,
+        projection_timestamp,
+        workflow_failure_context,
+    ) = _resolve_workflow_projection_context(run)
+    execution_backend = run.execution_backend or (
+        "workflow_core" if run.workflow_execution_id else "legacy_pool_runtime"
+    )
     approval_state = _resolve_approval_state(
         run=run,
         workflow_status=workflow_status,
@@ -384,6 +399,7 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
         workflow_status=workflow_status,
         workflow_input_context=workflow_input_context,
         approval_state=approval_state,
+        execution_backend=execution_backend,
     )
     terminal_reason = _resolve_terminal_reason(
         run=run,
@@ -394,9 +410,17 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
         workflow_status=workflow_status,
         approval_state=approval_state,
         publication_step_state=publication_step_state,
+        execution_backend=execution_backend,
+        projection_timestamp=projection_timestamp,
+        publication_hardening_cutoff_utc=publication_hardening_cutoff_utc,
     )
-    execution_backend = run.execution_backend or (
-        "workflow_core" if run.workflow_execution_id else "legacy_pool_runtime"
+    diagnostics = _resolve_run_diagnostics(
+        run=run,
+        workflow_status=workflow_status,
+        approval_state=approval_state,
+        publication_step_state=publication_step_state,
+        projected_status=projected_status,
+        workflow_failure_context=workflow_failure_context,
     )
     provenance = _build_run_provenance(
         run=run,
@@ -428,7 +452,7 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
         "seed": run.seed,
         "validation_summary": run.validation_summary,
         "publication_summary": run.publication_summary,
-        "diagnostics": run.diagnostics,
+        "diagnostics": diagnostics,
         "last_error": run.last_error,
         "created_at": run.created_at,
         "updated_at": run.updated_at,
@@ -439,18 +463,137 @@ def _serialize_run(run: PoolRun) -> dict[str, Any]:
     }
 
 
-def _resolve_workflow_projection_context(run: PoolRun) -> tuple[str | None, dict[str, Any]]:
+def _resolve_run_diagnostics(
+    *,
+    run: PoolRun,
+    workflow_status: str | None,
+    approval_state: str | None,
+    publication_step_state: str | None,
+    projected_status: str,
+    workflow_failure_context: dict[str, Any] | None,
+) -> Any:
+    workflow_failure_problem = _build_workflow_failure_problem_details(
+        workflow_status=workflow_status,
+        projected_status=projected_status,
+        workflow_failure_context=workflow_failure_context,
+    )
+    publication_step_problem = _build_publication_step_problem_details(
+        workflow_status=workflow_status,
+        approval_state=approval_state,
+        publication_step_state=publication_step_state,
+        projected_status=projected_status,
+    )
+
+    generated_problems: list[dict[str, Any]] = []
+    if workflow_failure_problem is not None:
+        generated_problems.append(workflow_failure_problem)
+    if publication_step_problem is not None:
+        generated_problems.append(publication_step_problem)
+
+    base_diagnostics = run.diagnostics
+    if not generated_problems:
+        return base_diagnostics
+    if not isinstance(base_diagnostics, list):
+        return generated_problems
+
+    diagnostics = list(base_diagnostics)
+    existing_codes = {
+        str(item.get("code") or "").strip()
+        for item in diagnostics
+        if isinstance(item, dict) and str(item.get("code") or "").strip()
+    }
+    for problem in generated_problems:
+        code = str(problem.get("code") or "").strip()
+        if code and code in existing_codes:
+            continue
+        diagnostics.append(problem)
+        if code:
+            existing_codes.add(code)
+    return diagnostics
+
+
+def _build_workflow_failure_problem_details(
+    *,
+    workflow_status: str | None,
+    projected_status: str,
+    workflow_failure_context: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    workflow_state = str(workflow_status or "").strip().lower()
+    if workflow_state != WorkflowExecution.STATUS_FAILED:
+        return None
+    if projected_status != PoolRun.STATUS_FAILED:
+        return None
+    if not isinstance(workflow_failure_context, dict):
+        return None
+
+    error_code = str(workflow_failure_context.get("error_code") or "").strip()
+    if not error_code:
+        return None
+
+    error_message = _sanitize_diagnostics_message(workflow_failure_context.get("error_message"))
+    payload: dict[str, Any] = {
+        "type": "about:blank",
+        "title": "Workflow Execution Failed",
+        "status": int(http_status.HTTP_409_CONFLICT),
+        "detail": error_message or "Workflow execution failed.",
+        "code": error_code,
+    }
+    error_details = workflow_failure_context.get("error_details")
+    if isinstance(error_details, dict) and error_details:
+        payload["error_details"] = error_details
+    return payload
+
+
+def _build_publication_step_problem_details(
+    *,
+    workflow_status: str | None,
+    approval_state: str | None,
+    publication_step_state: str | None,
+    projected_status: str,
+) -> dict[str, Any] | None:
+    workflow_state = str(workflow_status or "").strip().lower()
+    if workflow_state != WorkflowExecution.STATUS_COMPLETED:
+        return None
+    if projected_status != PoolRun.STATUS_FAILED:
+        return None
+    if approval_state not in {APPROVAL_STATE_APPROVED, APPROVAL_STATE_NOT_REQUIRED}:
+        return None
+    if publication_step_state == PUBLICATION_STEP_STATE_COMPLETED:
+        return None
+    return {
+        "type": "about:blank",
+        "title": "Publication Step Incomplete",
+        "status": int(http_status.HTTP_409_CONFLICT),
+        "detail": (
+            "Workflow execution completed without confirmed publication-step completion."
+        ),
+        "code": POOL_PUBLICATION_STEP_INCOMPLETE_CODE,
+    }
+
+
+def _resolve_workflow_projection_context(
+    run: PoolRun,
+) -> tuple[str | None, dict[str, Any], datetime | None, dict[str, Any] | None]:
     workflow_status = run.workflow_status or None
     workflow_input_context: dict[str, Any] = {}
+    projection_timestamp: datetime | None = run.created_at
+    workflow_failure_context: dict[str, Any] | None = None
     execution = _resolve_workflow_execution_for_projection(run=run)
 
     if not execution:
-        return workflow_status, workflow_input_context
+        return workflow_status, workflow_input_context, projection_timestamp, workflow_failure_context
 
     execution_id = execution.get("id")
     if execution_id:
         run.workflow_execution_id = execution_id
         run.execution_backend = "workflow_core"
+
+    started_at = execution.get("started_at")
+    created_at = execution.get("created_at")
+    if isinstance(started_at, datetime):
+        projection_timestamp = started_at
+    elif isinstance(created_at, datetime):
+        projection_timestamp = created_at
 
     raw_input_context = execution.get("input_context")
     if isinstance(raw_input_context, dict):
@@ -463,7 +606,15 @@ def _resolve_workflow_projection_context(run: PoolRun) -> tuple[str | None, dict
     resolved_status = execution.get("status") or workflow_status
     if resolved_status:
         run.workflow_status = resolved_status
-    return resolved_status, workflow_input_context
+    execution_error_code = str(execution.get("error_code") or "").strip()
+    if execution_error_code:
+        workflow_failure_context = {
+            "error_code": execution_error_code,
+            "error_message": str(execution.get("error_message") or ""),
+            "error_details": execution.get("error_details"),
+        }
+
+    return resolved_status, workflow_input_context, projection_timestamp, workflow_failure_context
 
 
 def _parse_positive_int(raw_value: object) -> int | None:
@@ -495,14 +646,20 @@ def _normalize_workflow_run_id(raw_workflow_run_id: object) -> str | None:
 
 
 def _workflow_execution_projection_fields() -> tuple[str, ...]:
-    return (
+    fields = [
         "id",
         "status",
         "input_context",
+        "error_code",
+        "error_message",
+        "error_details",
         "tenant_id",
         "workflow_template__name",
         "started_at",
-    )
+    ]
+    if "created_at" in {field.name for field in WorkflowExecution._meta.concrete_fields}:
+        fields.append("created_at")
+    return tuple(fields)
 
 
 def _load_transition_workflow_candidates_for_run(run: PoolRun) -> list[dict[str, Any]]:
@@ -628,6 +785,7 @@ def _resolve_publication_step_state(
     workflow_status: str | None,
     workflow_input_context: dict[str, Any],
     approval_state: str | None,
+    execution_backend: str,
 ) -> str | None:
     if not run.workflow_execution_id:
         return None
@@ -646,12 +804,6 @@ def _resolve_publication_step_state(
             and run.publishing_started_at is not None
         ):
             return PUBLICATION_STEP_STATE_STARTED
-        if (
-            raw_state != PUBLICATION_STEP_STATE_COMPLETED
-            and workflow_state == WorkflowExecution.STATUS_COMPLETED
-            and approval_state in {APPROVAL_STATE_APPROVED, APPROVAL_STATE_NOT_REQUIRED}
-        ):
-            return PUBLICATION_STEP_STATE_COMPLETED
         return raw_state
 
     if run.publishing_started_at is not None:
@@ -659,6 +811,8 @@ def _resolve_publication_step_state(
     if approval_state in {APPROVAL_STATE_PREPARING, APPROVAL_STATE_AWAITING_APPROVAL}:
         return PUBLICATION_STEP_STATE_NOT_ENQUEUED
     if workflow_state == WorkflowExecution.STATUS_COMPLETED:
+        if execution_backend == "workflow_core":
+            return None
         return PUBLICATION_STEP_STATE_COMPLETED
     return PUBLICATION_STEP_STATE_QUEUED
 
@@ -771,12 +925,67 @@ def _has_context_value(value: Any) -> bool:
     return True
 
 
+def _normalize_utc_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if timezone.is_naive(value):
+        return value.replace(tzinfo=dt_timezone.utc)
+    return value.astimezone(dt_timezone.utc)
+
+
+def _is_historical_workflow_core_projection(
+    *,
+    projection_timestamp: datetime | None,
+    publication_hardening_cutoff_utc: datetime | None,
+) -> bool:
+    # Rollback-safe default: until cutoff is configured, keep legacy projection for historical null-state runs.
+    normalized_cutoff = _normalize_utc_datetime(publication_hardening_cutoff_utc)
+    if normalized_cutoff is None:
+        return True
+
+    normalized_projection_ts = _normalize_utc_datetime(projection_timestamp)
+    if normalized_projection_ts is None:
+        return True
+
+    return normalized_projection_ts < normalized_cutoff
+
+
+def _resolve_publication_hardening_cutoff_utc(*, tenant_id: str | None) -> datetime | None:
+    try:
+        effective = get_effective_runtime_setting(POOL_PROJECTION_HARDENING_CUTOFF_KEY, tenant_id)
+    except Exception:
+        return None
+    return _parse_publication_hardening_cutoff_utc(effective.value)
+
+
+def _parse_publication_hardening_cutoff_utc(raw_value: object) -> datetime | None:
+    token = str(raw_value or "").strip()
+    if not token:
+        return None
+
+    normalized_token = token[:-1] + "+00:00" if token.endswith("Z") else token
+    try:
+        parsed = datetime.fromisoformat(normalized_token)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        return None
+    if parsed.utcoffset() != timedelta(0):
+        return None
+
+    return parsed.astimezone(dt_timezone.utc)
+
+
 def _project_pool_status(
     *,
     run: PoolRun,
     workflow_status: str | None,
     approval_state: str | None,
     publication_step_state: str | None,
+    execution_backend: str,
+    projection_timestamp: datetime | None,
+    publication_hardening_cutoff_utc: datetime | None,
 ) -> tuple[str, str | None]:
     status = run.status
     status_reason: str | None = None
@@ -805,15 +1014,37 @@ def _project_pool_status(
             return PoolRun.STATUS_VALIDATED, status_reason
 
     if (
+        workflow_state in {
+            WorkflowExecution.STATUS_PENDING,
+            WorkflowExecution.STATUS_RUNNING,
+            "queued",
+        }
+        and
         publication_step_state == PUBLICATION_STEP_STATE_STARTED
         and approval_state in {APPROVAL_STATE_APPROVED, APPROVAL_STATE_NOT_REQUIRED}
     ):
         return PoolRun.STATUS_PUBLISHING, None
 
     if workflow_state == WorkflowExecution.STATUS_COMPLETED:
-        if failed_targets > 0:
-            return PoolRun.STATUS_PARTIAL_SUCCESS, None
-        return PoolRun.STATUS_PUBLISHED, None
+        if publication_step_state == PUBLICATION_STEP_STATE_COMPLETED:
+            if failed_targets > 0:
+                return PoolRun.STATUS_PARTIAL_SUCCESS, None
+            return PoolRun.STATUS_PUBLISHED, None
+
+        if publication_step_state is None:
+            if execution_backend == "workflow_core":
+                if _is_historical_workflow_core_projection(
+                    projection_timestamp=projection_timestamp,
+                    publication_hardening_cutoff_utc=publication_hardening_cutoff_utc,
+                ):
+                    if failed_targets > 0:
+                        return PoolRun.STATUS_PARTIAL_SUCCESS, None
+                    return PoolRun.STATUS_PUBLISHED, None
+                return PoolRun.STATUS_FAILED, None
+            if failed_targets > 0:
+                return PoolRun.STATUS_PARTIAL_SUCCESS, None
+            return PoolRun.STATUS_PUBLISHED, None
+        return PoolRun.STATUS_FAILED, None
 
     if workflow_state in {
         WorkflowExecution.STATUS_PENDING,
@@ -1489,8 +1720,15 @@ def create_pool_run(request):
             queryset = queryset.filter(status=status_value)
         limit = _parse_limit(request.query_params.get("limit"))
         runs = list(queryset.order_by("-created_at")[:limit])
+        publication_hardening_cutoff_utc = _resolve_publication_hardening_cutoff_utc(tenant_id=tenant_id)
         payload = {
-            "runs": [_serialize_run(run) for run in runs],
+            "runs": [
+                _serialize_run(
+                    run,
+                    publication_hardening_cutoff_utc=publication_hardening_cutoff_utc,
+                )
+                for run in runs
+            ],
             "count": len(runs),
         }
         return Response(payload, status=http_status.HTTP_200_OK)
@@ -1569,7 +1807,10 @@ def create_pool_run(request):
         )
 
     payload = {
-        "run": _serialize_run(runtime_result.run),
+        "run": _serialize_run(
+            runtime_result.run,
+            publication_hardening_cutoff_utc=_resolve_publication_hardening_cutoff_utc(tenant_id=tenant_id),
+        ),
         "created": result.created,
     }
     response_status = http_status.HTTP_201_CREATED if result.created else http_status.HTTP_200_OK
@@ -2321,8 +2562,12 @@ def get_pool_run_report(request, run_id: UUID):
     attempts_by_status: dict[str, int] = {}
     for attempt in attempts:
         attempts_by_status[attempt.status] = attempts_by_status.get(attempt.status, 0) + 1
+    publication_hardening_cutoff_utc = _resolve_publication_hardening_cutoff_utc(tenant_id=tenant_id)
     payload = {
-        "run": _serialize_run(run),
+        "run": _serialize_run(
+            run,
+            publication_hardening_cutoff_utc=publication_hardening_cutoff_utc,
+        ),
         "publication_attempts": [_serialize_attempt(item) for item in attempts],
         "validation_summary": run.validation_summary,
         "publication_summary": run.publication_summary,
@@ -2477,8 +2722,12 @@ def get_pool_run(request, run_id: UUID):
     audit_events = list(
         PoolRunAuditEvent.objects.filter(run=run).order_by("created_at", "id")
     )
+    publication_hardening_cutoff_utc = _resolve_publication_hardening_cutoff_utc(tenant_id=tenant_id)
     payload = {
-        "run": _serialize_run(run),
+        "run": _serialize_run(
+            run,
+            publication_hardening_cutoff_utc=publication_hardening_cutoff_utc,
+        ),
         "publication_attempts": [_serialize_attempt(item) for item in attempts],
         "audit_events": [_serialize_audit_event(item) for item in audit_events],
     }
@@ -2540,8 +2789,12 @@ def _handle_pool_run_safe_command(
         )
 
     run_refresh = PoolRun.objects.get(id=run.id)
+    publication_hardening_cutoff_utc = _resolve_publication_hardening_cutoff_utc(tenant_id=tenant_id)
     payload = {
-        "run": _serialize_run(run_refresh),
+        "run": _serialize_run(
+            run_refresh,
+            publication_hardening_cutoff_utc=publication_hardening_cutoff_utc,
+        ),
         "command_type": command_type,
         "result": "accepted" if outcome.result_class == PoolRunCommandResultClass.ACCEPTED else "noop",
         "replayed": outcome.replayed,

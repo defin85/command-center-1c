@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -100,6 +101,26 @@ func (h *OperationHandler) HandleNode(
 
 	// Check for operation executor
 	if h.executor == nil {
+		if isPoolOperationType(config.OperationType) {
+			err := NewOperationExecutionError(
+				ErrorCodeWorkflowOperationExecutorNotConfigured,
+				"pool operation executor is not configured",
+			)
+			h.logger.Error("Pool operation executor is not configured",
+				zap.String("node_id", node.ID),
+				zap.String("operation_type", config.OperationType),
+				zap.Error(err),
+			)
+			return &executor.NodeResult{
+				NodeID:      node.ID,
+				Status:      executor.NodeStatusFailed,
+				Error:       err,
+				StartedAt:   startTime,
+				CompletedAt: time.Now(),
+				Duration:    time.Since(startTime),
+			}, nil
+		}
+
 		h.logger.Warn("No operation executor configured, returning rendered data only",
 			zap.String("node_id", node.ID))
 		return &executor.NodeResult{
@@ -120,6 +141,9 @@ func (h *OperationHandler) HandleNode(
 
 	// Extract target databases from context
 	targetDatabases := extractTargetDatabases(execCtx, node)
+	tenantID, _ := execCtx.GetString("tenant_id")
+	poolRunID, _ := execCtx.GetString("pool_run_id")
+	stepAttempt := getStepAttempt(execCtx, node.ID)
 
 	// Build operation request
 	req := &OperationRequest{
@@ -127,8 +151,14 @@ func (h *OperationHandler) HandleNode(
 		TargetEntity:    config.TargetEntity,
 		Payload:         renderedPayload,
 		TemplateID:      config.TemplateID,
+		OperationRef:    node.OperationRef,
 		TargetDatabases: targetDatabases,
 		TimeoutSeconds:  getNodeTimeout(node),
+		ExecutionID:     execCtx.ExecutionID(),
+		NodeID:          node.ID,
+		TenantID:        tenantID,
+		PoolRunID:       poolRunID,
+		StepAttempt:     stepAttempt,
 	}
 
 	h.logger.Debug("Executing operation",
@@ -170,7 +200,12 @@ func (h *OperationHandler) HandleNode(
 // parseOperationConfig extracts operation configuration from node.
 func parseOperationConfig(node *models.Node) (*models.OperationNodeConfig, error) {
 	config := &models.OperationNodeConfig{
-		TemplateID: node.TemplateID,
+		TemplateID:    node.TemplateID,
+		OperationType: node.TemplateID,
+	}
+
+	if node.OperationRef != nil && node.OperationRef.Alias != "" {
+		config.OperationType = node.OperationRef.Alias
 	}
 
 	// For operation nodes, TemplateID is typically required
@@ -244,6 +279,25 @@ func getNodeTimeout(node *models.Node) int {
 		return node.Config.TimeoutSeconds
 	}
 	return 300 // 5 minutes default
+}
+
+func isPoolOperationType(operationType string) bool {
+	return strings.HasPrefix(operationType, "pool.")
+}
+
+func getStepAttempt(execCtx *wfcontext.ExecutionContext, nodeID string) int {
+	if execCtx == nil {
+		return 1
+	}
+	if nodeID != "" {
+		if v, ok := execCtx.GetInt(fmt.Sprintf("step_attempts.%s", nodeID)); ok && v > 0 {
+			return v
+		}
+	}
+	if v, ok := execCtx.GetInt("step_attempt"); ok && v > 0 {
+		return v
+	}
+	return 1
 }
 
 // OperationNodeConfigFromJSON parses operation config from JSON.

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
 	"github.com/commandcenter1c/commandcenter/shared/models"
@@ -15,9 +16,14 @@ import (
 
 // mockWorkflowClient is a mock implementation of WorkflowClient for testing.
 type mockWorkflowClient struct {
-	getExecutionFunc   func(ctx context.Context, executionID string) (*orchestrator.WorkflowExecutionData, error)
-	updateStatusFunc   func(ctx context.Context, executionID, status, errorMessage string) error
+	getExecutionFunc func(ctx context.Context, executionID string) (*orchestrator.WorkflowExecutionData, error)
+	updateStatusFunc func(
+		ctx context.Context,
+		executionID, status, errorMessage, errorCode string,
+		errorDetails map[string]interface{},
+	) error
 	updateStatusCalled bool
+	updateStatusCalls  int
 }
 
 func (m *mockWorkflowClient) GetWorkflowExecution(ctx context.Context, executionID string) (*orchestrator.WorkflowExecutionData, error) {
@@ -27,12 +33,39 @@ func (m *mockWorkflowClient) GetWorkflowExecution(ctx context.Context, execution
 	return nil, errors.New("not implemented")
 }
 
-func (m *mockWorkflowClient) UpdateWorkflowExecutionStatus(ctx context.Context, executionID, status, errorMessage string) error {
+func (m *mockWorkflowClient) UpdateWorkflowExecutionStatus(
+	ctx context.Context,
+	executionID, status, errorMessage, errorCode string,
+	errorDetails map[string]interface{},
+) error {
 	m.updateStatusCalled = true
+	m.updateStatusCalls++
 	if m.updateStatusFunc != nil {
-		return m.updateStatusFunc(ctx, executionID, status, errorMessage)
+		return m.updateStatusFunc(ctx, executionID, status, errorMessage, errorCode, errorDetails)
 	}
 	return nil
+}
+
+type timelineRecord struct {
+	operationID string
+	event       string
+	metadata    map[string]interface{}
+}
+
+type timelineSpy struct {
+	records []timelineRecord
+}
+
+func (s *timelineSpy) Record(ctx context.Context, operationID, event string, metadata map[string]interface{}) {
+	s.records = append(s.records, timelineRecord{
+		operationID: operationID,
+		event:       event,
+		metadata:    metadata,
+	})
+}
+
+func (s *timelineSpy) GetTimeline(ctx context.Context, operationID string) ([]tracing.TimelineEntry, error) {
+	return nil, nil
 }
 
 func TestWorkflowHandler_ExecuteWorkflow_MissingExecutionID(t *testing.T) {
@@ -224,4 +257,69 @@ func TestWorkflowHandler_ResultDurationSet(t *testing.T) {
 	result := handler.ExecuteWorkflow(context.Background(), msg)
 	assert.False(t, result.Success)
 	assert.GreaterOrEqual(t, result.Duration, 0.0)
+}
+
+func TestWorkflowHandler_UpdateStatusWithRetry_DoesNotAmplifyRetriesOnTemporaryFailure(t *testing.T) {
+	mockClient := &mockWorkflowClient{
+		updateStatusFunc: func(
+			ctx context.Context,
+			executionID, status, errorMessage, errorCode string,
+			errorDetails map[string]interface{},
+		) error {
+			return errors.New("temporary 503")
+		},
+	}
+	timeline := &timelineSpy{}
+	handler := &WorkflowHandler{
+		workflowClient: mockClient,
+		logger:         zap.NewNop(),
+		timeline:       timeline,
+	}
+
+	handler.updateStatusWithRetry(
+		context.Background(),
+		"op-1",
+		"exec-1",
+		"failed",
+		"bridge failed",
+		"WORKFLOW_EXECUTION_ERROR",
+		map[string]interface{}{"http_status": 503},
+		nil,
+	)
+
+	assert.Equal(t, 1, mockClient.updateStatusCalls, "handler must delegate retries to transport client")
+	require.Len(t, timeline.records, 2)
+	assert.Equal(t, "external.orchestrator.update_workflow_status.started", timeline.records[0].event)
+	assert.Equal(t, "external.orchestrator.update_workflow_status.failed", timeline.records[1].event)
+	assert.Equal(t, 1, timeline.records[0].metadata["attempt"])
+	assert.Equal(t, 1, timeline.records[1].metadata["attempt"])
+	assert.Equal(t, "temporary 503", timeline.records[1].metadata["error"])
+}
+
+func TestWorkflowHandler_UpdateStatusWithRetry_RecordsSingleAttemptOnSuccess(t *testing.T) {
+	mockClient := &mockWorkflowClient{}
+	timeline := &timelineSpy{}
+	handler := &WorkflowHandler{
+		workflowClient: mockClient,
+		logger:         zap.NewNop(),
+		timeline:       timeline,
+	}
+
+	handler.updateStatusWithRetry(
+		context.Background(),
+		"op-1",
+		"exec-1",
+		"completed",
+		"",
+		"",
+		nil,
+		nil,
+	)
+
+	assert.Equal(t, 1, mockClient.updateStatusCalls)
+	require.Len(t, timeline.records, 2)
+	assert.Equal(t, "external.orchestrator.update_workflow_status.started", timeline.records[0].event)
+	assert.Equal(t, "external.orchestrator.update_workflow_status.completed", timeline.records[1].event)
+	assert.Equal(t, 1, timeline.records[0].metadata["attempt"])
+	assert.Equal(t, 1, timeline.records[1].metadata["attempt"])
 }

@@ -59,7 +59,14 @@ func (c *Client) GetWorkflowTemplate(ctx context.Context, templateID string) (*W
 }
 
 // UpdateWorkflowExecutionStatus updates execution status in Orchestrator.
-func (c *Client) UpdateWorkflowExecutionStatus(ctx context.Context, executionID string, status string, errorMessage string) error {
+func (c *Client) UpdateWorkflowExecutionStatus(
+	ctx context.Context,
+	executionID string,
+	status string,
+	errorMessage string,
+	errorCode string,
+	errorDetails map[string]interface{},
+) error {
 	path := "/api/v2/internal/workflows/update-execution-status"
 
 	payload := map[string]interface{}{
@@ -69,6 +76,29 @@ func (c *Client) UpdateWorkflowExecutionStatus(ctx context.Context, executionID 
 	if errorMessage != "" {
 		payload["error_message"] = errorMessage
 	}
+	if errorCode != "" {
+		payload["error_code"] = errorCode
+	}
+	if len(errorDetails) > 0 {
+		payload["error_details"] = errorDetails
+	}
 
 	return c.post(ctx, path, payload, nil)
+}
+
+// ExecutePoolRuntimeStep executes pool runtime step via canonical internal bridge endpoint.
+func (c *Client) ExecutePoolRuntimeStep(
+	ctx context.Context,
+	req *PoolRuntimeStepExecutionRequest,
+) (*PoolRuntimeStepExecutionResponse, error) {
+	if req == nil {
+		return nil, fmt.Errorf("pool runtime step request is required")
+	}
+
+	path := "/api/v2/internal/workflows/execute-pool-runtime-step"
+	var response PoolRuntimeStepExecutionResponse
+	if err := c.post(ctx, path, req, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
 }

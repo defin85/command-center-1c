@@ -197,6 +197,39 @@ type WorkflowResponse struct {
 	TimeoutSeconds   int                    `json:"timeout_seconds,omitempty"`
 }
 
+// PoolRuntimeOperationRef preserves operation binding provenance in bridge payload.
+type PoolRuntimeOperationRef struct {
+	Alias                    string `json:"alias"`
+	BindingMode              string `json:"binding_mode,omitempty"`
+	TemplateExposureID       string `json:"template_exposure_id,omitempty"`
+	TemplateExposureRevision int    `json:"template_exposure_revision,omitempty"`
+}
+
+// PoolRuntimeStepExecutionRequest represents request to pool runtime bridge endpoint.
+type PoolRuntimeStepExecutionRequest struct {
+	TenantID            string                   `json:"tenant_id"`
+	PoolRunID           string                   `json:"pool_run_id"`
+	WorkflowExecutionID string                   `json:"workflow_execution_id"`
+	NodeID              string                   `json:"node_id"`
+	OperationType       string                   `json:"operation_type"`
+	OperationRef        *PoolRuntimeOperationRef `json:"operation_ref,omitempty"`
+	StepAttempt         int                      `json:"step_attempt"`
+	TransportAttempt    int                      `json:"transport_attempt"`
+	IdempotencyKey      string                   `json:"idempotency_key"`
+	Payload             map[string]interface{}   `json:"payload"`
+}
+
+// PoolRuntimeStepExecutionResponse represents response from pool runtime bridge endpoint.
+type PoolRuntimeStepExecutionResponse struct {
+	Success        bool                   `json:"success"`
+	Status         string                 `json:"status,omitempty"`
+	ErrorCode      string                 `json:"error_code,omitempty"`
+	ErrorMessage   string                 `json:"error_message,omitempty"`
+	Result         map[string]interface{} `json:"result,omitempty"`
+	ErrorDetails   map[string]interface{} `json:"error_details,omitempty"`
+	IdempotencyKey string                 `json:"idempotency_key,omitempty"`
+}
+
 // ============================================================================
 // Failed Events Schemas (Event Replay System)
 // ============================================================================

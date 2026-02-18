@@ -497,6 +497,50 @@ class PoolRunCommandLog(models.Model):
         return f"{self.run_id}:{self.command_type}:{self.idempotency_key}"
 
 
+class PoolRuntimeStepIdempotencyLog(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    run = models.ForeignKey(
+        PoolRun,
+        on_delete=models.CASCADE,
+        related_name="runtime_step_idempotency_logs",
+    )
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_runtime_step_idempotency_logs",
+    )
+    workflow_execution_id = models.UUIDField(db_index=True)
+    node_id = models.CharField(max_length=100)
+    operation_type = models.CharField(max_length=255)
+    idempotency_key = models.CharField(max_length=255)
+    request_fingerprint = models.CharField(max_length=64)
+    response_snapshot = models.JSONField(default=dict, blank=True)
+    replay_count = models.PositiveIntegerField(default=0)
+    last_replayed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_runtime_step_idempotency_log"
+        indexes = [
+            models.Index(fields=["run", "node_id", "-created_at"]),
+            models.Index(fields=["tenant", "workflow_execution_id"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "idempotency_key"],
+                name="uniq_pool_runtime_step_idem_tenant_key",
+            ),
+            models.CheckConstraint(
+                condition=~Q(idempotency_key=""),
+                name="chk_pool_runtime_step_idem_nonempty_key",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.run_id}:{self.node_id}:{self.idempotency_key}"
+
+
 class PoolRunCommandOutboxIntent(models.TextChoices):
     ENQUEUE_WORKFLOW_EXECUTION = "enqueue_workflow_execution", "Enqueue Workflow Execution"
     CANCEL_WORKFLOW_EXECUTION = "cancel_workflow_execution", "Cancel Workflow Execution"

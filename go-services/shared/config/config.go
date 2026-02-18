@@ -1,6 +1,7 @@
 package config
 
 import (
+	"hash/fnv"
 	"os"
 	"strconv"
 	"strings"
@@ -75,6 +76,19 @@ type Config struct {
 	TemplateRenderTimeout  time.Duration
 
 	// Feature Flags
+	// EnablePoolOpsRoute enables poolops execution path for pool.* workflow operation nodes.
+	// false keeps route disabled (fail-closed on pool operations), true enables poolops bridge path.
+	// This control is independent from projection hardening cutoff settings in Orchestrator runtime settings.
+	EnablePoolOpsRoute bool
+	// PoolOpsRouteRolloutPercent controls canary rollout for poolops route across workers.
+	// Range: 0.0..1.0 where 1.0 means all workers, 0.0 means no workers.
+	PoolOpsRouteRolloutPercent float64
+	// PoolOpsRouteRolloutSeed isolates canary cohorts between experiments.
+	// When empty, worker_id alone is used for deterministic selection.
+	PoolOpsRouteRolloutSeed string
+	// PoolOpsRouteKillSwitch disables poolops route for all new executions.
+	// When enabled, pool.* nodes stay fail-closed with POOL_RUNTIME_ROUTE_DISABLED.
+	PoolOpsRouteKillSwitch bool
 	// UseStreamsClusterInfo enables Redis Streams for cluster info resolution (primary method).
 	// When enabled, Worker first tries to get cluster info via Streams, then falls back to HTTP.
 	// When disabled, only HTTP is used (for rollback scenarios).
@@ -159,15 +173,61 @@ func LoadFromEnv() *Config {
 		TemplateRenderTimeout:  getDurationEnv("TEMPLATE_RENDER_TIMEOUT", 5*time.Second),
 
 		// Feature Flags
-		UseStreamsClusterInfo:     getBoolEnv("USE_STREAMS_CLUSTER_INFO", true),
-		StreamsClusterInfoTimeout: getPositiveDurationEnv("STREAMS_CLUSTER_INFO_TIMEOUT", 5*time.Second),
-		StreamsCredentialsTimeout: getPositiveDurationEnv("STREAMS_CREDENTIALS_TIMEOUT", 5*time.Second),
+		EnablePoolOpsRoute:         getBoolEnv("ENABLE_POOLOPS_ROUTE", false),
+		PoolOpsRouteRolloutPercent: normalizeRolloutPercent(getFloat64Env("POOLOPS_ROUTE_ROLLOUT_PERCENT", 1.0)),
+		PoolOpsRouteRolloutSeed:    getEnv("POOLOPS_ROUTE_ROLLOUT_SEED", ""),
+		PoolOpsRouteKillSwitch:     getBoolEnv("POOLOPS_ROUTE_KILL_SWITCH", false),
+		UseStreamsClusterInfo:      getBoolEnv("USE_STREAMS_CLUSTER_INFO", true),
+		StreamsClusterInfoTimeout:  getPositiveDurationEnv("STREAMS_CLUSTER_INFO_TIMEOUT", 5*time.Second),
+		StreamsCredentialsTimeout:  getPositiveDurationEnv("STREAMS_CREDENTIALS_TIMEOUT", 5*time.Second),
 
 		// Timeline recorder
 		TimelineQueueSize:   getIntEnv("TIMELINE_QUEUE_SIZE", 10000),
 		TimelineWorkerCount: getIntEnv("TIMELINE_WORKER_COUNT", 4),
 		TimelineDropOnFull:  getBoolEnv("TIMELINE_DROP_ON_FULL", true),
 	}
+}
+
+// IsPoolOpsRouteEnabledForWorker returns effective route decision for current worker.
+// Decision is deterministic and based on worker_id + rollout settings.
+func (c *Config) IsPoolOpsRouteEnabledForWorker() bool {
+	if c == nil || !c.EnablePoolOpsRoute || c.PoolOpsRouteKillSwitch {
+		return false
+	}
+	return shouldEnableWorkerByRollout(c.WorkerID, c.PoolOpsRouteRolloutPercent, c.PoolOpsRouteRolloutSeed)
+}
+
+func shouldEnableWorkerByRollout(workerID string, rolloutPercent float64, rolloutSeed string) bool {
+	rolloutPercent = normalizeRolloutPercent(rolloutPercent)
+	if rolloutPercent <= 0.0 {
+		return false
+	}
+	if rolloutPercent >= 1.0 {
+		return true
+	}
+
+	cohortKey := strings.TrimSpace(workerID)
+	if cohortKey == "" {
+		cohortKey = "worker-default"
+	}
+	if seed := strings.TrimSpace(rolloutSeed); seed != "" {
+		cohortKey = seed + ":" + cohortKey
+	}
+
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(cohortKey))
+	threshold := uint32(float64(^uint32(0)) * rolloutPercent)
+	return h.Sum32() <= threshold
+}
+
+func normalizeRolloutPercent(value float64) float64 {
+	if value < 0.0 {
+		return 0.0
+	}
+	if value > 1.0 {
+		return 1.0
+	}
+	return value
 }
 
 // Helper functions
@@ -183,6 +243,15 @@ func getIntEnv(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
+		}
+	}
+	return defaultValue
+}
+
+func getFloat64Env(key string, defaultValue float64) float64 {
+	if value := os.Getenv(key); value != "" {
+		if floatValue, err := strconv.ParseFloat(value, 64); err == nil {
+			return floatValue
 		}
 	}
 	return defaultValue

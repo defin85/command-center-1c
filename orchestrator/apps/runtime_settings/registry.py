@@ -74,4 +74,13 @@ RUNTIME_SETTINGS = {
             "on workflow create/update."
         ),
     ),
+    "pools.projection.publication_hardening_cutoff_utc": RuntimeSettingDefinition(
+        key="pools.projection.publication_hardening_cutoff_utc",
+        value_type="string",
+        default="",
+        description=(
+            "RFC3339 UTC cutoff for staged pool projection hardening. "
+            "workflow_core runs with missing publication_step_state before cutoff keep legacy terminal projection."
+        ),
+    ),
 }

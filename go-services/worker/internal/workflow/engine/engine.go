@@ -351,6 +351,13 @@ func (e *Engine) ValidateDAG(dagJSON []byte) (*validator.ValidationResult, error
 	return v.Validate(), nil
 }
 
+// SetOperationExecutor injects an operation executor into handler dependencies.
+// The operation handler is re-created to pick up updated dependencies.
+func (e *Engine) SetOperationExecutor(operationExecutor handlers.OperationExecutor) {
+	e.handlerDeps.WithOperationExecutor(operationExecutor)
+	e.handlerReg.Register(models.NodeTypeOperation, handlers.NewOperationHandler(e.handlerDeps))
+}
+
 func (e *Engine) configureExecutor(exec *executor.Executor) {
 	for _, handler := range e.handlerReg.AllHandlers() {
 		exec.RegisterHandler(handler)

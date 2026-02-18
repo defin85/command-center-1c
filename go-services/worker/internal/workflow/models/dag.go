@@ -90,6 +90,8 @@ type Node struct {
 	Name string `json:"name"`
 	// TemplateID references the operation template (for operation nodes).
 	TemplateID string `json:"template_id,omitempty"`
+	// OperationRef preserves operation binding provenance (for operation nodes).
+	OperationRef *OperationRef `json:"operation_ref,omitempty"`
 	// Config holds node-specific configuration.
 	Config *NodeConfig `json:"config,omitempty"`
 	// NextNodes lists the IDs of successor nodes.

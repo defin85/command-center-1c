@@ -13,6 +13,14 @@ type OperationNodeConfig struct {
 	TemplateID string `json:"template_id,omitempty"`
 }
 
+// OperationRef describes operation template binding provenance.
+type OperationRef struct {
+	Alias                    string `json:"alias"`
+	BindingMode              string `json:"binding_mode,omitempty"`
+	TemplateExposureID       string `json:"template_exposure_id,omitempty"`
+	TemplateExposureRevision int    `json:"template_exposure_revision,omitempty"`
+}
+
 // ConditionNodeConfig holds configuration for condition nodes.
 // Condition nodes evaluate expressions and branch workflow execution.
 type ConditionNodeConfig struct {

@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/commandcenter1c/commandcenter/shared/httptrace"
@@ -160,13 +162,18 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 	}
 
 	var lastErr error
+	var nextRetryDelay time.Duration
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
 		if attempt > 0 {
 			// Calculate backoff with exponential increase
-			backoff := c.baseBackoff * time.Duration(1<<uint(attempt-1))
-			if backoff > maxBackoff {
-				backoff = maxBackoff
+			backoff := nextRetryDelay
+			if backoff <= 0 {
+				backoff = c.baseBackoff * time.Duration(1<<uint(attempt-1))
+				if backoff > maxBackoff {
+					backoff = maxBackoff
+				}
 			}
+			nextRetryDelay = 0
 
 			logger.Debugf("orchestrator client: retrying request (attempt %d/%d, backoff %v)",
 				attempt+1, c.maxRetries+1, backoff)
@@ -223,6 +230,13 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 				return apiErr
 			}
 
+			// Honor Retry-After for 429 if provided.
+			if apiErr.StatusCode == http.StatusTooManyRequests {
+				if retryAfterDelay, ok := parseRetryAfter(resp.Header.Get("Retry-After")); ok {
+					nextRetryDelay = retryAfterDelay
+				}
+			}
+
 			lastErr = apiErr
 			logger.Warnf("orchestrator client: retryable error (attempt %d/%d): %v",
 				attempt+1, c.maxRetries+1, apiErr)
@@ -263,6 +277,23 @@ func (c *Client) parseErrorResponse(resp *http.Response, body []byte) *ClientErr
 		Code:       apiErr.Code,
 		RequestID:  apiErr.RequestID,
 	}
+}
+
+func parseRetryAfter(headerValue string) (time.Duration, bool) {
+	raw := strings.TrimSpace(headerValue)
+	if raw == "" {
+		return 0, false
+	}
+	if seconds, err := strconv.Atoi(raw); err == nil && seconds > 0 {
+		return time.Duration(seconds) * time.Second, true
+	}
+	if retryAt, err := time.Parse(http.TimeFormat, raw); err == nil {
+		delay := time.Until(retryAt)
+		if delay > 0 {
+			return delay, true
+		}
+	}
+	return 0, false
 }
 
 // get performs a GET request.

@@ -121,6 +121,11 @@ urlpatterns = [
         views.update_workflow_execution_status,
         name='update-workflow-execution-status'
     ),
+    path(
+        'workflows/execute-pool-runtime-step',
+        views.execute_pool_runtime_step_v2,
+        name='execute-pool-runtime-step'
+    ),
 
     # ========================================================================
     # Timeline (Operation Observability)

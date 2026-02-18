@@ -363,6 +363,18 @@ class WorkflowExecution(models.Model):
 
     # Error tracking
     error_message = models.TextField(blank=True, help_text="Error message if failed")
+    error_code = models.CharField(
+        max_length=128,
+        blank=True,
+        db_index=True,
+        help_text="Machine-readable error code if failed",
+    )
+    error_details = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="Structured diagnostics payload for failure analysis",
+    )
     error_node_id = models.CharField(
         max_length=100, blank=True, help_text="Node ID where error occurred"
     )

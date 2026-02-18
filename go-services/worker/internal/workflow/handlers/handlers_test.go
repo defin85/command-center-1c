@@ -134,6 +134,73 @@ func TestOperationHandler(t *testing.T) {
 		assert.Equal(t, 10, output["records"])
 	})
 
+	t.Run("pool operation without executor fails closed", func(t *testing.T) {
+		deps := NewHandlerDependencies(zap.NewNop())
+		handler := NewOperationHandler(deps)
+
+		node := models.NewOperationNode("op1", "Pool Operation", "pool.publication_odata")
+		execCtx := wfcontext.NewExecutionContext("exec-1", "workflow-1")
+
+		result, err := handler.HandleNode(context.Background(), node, execCtx)
+		require.NoError(t, err)
+		assert.Equal(t, executor.NodeStatusFailed, result.Status)
+		assert.Nil(t, result.Output)
+		require.NotNil(t, result.Error)
+		opErr, ok := result.Error.(*OperationExecutionError)
+		require.True(t, ok)
+		assert.Equal(t, ErrorCodeWorkflowOperationExecutorNotConfigured, opErr.Code)
+	})
+
+	t.Run("operation type is derived from operation_ref alias", func(t *testing.T) {
+		var captured *OperationRequest
+		mockExec := &mockOperationExecutor{
+			executeFunc: func(ctx context.Context, req *OperationRequest) (map[string]interface{}, error) {
+				captured = req
+				return map[string]interface{}{"status": "success"}, nil
+			},
+		}
+
+		deps := NewHandlerDependencies(zap.NewNop()).
+			WithOperationExecutor(mockExec)
+		handler := NewOperationHandler(deps)
+
+		node := models.NewOperationNode("op1", "Pool Operation", "tpl-legacy")
+		node.OperationRef = &models.OperationRef{
+			Alias:       "pool.prepare_input",
+			BindingMode: "pinned_exposure",
+		}
+		execCtx := wfcontext.NewExecutionContext("exec-1", "workflow-1")
+
+		result, err := handler.HandleNode(context.Background(), node, execCtx)
+		require.NoError(t, err)
+		assert.Equal(t, executor.NodeStatusCompleted, result.Status)
+		require.NotNil(t, captured)
+		assert.Equal(t, "pool.prepare_input", captured.OperationType)
+	})
+
+	t.Run("operation type falls back to template_id when operation_ref is absent", func(t *testing.T) {
+		var captured *OperationRequest
+		mockExec := &mockOperationExecutor{
+			executeFunc: func(ctx context.Context, req *OperationRequest) (map[string]interface{}, error) {
+				captured = req
+				return map[string]interface{}{"status": "success"}, nil
+			},
+		}
+
+		deps := NewHandlerDependencies(zap.NewNop()).
+			WithOperationExecutor(mockExec)
+		handler := NewOperationHandler(deps)
+
+		node := models.NewOperationNode("op1", "Pool Operation", "pool.publication_odata")
+		execCtx := wfcontext.NewExecutionContext("exec-1", "workflow-1")
+
+		result, err := handler.HandleNode(context.Background(), node, execCtx)
+		require.NoError(t, err)
+		assert.Equal(t, executor.NodeStatusCompleted, result.Status)
+		require.NotNil(t, captured)
+		assert.Equal(t, "pool.publication_odata", captured.OperationType)
+	})
+
 	t.Run("supported types", func(t *testing.T) {
 		deps := NewHandlerDependencies(zap.NewNop())
 		handler := NewOperationHandler(deps)

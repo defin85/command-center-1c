@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone as dt_timezone
 from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -29,6 +29,7 @@ from apps.intercompany_pools.models import (
     PoolSchemaTemplateFormat,
 )
 from apps.operations.services import EnqueueResult
+from apps.runtime_settings.models import RuntimeSetting
 from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate, WorkflowType
 from apps.tenancy.models import Tenant, TenantMember
 
@@ -1262,6 +1263,227 @@ def test_get_pool_run_projects_completed_workflow_with_failed_targets_to_partial
     payload = response.json()
     assert payload["run"]["status"] == PoolRun.STATUS_PARTIAL_SUCCESS
     assert payload["run"]["status_reason"] is None
+    assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_COMPLETED
+
+
+@pytest.mark.django_db
+def test_get_pool_run_projects_completed_workflow_with_completed_publication_step_to_published(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": True,
+            "approval_state": "approved",
+            "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
+            "publication_step_state": "completed",
+        },
+    )
+
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["status"] == PoolRun.STATUS_PUBLISHED
+    assert payload["run"]["status_reason"] is None
+    assert payload["run"]["publication_step_state"] == "completed"
+    assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_COMPLETED
+
+
+@pytest.mark.django_db
+def test_get_pool_run_projects_completed_workflow_with_non_completed_publication_step_to_failed(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": True,
+            "approval_state": "approved",
+            "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
+            "publication_step_state": "queued",
+        },
+    )
+
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["status"] == PoolRun.STATUS_FAILED
+    assert payload["run"]["status_reason"] is None
+    assert payload["run"]["publication_step_state"] == "queued"
+    assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_COMPLETED
+    diagnostics = payload["run"]["diagnostics"]
+    assert any(
+        item.get("code") == "POOL_PUBLICATION_STEP_INCOMPLETE"
+        for item in diagnostics
+        if isinstance(item, dict)
+    )
+
+
+@pytest.mark.django_db
+def test_get_pool_run_returns_stable_publication_incomplete_problem_code_with_existing_diagnostics(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    run.diagnostics = [
+        {
+            "type": "about:blank",
+            "title": "Validation Error",
+            "status": 400,
+            "detail": "legacy diagnostics should not replace publication code",
+            "code": "VALIDATION_ERROR",
+        }
+    ]
+    run.save(update_fields=["diagnostics", "updated_at"])
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": True,
+            "approval_state": "approved",
+            "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
+            "publication_step_state": "queued",
+        },
+    )
+
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert response.status_code == 200
+    payload = response.json()
+    diagnostics = [item for item in payload["run"]["diagnostics"] if isinstance(item, dict)]
+    publication_diagnostics = [
+        item
+        for item in diagnostics
+        if item.get("code") == "POOL_PUBLICATION_STEP_INCOMPLETE"
+    ]
+    assert len(publication_diagnostics) == 1
+    publication_problem = publication_diagnostics[0]
+    assert publication_problem.get("type") == "about:blank"
+    assert publication_problem.get("title") == "Publication Step Incomplete"
+    assert publication_problem.get("status") == 409
+    assert publication_problem.get("code") == "POOL_PUBLICATION_STEP_INCOMPLETE"
+    assert "publication-step completion" in str(publication_problem.get("detail"))
+    assert any(item.get("code") == "VALIDATION_ERROR" for item in diagnostics)
+
+
+@pytest.mark.django_db
+def test_get_pool_run_projects_workflow_core_historical_completed_without_publication_state_uses_legacy_projection(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": False,
+            "approval_state": "not_required",
+            "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
+        },
+    )
+
+    historical_started_at = datetime(2025, 12, 31, 23, 59, tzinfo=dt_timezone.utc)
+    WorkflowExecution.objects.filter(id=run.workflow_execution_id).update(started_at=historical_started_at)
+
+    RuntimeSetting.objects.update_or_create(
+        key="pools.projection.publication_hardening_cutoff_utc",
+        defaults={"value": "2026-01-01T00:00:00Z"},
+    )
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["status"] == PoolRun.STATUS_PUBLISHED
+    assert payload["run"]["status_reason"] is None
+    assert payload["run"]["publication_step_state"] is None
+    assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_COMPLETED
+    diagnostics = payload["run"]["diagnostics"]
+    assert not any(
+        item.get("code") == "POOL_PUBLICATION_STEP_INCOMPLETE"
+        for item in diagnostics
+        if isinstance(item, dict)
+    )
+
+
+@pytest.mark.django_db
+def test_get_pool_run_projects_workflow_core_new_completed_without_publication_state_is_failed_after_cutoff(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": False,
+            "approval_state": "not_required",
+            "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
+        },
+    )
+
+    started_after_cutoff = datetime(2026, 1, 1, 0, 1, tzinfo=dt_timezone.utc)
+    WorkflowExecution.objects.filter(id=run.workflow_execution_id).update(started_at=started_after_cutoff)
+
+    RuntimeSetting.objects.update_or_create(
+        key="pools.projection.publication_hardening_cutoff_utc",
+        defaults={"value": "2026-01-01T00:00:00Z"},
+    )
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["status"] == PoolRun.STATUS_FAILED
+    assert payload["run"]["status_reason"] is None
+    assert payload["run"]["publication_step_state"] is None
+    assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_COMPLETED
+
+
+@pytest.mark.django_db
+def test_get_pool_run_projects_workflow_core_completed_without_publication_state_ignores_non_utc_cutoff(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": False,
+            "approval_state": "not_required",
+            "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
+        },
+    )
+
+    started_after_cutoff = datetime(2026, 1, 1, 0, 1, tzinfo=dt_timezone.utc)
+    WorkflowExecution.objects.filter(id=run.workflow_execution_id).update(started_at=started_after_cutoff)
+
+    RuntimeSetting.objects.update_or_create(
+        key="pools.projection.publication_hardening_cutoff_utc",
+        defaults={"value": "2026-01-01T00:00:00+03:00"},
+    )
+    response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["status"] == PoolRun.STATUS_PUBLISHED
+    assert payload["run"]["status_reason"] is None
+    assert payload["run"]["publication_step_state"] is None
     assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_COMPLETED
 
 

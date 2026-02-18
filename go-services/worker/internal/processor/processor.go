@@ -136,6 +136,7 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 		if orchestratorURL == "" {
 			orchestratorURL = cfg.OrchestratorURL
 		}
+		poolRouteEnabled := cfg.IsPoolOpsRouteEnabledForWorker()
 
 		workflowHandler, err := workflowops.NewWorkflowHandler(
 			opts.WorkflowClient,
@@ -143,6 +144,10 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 			orchestratorURL,
 			zapLogger,
 			timeline,
+			workflowops.WorkflowHandlerConfig{
+				PoolRouteEnabled:         poolRouteEnabled,
+				PoolRouteEnabledProvider: cfg.IsPoolOpsRouteEnabledForWorker,
+			},
 		)
 		if err != nil {
 			log.Error("failed to create workflow handler, execute_workflow disabled",
@@ -150,7 +155,13 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 			)
 		} else {
 			processor.workflowHandler = workflowHandler
-			log.Info("workflow handler initialized for execute_workflow operations")
+			log.Info(
+				"workflow handler initialized for execute_workflow operations",
+				zap.Bool("poolops_route_enabled", poolRouteEnabled),
+				zap.Bool("poolops_route_flag_enabled", cfg.EnablePoolOpsRoute),
+				zap.Float64("poolops_route_rollout_percent", cfg.PoolOpsRouteRolloutPercent),
+				zap.Bool("poolops_route_kill_switch", cfg.PoolOpsRouteKillSwitch),
+			)
 		}
 	} else {
 		log.Info("workflow client not configured, execute_workflow disabled")

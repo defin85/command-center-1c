@@ -4,6 +4,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 
 	"go.uber.org/zap"
 
@@ -40,10 +41,58 @@ type OperationRequest struct {
 	Payload map[string]interface{} `json:"payload,omitempty"`
 	// TemplateID references the operation template.
 	TemplateID string `json:"template_id,omitempty"`
+	// OperationRef preserves template binding provenance for operation nodes.
+	OperationRef *models.OperationRef `json:"operation_ref,omitempty"`
 	// TargetDatabases is a list of database IDs to operate on.
 	TargetDatabases []string `json:"target_databases,omitempty"`
 	// TimeoutSeconds is the operation timeout.
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+	// ExecutionID identifies current workflow execution.
+	ExecutionID string `json:"execution_id,omitempty"`
+	// NodeID identifies current operation node.
+	NodeID string `json:"node_id,omitempty"`
+	// TenantID is tenant context propagated from workflow input.
+	TenantID string `json:"tenant_id,omitempty"`
+	// PoolRunID is pool runtime identifier propagated from workflow input.
+	PoolRunID string `json:"pool_run_id,omitempty"`
+	// StepAttempt is workflow-level attempt number for idempotency semantics.
+	StepAttempt int `json:"step_attempt,omitempty"`
+	// IdempotencyKey allows caller to force a stable key per step attempt.
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+}
+
+const (
+	// ErrorCodeWorkflowOperationExecutorNotConfigured indicates missing executor wiring for pool runtime.
+	ErrorCodeWorkflowOperationExecutorNotConfigured = "WORKFLOW_OPERATION_EXECUTOR_NOT_CONFIGURED"
+	// ErrorCodePoolRuntimeRouteDisabled indicates poolops route is disabled by runtime guard.
+	ErrorCodePoolRuntimeRouteDisabled = "POOL_RUNTIME_ROUTE_DISABLED"
+)
+
+// OperationExecutionError is a machine-readable operation runtime error.
+type OperationExecutionError struct {
+	Code    string
+	Message string
+}
+
+func (e *OperationExecutionError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Code == "" {
+		return e.Message
+	}
+	if e.Message == "" {
+		return e.Code
+	}
+	return fmt.Sprintf("%s: %s", e.Code, e.Message)
+}
+
+// NewOperationExecutionError creates a machine-readable operation error.
+func NewOperationExecutionError(code, message string) *OperationExecutionError {
+	return &OperationExecutionError{
+		Code:    code,
+		Message: message,
+	}
 }
 
 // WorkflowStore provides access to workflow DAGs.

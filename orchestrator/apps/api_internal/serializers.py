@@ -231,4 +231,36 @@ class WorkflowExecutionStatusUpdateSerializer(serializers.Serializer):
         "cancelled",
     ])
     error_message = serializers.CharField(required=False, allow_blank=True, default="")
+    error_code = serializers.CharField(required=False, allow_blank=True, max_length=128)
+    error_details = serializers.JSONField(required=False, allow_null=True)
     result = serializers.JSONField(required=False, default=dict)
+
+
+class PoolRuntimeOperationRefSerializer(serializers.Serializer):
+    """Pinned operation binding provenance for pool runtime bridge payload."""
+
+    alias = serializers.CharField(max_length=255)
+    binding_mode = serializers.ChoiceField(choices=["required_alias", "pinned_exposure"])
+    template_exposure_id = serializers.UUIDField()
+    template_exposure_revision = serializers.IntegerField(min_value=1)
+
+
+class PoolRuntimeStepExecutionSerializer(serializers.Serializer):
+    """Input serializer for canonical pool runtime bridge endpoint."""
+
+    tenant_id = serializers.UUIDField()
+    pool_run_id = serializers.UUIDField()
+    workflow_execution_id = serializers.UUIDField()
+    node_id = serializers.CharField(max_length=128)
+    operation_type = serializers.CharField(max_length=255)
+    operation_ref = PoolRuntimeOperationRefSerializer()
+    step_attempt = serializers.IntegerField(min_value=1)
+    transport_attempt = serializers.IntegerField(min_value=1)
+    idempotency_key = serializers.CharField(min_length=8, max_length=255)
+    step_deadline_utc = serializers.DateTimeField(required=False, allow_null=True)
+    payload = serializers.JSONField()
+
+    def validate_payload(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("payload must be an object.")
+        return value

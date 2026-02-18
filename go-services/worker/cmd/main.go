@@ -297,10 +297,15 @@ func main() {
 
 	// Log feature flags configuration
 	featureFlags := taskProcessor.GetFeatureFlags()
+	poolRouteEnabled := cfg.IsPoolOpsRouteEnabledForWorker()
 	log.Info("feature flags loaded",
 		zap.Bool("event_driven_enabled", featureFlags["enable_event_driven"].(bool)),
 		zap.Float64("rollout_percentage", featureFlags["rollout_percentage"].(float64)),
 		zap.Int("max_concurrent_events", featureFlags["max_concurrent_events"].(int)),
+		zap.Bool("poolops_route_enabled", poolRouteEnabled),
+		zap.Bool("poolops_route_flag_enabled", cfg.EnablePoolOpsRoute),
+		zap.Float64("poolops_route_rollout_percent", cfg.PoolOpsRouteRolloutPercent),
+		zap.Bool("poolops_route_kill_switch", cfg.PoolOpsRouteKillSwitch),
 	)
 
 	// Initialize queue consumer (Redis Streams based)

@@ -113,6 +113,21 @@ def test_runtime_overrides_list_excludes_decommissioned_keys(staff_client):
 
 
 @pytest.mark.django_db
+def test_runtime_settings_list_includes_pool_projection_hardening_cutoff(staff_client):
+    resp = staff_client.get("/api/v2/settings/runtime/")
+    assert resp.status_code == 200
+    payload = resp.json()
+    row = next(
+        item
+        for item in payload["settings"]
+        if item["key"] == "pools.projection.publication_hardening_cutoff_utc"
+    )
+    assert row["value_type"] == "string"
+    assert row["default"] == ""
+    assert row["value"] == ""
+
+
+@pytest.mark.django_db
 def test_legacy_ui_action_catalog_endpoint_returns_stable_decommission_contract(staff_client):
     resp = staff_client.get("/api/v2/ui/action-catalog/")
     assert resp.status_code == 404

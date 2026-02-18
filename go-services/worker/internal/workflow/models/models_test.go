@@ -211,6 +211,39 @@ func TestFromJSON_EmptyNodes(t *testing.T) {
 	assert.NotNil(t, dag.Config)
 }
 
+func TestFromJSON_OperationRefPreserved(t *testing.T) {
+	data := []byte(`{
+	  "id": "wf-1",
+	  "name": "WF",
+	  "entry_node": "n1",
+	  "nodes": {
+	    "n1": {
+	      "id": "n1",
+	      "type": "operation",
+	      "name": "Pool step",
+	      "template_id": "pool.prepare_input",
+	      "operation_ref": {
+	        "alias": "pool.prepare_input",
+	        "binding_mode": "pinned_exposure",
+	        "template_exposure_id": "exp-1",
+	        "template_exposure_revision": 3
+	      }
+	    }
+	  },
+	  "edges": []
+	}`)
+
+	dag, err := FromJSON(data)
+	require.NoError(t, err)
+	node := dag.GetNode("n1")
+	require.NotNil(t, node)
+	require.NotNil(t, node.OperationRef)
+	assert.Equal(t, "pool.prepare_input", node.OperationRef.Alias)
+	assert.Equal(t, "pinned_exposure", node.OperationRef.BindingMode)
+	assert.Equal(t, "exp-1", node.OperationRef.TemplateExposureID)
+	assert.Equal(t, 3, node.OperationRef.TemplateExposureRevision)
+}
+
 func TestRetryPolicy_GetDelayForAttempt(t *testing.T) {
 	rp := &RetryPolicy{
 		MaxRetries: 3,
@@ -536,10 +569,10 @@ func TestDAG_ComplexWorkflow(t *testing.T) {
 
 func TestNode_JSONSerialization(t *testing.T) {
 	node := &Node{
-		ID:         "test-node",
-		Type:       NodeTypeParallel,
-		Name:       "Test Parallel",
-		Config:     DefaultNodeConfig(),
+		ID:     "test-node",
+		Type:   NodeTypeParallel,
+		Name:   "Test Parallel",
+		Config: DefaultNodeConfig(),
 		ParallelConfig: &ParallelNodeConfig{
 			BranchNodes:    []string{"a", "b", "c"},
 			WaitAll:        true,
