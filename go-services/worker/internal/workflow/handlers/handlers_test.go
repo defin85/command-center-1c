@@ -201,6 +201,40 @@ func TestOperationHandler(t *testing.T) {
 		assert.Equal(t, "pool.publication_odata", captured.OperationType)
 	})
 
+	t.Run("publication node payload falls back to execution context", func(t *testing.T) {
+		var captured *OperationRequest
+		mockExec := &mockOperationExecutor{
+			executeFunc: func(ctx context.Context, req *OperationRequest) (map[string]interface{}, error) {
+				captured = req
+				return map[string]interface{}{"status": "success"}, nil
+			},
+		}
+
+		deps := NewHandlerDependencies(zap.NewNop()).
+			WithOperationExecutor(mockExec)
+		handler := NewOperationHandler(deps)
+
+		node := models.NewOperationNode("op1", "Pool Publication", "pool.publication_odata")
+		execCtx := wfcontext.NewExecutionContext("exec-1", "workflow-1")
+		fallbackPayload := map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"entity_name": "Document_IntercompanyPoolDistribution",
+				"documents_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{"Amount": "100.00"},
+					},
+				},
+			},
+		}
+		execCtx = execCtx.Set("pool_runtime_publication_payload", fallbackPayload)
+
+		result, err := handler.HandleNode(context.Background(), node, execCtx)
+		require.NoError(t, err)
+		assert.Equal(t, executor.NodeStatusCompleted, result.Status)
+		require.NotNil(t, captured)
+		assert.Equal(t, fallbackPayload, captured.Payload)
+	})
+
 	t.Run("supported types", func(t *testing.T) {
 		deps := NewHandlerDependencies(zap.NewNop())
 		handler := NewOperationHandler(deps)

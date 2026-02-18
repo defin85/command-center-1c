@@ -14,6 +14,11 @@ import (
 	"github.com/commandcenter1c/commandcenter/worker/internal/workflow/models"
 )
 
+const (
+	poolPublicationOperationType     = "pool.publication_odata"
+	poolPublicationPayloadContextKey = "pool_runtime_publication_payload"
+)
+
 // OperationHandler executes operation nodes.
 // Operation nodes render templates and execute operations against 1C databases
 // via OData or RAS backends.
@@ -145,13 +150,17 @@ func (h *OperationHandler) HandleNode(
 	poolRunID, _ := execCtx.GetString("pool_run_id")
 	operationID, _ := execCtx.GetString("operation_id")
 	stepAttempt := getStepAttempt(execCtx, node.ID)
+	operationPayload := renderedPayload
+	if operationPayload == nil {
+		operationPayload = resolveOperationPayloadFromContext(config.OperationType, execCtx)
+	}
 
 	// Build operation request
 	req := &OperationRequest{
 		OperationID:     operationID,
 		OperationType:   config.OperationType,
 		TargetEntity:    config.TargetEntity,
-		Payload:         renderedPayload,
+		Payload:         operationPayload,
 		TemplateID:      config.TemplateID,
 		OperationRef:    node.OperationRef,
 		TargetDatabases: targetDatabases,
@@ -285,6 +294,24 @@ func getNodeTimeout(node *models.Node) int {
 
 func isPoolOperationType(operationType string) bool {
 	return strings.HasPrefix(operationType, "pool.")
+}
+
+func resolveOperationPayloadFromContext(
+	operationType string,
+	execCtx *wfcontext.ExecutionContext,
+) map[string]interface{} {
+	if execCtx == nil || operationType != poolPublicationOperationType {
+		return nil
+	}
+	rawPayload, ok := execCtx.Get(poolPublicationPayloadContextKey)
+	if !ok {
+		return nil
+	}
+	payload, ok := rawPayload.(map[string]interface{})
+	if !ok || len(payload) == 0 {
+		return nil
+	}
+	return payload
 }
 
 func getStepAttempt(execCtx *wfcontext.ExecutionContext, nodeID string) int {

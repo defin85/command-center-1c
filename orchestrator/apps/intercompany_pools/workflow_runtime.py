@@ -263,6 +263,9 @@ def start_pool_run_retry_workflow_execution(
 
         retry_input_context = _build_input_context(run=locked_run)
         retry_input_context["retry_request"] = _summarize_retry_request(retry_request)
+        retry_input_context["pool_runtime_publication_payload"] = _build_retry_publication_payload(
+            retry_request
+        )
         execution = workflow_template.create_execution(
             retry_input_context,
             tenant=locked_run.tenant,
@@ -427,6 +430,32 @@ def _summarize_retry_request(retry_request: dict[str, Any]) -> dict[str, Any]:
         "retry_interval_seconds": payload.get("retry_interval_seconds"),
         "external_key_field": str(payload.get("external_key_field") or "").strip(),
     }
+
+
+def _build_retry_publication_payload(retry_request: dict[str, Any]) -> dict[str, Any]:
+    payload = retry_request if isinstance(retry_request, dict) else {}
+    documents_by_database: dict[str, list[dict[str, Any]]] = {}
+    raw_documents_by_database = payload.get("documents_by_database")
+    if isinstance(raw_documents_by_database, dict):
+        for raw_database_id, raw_documents in raw_documents_by_database.items():
+            database_id = str(raw_database_id or "").strip()
+            if not database_id or not isinstance(raw_documents, list):
+                continue
+            normalized_documents = [
+                dict(item)
+                for item in raw_documents
+                if isinstance(item, dict)
+            ]
+            if normalized_documents:
+                documents_by_database[database_id] = normalized_documents
+    publication_payload = {
+        "entity_name": str(payload.get("entity_name") or "").strip(),
+        "documents_by_database": documents_by_database,
+        "max_attempts": payload.get("max_attempts"),
+        "retry_interval_seconds": payload.get("retry_interval_seconds"),
+        "external_key_field": str(payload.get("external_key_field") or "").strip(),
+    }
+    return {"pool_runtime": publication_payload}
 
 
 def _resolve_approval_state_for_input_context(*, run: PoolRun) -> str:

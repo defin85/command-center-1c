@@ -183,7 +183,9 @@ def test_retry_workflow_execution_keeps_operation_binding_snapshot() -> None:
 
     retry_payload = {
         "entity_name": "Document_IntercompanyPoolDistribution",
-        "documents_by_database": {},
+        "documents_by_database": {
+            "db-retry-1": [{"Amount": "100.00"}],
+        },
         "max_attempts": 1,
         "retry_interval_seconds": 0,
         "external_key_field": "ExternalRunKey",
@@ -227,3 +229,9 @@ def test_retry_workflow_execution_keeps_operation_binding_snapshot() -> None:
     assert lineage.get("attempt_kind") == "retry"
     assert int(lineage.get("attempt_number") or 0) >= 2
     assert str(lineage.get("parent_workflow_run_id") or "").strip()
+
+    publication_payload = execution.input_context.get("pool_runtime_publication_payload")
+    assert isinstance(publication_payload, dict)
+    pool_runtime_payload = publication_payload.get("pool_runtime")
+    assert isinstance(pool_runtime_payload, dict)
+    assert pool_runtime_payload.get("documents_by_database") == retry_payload.get("documents_by_database")

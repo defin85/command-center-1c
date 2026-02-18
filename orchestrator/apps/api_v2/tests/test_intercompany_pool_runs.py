@@ -2225,6 +2225,14 @@ def test_retry_pool_run_failed_endpoint_returns_accepted_workflow_reference_and_
     assert retry_request.get("requested_target_ids") == [str(db_two.id)]
     assert retry_request.get("requested_targets_count") == 1
     assert retry_request.get("requested_documents_count") == 1
+    publication_payload = retry_execution.input_context.get("pool_runtime_publication_payload")
+    assert isinstance(publication_payload, dict)
+    pool_runtime_payload = publication_payload.get("pool_runtime")
+    assert isinstance(pool_runtime_payload, dict)
+    assert pool_runtime_payload.get("entity_name") == "Document_IntercompanyPoolDistribution"
+    assert pool_runtime_payload.get("documents_by_database") == {
+        str(db_two.id): [{"Amount": "90.00"}],
+    }
 
 
 @pytest.mark.django_db
