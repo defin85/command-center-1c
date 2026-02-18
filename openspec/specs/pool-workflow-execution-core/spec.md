@@ -850,77 +850,26 @@ Retry path ДОЛЖЕН (SHALL) переиспользовать тот же def
 - **AND** система не создаёт ложный сигнал завершённой публикации
 
 ### Requirement: Poolops bridge MUST иметь детерминированный runtime-контракт
-Система ДОЛЖНА (SHALL) исполнять bridge-вызовы `poolops` в Orchestrator domain runtime через canonical internal API endpoint `POST /api/v2/internal/workflows/execute-pool-runtime-step`, описанный в `contracts/orchestrator-internal/openapi.yaml`.
+Система ДОЛЖНА (SHALL) использовать canonical bridge endpoint `POST /api/v2/internal/workflows/execute-pool-runtime-step` для pool runtime шагов, КРОМЕ `pool.publication_odata` после Big-bang cutover.
 
-Система ДОЛЖНА (SHALL) применять для endpoint детерминированный контракт:
-- обязательный internal auth;
-- request schema с tenant-scoped контекстом (`tenant_id`, `pool_run_id`, `workflow_execution_id`, `node_id`, `operation_type`);
-- обязательная передача pinned binding provenance (`operation_ref.alias`, `operation_ref.binding_mode`, `operation_ref.template_exposure_id`, `operation_ref.template_exposure_revision`);
-- bounded timeout;
-- идемпотентный ключ шага (`workflow_execution_id + node_id + step_attempt`).
+После Big-bang cutover шаг `pool.publication_odata` ДОЛЖЕН (SHALL) исполняться локально в worker через shared `odata-core`.
 
-Система ДОЛЖНА (SHALL) различать:
-- `step_attempt` (уровень workflow runtime retry semantics);
-- `transport_attempt` (повтор HTTP-запроса в рамках того же `step_attempt`).
+Bridge endpoint НЕ ДОЛЖЕН (SHALL NOT) выполнять OData side effects для `pool.publication_odata` после cutover и ДОЛЖЕН (SHALL) возвращать non-retryable конфликт с machine-readable кодом.
 
-Система ДОЛЖНА (SHALL) переиспользовать один и тот же step-idempotency key для всех `transport_attempt` внутри одного `step_attempt`.
+Fail-closed код для этого контракта ДОЛЖЕН (SHALL) быть стабильным: `POOL_RUNTIME_PUBLICATION_PATH_DISABLED`.
 
-Система ДОЛЖНА (SHALL) иметь явную status-matrix retry classification:
-- retryable: transport errors, HTTP `429`, HTTP `5xx`;
-- non-retryable: HTTP `400`, `401`, `404`, `409`.
+#### Scenario: publication_odata после cutover исполняется без bridge side effect
+- **GIVEN** Big-bang cutover завершён
+- **WHEN** worker исполняет шаг `pool.publication_odata`
+- **THEN** OData запросы выполняются через worker `odata-core` без вызова bridge endpoint для side effect
+- **AND** доменный lifecycle/projection pool run остаётся совместимым с контрактом
 
-Система ДОЛЖНА (SHALL) валидировать tenant-scoped bridge-контекст на стороне Orchestrator:
-- `tenant_id` в request ДОЛЖЕН (SHALL) совпадать с tenant execution/run;
-- `pool_run_id` ДОЛЖЕН (SHALL) быть связан с `workflow_execution_id`;
-- `node_id` ДОЛЖЕН (SHALL) соответствовать исполняемому workflow step.
-
-Система ДОЛЖНА (SHALL) считать idempotency key конфликтом случай, когда:
-- key уже сохранён;
-- новый request имеет другой fingerprint (body/context/provenance).
-
-При idempotency key конфликте система ДОЛЖНА (SHALL):
-- вернуть non-retryable `409 Conflict`;
-- вернуть `error_code=IDEMPOTENCY_KEY_CONFLICT`;
-- не выполнять side effects.
-
-#### Scenario: Повтор bridge-вызова publication шага не создаёт дублирующий side effect
-- **GIVEN** worker повторно отправляет bridge-вызов для того же шага `pool.publication_odata` (тот же `workflow_execution_id`, `node_id`, `step_attempt`)
-- **WHEN** Orchestrator получает повторный запрос с тем же step-idempotency key
-- **THEN** side effect публикации не дублируется
-- **AND** worker получает детерминированный ответ по исходной попытке
-
-#### Scenario: Transport retry в пределах step_attempt использует тот же idempotency key
-- **GIVEN** шаг `pool.publication_odata` выполняется с `step_attempt=2`
-- **AND** первый HTTP-вызов завершился retryable ошибкой `503`
-- **WHEN** transport слой делает повторный HTTP-вызов для того же шага
-- **THEN** повторный запрос использует тот же step-idempotency key
-- **AND** новый idempotency key НЕ создаётся до перехода к следующему `step_attempt`
-
-#### Scenario: Повтор с тем же idempotency key и другим payload завершается конфликтом
-- **GIVEN** bridge-запрос для шага уже сохранён по step-idempotency key
-- **AND** новый запрос с тем же key имеет другой request fingerprint
-- **WHEN** Orchestrator получает повторный запрос
-- **THEN** Orchestrator возвращает `409 Conflict` без выполнения side effects
-- **AND** ответ содержит `error_code=IDEMPOTENCY_KEY_CONFLICT`
-
-#### Scenario: Tenant/run/execution mismatch блокируется fail-closed
-- **GIVEN** bridge-запрос содержит `tenant_id`, `pool_run_id`, `workflow_execution_id`, `node_id`
-- **AND** хотя бы одно соответствие контекста невалидно
-- **WHEN** Orchestrator валидирует bridge request
-- **THEN** Orchestrator возвращает non-retryable `409 Conflict` без выполнения side effects
-- **AND** ответ содержит `error_code=POOL_RUNTIME_CONTEXT_MISMATCH`
-
-#### Scenario: Bridge request несёт pinned provenance для deterministic runtime-проверок
-- **GIVEN** worker исполняет `pool.prepare_input` через `binding_mode=pinned_exposure`
-- **WHEN** формируется bridge-запрос в Orchestrator runtime
-- **THEN** запрос содержит `template_exposure_id` и `template_exposure_revision`
-- **AND** runtime не выполняет alias/fallback путь при несоответствии pinned binding
-
-#### Scenario: Non-retryable конфликт bridge endpoint не ретраится
-- **GIVEN** Orchestrator bridge endpoint возвращает `409 Conflict` для шага `pool.approval_gate`
-- **WHEN** worker обрабатывает ответ bridge-вызова
-- **THEN** шаг завершается fail-closed без повторной отправки этого запроса
-- **AND** итоговая ошибка содержит machine-readable код причины
+#### Scenario: Вызов bridge для publication_odata после cutover отклоняется fail-closed
+- **GIVEN** после cutover отправлен bridge-запрос с `operation_type=pool.publication_odata`
+- **WHEN** Orchestrator валидирует запрос
+- **THEN** endpoint возвращает `409 Conflict` (non-retryable) с payload `ErrorResponse`
+- **AND** поле `code` равно `POOL_RUNTIME_PUBLICATION_PATH_DISABLED`
+- **AND** side effects публикации не выполняются
 
 ### Requirement: Bridge/status update retry MUST иметь единственного владельца
 Система ДОЛЖНА (SHALL) выполнять retry для `poolops` bridge и `update-execution-status` только в одном слое transport path.
@@ -1077,4 +1026,40 @@ Retry path ДОЛЖЕН (SHALL) переиспользовать тот же def
 - **WHEN** оператор активирует kill-switch во время выполнения этого run
 - **THEN** текущий run продолжает выполнение по зафиксированному execution path
 - **AND** kill-switch влияет только на новые run-ы
+
+### Requirement: Publication workflow step MUST использовать shared `odata-core` transport в Big-bang режиме
+Система ДОЛЖНА (SHALL) выполнять Big-bang перенос `pool.publication_odata` на shared `odata-core` синхронно с переключением `odataops`.
+
+Переход на shared `odata-core` НЕ ДОЛЖЕН (SHALL NOT) менять доменные инварианты pool runtime:
+- правила `approval_state/publication_step_state`;
+- идемпотентность публикации;
+- diagnostics contract публикации;
+- retry policy ограничения (`max_attempts_total`, `retry_interval_seconds` caps).
+
+#### Scenario: publication_odata сохраняет доменный контракт после Big-bang cutover
+- **GIVEN** workflow run дошёл до шага `publication_odata`
+- **WHEN** step исполняется через worker `odata-core`
+- **THEN** run lifecycle и pool facade status projection остаются совместимыми с текущим контрактом
+- **AND** publication diagnostics сохраняют каноническую структуру
+- **AND** side effects публикации остаются идемпотентными
+
+### Requirement: OData compatibility profile MUST оставаться source-of-truth для shared transport
+Система ДОЛЖНА (SHALL) применять compatibility constraints из `odata-compatibility-profile` при исполнении `publication_odata` через worker `odata-core`.
+
+#### Scenario: shared transport соблюдает compatibility ограничения
+- **GIVEN** целевая ИБ требует конкретный write media-type из compatibility profile
+- **WHEN** `publication_odata` исполняется через worker `odata-core`
+- **THEN** запросы используют совместимый media-type
+- **AND** при несовместимом профиле шаг завершается контролируемой fail-closed ошибкой
+
+### Requirement: Publication diagnostics projection MUST оставаться совместимой для pools facade
+Система ДОЛЖНА (SHALL) сохранять совместимость операторского read-model после переноса transport-owner:
+- источник истины для `/api/v2/pools/runs/{run_id}/report` остаётся `PoolPublicationAttempt`;
+- структура `publication_attempts`, `publication_summary` и `diagnostics` остаётся совместимой с текущим facade-контрактом.
+
+#### Scenario: После cutover отчёт run сохраняет совместимую diagnostics структуру
+- **GIVEN** публикация завершена после Big-bang cutover
+- **WHEN** оператор запрашивает `/api/v2/pools/runs/{run_id}/report`
+- **THEN** ответ содержит ожидаемые поля `publication_attempts`, `publication_summary`, `diagnostics`
+- **AND** существующие клиенты не требуют миграции формата
 

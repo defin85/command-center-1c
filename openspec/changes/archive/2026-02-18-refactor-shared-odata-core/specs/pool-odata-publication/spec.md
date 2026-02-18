@@ -35,6 +35,7 @@
 - **THEN** структура и обязательные поля diagnostics соответствуют текущему публичному контракту
 - **AND** оператор может принять решение о повторной дозаписи без миграции клиентской логики
 
+## ADDED Requirements
 ### Requirement: Publication attempts read-model MUST оставаться каноническим
 Система ДОЛЖНА (SHALL) после переноса transport-owner в worker сохранять канонический read-model попыток публикации в `PoolPublicationAttempt` без изменения публичного формата отчёта run.
 
