@@ -88,6 +88,18 @@
 - **THEN** OData side effect исполняется только через worker `odata-core`
 - **AND** legacy Orchestrator transport path не используется
 
+### Requirement: Publication idempotency MUST сохраняться при переносе transport-owner
+Система ДОЛЖНА (SHALL) сохранять детерминированную идемпотентность `pool.publication_odata` после переноса в worker `odata-core`.
+
+Система ДОЛЖНА (SHALL) использовать стабильный ключ идемпотентности для одного `step_attempt` и НЕ ДОЛЖНА (SHALL NOT) создавать новый business side effect при transport retry внутри этого же `step_attempt`.
+
+#### Scenario: Transport retry в publication path не дублирует side effect
+- **GIVEN** `pool.publication_odata` выполняется через worker `odata-core`
+- **AND** первая transport попытка завершилась retryable ошибкой
+- **WHEN** выполняется повтор внутри того же `step_attempt`
+- **THEN** publication side effect не дублируется
+- **AND** replay/conflict outcome остаётся детерминированным
+
 ### Requirement: Migration на `odata-core` MUST сохранять внешний контракт драйверов
 Система ДОЛЖНА (SHALL) сохранить внешний контракт результатов `odataops` и `poolops` после переключения на `odata-core`.
 
@@ -96,3 +108,19 @@
 - **WHEN** драйвер использует `odata-core`
 - **THEN** структура `DatabaseResultV2` остаётся совместимой
 - **AND** существующие клиенты не требуют изменения контракта
+
+### Requirement: Big-bang release MUST проходить обязательные quality gates
+Система ДОЛЖНА (SHALL) считать cutover допустимым только при успешном прохождении всех blocking gates:
+- parity suite для `odataops` и `pool.publication_odata`;
+- compatibility preflight по `odata-compatibility-profile`;
+- bridge fail-closed contract tests;
+- staging rehearsal и rollback drill.
+
+Система НЕ ДОЛЖНА (SHALL NOT) выполнять production cutover при провале хотя бы одного gate.
+
+#### Scenario: Провал compatibility preflight блокирует cutover
+- **GIVEN** release-кандидат включает новый `odata-core` path для publication
+- **AND** compatibility preflight возвращает несовместимость media-type профиля
+- **WHEN** выполняется release gate проверка
+- **THEN** production cutover отклоняется
+- **AND** релиз остаётся в состоянии no-go до устранения несовместимости

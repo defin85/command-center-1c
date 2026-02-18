@@ -6,6 +6,8 @@
 
 Bridge endpoint НЕ ДОЛЖЕН (SHALL NOT) выполнять OData side effects для `pool.publication_odata` после cutover и ДОЛЖЕН (SHALL) возвращать non-retryable конфликт с machine-readable кодом.
 
+Fail-closed код для этого контракта ДОЛЖЕН (SHALL) быть стабильным: `POOL_RUNTIME_PUBLICATION_PATH_DISABLED`.
+
 #### Scenario: publication_odata после cutover исполняется без bridge side effect
 - **GIVEN** Big-bang cutover завершён
 - **WHEN** worker исполняет шаг `pool.publication_odata`
@@ -15,7 +17,8 @@ Bridge endpoint НЕ ДОЛЖЕН (SHALL NOT) выполнять OData side effe
 #### Scenario: Вызов bridge для publication_odata после cutover отклоняется fail-closed
 - **GIVEN** после cutover отправлен bridge-запрос с `operation_type=pool.publication_odata`
 - **WHEN** Orchestrator валидирует запрос
-- **THEN** endpoint возвращает non-retryable конфликт с machine-readable кодом
+- **THEN** endpoint возвращает `409 Conflict` (non-retryable) с payload `ErrorResponse`
+- **AND** поле `code` равно `POOL_RUNTIME_PUBLICATION_PATH_DISABLED`
 - **AND** side effects публикации не выполняются
 
 ## ADDED Requirements
@@ -43,3 +46,14 @@ Bridge endpoint НЕ ДОЛЖЕН (SHALL NOT) выполнять OData side effe
 - **WHEN** `publication_odata` исполняется через worker `odata-core`
 - **THEN** запросы используют совместимый media-type
 - **AND** при несовместимом профиле шаг завершается контролируемой fail-closed ошибкой
+
+### Requirement: Publication diagnostics projection MUST оставаться совместимой для pools facade
+Система ДОЛЖНА (SHALL) сохранять совместимость операторского read-model после переноса transport-owner:
+- источник истины для `/api/v2/pools/runs/{run_id}/report` остаётся `PoolPublicationAttempt`;
+- структура `publication_attempts`, `publication_summary` и `diagnostics` остаётся совместимой с текущим facade-контрактом.
+
+#### Scenario: После cutover отчёт run сохраняет совместимую diagnostics структуру
+- **GIVEN** публикация завершена после Big-bang cutover
+- **WHEN** оператор запрашивает `/api/v2/pools/runs/{run_id}/report`
+- **THEN** ответ содержит ожидаемые поля `publication_attempts`, `publication_summary`, `diagnostics`
+- **AND** существующие клиенты не требуют миграции формата
