@@ -143,10 +143,12 @@ func (h *OperationHandler) HandleNode(
 	targetDatabases := extractTargetDatabases(execCtx, node)
 	tenantID, _ := execCtx.GetString("tenant_id")
 	poolRunID, _ := execCtx.GetString("pool_run_id")
+	operationID, _ := execCtx.GetString("operation_id")
 	stepAttempt := getStepAttempt(execCtx, node.ID)
 
 	// Build operation request
 	req := &OperationRequest{
+		OperationID:     operationID,
 		OperationType:   config.OperationType,
 		TargetEntity:    config.TargetEntity,
 		Payload:         renderedPayload,

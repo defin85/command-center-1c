@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+type transportTraceRecord struct {
+	event    string
+	metadata map[string]interface{}
+}
+
 func TestClient_Create(t *testing.T) {
 	// Mock 1C OData server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -169,6 +174,83 @@ func TestClient_Create_Retry(t *testing.T) {
 
 	if result["Ref_Key"] != "guid'...'" {
 		t.Error("Invalid result")
+	}
+}
+
+func TestClient_Create_TransportTraceIncludesRetryAndResendAttempt(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		response := map[string]interface{}{"Ref_Key": "guid'abc'"}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{
+		BaseURL:       server.URL,
+		Auth:          Auth{Username: "test", Password: "test"},
+		MaxRetries:    2,
+		RetryWaitTime: 10 * time.Millisecond,
+	})
+
+	records := make([]transportTraceRecord, 0, 4)
+	ctx := WithTransportTelemetry(context.Background(), TransportTelemetry{
+		Operation:   "pool.publication_odata",
+		ExecutionID: "exec-1",
+		NodeID:      "publication_odata",
+		DatabaseID:  "db-1",
+		Entity:      "Document_IntercompanyPoolDistribution",
+		Trace: func(_ context.Context, event string, metadata map[string]interface{}) {
+			copied := make(map[string]interface{}, len(metadata))
+			for key, value := range metadata {
+				copied[key] = value
+			}
+			records = append(records, transportTraceRecord{event: event, metadata: copied})
+		},
+	})
+
+	_, err := client.Create(ctx, "Catalog_Test", map[string]interface{}{"Name": "Test"})
+	if err != nil {
+		t.Fatalf("expected successful retry path, got error: %v", err)
+	}
+
+	var sawRetryScheduled bool
+	var sawResendCompleted bool
+	for _, record := range records {
+		if record.event == "external.odata.transport.retry.scheduled" {
+			sawRetryScheduled = true
+			if record.metadata["attempt"] != 1 {
+				t.Fatalf("expected retry attempt=1, got %v", record.metadata["attempt"])
+			}
+			if record.metadata["next_attempt"] != 2 {
+				t.Fatalf("expected next_attempt=2, got %v", record.metadata["next_attempt"])
+			}
+			if record.metadata["transport_operation"] != "pool.publication_odata" {
+				t.Fatalf("expected transport_operation=pool.publication_odata, got %v", record.metadata["transport_operation"])
+			}
+		}
+		if record.event == "external.odata.transport.request.completed" && record.metadata["attempt"] == 2 {
+			sawResendCompleted = true
+			if record.metadata["resend_attempt"] != true {
+				t.Fatalf("expected resend_attempt=true, got %v", record.metadata["resend_attempt"])
+			}
+			if record.metadata["status_class"] != "2xx" {
+				t.Fatalf("expected status_class=2xx, got %v", record.metadata["status_class"])
+			}
+		}
+	}
+
+	if !sawRetryScheduled {
+		t.Fatal("expected retry scheduled trace event")
+	}
+	if !sawResendCompleted {
+		t.Fatal("expected completed resend attempt trace event")
 	}
 }
 

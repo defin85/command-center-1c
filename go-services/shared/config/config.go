@@ -89,6 +89,27 @@ type Config struct {
 	// PoolOpsRouteKillSwitch disables poolops route for all new executions.
 	// When enabled, pool.* nodes stay fail-closed with POOL_RUNTIME_ROUTE_DISABLED.
 	PoolOpsRouteKillSwitch bool
+	// EnablePoolPublicationODataCore enables local worker execution for pool.publication_odata via shared odata-core.
+	// false keeps publication step on bridge path; true enables local publication transport for selected workers.
+	EnablePoolPublicationODataCore bool
+	// PoolPublicationODataCoreRolloutPercent controls deterministic rollout for local publication transport.
+	PoolPublicationODataCoreRolloutPercent float64
+	// PoolPublicationODataCoreRolloutSeed isolates canary cohorts between experiments.
+	PoolPublicationODataCoreRolloutSeed string
+	// PoolPublicationODataCoreKillSwitch disables local publication transport for all new executions.
+	PoolPublicationODataCoreKillSwitch bool
+	// ODataCompatibilityProfilePath points to odata-compatibility-profile.yaml used by publication transport gate.
+	// Empty value enables auto-discovery via known repository-relative paths.
+	ODataCompatibilityProfilePath string
+	// ODataCompatibilityConfigurationID selects target configuration entry for compatibility gate checks.
+	ODataCompatibilityConfigurationID string
+	// ODataCompatibilityMode forwards target 1C compatibility mode (e.g. "8.3.23") to legacy policy checks.
+	ODataCompatibilityMode string
+	// ODataCompatibilityWriteContentType forwards effective write content type for media-type gate checks.
+	ODataCompatibilityWriteContentType string
+	// ODataCompatibilityReleaseProfileVersion pins release profile version used by compatibility gate.
+	// Empty value lets runtime use profile_version from loaded artifact.
+	ODataCompatibilityReleaseProfileVersion string
 	// UseStreamsClusterInfo enables Redis Streams for cluster info resolution (primary method).
 	// When enabled, Worker first tries to get cluster info via Streams, then falls back to HTTP.
 	// When disabled, only HTTP is used (for rollback scenarios).
@@ -173,13 +194,22 @@ func LoadFromEnv() *Config {
 		TemplateRenderTimeout:  getDurationEnv("TEMPLATE_RENDER_TIMEOUT", 5*time.Second),
 
 		// Feature Flags
-		EnablePoolOpsRoute:         getBoolEnv("ENABLE_POOLOPS_ROUTE", false),
-		PoolOpsRouteRolloutPercent: normalizeRolloutPercent(getFloat64Env("POOLOPS_ROUTE_ROLLOUT_PERCENT", 1.0)),
-		PoolOpsRouteRolloutSeed:    getEnv("POOLOPS_ROUTE_ROLLOUT_SEED", ""),
-		PoolOpsRouteKillSwitch:     getBoolEnv("POOLOPS_ROUTE_KILL_SWITCH", false),
-		UseStreamsClusterInfo:      getBoolEnv("USE_STREAMS_CLUSTER_INFO", true),
-		StreamsClusterInfoTimeout:  getPositiveDurationEnv("STREAMS_CLUSTER_INFO_TIMEOUT", 5*time.Second),
-		StreamsCredentialsTimeout:  getPositiveDurationEnv("STREAMS_CREDENTIALS_TIMEOUT", 5*time.Second),
+		EnablePoolOpsRoute:                      getBoolEnv("ENABLE_POOLOPS_ROUTE", false),
+		PoolOpsRouteRolloutPercent:              normalizeRolloutPercent(getFloat64Env("POOLOPS_ROUTE_ROLLOUT_PERCENT", 1.0)),
+		PoolOpsRouteRolloutSeed:                 getEnv("POOLOPS_ROUTE_ROLLOUT_SEED", ""),
+		PoolOpsRouteKillSwitch:                  getBoolEnv("POOLOPS_ROUTE_KILL_SWITCH", false),
+		EnablePoolPublicationODataCore:          getBoolEnv("ENABLE_POOL_PUBLICATION_ODATA_CORE", false),
+		PoolPublicationODataCoreRolloutPercent:  normalizeRolloutPercent(getFloat64Env("POOL_PUBLICATION_ODATA_CORE_ROLLOUT_PERCENT", 0.0)),
+		PoolPublicationODataCoreRolloutSeed:     getEnv("POOL_PUBLICATION_ODATA_CORE_ROLLOUT_SEED", ""),
+		PoolPublicationODataCoreKillSwitch:      getBoolEnv("POOL_PUBLICATION_ODATA_CORE_KILL_SWITCH", false),
+		ODataCompatibilityProfilePath:           getEnv("ODATA_COMPATIBILITY_PROFILE_PATH", ""),
+		ODataCompatibilityConfigurationID:       getEnv("ODATA_COMPATIBILITY_CONFIGURATION_ID", ""),
+		ODataCompatibilityMode:                  getEnv("ODATA_COMPATIBILITY_MODE", ""),
+		ODataCompatibilityWriteContentType:      getEnv("ODATA_COMPATIBILITY_WRITE_CONTENT_TYPE", "application/json;odata=nometadata"),
+		ODataCompatibilityReleaseProfileVersion: getEnv("ODATA_COMPATIBILITY_RELEASE_PROFILE_VERSION", ""),
+		UseStreamsClusterInfo:                   getBoolEnv("USE_STREAMS_CLUSTER_INFO", true),
+		StreamsClusterInfoTimeout:               getPositiveDurationEnv("STREAMS_CLUSTER_INFO_TIMEOUT", 5*time.Second),
+		StreamsCredentialsTimeout:               getPositiveDurationEnv("STREAMS_CREDENTIALS_TIMEOUT", 5*time.Second),
 
 		// Timeline recorder
 		TimelineQueueSize:   getIntEnv("TIMELINE_QUEUE_SIZE", 10000),
@@ -195,6 +225,18 @@ func (c *Config) IsPoolOpsRouteEnabledForWorker() bool {
 		return false
 	}
 	return shouldEnableWorkerByRollout(c.WorkerID, c.PoolOpsRouteRolloutPercent, c.PoolOpsRouteRolloutSeed)
+}
+
+// IsPoolPublicationODataCoreEnabledForWorker returns effective decision for local publication transport.
+func (c *Config) IsPoolPublicationODataCoreEnabledForWorker() bool {
+	if c == nil || !c.EnablePoolPublicationODataCore || c.PoolPublicationODataCoreKillSwitch {
+		return false
+	}
+	return shouldEnableWorkerByRollout(
+		c.WorkerID,
+		c.PoolPublicationODataCoreRolloutPercent,
+		c.PoolPublicationODataCoreRolloutSeed,
+	)
 }
 
 func shouldEnableWorkerByRollout(workerID string, rolloutPercent float64, rolloutSeed string) bool {

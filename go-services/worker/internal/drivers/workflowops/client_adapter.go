@@ -31,6 +31,7 @@ func (a *OrchestratorWorkflowClient) UpdateWorkflowExecutionStatus(
 	ctx context.Context,
 	executionID, status, errorMessage, errorCode string,
 	errorDetails map[string]interface{},
+	result map[string]interface{},
 ) error {
 	return a.client.UpdateWorkflowExecutionStatus(
 		ctx,
@@ -39,5 +40,6 @@ func (a *OrchestratorWorkflowClient) UpdateWorkflowExecutionStatus(
 		errorMessage,
 		errorCode,
 		errorDetails,
+		result,
 	)
 }

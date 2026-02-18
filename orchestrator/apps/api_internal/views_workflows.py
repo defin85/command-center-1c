@@ -5,7 +5,7 @@ from collections.abc import Mapping
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import F
+from django.db.models import F, Max
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -26,6 +26,7 @@ PUBLICATION_STEP_STATE_STARTED = "started"
 PUBLICATION_STEP_STATE_COMPLETED = "completed"
 POOL_RUNTIME_CONTEXT_MISMATCH = "POOL_RUNTIME_CONTEXT_MISMATCH"
 IDEMPOTENCY_KEY_CONFLICT = "IDEMPOTENCY_KEY_CONFLICT"
+POOL_RUNTIME_PUBLICATION_PATH_DISABLED = "POOL_RUNTIME_PUBLICATION_PATH_DISABLED"
 ERROR_DETAILS_MAX_SIZE_BYTES = 8 * 1024
 ERROR_DETAILS_REDACTED_VALUE = "***REDACTED***"
 ERROR_DETAILS_MAX_DEPTH = 4
@@ -252,6 +253,423 @@ def _sanitize_error_details(details: object) -> dict[str, object] | None:
     return _apply_error_details_size_cap(normalized)
 
 
+def _parse_positive_int(value: object, *, default: int, minimum: int = 1) -> int:
+    if isinstance(value, bool):
+        return default
+    parsed: int | None = None
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, float):
+        if value.is_integer():
+            parsed = int(value)
+    elif isinstance(value, str):
+        token = value.strip()
+        if token:
+            try:
+                parsed = int(token)
+            except ValueError:
+                parsed = None
+    if parsed is None or parsed < minimum:
+        return default
+    return parsed
+
+
+def _extract_publication_result_payload(result_payload: object) -> dict[str, object] | None:
+    def _normalize_candidate(candidate: object) -> dict[str, object] | None:
+        if not isinstance(candidate, Mapping):
+            return None
+        if str(candidate.get("step") or "").strip().lower() == "publication_odata":
+            return dict(candidate)
+        nested_output = candidate.get("output")
+        if isinstance(nested_output, Mapping):
+            if str(nested_output.get("step") or "").strip().lower() == "publication_odata":
+                return dict(nested_output)
+        return None
+
+    if not isinstance(result_payload, Mapping):
+        return None
+
+    direct = _normalize_candidate(result_payload)
+    if direct is not None:
+        return direct
+
+    for container_key in ("node_results", "nodes"):
+        container = result_payload.get(container_key)
+        if not isinstance(container, Mapping):
+            continue
+        direct_candidate = _normalize_candidate(container.get("publication_odata"))
+        if direct_candidate is not None:
+            return direct_candidate
+        for candidate in container.values():
+            normalized = _normalize_candidate(candidate)
+            if normalized is not None:
+                return normalized
+    return None
+
+
+def _normalize_publication_attempt_rows(
+    *,
+    raw_attempts: object,
+    entity_name: str,
+    documents_count_by_database: dict[str, int],
+) -> list[dict[str, object]]:
+    if not isinstance(raw_attempts, list):
+        return []
+
+    normalized: list[dict[str, object]] = []
+    for raw_attempt in raw_attempts:
+        if not isinstance(raw_attempt, Mapping):
+            continue
+        target_database = str(
+            raw_attempt.get("target_database")
+            or raw_attempt.get("target_database_id")
+            or raw_attempt.get("database_id")
+            or ""
+        ).strip()
+        if not target_database:
+            continue
+
+        raw_status = str(raw_attempt.get("status") or "").strip().lower()
+        status_value = "success" if raw_status == "success" else "failed"
+        default_documents_count = max(int(documents_count_by_database.get(target_database) or 0), 1)
+        documents_count = _parse_positive_int(
+            raw_attempt.get("documents_count"),
+            default=default_documents_count,
+        )
+        request_summary = raw_attempt.get("request_summary")
+        if not isinstance(request_summary, Mapping):
+            request_summary = {"documents_count": documents_count}
+        response_summary = raw_attempt.get("response_summary")
+        if not isinstance(response_summary, Mapping):
+            response_summary = {"posted": status_value == "success"}
+
+        posted = bool(
+            raw_attempt.get("posted")
+            if "posted" in raw_attempt
+            else status_value == "success"
+        )
+        error_code = str(raw_attempt.get("error_code") or "").strip()
+        error_message = str(raw_attempt.get("error_message") or "").strip()
+        http_status_value = raw_attempt.get("http_status")
+        http_status = None
+        if isinstance(http_status_value, int):
+            http_status = http_status_value
+        elif isinstance(http_status_value, float) and http_status_value.is_integer():
+            http_status = int(http_status_value)
+
+        normalized.append(
+            {
+                "target_database": target_database,
+                "attempt_number": _parse_positive_int(raw_attempt.get("attempt_number"), default=1),
+                "status": status_value,
+                "entity_name": str(raw_attempt.get("entity_name") or "").strip() or entity_name,
+                "documents_count": documents_count,
+                "posted": posted,
+                "error_code": error_code,
+                "error_message": error_message,
+                "http_status": http_status,
+                "request_summary": dict(request_summary),
+                "response_summary": dict(response_summary),
+            }
+        )
+    return normalized
+
+
+def _synthesize_publication_attempt_rows(
+    *,
+    target_databases: list[str],
+    entity_name: str,
+    documents_count_by_database: dict[str, int],
+    failed_databases: dict[str, str],
+    failed_databases_diagnostics: dict[str, dict[str, object]],
+    max_attempts: int,
+) -> list[dict[str, object]]:
+    synthesized: list[dict[str, object]] = []
+    for database_id in target_databases:
+        is_failed = database_id in failed_databases or database_id in failed_databases_diagnostics
+        diagnostics = failed_databases_diagnostics.get(database_id) or {}
+        attempts_count = 1
+        if is_failed:
+            attempts_count = _parse_positive_int(
+                diagnostics.get("attempts"),
+                default=max(max_attempts, 1),
+            )
+
+        documents_count = _parse_positive_int(
+            documents_count_by_database.get(database_id),
+            default=1,
+        )
+        status_value = "failed" if is_failed else "success"
+        error_message = ""
+        error_code = ""
+        http_status = None
+        if is_failed:
+            error_message = str(
+                failed_databases.get(database_id)
+                or diagnostics.get("error")
+                or ""
+            ).strip()
+            error_code = str(diagnostics.get("error_code") or "").strip()
+            raw_http_status = diagnostics.get("http_status")
+            if isinstance(raw_http_status, int):
+                http_status = raw_http_status
+            elif isinstance(raw_http_status, float) and raw_http_status.is_integer():
+                http_status = int(raw_http_status)
+
+        for attempt_number in range(1, attempts_count + 1):
+            synthesized.append(
+                {
+                    "target_database": database_id,
+                    "attempt_number": attempt_number,
+                    "status": status_value,
+                    "entity_name": entity_name,
+                    "documents_count": documents_count,
+                    "posted": not is_failed,
+                    "error_code": error_code,
+                    "error_message": error_message,
+                    "http_status": http_status,
+                    "request_summary": {"documents_count": documents_count},
+                    "response_summary": {"posted": not is_failed},
+                }
+            )
+    return synthesized
+
+
+def _project_pool_publication_attempts_from_result(*, execution, result_payload: object) -> None:
+    from apps.databases.models import Database
+    from apps.intercompany_pools.models import (
+        PoolPublicationAttempt,
+        PoolPublicationAttemptStatus,
+        PoolRun,
+    )
+
+    if str(execution.execution_consumer or "") != "pools":
+        return
+
+    publication_result = _extract_publication_result_payload(result_payload)
+    if publication_result is None:
+        return
+
+    execution_context = execution.input_context if isinstance(execution.input_context, dict) else {}
+    pool_run_id = str(
+        publication_result.get("pool_run_id")
+        or execution_context.get("pool_run_id")
+        or ""
+    ).strip()
+    if not pool_run_id:
+        return
+
+    try:
+        pool_run_uuid = uuid.UUID(pool_run_id)
+    except ValueError:
+        logger.warning(
+            "Skipping publication projection: invalid pool run id",
+            extra={"execution_id": str(execution.id), "pool_run_id": pool_run_id},
+        )
+        return
+
+    run = PoolRun.objects.filter(id=pool_run_uuid).first()
+    if run is None:
+        logger.warning(
+            "Skipping publication projection: pool run is missing",
+            extra={"execution_id": str(execution.id), "pool_run_id": pool_run_id},
+        )
+        return
+
+    execution_tenant_id = str(getattr(execution, "tenant_id", "") or "").strip()
+    if execution_tenant_id and str(run.tenant_id) != execution_tenant_id:
+        logger.warning(
+            "Skipping publication projection due to tenant mismatch",
+            extra={
+                "execution_id": str(execution.id),
+                "pool_run_id": str(run.id),
+                "run_tenant_id": str(run.tenant_id),
+                "execution_tenant_id": execution_tenant_id,
+            },
+        )
+        return
+
+    target_databases: list[str] = []
+    raw_targets = publication_result.get("target_databases")
+    if isinstance(raw_targets, list):
+        for raw_value in raw_targets:
+            normalized = str(raw_value or "").strip()
+            if normalized and normalized not in target_databases:
+                target_databases.append(normalized)
+
+    documents_count_by_database: dict[str, int] = {}
+    raw_documents_count = publication_result.get("documents_count_by_database")
+    if isinstance(raw_documents_count, Mapping):
+        for raw_database_id, raw_count in raw_documents_count.items():
+            database_id = str(raw_database_id or "").strip()
+            if not database_id:
+                continue
+            documents_count_by_database[database_id] = _parse_positive_int(
+                raw_count,
+                default=1,
+            )
+            if database_id not in target_databases:
+                target_databases.append(database_id)
+
+    failed_databases: dict[str, str] = {}
+    raw_failed_databases = publication_result.get("failed_databases")
+    if isinstance(raw_failed_databases, Mapping):
+        for raw_database_id, raw_error in raw_failed_databases.items():
+            database_id = str(raw_database_id or "").strip()
+            if not database_id:
+                continue
+            failed_databases[database_id] = str(raw_error or "").strip()
+            if database_id not in target_databases:
+                target_databases.append(database_id)
+
+    failed_databases_diagnostics: dict[str, dict[str, object]] = {}
+    raw_failed_diagnostics = publication_result.get("failed_databases_diagnostics")
+    if isinstance(raw_failed_diagnostics, Mapping):
+        for raw_database_id, raw_diagnostics in raw_failed_diagnostics.items():
+            database_id = str(raw_database_id or "").strip()
+            if not database_id or not isinstance(raw_diagnostics, Mapping):
+                continue
+            failed_databases_diagnostics[database_id] = dict(raw_diagnostics)
+            if database_id not in target_databases:
+                target_databases.append(database_id)
+
+    entity_name = str(
+        publication_result.get("entity_name") or "Document_IntercompanyPoolDistribution"
+    ).strip() or "Document_IntercompanyPoolDistribution"
+    max_attempts = _parse_positive_int(publication_result.get("max_attempts"), default=1)
+    attempt_rows = _normalize_publication_attempt_rows(
+        raw_attempts=publication_result.get("attempts"),
+        entity_name=entity_name,
+        documents_count_by_database=documents_count_by_database,
+    )
+    if not attempt_rows and target_databases:
+        attempt_rows = _synthesize_publication_attempt_rows(
+            target_databases=target_databases,
+            entity_name=entity_name,
+            documents_count_by_database=documents_count_by_database,
+            failed_databases=failed_databases,
+            failed_databases_diagnostics=failed_databases_diagnostics,
+            max_attempts=max_attempts,
+        )
+
+    database_ids: set[str] = set(target_databases)
+    for row in attempt_rows:
+        database_ids.add(str(row.get("target_database") or "").strip())
+    database_ids = {value for value in database_ids if value}
+    valid_database_ids: set[str] = set()
+    for database_id in database_ids:
+        try:
+            valid_database_ids.add(str(uuid.UUID(database_id)))
+        except ValueError:
+            logger.warning(
+                "Skipping publication projection for invalid database id",
+                extra={
+                    "execution_id": str(execution.id),
+                    "pool_run_id": str(run.id),
+                    "target_database_id": database_id,
+                },
+            )
+
+    databases = {
+        str(db.id): db
+        for db in Database.objects.filter(
+            id__in=list(valid_database_ids),
+            tenant=run.tenant,
+        )
+    }
+
+    if attempt_rows:
+        existing_attempts = (
+            PoolPublicationAttempt.objects.filter(
+                run=run,
+                target_database_id__in=list(databases.keys()),
+            )
+            .values("target_database_id")
+            .annotate(max_attempt=Max("attempt_number"))
+        )
+        attempt_offset_by_database = {
+            str(item["target_database_id"]): int(item["max_attempt"] or 0)
+            for item in existing_attempts
+        }
+
+        for row in attempt_rows:
+            database_id = str(row.get("target_database") or "").strip()
+            target_database = databases.get(database_id)
+            if target_database is None:
+                logger.warning(
+                    "Skipping publication attempt projection: database is missing",
+                    extra={
+                        "execution_id": str(execution.id),
+                        "pool_run_id": str(run.id),
+                        "target_database_id": database_id,
+                    },
+                )
+                continue
+
+            local_attempt_number = _parse_positive_int(row.get("attempt_number"), default=1)
+            attempt_number = attempt_offset_by_database.get(database_id, 0) + local_attempt_number
+            status_value = str(row.get("status") or "").strip().lower()
+            if status_value not in {
+                PoolPublicationAttemptStatus.SUCCESS,
+                PoolPublicationAttemptStatus.FAILED,
+            }:
+                status_value = PoolPublicationAttemptStatus.FAILED
+
+            PoolPublicationAttempt.objects.update_or_create(
+                run=run,
+                target_database=target_database,
+                attempt_number=attempt_number,
+                defaults={
+                    "tenant": run.tenant,
+                    "status": status_value,
+                    "entity_name": str(row.get("entity_name") or entity_name).strip() or entity_name,
+                    "documents_count": _parse_positive_int(
+                        row.get("documents_count"),
+                        default=1,
+                    ),
+                    "posted": bool(row.get("posted")),
+                    "http_status": row.get("http_status"),
+                    "error_code": str(row.get("error_code") or "").strip(),
+                    "error_message": str(row.get("error_message") or "").strip(),
+                    "request_summary": dict(row.get("request_summary") or {}),
+                    "response_summary": dict(row.get("response_summary") or {}),
+                    "started_at": timezone.now(),
+                    "finished_at": timezone.now(),
+                },
+            )
+
+    total_targets = _parse_positive_int(
+        publication_result.get("documents_targets"),
+        default=len(target_databases),
+        minimum=0,
+    )
+    failed_targets = _parse_positive_int(
+        publication_result.get("failed_targets"),
+        default=len(failed_databases),
+        minimum=0,
+    )
+    succeeded_targets = _parse_positive_int(
+        publication_result.get("succeeded_targets"),
+        default=max(total_targets - failed_targets, 0),
+        minimum=0,
+    )
+    run.publication_summary = {
+        "total_targets": total_targets,
+        "succeeded_targets": succeeded_targets,
+        "failed_targets": failed_targets,
+        "max_attempts": max_attempts,
+    }
+    run.save(update_fields=["publication_summary", "updated_at"])
+
+    current_publication_state = str(
+        execution_context.get("publication_step_state") or ""
+    ).strip().lower()
+    if current_publication_state != PUBLICATION_STEP_STATE_COMPLETED:
+        updated_context = dict(execution_context)
+        updated_context["publication_step_state"] = PUBLICATION_STEP_STATE_COMPLETED
+        execution.input_context = updated_context
+
+
 def _resolve_workflow_node(*, execution, node_id: str) -> dict[str, object] | None:
     dag_structure = _model_dump(execution.workflow_template.dag_structure)
     if not isinstance(dag_structure, dict):
@@ -476,6 +894,15 @@ def execute_pool_runtime_step_v2(request):
             status=status.HTTP_409_CONFLICT,
         )
 
+    if operation_type == "pool.publication_odata":
+        return Response(
+            _build_error_response_payload(
+                error="Publication OData side effects are disabled for bridge path",
+                code=POOL_RUNTIME_PUBLICATION_PATH_DISABLED,
+            ),
+            status=status.HTTP_409_CONFLICT,
+        )
+
     request_fingerprint = _build_pool_runtime_request_fingerprint(
         tenant_id=tenant_id,
         pool_run_id=str(run.id),
@@ -696,6 +1123,10 @@ def update_workflow_execution_status(request):
             if execution.status != WorkflowExecution.STATUS_RUNNING:
                 return Response({"success": False, "error": "Execution is not running"}, status=status.HTTP_409_CONFLICT)
             execution.complete(result_payload)
+            _project_pool_publication_attempts_from_result(
+                execution=execution,
+                result_payload=result_payload,
+            )
 
         elif target_status == WorkflowExecution.STATUS_FAILED:
             if execution.status == WorkflowExecution.STATUS_PENDING:

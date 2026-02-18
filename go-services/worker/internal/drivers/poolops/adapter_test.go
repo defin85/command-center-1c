@@ -27,6 +27,22 @@ func (m *mockBridgeClient) ExecutePoolRuntimeStep(ctx context.Context, req *Brid
 	return m.res, m.err
 }
 
+type mockPublicationTransport struct {
+	callCount int
+	lastReq   *handlers.OperationRequest
+	res       map[string]interface{}
+	err       error
+}
+
+func (m *mockPublicationTransport) ExecutePublicationOData(
+	ctx context.Context,
+	req *handlers.OperationRequest,
+) (map[string]interface{}, error) {
+	m.callCount++
+	m.lastReq = req
+	return m.res, m.err
+}
+
 func TestIsPoolOperation(t *testing.T) {
 	assert.True(t, IsPoolOperation("pool.publication_odata"))
 	assert.True(t, IsPoolOperation("pool.prepare_input"))
@@ -54,7 +70,7 @@ func TestAdapter_ExecuteNonPoolOperationIsSkipped(t *testing.T) {
 	assert.Equal(t, "odata.create", out["operation_type"])
 }
 
-func TestAdapter_ExecutePoolOperationWithoutBridgeFailsClosed(t *testing.T) {
+func TestAdapter_ExecutePublicationOperationWithoutTransportFailsClosed(t *testing.T) {
 	adapter := NewAdapter(nil, zap.NewNop())
 
 	out, err := adapter.Execute(context.Background(), &handlers.OperationRequest{
@@ -66,7 +82,7 @@ func TestAdapter_ExecutePoolOperationWithoutBridgeFailsClosed(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, out)
 	assert.True(t, errors.As(err, &opErr))
-	assert.Equal(t, handlers.ErrorCodeWorkflowOperationExecutorNotConfigured, opErr.Code)
+	assert.Equal(t, handlers.ErrorCodePoolRuntimePublicationPathDisabled, opErr.Code)
 }
 
 func TestAdapter_ExecutePoolOperationRouteDisabledFailsClosed(t *testing.T) {
@@ -94,7 +110,7 @@ func TestAdapter_ExecutePoolOperationCallsBridge(t *testing.T) {
 	adapter := NewAdapter(bridge, zap.NewNop())
 
 	out, err := adapter.Execute(context.Background(), &handlers.OperationRequest{
-		OperationType:   "pool.publication_odata",
+		OperationType:   "pool.prepare_input",
 		TemplateID:      "tpl-1",
 		TargetEntity:    "Document",
 		Payload:         map[string]interface{}{"k": "v"},
@@ -105,7 +121,7 @@ func TestAdapter_ExecutePoolOperationCallsBridge(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1, bridge.callCount)
 	assert.NotNil(t, bridge.lastReq)
-	assert.Equal(t, "pool.publication_odata", bridge.lastReq.OperationType)
+	assert.Equal(t, "pool.prepare_input", bridge.lastReq.OperationType)
 	assert.Equal(t, "ok", out["status"])
 }
 
@@ -118,9 +134,9 @@ func TestAdapter_ExecutePoolOperationPropagatesOperationRef(t *testing.T) {
 	adapter := NewAdapter(bridge, zap.NewNop())
 
 	_, err := adapter.Execute(context.Background(), &handlers.OperationRequest{
-		OperationType: "pool.publication_odata",
+		OperationType: "pool.prepare_input",
 		OperationRef: &models.OperationRef{
-			Alias:                    "pool.publication_odata",
+			Alias:                    "pool.prepare_input",
 			BindingMode:              "pinned_exposure",
 			TemplateExposureID:       "exposure-1",
 			TemplateExposureRevision: 5,
@@ -130,7 +146,7 @@ func TestAdapter_ExecutePoolOperationPropagatesOperationRef(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, bridge.lastReq)
 	require.NotNil(t, bridge.lastReq.OperationRef)
-	assert.Equal(t, "pool.publication_odata", bridge.lastReq.OperationRef.Alias)
+	assert.Equal(t, "pool.prepare_input", bridge.lastReq.OperationRef.Alias)
 	assert.Equal(t, "pinned_exposure", bridge.lastReq.OperationRef.BindingMode)
 	assert.Equal(t, "exposure-1", bridge.lastReq.OperationRef.TemplateExposureID)
 	assert.Equal(t, 5, bridge.lastReq.OperationRef.TemplateExposureRevision)
@@ -161,11 +177,96 @@ func TestAdapter_ExecutePoolOperationBridgeError(t *testing.T) {
 	adapter := NewAdapter(bridge, zap.NewNop())
 
 	_, err := adapter.Execute(context.Background(), &handlers.OperationRequest{
-		OperationType: "pool.publication_odata",
+		OperationType: "pool.prepare_input",
 	})
 
 	assert.Error(t, err)
 	assert.EqualError(t, err, "bridge failed")
+}
+
+func TestAdapter_ExecutePublicationOperationUsesLocalTransportWhenEnabled(t *testing.T) {
+	bridge := &mockBridgeClient{
+		res: &BridgeResponse{
+			Result: map[string]interface{}{"status": "bridge"},
+		},
+	}
+	publicationTransport := &mockPublicationTransport{
+		res: map[string]interface{}{"status": "local"},
+	}
+
+	adapter := NewAdapterWithConfig(bridge, zap.NewNop(), AdapterConfig{
+		PoolRouteEnabled:     true,
+		PublicationTransport: publicationTransport,
+		PublicationRouteEnabledProvider: func() bool {
+			return true
+		},
+	})
+
+	out, err := adapter.Execute(context.Background(), &handlers.OperationRequest{
+		OperationType: "pool.publication_odata",
+		ExecutionID:   "exec-1",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "local", out["status"])
+	assert.Equal(t, 1, publicationTransport.callCount)
+	assert.Equal(t, 0, bridge.callCount)
+}
+
+func TestAdapter_ExecutePublicationOperationDoesNotFallbackToBridgeWhenTransportMissing(t *testing.T) {
+	bridge := &mockBridgeClient{
+		res: &BridgeResponse{
+			Result: map[string]interface{}{"status": "bridge"},
+		},
+	}
+	adapter := NewAdapterWithConfig(bridge, zap.NewNop(), AdapterConfig{
+		PoolRouteEnabled: true,
+		PublicationRouteEnabledProvider: func() bool {
+			return true
+		},
+	})
+
+	out, err := adapter.Execute(context.Background(), &handlers.OperationRequest{
+		OperationType: "pool.publication_odata",
+		ExecutionID:   "exec-1",
+	})
+
+	var opErr *handlers.OperationExecutionError
+	require.Error(t, err)
+	assert.Nil(t, out)
+	require.True(t, errors.As(err, &opErr))
+	assert.Equal(t, handlers.ErrorCodePoolRuntimePublicationPathDisabled, opErr.Code)
+	assert.Equal(t, 0, bridge.callCount)
+}
+
+func TestAdapter_ExecutePublicationOperationRouteDisabledFailsClosed(t *testing.T) {
+	bridge := &mockBridgeClient{
+		res: &BridgeResponse{
+			Result: map[string]interface{}{"status": "bridge"},
+		},
+	}
+	publicationTransport := &mockPublicationTransport{
+		res: map[string]interface{}{"status": "local"},
+	}
+	adapter := NewAdapterWithConfig(bridge, zap.NewNop(), AdapterConfig{
+		PoolRouteEnabled:     true,
+		PublicationTransport: publicationTransport,
+		PublicationRouteEnabledProvider: func() bool {
+			return false
+		},
+	})
+
+	out, err := adapter.Execute(context.Background(), &handlers.OperationRequest{
+		OperationType: "pool.publication_odata",
+		ExecutionID:   "exec-1",
+	})
+
+	var opErr *handlers.OperationExecutionError
+	require.Error(t, err)
+	assert.Nil(t, out)
+	require.True(t, errors.As(err, &opErr))
+	assert.Equal(t, handlers.ErrorCodePoolRuntimePublicationPathDisabled, opErr.Code)
+	assert.Equal(t, 0, publicationTransport.callCount)
+	assert.Equal(t, 0, bridge.callCount)
 }
 
 func TestAdapter_ExecutePoolOperationRouteDecisionLatchedPerExecution(t *testing.T) {
@@ -195,7 +296,7 @@ func TestAdapter_ExecutePoolOperationRouteDecisionLatchedPerExecution(t *testing
 
 	// In-flight execution "exec-1" must keep latched route=true.
 	_, err = adapter.Execute(context.Background(), &handlers.OperationRequest{
-		OperationType: "pool.publication_odata",
+		OperationType: "pool.prepare_input",
 		ExecutionID:   "exec-1",
 		NodeID:        "node-2",
 	})
@@ -204,7 +305,7 @@ func TestAdapter_ExecutePoolOperationRouteDecisionLatchedPerExecution(t *testing
 
 	// New execution must observe updated route=false and fail-closed.
 	_, err = adapter.Execute(context.Background(), &handlers.OperationRequest{
-		OperationType: "pool.publication_odata",
+		OperationType: "pool.prepare_input",
 		ExecutionID:   "exec-2",
 		NodeID:        "node-1",
 	})

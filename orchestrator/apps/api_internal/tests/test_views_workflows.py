@@ -389,6 +389,498 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
         self.assertLessEqual(len(encoded), 8 * 1024)
         self.assertTrue(saved.error_details.get("_truncated"))
 
+    def test_update_workflow_status_completed_projects_worker_publication_attempts_into_read_model(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        db_success = Database.objects.create(
+            tenant=tenant,
+            name=f"projection-db-success-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/success.odata",
+            username="admin",
+            password="secret",
+        )
+        db_failed = Database.objects.create(
+            tenant=tenant,
+            name=f"projection-db-failed-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/failed.odata",
+            username="admin",
+            password="secret",
+        )
+
+        payload = {
+            "execution_id": str(execution.id),
+            "status": "completed",
+            "result": {
+                "node_results": {
+                    "publication_odata": {
+                        "step": "publication_odata",
+                        "pool_run_id": str(run.id),
+                        "status": "partial_success",
+                        "entity_name": "Document_IntercompanyPoolDistribution",
+                        "documents_targets": 2,
+                        "succeeded_targets": 1,
+                        "failed_targets": 1,
+                        "max_attempts": 2,
+                        "target_databases": [str(db_success.id), str(db_failed.id)],
+                        "documents_count_by_database": {
+                            str(db_success.id): 1,
+                            str(db_failed.id): 2,
+                        },
+                        "failed_databases": {
+                            str(db_failed.id): "target unavailable",
+                        },
+                        "failed_databases_diagnostics": {
+                            str(db_failed.id): {
+                                "error_code": "POOL_RUNTIME_PUBLICATION_ODATA_FAILED",
+                                "error_class": "server",
+                                "status_class": "5xx",
+                                "retryable": True,
+                                "attempts": 2,
+                                "http_status": 503,
+                                "error": "target unavailable",
+                            }
+                        },
+                        "attempts": [
+                            {
+                                "target_database": str(db_success.id),
+                                "attempt_number": 1,
+                                "status": "success",
+                                "entity_name": "Document_IntercompanyPoolDistribution",
+                                "documents_count": 1,
+                                "posted": True,
+                                "request_summary": {"documents_count": 1},
+                                "response_summary": {"posted": True},
+                            },
+                            {
+                                "target_database": str(db_failed.id),
+                                "attempt_number": 1,
+                                "status": "failed",
+                                "entity_name": "Document_IntercompanyPoolDistribution",
+                                "documents_count": 2,
+                                "posted": False,
+                                "error_code": "POOL_RUNTIME_PUBLICATION_ODATA_FAILED",
+                                "error_message": "target unavailable",
+                                "http_status": 503,
+                                "request_summary": {"documents_count": 2},
+                                "response_summary": {},
+                            },
+                            {
+                                "target_database": str(db_failed.id),
+                                "attempt_number": 2,
+                                "status": "failed",
+                                "entity_name": "Document_IntercompanyPoolDistribution",
+                                "documents_count": 2,
+                                "posted": False,
+                                "error_code": "POOL_RUNTIME_PUBLICATION_ODATA_FAILED",
+                                "error_message": "target unavailable",
+                                "http_status": 503,
+                                "request_summary": {"documents_count": 2},
+                                "response_summary": {},
+                            },
+                        ],
+                    }
+                }
+            },
+        }
+
+        response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["status"], "completed")
+
+        saved_execution = WorkflowExecution.objects.get(id=execution.id)
+        run.refresh_from_db(fields=["publication_summary"])
+        self.assertEqual(saved_execution.status, WorkflowExecution.STATUS_COMPLETED)
+        self.assertEqual(saved_execution.input_context.get("publication_step_state"), "completed")
+        self.assertEqual(run.publication_summary.get("total_targets"), 2)
+        self.assertEqual(run.publication_summary.get("succeeded_targets"), 1)
+        self.assertEqual(run.publication_summary.get("failed_targets"), 1)
+        self.assertEqual(run.publication_summary.get("max_attempts"), 2)
+
+        success_attempt = PoolPublicationAttempt.objects.get(
+            run=run,
+            target_database=db_success,
+            attempt_number=1,
+        )
+        self.assertEqual(success_attempt.status, PoolPublicationAttemptStatus.SUCCESS)
+        self.assertTrue(success_attempt.posted)
+        self.assertEqual(success_attempt.documents_count, 1)
+        self.assertEqual(success_attempt.request_summary.get("documents_count"), 1)
+
+        failed_attempts = list(
+            PoolPublicationAttempt.objects.filter(run=run, target_database=db_failed).order_by("attempt_number")
+        )
+        self.assertEqual([item.attempt_number for item in failed_attempts], [1, 2])
+        self.assertEqual(
+            [item.status for item in failed_attempts],
+            [PoolPublicationAttemptStatus.FAILED, PoolPublicationAttemptStatus.FAILED],
+        )
+        self.assertEqual(failed_attempts[-1].error_code, "POOL_RUNTIME_PUBLICATION_ODATA_FAILED")
+        self.assertEqual(failed_attempts[-1].http_status, 503)
+        self.assertFalse(failed_attempts[-1].posted)
+
+    def test_update_workflow_status_completed_is_idempotent_for_projected_publication_attempts(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        database = Database.objects.create(
+            tenant=tenant,
+            name=f"projection-idempotent-db-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/idempotent.odata",
+            username="admin",
+            password="secret",
+        )
+        base_payload = {
+            "execution_id": str(execution.id),
+            "status": "completed",
+            "result": {
+                "node_results": {
+                    "publication_odata": {
+                        "step": "publication_odata",
+                        "pool_run_id": str(run.id),
+                        "status": "published",
+                        "entity_name": "Document_IntercompanyPoolDistribution",
+                        "documents_targets": 1,
+                        "succeeded_targets": 1,
+                        "failed_targets": 0,
+                        "max_attempts": 1,
+                        "target_databases": [str(database.id)],
+                        "documents_count_by_database": {str(database.id): 1},
+                        "attempts": [
+                            {
+                                "target_database": str(database.id),
+                                "attempt_number": 1,
+                                "status": "success",
+                                "documents_count": 1,
+                                "posted": True,
+                            }
+                        ],
+                    }
+                }
+            },
+        }
+
+        first_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            base_payload,
+            format="json",
+        )
+        second_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            base_payload,
+            format="json",
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(second_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            PoolPublicationAttempt.objects.filter(run=run, target_database=database).count(),
+            1,
+        )
+
+    def test_worker_publication_projection_preserves_pool_run_report_contract(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        username = f"pool-report-user-{uuid4().hex[:8]}"
+        user = User.objects.create_user(username=username, password="pass")
+        TenantMember.objects.create(
+            tenant=tenant,
+            user=user,
+            role=TenantMember.ROLE_ADMIN,
+        )
+        db_success = Database.objects.create(
+            tenant=tenant,
+            name=f"report-db-success-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/report-success.odata",
+            username="admin",
+            password="secret",
+        )
+        db_failed = Database.objects.create(
+            tenant=tenant,
+            name=f"report-db-failed-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/report-failed.odata",
+            username="admin",
+            password="secret",
+        )
+
+        update_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "completed",
+                "result": {
+                    "node_results": {
+                        "publication_odata": {
+                            "step": "publication_odata",
+                            "pool_run_id": str(run.id),
+                            "status": "partial_success",
+                            "entity_name": "Document_IntercompanyPoolDistribution",
+                            "documents_targets": 2,
+                            "succeeded_targets": 1,
+                            "failed_targets": 1,
+                            "max_attempts": 2,
+                            "target_databases": [str(db_success.id), str(db_failed.id)],
+                            "documents_count_by_database": {
+                                str(db_success.id): 1,
+                                str(db_failed.id): 1,
+                            },
+                            "attempts": [
+                                {
+                                    "target_database": str(db_success.id),
+                                    "attempt_number": 1,
+                                    "status": "success",
+                                    "documents_count": 1,
+                                    "posted": True,
+                                    "request_summary": {"documents_count": 1},
+                                    "response_summary": {"posted": True},
+                                },
+                                {
+                                    "target_database": str(db_failed.id),
+                                    "attempt_number": 1,
+                                    "status": "failed",
+                                    "documents_count": 1,
+                                    "posted": False,
+                                    "error_code": "POOL_RUNTIME_PUBLICATION_ODATA_FAILED",
+                                    "error_message": "target unavailable",
+                                    "http_status": 503,
+                                    "request_summary": {"documents_count": 1},
+                                    "response_summary": {},
+                                },
+                            ],
+                            "failed_databases": {
+                                str(db_failed.id): "target unavailable",
+                            },
+                            "failed_databases_diagnostics": {
+                                str(db_failed.id): {
+                                    "error_code": "POOL_RUNTIME_PUBLICATION_ODATA_FAILED",
+                                    "error": "target unavailable",
+                                    "http_status": 503,
+                                    "retryable": True,
+                                    "attempts": 1,
+                                }
+                            },
+                        }
+                    }
+                },
+            },
+            format="json",
+        )
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(update_response.data["success"])
+
+        facade_client = APIClient()
+        facade_client.force_authenticate(user=user)
+        facade_client.credentials(HTTP_X_CC1C_TENANT_ID=str(tenant.id))
+
+        details_response = facade_client.get(f"/api/v2/pools/runs/{run.id}/")
+        report_response = facade_client.get(f"/api/v2/pools/runs/{run.id}/report/")
+
+        self.assertEqual(details_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(report_response.status_code, status.HTTP_200_OK)
+
+        details_payload = details_response.data
+        report_payload = report_response.data
+        self.assertEqual(details_payload["run"]["status"], PoolRun.STATUS_PARTIAL_SUCCESS)
+        self.assertEqual(details_payload["run"]["workflow_status"], WorkflowExecution.STATUS_COMPLETED)
+        self.assertEqual(details_payload["run"]["publication_step_state"], "completed")
+        self.assertEqual(details_payload["run"]["publication_summary"]["failed_targets"], 1)
+        self.assertIsInstance(details_payload["run"]["diagnostics"], list)
+
+        self.assertIn("publication_attempts", report_payload)
+        self.assertIn("publication_summary", report_payload)
+        self.assertIn("diagnostics", report_payload)
+        self.assertIn("attempts_by_status", report_payload)
+        self.assertEqual(report_payload["publication_summary"]["total_targets"], 2)
+        self.assertEqual(report_payload["publication_summary"]["failed_targets"], 1)
+
+        failed_attempt = next(
+            item
+            for item in report_payload["publication_attempts"]
+            if item["target_database_id"] == str(db_failed.id)
+        )
+        self.assertEqual(failed_attempt["status"], PoolPublicationAttemptStatus.FAILED)
+        self.assertEqual(failed_attempt["domain_error_code"], "POOL_RUNTIME_PUBLICATION_ODATA_FAILED")
+        self.assertEqual(failed_attempt["domain_error_message"], "target unavailable")
+        self.assertEqual(failed_attempt["http_error"]["status"], 503)
+        self.assertEqual(failed_attempt["payload_summary"]["documents_count"], 1)
+        self.assertFalse(failed_attempt["posted"])
+
+    def test_worker_publication_projection_e2e_regression_run_500_on_3_targets(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        username = f"pool-e2e-500-user-{uuid4().hex[:8]}"
+        user = User.objects.create_user(username=username, password="pass")
+        TenantMember.objects.create(
+            tenant=tenant,
+            user=user,
+            role=TenantMember.ROLE_ADMIN,
+        )
+        db_a = Database.objects.create(
+            tenant=tenant,
+            name=f"run500-db-a-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/run500-a.odata",
+            username="admin",
+            password="secret",
+        )
+        db_b = Database.objects.create(
+            tenant=tenant,
+            name=f"run500-db-b-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/run500-b.odata",
+            username="admin",
+            password="secret",
+        )
+        db_c = Database.objects.create(
+            tenant=tenant,
+            name=f"run500-db-c-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/run500-c.odata",
+            username="admin",
+            password="secret",
+        )
+
+        update_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "completed",
+                "result": {
+                    "node_results": {
+                        "publication_odata": {
+                            "step": "publication_odata",
+                            "pool_run_id": str(run.id),
+                            "status": "partial_success",
+                            "entity_name": "Document_IntercompanyPoolDistribution",
+                            "documents_targets": 3,
+                            "succeeded_targets": 2,
+                            "failed_targets": 1,
+                            "max_attempts": 5,
+                            "target_databases": [str(db_a.id), str(db_b.id), str(db_c.id)],
+                            "documents_count_by_database": {
+                                str(db_a.id): 200,
+                                str(db_b.id): 150,
+                                str(db_c.id): 150,
+                            },
+                            "attempts": [
+                                {
+                                    "target_database": str(db_a.id),
+                                    "attempt_number": 1,
+                                    "status": "success",
+                                    "documents_count": 200,
+                                    "posted": True,
+                                    "request_summary": {"documents_count": 200},
+                                    "response_summary": {"posted": True},
+                                },
+                                {
+                                    "target_database": str(db_b.id),
+                                    "attempt_number": 1,
+                                    "status": "success",
+                                    "documents_count": 150,
+                                    "posted": True,
+                                    "request_summary": {"documents_count": 150},
+                                    "response_summary": {"posted": True},
+                                },
+                                {
+                                    "target_database": str(db_c.id),
+                                    "attempt_number": 1,
+                                    "status": "failed",
+                                    "documents_count": 150,
+                                    "posted": False,
+                                    "error_code": "POOL_RUNTIME_PUBLICATION_ODATA_FAILED",
+                                    "error_message": "target unavailable",
+                                    "http_status": 503,
+                                    "request_summary": {"documents_count": 150},
+                                    "response_summary": {},
+                                },
+                                {
+                                    "target_database": str(db_c.id),
+                                    "attempt_number": 2,
+                                    "status": "failed",
+                                    "documents_count": 150,
+                                    "posted": False,
+                                    "error_code": "POOL_RUNTIME_PUBLICATION_ODATA_FAILED",
+                                    "error_message": "target unavailable",
+                                    "http_status": 503,
+                                    "request_summary": {"documents_count": 150},
+                                    "response_summary": {},
+                                },
+                                {
+                                    "target_database": str(db_c.id),
+                                    "attempt_number": 3,
+                                    "status": "failed",
+                                    "documents_count": 150,
+                                    "posted": False,
+                                    "error_code": "POOL_RUNTIME_PUBLICATION_ODATA_FAILED",
+                                    "error_message": "target unavailable",
+                                    "http_status": 503,
+                                    "request_summary": {"documents_count": 150},
+                                    "response_summary": {},
+                                },
+                            ],
+                            "failed_databases": {
+                                str(db_c.id): "target unavailable",
+                            },
+                            "failed_databases_diagnostics": {
+                                str(db_c.id): {
+                                    "error_code": "POOL_RUNTIME_PUBLICATION_ODATA_FAILED",
+                                    "error": "target unavailable",
+                                    "http_status": 503,
+                                    "retryable": True,
+                                    "attempts": 3,
+                                }
+                            },
+                        }
+                    }
+                },
+            },
+            format="json",
+        )
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(update_response.data["success"])
+
+        facade_client = APIClient()
+        facade_client.force_authenticate(user=user)
+        facade_client.credentials(HTTP_X_CC1C_TENANT_ID=str(tenant.id))
+
+        details_response = facade_client.get(f"/api/v2/pools/runs/{run.id}/")
+        report_response = facade_client.get(f"/api/v2/pools/runs/{run.id}/report/")
+        self.assertEqual(details_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(report_response.status_code, status.HTTP_200_OK)
+
+        details_payload = details_response.data
+        report_payload = report_response.data
+        self.assertEqual(details_payload["run"]["status"], PoolRun.STATUS_PARTIAL_SUCCESS)
+        self.assertEqual(details_payload["run"]["workflow_status"], WorkflowExecution.STATUS_COMPLETED)
+        self.assertEqual(details_payload["run"]["publication_step_state"], "completed")
+        self.assertEqual(details_payload["run"]["publication_summary"]["total_targets"], 3)
+        self.assertEqual(details_payload["run"]["publication_summary"]["succeeded_targets"], 2)
+        self.assertEqual(details_payload["run"]["publication_summary"]["failed_targets"], 1)
+        self.assertEqual(details_payload["run"]["publication_summary"]["max_attempts"], 5)
+
+        self.assertEqual(len(report_payload["publication_attempts"]), 5)
+        self.assertEqual(report_payload["publication_summary"]["total_targets"], 3)
+        self.assertEqual(report_payload["publication_summary"]["succeeded_targets"], 2)
+        self.assertEqual(report_payload["publication_summary"]["failed_targets"], 1)
+        self.assertEqual(report_payload["attempts_by_status"][PoolPublicationAttemptStatus.SUCCESS], 2)
+        self.assertEqual(report_payload["attempts_by_status"][PoolPublicationAttemptStatus.FAILED], 3)
+
+        failed_attempts = [
+            item
+            for item in report_payload["publication_attempts"]
+            if item["target_database_id"] == str(db_c.id)
+        ]
+        self.assertEqual([item["attempt_number"] for item in failed_attempts], [1, 2, 3])
+        self.assertTrue(all(item["status"] == PoolPublicationAttemptStatus.FAILED for item in failed_attempts))
+        self.assertTrue(all(item["payload_summary"]["documents_count"] == 150 for item in failed_attempts))
+        self.assertTrue(all(item["domain_error_code"] == "POOL_RUNTIME_PUBLICATION_ODATA_FAILED" for item in failed_attempts))
+        self.assertTrue(all(item["http_error"]["status"] == 503 for item in failed_attempts))
+
     def test_update_workflow_status_fail_closed_code_propagates_to_facade_diagnostics(self):
         tenant, run, execution, _ = self._create_pool_runtime_fixture()
         username = f"pool-facade-user-{uuid4().hex[:8]}"
@@ -643,7 +1135,7 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertEqual(response.data["code"], "POOL_RUNTIME_CONTEXT_MISMATCH")
 
-    def test_execute_pool_runtime_step_publication_odata_creates_publication_attempt_and_posts_documents(self):
+    def test_execute_pool_runtime_step_publication_odata_is_fail_closed_after_cutover(self):
         tenant, run, execution, template = self._create_pool_runtime_fixture()
         database = Database.objects.create(
             tenant=tenant,
@@ -684,41 +1176,33 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
             }
         }
 
-        odata_client = MagicMock()
-        odata_client.get_entities.return_value = []
-        odata_client.create_entity.return_value = {"Ref_Key": "550e8400-e29b-41d4-a716-446655440000"}
-
-        with patch("apps.intercompany_pools.publication.session_manager.get_client", return_value=odata_client):
+        with patch(
+            "apps.intercompany_pools.pool_domain_steps.execute_pool_runtime_step",
+            side_effect=AssertionError("bridge publication side effects must be disabled"),
+        ) as bridge_step_mock:
             response = self.client.post(
                 "/api/v2/internal/workflows/execute-pool-runtime-step",
                 payload,
                 format="json",
             )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(response.data["success"])
-        self.assertEqual(response.data["status"], "completed")
-        self.assertEqual(response.data["result"]["step"], "publication_odata")
-        self.assertEqual(response.data["result"]["documents_targets"], 1)
-        self.assertEqual(response.data["result"]["succeeded_targets"], 1)
-        self.assertEqual(response.data["result"]["failed_targets"], 0)
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "POOL_RUNTIME_PUBLICATION_PATH_DISABLED")
+        self.assertIn("disabled for bridge path", response.data["error"])
+        bridge_step_mock.assert_not_called()
 
-        run_state = PoolRun.objects.filter(id=run.id).values("status", "publication_summary").get()
-        self.assertEqual(run_state["status"], PoolRun.STATUS_PUBLISHED)
-        self.assertEqual(run_state["publication_summary"].get("total_targets"), 1)
-        self.assertEqual(run_state["publication_summary"].get("succeeded_targets"), 1)
-
+        run_state = PoolRun.objects.filter(id=run.id).values("status", "publication_summary", "updated_at").get()
+        self.assertEqual(run_state["status"], PoolRun.STATUS_VALIDATED)
+        self.assertEqual(run_state["publication_summary"], {})
         execution.refresh_from_db(fields=["input_context"])
-        self.assertEqual(execution.input_context.get("publication_step_state"), "completed")
-
-        attempt = PoolPublicationAttempt.objects.get(run=run, target_database=database)
-        self.assertEqual(attempt.status, PoolPublicationAttemptStatus.SUCCESS)
-        self.assertTrue(attempt.posted)
-        self.assertEqual(attempt.documents_count, 1)
-        self.assertEqual(attempt.request_summary.get("documents_count"), 1)
-
-        odata_client.create_entity.assert_called_once()
-        odata_client.update_entity.assert_called_once()
+        self.assertEqual(execution.input_context.get("publication_step_state"), "queued")
+        self.assertFalse(PoolPublicationAttempt.objects.filter(run=run).exists())
+        self.assertFalse(
+            PoolRuntimeStepIdempotencyLog.objects.filter(
+                tenant_id=tenant.id,
+                idempotency_key=payload["idempotency_key"],
+            ).exists()
+        )
 
     def test_execute_pool_runtime_step_replays_idempotent_request_without_reapplying_side_effect(self):
         tenant, run, execution, _ = self._create_pool_runtime_fixture()

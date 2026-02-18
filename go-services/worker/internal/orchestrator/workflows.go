@@ -66,6 +66,7 @@ func (c *Client) UpdateWorkflowExecutionStatus(
 	errorMessage string,
 	errorCode string,
 	errorDetails map[string]interface{},
+	result map[string]interface{},
 ) error {
 	path := "/api/v2/internal/workflows/update-execution-status"
 
@@ -81,6 +82,9 @@ func (c *Client) UpdateWorkflowExecutionStatus(
 	}
 	if len(errorDetails) > 0 {
 		payload["error_details"] = errorDetails
+	}
+	if len(result) > 0 {
+		payload["result"] = result
 	}
 
 	return c.post(ctx, path, payload, nil)

@@ -41,6 +41,11 @@ type BridgeResponse struct {
 	Result map[string]interface{}
 }
 
+// PublicationTransport executes publication OData side effects locally in worker.
+type PublicationTransport interface {
+	ExecutePublicationOData(ctx context.Context, req *handlers.OperationRequest) (map[string]interface{}, error)
+}
+
 // BridgeOperationRef carries operation binding provenance to bridge payload.
 type BridgeOperationRef struct {
 	Alias                    string
@@ -51,16 +56,22 @@ type BridgeOperationRef struct {
 
 // Adapter bridges workflow operation nodes to pool runtime backend.
 type Adapter struct {
-	bridge                   BridgeClient
-	logger                   *zap.Logger
-	poolRouteEnabledProvider func() bool
-	routeDecisionByExecution sync.Map // map[execution_id]bool
+	bridge                         BridgeClient
+	publicationTransport           PublicationTransport
+	logger                         *zap.Logger
+	poolRouteEnabledProvider       func() bool
+	publicationRouteEnabled        func() bool
+	routeDecisionByExecution       sync.Map // map[execution_id]bool
+	publicationDecisionByExecution sync.Map // map[execution_id]bool
 }
 
 // AdapterConfig controls runtime behavior of poolops adapter.
 type AdapterConfig struct {
-	PoolRouteEnabled         bool
-	PoolRouteEnabledProvider func() bool
+	PoolRouteEnabled                bool
+	PoolRouteEnabledProvider        func() bool
+	PublicationTransport            PublicationTransport
+	PublicationRouteEnabled         bool
+	PublicationRouteEnabledProvider func() bool
 }
 
 // NewAdapter creates a poolops adapter for workflow operation execution.
@@ -80,10 +91,19 @@ func NewAdapterWithConfig(bridge BridgeClient, logger *zap.Logger, cfg AdapterCo
 			return poolRouteEnabled
 		}
 	}
+	publicationRouteProvider := cfg.PublicationRouteEnabledProvider
+	if publicationRouteProvider == nil {
+		publicationRouteEnabled := cfg.PublicationRouteEnabled
+		publicationRouteProvider = func() bool {
+			return publicationRouteEnabled
+		}
+	}
 	return &Adapter{
 		bridge:                   bridge,
+		publicationTransport:     cfg.PublicationTransport,
 		logger:                   logger.Named("poolops_adapter"),
 		poolRouteEnabledProvider: routeProvider,
+		publicationRouteEnabled:  publicationRouteProvider,
 	}
 }
 
@@ -108,6 +128,22 @@ func (a *Adapter) Execute(ctx context.Context, req *handlers.OperationRequest) (
 			handlers.ErrorCodePoolRuntimeRouteDisabled,
 			"poolops route is disabled by runtime guard",
 		)
+	}
+
+	if operationType == "pool.publication_odata" {
+		if !a.publicationRouteEnabledForExecution(req.ExecutionID) {
+			return nil, handlers.NewOperationExecutionError(
+				handlers.ErrorCodePoolRuntimePublicationPathDisabled,
+				"pool.publication_odata is disabled by runtime guard",
+			)
+		}
+		if a.publicationTransport == nil {
+			return nil, handlers.NewOperationExecutionError(
+				handlers.ErrorCodePoolRuntimePublicationPathDisabled,
+				"pool.publication_odata transport is not configured",
+			)
+		}
+		return a.publicationTransport.ExecutePublicationOData(ctx, req)
 	}
 
 	if a.bridge == nil {
@@ -194,6 +230,30 @@ func (a *Adapter) poolRouteEnabled() bool {
 		return false
 	}
 	return a.poolRouteEnabledProvider()
+}
+
+func (a *Adapter) publicationRouteEnabledForExecution(executionID string) bool {
+	current := a.publicationRoute()
+	normalizedExecutionID := strings.TrimSpace(executionID)
+	if normalizedExecutionID == "" {
+		return current
+	}
+
+	if latched, ok := a.publicationDecisionByExecution.Load(normalizedExecutionID); ok {
+		if decision, typeOK := latched.(bool); typeOK {
+			return decision
+		}
+	}
+
+	a.publicationDecisionByExecution.Store(normalizedExecutionID, current)
+	return current
+}
+
+func (a *Adapter) publicationRoute() bool {
+	if a.publicationRouteEnabled == nil {
+		return false
+	}
+	return a.publicationRouteEnabled()
 }
 
 func toBridgeOperationRef(src *models.OperationRef) *BridgeOperationRef {

@@ -180,6 +180,8 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 		d.timeline.Record(ctx, msg.OperationID, "template.render.completed", events.MergeMetadata(templateMeta, workflowMetadata))
 	}
 
+	ctx = d.withTransportTelemetry(ctx, msg, databaseID, workflowMetadata)
+
 	var result models.DatabaseResultV2
 	switch msg.OperationType {
 	case "create":
@@ -205,14 +207,51 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 			"duration_ms": time.Since(start).Milliseconds(),
 		}, workflowMetadata))
 	} else {
+		labels := odata.NormalizeErrorCode(result.ErrorCode)
 		d.timeline.Record(ctx, msg.OperationID, eventBase+".failed", events.MergeMetadata(map[string]interface{}{
-			"database_id": databaseID,
-			"error":       result.Error,
-			"error_code":  result.ErrorCode,
+			"database_id":  databaseID,
+			"error":        result.Error,
+			"error_code":   result.ErrorCode,
+			"error_class":  labels.Class,
+			"status_class": labels.StatusClass(),
+			"retryable":    labels.Retryable,
 		}, workflowMetadata))
 	}
 
 	return result, nil
+}
+
+func (d *Driver) withTransportTelemetry(
+	ctx context.Context,
+	msg *models.OperationMessage,
+	databaseID string,
+	workflowMetadata map[string]interface{},
+) context.Context {
+	if msg == nil {
+		return ctx
+	}
+
+	transportOperation := "odataops." + strings.TrimSpace(msg.OperationType)
+	executionID := strings.TrimSpace(msg.Metadata.WorkflowExecutionID)
+	nodeID := strings.TrimSpace(msg.Metadata.NodeID)
+	entity := strings.TrimSpace(msg.Entity)
+
+	var traceFn odata.TransportTraceFunc
+	if d.timeline != nil && strings.TrimSpace(msg.OperationID) != "" {
+		operationID := strings.TrimSpace(msg.OperationID)
+		traceFn = func(traceCtx context.Context, event string, metadata map[string]interface{}) {
+			d.timeline.Record(traceCtx, operationID, event, events.MergeMetadata(metadata, workflowMetadata))
+		}
+	}
+
+	return odata.WithTransportTelemetry(ctx, odata.TransportTelemetry{
+		Operation:   transportOperation,
+		ExecutionID: executionID,
+		NodeID:      nodeID,
+		DatabaseID:  strings.TrimSpace(databaseID),
+		Entity:      entity,
+		Trace:       traceFn,
+	})
 }
 
 func (d *Driver) executeCreate(ctx context.Context, msg *models.OperationMessage, databaseID string, creds *credentials.DatabaseCredentials) models.DatabaseResultV2 {
@@ -541,10 +580,7 @@ func (d *Driver) buildTemplateContext(msg *models.OperationMessage, databaseID s
 }
 
 func categorizeODataError(err error) string {
-	if odataErr, ok := err.(*odata.ODataError); ok {
-		return odataErr.Code
-	}
-	return "UNKNOWN_ERROR"
+	return odata.NormalizeError(err).Code
 }
 
 func categorizeTemplateError(err error) string {

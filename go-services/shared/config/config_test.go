@@ -142,3 +142,29 @@ func TestConfig_PoolOpsRoutingControls_IndependentFromProjectionHardeningCutoff(
 		t.Fatalf("expected poolops route enabled independently of projection hardening cutoff")
 	}
 }
+
+func TestLoadFromEnv_EnablePoolPublicationODataCore_DefaultFalse(t *testing.T) {
+	t.Setenv("ENABLE_POOL_PUBLICATION_ODATA_CORE", "")
+
+	cfg := LoadFromEnv()
+	if cfg.EnablePoolPublicationODataCore {
+		t.Fatalf("expected EnablePoolPublicationODataCore=false by default")
+	}
+}
+
+func TestConfig_IsPoolPublicationODataCoreEnabledForWorker_RolloutAndKillSwitch(t *testing.T) {
+	cfg := &Config{
+		EnablePoolPublicationODataCore:         true,
+		PoolPublicationODataCoreRolloutPercent: 1.0,
+		WorkerID:                               "worker-a",
+	}
+
+	if !cfg.IsPoolPublicationODataCoreEnabledForWorker() {
+		t.Fatalf("expected publication transport enabled for rollout 1.0")
+	}
+
+	cfg.PoolPublicationODataCoreKillSwitch = true
+	if cfg.IsPoolPublicationODataCoreEnabledForWorker() {
+		t.Fatalf("expected publication transport disabled when kill-switch is enabled")
+	}
+}

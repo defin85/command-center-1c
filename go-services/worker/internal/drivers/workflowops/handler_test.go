@@ -25,6 +25,7 @@ type mockWorkflowClient struct {
 		ctx context.Context,
 		executionID, status, errorMessage, errorCode string,
 		errorDetails map[string]interface{},
+		result map[string]interface{},
 	) error
 	updateStatusCalled bool
 	updateStatusCalls  int
@@ -41,11 +42,12 @@ func (m *mockWorkflowClient) UpdateWorkflowExecutionStatus(
 	ctx context.Context,
 	executionID, status, errorMessage, errorCode string,
 	errorDetails map[string]interface{},
+	result map[string]interface{},
 ) error {
 	m.updateStatusCalled = true
 	m.updateStatusCalls++
 	if m.updateStatusFunc != nil {
-		return m.updateStatusFunc(ctx, executionID, status, errorMessage, errorCode, errorDetails)
+		return m.updateStatusFunc(ctx, executionID, status, errorMessage, errorCode, errorDetails, result)
 	}
 	return nil
 }
@@ -269,6 +271,7 @@ func TestWorkflowHandler_UpdateStatusWithRetry_DoesNotAmplifyRetriesOnTemporaryF
 			ctx context.Context,
 			executionID, status, errorMessage, errorCode string,
 			errorDetails map[string]interface{},
+			result map[string]interface{},
 		) error {
 			return errors.New("temporary 503")
 		},
@@ -288,6 +291,7 @@ func TestWorkflowHandler_UpdateStatusWithRetry_DoesNotAmplifyRetriesOnTemporaryF
 		"bridge failed",
 		"WORKFLOW_EXECUTION_ERROR",
 		map[string]interface{}{"http_status": 503},
+		nil,
 		nil,
 	)
 
@@ -316,6 +320,7 @@ func TestWorkflowHandler_UpdateStatusWithRetry_RecordsSingleAttemptOnSuccess(t *
 		"completed",
 		"",
 		"",
+		nil,
 		nil,
 		nil,
 	)

@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -115,6 +117,14 @@ func handleQuery(w http.ResponseWriter, r *http.Request, entities map[string]map
 }
 
 func setupTestProcessor(t *testing.T, credsClient credentials.Fetcher) (*TaskProcessor, func()) {
+	return setupTestProcessorWithConfig(t, credsClient, &config.Config{WorkerID: "test-worker-1"})
+}
+
+func setupTestProcessorWithConfig(
+	t *testing.T,
+	credsClient credentials.Fetcher,
+	cfg *config.Config,
+) (*TaskProcessor, func()) {
 	t.Helper()
 
 	mr, err := miniredis.Run()
@@ -126,7 +136,9 @@ func setupTestProcessor(t *testing.T, credsClient credentials.Fetcher) (*TaskPro
 		Addr: mr.Addr(),
 	})
 
-	cfg := &config.Config{WorkerID: "test-worker-1"}
+	if cfg == nil {
+		cfg = &config.Config{WorkerID: "test-worker-1"}
+	}
 	odataPool := odata.NewClientPool()
 	odataService := odata.NewService(odataPool)
 	processor := NewTaskProcessorWithOptions(cfg, credsClient, redisClient, ProcessorOptions{
@@ -139,6 +151,19 @@ func setupTestProcessor(t *testing.T, credsClient credentials.Fetcher) (*TaskPro
 	}
 
 	return processor, cleanup
+}
+
+func integrationCompatibilityProfilePath(t *testing.T) string {
+	t.Helper()
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("unable to resolve caller path")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "../../../../"))
+	return filepath.Join(
+		repoRoot,
+		"openspec/specs/pool-workflow-execution-core/artifacts/odata-compatibility-profile.yaml",
+	)
 }
 
 // TestProcessor_Integration_CreateOperation тестирует Create через весь processor
@@ -347,6 +372,65 @@ func TestProcessor_Integration_QueryOperation(t *testing.T) {
 	// Check results array exists
 	if _, ok := dbResult.Data["results"]; !ok {
 		t.Error("Expected 'results' field in response")
+	}
+}
+
+func TestProcessor_Integration_CreateOperation_WithPoolPublicationCoreEnabled(t *testing.T) {
+	server := setupMockODataServer()
+	defer server.Close()
+
+	credsClient := &credentials.MockCredentialsClient{
+		Credentials: &credentials.DatabaseCredentials{
+			ODataURL: server.URL,
+			Username: "testuser",
+			Password: "testpass",
+		},
+	}
+
+	cfg := &config.Config{
+		WorkerID:                                "test-worker-1",
+		EnablePoolOpsRoute:                      true,
+		PoolOpsRouteRolloutPercent:              1.0,
+		EnablePoolPublicationODataCore:          true,
+		PoolPublicationODataCoreRolloutPercent:  1.0,
+		ODataCompatibilityProfilePath:           integrationCompatibilityProfilePath(t),
+		ODataCompatibilityConfigurationID:       "1c-accounting-3.0-standard-odata",
+		ODataCompatibilityWriteContentType:      "application/json;odata=nometadata",
+		ODataCompatibilityReleaseProfileVersion: "0.4.2-draft",
+	}
+
+	processor, cleanup := setupTestProcessorWithConfig(t, credsClient, cfg)
+	defer cleanup()
+
+	msg := &models.OperationMessage{
+		Version:         "2.0",
+		OperationID:     "test-op-publication-core-enabled-001",
+		OperationType:   "create",
+		Entity:          "Catalog_Users",
+		TargetDatabases: []models.TargetDatabase{{ID: "db-001"}},
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"Name":  "Core Enabled",
+				"Email": "core-enabled@example.com",
+			},
+		},
+		ExecConfig: models.ExecutionConfig{
+			TimeoutSeconds: 30,
+		},
+	}
+
+	result := processor.Process(context.Background(), msg)
+	if result.Status != "completed" {
+		t.Fatalf("expected status completed, got %s", result.Status)
+	}
+	if result.Summary.Failed != 0 {
+		t.Fatalf("expected no failed results, got %d", result.Summary.Failed)
+	}
+	if len(result.Results) != 1 {
+		t.Fatalf("expected one db result, got %d", len(result.Results))
+	}
+	if !result.Results[0].Success {
+		t.Fatalf("expected successful result, got error: %s", result.Results[0].Error)
 	}
 }
 

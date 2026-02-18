@@ -3,11 +3,9 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
-from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from .models import PoolRun, PoolRunDirection, PoolRunMode
-from .publication import publish_run_documents, retry_failed_run_documents
 
 
 APPROVAL_STATE_NOT_REQUIRED = "not_required"
@@ -26,6 +24,7 @@ _OP_DISTRIBUTION_BOTTOM_UP = "pool.distribution_calculation.bottom_up"
 _OP_RECONCILIATION = "pool.reconciliation_report"
 _OP_APPROVAL_GATE = "pool.approval_gate"
 _OP_PUBLICATION = "pool.publication_odata"
+POOL_RUNTIME_PUBLICATION_PATH_DISABLED = "POOL_RUNTIME_PUBLICATION_PATH_DISABLED"
 
 
 def execute_pool_runtime_step(
@@ -280,71 +279,11 @@ def _execute_publication(
     execution_context: dict[str, Any],
     rendered_data: dict[str, Any],
 ) -> dict[str, Any]:
-    approval_state = _resolve_approval_state(run=run, execution_context=execution_context)
-    if run.mode == PoolRunMode.SAFE and approval_state != APPROVAL_STATE_APPROVED:
-        raise ValueError(
-            "POOL_RUNTIME_APPROVAL_REQUIRED: publication step requires approved state for safe mode"
-        )
-
-    publication_payload = _publication_payload(run=run, rendered_data=rendered_data)
-    entity_name = str(publication_payload.get("entity_name") or "Document_IntercompanyPoolDistribution").strip()
-    documents_by_database = _normalize_documents_by_database(
-        publication_payload.get("documents_by_database")
+    _ = (run, execution, execution_context, rendered_data)
+    raise ValueError(
+        f"{POOL_RUNTIME_PUBLICATION_PATH_DISABLED}: "
+        "publication OData side effects are disabled in orchestrator pool-domain runtime"
     )
-    max_attempts = _positive_int(publication_payload.get("max_attempts"), default=5)
-    retry_interval_seconds = _positive_int(
-        publication_payload.get("retry_interval_seconds"),
-        default=0,
-    )
-    external_key_field = str(publication_payload.get("external_key_field") or "ExternalRunKey").strip() or "ExternalRunKey"
-
-    _update_execution_context(execution=execution, updates={"publication_step_state": PUBLICATION_STEP_STATE_STARTED})
-
-    if not documents_by_database:
-        _update_execution_context(execution=execution, updates={"publication_step_state": PUBLICATION_STEP_STATE_COMPLETED})
-        return {
-            "step": "publication_odata",
-            "pool_run_id": str(run.id),
-            "status": "skipped_no_targets",
-            "entity_name": entity_name,
-            "documents_targets": 0,
-        }
-
-    retry_failed_only = bool(publication_payload.get("retry_failed_only"))
-    try:
-        if retry_failed_only:
-            summary = retry_failed_run_documents(
-                run=run,
-                entity_name=entity_name,
-                documents_by_database=documents_by_database,
-                max_attempts=max_attempts,
-                retry_interval_seconds=retry_interval_seconds,
-                external_key_field=external_key_field,
-            )
-        else:
-            summary = publish_run_documents(
-                run=run,
-                entity_name=entity_name,
-                documents_by_database=documents_by_database,
-                max_attempts=max_attempts,
-                retry_interval_seconds=retry_interval_seconds,
-                external_key_field=external_key_field,
-            )
-    except (ValidationError, ValueError) as exc:
-        raise ValueError(f"POOL_RUNTIME_PUBLICATION_FAILED: {exc}") from exc
-
-    _update_execution_context(execution=execution, updates={"publication_step_state": PUBLICATION_STEP_STATE_COMPLETED})
-
-    return {
-        "step": "publication_odata",
-        "pool_run_id": str(run.id),
-        "status": "published",
-        "entity_name": entity_name,
-        "documents_targets": summary.total_targets,
-        "succeeded_targets": summary.succeeded_targets,
-        "failed_targets": summary.failed_targets,
-        "max_attempts": summary.max_attempts,
-    }
 
 
 def _run_input(run: PoolRun) -> dict[str, Any]:
@@ -433,44 +372,6 @@ def _update_execution_context(*, execution: Any, updates: dict[str, Any]) -> Non
     execution.save(update_fields=["input_context"])
 
 
-def _publication_payload(*, run: PoolRun, rendered_data: dict[str, Any]) -> dict[str, Any]:
-    run_input = _run_input(run)
-    payload = run_input.get("publication")
-    if isinstance(payload, Mapping):
-        return dict(payload)
-
-    if isinstance(run_input.get("documents_by_database"), Mapping):
-        return {
-            "documents_by_database": run_input.get("documents_by_database"),
-            "entity_name": run_input.get("entity_name"),
-            "max_attempts": run_input.get("max_attempts"),
-            "retry_interval_seconds": run_input.get("retry_interval_seconds"),
-            "external_key_field": run_input.get("external_key_field"),
-        }
-
-    runtime_data = rendered_data.get("pool_runtime")
-    if isinstance(runtime_data, Mapping):
-        return dict(runtime_data)
-    return {}
-
-
-def _normalize_documents_by_database(value: Any) -> dict[str, list[dict[str, Any]]]:
-    if not isinstance(value, Mapping):
-        return {}
-    result: dict[str, list[dict[str, Any]]] = {}
-    for raw_database_id, raw_documents in value.items():
-        database_id = str(raw_database_id or "").strip()
-        if not database_id:
-            continue
-        if not isinstance(raw_documents, list):
-            continue
-        documents = [dict(document) for document in raw_documents if isinstance(document, Mapping)]
-        if not documents:
-            continue
-        result[database_id] = documents
-    return result
-
-
 def _parse_decimal(value: Any) -> Decimal | None:
     if value is None:
         return None
@@ -489,11 +390,3 @@ def _decimal_to_string(value: Decimal | None) -> str | None:
     if value is None:
         return None
     return format(value, "f")
-
-
-def _positive_int(value: Any, *, default: int) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return default
-    return parsed if parsed > 0 else default

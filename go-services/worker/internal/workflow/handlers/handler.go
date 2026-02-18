@@ -33,6 +33,8 @@ type OperationExecutor interface {
 
 // OperationRequest represents a request to execute an operation.
 type OperationRequest struct {
+	// OperationID identifies top-level worker operation execution.
+	OperationID string `json:"operation_id,omitempty"`
 	// OperationType specifies the operation kind (create, update, delete, query, etc.).
 	OperationType string `json:"operation_type"`
 	// TargetEntity is the OData entity or resource being operated on.
@@ -66,6 +68,8 @@ const (
 	ErrorCodeWorkflowOperationExecutorNotConfigured = "WORKFLOW_OPERATION_EXECUTOR_NOT_CONFIGURED"
 	// ErrorCodePoolRuntimeRouteDisabled indicates poolops route is disabled by runtime guard.
 	ErrorCodePoolRuntimeRouteDisabled = "POOL_RUNTIME_ROUTE_DISABLED"
+	// ErrorCodePoolRuntimePublicationPathDisabled indicates publication path is fail-closed and must not fallback to bridge.
+	ErrorCodePoolRuntimePublicationPathDisabled = "POOL_RUNTIME_PUBLICATION_PATH_DISABLED"
 	// ErrorCodePoolRuntimeBridgeRetryBudgetExhausted indicates bridge transport retries exhausted execution budget.
 	ErrorCodePoolRuntimeBridgeRetryBudgetExhausted = "POOL_RUNTIME_BRIDGE_RETRY_BUDGET_EXHAUSTED"
 )

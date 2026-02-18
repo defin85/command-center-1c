@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/commandcenter1c/commandcenter/shared/httptrace"
@@ -223,20 +224,46 @@ func (c *Client) doWithRetry(ctx context.Context, method, url string, body []byt
 	var lastErr error
 
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
-		if attempt > 0 {
-			// Wait before retry (exponential backoff)
-			waitTime := c.retryWait * time.Duration(1<<uint(attempt-1))
-			select {
-			case <-time.After(waitTime):
-			case <-ctx.Done():
-				return ctx.Err()
-			}
+		attemptNumber := attempt + 1
+		resendAttempt := attemptNumber > 1
+		if resendAttempt {
+			recordTransportResendAttempt(ctx, method)
 		}
 
-		err := c.doRequest(ctx, method, url, body, result)
+		attemptStart := time.Now()
+		statusCode, err := c.doRequest(ctx, method, url, body, result)
+		duration := time.Since(attemptStart)
 		if err == nil {
+			statusClass := statusClassFromStatusCode(statusCode)
+			recordTransportLatency(ctx, method, duration, statusClass, resendAttempt)
+			emitTransportTrace(ctx, "external.odata.transport.request.completed", map[string]interface{}{
+				"method":         strings.ToUpper(method),
+				"attempt":        attemptNumber,
+				"resend_attempt": resendAttempt,
+				"status_code":    statusCode,
+				"status_class":   statusClass,
+				"duration_ms":    duration.Milliseconds(),
+			})
 			return nil // Success
 		}
+
+		normalized := NormalizeError(err)
+		if normalized.StatusCode <= 0 {
+			normalized.StatusCode = statusCode
+		}
+		recordTransportLatency(ctx, method, duration, normalized.StatusClass(), resendAttempt)
+		recordTransportError(ctx, method, normalized)
+		emitTransportTrace(ctx, "external.odata.transport.request.failed", map[string]interface{}{
+			"method":         strings.ToUpper(method),
+			"attempt":        attemptNumber,
+			"resend_attempt": resendAttempt,
+			"duration_ms":    duration.Milliseconds(),
+			"error_code":     normalized.Code,
+			"error_class":    normalized.Class,
+			"status_class":   normalized.StatusClass(),
+			"retryable":      normalized.Retryable,
+			"error":          normalized.Message,
+		})
 
 		// Check if error is transient
 		if !IsTransient(err) {
@@ -244,13 +271,35 @@ func (c *Client) doWithRetry(ctx context.Context, method, url string, body []byt
 		}
 
 		lastErr = err
+		if attempt == c.maxRetries {
+			break
+		}
+
+		waitTime := ComputeExponentialBackoffWithJitter(c.retryWait, attemptNumber)
+		recordTransportRetry(ctx, method, normalized)
+		emitTransportTrace(ctx, "external.odata.transport.retry.scheduled", map[string]interface{}{
+			"method":         strings.ToUpper(method),
+			"attempt":        attemptNumber,
+			"next_attempt":   attemptNumber + 1,
+			"resend_attempt": true,
+			"backoff_ms":     waitTime.Milliseconds(),
+			"error_code":     normalized.Code,
+			"error_class":    normalized.Class,
+			"status_class":   normalized.StatusClass(),
+			"retryable":      normalized.Retryable,
+		})
+		select {
+		case <-time.After(waitTime):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 
 	return fmt.Errorf("max retries exceeded: %w", lastErr)
 }
 
 // doRequest executes single HTTP request
-func (c *Client) doRequest(ctx context.Context, method, url string, body []byte, result interface{}) error {
+func (c *Client) doRequest(ctx context.Context, method, url string, body []byte, result interface{}) (int, error) {
 	var bodyReader io.Reader
 	if body != nil {
 		bodyReader = bytes.NewReader(body)
@@ -258,7 +307,7 @@ func (c *Client) doRequest(ctx context.Context, method, url string, body []byte,
 
 	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// Set headers
@@ -273,7 +322,7 @@ func (c *Client) doRequest(ctx context.Context, method, url string, body []byte,
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		httptrace.LogRequestError(logger.GetLogger(), req, time.Since(start), err)
-		return &ODataError{
+		return 0, &ODataError{
 			Code:        ErrorCategoryNetwork,
 			Message:     fmt.Sprintf("HTTP request failed: %v", err),
 			StatusCode:  0,
@@ -286,22 +335,22 @@ func (c *Client) doRequest(ctx context.Context, method, url string, body []byte,
 
 	// Check status code
 	if resp.StatusCode >= 400 {
-		return ParseODataError(resp)
+		return resp.StatusCode, ParseODataError(resp)
 	}
 
 	// Parse response body if result is provided
 	if result != nil && resp.StatusCode != 204 { // 204 = No Content
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("failed to read response: %w", err)
+			return resp.StatusCode, fmt.Errorf("failed to read response: %w", err)
 		}
 
 		if err := json.Unmarshal(respBody, result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return resp.StatusCode, fmt.Errorf("failed to parse response: %w", err)
 		}
 	}
 
-	return nil
+	return resp.StatusCode, nil
 }
 
 // setAuth sets Basic Auth header

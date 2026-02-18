@@ -136,7 +136,7 @@ def test_approval_gate_sets_awaiting_approval_for_safe_unconfirmed_run() -> None
 
 
 @pytest.mark.django_db
-def test_publication_step_requires_approval_in_safe_mode() -> None:
+def test_publication_step_is_fail_closed_for_safe_mode() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
     execution = _attach_execution(
         run=run,
@@ -148,7 +148,7 @@ def test_publication_step_requires_approval_in_safe_mode() -> None:
         },
     )
 
-    with pytest.raises(ValueError, match="POOL_RUNTIME_APPROVAL_REQUIRED"):
+    with pytest.raises(ValueError, match="POOL_RUNTIME_PUBLICATION_PATH_DISABLED"):
         execute_pool_runtime_step(
             operation_type="pool.publication_odata",
             rendered_data={"pool_runtime": {"step_id": "publication_odata"}},
@@ -156,9 +156,12 @@ def test_publication_step_requires_approval_in_safe_mode() -> None:
             execution=execution,
         )
 
+    execution.refresh_from_db(fields=["input_context"])
+    assert execution.input_context.get("publication_step_state") == "not_enqueued"
+
 
 @pytest.mark.django_db
-def test_publication_step_without_targets_completes_context() -> None:
+def test_publication_step_is_fail_closed_for_unsafe_mode() -> None:
     run = _create_pool_run(mode=PoolRunMode.UNSAFE)
     execution = _attach_execution(
         run=run,
@@ -170,14 +173,13 @@ def test_publication_step_without_targets_completes_context() -> None:
         },
     )
 
-    output = execute_pool_runtime_step(
-        operation_type="pool.publication_odata",
-        rendered_data={"pool_runtime": {"step_id": "publication_odata"}},
-        context={"pool_run_id": str(run.id)},
-        execution=execution,
-    )
+    with pytest.raises(ValueError, match="POOL_RUNTIME_PUBLICATION_PATH_DISABLED"):
+        execute_pool_runtime_step(
+            operation_type="pool.publication_odata",
+            rendered_data={"pool_runtime": {"step_id": "publication_odata"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
 
     execution.refresh_from_db(fields=["input_context"])
-    assert output["step"] == "publication_odata"
-    assert output["status"] == "skipped_no_targets"
-    assert execution.input_context.get("publication_step_state") == "completed"
+    assert execution.input_context.get("publication_step_state") == "queued"

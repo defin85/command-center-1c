@@ -530,9 +530,11 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409':
           description: |
-            Non-retryable конфликт контекста или идемпотентности:
+            Non-retryable конфликт контекста, идемпотентности
+            или принудительного fail-closed режима publication path:
             - `POOL_RUNTIME_CONTEXT_MISMATCH`
             - `IDEMPOTENCY_KEY_CONFLICT`
+            - `POOL_RUNTIME_PUBLICATION_PATH_DISABLED` (для `operation_type=pool.publication_odata` после cutover)
           content:
             application/json:
               schema:
@@ -548,6 +550,11 @@ paths:
                   value:
                     error: "Idempotency key conflict"
                     code: "IDEMPOTENCY_KEY_CONFLICT"
+                publicationPathDisabled:
+                  summary: Publication path отключен на bridge после cutover
+                  value:
+                    error: "Publication OData side effects are disabled for bridge path"
+                    code: "POOL_RUNTIME_PUBLICATION_PATH_DISABLED"
         '429': {$ref: '#/components/responses/TooManyRequests'}
         '500': {$ref: '#/components/responses/InternalServerError'}
 

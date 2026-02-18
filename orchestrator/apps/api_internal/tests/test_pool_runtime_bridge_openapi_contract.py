@@ -53,6 +53,16 @@ def test_execute_pool_runtime_step_path_has_canonical_status_matrix_contract() -
     assert ok_ref == "#/components/schemas/PoolRuntimeStepExecutionResponse"
     assert conflict_ref == "#/components/schemas/ErrorResponse"
 
+    conflict_examples = responses["409"]["content"]["application/json"].get("examples")
+    assert isinstance(conflict_examples, dict)
+    assert {"contextMismatch", "idempotencyConflict", "publicationPathDisabled"}.issubset(
+        set(conflict_examples.keys())
+    )
+
+    publication_example = conflict_examples["publicationPathDisabled"].get("value")
+    assert isinstance(publication_example, dict)
+    assert publication_example.get("code") == "POOL_RUNTIME_PUBLICATION_PATH_DISABLED"
+
 
 def test_pool_runtime_step_request_schema_contains_context_and_retry_fields() -> None:
     contract = _load_internal_contract()

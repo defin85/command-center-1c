@@ -142,11 +142,20 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 			opts.WorkflowClient,
 			redisClient,
 			orchestratorURL,
+			processor.credsClient,
+			opts.ODataService,
 			zapLogger,
 			timeline,
 			workflowops.WorkflowHandlerConfig{
-				PoolRouteEnabled:         poolRouteEnabled,
-				PoolRouteEnabledProvider: cfg.IsPoolOpsRouteEnabledForWorker,
+				PoolRouteEnabled:                        poolRouteEnabled,
+				PoolRouteEnabledProvider:                cfg.IsPoolOpsRouteEnabledForWorker,
+				PublicationRouteEnabled:                 cfg.IsPoolPublicationODataCoreEnabledForWorker(),
+				PublicationRouteEnabledProvider:         cfg.IsPoolPublicationODataCoreEnabledForWorker,
+				ODataCompatibilityProfilePath:           cfg.ODataCompatibilityProfilePath,
+				ODataCompatibilityConfigurationID:       cfg.ODataCompatibilityConfigurationID,
+				ODataCompatibilityMode:                  cfg.ODataCompatibilityMode,
+				ODataCompatibilityWriteContentType:      cfg.ODataCompatibilityWriteContentType,
+				ODataCompatibilityReleaseProfileVersion: cfg.ODataCompatibilityReleaseProfileVersion,
 			},
 		)
 		if err != nil {
