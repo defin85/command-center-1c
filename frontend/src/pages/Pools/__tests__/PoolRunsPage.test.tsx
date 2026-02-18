@@ -101,7 +101,7 @@ function buildReport(
         attempt_number: 1,
         attempt_timestamp: '2026-01-01T00:02:00Z',
         status: 'failed',
-        entity_name: 'Document_IntercompanyPoolDistribution',
+        entity_name: 'Document_РеализацияТоваровУслуг',
         documents_count: 1,
         publication_identity_strategy: 'guid',
         external_document_identity: 'ref-1',
@@ -307,7 +307,7 @@ describe('PoolRunsPage', () => {
     expect(mockRetryPoolRunFailed).toHaveBeenCalledWith(
       '11111111-1111-1111-1111-111111111111',
       {
-        entity_name: 'Document_IntercompanyPoolDistribution',
+        entity_name: 'Document_РеализацияТоваровУслуг',
         max_attempts: 5,
         retry_interval_seconds: 0,
         documents_by_database: {

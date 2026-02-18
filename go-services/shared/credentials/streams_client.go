@@ -117,7 +117,7 @@ func (c *StreamsClient) start() {
 
 	// Ensure consumer group exists for response stream
 	stream := events.StreamEventsDatabaseCredentialsResponse
-	if err := c.redisClient.XGroupCreateMkStream(ctx, stream, c.consumerGroup, "0").Err(); err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
+	if err := c.redisClient.XGroupCreateMkStream(ctx, stream, c.consumerGroup, "$").Err(); err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
 		c.logger.Warn("failed to create consumer group for credentials response stream", zap.Error(err), zap.String("stream", stream))
 	}
 

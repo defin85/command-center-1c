@@ -518,7 +518,7 @@ export function PoolRunsPage() {
       source_artifact_id: '',
     })
     retryForm.setFieldsValue({
-      entity_name: 'Document_IntercompanyPoolDistribution',
+      entity_name: 'Document_РеализацияТоваровУслуг',
       max_attempts: 5,
       retry_interval_seconds: 0,
       documents_json: DEFAULT_RETRY_DOCUMENTS_JSON,

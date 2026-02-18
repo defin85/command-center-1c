@@ -18,6 +18,7 @@ import (
 
 	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/commandcenter1c/commandcenter/shared/credentials"
+	"github.com/commandcenter1c/commandcenter/shared/events"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/commandcenter1c/commandcenter/shared/metrics"
 	"github.com/commandcenter1c/commandcenter/shared/tracing"
@@ -168,10 +169,21 @@ func main() {
 	)
 
 	// Initialize credentials fetcher (Redis Streams only; internal HTTP endpoint removed)
+	workerToken := strings.TrimSpace(cfg.WorkerID)
+	if workerToken == "" {
+		workerToken = "worker"
+	}
+	credentialsConsumerGroup := fmt.Sprintf(
+		"%s:%s:%d",
+		events.ConsumerGroupWorkerCredentials,
+		workerToken,
+		os.Getpid(),
+	)
 	streamsClient, err := credentials.NewStreamsClient(credentials.StreamsClientConfig{
 		RedisClient:    redisClient,
 		TransportKey:   transportKey,
 		RequestTimeout: cfg.StreamsCredentialsTimeout,
+		ConsumerGroup:  credentialsConsumerGroup,
 		Logger:         zapLog,
 	})
 	if err != nil {
@@ -179,7 +191,9 @@ func main() {
 	}
 	defer streamsClient.Close()
 	credsClient := credentials.Fetcher(streamsClient)
-	log.Info("credentials client initialized (Redis Streams)")
+	log.Info("credentials client initialized (Redis Streams)",
+		zap.String("consumer_group", credentialsConsumerGroup),
+	)
 
 	// Initialize TimelineRecorder for operation tracing
 	timelineCfg := tracing.DefaultTimelineConfig("worker")

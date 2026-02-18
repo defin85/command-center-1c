@@ -171,6 +171,45 @@ def test_start_pool_run_workflow_execution_sets_publication_auth_context() -> No
 
 
 @pytest.mark.django_db
+def test_start_pool_run_workflow_execution_sets_publication_payload_from_run_input() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    run.run_input = {
+        "entity_name": "Document_IntercompanyPoolDistribution",
+        "documents_by_database": {
+            "db-initial-1": [{"Amount": "100.00"}],
+            "db-initial-2": [{"Amount": "90.00"}],
+        },
+        "max_attempts": 2,
+        "retry_interval_seconds": 5,
+        "external_key_field": "ExternalRunKey",
+    }
+    run.save(update_fields=["run_input", "updated_at"])
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-publication-payload",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        result = start_pool_run_workflow_execution(run=run)
+
+    execution = WorkflowExecution.objects.get(id=result.execution_id)
+    publication_payload = execution.input_context.get("pool_runtime_publication_payload")
+    assert isinstance(publication_payload, dict)
+    pool_runtime_payload = publication_payload.get("pool_runtime")
+    assert isinstance(pool_runtime_payload, dict)
+    assert pool_runtime_payload.get("documents_by_database") == run.run_input.get("documents_by_database")
+    assert pool_runtime_payload.get("entity_name") == "Document_IntercompanyPoolDistribution"
+    assert pool_runtime_payload.get("max_attempts") == 2
+    assert pool_runtime_payload.get("retry_interval_seconds") == 5
+    assert pool_runtime_payload.get("external_key_field") == "ExternalRunKey"
+
+
+@pytest.mark.django_db
 def test_start_pool_run_workflow_execution_fail_closed_when_actor_mapping_missing() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
     _attach_pool_target_database(

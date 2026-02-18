@@ -396,6 +396,7 @@ def _build_input_context(
     publication_auth_source: str = PUBLICATION_AUTH_SOURCE_RUN_CREATE,
     fallback_publication_auth: object | None = None,
 ) -> dict[str, Any]:
+    run_input = run.run_input if isinstance(run.run_input, dict) else {}
     return {
         "pool_run_id": str(run.id),
         "pool_run_idempotency_key": run.idempotency_key,
@@ -405,7 +406,8 @@ def _build_input_context(
         "mode": run.mode,
         "period_start": run.period_start.isoformat(),
         "period_end": run.period_end.isoformat() if run.period_end else None,
-        "run_input": run.run_input if isinstance(run.run_input, dict) else {},
+        "run_input": run_input,
+        "pool_runtime_publication_payload": _build_retry_publication_payload(run_input),
         "approval_required": run.mode == PoolRunMode.SAFE,
         "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
         "approval_state": _resolve_approval_state_for_input_context(run=run),

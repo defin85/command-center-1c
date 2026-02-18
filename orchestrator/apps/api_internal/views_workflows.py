@@ -534,8 +534,8 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
                 target_databases.append(database_id)
 
     entity_name = str(
-        publication_result.get("entity_name") or "Document_IntercompanyPoolDistribution"
-    ).strip() or "Document_IntercompanyPoolDistribution"
+        publication_result.get("entity_name") or "Document_РеализацияТоваровУслуг"
+    ).strip() or "Document_РеализацияТоваровУслуг"
     max_attempts = _parse_positive_int(publication_result.get("max_attempts"), default=1)
     attempt_rows = _normalize_publication_attempt_rows(
         raw_attempts=publication_result.get("attempts"),

@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	defaultPublicationEntityName       = "Document_IntercompanyPoolDistribution"
+	defaultPublicationEntityName       = "Document_РеализацияТоваровУслуг"
 	defaultPublicationExternalKeyField = "ExternalRunKey"
 	defaultPublicationMaxAttempts      = 5
 	defaultPublicationRetryIntervalSec = 0
