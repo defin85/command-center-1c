@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,7 +11,13 @@ from django.utils import timezone
 from apps.operations.services import OperationsService
 from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate
 
+from .document_plan_artifact_contract import (
+    POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
+    build_publication_payload_from_document_plan_artifact,
+    validate_document_plan_artifact_v1,
+)
 from .models import PoolRun, PoolRunMode, PoolSchemaTemplate, PoolSchemaTemplateFormat
+from .models import PoolPublicationAttempt, PoolPublicationAttemptStatus
 from .publication_auth_mapping import (
     PUBLICATION_AUTH_STRATEGY_ACTOR,
     PUBLICATION_AUTH_STRATEGY_SERVICE,
@@ -18,6 +25,7 @@ from .publication_auth_mapping import (
     evaluate_publication_auth_coverage,
 )
 from .runtime_template_registry import sync_pool_runtime_template_registry
+from .run_input_sanitizer import sanitize_run_input_for_runtime_contract
 from .workflow_compiler import PoolWorkflowRunContext, compile_pool_execution_plan
 
 
@@ -42,6 +50,7 @@ ATTEMPT_KIND_RETRY = "retry"
 PUBLICATION_AUTH_SOURCE_RUN_CREATE = "run_create"
 PUBLICATION_AUTH_SOURCE_CONFIRM_PUBLICATION = "confirm_publication"
 PUBLICATION_AUTH_SOURCE_RETRY_PUBLICATION = "retry_publication"
+POOL_RUNTIME_RETRY_PAYLOAD_INVALID = "POOL_RUNTIME_RETRY_PAYLOAD_INVALID"
 
 
 @dataclass(frozen=True)
@@ -100,7 +109,7 @@ def start_pool_run_workflow_execution(
                 period_end=locked_run.period_end,
                 direction=locked_run.direction,
                 mode=locked_run.mode,
-                run_input=locked_run.run_input if isinstance(locked_run.run_input, dict) else {},
+                run_input=sanitize_run_input_for_runtime_contract(run_input=locked_run.run_input),
             ),
         )
         save_fields = {
@@ -274,7 +283,7 @@ def start_pool_run_retry_workflow_execution(
                 period_end=locked_run.period_end,
                 direction=locked_run.direction,
                 mode=locked_run.mode,
-                run_input=locked_run.run_input if isinstance(locked_run.run_input, dict) else {},
+                run_input=sanitize_run_input_for_runtime_contract(run_input=locked_run.run_input),
             ),
         )
         workflow_template = _resolve_or_create_workflow_template(plan=plan, requested_by=requested_by)
@@ -285,10 +294,13 @@ def start_pool_run_retry_workflow_execution(
             publication_auth_source=PUBLICATION_AUTH_SOURCE_RETRY_PUBLICATION,
             fallback_publication_auth=parent_input_context.get("publication_auth"),
         )
-        retry_input_context["retry_request"] = _summarize_retry_request(retry_request)
-        retry_input_context["pool_runtime_publication_payload"] = _build_retry_publication_payload(
-            retry_request
+        retry_publication_payload = _build_retry_publication_payload(
+            run=locked_run,
+            retry_request=retry_request,
+            parent_input_context=parent_input_context,
         )
+        retry_input_context["retry_request"] = _summarize_retry_request(retry_request)
+        retry_input_context["pool_runtime_publication_payload"] = retry_publication_payload
         retry_input_context["pool_runtime_retry_settings"] = {
             "use_retry_subset_payload": bool(retry_request.get("use_retry_subset_payload")),
         }
@@ -399,7 +411,7 @@ def _build_input_context(
     publication_auth_source: str = PUBLICATION_AUTH_SOURCE_RUN_CREATE,
     fallback_publication_auth: object | None = None,
 ) -> dict[str, Any]:
-    run_input = run.run_input if isinstance(run.run_input, dict) else {}
+    run_input = sanitize_run_input_for_runtime_contract(run_input=run.run_input)
     return {
         "pool_run_id": str(run.id),
         "pool_run_idempotency_key": run.idempotency_key,
@@ -533,7 +545,7 @@ def _parse_context_attempt_number(raw_attempt_number: object) -> int:
 
 def _summarize_retry_request(retry_request: dict[str, Any]) -> dict[str, Any]:
     payload = retry_request if isinstance(retry_request, dict) else {}
-    target_ids = sorted(str(key) for key in (payload.get("documents_by_database") or {}).keys())
+    target_ids = _extract_retry_target_ids(payload)
     documents_by_database = payload.get("documents_by_database") or {}
     documents_total = 0
     if isinstance(documents_by_database, dict):
@@ -543,6 +555,7 @@ def _summarize_retry_request(retry_request: dict[str, Any]) -> dict[str, Any]:
     return {
         "entity_name": str(payload.get("entity_name") or "").strip(),
         "requested_target_ids": target_ids,
+        "target_database_ids": target_ids,
         "requested_targets_count": len(target_ids),
         "requested_documents_count": documents_total,
         "use_retry_subset_payload": bool(payload.get("use_retry_subset_payload")),
@@ -552,14 +565,46 @@ def _summarize_retry_request(retry_request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _build_retry_publication_payload(retry_request: dict[str, Any]) -> dict[str, Any]:
+def _build_retry_publication_payload(
+    *,
+    run: PoolRun,
+    retry_request: dict[str, Any],
+    parent_input_context: dict[str, Any],
+) -> dict[str, Any]:
     payload = retry_request if isinstance(retry_request, dict) else {}
+    target_database_ids = _extract_retry_target_ids(payload)
+    document_plan_artifact = _resolve_retry_document_plan_artifact(parent_input_context)
+    if document_plan_artifact is not None:
+        compiled_payload = build_publication_payload_from_document_plan_artifact(
+            artifact=document_plan_artifact,
+            run_input=payload,
+        )
+        return _filter_retry_publication_payload_from_artifact(
+            run=run,
+            publication_payload=compiled_payload,
+            target_database_ids=target_database_ids,
+        )
+
+    return _build_retry_publication_payload_from_request(
+        payload=payload,
+        target_database_ids=target_database_ids,
+    )
+
+
+def _build_retry_publication_payload_from_request(
+    *,
+    payload: dict[str, Any],
+    target_database_ids: list[str],
+) -> dict[str, Any]:
+    target_database_set = set(target_database_ids)
     documents_by_database: dict[str, list[dict[str, Any]]] = {}
     raw_documents_by_database = payload.get("documents_by_database")
     if isinstance(raw_documents_by_database, dict):
         for raw_database_id, raw_documents in raw_documents_by_database.items():
             database_id = str(raw_database_id or "").strip()
             if not database_id or not isinstance(raw_documents, list):
+                continue
+            if target_database_set and database_id not in target_database_set:
                 continue
             normalized_documents = [
                 dict(item)
@@ -576,6 +621,256 @@ def _build_retry_publication_payload(retry_request: dict[str, Any]) -> dict[str,
         "external_key_field": str(payload.get("external_key_field") or "").strip(),
     }
     return {"pool_runtime": publication_payload}
+
+
+def _extract_retry_target_ids(payload: dict[str, Any]) -> list[str]:
+    target_ids_raw = payload.get("target_database_ids")
+    if isinstance(target_ids_raw, list):
+        seen: set[str] = set()
+        target_ids: list[str] = []
+        for raw_target_id in target_ids_raw:
+            target_id = str(raw_target_id or "").strip()
+            if not target_id or target_id in seen:
+                continue
+            seen.add(target_id)
+            target_ids.append(target_id)
+        if target_ids:
+            return sorted(target_ids)
+
+    raw_documents_by_database = payload.get("documents_by_database")
+    if isinstance(raw_documents_by_database, dict):
+        return sorted(
+            {
+                str(raw_database_id or "").strip()
+                for raw_database_id in raw_documents_by_database.keys()
+                if str(raw_database_id or "").strip()
+            }
+        )
+    return []
+
+
+def _resolve_retry_document_plan_artifact(
+    parent_input_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    artifact_raw = parent_input_context.get(POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY)
+    if artifact_raw is None:
+        return None
+    try:
+        return validate_document_plan_artifact_v1(artifact=artifact_raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"{POOL_RUNTIME_RETRY_PAYLOAD_INVALID}: "
+            f"persisted document_plan_artifact is invalid: {exc}"
+        ) from exc
+
+
+def _filter_retry_publication_payload_from_artifact(
+    *,
+    run: PoolRun,
+    publication_payload: dict[str, Any],
+    target_database_ids: list[str],
+) -> dict[str, Any]:
+    pool_runtime_raw = publication_payload.get("pool_runtime")
+    if not isinstance(pool_runtime_raw, dict):
+        raise ValueError(
+            f"{POOL_RUNTIME_RETRY_PAYLOAD_INVALID}: "
+            "artifact-based retry payload must contain pool_runtime object"
+        )
+    pool_runtime = dict(pool_runtime_raw)
+    target_database_set = set(target_database_ids)
+
+    raw_chains_by_database = pool_runtime.get("document_chains_by_database")
+    chains_by_database_input = (
+        dict(raw_chains_by_database)
+        if isinstance(raw_chains_by_database, dict)
+        else {}
+    )
+    raw_documents_by_database = pool_runtime.get("documents_by_database")
+    documents_by_database_input = (
+        dict(raw_documents_by_database)
+        if isinstance(raw_documents_by_database, dict)
+        else {}
+    )
+
+    failed_document_keys_by_database = _collect_failed_document_keys_for_retry(
+        run=run,
+        target_database_ids=target_database_ids,
+    )
+
+    filtered_chains_by_database: dict[str, list[dict[str, Any]]] = {}
+    for database_id, chains_raw in chains_by_database_input.items():
+        normalized_database_id = str(database_id or "").strip()
+        if not normalized_database_id:
+            continue
+        if target_database_set and normalized_database_id not in target_database_set:
+            continue
+        if not isinstance(chains_raw, list):
+            continue
+        failed_document_keys = failed_document_keys_by_database.get(normalized_database_id)
+        filtered_chains = _filter_retry_chains_by_document_keys(
+            chains_raw=chains_raw,
+            failed_document_keys=failed_document_keys,
+        )
+        if filtered_chains:
+            filtered_chains_by_database[normalized_database_id] = filtered_chains
+
+    filtered_documents_by_database = _build_legacy_documents_by_database_from_chains(
+        chains_by_database=filtered_chains_by_database
+    )
+    if not filtered_documents_by_database:
+        for database_id, documents_raw in documents_by_database_input.items():
+            normalized_database_id = str(database_id or "").strip()
+            if not normalized_database_id:
+                continue
+            if target_database_set and normalized_database_id not in target_database_set:
+                continue
+            if not isinstance(documents_raw, list):
+                continue
+            normalized_documents = [
+                dict(item)
+                for item in documents_raw
+                if isinstance(item, dict)
+            ]
+            if normalized_documents:
+                filtered_documents_by_database[normalized_database_id] = normalized_documents
+
+    if target_database_set and not filtered_documents_by_database and not filtered_chains_by_database:
+        raise ValueError(
+            f"{POOL_RUNTIME_RETRY_PAYLOAD_INVALID}: "
+            "no retry targets available after applying target_database_ids filter"
+        )
+
+    pool_runtime["documents_by_database"] = filtered_documents_by_database
+    pool_runtime["document_chains_by_database"] = filtered_chains_by_database
+    return {"pool_runtime": pool_runtime}
+
+
+def _collect_failed_document_keys_for_retry(
+    *,
+    run: PoolRun,
+    target_database_ids: list[str],
+) -> dict[str, set[str]]:
+    if not target_database_ids:
+        return {}
+
+    attempt_rows = (
+        PoolPublicationAttempt.objects.filter(
+            run=run,
+            target_database_id__in=target_database_ids,
+        )
+        .order_by("target_database_id", "attempt_number", "created_at")
+        .only("target_database_id", "status", "request_summary", "response_summary")
+    )
+    successful_keys_by_database: dict[str, set[str]] = defaultdict(set)
+    latest_request_keys_by_database: dict[str, list[str]] = {}
+
+    for attempt in attempt_rows:
+        database_id = str(attempt.target_database_id)
+        request_summary = (
+            attempt.request_summary if isinstance(attempt.request_summary, dict) else {}
+        )
+        response_summary = (
+            attempt.response_summary if isinstance(attempt.response_summary, dict) else {}
+        )
+
+        request_keys = _normalize_document_keys(
+            request_summary.get("document_idempotency_keys")
+        )
+        if request_keys:
+            latest_request_keys_by_database[database_id] = request_keys
+
+        successful_keys = _normalize_document_keys(
+            response_summary.get("successful_document_idempotency_keys")
+        )
+        if (
+            not successful_keys
+            and attempt.status == PoolPublicationAttemptStatus.SUCCESS
+            and request_keys
+        ):
+            successful_keys = request_keys
+        successful_keys_by_database[database_id].update(successful_keys)
+
+    failed_keys_by_database: dict[str, set[str]] = {}
+    for database_id in target_database_ids:
+        latest_request_keys = latest_request_keys_by_database.get(database_id)
+        if not latest_request_keys:
+            continue
+        successful_keys = successful_keys_by_database.get(database_id, set())
+        failed_keys = {
+            key
+            for key in latest_request_keys
+            if key not in successful_keys
+        }
+        failed_keys_by_database[database_id] = failed_keys
+    return failed_keys_by_database
+
+
+def _normalize_document_keys(raw_keys: object) -> list[str]:
+    if not isinstance(raw_keys, list):
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_key in raw_keys:
+        key = str(raw_key or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        normalized.append(key)
+    return normalized
+
+
+def _filter_retry_chains_by_document_keys(
+    *,
+    chains_raw: list[Any],
+    failed_document_keys: set[str] | None,
+) -> list[dict[str, Any]]:
+    filtered_chains: list[dict[str, Any]] = []
+    for chain_raw in chains_raw:
+        if not isinstance(chain_raw, dict):
+            continue
+        chain = dict(chain_raw)
+        documents_raw = chain.get("documents")
+        if not isinstance(documents_raw, list):
+            continue
+
+        filtered_documents: list[dict[str, Any]] = []
+        for document_raw in documents_raw:
+            if not isinstance(document_raw, dict):
+                continue
+            document = dict(document_raw)
+            document_key = str(document.get("idempotency_key") or "").strip()
+            if failed_document_keys and document_key and document_key not in failed_document_keys:
+                continue
+            filtered_documents.append(document)
+
+        if not filtered_documents:
+            continue
+        chain["documents"] = filtered_documents
+        filtered_chains.append(chain)
+    return filtered_chains
+
+
+def _build_legacy_documents_by_database_from_chains(
+    *,
+    chains_by_database: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    documents_by_database: dict[str, list[dict[str, Any]]] = {}
+    for database_id, chains in chains_by_database.items():
+        if not isinstance(chains, list):
+            continue
+        documents: list[dict[str, Any]] = []
+        for chain in chains:
+            if not isinstance(chain, dict):
+                continue
+            allocation = chain.get("allocation")
+            allocation_payload = allocation if isinstance(allocation, dict) else {}
+            amount = str(allocation_payload.get("amount") or "").strip()
+            if not amount:
+                continue
+            documents.append({"Amount": amount})
+        if documents:
+            documents_by_database[database_id] = documents
+    return documents_by_database
 
 
 def _resolve_approval_state_for_input_context(*, run: PoolRun) -> str:
@@ -601,7 +896,7 @@ def _build_execution_plan_snapshot(
     workflow_template: WorkflowTemplate,
     execution_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    run_input = run.run_input if isinstance(run.run_input, dict) else {}
+    run_input = sanitize_run_input_for_runtime_contract(run_input=run.run_input)
     execution_lineage = _build_execution_lineage_snapshot(execution_context=execution_context)
     publication_auth = _normalize_publication_auth_context(
         (execution_context or {}).get("publication_auth")

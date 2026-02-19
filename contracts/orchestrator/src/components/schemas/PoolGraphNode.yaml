@@ -12,6 +12,7 @@ properties:
     type: string
   is_root:
     type: boolean
+  metadata: {}
 required:
   - inn
   - is_root

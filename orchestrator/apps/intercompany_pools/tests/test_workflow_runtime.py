@@ -12,6 +12,8 @@ from apps.intercompany_pools.models import (
     Organization,
     OrganizationPool,
     PoolNodeVersion,
+    PoolPublicationAttempt,
+    PoolPublicationAttemptStatus,
     PoolRun,
     PoolRunDirection,
     PoolRunMode,
@@ -199,6 +201,47 @@ def test_start_pool_run_workflow_execution_does_not_prefill_publication_payload_
 
     execution = WorkflowExecution.objects.get(id=result.execution_id)
     assert "pool_runtime_publication_payload" not in execution.input_context
+
+
+@pytest.mark.django_db
+def test_start_pool_run_workflow_execution_sanitizes_reserved_artifact_keys_from_run_input() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    run.run_input = {
+        "entity_name": "Document_IntercompanyPoolDistribution",
+        "source_payload": [{"inn": "730000000001", "amount": "100.00"}],
+        "pool_runtime_distribution_artifact": {"version": "distribution_artifact.v1"},
+        "distribution_artifact": {"version": "distribution_artifact.v1"},
+        "document_plan_artifact": {"version": "document_plan_artifact.v1"},
+        "pool_runtime_publication_payload": {
+            "pool_runtime": {
+                "entity_name": "Document_IntercompanyPoolDistribution",
+                "documents_by_database": {"db-bypass": [{"Amount": "999.00"}]},
+            }
+        },
+    }
+    run.save(update_fields=["run_input", "updated_at"])
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-run-input-sanitize",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        result = start_pool_run_workflow_execution(run=run)
+
+    execution = WorkflowExecution.objects.get(id=result.execution_id)
+    run_input = execution.input_context.get("run_input")
+    assert isinstance(run_input, dict)
+    assert run_input.get("entity_name") == "Document_IntercompanyPoolDistribution"
+    assert "source_payload" in run_input
+    assert "pool_runtime_distribution_artifact" not in run_input
+    assert "distribution_artifact" not in run_input
+    assert "document_plan_artifact" not in run_input
+    assert "pool_runtime_publication_payload" not in run_input
 
 
 @pytest.mark.django_db
@@ -450,4 +493,212 @@ def test_retry_workflow_execution_keeps_operation_binding_snapshot() -> None:
         "strategy": "actor",
         "actor_username": retry_actor.username,
         "source": "retry_publication",
+    }
+
+
+@pytest.mark.django_db
+def test_retry_workflow_execution_uses_persisted_document_plan_and_skips_successful_document_steps() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    failed_database = Database.objects.create(
+        tenant=run.tenant,
+        name=f"pool-runtime-retry-db-{uuid4().hex[:8]}",
+        host="localhost",
+        odata_url="http://localhost/odata/standard.odata",
+        username="legacy-user",
+        password="legacy-pass",
+    )
+    skipped_database = Database.objects.create(
+        tenant=run.tenant,
+        name=f"pool-runtime-retry-db-{uuid4().hex[:8]}",
+        host="localhost",
+        odata_url="http://localhost/odata/standard.odata",
+        username="legacy-user",
+        password="legacy-pass",
+    )
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-initial",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        first = start_pool_run_workflow_execution(run=run)
+
+    first_execution = WorkflowExecution.objects.get(id=first.execution_id)
+    first_execution.input_context = {
+        **(first_execution.input_context or {}),
+        "pool_runtime_document_plan_artifact": {
+            "version": "document_plan_artifact.v1",
+            "run_id": str(run.id),
+            "distribution_artifact_ref": {
+                "version": "distribution_artifact.v1",
+                "topology_version_ref": "topology-v1",
+            },
+            "topology_version_ref": "topology-v1",
+            "policy_refs": [
+                {
+                    "edge_ref": {
+                        "parent_node_id": "node-parent",
+                        "child_node_id": "node-child",
+                    },
+                    "policy_version": "document_policy.v1",
+                    "source": "edge.metadata.document_policy",
+                }
+            ],
+            "targets": [
+                {
+                    "database_id": str(failed_database.id),
+                    "chains": [
+                        {
+                            "chain_id": "sale-chain",
+                            "edge_ref": {
+                                "parent_node_id": "node-parent",
+                                "child_node_id": "node-child",
+                            },
+                            "policy_source": "edge.metadata.document_policy",
+                            "policy_version": "document_policy.v1",
+                            "allocation": {"amount": "100.00"},
+                            "documents": [
+                                {
+                                    "document_id": "sale-doc",
+                                    "entity_name": "Document_Sales",
+                                    "document_role": "base",
+                                    "field_mapping": {},
+                                    "table_parts_mapping": {},
+                                    "link_rules": {},
+                                    "invoice_mode": "optional",
+                                    "idempotency_key": "doc-sale-key",
+                                },
+                                {
+                                    "document_id": "invoice-doc",
+                                    "entity_name": "Document_Invoice",
+                                    "document_role": "invoice",
+                                    "field_mapping": {},
+                                    "table_parts_mapping": {},
+                                    "link_rules": {},
+                                    "invoice_mode": "required",
+                                    "idempotency_key": "doc-invoice-key",
+                                    "link_to": "sale-doc",
+                                },
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "database_id": str(skipped_database.id),
+                    "chains": [
+                        {
+                            "chain_id": "sale-chain-skipped",
+                            "edge_ref": {
+                                "parent_node_id": "node-parent",
+                                "child_node_id": "node-child-skipped",
+                            },
+                            "policy_source": "edge.metadata.document_policy",
+                            "policy_version": "document_policy.v1",
+                            "allocation": {"amount": "50.00"},
+                            "documents": [
+                                {
+                                    "document_id": "sale-doc-skipped",
+                                    "entity_name": "Document_Sales",
+                                    "document_role": "base",
+                                    "field_mapping": {},
+                                    "table_parts_mapping": {},
+                                    "link_rules": {},
+                                    "invoice_mode": "optional",
+                                    "idempotency_key": "doc-sale-skip-key",
+                                }
+                            ],
+                        }
+                    ],
+                },
+            ],
+            "compile_summary": {
+                "compiled_edges": 1,
+                "targets_count": 2,
+                "chains_count": 2,
+                "documents_count": 3,
+                "compiled_at": "2026-01-01T00:00:00+00:00",
+            },
+        },
+    }
+    first_execution.save(update_fields=["input_context"])
+
+    PoolPublicationAttempt.objects.create(
+        run=run,
+        tenant=run.tenant,
+        target_database=failed_database,
+        attempt_number=1,
+        status=PoolPublicationAttemptStatus.FAILED,
+        entity_name="Document_Sales",
+        documents_count=2,
+        posted=False,
+        request_summary={
+            "documents_count": 2,
+            "document_idempotency_keys": ["doc-sale-key", "doc-invoice-key"],
+        },
+        response_summary={
+            "posted": False,
+            "successful_document_idempotency_keys": ["doc-sale-key"],
+            "failed_document_idempotency_key": "doc-invoice-key",
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-retry",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        retry = start_pool_run_retry_workflow_execution(
+            run=run,
+            retry_request={
+                "target_database_ids": [str(failed_database.id)],
+                "use_retry_subset_payload": True,
+                "max_attempts": 1,
+                "retry_interval_seconds": 0,
+                "external_key_field": "ExternalRunKey",
+            },
+        )
+
+    execution = WorkflowExecution.objects.get(id=retry.execution_id)
+    publication_payload = execution.input_context.get("pool_runtime_publication_payload")
+    assert isinstance(publication_payload, dict)
+    pool_runtime_payload = publication_payload.get("pool_runtime")
+    assert isinstance(pool_runtime_payload, dict)
+    document_chains_by_database = pool_runtime_payload.get("document_chains_by_database")
+    assert document_chains_by_database == {
+        str(failed_database.id): [
+            {
+                "chain_id": "sale-chain",
+                "edge_ref": {
+                    "parent_node_id": "node-parent",
+                    "child_node_id": "node-child",
+                },
+                "policy_source": "edge.metadata.document_policy",
+                "policy_version": "document_policy.v1",
+                "allocation": {"amount": "100.00"},
+                "documents": [
+                    {
+                        "document_id": "invoice-doc",
+                        "entity_name": "Document_Invoice",
+                        "document_role": "invoice",
+                        "idempotency_key": "doc-invoice-key",
+                        "invoice_mode": "required",
+                        "payload": {"Amount": "100.00"},
+                        "link_to": "sale-doc",
+                    }
+                ],
+            }
+        ]
+    }
+    assert pool_runtime_payload.get("documents_by_database") == {
+        str(failed_database.id): [{"Amount": "100.00"}]
     }

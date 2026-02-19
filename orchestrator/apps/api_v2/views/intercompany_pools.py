@@ -42,6 +42,10 @@ from apps.intercompany_pools.command_log import (
     PoolRunCommandIdempotencyConflict,
     record_pool_run_command_outcome,
 )
+from apps.intercompany_pools.document_policy_contract import (
+    DOCUMENT_POLICY_METADATA_KEY,
+    resolve_document_policy_from_edge_metadata,
+)
 from apps.intercompany_pools.safe_commands import (
     CONFLICT_REASON_AWAITING_PRE_PUBLISH,
     CONFLICT_REASON_IDEMPOTENCY_KEY_REUSED,
@@ -265,6 +269,20 @@ def _collect_failed_target_ids_for_retry(*, run: PoolRun) -> list[str]:
         for database_id, status in latest_status_by_database.items()
         if status == PoolPublicationAttemptStatus.FAILED
     )
+
+
+def _normalize_retry_target_ids(raw_target_ids: object) -> list[str]:
+    if not isinstance(raw_target_ids, list):
+        return []
+    normalized_ids: list[str] = []
+    seen: set[str] = set()
+    for raw_target_id in raw_target_ids:
+        target_id = str(raw_target_id or "").strip()
+        if not target_id or target_id in seen:
+            continue
+        seen.add(target_id)
+        normalized_ids.append(target_id)
+    return sorted(normalized_ids)
 
 
 def _build_retry_command_fingerprint(
@@ -1410,9 +1428,16 @@ class PoolRunDetailResponseSerializer(serializers.Serializer):
 
 
 class PoolRunRetryRequestSerializer(serializers.Serializer):
-    entity_name = serializers.CharField(max_length=255)
+    entity_name = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
     documents_by_database = serializers.DictField(
         child=serializers.ListField(child=serializers.JSONField()),
+        required=False,
+        allow_empty=True,
+        default=dict,
+    )
+    target_database_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
         allow_empty=False,
     )
     max_attempts = serializers.IntegerField(
@@ -1618,7 +1643,14 @@ class PoolTopologySnapshotEdgeInputSerializer(serializers.Serializer):
     def validate_metadata(self, value):
         if not isinstance(value, dict):
             raise serializers.ValidationError("metadata must be an object")
-        return value
+        normalized = dict(value)
+        try:
+            policy = resolve_document_policy_from_edge_metadata(metadata=normalized)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc))
+        if policy is not None:
+            normalized[DOCUMENT_POLICY_METADATA_KEY] = policy
+        return normalized
 
 
 class PoolTopologySnapshotUpsertRequestSerializer(serializers.Serializer):
@@ -1651,6 +1683,7 @@ class PoolGraphNodeSerializer(serializers.Serializer):
     inn = serializers.CharField()
     name = serializers.CharField()
     is_root = serializers.BooleanField()
+    metadata = serializers.JSONField(required=False)
 
 
 class PoolGraphEdgeSerializer(serializers.Serializer):
@@ -1660,6 +1693,7 @@ class PoolGraphEdgeSerializer(serializers.Serializer):
     weight = serializers.DecimalField(max_digits=12, decimal_places=6)
     min_amount = serializers.DecimalField(max_digits=18, decimal_places=2, required=False, allow_null=True)
     max_amount = serializers.DecimalField(max_digits=18, decimal_places=2, required=False, allow_null=True)
+    metadata = serializers.JSONField(required=False)
 
 
 class PoolGraphResponseSerializer(serializers.Serializer):
@@ -2507,6 +2541,7 @@ def get_pool_graph(request, pool_id: UUID):
                 "inn": node.organization.inn,
                 "name": node.organization.name,
                 "is_root": node.is_root,
+                "metadata": node.metadata if isinstance(node.metadata, dict) else {},
             }
             for node in active_nodes
         ],
@@ -2518,6 +2553,7 @@ def get_pool_graph(request, pool_id: UUID):
                 "weight": edge.weight,
                 "min_amount": edge.min_amount,
                 "max_amount": edge.max_amount,
+                "metadata": edge.metadata if isinstance(edge.metadata, dict) else {},
             }
             for edge in active_edges
         ],
@@ -2902,7 +2938,6 @@ def retry_pool_run_failed(request, run_id: UUID):
 
     data = dict(serializer.validated_data)
     documents_by_database = data.get("documents_by_database") or {}
-    requested_targets = len(documents_by_database)
     requested_documents = sum(
         len(documents)
         for documents in documents_by_database.values()
@@ -2918,25 +2953,55 @@ def retry_pool_run_failed(request, run_id: UUID):
         )
 
     failed_target_set = set(failed_target_ids)
+    explicit_target_ids = _normalize_retry_target_ids(data.get("target_database_ids"))
+    requested_target_ids = explicit_target_ids
+    if not requested_target_ids and isinstance(documents_by_database, dict):
+        requested_target_ids = sorted(
+            {
+                str(database_id or "").strip()
+                for database_id in documents_by_database.keys()
+                if str(database_id or "").strip()
+            }
+        )
+    if not requested_target_ids:
+        requested_target_ids = failed_target_ids
+
+    invalid_target_ids = sorted(set(explicit_target_ids) - failed_target_set)
+    if explicit_target_ids and invalid_target_ids:
+        return _error(
+            code="INVALID_RETRY_TARGETS",
+            message=(
+                "Retry targets must be failed targets only: "
+                + ", ".join(invalid_target_ids)
+            ),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    selected_target_ids = [
+        target_id
+        for target_id in requested_target_ids
+        if target_id in failed_target_set
+    ]
+    if not selected_target_ids:
+        return _error(
+            code="NO_FAILED_TARGETS",
+            message="Pool run has no failed targets to retry.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
     filtered_documents_by_database = {
         str(database_id): documents
         for database_id, documents in documents_by_database.items()
-        if str(database_id) in failed_target_set
+        if str(database_id) in set(selected_target_ids)
     }
-    missing_failed_targets = sorted(failed_target_set - set(filtered_documents_by_database))
-    if missing_failed_targets:
-        return _error(
-            code="MISSING_FAILED_TARGETS",
-            message=f"Missing documents for failed targets: {', '.join(missing_failed_targets)}",
-            status_code=http_status.HTTP_400_BAD_REQUEST,
-        )
+    requested_targets = len(requested_target_ids)
 
     retry_target_summary = {
         "requested_targets": requested_targets,
         "requested_documents": requested_documents,
         "failed_targets": len(failed_target_ids),
-        "enqueued_targets": len(filtered_documents_by_database),
-        "skipped_successful_targets": max(0, requested_targets - len(filtered_documents_by_database)),
+        "enqueued_targets": len(selected_target_ids),
+        "skipped_successful_targets": max(0, requested_targets - len(selected_target_ids)),
     }
 
     retry_command_log: PoolRunCommandLog | None = None
@@ -2944,7 +3009,7 @@ def retry_pool_run_failed(request, run_id: UUID):
     if idempotency_key:
         command_fingerprint = _build_retry_command_fingerprint(
             entity_name=str(data.get("entity_name") or ""),
-            target_ids=sorted(filtered_documents_by_database.keys()),
+            target_ids=sorted(selected_target_ids),
             max_attempts=int(data.get("max_attempts", MAX_PUBLICATION_ATTEMPTS)),
             retry_interval_seconds=int(data.get("retry_interval_seconds", 0)),
             external_key_field=str(data.get("external_key_field") or "ExternalRunKey"),
@@ -2999,6 +3064,7 @@ def retry_pool_run_failed(request, run_id: UUID):
         retry_command_log = write_result.entry
 
     data["documents_by_database"] = filtered_documents_by_database
+    data["target_database_ids"] = selected_target_ids
     try:
         retry_result = start_pool_run_retry_workflow_execution(
             run=run,

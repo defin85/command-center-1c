@@ -4,6 +4,20 @@
 
 Система ДОЛЖНА (SHALL) поддерживать хранение document-policy в topology edge metadata и использовать этот contract как source-of-truth для построения публикационного плана документов.
 
+Минимальный обязательный набор полей `document_policy.v1`:
+- `version = "document_policy.v1"`;
+- `chains[]` (ordered);
+- `chains[].chain_id`;
+- `chains[].documents[]` (ordered);
+- `chains[].documents[].document_id`;
+- `chains[].documents[].entity_name`;
+- `chains[].documents[].document_role`;
+- `chains[].documents[].field_mapping` (object);
+- `chains[].documents[].table_parts_mapping` (object);
+- `chains[].documents[].link_rules` (object);
+- `chains[].documents[].invoice_mode` (`optional|required`);
+- `chains[].documents[].link_to` (optional).
+
 #### Scenario: Оператор задаёт policy для ребра без backend hardcode
 - **GIVEN** оператор редактирует topology snapshot пула
 - **WHEN** для ребра задаётся `metadata.document_policy` с `version=document_policy.v1`
@@ -92,3 +106,20 @@
 - **WHEN** runtime выполняет policy validation/compile
 - **THEN** run останавливается fail-closed до публикации
 - **AND** diagnostics содержит machine-readable код `POOL_DOCUMENT_POLICY_MAPPING_INVALID`
+
+#### Scenario: Невалидная структура цепочки возвращает стабильный код ошибки
+- **GIVEN** policy содержит некорректную структуру chain (например, duplicate `chain_id` или invalid `invoice_mode`)
+- **WHEN** runtime выполняет policy validation/compile
+- **THEN** run останавливается fail-closed до публикации
+- **AND** diagnostics содержит machine-readable код `POOL_DOCUMENT_POLICY_CHAIN_INVALID`
+
+### Requirement: Migration path MUST быть backward-compatible для run-ов без document policy
+Система ДОЛЖНА (SHALL) поддерживать переходный режим, в котором существующие run-ы без `metadata.document_policy` продолжают выполняться по legacy create-run path без policy compile ошибки.
+
+Система НЕ ДОЛЖНА (SHALL NOT) требовать retroactive миграции исторических run-ов или topology версий только для сохранения текущего поведения публикации.
+
+#### Scenario: Legacy run без document policy выполняется без policy compile шага
+- **GIVEN** run создан для topology версии, где отсутствует `edge.metadata.document_policy`
+- **WHEN** runtime выполняет distribution/reconciliation create-run path
+- **THEN** run не завершается ошибкой policy-missing
+- **AND** legacy publication payload семантика сохраняется до включения policy

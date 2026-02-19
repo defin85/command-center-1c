@@ -1,0 +1,613 @@
+from __future__ import annotations
+
+import json
+from decimal import Decimal, InvalidOperation
+from hashlib import sha256
+from typing import Any, Mapping
+
+from django.utils import timezone
+
+from .document_policy_contract import resolve_document_policy_with_precedence
+from .models import PoolEdgeVersion, PoolNodeVersion, PoolRun
+
+
+DOCUMENT_PLAN_ARTIFACT_VERSION = "document_plan_artifact.v1"
+POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY = "pool_runtime_document_plan_artifact"
+POOL_DOCUMENT_PLAN_ARTIFACT_INVALID = "POOL_DOCUMENT_PLAN_ARTIFACT_INVALID"
+
+REQUIRED_DOCUMENT_PLAN_ARTIFACT_FIELDS = {
+    "version",
+    "run_id",
+    "distribution_artifact_ref",
+    "topology_version_ref",
+    "policy_refs",
+    "targets",
+    "compile_summary",
+}
+
+
+def compile_document_plan_artifact_v1(
+    *,
+    run: PoolRun,
+    distribution_artifact: Mapping[str, Any],
+    topology: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    edge_allocations = distribution_artifact.get("edge_allocations")
+    if not isinstance(edge_allocations, list):
+        return None
+
+    edge_models_raw = topology.get("edge_models")
+    node_models_raw = topology.get("node_models")
+    if not isinstance(edge_models_raw, Mapping) or not isinstance(node_models_raw, Mapping):
+        return None
+
+    pool_metadata = run.pool.metadata if isinstance(run.pool.metadata, Mapping) else {}
+    targets_by_database: dict[str, dict[str, Any]] = {}
+    policy_refs: list[dict[str, Any]] = []
+    seen_policy_refs: set[tuple[str, str]] = set()
+    compiled_edges = 0
+    chains_count = 0
+    documents_count = 0
+
+    allocations = sorted(
+        (
+            dict(item)
+            for item in edge_allocations
+            if isinstance(item, Mapping)
+        ),
+        key=lambda item: (
+            str(item.get("parent_node_id") or ""),
+            str(item.get("child_node_id") or ""),
+        ),
+    )
+
+    for allocation in allocations:
+        parent_node_id = str(allocation.get("parent_node_id") or "").strip()
+        child_node_id = str(allocation.get("child_node_id") or "").strip()
+        if not parent_node_id or not child_node_id:
+            continue
+
+        amount = _parse_decimal(allocation.get("amount"))
+        if amount is None or amount <= Decimal("0"):
+            continue
+        amount_text = _decimal_to_string(amount)
+
+        edge_key = (parent_node_id, child_node_id)
+        edge_model = edge_models_raw.get(edge_key)
+        child_node = node_models_raw.get(child_node_id)
+        if not isinstance(edge_model, PoolEdgeVersion) or not isinstance(child_node, PoolNodeVersion):
+            continue
+
+        database_id = (
+            str(child_node.organization.database_id)
+            if getattr(child_node.organization, "database_id", None)
+            else ""
+        )
+        if not database_id:
+            continue
+
+        edge_metadata = edge_model.metadata if isinstance(edge_model.metadata, Mapping) else {}
+        policy, source = resolve_document_policy_with_precedence(
+            edge_metadata=edge_metadata,
+            pool_metadata=pool_metadata,
+        )
+        if policy is None:
+            continue
+
+        edge_ref = {
+            "parent_node_id": parent_node_id,
+            "child_node_id": child_node_id,
+        }
+        policy_ref_key = (parent_node_id, child_node_id)
+        if policy_ref_key not in seen_policy_refs:
+            policy_refs.append(
+                {
+                    "edge_ref": edge_ref,
+                    "policy_version": str(policy.get("version") or ""),
+                    "source": source,
+                }
+            )
+            seen_policy_refs.add(policy_ref_key)
+
+        chain_payloads = _compile_chains_for_edge(
+            run=run,
+            policy=policy,
+            edge_ref=edge_ref,
+            source=source,
+            database_id=database_id,
+            amount_text=amount_text,
+        )
+        if not chain_payloads:
+            continue
+
+        target = targets_by_database.setdefault(
+            database_id,
+            {
+                "database_id": database_id,
+                "chains": [],
+            },
+        )
+        target["chains"].extend(chain_payloads)
+        compiled_edges += 1
+        chains_count += len(chain_payloads)
+        documents_count += sum(
+            len(chain.get("documents") or [])
+            for chain in chain_payloads
+            if isinstance(chain, Mapping)
+        )
+
+    if not targets_by_database:
+        return None
+
+    targets = [targets_by_database[database_id] for database_id in sorted(targets_by_database)]
+    topology_version_ref = str(distribution_artifact.get("topology_version_ref") or "").strip()
+    artifact = {
+        "version": DOCUMENT_PLAN_ARTIFACT_VERSION,
+        "run_id": str(run.id),
+        "distribution_artifact_ref": {
+            "version": str(distribution_artifact.get("version") or "").strip(),
+            "topology_version_ref": topology_version_ref,
+        },
+        "topology_version_ref": topology_version_ref,
+        "policy_refs": policy_refs,
+        "targets": targets,
+        "compile_summary": {
+            "compiled_edges": compiled_edges,
+            "targets_count": len(targets),
+            "chains_count": chains_count,
+            "documents_count": documents_count,
+            "compiled_at": timezone.now().isoformat(),
+        },
+    }
+    return validate_document_plan_artifact_v1(artifact=artifact)
+
+
+def validate_document_plan_artifact_v1(*, artifact: Any) -> dict[str, Any]:
+    payload = _require_object(
+        artifact,
+        field_name="document_plan_artifact",
+    )
+    missing_fields = sorted(
+        field_name
+        for field_name in REQUIRED_DOCUMENT_PLAN_ARTIFACT_FIELDS
+        if field_name not in payload
+    )
+    if missing_fields:
+        raise ValueError(
+            f"{POOL_DOCUMENT_PLAN_ARTIFACT_INVALID}: "
+            f"missing required artifact fields: {', '.join(missing_fields)}"
+        )
+
+    version = _require_string(
+        payload.get("version"),
+        field_name="document_plan_artifact.version",
+    )
+    if version != DOCUMENT_PLAN_ARTIFACT_VERSION:
+        raise ValueError(
+            f"{POOL_DOCUMENT_PLAN_ARTIFACT_INVALID}: unexpected artifact version '{version or '<empty>'}'"
+        )
+
+    _require_string(
+        payload.get("run_id"),
+        field_name="document_plan_artifact.run_id",
+    )
+    _require_string(
+        payload.get("topology_version_ref"),
+        field_name="document_plan_artifact.topology_version_ref",
+    )
+
+    distribution_ref = _require_object(
+        payload.get("distribution_artifact_ref"),
+        field_name="document_plan_artifact.distribution_artifact_ref",
+    )
+    _require_string(
+        distribution_ref.get("version"),
+        field_name="document_plan_artifact.distribution_artifact_ref.version",
+    )
+    _require_string(
+        distribution_ref.get("topology_version_ref"),
+        field_name="document_plan_artifact.distribution_artifact_ref.topology_version_ref",
+    )
+
+    policy_refs = _require_array(
+        payload.get("policy_refs"),
+        field_name="document_plan_artifact.policy_refs",
+        require_non_empty=True,
+    )
+    for index, policy_ref_raw in enumerate(policy_refs):
+        policy_ref = _require_object(
+            policy_ref_raw,
+            field_name=f"document_plan_artifact.policy_refs[{index}]",
+        )
+        edge_ref = _require_object(
+            policy_ref.get("edge_ref"),
+            field_name=f"document_plan_artifact.policy_refs[{index}].edge_ref",
+        )
+        _require_string(
+            edge_ref.get("parent_node_id"),
+            field_name=f"document_plan_artifact.policy_refs[{index}].edge_ref.parent_node_id",
+        )
+        _require_string(
+            edge_ref.get("child_node_id"),
+            field_name=f"document_plan_artifact.policy_refs[{index}].edge_ref.child_node_id",
+        )
+        _require_string(
+            policy_ref.get("policy_version"),
+            field_name=f"document_plan_artifact.policy_refs[{index}].policy_version",
+        )
+        _require_string(
+            policy_ref.get("source"),
+            field_name=f"document_plan_artifact.policy_refs[{index}].source",
+        )
+
+    targets = _require_array(
+        payload.get("targets"),
+        field_name="document_plan_artifact.targets",
+        require_non_empty=True,
+    )
+    for target_index, target_raw in enumerate(targets):
+        target = _require_object(
+            target_raw,
+            field_name=f"document_plan_artifact.targets[{target_index}]",
+        )
+        _require_string(
+            target.get("database_id"),
+            field_name=f"document_plan_artifact.targets[{target_index}].database_id",
+        )
+        chains = _require_array(
+            target.get("chains"),
+            field_name=f"document_plan_artifact.targets[{target_index}].chains",
+            require_non_empty=True,
+        )
+        for chain_index, chain_raw in enumerate(chains):
+            chain = _require_object(
+                chain_raw,
+                field_name=(
+                    f"document_plan_artifact.targets[{target_index}].chains[{chain_index}]"
+                ),
+            )
+            _require_string(
+                chain.get("chain_id"),
+                field_name=(
+                    f"document_plan_artifact.targets[{target_index}].chains[{chain_index}].chain_id"
+                ),
+            )
+            edge_ref = _require_object(
+                chain.get("edge_ref"),
+                field_name=(
+                    f"document_plan_artifact.targets[{target_index}].chains[{chain_index}].edge_ref"
+                ),
+            )
+            _require_string(
+                edge_ref.get("parent_node_id"),
+                field_name=(
+                    f"document_plan_artifact.targets[{target_index}].chains[{chain_index}].edge_ref.parent_node_id"
+                ),
+            )
+            _require_string(
+                edge_ref.get("child_node_id"),
+                field_name=(
+                    f"document_plan_artifact.targets[{target_index}].chains[{chain_index}].edge_ref.child_node_id"
+                ),
+            )
+            documents = _require_array(
+                chain.get("documents"),
+                field_name=(
+                    f"document_plan_artifact.targets[{target_index}].chains[{chain_index}].documents"
+                ),
+                require_non_empty=True,
+            )
+            for document_index, document_raw in enumerate(documents):
+                document = _require_object(
+                    document_raw,
+                    field_name=(
+                        "document_plan_artifact.targets"
+                        f"[{target_index}].chains[{chain_index}].documents[{document_index}]"
+                    ),
+                )
+                for field_name in (
+                    "document_id",
+                    "entity_name",
+                    "document_role",
+                    "invoice_mode",
+                    "idempotency_key",
+                ):
+                    _require_string(
+                        document.get(field_name),
+                        field_name=(
+                            "document_plan_artifact.targets"
+                            f"[{target_index}].chains[{chain_index}].documents[{document_index}].{field_name}"
+                        ),
+                    )
+                _require_object(
+                    document.get("field_mapping"),
+                    field_name=(
+                        "document_plan_artifact.targets"
+                        f"[{target_index}].chains[{chain_index}].documents[{document_index}].field_mapping"
+                    ),
+                )
+                _require_object(
+                    document.get("table_parts_mapping"),
+                    field_name=(
+                        "document_plan_artifact.targets"
+                        f"[{target_index}].chains[{chain_index}].documents[{document_index}].table_parts_mapping"
+                    ),
+                )
+                _require_object(
+                    document.get("link_rules"),
+                    field_name=(
+                        "document_plan_artifact.targets"
+                        f"[{target_index}].chains[{chain_index}].documents[{document_index}].link_rules"
+                    ),
+                )
+
+    compile_summary = _require_object(
+        payload.get("compile_summary"),
+        field_name="document_plan_artifact.compile_summary",
+    )
+    for field_name in (
+        "compiled_edges",
+        "targets_count",
+        "chains_count",
+        "documents_count",
+    ):
+        _require_non_negative_int(
+            compile_summary.get(field_name),
+            field_name=f"document_plan_artifact.compile_summary.{field_name}",
+        )
+    _require_string(
+        compile_summary.get("compiled_at"),
+        field_name="document_plan_artifact.compile_summary.compiled_at",
+    )
+    return payload
+
+
+def build_publication_payload_from_document_plan_artifact(
+    *,
+    artifact: Mapping[str, Any],
+    run_input: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = run_input if isinstance(run_input, Mapping) else {}
+    validated_artifact = validate_document_plan_artifact_v1(artifact=artifact)
+    targets = validated_artifact.get("targets")
+    target_items = targets if isinstance(targets, list) else []
+
+    documents_by_database: dict[str, list[dict[str, Any]]] = {}
+    document_chains_by_database: dict[str, list[dict[str, Any]]] = {}
+    resolved_entity_name = ""
+
+    for target_raw in target_items:
+        if not isinstance(target_raw, Mapping):
+            continue
+        database_id = str(target_raw.get("database_id") or "").strip()
+        if not database_id:
+            continue
+        chains_raw = target_raw.get("chains")
+        if not isinstance(chains_raw, list):
+            continue
+
+        for chain_raw in chains_raw:
+            if not isinstance(chain_raw, Mapping):
+                continue
+            allocation_raw = chain_raw.get("allocation")
+            allocation = allocation_raw if isinstance(allocation_raw, Mapping) else {}
+            amount = str(allocation.get("amount") or "").strip()
+            if not amount:
+                continue
+
+            documents_by_database.setdefault(database_id, []).append({"Amount": amount})
+
+            documents_raw = chain_raw.get("documents")
+            if not isinstance(documents_raw, list):
+                continue
+            compiled_documents: list[dict[str, Any]] = []
+            for document_raw in documents_raw:
+                if not isinstance(document_raw, Mapping):
+                    continue
+                document = dict(document_raw)
+                entity_name = str(document.get("entity_name") or "").strip()
+                if not resolved_entity_name and entity_name:
+                    resolved_entity_name = entity_name
+                compiled_document: dict[str, Any] = {
+                    "document_id": str(document.get("document_id") or "").strip(),
+                    "entity_name": entity_name,
+                    "document_role": str(document.get("document_role") or "").strip(),
+                    "idempotency_key": str(document.get("idempotency_key") or "").strip(),
+                    "invoice_mode": str(document.get("invoice_mode") or "").strip(),
+                    "payload": {
+                        "Amount": amount,
+                    },
+                }
+                link_to = str(document.get("link_to") or "").strip()
+                if link_to:
+                    compiled_document["link_to"] = link_to
+                compiled_documents.append(compiled_document)
+
+            if not compiled_documents:
+                continue
+            chain_payload = {
+                "chain_id": str(chain_raw.get("chain_id") or "").strip(),
+                "edge_ref": dict(chain_raw.get("edge_ref") or {}),
+                "policy_source": str(chain_raw.get("policy_source") or "").strip(),
+                "policy_version": str(chain_raw.get("policy_version") or "").strip(),
+                "allocation": {
+                    "amount": amount,
+                },
+                "documents": compiled_documents,
+            }
+            document_chains_by_database.setdefault(database_id, []).append(chain_payload)
+
+    if not resolved_entity_name:
+        resolved_entity_name = str(payload.get("entity_name") or "").strip()
+
+    publication_payload = {
+        "entity_name": resolved_entity_name,
+        "documents_by_database": documents_by_database,
+        "document_chains_by_database": document_chains_by_database,
+        "document_plan_artifact": validated_artifact,
+        "max_attempts": payload.get("max_attempts"),
+        "retry_interval_seconds": payload.get("retry_interval_seconds"),
+        "external_key_field": str(payload.get("external_key_field") or "").strip(),
+    }
+    return {"pool_runtime": publication_payload}
+
+
+def _compile_chains_for_edge(
+    *,
+    run: PoolRun,
+    policy: Mapping[str, Any],
+    edge_ref: Mapping[str, str],
+    source: str,
+    database_id: str,
+    amount_text: str,
+) -> list[dict[str, Any]]:
+    chains_raw = policy.get("chains")
+    if not isinstance(chains_raw, list):
+        return []
+
+    compiled_chains: list[dict[str, Any]] = []
+    for chain in chains_raw:
+        if not isinstance(chain, Mapping):
+            continue
+        chain_id = str(chain.get("chain_id") or "").strip()
+        if not chain_id:
+            continue
+        documents_raw = chain.get("documents")
+        if not isinstance(documents_raw, list):
+            continue
+
+        compiled_documents: list[dict[str, Any]] = []
+        for document in documents_raw:
+            if not isinstance(document, Mapping):
+                continue
+            document_id = str(document.get("document_id") or "").strip()
+            if not document_id:
+                continue
+            compiled_document = {
+                "document_id": document_id,
+                "entity_name": str(document.get("entity_name") or "").strip(),
+                "document_role": str(document.get("document_role") or "").strip(),
+                "field_mapping": _as_object(document.get("field_mapping")),
+                "table_parts_mapping": _as_object(document.get("table_parts_mapping")),
+                "link_rules": _as_object(document.get("link_rules")),
+                "invoice_mode": str(document.get("invoice_mode") or "").strip(),
+                "idempotency_key": _build_document_idempotency_key(
+                    run_id=str(run.id),
+                    database_id=database_id,
+                    edge_ref=edge_ref,
+                    chain_id=chain_id,
+                    document_id=document_id,
+                    amount_text=amount_text,
+                ),
+            }
+            link_to = str(document.get("link_to") or "").strip()
+            if link_to:
+                compiled_document["link_to"] = link_to
+            compiled_documents.append(compiled_document)
+
+        if not compiled_documents:
+            continue
+
+        compiled_chains.append(
+            {
+                "chain_id": chain_id,
+                "edge_ref": dict(edge_ref),
+                "policy_source": source,
+                "policy_version": str(policy.get("version") or "").strip(),
+                "allocation": {
+                    "amount": amount_text,
+                },
+                "documents": compiled_documents,
+            }
+        )
+    return compiled_chains
+
+
+def _build_document_idempotency_key(
+    *,
+    run_id: str,
+    database_id: str,
+    edge_ref: Mapping[str, str],
+    chain_id: str,
+    document_id: str,
+    amount_text: str,
+) -> str:
+    payload = {
+        "amount": amount_text,
+        "chain_id": chain_id,
+        "child_node_id": str(edge_ref.get("child_node_id") or "").strip(),
+        "database_id": database_id,
+        "document_id": document_id,
+        "parent_node_id": str(edge_ref.get("parent_node_id") or "").strip(),
+        "run_id": run_id,
+    }
+    digest = sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return f"doc-plan:{digest[:32]}"
+
+
+def _require_object(value: Any, *, field_name: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(
+            f"{POOL_DOCUMENT_PLAN_ARTIFACT_INVALID}: {field_name} must be an object"
+        )
+    return dict(value)
+
+
+def _require_array(
+    value: Any,
+    *,
+    field_name: str,
+    require_non_empty: bool = False,
+) -> list[Any]:
+    if not isinstance(value, list):
+        raise ValueError(
+            f"{POOL_DOCUMENT_PLAN_ARTIFACT_INVALID}: {field_name} must be an array"
+        )
+    if require_non_empty and not value:
+        raise ValueError(
+            f"{POOL_DOCUMENT_PLAN_ARTIFACT_INVALID}: {field_name} must be a non-empty array"
+        )
+    return value
+
+
+def _require_string(value: Any, *, field_name: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(
+            f"{POOL_DOCUMENT_PLAN_ARTIFACT_INVALID}: {field_name} must be a non-empty string"
+        )
+    return text
+
+
+def _require_non_negative_int(value: Any, *, field_name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(
+            f"{POOL_DOCUMENT_PLAN_ARTIFACT_INVALID}: {field_name} must be a non-negative integer"
+        )
+    return value
+
+
+def _as_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return dict(value)
+    return {}
+
+
+def _parse_decimal(value: Any) -> Decimal | None:
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return Decimal(text)
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _decimal_to_string(value: Decimal) -> str:
+    return format(value, "f")

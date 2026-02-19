@@ -88,6 +88,22 @@ def compute_distribution_runtime_state(
     }
 
 
+def load_runtime_topology_for_period(*, run: PoolRun) -> dict[str, Any]:
+    period_start = run.period_start
+    period_end = run.period_end or run.period_start
+    if period_end < period_start:
+        _fail(
+            ERROR_CODE_DISTRIBUTION_INPUT_INVALID,
+            f"period_end '{period_end.isoformat()}' must be >= period_start '{period_start.isoformat()}'",
+        )
+    segments = _load_topology_segments(
+        run=run,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    return _merge_topology_segments(segments=segments)
+
+
 def _compute_top_down_distribution_over_segments(
     *,
     run: PoolRun,

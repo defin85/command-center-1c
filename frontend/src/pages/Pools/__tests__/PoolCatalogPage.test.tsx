@@ -64,12 +64,30 @@ const baseOrganization: Organization = {
   updated_at: '2026-01-01T00:00:01Z',
 }
 
+const secondOrganization: Organization = {
+  ...baseOrganization,
+  id: '77777777-7777-7777-7777-777777777777',
+  database_id: '88888888-8888-8888-8888-888888888888',
+  name: 'Org Two',
+  full_name: 'Org Two LLC',
+  inn: '730000000002',
+}
+
 function renderPage() {
   return render(
     <AntApp>
       <PoolCatalogPage />
     </AntApp>
   )
+}
+
+async function selectDropdownOption(label: string) {
+  const matches = await screen.findAllByText(label)
+  const option = [...matches]
+    .reverse()
+    .find((node) => node.closest('.ant-select-item-option'))
+  expect(option).toBeTruthy()
+  fireEvent.click(option as Element)
 }
 
 describe('PoolCatalogPage', () => {
@@ -361,6 +379,114 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Preflight validation failed')).toBeInTheDocument()
     expect(await screen.findByText('Добавьте хотя бы один topology node.')).toBeInTheDocument()
     expect(mockUpsertPoolTopologySnapshot).not.toHaveBeenCalled()
+  }, 15000)
+
+  it('blocks topology save when edge document_policy JSON is invalid', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+    expect(await screen.findByText('Org Two')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
+    await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
+    await user.click(screen.getByTestId('pool-catalog-topology-add-edge'))
+
+    const topologyCard = screen.getByText('Topology snapshot editor').closest('.ant-card')
+    expect(topologyCard).toBeTruthy()
+
+    const selectors = topologyCard?.querySelectorAll('.ant-select .ant-select-selector')
+    expect(selectors?.length).toBeGreaterThanOrEqual(4)
+    fireEvent.mouseDown(selectors?.[0] as Element)
+    await selectDropdownOption('Org One (730000000001)')
+
+    fireEvent.mouseDown(selectors?.[1] as Element)
+    await selectDropdownOption('Org Two (730000000002)')
+
+    const rootSwitch = topologyCard?.querySelector('button[role="switch"]')
+    expect(rootSwitch).toBeTruthy()
+    fireEvent.click(rootSwitch as Element)
+
+    fireEvent.mouseDown(selectors?.[2] as Element)
+    await selectDropdownOption('Org One (730000000001)')
+    fireEvent.mouseDown(selectors?.[3] as Element)
+    await selectDropdownOption('Org Two (730000000002)')
+
+    const edgePolicyInput = screen.getByTestId('pool-catalog-topology-edge-policy-0')
+    await user.click(edgePolicyInput)
+    await user.clear(edgePolicyInput)
+    await user.paste('{invalid-json')
+    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+
+    expect(await screen.findByText('Preflight validation failed')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Edge #1: document_policy должен быть валидным JSON.')
+    ).toBeInTheDocument()
+    expect(mockUpsertPoolTopologySnapshot).not.toHaveBeenCalled()
+  }, 15000)
+
+  it('includes edge document_policy in topology upsert payload after preflight', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+    expect(await screen.findByText('Org Two')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
+    await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
+    await user.click(screen.getByTestId('pool-catalog-topology-add-edge'))
+
+    const topologyCard = screen.getByText('Topology snapshot editor').closest('.ant-card')
+    expect(topologyCard).toBeTruthy()
+
+    const selectors = topologyCard?.querySelectorAll('.ant-select .ant-select-selector')
+    expect(selectors?.length).toBeGreaterThanOrEqual(4)
+    fireEvent.mouseDown(selectors?.[0] as Element)
+    await selectDropdownOption('Org One (730000000001)')
+    fireEvent.mouseDown(selectors?.[1] as Element)
+    await selectDropdownOption('Org Two (730000000002)')
+
+    const rootSwitch = topologyCard?.querySelector('button[role="switch"]')
+    expect(rootSwitch).toBeTruthy()
+    fireEvent.click(rootSwitch as Element)
+
+    fireEvent.mouseDown(selectors?.[2] as Element)
+    await selectDropdownOption('Org One (730000000001)')
+    fireEvent.mouseDown(selectors?.[3] as Element)
+    await selectDropdownOption('Org Two (730000000002)')
+
+    const edgePolicyInput = screen.getByTestId('pool-catalog-topology-edge-policy-0')
+    await user.click(edgePolicyInput)
+    await user.clear(edgePolicyInput)
+    await user.paste(
+      '{"version":"document_policy.v1","chains":[{"chain_id":"sale_chain","documents":[{"document_id":"sale","entity_name":"Document_Sales","document_role":"sale"}]}]}'
+    )
+    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+
+    await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
+    expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledWith(
+      '44444444-4444-4444-4444-444444444444',
+      expect.objectContaining({
+        version: 'v1:topology-initial',
+        edges: [
+          expect.objectContaining({
+            parent_organization_id: '11111111-1111-1111-1111-111111111111',
+            child_organization_id: '77777777-7777-7777-7777-777777777777',
+            metadata: {
+              document_policy: expect.objectContaining({
+                version: 'document_policy.v1',
+              }),
+            },
+          }),
+        ],
+      })
+    )
   }, 15000)
 
   it('sends topology version token and shows conflict error without clearing form data', async () => {

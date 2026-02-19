@@ -193,3 +193,24 @@ def test_execution_plan_schema_covers_runtime_serializer_fields() -> None:
     runtime_fields = set(ExecutionPlanSerializer().fields.keys())
     contract_fields = set(properties.keys())
     assert runtime_fields.issubset(contract_fields)
+
+
+def test_pool_topology_and_graph_schemas_include_metadata_contract_fields() -> None:
+    contract = _load_openapi_contract()
+
+    checks = (
+        ("PoolTopologySnapshotNodeInput", pools_view.PoolTopologySnapshotNodeInputSerializer),
+        ("PoolTopologySnapshotEdgeInput", pools_view.PoolTopologySnapshotEdgeInputSerializer),
+        ("PoolGraphNode", pools_view.PoolGraphNodeSerializer),
+        ("PoolGraphEdge", pools_view.PoolGraphEdgeSerializer),
+    )
+
+    for schema_name, serializer_cls in checks:
+        schema = _schema(contract, schema_name)
+        properties = schema.get("properties")
+        assert isinstance(properties, dict)
+        assert "metadata" in properties, f"{schema_name}.metadata missing in OpenAPI contract"
+
+        runtime_fields = set(serializer_cls().fields.keys())
+        contract_fields = set(properties.keys())
+        assert runtime_fields.issubset(contract_fields)

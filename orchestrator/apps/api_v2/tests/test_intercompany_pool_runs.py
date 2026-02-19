@@ -214,6 +214,37 @@ def _assert_problem_details_response(response, *, status_code: int, code: str) -
     return payload
 
 
+def _build_document_policy_payload() -> dict[str, object]:
+    return {
+        "version": "document_policy.v1",
+        "chains": [
+            {
+                "chain_id": "sale_chain",
+                "documents": [
+                    {
+                        "document_id": "sale",
+                        "entity_name": "Document_Sales",
+                        "document_role": "sale",
+                        "field_mapping": {"Amount": "allocation.amount"},
+                        "table_parts_mapping": {},
+                        "link_rules": {},
+                        "invoice_mode": "required",
+                    },
+                    {
+                        "document_id": "invoice",
+                        "entity_name": "Document_Invoice",
+                        "document_role": "invoice",
+                        "field_mapping": {"BaseDocument": "sale.ref"},
+                        "table_parts_mapping": {},
+                        "link_rules": {"depends_on": "sale"},
+                        "link_to": "sale",
+                    },
+                ],
+            }
+        ],
+    }
+
+
 @pytest.fixture
 def default_tenant() -> Tenant:
     tenant, _ = Tenant.objects.get_or_create(slug="default", defaults={"name": "Default"})
@@ -560,6 +591,212 @@ def test_upsert_pool_topology_snapshot_creates_graph_for_date(
     assert len(graph_payload["nodes"]) == 3
     assert len(graph_payload["edges"]) == 2
     assert any(node["is_root"] for node in graph_payload["nodes"])
+
+
+@pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_accepts_valid_document_policy_metadata(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    root_org = Organization.objects.create(tenant=default_tenant, name="Policy Root", inn="741100000001")
+    leaf_org = Organization.objects.create(tenant=default_tenant, name="Policy Leaf", inn="741100000002")
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    current_version = graph_before.json()["version"]
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "nodes": [
+                {"organization_id": str(root_org.id), "is_root": True},
+                {"organization_id": str(leaf_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "1.0",
+                    "metadata": {
+                        "document_policy": _build_document_policy_payload(),
+                    },
+                },
+            ],
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+
+    edge = (
+        PoolEdgeVersion.objects.select_related("parent_node__organization", "child_node__organization")
+        .filter(pool=pool, effective_from=date(2026, 1, 1))
+        .get(
+            parent_node__organization=root_org,
+            child_node__organization=leaf_org,
+        )
+    )
+    edge_metadata = edge.metadata if isinstance(edge.metadata, dict) else {}
+    policy = edge_metadata.get("document_policy")
+    assert isinstance(policy, dict)
+    documents = policy["chains"][0]["documents"]
+    assert documents[0]["invoice_mode"] == "required"
+    assert documents[1]["invoice_mode"] == "optional"
+
+
+@pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_rejects_invalid_document_policy_mapping(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    root_org = Organization.objects.create(tenant=default_tenant, name="Policy Invalid Root", inn="741100000011")
+    leaf_org = Organization.objects.create(tenant=default_tenant, name="Policy Invalid Leaf", inn="741100000012")
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    current_version = graph_before.json()["version"]
+
+    invalid_policy = _build_document_policy_payload()
+    invalid_policy["chains"][0]["documents"][0]["field_mapping"] = []
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "nodes": [
+                {"organization_id": str(root_org.id), "is_root": True},
+                {"organization_id": str(leaf_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "1.0",
+                    "metadata": {
+                        "document_policy": invalid_policy,
+                    },
+                },
+            ],
+        },
+        format="json",
+    )
+    payload = _assert_problem_details_response(response, status_code=400, code="VALIDATION_ERROR")
+    assert "POOL_DOCUMENT_POLICY_MAPPING_INVALID" in payload["detail"]
+
+
+@pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_rejects_missing_required_invoice_in_policy(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    root_org = Organization.objects.create(tenant=default_tenant, name="Policy Missing Invoice Root", inn="741100000021")
+    leaf_org = Organization.objects.create(tenant=default_tenant, name="Policy Missing Invoice Leaf", inn="741100000022")
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    current_version = graph_before.json()["version"]
+
+    invalid_policy = _build_document_policy_payload()
+    invalid_policy["chains"][0]["documents"] = [
+        {
+            "document_id": "sale",
+            "entity_name": "Document_Sales",
+            "document_role": "sale",
+            "field_mapping": {"Amount": "allocation.amount"},
+            "table_parts_mapping": {},
+            "link_rules": {},
+            "invoice_mode": "required",
+        }
+    ]
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "nodes": [
+                {"organization_id": str(root_org.id), "is_root": True},
+                {"organization_id": str(leaf_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "1.0",
+                    "metadata": {
+                        "document_policy": invalid_policy,
+                    },
+                },
+            ],
+        },
+        format="json",
+    )
+    payload = _assert_problem_details_response(response, status_code=400, code="VALIDATION_ERROR")
+    assert "POOL_DOCUMENT_POLICY_MISSING_REQUIRED_INVOICE" in payload["detail"]
+
+
+@pytest.mark.django_db
+def test_get_pool_graph_returns_node_and_edge_metadata_including_document_policy(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    root_org = Organization.objects.create(tenant=default_tenant, name="Graph Metadata Root", inn="741100000031")
+    leaf_org = Organization.objects.create(tenant=default_tenant, name="Graph Metadata Leaf", inn="741100000032")
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    current_version = graph_before.json()["version"]
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "nodes": [
+                {
+                    "organization_id": str(root_org.id),
+                    "is_root": True,
+                    "metadata": {"node_tag": "root-tag"},
+                },
+                {
+                    "organization_id": str(leaf_org.id),
+                    "is_root": False,
+                    "metadata": {"node_tag": "leaf-tag"},
+                },
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "1.0",
+                    "metadata": {
+                        "edge_tag": "edge-tag",
+                        "document_policy": _build_document_policy_payload(),
+                    },
+                },
+            ],
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+
+    graph_response = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_response.status_code == 200
+    payload = graph_response.json()
+
+    nodes_by_org = {item["organization_id"]: item for item in payload["nodes"]}
+    assert nodes_by_org[str(root_org.id)]["metadata"] == {"node_tag": "root-tag"}
+    assert nodes_by_org[str(leaf_org.id)]["metadata"] == {"node_tag": "leaf-tag"}
+
+    assert len(payload["edges"]) == 1
+    edge_metadata = payload["edges"][0]["metadata"]
+    assert edge_metadata["edge_tag"] == "edge-tag"
+    assert edge_metadata["document_policy"]["version"] == "document_policy.v1"
+    documents = edge_metadata["document_policy"]["chains"][0]["documents"]
+    assert documents[0]["invoice_mode"] == "required"
+    assert documents[1]["invoice_mode"] == "optional"
 
 
 @pytest.mark.django_db
@@ -2388,6 +2625,212 @@ def test_retry_pool_run_failed_endpoint_returns_accepted_workflow_reference_and_
         "strategy": "actor",
         "actor_username": user.username,
         "source": "retry_publication",
+    }
+
+
+@pytest.mark.django_db
+def test_retry_pool_run_failed_endpoint_builds_subset_from_persisted_document_plan_artifact(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    db_success = _create_database(tenant=default_tenant, name="pool-api-retry-success-db")
+    db_failed = _create_database(tenant=default_tenant, name="pool-api-retry-failed-db")
+    initial_execution = _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "pool_runtime_document_plan_artifact": {
+                "version": "document_plan_artifact.v1",
+                "run_id": str(run.id),
+                "distribution_artifact_ref": {
+                    "version": "distribution_artifact.v1",
+                    "topology_version_ref": "topology-v1",
+                },
+                "topology_version_ref": "topology-v1",
+                "policy_refs": [
+                    {
+                        "edge_ref": {"parent_node_id": "node-parent", "child_node_id": "node-child"},
+                        "policy_version": "document_policy.v1",
+                        "source": "edge.metadata.document_policy",
+                    }
+                ],
+                "targets": [
+                    {
+                        "database_id": str(db_success.id),
+                        "chains": [
+                            {
+                                "chain_id": "chain-success",
+                                "edge_ref": {"parent_node_id": "node-parent", "child_node_id": "node-success"},
+                                "policy_source": "edge.metadata.document_policy",
+                                "policy_version": "document_policy.v1",
+                                "allocation": {"amount": "80.00"},
+                                "documents": [
+                                    {
+                                        "document_id": "doc-success",
+                                        "entity_name": "Document_Sales",
+                                        "document_role": "base",
+                                        "field_mapping": {},
+                                        "table_parts_mapping": {},
+                                        "link_rules": {},
+                                        "invoice_mode": "optional",
+                                        "idempotency_key": "doc-success-key",
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                    {
+                        "database_id": str(db_failed.id),
+                        "chains": [
+                            {
+                                "chain_id": "chain-failed",
+                                "edge_ref": {"parent_node_id": "node-parent", "child_node_id": "node-failed"},
+                                "policy_source": "edge.metadata.document_policy",
+                                "policy_version": "document_policy.v1",
+                                "allocation": {"amount": "20.00"},
+                                "documents": [
+                                    {
+                                        "document_id": "doc-sale",
+                                        "entity_name": "Document_Sales",
+                                        "document_role": "base",
+                                        "field_mapping": {},
+                                        "table_parts_mapping": {},
+                                        "link_rules": {},
+                                        "invoice_mode": "optional",
+                                        "idempotency_key": "doc-sale-key",
+                                    },
+                                    {
+                                        "document_id": "doc-invoice",
+                                        "entity_name": "Document_Invoice",
+                                        "document_role": "invoice",
+                                        "field_mapping": {},
+                                        "table_parts_mapping": {},
+                                        "link_rules": {},
+                                        "invoice_mode": "required",
+                                        "idempotency_key": "doc-invoice-key",
+                                        "link_to": "doc-sale",
+                                    },
+                                ],
+                            }
+                        ],
+                    },
+                ],
+                "compile_summary": {
+                    "compiled_edges": 1,
+                    "targets_count": 2,
+                    "chains_count": 2,
+                    "documents_count": 3,
+                    "compiled_at": "2026-01-01T00:00:00+00:00",
+                },
+            },
+        },
+    )
+    PoolPublicationAttempt.objects.create(
+        run=run,
+        tenant=default_tenant,
+        target_database=db_success,
+        attempt_number=1,
+        status=PoolPublicationAttemptStatus.SUCCESS,
+        entity_name="Document_Sales",
+        documents_count=1,
+        posted=True,
+        request_summary={
+            "documents_count": 1,
+            "document_idempotency_keys": ["doc-success-key"],
+        },
+        response_summary={
+            "posted": True,
+            "successful_document_idempotency_keys": ["doc-success-key"],
+        },
+    )
+    PoolPublicationAttempt.objects.create(
+        run=run,
+        tenant=default_tenant,
+        target_database=db_failed,
+        attempt_number=1,
+        status=PoolPublicationAttemptStatus.FAILED,
+        entity_name="Document_Sales",
+        documents_count=2,
+        posted=False,
+        error_code="network",
+        error_message="temporary network error",
+        request_summary={
+            "documents_count": 2,
+            "document_idempotency_keys": ["doc-sale-key", "doc-invoice-key"],
+        },
+        response_summary={
+            "posted": False,
+            "successful_document_idempotency_keys": ["doc-sale-key"],
+            "failed_document_idempotency_key": "doc-invoice-key",
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="retry-op-artifact", status="queued"),
+    ) as enqueue:
+        response = authenticated_client.post(
+            f"/api/v2/pools/runs/{run.id}/retry/",
+            {
+                "target_database_ids": [str(db_failed.id)],
+                "use_retry_subset_payload": True,
+                "max_attempts": 1,
+            },
+            format="json",
+        )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["accepted"] is True
+    assert payload["operation_id"] == "retry-op-artifact"
+    assert payload["retry_target_summary"] == {
+        "requested_targets": 1,
+        "requested_documents": 0,
+        "failed_targets": 1,
+        "enqueued_targets": 1,
+        "skipped_successful_targets": 0,
+    }
+    assert payload["workflow_execution_id"] != str(initial_execution.id)
+    enqueue.assert_called_once()
+
+    run_reloaded = PoolRun.objects.get(id=run.id)
+    retry_execution = WorkflowExecution.objects.get(id=run_reloaded.workflow_execution_id)
+    retry_request = retry_execution.input_context.get("retry_request")
+    assert isinstance(retry_request, dict)
+    assert retry_request.get("requested_target_ids") == [str(db_failed.id)]
+    assert retry_request.get("requested_targets_count") == 1
+    assert retry_request.get("requested_documents_count") == 0
+    publication_payload = retry_execution.input_context.get("pool_runtime_publication_payload")
+    assert isinstance(publication_payload, dict)
+    pool_runtime_payload = publication_payload.get("pool_runtime")
+    assert isinstance(pool_runtime_payload, dict)
+    assert pool_runtime_payload.get("documents_by_database") == {
+        str(db_failed.id): [{"Amount": "20.00"}]
+    }
+    assert pool_runtime_payload.get("document_chains_by_database") == {
+        str(db_failed.id): [
+            {
+                "chain_id": "chain-failed",
+                "edge_ref": {"parent_node_id": "node-parent", "child_node_id": "node-failed"},
+                "policy_source": "edge.metadata.document_policy",
+                "policy_version": "document_policy.v1",
+                "allocation": {"amount": "20.00"},
+                "documents": [
+                    {
+                        "document_id": "doc-invoice",
+                        "entity_name": "Document_Invoice",
+                        "document_role": "invoice",
+                        "idempotency_key": "doc-invoice-key",
+                        "invoice_mode": "required",
+                        "payload": {"Amount": "20.00"},
+                        "link_to": "doc-sale",
+                    }
+                ],
+            }
+        ]
     }
 
 

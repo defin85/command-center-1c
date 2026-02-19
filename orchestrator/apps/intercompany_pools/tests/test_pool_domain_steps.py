@@ -7,6 +7,16 @@ from uuid import uuid4
 import pytest
 
 from apps.databases.models import Database
+from apps.intercompany_pools.document_plan_artifact_contract import (
+    DOCUMENT_PLAN_ARTIFACT_VERSION,
+    POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
+)
+from apps.intercompany_pools.document_policy_contract import (
+    DOCUMENT_POLICY_METADATA_KEY,
+    DOCUMENT_POLICY_RESOLUTION_SOURCE_EDGE,
+    DOCUMENT_POLICY_RESOLUTION_SOURCE_POOL_DEFAULT,
+    POOL_DOCUMENT_POLICY_CHAIN_INVALID,
+)
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationPool,
@@ -109,7 +119,48 @@ def _create_database(*, tenant: Tenant, suffix: str) -> Database:
     )
 
 
-def _attach_active_topology(*, run: PoolRun) -> dict[str, str]:
+def _build_document_policy(*, chain_id: str = "sale_chain") -> dict[str, object]:
+    return {
+        "version": "document_policy.v1",
+        "chains": [
+            {
+                "chain_id": chain_id,
+                "documents": [
+                    {
+                        "document_id": "sale",
+                        "entity_name": "Document_Sales",
+                        "document_role": "sale",
+                        "field_mapping": {"Amount": "allocation.amount"},
+                        "table_parts_mapping": {},
+                        "link_rules": {},
+                    },
+                    {
+                        "document_id": "invoice",
+                        "entity_name": "Document_Invoice",
+                        "document_role": "invoice",
+                        "field_mapping": {"BaseDocument": "sale.ref"},
+                        "table_parts_mapping": {},
+                        "link_rules": {"depends_on": "sale"},
+                        "link_to": "sale",
+                        "invoice_mode": "required",
+                    },
+                ],
+            }
+        ],
+    }
+
+
+def _attach_active_topology(
+    *,
+    run: PoolRun,
+    left_edge_metadata: dict[str, object] | None = None,
+    right_edge_metadata: dict[str, object] | None = None,
+    pool_metadata: dict[str, object] | None = None,
+) -> dict[str, str]:
+    if isinstance(pool_metadata, dict):
+        run.pool.metadata = dict(pool_metadata)
+        run.pool.save(update_fields=["metadata", "updated_at"])
+
     root_org = Organization.objects.create(
         tenant=run.tenant,
         name=f"Root {uuid4().hex[:6]}",
@@ -152,6 +203,7 @@ def _attach_active_topology(*, run: PoolRun) -> dict[str, str]:
         child_node=left_node,
         weight=Decimal("0.6"),
         effective_from=run.period_start,
+        metadata=dict(left_edge_metadata) if isinstance(left_edge_metadata, dict) else {},
     )
     PoolEdgeVersion.objects.create(
         pool=run.pool,
@@ -159,6 +211,7 @@ def _attach_active_topology(*, run: PoolRun) -> dict[str, str]:
         child_node=right_node,
         weight=Decimal("0.4"),
         effective_from=run.period_start,
+        metadata=dict(right_edge_metadata) if isinstance(right_edge_metadata, dict) else {},
     )
     return {
         "left_inn": left_org.inn,
@@ -361,6 +414,350 @@ def test_distribution_top_down_stores_artifact_and_calculated_publication_payloa
         "version"
     ) == DISTRIBUTION_ARTIFACT_VERSION
     assert execution.input_context.get("pool_runtime_publication_payload") == output["publication_payload"]
+
+
+@pytest.mark.django_db
+def test_distribution_top_down_rejects_raw_run_input_bypass_keys_for_artifacts() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={
+            "starting_amount": "100.00",
+            "entity_name": "Document_IntercompanyPoolDistribution",
+            "documents_by_database": {"db-raw-override": [{"Amount": "999.00"}]},
+            "distribution_artifact": {"version": "distribution_artifact.v1", "topology_version_ref": "raw"},
+            "pool_runtime_distribution_artifact": {"version": "distribution_artifact.v1"},
+            "document_plan_artifact": {"version": "document_plan_artifact.v1"},
+            "pool_runtime_publication_payload": {
+                "pool_runtime": {
+                    "entity_name": "Document_IntercompanyPoolDistribution",
+                    "documents_by_database": {"db-bypass": [{"Amount": "777.00"}]},
+                }
+            },
+        },
+    )
+    topology = _attach_active_topology(run=run)
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+        },
+    )
+
+    output = execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    artifact = output["distribution_artifact"]
+    assert artifact["version"] == DISTRIBUTION_ARTIFACT_VERSION
+    assert artifact["topology_version_ref"] != "raw"
+    publication_payload = output["publication_payload"]["pool_runtime"]
+    documents_by_database = publication_payload["documents_by_database"]
+    assert set(documents_by_database.keys()) == {
+        topology["left_database_id"],
+        topology["right_database_id"],
+    }
+    assert "db-raw-override" not in documents_by_database
+    assert "db-bypass" not in documents_by_database
+
+
+@pytest.mark.django_db
+def test_reconciliation_without_document_policy_keeps_legacy_create_run_path() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={
+            "starting_amount": "100.00",
+            "entity_name": "Document_IntercompanyPoolDistribution",
+        },
+    )
+    topology = _attach_active_topology(run=run)
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+        },
+    )
+
+    distribution_output = execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+    reconciliation_output = execute_pool_runtime_step(
+        operation_type="pool.reconciliation_report",
+        rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    documents_by_database = reconciliation_output["publication_payload"]["pool_runtime"]["documents_by_database"]
+    assert set(documents_by_database.keys()) == {
+        topology["left_database_id"],
+        topology["right_database_id"],
+    }
+    assert reconciliation_output["report"]["status"] == "ok"
+    assert reconciliation_output["distribution_artifact"]["version"] == DISTRIBUTION_ARTIFACT_VERSION
+
+    execution.refresh_from_db(fields=["input_context"])
+    assert execution.input_context.get("pool_runtime_publication_payload") == distribution_output["publication_payload"]
+    assert "document_plan_artifact" not in execution.input_context
+    assert "pool_runtime_document_plan_artifact" not in execution.input_context
+
+
+@pytest.mark.django_db
+def test_reconciliation_compiles_document_plan_artifact_from_edge_policy() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={
+            "starting_amount": "100.00",
+            "entity_name": "Document_Raw_Bypass",
+            "documents_by_database": {"db-raw-bypass": [{"Amount": "999.00"}]},
+            "max_attempts": 3,
+            "retry_interval_seconds": 5,
+            "external_key_field": "ExternalRunKey",
+        },
+    )
+    edge_policy = _build_document_policy(chain_id="edge_chain")
+    topology = _attach_active_topology(
+        run=run,
+        left_edge_metadata={DOCUMENT_POLICY_METADATA_KEY: edge_policy},
+    )
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+        },
+    )
+
+    execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+    reconciliation_output = execute_pool_runtime_step(
+        operation_type="pool.reconciliation_report",
+        rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    artifact = reconciliation_output.get("document_plan_artifact")
+    assert isinstance(artifact, dict)
+    assert artifact["version"] == DOCUMENT_PLAN_ARTIFACT_VERSION
+    assert artifact["run_id"] == str(run.id)
+    assert artifact["distribution_artifact_ref"]["version"] == DISTRIBUTION_ARTIFACT_VERSION
+    assert artifact["topology_version_ref"] == reconciliation_output["distribution_artifact"]["topology_version_ref"]
+    assert any(
+        ref.get("source") == DOCUMENT_POLICY_RESOLUTION_SOURCE_EDGE
+        for ref in artifact["policy_refs"]
+        if isinstance(ref, dict)
+    )
+
+    target_ids = {
+        str(target.get("database_id") or "").strip()
+        for target in artifact["targets"]
+        if isinstance(target, dict)
+    }
+    assert topology["left_database_id"] in target_ids
+
+    left_target = next(
+        (
+            target
+            for target in artifact["targets"]
+            if isinstance(target, dict) and target.get("database_id") == topology["left_database_id"]
+        ),
+        None,
+    )
+    assert isinstance(left_target, dict)
+    documents = left_target["chains"][0]["documents"]
+    assert documents[0]["idempotency_key"].startswith("doc-plan:")
+    assert documents[0]["invoice_mode"] == "optional"
+    assert documents[1]["invoice_mode"] == "required"
+
+    publication_payload = reconciliation_output["publication_payload"]["pool_runtime"]
+    assert publication_payload["entity_name"] == "Document_Sales"
+    assert publication_payload["documents_by_database"] == {
+        topology["left_database_id"]: [{"Amount": "60.00"}]
+    }
+    assert "db-raw-bypass" not in publication_payload["documents_by_database"]
+    chains_by_database = publication_payload.get("document_chains_by_database")
+    assert isinstance(chains_by_database, dict)
+    assert topology["left_database_id"] in chains_by_database
+    chain_documents = chains_by_database[topology["left_database_id"]][0]["documents"]
+    assert [item.get("entity_name") for item in chain_documents] == [
+        "Document_Sales",
+        "Document_Invoice",
+    ]
+
+    execution.refresh_from_db(fields=["input_context"])
+    assert (
+        execution.input_context.get(POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY)
+        == artifact
+    )
+
+
+@pytest.mark.django_db
+def test_reconciliation_document_plan_uses_pool_default_policy_when_edge_policy_missing() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={
+            "starting_amount": "100.00",
+            "entity_name": "Document_IntercompanyPoolDistribution",
+        },
+    )
+    pool_default_policy = _build_document_policy(chain_id="pool_default_chain")
+    topology = _attach_active_topology(
+        run=run,
+        pool_metadata={DOCUMENT_POLICY_METADATA_KEY: pool_default_policy},
+    )
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+        },
+    )
+
+    execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+    reconciliation_output = execute_pool_runtime_step(
+        operation_type="pool.reconciliation_report",
+        rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    artifact = reconciliation_output.get("document_plan_artifact")
+    assert isinstance(artifact, dict)
+
+    sources = {
+        str(ref.get("source") or "").strip()
+        for ref in artifact["policy_refs"]
+        if isinstance(ref, dict)
+    }
+    assert DOCUMENT_POLICY_RESOLUTION_SOURCE_POOL_DEFAULT in sources
+    assert DOCUMENT_POLICY_RESOLUTION_SOURCE_EDGE not in sources
+
+    target_ids = {
+        str(target.get("database_id") or "").strip()
+        for target in artifact["targets"]
+        if isinstance(target, dict)
+    }
+    assert topology["left_database_id"] in target_ids
+    assert topology["right_database_id"] in target_ids
+
+
+@pytest.mark.django_db
+def test_reconciliation_fail_closed_on_invalid_edge_document_policy() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={
+            "starting_amount": "100.00",
+            "entity_name": "Document_IntercompanyPoolDistribution",
+        },
+    )
+    invalid_policy = _build_document_policy()
+    invalid_policy["chains"][0]["documents"][1]["invoice_mode"] = "always"
+    _attach_active_topology(
+        run=run,
+        left_edge_metadata={DOCUMENT_POLICY_METADATA_KEY: invalid_policy},
+    )
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+        },
+    )
+
+    execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_CHAIN_INVALID):
+        execute_pool_runtime_step(
+            operation_type="pool.reconciliation_report",
+            rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
+
+    execution.refresh_from_db(fields=["input_context"])
+    assert POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY not in execution.input_context
+
+
+@pytest.mark.django_db
+def test_reconciliation_fail_closed_on_invalid_pool_default_document_policy() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={
+            "starting_amount": "100.00",
+            "entity_name": "Document_IntercompanyPoolDistribution",
+        },
+    )
+    invalid_pool_default_policy = _build_document_policy()
+    invalid_pool_default_policy["chains"][0]["documents"][1]["invoice_mode"] = "always"
+    _attach_active_topology(
+        run=run,
+        pool_metadata={DOCUMENT_POLICY_METADATA_KEY: invalid_pool_default_policy},
+    )
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+        },
+    )
+
+    execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_CHAIN_INVALID):
+        execute_pool_runtime_step(
+            operation_type="pool.reconciliation_report",
+            rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
+
+    execution.refresh_from_db(fields=["input_context"])
+    assert POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY not in execution.input_context
 
 
 @pytest.mark.django_db

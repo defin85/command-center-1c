@@ -197,6 +197,7 @@ export type PoolGraphNode = {
   inn: string
   name: string
   is_root: boolean
+  metadata: Record<string, unknown>
 }
 
 export type PoolGraphEdge = {
@@ -206,6 +207,7 @@ export type PoolGraphEdge = {
   weight: string
   min_amount: string | null
   max_amount: string | null
+  metadata: Record<string, unknown>
 }
 
 export type PoolGraph = {
@@ -292,11 +294,13 @@ export type UpsertPoolTopologySnapshotPayload = {
 }
 
 export type RetryPoolRunPayload = {
-  entity_name: string
-  documents_by_database: Record<string, Array<Record<string, unknown>>>
+  entity_name?: string
+  documents_by_database?: Record<string, Array<Record<string, unknown>>>
+  target_database_ids?: string[]
   max_attempts?: number
   retry_interval_seconds?: number
   external_key_field?: string
+  use_retry_subset_payload?: boolean
 }
 
 export type UpsertOrganizationPayload = {

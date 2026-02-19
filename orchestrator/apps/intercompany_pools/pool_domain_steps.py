@@ -5,12 +5,24 @@ from typing import Any, Mapping
 
 from django.utils import timezone
 
+from .document_plan_artifact_contract import (
+    POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
+    build_publication_payload_from_document_plan_artifact,
+    compile_document_plan_artifact_v1,
+)
+from .distribution_artifact_contract import (
+    POOL_DISTRIBUTION_ARTIFACT_INVALID,
+    POOL_RUNTIME_DISTRIBUTION_ARTIFACT_CONTEXT_KEY,
+    resolve_distribution_artifact_for_downstream_compile,
+    validate_distribution_artifact_v1,
+)
 from .models import PoolRun, PoolRunDirection, PoolRunMode
 from .runtime_distribution import (
-    DISTRIBUTION_ARTIFACT_VERSION,
     build_publication_payload_from_artifact,
     compute_distribution_runtime_state,
+    load_runtime_topology_for_period,
 )
+from .run_input_sanitizer import sanitize_run_input_for_runtime_contract
 
 
 APPROVAL_STATE_NOT_REQUIRED = "not_required"
@@ -31,19 +43,8 @@ _OP_APPROVAL_GATE = "pool.approval_gate"
 _OP_PUBLICATION = "pool.publication_odata"
 POOL_RUNTIME_PUBLICATION_PATH_DISABLED = "POOL_RUNTIME_PUBLICATION_PATH_DISABLED"
 POOL_RUNTIME_RETRY_PAYLOAD_INVALID = "POOL_RUNTIME_RETRY_PAYLOAD_INVALID"
-POOL_DISTRIBUTION_ARTIFACT_INVALID = "POOL_DISTRIBUTION_ARTIFACT_INVALID"
 POOL_DISTRIBUTION_BALANCE_MISMATCH = "POOL_DISTRIBUTION_BALANCE_MISMATCH"
 POOL_DISTRIBUTION_COVERAGE_GAP = "POOL_DISTRIBUTION_COVERAGE_GAP"
-
-_REQUIRED_DISTRIBUTION_ARTIFACT_FIELDS = {
-    "version",
-    "topology_version_ref",
-    "node_totals",
-    "edge_allocations",
-    "coverage",
-    "balance",
-    "input_provenance",
-}
 
 
 def execute_pool_runtime_step(
@@ -190,8 +191,8 @@ def _execute_reconciliation(
     execution: Any,
     execution_context: dict[str, Any],
 ) -> dict[str, Any]:
-    distribution_artifact = _validate_distribution_artifact_contract(
-        artifact=execution_context.get("pool_runtime_distribution_artifact")
+    distribution_artifact = resolve_distribution_artifact_for_downstream_compile(
+        execution_context=execution_context
     )
     coverage_payload = distribution_artifact.get("coverage")
     coverage = dict(coverage_payload) if isinstance(coverage_payload, Mapping) else {}
@@ -223,6 +224,17 @@ def _execute_reconciliation(
         artifact=distribution_artifact,
         run_input=_run_input(run),
     )
+    topology = load_runtime_topology_for_period(run=run)
+    document_plan_artifact = compile_document_plan_artifact_v1(
+        run=run,
+        distribution_artifact=distribution_artifact,
+        topology=topology,
+    )
+    if document_plan_artifact is not None:
+        publication_payload = build_publication_payload_from_document_plan_artifact(
+            artifact=document_plan_artifact,
+            run_input=_run_input(run),
+        )
     locked_retry_payload = _resolve_locked_retry_publication_payload(
         execution_context=execution_context
     )
@@ -242,20 +254,27 @@ def _execute_reconciliation(
         "generated_at": timezone.now().isoformat(),
     }
 
+    execution_updates: dict[str, Any] = {
+        "pool_runtime_reconciliation": report,
+        "pool_runtime_publication_payload": publication_payload,
+    }
+    if document_plan_artifact is not None:
+        execution_updates[POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY] = document_plan_artifact
+
     _update_execution_context(
         execution=execution,
-        updates={
-            "pool_runtime_reconciliation": report,
-            "pool_runtime_publication_payload": publication_payload,
-        },
+        updates=execution_updates,
     )
-    return {
+    response = {
         "step": "reconciliation_report",
         "pool_run_id": str(run.id),
         "report": report,
         "distribution_artifact": distribution_artifact,
         "publication_payload": publication_payload,
     }
+    if document_plan_artifact is not None:
+        response["document_plan_artifact"] = document_plan_artifact
+    return response
 
 
 def _execute_distribution_calculation(
@@ -275,7 +294,7 @@ def _execute_distribution_calculation(
     summary_payload = runtime_state.get("summary")
     distribution_summary = dict(summary_payload) if isinstance(summary_payload, Mapping) else {}
     artifact_payload = runtime_state.get("artifact")
-    distribution_artifact = _validate_distribution_artifact_contract(artifact=artifact_payload)
+    distribution_artifact = validate_distribution_artifact_v1(artifact=artifact_payload)
     publication_payload_raw = runtime_state.get("publication_payload")
     publication_payload = (
         dict(publication_payload_raw)
@@ -299,7 +318,7 @@ def _execute_distribution_calculation(
         execution=execution,
         updates={
             "pool_runtime_distribution": distribution_summary,
-            "pool_runtime_distribution_artifact": distribution_artifact,
+            POOL_RUNTIME_DISTRIBUTION_ARTIFACT_CONTEXT_KEY: distribution_artifact,
             "pool_runtime_publication_payload": publication_payload,
         },
     )
@@ -310,50 +329,6 @@ def _execute_distribution_calculation(
         "distribution_artifact": distribution_artifact,
         "publication_payload": publication_payload,
     }
-
-
-def _validate_distribution_artifact_contract(*, artifact: Any) -> dict[str, Any]:
-    if not isinstance(artifact, Mapping):
-        raise ValueError(
-            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: distribution_artifact.v1 is missing in execution context"
-        )
-    artifact_payload = dict(artifact)
-    missing_fields = sorted(
-        field_name
-        for field_name in _REQUIRED_DISTRIBUTION_ARTIFACT_FIELDS
-        if field_name not in artifact_payload
-    )
-    if missing_fields:
-        raise ValueError(
-            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: missing required artifact fields: {', '.join(missing_fields)}"
-        )
-    version = str(artifact_payload.get("version") or "").strip()
-    if version != DISTRIBUTION_ARTIFACT_VERSION:
-        raise ValueError(
-            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: unexpected artifact version '{version or '<empty>'}'"
-        )
-    if not isinstance(artifact_payload.get("coverage"), Mapping):
-        raise ValueError(
-            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: field 'coverage' must be an object in distribution_artifact.v1"
-        )
-    if not isinstance(artifact_payload.get("balance"), Mapping):
-        raise ValueError(
-            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: field 'balance' must be an object in distribution_artifact.v1"
-        )
-    if not isinstance(artifact_payload.get("node_totals"), list):
-        raise ValueError(
-            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: field 'node_totals' must be an array in distribution_artifact.v1"
-        )
-    if not isinstance(artifact_payload.get("edge_allocations"), list):
-        raise ValueError(
-            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: field 'edge_allocations' must be an array in distribution_artifact.v1"
-        )
-    if not isinstance(artifact_payload.get("input_provenance"), Mapping):
-        raise ValueError(
-            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: field 'input_provenance' must be an object in distribution_artifact.v1"
-        )
-    return artifact_payload
-
 
 def _execute_approval_gate(
     *,
@@ -438,7 +413,7 @@ def _resolve_locked_retry_publication_payload(
 
 
 def _run_input(run: PoolRun) -> dict[str, Any]:
-    return dict(run.run_input) if isinstance(run.run_input, dict) else {}
+    return sanitize_run_input_for_runtime_contract(run_input=run.run_input)
 
 
 def _source_rows(*, run_input: dict[str, Any]) -> list[dict[str, Any]]:

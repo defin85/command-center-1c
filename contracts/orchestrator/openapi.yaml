@@ -13704,6 +13704,7 @@ components:
           type: string
         is_root:
           type: boolean
+        metadata: {}
       required:
         - inn
         - is_root
@@ -13736,6 +13737,7 @@ components:
           format: decimal
           pattern: ^-?\d{0,16}(?:\.\d{0,2})?$
           nullable: true
+        metadata: {}
       required:
         - child_node_version_id
         - edge_version_id

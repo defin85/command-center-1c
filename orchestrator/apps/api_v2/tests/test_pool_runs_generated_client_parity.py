@@ -93,3 +93,21 @@ def test_generated_retry_chain_attempt_kind_enum_matches_contract() -> None:
     enum_content = enum_path.read_text(encoding="utf-8")
     assert 'initial: "initial"' in enum_content
     assert 'retry: "retry"' in enum_content
+
+
+def test_generated_models_cover_graph_metadata_fields_from_contract() -> None:
+    contract = _load_openapi_contract()
+
+    checks = {
+        "PoolGraphNode": "poolGraphNode.ts",
+        "PoolGraphEdge": "poolGraphEdge.ts",
+    }
+
+    for schema_name, model_file in checks.items():
+        schema = _schema(contract, schema_name)
+        properties = schema.get("properties")
+        assert isinstance(properties, dict)
+        assert "metadata" in properties, f"{schema_name}.metadata missing in OpenAPI contract"
+
+        generated_fields = _generated_model_fields(model_file)
+        assert "metadata" in generated_fields, f"{schema_name}.metadata missing in generated {model_file}"

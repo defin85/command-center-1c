@@ -104,6 +104,8 @@ type mockPublicationODataService struct {
 	lastUpdateEntity string
 	lastUpdateID     string
 	lastUpdateData   map[string]interface{}
+	createEntities   []string
+	createPayloads   []map[string]interface{}
 
 	createResponse     map[string]interface{}
 	createErr          error
@@ -121,6 +123,8 @@ func (m *mockPublicationODataService) Create(
 	m.createCalls++
 	m.lastCreateEntity = entity
 	m.lastCreateData = cloneMap(data)
+	m.createEntities = append(m.createEntities, entity)
+	m.createPayloads = append(m.createPayloads, cloneMap(data))
 	if m.createErrByBaseURL != nil {
 		if err, ok := m.createErrByBaseURL[creds.BaseURL]; ok && err != nil {
 			return nil, err
@@ -212,6 +216,156 @@ func TestODataPublicationTransport_ExecutePublicationOData_Success(t *testing.T)
 	assert.Equal(t, "alice", fetcher.lastRequestedBy)
 	assert.Equal(t, "actor", fetcher.lastIbAuthStrategy)
 	assert.Equal(t, publicationCredentialsPurpose, fetcher.lastCredentialsPurpose)
+}
+
+func TestODataPublicationTransport_ExecutePublicationOData_UsesDocumentChainsPayloadWithMultipleEntities(t *testing.T) {
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockPublicationODataService{}
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationType:   "pool.publication_odata",
+		PoolRunID:       "run-1",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthActorForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"entity_name": "Document_Raw_Bypass",
+				"documents_by_database": map[string]interface{}{
+					"db-raw": []interface{}{
+						map[string]interface{}{"Amount": "999.00"},
+					},
+				},
+				"document_chains_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{
+							"chain_id": "sale_chain",
+							"documents": []interface{}{
+								map[string]interface{}{
+									"entity_name": "Document_Sales",
+									"payload": map[string]interface{}{
+										"Amount": "100.00",
+									},
+								},
+								map[string]interface{}{
+									"entity_name": "Document_Invoice",
+									"payload": map[string]interface{}{
+										"Amount": "100.00",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.Equal(t, "published", out["status"])
+	assert.Equal(t, 1, out["documents_targets"])
+	assert.Equal(t, []string{"db-1"}, out["target_databases"])
+	documentsCountByDatabase, ok := out["documents_count_by_database"].(map[string]int)
+	require.True(t, ok)
+	assert.Equal(t, 2, documentsCountByDatabase["db-1"])
+	_, hasRawTarget := documentsCountByDatabase["db-raw"]
+	assert.False(t, hasRawTarget)
+
+	require.Len(t, service.createEntities, 2)
+	assert.Equal(t, []string{"Document_Sales", "Document_Invoice"}, service.createEntities)
+	require.Len(t, service.createPayloads, 2)
+	assert.Equal(t, "100.00", service.createPayloads[0]["Amount"])
+	assert.Equal(t, "100.00", service.createPayloads[1]["Amount"])
+}
+
+func TestODataPublicationTransport_ExecutePublicationOData_ChainFailureIncludesDocumentRetryDiagnostics(t *testing.T) {
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockPublicationODataService{
+		createErrSequence: []error{
+			nil,
+			&odata.ODataError{
+				Code:        odata.ErrorCategoryValidation,
+				Message:     "invoice validation failed",
+				StatusCode:  400,
+				IsTransient: false,
+			},
+		},
+	}
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationType:   "pool.publication_odata",
+		PoolRunID:       "run-chain-retry",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthActorForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"max_attempts": float64(1),
+				"document_chains_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{
+							"chain_id": "sale_invoice_chain",
+							"documents": []interface{}{
+								map[string]interface{}{
+									"entity_name":     "Document_Sales",
+									"idempotency_key": "doc-sale-key",
+									"payload": map[string]interface{}{
+										"Amount": "100.00",
+									},
+								},
+								map[string]interface{}{
+									"entity_name":     "Document_Invoice",
+									"idempotency_key": "doc-invoice-key",
+									"payload": map[string]interface{}{
+										"Amount": "100.00",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.Equal(t, "failed", out["status"])
+	attempts, ok := out["attempts"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, attempts, 1)
+
+	requestSummary, ok := attempts[0]["request_summary"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(
+		t,
+		[]string{"doc-sale-key", "doc-invoice-key"},
+		requestSummary["document_idempotency_keys"],
+	)
+
+	responseSummary, ok := attempts[0]["response_summary"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(
+		t,
+		[]string{"doc-sale-key"},
+		responseSummary["successful_document_idempotency_keys"],
+	)
+	assert.Equal(t, "doc-invoice-key", responseSummary["failed_document_idempotency_key"])
 }
 
 func TestODataPublicationTransport_ExecutePublicationOData_ServiceStrategySetsCredentialsContext(t *testing.T) {

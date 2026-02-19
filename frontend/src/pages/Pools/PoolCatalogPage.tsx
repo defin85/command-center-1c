@@ -92,6 +92,7 @@ type TopologyEdgeFormValue = {
   weight?: number
   min_amount?: number | null
   max_amount?: number | null
+  document_policy_json?: string
 }
 
 type TopologyFormValues = {
@@ -373,6 +374,92 @@ const formatOptionalDecimal = (value: number | null | undefined): string | null 
   return Number(value).toFixed(2)
 }
 
+const parseDocumentPolicyMetadata = (
+  rawPolicyJson: string,
+  rowNo: number
+): {
+  policy: Record<string, unknown> | null
+  errors: string[]
+} => {
+  const errors: string[] = []
+  const source = rawPolicyJson.trim()
+  if (!source) {
+    return { policy: null, errors }
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(source)
+  } catch {
+    return {
+      policy: null,
+      errors: [`Edge #${rowNo}: document_policy должен быть валидным JSON.`],
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {
+      policy: null,
+      errors: [`Edge #${rowNo}: document_policy должен быть JSON object.`],
+    }
+  }
+  const policy = parsed as Record<string, unknown>
+  const version = String(policy.version ?? '').trim()
+  if (version !== 'document_policy.v1') {
+    errors.push(`Edge #${rowNo}: document_policy.version должен быть "document_policy.v1".`)
+  }
+
+  const chainsRaw = policy.chains
+  if (!Array.isArray(chainsRaw) || chainsRaw.length === 0) {
+    errors.push(`Edge #${rowNo}: document_policy.chains должен содержать хотя бы одну цепочку.`)
+    return { policy, errors }
+  }
+
+  chainsRaw.forEach((chain, chainIndex) => {
+    const chainNo = chainIndex + 1
+    if (!chain || typeof chain !== 'object' || Array.isArray(chain)) {
+      errors.push(`Edge #${rowNo}: chain #${chainNo} должен быть объектом.`)
+      return
+    }
+    const chainObject = chain as Record<string, unknown>
+    const chainId = String(chainObject.chain_id ?? '').trim()
+    if (!chainId) {
+      errors.push(`Edge #${rowNo}: chain #${chainNo} должен содержать chain_id.`)
+    }
+    const documentsRaw = chainObject.documents
+    if (!Array.isArray(documentsRaw) || documentsRaw.length === 0) {
+      errors.push(`Edge #${rowNo}: chain #${chainNo} должен содержать documents[].`)
+      return
+    }
+
+    documentsRaw.forEach((document, documentIndex) => {
+      const documentNo = documentIndex + 1
+      if (!document || typeof document !== 'object' || Array.isArray(document)) {
+        errors.push(`Edge #${rowNo}: chain #${chainNo}, document #${documentNo} должен быть объектом.`)
+        return
+      }
+      const documentObject = document as Record<string, unknown>
+      const requiredFields = ['document_id', 'entity_name', 'document_role']
+      requiredFields.forEach((fieldName) => {
+        const fieldValue = String(documentObject[fieldName] ?? '').trim()
+        if (!fieldValue) {
+          errors.push(
+            `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} должен содержать ${fieldName}.`
+          )
+        }
+      })
+      const invoiceModeRaw = String(documentObject.invoice_mode ?? '').trim()
+      if (invoiceModeRaw && invoiceModeRaw !== 'optional' && invoiceModeRaw !== 'required') {
+        errors.push(
+          `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} содержит недопустимый invoice_mode.`
+        )
+      }
+    })
+  })
+
+  return { policy, errors }
+}
+
 const buildTopologyPreflight = (values: TopologyFormValues): {
   payload: {
     effective_from: string
@@ -441,13 +528,25 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
       errors.push(`Edge #${rowNo}: max_amount должен быть >= min_amount.`)
       return
     }
+    const policyParseResult = parseDocumentPolicyMetadata(
+      String(edge.document_policy_json ?? ''),
+      rowNo
+    )
+    errors.push(...policyParseResult.errors)
+    if (policyParseResult.errors.length > 0) {
+      return
+    }
+    const metadata: Record<string, unknown> = {}
+    if (policyParseResult.policy) {
+      metadata.document_policy = policyParseResult.policy
+    }
     edges.push({
       parent_organization_id: parentId,
       child_organization_id: childId,
       weight: edge.weight == null ? '1' : String(edge.weight),
       min_amount: minAmount,
       max_amount: maxAmount,
-      metadata: {},
+      metadata,
     })
   })
 
@@ -1331,59 +1430,86 @@ export function PoolCatalogPage() {
                   {(fields, { add, remove }) => (
                     <Space direction="vertical" size="small" style={{ width: '100%' }}>
                       {fields.map((field) => (
-                        <Row key={field.key} gutter={8} align="middle">
-                          <Col span={7}>
-                            <Form.Item
-                              name={[field.name, 'parent_organization_id']}
-                              label={field.name === 0 ? 'Parent' : ''}
-                              style={{ marginBottom: 0 }}
-                            >
-                              <Select options={organizationOptions} placeholder="Parent" />
-                            </Form.Item>
-                          </Col>
-                          <Col span={7}>
-                            <Form.Item
-                              name={[field.name, 'child_organization_id']}
-                              label={field.name === 0 ? 'Child' : ''}
-                              style={{ marginBottom: 0 }}
-                            >
-                              <Select options={organizationOptions} placeholder="Child" />
-                            </Form.Item>
-                          </Col>
-                          <Col span={3}>
-                            <Form.Item
-                              name={[field.name, 'weight']}
-                              label={field.name === 0 ? 'Weight' : ''}
-                              style={{ marginBottom: 0 }}
-                            >
-                              <InputNumber min={0.000001} step={0.1} style={{ width: '100%' }} />
-                            </Form.Item>
-                          </Col>
-                          <Col span={3}>
-                            <Form.Item
-                              name={[field.name, 'min_amount']}
-                              label={field.name === 0 ? 'Min' : ''}
-                              style={{ marginBottom: 0 }}
-                            >
-                              <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
-                            </Form.Item>
-                          </Col>
-                          <Col span={3}>
-                            <Form.Item
-                              name={[field.name, 'max_amount']}
-                              label={field.name === 0 ? 'Max' : ''}
-                              style={{ marginBottom: 0 }}
-                            >
-                              <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
-                            </Form.Item>
-                          </Col>
-                          <Col span={1}>
-                            <Button danger onClick={() => remove(field.name)}>x</Button>
-                          </Col>
-                        </Row>
+                        <Space
+                          key={field.key}
+                          direction="vertical"
+                          size={6}
+                          style={{ width: '100%' }}
+                        >
+                          <Row gutter={8} align="middle">
+                            <Col span={7}>
+                              <Form.Item
+                                name={[field.name, 'parent_organization_id']}
+                                label={field.name === 0 ? 'Parent' : ''}
+                                style={{ marginBottom: 0 }}
+                              >
+                                <Select options={organizationOptions} placeholder="Parent" />
+                              </Form.Item>
+                            </Col>
+                            <Col span={7}>
+                              <Form.Item
+                                name={[field.name, 'child_organization_id']}
+                                label={field.name === 0 ? 'Child' : ''}
+                                style={{ marginBottom: 0 }}
+                              >
+                                <Select options={organizationOptions} placeholder="Child" />
+                              </Form.Item>
+                            </Col>
+                            <Col span={3}>
+                              <Form.Item
+                                name={[field.name, 'weight']}
+                                label={field.name === 0 ? 'Weight' : ''}
+                                style={{ marginBottom: 0 }}
+                              >
+                                <InputNumber min={0.000001} step={0.1} style={{ width: '100%' }} />
+                              </Form.Item>
+                            </Col>
+                            <Col span={3}>
+                              <Form.Item
+                                name={[field.name, 'min_amount']}
+                                label={field.name === 0 ? 'Min' : ''}
+                                style={{ marginBottom: 0 }}
+                              >
+                                <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                              </Form.Item>
+                            </Col>
+                            <Col span={3}>
+                              <Form.Item
+                                name={[field.name, 'max_amount']}
+                                label={field.name === 0 ? 'Max' : ''}
+                                style={{ marginBottom: 0 }}
+                              >
+                                <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                              </Form.Item>
+                            </Col>
+                            <Col span={1}>
+                              <Button danger onClick={() => remove(field.name)}>x</Button>
+                            </Col>
+                          </Row>
+                          <Row gutter={8}>
+                            <Col span={23}>
+                              <Form.Item
+                                name={[field.name, 'document_policy_json']}
+                                label={field.name === 0 ? 'Document policy (JSON)' : ''}
+                                style={{ marginBottom: 0 }}
+                              >
+                                <TextArea
+                                  autoSize={{ minRows: 2, maxRows: 8 }}
+                                  placeholder='{"version":"document_policy.v1","chains":[...]}'
+                                  data-testid={`pool-catalog-topology-edge-policy-${field.name}`}
+                                />
+                              </Form.Item>
+                            </Col>
+                          </Row>
+                        </Space>
                       ))}
                       <Button
-                        onClick={() => add({ weight: 1, min_amount: null, max_amount: null })}
+                        onClick={() => add({
+                          weight: 1,
+                          min_amount: null,
+                          max_amount: null,
+                          document_policy_json: '',
+                        })}
                         data-testid="pool-catalog-topology-add-edge"
                       >
                         Add edge

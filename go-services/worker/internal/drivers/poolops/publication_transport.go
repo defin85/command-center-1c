@@ -107,6 +107,17 @@ type publicationTargetResult struct {
 	Attempts []publicationTargetAttempt
 }
 
+type publicationDocument struct {
+	EntityName     string
+	IdempotencyKey string
+	Payload        map[string]interface{}
+}
+
+type publicationDocumentsExecutionResult struct {
+	SuccessfulDocumentKeys []string
+	FailedDocumentKey      string
+}
+
 type publicationAuthContext struct {
 	Strategy      string
 	ActorUsername string
@@ -193,7 +204,16 @@ func (t *ODataPublicationTransport) ExecutePublicationOData(
 	}
 
 	publicationPayload := resolvePublicationPayload(req.Payload)
-	documentsByDatabase, err := normalizeDocumentsByDatabase(publicationPayload["documents_by_database"])
+	chainedDocumentsByDatabase, err := normalizeDocumentChainsByDatabase(
+		publicationPayload["document_chains_by_database"],
+	)
+	if err != nil {
+		return nil, handlers.NewOperationExecutionError(
+			ErrorCodePoolRuntimePublicationPayloadInvalid,
+			err.Error(),
+		)
+	}
+	legacyDocumentsByDatabase, err := normalizeDocumentsByDatabase(publicationPayload["documents_by_database"])
 	if err != nil {
 		return nil, handlers.NewOperationExecutionError(
 			ErrorCodePoolRuntimePublicationPayloadInvalid,
@@ -205,6 +225,11 @@ func (t *ODataPublicationTransport) ExecutePublicationOData(
 	if entityName == "" {
 		entityName = t.cfg.DefaultEntityName
 	}
+	documentsByDatabase := chainedDocumentsByDatabase
+	if len(documentsByDatabase) == 0 {
+		documentsByDatabase = toPublicationDocumentsByDatabase(entityName, legacyDocumentsByDatabase)
+	}
+
 	externalKeyField := readOptionalString(publicationPayload["external_key_field"])
 	if externalKeyField == "" {
 		externalKeyField = defaultPublicationExternalKeyField
@@ -345,13 +370,14 @@ func (t *ODataPublicationTransport) publishTargetWithRetries(
 	databaseID string,
 	entityName string,
 	externalKeyField string,
-	documents []map[string]interface{},
+	documents []publicationDocument,
 	maxAttempts int,
 	retryIntervalSec int,
 ) (publicationTargetResult, error) {
 	result := publicationTargetResult{
 		Attempts: make([]publicationTargetAttempt, 0, maxAttempts),
 	}
+	requestDocumentKeys := collectDocumentIdempotencyKeys(entityName, documents)
 	credsCtx := t.withPublicationCredentialsContext(ctx, publicationAuth)
 	creds, err := t.credsClient.Fetch(credsCtx, databaseID)
 	if err != nil {
@@ -399,7 +425,7 @@ func (t *ODataPublicationTransport) publishTargetWithRetries(
 
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		lastErr = t.publishDocumentsOnce(
+		publishResult, publishErr := t.publishDocumentsOnce(
 			ctx,
 			req,
 			databaseID,
@@ -408,33 +434,55 @@ func (t *ODataPublicationTransport) publishTargetWithRetries(
 			documents,
 			odataCreds,
 		)
+		lastErr = publishErr
+		requestSummary := map[string]interface{}{
+			"documents_count": len(documents),
+		}
+		if len(requestDocumentKeys) > 0 {
+			requestSummary["document_idempotency_keys"] = append([]string(nil), requestDocumentKeys...)
+		}
 		if lastErr == nil {
+			responseSummary := map[string]interface{}{
+				"posted": true,
+			}
+			if len(publishResult.SuccessfulDocumentKeys) > 0 {
+				responseSummary["successful_document_idempotency_keys"] = append(
+					[]string(nil),
+					publishResult.SuccessfulDocumentKeys...,
+				)
+			}
 			result.Attempts = append(result.Attempts, publicationTargetAttempt{
-				AttemptNumber:  attempt,
-				Status:         "success",
-				DocumentsCount: len(documents),
-				Posted:         true,
-				RequestSummary: map[string]interface{}{
-					"documents_count": len(documents),
-				},
-				ResponseSummary: map[string]interface{}{
-					"posted": true,
-				},
+				AttemptNumber:   attempt,
+				Status:          "success",
+				DocumentsCount:  len(documents),
+				Posted:          true,
+				RequestSummary:  requestSummary,
+				ResponseSummary: responseSummary,
 			})
 			return result, nil
 		}
 		normalized := workerodata.NormalizeError(lastErr)
+		responseSummary := map[string]interface{}{}
+		if len(publishResult.SuccessfulDocumentKeys) > 0 {
+			responseSummary["successful_document_idempotency_keys"] = append(
+				[]string(nil),
+				publishResult.SuccessfulDocumentKeys...,
+			)
+		}
+		if strings.TrimSpace(publishResult.FailedDocumentKey) != "" {
+			responseSummary["failed_document_idempotency_key"] = strings.TrimSpace(
+				publishResult.FailedDocumentKey,
+			)
+		}
 		failedAttempt := publicationTargetAttempt{
-			AttemptNumber:  attempt,
-			Status:         "failed",
-			DocumentsCount: len(documents),
-			Posted:         false,
-			ErrorCode:      normalized.Code,
-			ErrorMessage:   lastErr.Error(),
-			RequestSummary: map[string]interface{}{
-				"documents_count": len(documents),
-			},
-			ResponseSummary: map[string]interface{}{},
+			AttemptNumber:   attempt,
+			Status:          "failed",
+			DocumentsCount:  len(documents),
+			Posted:          false,
+			ErrorCode:       normalized.Code,
+			ErrorMessage:    lastErr.Error(),
+			RequestSummary:  requestSummary,
+			ResponseSummary: responseSummary,
 		}
 		if normalized.StatusCode > 0 {
 			statusCode := normalized.StatusCode
@@ -481,26 +529,35 @@ func (t *ODataPublicationTransport) publishDocumentsOnce(
 	databaseID string,
 	entityName string,
 	externalKeyField string,
-	documents []map[string]interface{},
+	documents []publicationDocument,
 	creds sharedodata.ODataCredentials,
-) error {
+) (publicationDocumentsExecutionResult, error) {
+	result := publicationDocumentsExecutionResult{
+		SuccessfulDocumentKeys: make([]string, 0, len(documents)),
+	}
 	for idx, doc := range documents {
-		documentPayload := cloneMap(doc)
+		documentPayload := cloneMap(doc.Payload)
+		documentEntityName := strings.TrimSpace(doc.EntityName)
+		if documentEntityName == "" {
+			documentEntityName = entityName
+		}
+		documentKey := resolvePublicationDocumentKey(entityName, doc, idx)
 		if externalKeyField != "" {
 			if _, exists := documentPayload[externalKeyField]; !exists {
 				documentPayload[externalKeyField] = buildExternalRunKey(
 					req.PoolRunID,
 					databaseID,
-					entityName,
+					documentEntityName,
 					req.StepAttempt,
 					idx,
 				)
 			}
 		}
 
-		created, err := t.service.Create(ctx, creds, entityName, documentPayload)
+		created, err := t.service.Create(ctx, creds, documentEntityName, documentPayload)
 		if err != nil {
-			return err
+			result.FailedDocumentKey = documentKey
+			return result, err
 		}
 
 		documentRef := extractDocumentRef(created)
@@ -508,12 +565,20 @@ func (t *ODataPublicationTransport) publishDocumentsOnce(
 			continue
 		}
 
-		err = t.service.Update(ctx, creds, entityName, guidLiteral(documentRef), map[string]interface{}{"Posted": true})
+		err = t.service.Update(
+			ctx,
+			creds,
+			documentEntityName,
+			guidLiteral(documentRef),
+			map[string]interface{}{"Posted": true},
+		)
 		if err != nil {
-			return err
+			result.FailedDocumentKey = documentKey
+			return result, err
 		}
+		result.SuccessfulDocumentKeys = append(result.SuccessfulDocumentKeys, documentKey)
 	}
-	return nil
+	return result, nil
 }
 
 func (t *ODataPublicationTransport) readMaxAttempts(value interface{}) (int, error) {
@@ -638,6 +703,96 @@ func resolvePublicationPayload(payload map[string]interface{}) map[string]interf
 	return payload
 }
 
+func toPublicationDocumentsByDatabase(
+	entityName string,
+	legacy map[string][]map[string]interface{},
+) map[string][]publicationDocument {
+	result := make(map[string][]publicationDocument, len(legacy))
+	for databaseID, documents := range legacy {
+		items := make([]publicationDocument, 0, len(documents))
+		for _, document := range documents {
+			items = append(items, publicationDocument{
+				EntityName:     strings.TrimSpace(entityName),
+				IdempotencyKey: "",
+				Payload:        cloneMap(document),
+			})
+		}
+		if len(items) > 0 {
+			result[databaseID] = items
+		}
+	}
+	return result
+}
+
+func normalizeDocumentChainsByDatabase(value interface{}) (map[string][]publicationDocument, error) {
+	if value == nil {
+		return map[string][]publicationDocument{}, nil
+	}
+
+	if typed, ok := value.(map[string][]publicationDocument); ok {
+		return typed, nil
+	}
+
+	src, ok := value.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("document_chains_by_database must be an object")
+	}
+
+	result := make(map[string][]publicationDocument, len(src))
+	for rawDatabaseID, rawChains := range src {
+		databaseID := strings.TrimSpace(rawDatabaseID)
+		if databaseID == "" {
+			return nil, fmt.Errorf("document_chains_by_database contains empty database id")
+		}
+
+		chainsSlice, ok := rawChains.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("document_chains_by_database[%s] must be a list", databaseID)
+		}
+
+		docs := make([]publicationDocument, 0)
+		for _, rawChain := range chainsSlice {
+			chain, ok := rawChain.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("document_chains_by_database[%s] contains non-object chain", databaseID)
+			}
+			rawDocuments, ok := chain["documents"].([]interface{})
+			if !ok {
+				return nil, fmt.Errorf("document_chains_by_database[%s].documents must be a list", databaseID)
+			}
+			for _, rawDocument := range rawDocuments {
+				document, ok := rawDocument.(map[string]interface{})
+				if !ok {
+					return nil, fmt.Errorf("document_chains_by_database[%s] contains non-object document", databaseID)
+				}
+				entityName := readOptionalString(document["entity_name"])
+				if entityName == "" {
+					return nil, fmt.Errorf(
+						"document_chains_by_database[%s] document entity_name must be a non-empty string",
+						databaseID,
+					)
+				}
+				payload, ok := document["payload"].(map[string]interface{})
+				if !ok {
+					return nil, fmt.Errorf(
+						"document_chains_by_database[%s] document payload must be an object",
+						databaseID,
+					)
+				}
+				docs = append(docs, publicationDocument{
+					EntityName:     entityName,
+					IdempotencyKey: readOptionalString(document["idempotency_key"]),
+					Payload:        cloneMap(payload),
+				})
+			}
+		}
+		if len(docs) > 0 {
+			result[databaseID] = docs
+		}
+	}
+	return result, nil
+}
+
 func normalizeDocumentsByDatabase(value interface{}) (map[string][]map[string]interface{}, error) {
 	if value == nil {
 		return map[string][]map[string]interface{}{}, nil
@@ -684,6 +839,39 @@ func readOptionalString(value interface{}) string {
 		return ""
 	}
 	return strings.TrimSpace(str)
+}
+
+func collectDocumentIdempotencyKeys(
+	defaultEntityName string,
+	documents []publicationDocument,
+) []string {
+	keys := make([]string, 0, len(documents))
+	for idx, document := range documents {
+		keys = append(
+			keys,
+			resolvePublicationDocumentKey(defaultEntityName, document, idx),
+		)
+	}
+	return keys
+}
+
+func resolvePublicationDocumentKey(
+	defaultEntityName string,
+	document publicationDocument,
+	idx int,
+) string {
+	documentKey := strings.TrimSpace(document.IdempotencyKey)
+	if documentKey != "" {
+		return documentKey
+	}
+	entityName := strings.TrimSpace(document.EntityName)
+	if entityName == "" {
+		entityName = strings.TrimSpace(defaultEntityName)
+	}
+	if entityName == "" {
+		entityName = defaultPublicationEntityName
+	}
+	return fmt.Sprintf("fallback:%s:%d", entityName, idx)
 }
 
 func readInt(value interface{}) (int, bool) {
