@@ -19,3 +19,14 @@
 - **WHEN** выполняется повторный enqueue с тем же idempotency ключом
 - **THEN** система выполняет idempotent upsert существующего root record
 - **AND** дублирующая запись operation в `/operations` не создаётся
+
+### Requirement: Workflow projection consistency MUST включать detect+repair/backfill для пропущенных root records
+Система ДОЛЖНА (SHALL) детектировать workflow execution записи, для которых отсутствует root operation projection в `/operations`, и выполнять idempotent repair/backfill.
+
+Система ДОЛЖНА (SHALL) публиковать alert/diagnostics событие при обнаружении такого рассинхрона, чтобы инцидент был наблюдаем оператором.
+
+#### Scenario: Historical execution без root projection восстанавливается backfill-процедурой
+- **GIVEN** в системе существует `workflow_execution_id` без root operation record
+- **WHEN** запускается reconciliation/backfill процесс
+- **THEN** создаётся root operation record с `operation_id = workflow_execution_id`
+- **AND** запись становится доступной через `/operations` endpoints без ручного исправления

@@ -24,9 +24,18 @@
 
 Система НЕ ДОЛЖНА (SHALL NOT) использовать raw `run_input` как authoritative источник итогового publication payload, если рассчитанный distribution artifact уже сформирован.
 
+Система ДОЛЖНА (SHALL) принимать `run_input.documents_by_database` в create-run только как `provenance-only` вход для аудита/диагностики и не использовать его для переопределения расчётного payload.
+
 #### Scenario: Runtime игнорирует raw publication payload при наличии расчётного artifact
 - **GIVEN** create-run запрос содержит `run_input` с полем `documents_by_database`
 - **AND** шаги распределения успешно сформировали канонический distribution artifact
 - **WHEN** runtime формирует payload для `pool.publication_odata`
 - **THEN** используется payload из distribution artifact
 - **AND** raw `run_input.documents_by_database` не может обойти инварианты покрытия и сходимости
+
+#### Scenario: Raw create-run payload сохраняется только как provenance
+- **GIVEN** create-run запрос содержит `run_input.documents_by_database`
+- **AND** distribution шаги завершились успешно с `distribution_artifact.v1`
+- **WHEN** run сохраняется и публикуется
+- **THEN** raw payload сохраняется только в provenance/diagnostics контексте
+- **AND** финальный publication payload формируется исключительно из `distribution_artifact.v1`

@@ -6,6 +6,8 @@
 
 При enqueue ошибке система ДОЛЖНА (SHALL) возвращать fail-closed ошибку и НЕ ДОЛЖНА (SHALL NOT) продолжать выполнение в альтернативном локальном runtime path.
 
+Система ДОЛЖНА (SHALL) принудительно отключать локальный fallback при production profile даже при наличии debug-настроек, чтобы избежать расхождения runtime semantics между окружениями.
+
 #### Scenario: Enqueue failure не переводится в локальный sync/background execution
 - **GIVEN** клиент вызывает `POST /api/v2/workflows/execute-workflow/`
 - **AND** enqueue в worker stream завершается ошибкой
@@ -13,16 +15,32 @@
 - **THEN** возвращается fail-closed ошибка enqueue
 - **AND** workflow execution не запускается через локальный background/sync fallback
 
+#### Scenario: Production profile игнорирует debug fallback и остаётся queue-only
+- **GIVEN** система работает в production profile
+- **AND** включён debug-флаг локального fallback
+- **AND** enqueue в worker stream завершается ошибкой
+- **WHEN** API обрабатывает запрос execution
+- **THEN** локальный fallback не используется
+- **AND** клиент получает fail-closed enqueue error
+
 ### Requirement: Workflow execution MUST проецироваться в `/operations` как root operation record
 Система ДОЛЖНА (SHALL) создавать/обновлять канонический operation record для workflow execution (`operation_id = workflow_execution_id`) с едиными status/timeline semantics.
 
 Система ДОЛЖНА (SHALL) обеспечивать, что `/api/v2/operations/list-operations/`, `/api/v2/operations/get-operation/`, `/api/v2/operations/stream*` и timeline API возвращают этот root record и его progression.
+
+Система ДОЛЖНА (SHALL) выполнять idempotent upsert root record для повторных enqueue и не создавать duplicate operation records для одного `workflow_execution_id`.
 
 #### Scenario: Workflow execution виден оператору в `/operations`
 - **GIVEN** workflow execution успешно enqueue
 - **WHEN** оператор открывает `/operations`
 - **THEN** в списке присутствует root operation record, связанный с `workflow_execution_id`
 - **AND** status/timeline record обновляются по worker events/status updates
+
+#### Scenario: Повторный enqueue не создаёт duplicate root operation
+- **GIVEN** root operation record уже существует для `workflow_execution_id`
+- **WHEN** происходит повторный enqueue того же execution
+- **THEN** обновляется существующий root record
+- **AND** новый duplicate operation record не создаётся
 
 ### Requirement: Unified observability MUST сохранять корреляцию root execution и атомарных шагов
 Система ДОЛЖНА (SHALL) поддерживать correlation metadata между root execution и атомарными шагами (`workflow_execution_id`, `node_id`, `root_operation_id`, `execution_consumer`, `lane`).

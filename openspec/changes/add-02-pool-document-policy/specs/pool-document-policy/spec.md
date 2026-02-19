@@ -44,11 +44,28 @@
 
 Система ДОЛЖНА (SHALL) использовать этот artifact как source-of-truth для create-run publication и retry semantics.
 
+Минимальный обязательный набор полей `document_plan_artifact.v1`:
+- `version`;
+- `run_id`;
+- `distribution_artifact_ref`;
+- `topology_version_ref`;
+- `policy_refs[]`;
+- `targets[].chains[].documents[]` с `entity_name`, `document_role`, `field_mapping`, `table_parts_mapping`, `link_rules`, `invoice_mode`, `idempotency_key`;
+- `compile_summary`.
+
+Система НЕ ДОЛЖНА (SHALL NOT) формировать create-run publication chain напрямую из raw `run_input`, если `document_plan_artifact.v1` успешно построен и сохранён.
+
 #### Scenario: Одинаковый вход и policy дают идентичный document plan artifact
 - **GIVEN** одинаковые distribution artifact, topology version и document-policy
 - **WHEN** runtime выполняет compile document plan повторно
 - **THEN** структура и порядок `document_plan_artifact` совпадают
 - **AND** idempotency ключи документов совпадают
+
+#### Scenario: Неполный document plan artifact блокирует публикацию
+- **GIVEN** runtime сформировал artifact без одного из обязательных полей `document_plan_artifact.v1`
+- **WHEN** выполняется pre-publication gate
+- **THEN** run завершается fail-closed до OData side effects
+- **AND** diagnostics содержит machine-readable код нарушения artifact-контракта
 
 ### Requirement: Document plan artifact MUST быть downstream execution-контрактом для атомарного workflow compile
 Система ДОЛЖНА (SHALL) публиковать versioned `document_plan_artifact` как downstream input-контракт для атомарного workflow compiler.

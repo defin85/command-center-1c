@@ -12,17 +12,20 @@
 - [ ] 2.1 Добавить backend валидацию `edge.metadata.document_policy` в topology snapshot upsert.
 - [ ] 2.2 Добавить read-path возврата metadata (включая `document_policy`) в graph/topology response для операторского редактирования.
 - [ ] 2.3 Добавить UI-path редактирования document-policy на рёбрах пула (минимальный operator-friendly редактор + client-side preflight).
+- [ ] 2.4 Обновить OpenAPI/frontend contract для `node.metadata` и `edge.metadata`, чтобы round-trip metadata (включая `document_policy`) был schema-stable.
 
 ## 3. Runtime Planning Layer
 - [ ] 3.1 Реализовать resolver policy c deterministic precedence (edge-level config -> pool defaults, если заданы).
 - [ ] 3.2 Добавить компиляцию versioned `document_plan_artifact.v1` из `distribution_artifact.v1` + topology + policy до шага publication.
 - [ ] 3.3 Зафиксировать fail-closed gate: publication не стартует при невалидной policy/цепочке/маппинге.
+- [ ] 3.4 Зафиксировать и валидировать обязательные поля `document_plan_artifact.v1` (references/chains/documents/idempotency/compile_summary).
 
 ## 4. Publication Execution
 - [ ] 4.1 Расширить publication payload contract до per-document chain (несколько entity в одной target database) с backward compatibility.
 - [ ] 4.2 Реализовать обязательное создание связанной счёт-фактуры для policy, где `invoice_mode=required`.
 - [ ] 4.3 Сохранить selective retry semantics: retry работает от persisted `document_plan_artifact` и не дублирует успешные документы.
 - [ ] 4.4 Зафиксировать, что atomic execution graph строится downstream из `document_plan_artifact` (scope change `refactor-03-unify-platform-execution-runtime`), без дублирования compile логики в этом change.
+- [ ] 4.5 Запретить обход document-chain compile через raw `run_input` в create-run path при наличии валидного `document_plan_artifact.v1`.
 
 ## 5. Tests
 - [ ] 5.1 Добавить unit-тесты валидации `document_policy.v1` (валидные/невалидные цепочки, required invoice, mapping rules).

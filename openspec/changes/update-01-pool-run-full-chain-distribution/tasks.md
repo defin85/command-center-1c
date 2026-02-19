@@ -7,11 +7,13 @@
 - [ ] 1.1 Зафиксировать в спеках canonical full-distribution инварианты для create-run execution path (active DAG coverage + balance preservation).
 - [ ] 1.2 Зафиксировать, что publication payload для create-run формируется из runtime distribution artifacts, а не из произвольного raw `run_input`.
 - [ ] 1.3 Зафиксировать machine-readable fail-closed taxonomy для нарушений инвариантов распределения.
+- [ ] 1.4 Зафиксировать `provenance-only` политику для `run_input.documents_by_database` (принимается для аудита, но не влияет на итоговый publication payload).
 
 ## 2. Runtime Algorithm Wiring
 - [ ] 2.1 Подключить `distribute_top_down` к шагу `pool.distribution_calculation.top_down` с учётом active topology version (`effective_from/effective_to`) и edge constraints (`weight/min/max`).
 - [ ] 2.2 Подключить bottom-up агрегацию к шагу `pool.distribution_calculation.bottom_up` с расчётом root convergence по active topology.
 - [ ] 2.3 Сохранять детерминированный distribution artifact в execution context (узлы/рёбра/итоги), пригодный для дальнейшей публикации и отчётности.
+- [ ] 2.4 Добавить schema validation для обязательных полей `distribution_artifact.v1` перед reconciliation/publication и downstream handoff.
 
 ## 3. Reconciliation and Fail-Closed Gate
 - [ ] 3.1 Перевести reconciliation на проверку канонических distribution artifacts вместо summary-only сверки.
@@ -21,6 +23,7 @@
 ## 4. Publication Payload Source-of-Truth
 - [ ] 4.1 Собирать base publication input для create-run из distribution artifact (без обхода через raw `run_input`); document-chain детализация для per-document/invoice выполняется downstream change `add-02-pool-document-policy`.
 - [ ] 4.2 Сохранить совместимость retry failed-subset контракта, но явно зафиксировать связь retry с ранее рассчитанным run distribution state.
+- [ ] 4.3 Сохранять `run_input.documents_by_database` только как provenance/diagnostics snapshot без влияния на publication payload.
 
 ## 5. Validation and Tests
 - [ ] 5.1 Добавить unit-тесты на top-down full-chain distribution (многоуровневый граф, min/max, rounding remainder, deterministic seed).

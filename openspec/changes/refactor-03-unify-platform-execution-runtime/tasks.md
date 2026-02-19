@@ -7,13 +7,14 @@
 
 ## 1. Unified Runtime Contract
 - [ ] 1.1 Зафиксировать canonical execution envelope для `execute_workflow` и manual operations (единые обязательные поля correlation/provenance).
-- [ ] 1.2 Убрать hidden fallback path в `POST /api/v2/workflows/execute-workflow/` для production execution profile (queue-only + fail-closed enqueue error).
-- [ ] 1.3 Зафиксировать explicit runtime controls для non-production debug fallback, чтобы он не смешивался с production semantics.
+- [ ] 1.2 Убрать hidden fallback path в `POST /api/v2/workflows/execute-workflow/` для production execution profile (queue-only + fail-closed enqueue error, без исключений по debug-настройкам).
+- [ ] 1.3 Зафиксировать explicit runtime controls для non-production debug fallback с жёсткой защитой от включения в production.
 
 ## 2. Workflow Projection в `/operations`
 - [ ] 2.1 Добавить transactional создание/обновление root operation record для workflow execution enqueue (`operation_id = workflow_execution_id`).
 - [ ] 2.2 Обеспечить idempotent status sync root record из worker events/internal status updates.
 - [ ] 2.3 Добавить reconciliation path для workflow execution без projection record (detect + repair + alert).
+- [ ] 2.4 Добавить backfill job для historical workflow execution без root record с idempotent upsert и SLA-мониторингом.
 
 ## 3. Pool Run Atomic Workflow Expansion
 - [ ] 3.1 Перевести compile `pool run` на атомарные workflow nodes из `distribution_artifact.v1` + `document_plan_artifact.v1` (Track B, после закрытия blocker'ов).
@@ -33,6 +34,7 @@
 - [ ] 6.2 Добавить tests на projection consistency: enqueue -> queued -> completed/failed для workflow root operation record.
 - [ ] 6.3 Добавить pool runtime tests на atomic graph compile и selective retry по failed atomic nodes.
 - [ ] 6.4 Добавить frontend tests на отображение unified операций (manual + workflow + pool atomic steps) в `/operations`.
+- [ ] 6.5 Добавить integration tests на detect+repair/backfill для workflow execution без root projection record.
 
 ## 7. Validation
 - [ ] 7.1 Прогнать `openspec validate refactor-03-unify-platform-execution-runtime --strict --no-interactive`.

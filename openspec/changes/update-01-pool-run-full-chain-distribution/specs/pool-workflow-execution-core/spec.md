@@ -37,8 +37,23 @@
 
 Система НЕ ДОЛЖНА (SHALL NOT) допускать обход этого контракта в create-run path через произвольный raw payload.
 
+Минимальный обязательный набор полей `distribution_artifact.v1`:
+- `version`;
+- `topology_version_ref`;
+- `node_totals[]`;
+- `edge_allocations[]`;
+- `coverage`;
+- `balance`;
+- `input_provenance`.
+
 #### Scenario: Downstream compile использует только distribution artifact как вход распределения
 - **GIVEN** create-run distribution завершён и сохранён versioned `distribution_artifact`
 - **WHEN** runtime переходит к downstream compile (document plan или atomic graph)
 - **THEN** вход распределения берётся из `distribution_artifact`
 - **AND** raw `run_input` не используется как authoritative источник распределённых сумм
+
+#### Scenario: Runtime отклоняет неполный distribution artifact контракт
+- **GIVEN** execution context содержит artifact без одного из обязательных полей `distribution_artifact.v1`
+- **WHEN** runtime пытается выполнить downstream compile/reconciliation
+- **THEN** run завершается fail-closed до publication
+- **AND** diagnostics содержит machine-readable код нарушения artifact-контракта

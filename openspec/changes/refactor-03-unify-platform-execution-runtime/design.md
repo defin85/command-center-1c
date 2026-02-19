@@ -25,10 +25,21 @@ Code-first наблюдения:
 
 Hidden fallback (background/sync execution) в production path удаляется, чтобы исключить split-brain поведение runtime.
 
+Production policy фиксируется явно:
+- при production execution profile локальный in-process/background fallback всегда запрещён;
+- ошибка enqueue всегда возвращается клиенту как fail-closed результат;
+- debug fallback допускается только вне production и только под явным feature flag, не влияющим на production semantics.
+
 ### Decision 2: Workflow execution проецируется в `BatchOperation` как root operation record
 Для каждого workflow execution enqueue создается/обновляется root operation record (`operation_id == workflow_execution_id`) с единым metadata-контрактом (`execution_consumer`, `lane`, correlation ids).
 
 Это позволяет использовать существующий `/operations` list/stream/timeline UX без параллельного “второго мира” observability.
+
+Projection semantics:
+- root record создаётся idempotent upsert-ом до enqueue в состоянии `pending`;
+- перевод в `queued` происходит только после успешного XADD;
+- при повторном enqueue того же `workflow_execution_id` создаётся не дубликат, а повторное обновление существующего root record;
+- для исторических пропусков обязателен detect+repair/backfill path с алертингом.
 
 ### Decision 3: Stream split сохраняется как lane-механизм, не как отдельная runtime-модель
 `commands:worker:operations` и `commands:worker:workflows` остаются допустимыми lane-ами для QoS/isolation, но должны оставаться в едином execution contract (envelope, events, telemetry, idempotency semantics).

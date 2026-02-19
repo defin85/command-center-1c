@@ -64,7 +64,20 @@ Publication payload расширяется до per-document chain semantics (н
 - вход: `distribution_artifact.v1` + active topology + `document_policy.v1`;
 - выход: детализированный план document chains, пригодный для atomic workflow compile.
 
+Минимальный обязательный контракт `document_plan_artifact.v1`:
+- `version = "document_plan_artifact.v1"`;
+- `run_id`;
+- `distribution_artifact_ref` (id/version/checksum);
+- `topology_version_ref`;
+- `policy_refs[]` (привязка к edge и версии policy);
+- `targets[]` с ordered `chains[]` и ordered `documents[]` в каждой цепочке;
+- per-document поля: `entity_name`, `document_role`, `field_mapping`, `table_parts_mapping`, `link_rules`, `invoice_mode`, `idempotency_key`;
+- `compile_summary` (warnings/errors digest, timestamp).
+
 Этот change не вводит platform-level execution orchestration; downstream исполнение атомарных шагов принадлежит `refactor-03-unify-platform-execution-runtime`.
+
+### Decision 7: Topology metadata contract обязателен на write/read path
+Topology mutating path валидирует `edge.metadata.document_policy` до persistence (fail-closed), а topology/graph read-path всегда возвращает `node.metadata` и `edge.metadata` (включая `edge.metadata.document_policy`) без потери данных между round-trips.
 
 ## Alternatives Considered
 ### A1. Хранить policy только в `run_input`
@@ -94,6 +107,6 @@ Publication payload расширяется до per-document chain semantics (н
 7. Зафиксировать downstream handoff контракта для atomic workflow compile в `refactor-03-unify-platform-execution-runtime`.
 8. Прогнать contract/tests/rollout preflight.
 
-## Open Questions
-- Нужен ли в `v1` отдельный catalog поддерживаемых типов документов и их обязательных полей per configuration profile, или достаточно fail-closed whitelist в runtime?
-- Должен ли `invoice_mode=required` включаться только для явно отмеченных chain-типов, либо для `sale/purchase` по умолчанию в рамках tenant policy defaults?
+## Resolved Questions
+- Отдельный catalog обязательных полей в `v1` не вводится; применяется fail-closed whitelist/runtime validation на стороне compile/publication.
+- `invoice_mode=required` применяется только при явном указании в policy; implicit defaults для `sale/purchase` в этом change не вводятся.

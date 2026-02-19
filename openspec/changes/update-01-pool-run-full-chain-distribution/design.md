@@ -29,6 +29,15 @@
 
 Дальнейшие шаги (`reconciliation`, формирование publication payload) используют только этот artifact как source-of-truth.
 
+Минимальный обязательный контракт `distribution_artifact.v1`:
+- `version = "distribution_artifact.v1"`;
+- `topology_version_ref` (идентификатор активной версии topology для периода run);
+- `node_totals[]` (stable `node_id`, amount, currency);
+- `edge_allocations[]` (stable `edge_id`, amount, constraints digest);
+- `coverage` (список covered/missing publish-target узлов);
+- `balance` (`source_total`, `distributed_total`, `delta`, `tolerance`);
+- `input_provenance` (ссылка на source input, без права переопределять расчёт).
+
 ### Decision 2: Подключение существующих алгоритмов вместо дублирования логики
 - top-down path использует `distribute_top_down`;
 - bottom-up path использует bottom-up aggregation/convergence на active topology.
@@ -44,6 +53,8 @@
 Для create-run path `pool_runtime_publication_payload.documents_by_database` формируется из рассчитанного распределения.
 
 Raw `run_input` может храниться как provenance входа, но НЕ ДОЛЖЕН (SHALL NOT) быть authoritative источником итогового publication payload.
+
+Решение по совместимости create-run: `run_input.documents_by_database` принимается только как `provenance-only` поле, сохраняется для аудита/диагностики и не участвует в формировании финального publication payload при наличии валидного `distribution_artifact.v1`.
 
 Retry path сохраняет selective-subset контракт, но опирается на зафиксированное расчётное состояние run.
 
@@ -87,5 +98,5 @@ Retry path сохраняет selective-subset контракт, но опира
 5. Зафиксировать `distribution_artifact.v1` как стабильный input-контракт для downstream change-ов.
 6. Дополнить unit/integration/e2e тесты и пройти quality gates.
 
-## Open Questions
-- В рамках данного change подразумевается, что create-run с явным `run_input.documents_by_database` остаётся допустимым как входные данные-provenance, но не authoritative для публикации. Если требуется stricter policy (полный reject таких полей), это нужно зафиксировать отдельным решением.
+## Resolved Questions
+- Для create-run выбран режим `provenance-only` для `run_input.documents_by_database`; режим полного reject в этом change не вводится, чтобы избежать breaking-change для клиентов.

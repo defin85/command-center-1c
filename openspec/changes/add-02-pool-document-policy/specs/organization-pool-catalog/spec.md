@@ -20,3 +20,14 @@
 - **WHEN** backend выполняет pre-persist validation
 - **THEN** запрос отклоняется валидационной ошибкой
 - **AND** topology snapshot в БД остаётся неизменным
+
+### Requirement: Topology metadata contract MUST быть schema-stable для API и клиента
+Система ДОЛЖНА (SHALL) публиковать в topology/graph API явные поля `node.metadata` и `edge.metadata` как часть стабильного read-model контракта, включая `edge.metadata.document_policy`.
+
+Система ДОЛЖНА (SHALL) сохранять round-trip совместимость metadata: пользовательские поля metadata не теряются между mutating и последующим read-path вызовом.
+
+#### Scenario: Round-trip topology metadata не теряет пользовательские поля
+- **GIVEN** snapshot содержит `node.metadata`, `edge.metadata` и валидный `edge.metadata.document_policy`
+- **WHEN** snapshot сохраняется и затем читается через graph/topology API
+- **THEN** response содержит те же metadata структуры без потери пользовательских полей
+- **AND** frontend может безопасно повторно отправить snapshot без реконструкции metadata вне API
