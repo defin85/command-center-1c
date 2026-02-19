@@ -8,6 +8,12 @@ properties:
     additionalProperties:
       type: array
       items: {}
+  target_database_ids:
+    type: array
+    minItems: 1
+    items:
+      type: string
+      format: uuid
   max_attempts:
     type: integer
     maximum: 5

@@ -408,19 +408,33 @@ def build_publication_payload_from_document_plan_artifact(
                 entity_name = str(document.get("entity_name") or "").strip()
                 if not resolved_entity_name and entity_name:
                     resolved_entity_name = entity_name
+                field_mapping = _as_object(document.get("field_mapping"))
+                table_parts_mapping = _as_object(document.get("table_parts_mapping"))
+                link_rules = _as_object(document.get("link_rules"))
+                resolved_link_refs = _as_object(document.get("resolved_link_refs"))
+                document_payload = _build_document_payload_from_mapping(
+                    amount=amount,
+                    allocation=allocation,
+                    field_mapping=field_mapping,
+                    table_parts_mapping=table_parts_mapping,
+                    resolved_link_refs=resolved_link_refs,
+                )
                 compiled_document: dict[str, Any] = {
                     "document_id": str(document.get("document_id") or "").strip(),
                     "entity_name": entity_name,
                     "document_role": str(document.get("document_role") or "").strip(),
                     "idempotency_key": str(document.get("idempotency_key") or "").strip(),
                     "invoice_mode": str(document.get("invoice_mode") or "").strip(),
-                    "payload": {
-                        "Amount": amount,
-                    },
+                    "field_mapping": field_mapping,
+                    "table_parts_mapping": table_parts_mapping,
+                    "link_rules": link_rules,
+                    "payload": document_payload,
                 }
                 link_to = str(document.get("link_to") or "").strip()
                 if link_to:
                     compiled_document["link_to"] = link_to
+                if resolved_link_refs:
+                    compiled_document["resolved_link_refs"] = resolved_link_refs
                 compiled_documents.append(compiled_document)
 
             if not compiled_documents:
@@ -593,6 +607,124 @@ def _as_object(value: Any) -> dict[str, Any]:
     if isinstance(value, Mapping):
         return dict(value)
     return {}
+
+
+def _build_document_payload_from_mapping(
+    *,
+    amount: str,
+    allocation: Mapping[str, Any],
+    field_mapping: Mapping[str, Any],
+    table_parts_mapping: Mapping[str, Any],
+    resolved_link_refs: Mapping[str, Any],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"Amount": amount}
+    allocation_payload = dict(allocation)
+
+    for raw_field_name, raw_mapping in field_mapping.items():
+        field_name = str(raw_field_name or "").strip()
+        if not field_name:
+            continue
+        resolved_value, is_resolved = _resolve_mapping_value(
+            raw_mapping,
+            allocation=allocation_payload,
+            resolved_link_refs=resolved_link_refs,
+        )
+        if is_resolved:
+            payload[field_name] = resolved_value
+
+    for raw_table_name, raw_rows in table_parts_mapping.items():
+        table_name = str(raw_table_name or "").strip()
+        if not table_name or not isinstance(raw_rows, list):
+            continue
+        compiled_rows: list[dict[str, Any]] = []
+        for raw_row in raw_rows:
+            if not isinstance(raw_row, Mapping):
+                continue
+            compiled_row: dict[str, Any] = {}
+            for raw_column_name, raw_mapping in raw_row.items():
+                column_name = str(raw_column_name or "").strip()
+                if not column_name:
+                    continue
+                resolved_value, is_resolved = _resolve_mapping_value(
+                    raw_mapping,
+                    allocation=allocation_payload,
+                    resolved_link_refs=resolved_link_refs,
+                )
+                if is_resolved:
+                    compiled_row[column_name] = resolved_value
+            if compiled_row:
+                compiled_rows.append(compiled_row)
+        if compiled_rows:
+            payload[table_name] = compiled_rows
+
+    return payload
+
+
+def _resolve_mapping_value(
+    value: Any,
+    *,
+    allocation: Mapping[str, Any],
+    resolved_link_refs: Mapping[str, Any],
+) -> tuple[Any, bool]:
+    if isinstance(value, str):
+        token = value.strip()
+        if not token:
+            return None, False
+        if token.startswith("allocation."):
+            lookup_path = token.removeprefix("allocation.").strip()
+            if not lookup_path:
+                return None, False
+            return _resolve_dotted_path(allocation, lookup_path)
+        if token.endswith(".ref"):
+            document_id = token.removesuffix(".ref").strip()
+            if not document_id:
+                return None, False
+            ref_value = str(resolved_link_refs.get(document_id) or "").strip()
+            if not ref_value:
+                return None, False
+            return ref_value, True
+        return token, True
+
+    if isinstance(value, Mapping):
+        payload: dict[str, Any] = {}
+        for raw_key, raw_item in value.items():
+            key = str(raw_key or "").strip()
+            if not key:
+                continue
+            resolved_value, is_resolved = _resolve_mapping_value(
+                raw_item,
+                allocation=allocation,
+                resolved_link_refs=resolved_link_refs,
+            )
+            if is_resolved:
+                payload[key] = resolved_value
+        return payload, bool(payload)
+
+    if isinstance(value, list):
+        items: list[Any] = []
+        for raw_item in value:
+            resolved_value, is_resolved = _resolve_mapping_value(
+                raw_item,
+                allocation=allocation,
+                resolved_link_refs=resolved_link_refs,
+            )
+            if is_resolved:
+                items.append(resolved_value)
+        return items, bool(items)
+
+    if value is None:
+        return None, False
+    return value, True
+
+
+def _resolve_dotted_path(payload: Mapping[str, Any], path: str) -> tuple[Any, bool]:
+    current: Any = payload
+    for segment in path.split("."):
+        key = str(segment or "").strip()
+        if not key or not isinstance(current, Mapping) or key not in current:
+            return None, False
+        current = current.get(key)
+    return current, True
 
 
 def _parse_decimal(value: Any) -> Decimal | None:

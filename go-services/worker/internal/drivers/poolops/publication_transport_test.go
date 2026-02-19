@@ -107,11 +107,12 @@ type mockPublicationODataService struct {
 	createEntities   []string
 	createPayloads   []map[string]interface{}
 
-	createResponse     map[string]interface{}
-	createErr          error
-	createErrSequence  []error
-	createErrByBaseURL map[string]error
-	updateErr          error
+	createResponse         map[string]interface{}
+	createResponseSequence []map[string]interface{}
+	createErr              error
+	createErrSequence      []error
+	createErrByBaseURL     map[string]error
+	updateErr              error
 }
 
 func (m *mockPublicationODataService) Create(
@@ -135,6 +136,13 @@ func (m *mockPublicationODataService) Create(
 		m.createErrSequence = m.createErrSequence[1:]
 		if err != nil {
 			return nil, err
+		}
+	}
+	if len(m.createResponseSequence) > 0 {
+		response := cloneMap(m.createResponseSequence[0])
+		m.createResponseSequence = m.createResponseSequence[1:]
+		if len(response) > 0 {
+			return response, nil
 		}
 	}
 	if m.createErr != nil {
@@ -284,6 +292,185 @@ func TestODataPublicationTransport_ExecutePublicationOData_UsesDocumentChainsPay
 	require.Len(t, service.createPayloads, 2)
 	assert.Equal(t, "100.00", service.createPayloads[0]["Amount"])
 	assert.Equal(t, "100.00", service.createPayloads[1]["Amount"])
+}
+
+func TestODataPublicationTransport_ExecutePublicationOData_AppliesChainMappingAndRequiredInvoiceLinkage(t *testing.T) {
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockPublicationODataService{
+		createResponseSequence: []map[string]interface{}{
+			{"Ref_Key": "sale-ref-1"},
+			{"Ref_Key": "invoice-ref-1"},
+		},
+	}
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationType:   "pool.publication_odata",
+		PoolRunID:       "run-chain-mapping",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthActorForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"document_chains_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{
+							"chain_id": "sale_chain",
+							"allocation": map[string]interface{}{
+								"amount": "100.00",
+							},
+							"documents": []interface{}{
+								map[string]interface{}{
+									"document_id": "sale",
+									"entity_name": "Document_Sales",
+									"field_mapping": map[string]interface{}{
+										"Amount": "allocation.amount",
+									},
+									"payload": map[string]interface{}{},
+								},
+								map[string]interface{}{
+									"document_id":  "invoice",
+									"entity_name":  "Document_Invoice",
+									"invoice_mode": "required",
+									"link_to":      "sale",
+									"field_mapping": map[string]interface{}{
+										"Amount":       "allocation.amount",
+										"BaseDocument": "sale.ref",
+									},
+									"payload": map[string]interface{}{},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.Equal(t, "published", out["status"])
+	require.Len(t, service.createPayloads, 2)
+	assert.Equal(t, "100.00", service.createPayloads[0]["Amount"])
+	assert.Equal(t, "100.00", service.createPayloads[1]["Amount"])
+	assert.Equal(t, "sale-ref-1", service.createPayloads[1]["BaseDocument"])
+
+	attempts, ok := out["attempts"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, attempts, 1)
+	responseSummary, ok := attempts[0]["response_summary"].(map[string]interface{})
+	require.True(t, ok)
+	successfulRefsRaw, ok := responseSummary["successful_document_refs"].(map[string]interface{})
+	require.True(t, ok)
+	assert.NotEmpty(t, successfulRefsRaw)
+}
+
+func TestODataPublicationTransport_ExecutePublicationOData_RejectsRequiredInvoiceWithUnresolvedLink(t *testing.T) {
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockPublicationODataService{}
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	_, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationType:   "pool.publication_odata",
+		PoolRunID:       "run-chain-invalid",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthActorForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"document_chains_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{
+							"chain_id": "sale_chain",
+							"documents": []interface{}{
+								map[string]interface{}{
+									"document_id":  "invoice",
+									"entity_name":  "Document_Invoice",
+									"invoice_mode": "required",
+									"link_to":      "sale",
+									"payload":      map[string]interface{}{"Amount": "100.00"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	require.Error(t, err)
+	var opErr *handlers.OperationExecutionError
+	require.True(t, errors.As(err, &opErr))
+	assert.Equal(t, ErrorCodePoolRuntimePublicationPayloadInvalid, opErr.Code)
+	assert.Contains(t, opErr.Message, "required invoice link_to")
+	assert.Equal(t, 0, service.createCalls)
+}
+
+func TestODataPublicationTransport_ExecutePublicationOData_UsesResolvedLinkRefsForRetriedInvoice(t *testing.T) {
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockPublicationODataService{}
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationType:   "pool.publication_odata",
+		PoolRunID:       "run-chain-retry-ref",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthActorForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"document_chains_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{
+							"chain_id": "sale_chain",
+							"allocation": map[string]interface{}{
+								"amount": "100.00",
+							},
+							"documents": []interface{}{
+								map[string]interface{}{
+									"document_id":  "invoice",
+									"entity_name":  "Document_Invoice",
+									"invoice_mode": "required",
+									"link_to":      "sale",
+									"field_mapping": map[string]interface{}{
+										"BaseDocument": "sale.ref",
+									},
+									"resolved_link_refs": map[string]interface{}{
+										"sale": "sale-ref-1",
+									},
+									"payload": map[string]interface{}{},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.Equal(t, "published", out["status"])
+	require.Len(t, service.createPayloads, 1)
+	assert.Equal(t, "sale-ref-1", service.createPayloads[0]["BaseDocument"])
 }
 
 func TestODataPublicationTransport_ExecutePublicationOData_ChainFailureIncludesDocumentRetryDiagnostics(t *testing.T) {

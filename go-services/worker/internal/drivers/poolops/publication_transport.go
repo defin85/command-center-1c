@@ -25,6 +25,8 @@ const (
 	defaultPublicationMaxAttempts      = 5
 	defaultPublicationRetryIntervalSec = 0
 	defaultPublicationRetryIntervalCap = 120
+	invoiceModeOptional                = "optional"
+	invoiceModeRequired                = "required"
 )
 
 const (
@@ -108,13 +110,24 @@ type publicationTargetResult struct {
 }
 
 type publicationDocument struct {
-	EntityName     string
-	IdempotencyKey string
-	Payload        map[string]interface{}
+	ChainID           string
+	DocumentID        string
+	DocumentRole      string
+	InvoiceMode       string
+	LinkTo            string
+	EntityName        string
+	IdempotencyKey    string
+	Payload           map[string]interface{}
+	Allocation        map[string]interface{}
+	FieldMapping      map[string]interface{}
+	TablePartsMapping map[string]interface{}
+	LinkRules         map[string]interface{}
+	ResolvedLinkRefs  map[string]string
 }
 
 type publicationDocumentsExecutionResult struct {
 	SuccessfulDocumentKeys []string
+	SuccessfulDocumentRefs map[string]string
 	FailedDocumentKey      string
 }
 
@@ -451,6 +464,20 @@ func (t *ODataPublicationTransport) publishTargetWithRetries(
 					publishResult.SuccessfulDocumentKeys...,
 				)
 			}
+			if len(publishResult.SuccessfulDocumentRefs) > 0 {
+				successfulDocumentRefs := make(map[string]interface{}, len(publishResult.SuccessfulDocumentRefs))
+				for key, value := range publishResult.SuccessfulDocumentRefs {
+					documentKey := strings.TrimSpace(key)
+					documentRef := strings.TrimSpace(value)
+					if documentKey == "" || documentRef == "" {
+						continue
+					}
+					successfulDocumentRefs[documentKey] = documentRef
+				}
+				if len(successfulDocumentRefs) > 0 {
+					responseSummary["successful_document_refs"] = successfulDocumentRefs
+				}
+			}
 			result.Attempts = append(result.Attempts, publicationTargetAttempt{
 				AttemptNumber:   attempt,
 				Status:          "success",
@@ -468,6 +495,20 @@ func (t *ODataPublicationTransport) publishTargetWithRetries(
 				[]string(nil),
 				publishResult.SuccessfulDocumentKeys...,
 			)
+		}
+		if len(publishResult.SuccessfulDocumentRefs) > 0 {
+			successfulDocumentRefs := make(map[string]interface{}, len(publishResult.SuccessfulDocumentRefs))
+			for key, value := range publishResult.SuccessfulDocumentRefs {
+				documentKey := strings.TrimSpace(key)
+				documentRef := strings.TrimSpace(value)
+				if documentKey == "" || documentRef == "" {
+					continue
+				}
+				successfulDocumentRefs[documentKey] = documentRef
+			}
+			if len(successfulDocumentRefs) > 0 {
+				responseSummary["successful_document_refs"] = successfulDocumentRefs
+			}
 		}
 		if strings.TrimSpace(publishResult.FailedDocumentKey) != "" {
 			responseSummary["failed_document_idempotency_key"] = strings.TrimSpace(
@@ -534,14 +575,35 @@ func (t *ODataPublicationTransport) publishDocumentsOnce(
 ) (publicationDocumentsExecutionResult, error) {
 	result := publicationDocumentsExecutionResult{
 		SuccessfulDocumentKeys: make([]string, 0, len(documents)),
+		SuccessfulDocumentRefs: make(map[string]string, len(documents)),
 	}
+	createdDocumentRefsByChain := map[string]map[string]string{}
 	for idx, doc := range documents {
 		documentPayload := cloneMap(doc.Payload)
 		documentEntityName := strings.TrimSpace(doc.EntityName)
 		if documentEntityName == "" {
 			documentEntityName = entityName
 		}
+		chainScope := strings.TrimSpace(doc.ChainID)
+		if chainScope == "" {
+			chainScope = "__default__"
+		}
+		chainDocumentRefs, ok := createdDocumentRefsByChain[chainScope]
+		if !ok {
+			chainDocumentRefs = map[string]string{}
+			createdDocumentRefsByChain[chainScope] = chainDocumentRefs
+		}
 		documentKey := resolvePublicationDocumentKey(entityName, doc, idx)
+		resolvedPayload, resolveErr := resolveDocumentPayloadForPublication(
+			documentPayload,
+			doc,
+			chainDocumentRefs,
+		)
+		if resolveErr != nil {
+			result.FailedDocumentKey = documentKey
+			return result, resolveErr
+		}
+		documentPayload = resolvedPayload
 		if externalKeyField != "" {
 			if _, exists := documentPayload[externalKeyField]; !exists {
 				documentPayload[externalKeyField] = buildExternalRunKey(
@@ -564,6 +626,10 @@ func (t *ODataPublicationTransport) publishDocumentsOnce(
 		if documentRef == "" {
 			continue
 		}
+		documentID := strings.TrimSpace(doc.DocumentID)
+		if documentID != "" {
+			chainDocumentRefs[documentID] = documentRef
+		}
 
 		err = t.service.Update(
 			ctx,
@@ -577,6 +643,7 @@ func (t *ODataPublicationTransport) publishDocumentsOnce(
 			return result, err
 		}
 		result.SuccessfulDocumentKeys = append(result.SuccessfulDocumentKeys, documentKey)
+		result.SuccessfulDocumentRefs[documentKey] = documentRef
 	}
 	return result, nil
 }
@@ -751,19 +818,48 @@ func normalizeDocumentChainsByDatabase(value interface{}) (map[string][]publicat
 		}
 
 		docs := make([]publicationDocument, 0)
-		for _, rawChain := range chainsSlice {
+		for chainIdx, rawChain := range chainsSlice {
 			chain, ok := rawChain.(map[string]interface{})
 			if !ok {
 				return nil, fmt.Errorf("document_chains_by_database[%s] contains non-object chain", databaseID)
 			}
+			chainID := readOptionalString(chain["chain_id"])
+			if chainID == "" {
+				chainID = fmt.Sprintf("__chain_%d", chainIdx)
+			}
+			allocation := readOptionalObject(chain["allocation"])
 			rawDocuments, ok := chain["documents"].([]interface{})
 			if !ok {
 				return nil, fmt.Errorf("document_chains_by_database[%s].documents must be a list", databaseID)
 			}
+			chainDocumentIDs := map[string]struct{}{}
+			chainDocuments := make([]publicationDocument, 0, len(rawDocuments))
+			hasInvoiceDocument := false
+			requiresInvoice := false
 			for _, rawDocument := range rawDocuments {
 				document, ok := rawDocument.(map[string]interface{})
 				if !ok {
 					return nil, fmt.Errorf("document_chains_by_database[%s] contains non-object document", databaseID)
+				}
+				documentID := readOptionalString(document["document_id"])
+				if documentID != "" {
+					chainDocumentIDs[documentID] = struct{}{}
+				}
+				documentRole := readOptionalString(document["document_role"])
+				if strings.EqualFold(documentRole, "invoice") {
+					hasInvoiceDocument = true
+				}
+				invoiceMode, invoiceModeErr := normalizeInvoiceMode(readOptionalString(document["invoice_mode"]))
+				if invoiceModeErr != nil {
+					return nil, fmt.Errorf(
+						"document_chains_by_database[%s] has invalid invoice_mode: %v",
+						databaseID,
+						invoiceModeErr,
+					)
+				}
+				if invoiceMode == invoiceModeRequired {
+					requiresInvoice = true
+					hasInvoiceDocument = true
 				}
 				entityName := readOptionalString(document["entity_name"])
 				if entityName == "" {
@@ -779,12 +875,46 @@ func normalizeDocumentChainsByDatabase(value interface{}) (map[string][]publicat
 						databaseID,
 					)
 				}
-				docs = append(docs, publicationDocument{
-					EntityName:     entityName,
-					IdempotencyKey: readOptionalString(document["idempotency_key"]),
-					Payload:        cloneMap(payload),
+				chainDocuments = append(chainDocuments, publicationDocument{
+					ChainID:           chainID,
+					DocumentID:        documentID,
+					DocumentRole:      documentRole,
+					InvoiceMode:       invoiceMode,
+					LinkTo:            readOptionalString(document["link_to"]),
+					EntityName:        entityName,
+					IdempotencyKey:    readOptionalString(document["idempotency_key"]),
+					Payload:           cloneMap(payload),
+					Allocation:        allocation,
+					FieldMapping:      readOptionalObject(document["field_mapping"]),
+					TablePartsMapping: readOptionalObject(document["table_parts_mapping"]),
+					LinkRules:         readOptionalObject(document["link_rules"]),
+					ResolvedLinkRefs:  readOptionalStringMap(document["resolved_link_refs"]),
 				})
 			}
+			if requiresInvoice && !hasInvoiceDocument {
+				return nil, fmt.Errorf(
+					"document_chains_by_database[%s] chain %s requires invoice document",
+					databaseID,
+					chainID,
+				)
+			}
+			for _, document := range chainDocuments {
+				linkTo := strings.TrimSpace(document.LinkTo)
+				if linkTo == "" {
+					continue
+				}
+				_, linkedInChain := chainDocumentIDs[linkTo]
+				linkedRef := strings.TrimSpace(document.ResolvedLinkRefs[linkTo])
+				if !linkedInChain && linkedRef == "" && strings.TrimSpace(document.InvoiceMode) == invoiceModeRequired {
+					return nil, fmt.Errorf(
+						"document_chains_by_database[%s] chain %s required invoice link_to %s is unresolved",
+						databaseID,
+						chainID,
+						linkTo,
+					)
+				}
+			}
+			docs = append(docs, chainDocuments...)
 		}
 		if len(docs) > 0 {
 			result[databaseID] = docs
@@ -904,6 +1034,317 @@ func cloneMap(src map[string]interface{}) map[string]interface{} {
 		out[k] = v
 	}
 	return out
+}
+
+func readOptionalObject(value interface{}) map[string]interface{} {
+	obj, ok := value.(map[string]interface{})
+	if !ok {
+		return map[string]interface{}{}
+	}
+	return cloneMap(obj)
+}
+
+func readOptionalStringMap(value interface{}) map[string]string {
+	obj, ok := value.(map[string]interface{})
+	if !ok {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(obj))
+	for rawKey, rawValue := range obj {
+		key := strings.TrimSpace(rawKey)
+		if key == "" {
+			continue
+		}
+		ref := strings.TrimSpace(fmt.Sprintf("%v", rawValue))
+		if ref == "" {
+			continue
+		}
+		out[key] = ref
+	}
+	return out
+}
+
+func normalizeInvoiceMode(raw string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(raw))
+	if mode == "" {
+		return invoiceModeOptional, nil
+	}
+	if mode != invoiceModeOptional && mode != invoiceModeRequired {
+		return "", fmt.Errorf("invoice_mode must be optional|required")
+	}
+	return mode, nil
+}
+
+func resolveDocumentPayloadForPublication(
+	payload map[string]interface{},
+	document publicationDocument,
+	createdDocumentRefs map[string]string,
+) (map[string]interface{}, error) {
+	resolvedPayload := cloneMap(payload)
+	applyFieldMappings(
+		resolvedPayload,
+		document.FieldMapping,
+		document.Allocation,
+		createdDocumentRefs,
+		document.ResolvedLinkRefs,
+	)
+	applyTablePartsMappings(
+		resolvedPayload,
+		document.TablePartsMapping,
+		document.Allocation,
+		createdDocumentRefs,
+		document.ResolvedLinkRefs,
+	)
+	if err := validateDocumentLinkage(
+		document,
+		resolvedPayload,
+		createdDocumentRefs,
+	); err != nil {
+		return nil, err
+	}
+	return resolvedPayload, nil
+}
+
+func applyFieldMappings(
+	payload map[string]interface{},
+	fieldMapping map[string]interface{},
+	allocation map[string]interface{},
+	createdDocumentRefs map[string]string,
+	resolvedLinkRefs map[string]string,
+) {
+	for rawFieldName, mappingValue := range fieldMapping {
+		fieldName := strings.TrimSpace(rawFieldName)
+		if fieldName == "" {
+			continue
+		}
+		resolvedValue, ok := resolveMappingValue(
+			mappingValue,
+			allocation,
+			createdDocumentRefs,
+			resolvedLinkRefs,
+		)
+		if !ok {
+			continue
+		}
+		payload[fieldName] = resolvedValue
+	}
+}
+
+func applyTablePartsMappings(
+	payload map[string]interface{},
+	tablePartsMapping map[string]interface{},
+	allocation map[string]interface{},
+	createdDocumentRefs map[string]string,
+	resolvedLinkRefs map[string]string,
+) {
+	for rawTableName, rawRows := range tablePartsMapping {
+		tableName := strings.TrimSpace(rawTableName)
+		if tableName == "" {
+			continue
+		}
+		rows, ok := rawRows.([]interface{})
+		if !ok {
+			continue
+		}
+		compiledRows := make([]interface{}, 0, len(rows))
+		for _, rawRow := range rows {
+			row, ok := rawRow.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			compiledRow := map[string]interface{}{}
+			for rawColumnName, mappingValue := range row {
+				columnName := strings.TrimSpace(rawColumnName)
+				if columnName == "" {
+					continue
+				}
+				resolvedValue, resolved := resolveMappingValue(
+					mappingValue,
+					allocation,
+					createdDocumentRefs,
+					resolvedLinkRefs,
+				)
+				if resolved {
+					compiledRow[columnName] = resolvedValue
+				}
+			}
+			if len(compiledRow) > 0 {
+				compiledRows = append(compiledRows, compiledRow)
+			}
+		}
+		if len(compiledRows) > 0 {
+			payload[tableName] = compiledRows
+		}
+	}
+}
+
+func resolveMappingValue(
+	mappingValue interface{},
+	allocation map[string]interface{},
+	createdDocumentRefs map[string]string,
+	resolvedLinkRefs map[string]string,
+) (interface{}, bool) {
+	switch value := mappingValue.(type) {
+	case string:
+		token := strings.TrimSpace(value)
+		if token == "" {
+			return nil, false
+		}
+		if strings.HasPrefix(token, "allocation.") {
+			path := strings.TrimSpace(strings.TrimPrefix(token, "allocation."))
+			if path == "" {
+				return nil, false
+			}
+			return resolveDottedPath(allocation, path)
+		}
+		if strings.HasSuffix(token, ".ref") {
+			documentID := strings.TrimSpace(strings.TrimSuffix(token, ".ref"))
+			if documentID == "" {
+				return nil, false
+			}
+			if ref := strings.TrimSpace(createdDocumentRefs[documentID]); ref != "" {
+				return ref, true
+			}
+			if ref := strings.TrimSpace(resolvedLinkRefs[documentID]); ref != "" {
+				return ref, true
+			}
+			return nil, false
+		}
+		return token, true
+	case map[string]interface{}:
+		resolvedMap := map[string]interface{}{}
+		for rawKey, nested := range value {
+			key := strings.TrimSpace(rawKey)
+			if key == "" {
+				continue
+			}
+			resolvedValue, ok := resolveMappingValue(
+				nested,
+				allocation,
+				createdDocumentRefs,
+				resolvedLinkRefs,
+			)
+			if ok {
+				resolvedMap[key] = resolvedValue
+			}
+		}
+		return resolvedMap, len(resolvedMap) > 0
+	case []interface{}:
+		items := make([]interface{}, 0, len(value))
+		for _, nested := range value {
+			resolvedValue, ok := resolveMappingValue(
+				nested,
+				allocation,
+				createdDocumentRefs,
+				resolvedLinkRefs,
+			)
+			if ok {
+				items = append(items, resolvedValue)
+			}
+		}
+		return items, len(items) > 0
+	case nil:
+		return nil, false
+	default:
+		return value, true
+	}
+}
+
+func resolveDottedPath(source map[string]interface{}, path string) (interface{}, bool) {
+	current := interface{}(source)
+	for _, rawPart := range strings.Split(path, ".") {
+		part := strings.TrimSpace(rawPart)
+		if part == "" {
+			return nil, false
+		}
+		node, ok := current.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+		next, exists := node[part]
+		if !exists {
+			return nil, false
+		}
+		current = next
+	}
+	return current, true
+}
+
+func validateDocumentLinkage(
+	document publicationDocument,
+	payload map[string]interface{},
+	createdDocumentRefs map[string]string,
+) error {
+	invoiceMode := strings.TrimSpace(document.InvoiceMode)
+	linkTo := strings.TrimSpace(document.LinkTo)
+
+	if invoiceMode == invoiceModeRequired && linkTo == "" {
+		return fmt.Errorf(
+			"required invoice document %s must declare link_to",
+			strings.TrimSpace(document.DocumentID),
+		)
+	}
+	if linkTo != "" {
+		linkedDocumentRef := strings.TrimSpace(createdDocumentRefs[linkTo])
+		if linkedDocumentRef == "" {
+			linkedDocumentRef = strings.TrimSpace(document.ResolvedLinkRefs[linkTo])
+		}
+		if linkedDocumentRef == "" && invoiceMode == invoiceModeRequired {
+			return fmt.Errorf(
+				"required invoice document %s has unresolved link_to reference %s",
+				strings.TrimSpace(document.DocumentID),
+				linkTo,
+			)
+		}
+		if linkedDocumentRef != "" && invoiceMode == invoiceModeRequired && !payloadContainsValue(payload, linkedDocumentRef) {
+			return fmt.Errorf(
+				"required invoice document %s must include mapped link reference for %s",
+				strings.TrimSpace(document.DocumentID),
+				linkTo,
+			)
+		}
+	}
+
+	dependsOn := strings.TrimSpace(readOptionalString(document.LinkRules["depends_on"]))
+	if dependsOn == "" {
+		return nil
+	}
+	dependencyRef := strings.TrimSpace(createdDocumentRefs[dependsOn])
+	if dependencyRef == "" {
+		dependencyRef = strings.TrimSpace(document.ResolvedLinkRefs[dependsOn])
+	}
+	if dependencyRef == "" {
+		return fmt.Errorf(
+			"document %s depends_on unresolved document %s",
+			strings.TrimSpace(document.DocumentID),
+			dependsOn,
+		)
+	}
+	return nil
+}
+
+func payloadContainsValue(value interface{}, expected string) bool {
+	expectedValue := strings.TrimSpace(expected)
+	if expectedValue == "" {
+		return false
+	}
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for _, nested := range typed {
+			if payloadContainsValue(nested, expectedValue) {
+				return true
+			}
+		}
+	case []interface{}:
+		for _, nested := range typed {
+			if payloadContainsValue(nested, expectedValue) {
+				return true
+			}
+		}
+	case string:
+		return strings.TrimSpace(typed) == expectedValue
+	}
+	return false
 }
 
 func publicationAttemptToMap(databaseID, entityName string, attempt publicationTargetAttempt) map[string]interface{} {

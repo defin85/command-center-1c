@@ -2764,6 +2764,7 @@ def test_retry_pool_run_failed_endpoint_builds_subset_from_persisted_document_pl
         response_summary={
             "posted": False,
             "successful_document_idempotency_keys": ["doc-sale-key"],
+            "successful_document_refs": {"doc-sale-key": "sale-doc-ref"},
             "failed_document_idempotency_key": "doc-invoice-key",
         },
     )
@@ -2825,8 +2826,12 @@ def test_retry_pool_run_failed_endpoint_builds_subset_from_persisted_document_pl
                         "document_role": "invoice",
                         "idempotency_key": "doc-invoice-key",
                         "invoice_mode": "required",
+                        "field_mapping": {},
+                        "table_parts_mapping": {},
+                        "link_rules": {},
                         "payload": {"Amount": "20.00"},
                         "link_to": "doc-sale",
+                        "resolved_link_refs": {"doc-sale": "sale-doc-ref"},
                     }
                 ],
             }

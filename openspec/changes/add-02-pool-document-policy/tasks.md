@@ -36,3 +36,10 @@
 ## 6. Validation
 - [x] 6.1 Прогнать `openspec validate add-02-pool-document-policy --strict --no-interactive`.
 - [x] 6.2 Прогнать целевые тесты backend/worker/frontend, затронутые новым policy-контрактом.
+
+## 7. Post-review follow-up (осталось доделать)
+- [ ] 7.1 Закрыть UI-риск round-trip metadata: в `PoolCatalogPage` сохранить `node.metadata`/`edge.metadata` без потери пользовательских полей при редактировании `document_policy`.
+- [ ] 7.2 Добавить frontend regression test на round-trip topology metadata (включая `edge.metadata.document_policy` и произвольные metadata-поля).
+- [ ] 7.3 Добавить contract parity test для `PoolRunRetryRequest`, чтобы `target_database_ids` проверялся на соответствие runtime serializer и OpenAPI.
+- [ ] 7.4 Прогнать целевые backend тесты (`pytest`) в окружении orchestrator и зафиксировать результаты в change (локально сейчас `pytest` недоступен).
+- [ ] 7.5 Прогнать UI smoke/e2e сценарий retry для цепочки с `invoice_mode=required` (проверка, что linkage сохраняется и retry не дублирует успешные шаги).

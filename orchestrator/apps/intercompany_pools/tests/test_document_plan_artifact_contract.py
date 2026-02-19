@@ -123,3 +123,42 @@ def test_build_publication_payload_from_document_plan_artifact_ignores_raw_run_i
     assert payload["pool_runtime"]["document_chains_by_database"]["db-1"][0]["documents"][0][
         "entity_name"
     ] == "Document_Sales"
+
+
+def test_build_publication_payload_from_document_plan_artifact_materializes_mapping_and_link_refs() -> None:
+    artifact = _build_artifact()
+    artifact["targets"][0]["chains"][0]["documents"] = [
+        {
+            "document_id": "sale",
+            "entity_name": "Document_Sales",
+            "document_role": "sale",
+            "field_mapping": {"Amount": "allocation.amount"},
+            "table_parts_mapping": {"Goods": [{"Qty": "allocation.amount"}]},
+            "link_rules": {},
+            "invoice_mode": "optional",
+            "idempotency_key": "doc-plan:sale",
+        },
+        {
+            "document_id": "invoice",
+            "entity_name": "Document_Invoice",
+            "document_role": "invoice",
+            "field_mapping": {"BaseDocument": "sale.ref", "Amount": "allocation.amount"},
+            "table_parts_mapping": {},
+            "link_rules": {"depends_on": "sale"},
+            "invoice_mode": "required",
+            "idempotency_key": "doc-plan:invoice",
+            "link_to": "sale",
+            "resolved_link_refs": {"sale": "sale-ref-123"},
+        },
+    ]
+    artifact["compile_summary"]["documents_count"] = 2
+
+    payload = build_publication_payload_from_document_plan_artifact(artifact=artifact)
+    chain = payload["pool_runtime"]["document_chains_by_database"]["db-1"][0]
+    sale_payload = chain["documents"][0]["payload"]
+    invoice_payload = chain["documents"][1]["payload"]
+
+    assert sale_payload["Amount"] == "100.00"
+    assert sale_payload["Goods"] == [{"Qty": "100.00"}]
+    assert invoice_payload["Amount"] == "100.00"
+    assert invoice_payload["BaseDocument"] == "sale-ref-123"

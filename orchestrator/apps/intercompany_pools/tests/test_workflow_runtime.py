@@ -643,6 +643,7 @@ def test_retry_workflow_execution_uses_persisted_document_plan_and_skips_success
         response_summary={
             "posted": False,
             "successful_document_idempotency_keys": ["doc-sale-key"],
+            "successful_document_refs": {"doc-sale-key": "sale-doc-ref"},
             "failed_document_idempotency_key": "doc-invoice-key",
         },
     )
@@ -692,8 +693,12 @@ def test_retry_workflow_execution_uses_persisted_document_plan_and_skips_success
                         "document_role": "invoice",
                         "idempotency_key": "doc-invoice-key",
                         "invoice_mode": "required",
+                        "field_mapping": {},
+                        "table_parts_mapping": {},
+                        "link_rules": {},
                         "payload": {"Amount": "100.00"},
                         "link_to": "sale-doc",
+                        "resolved_link_refs": {"sale-doc": "sale-doc-ref"},
                     }
                 ],
             }

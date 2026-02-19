@@ -696,6 +696,10 @@ def _filter_retry_publication_payload_from_artifact(
         run=run,
         target_database_ids=target_database_ids,
     )
+    successful_document_refs_by_database = _collect_successful_document_refs_for_retry(
+        run=run,
+        target_database_ids=target_database_ids,
+    )
 
     filtered_chains_by_database: dict[str, list[dict[str, Any]]] = {}
     for database_id, chains_raw in chains_by_database_input.items():
@@ -710,6 +714,7 @@ def _filter_retry_publication_payload_from_artifact(
         filtered_chains = _filter_retry_chains_by_document_keys(
             chains_raw=chains_raw,
             failed_document_keys=failed_document_keys,
+            successful_document_refs=successful_document_refs_by_database.get(normalized_database_id),
         )
         if filtered_chains:
             filtered_chains_by_database[normalized_database_id] = filtered_chains
@@ -805,6 +810,45 @@ def _collect_failed_document_keys_for_retry(
     return failed_keys_by_database
 
 
+def _collect_successful_document_refs_for_retry(
+    *,
+    run: PoolRun,
+    target_database_ids: list[str],
+) -> dict[str, dict[str, str]]:
+    if not target_database_ids:
+        return {}
+
+    attempt_rows = (
+        PoolPublicationAttempt.objects.filter(
+            run=run,
+            target_database_id__in=target_database_ids,
+        )
+        .order_by("target_database_id", "attempt_number", "created_at")
+        .only("target_database_id", "response_summary")
+    )
+    refs_by_database: dict[str, dict[str, str]] = defaultdict(dict)
+    for attempt in attempt_rows:
+        database_id = str(attempt.target_database_id)
+        response_summary = (
+            attempt.response_summary if isinstance(attempt.response_summary, dict) else {}
+        )
+        successful_refs = response_summary.get("successful_document_refs")
+        if not isinstance(successful_refs, dict):
+            continue
+        normalized_refs = refs_by_database[database_id]
+        for raw_key, raw_ref in successful_refs.items():
+            document_key = str(raw_key or "").strip()
+            document_ref = str(raw_ref or "").strip()
+            if not document_key or not document_ref:
+                continue
+            normalized_refs[document_key] = document_ref
+    return {
+        database_id: dict(refs)
+        for database_id, refs in refs_by_database.items()
+        if refs
+    }
+
+
 def _normalize_document_keys(raw_keys: object) -> list[str]:
     if not isinstance(raw_keys, list):
         return []
@@ -823,6 +867,7 @@ def _filter_retry_chains_by_document_keys(
     *,
     chains_raw: list[Any],
     failed_document_keys: set[str] | None,
+    successful_document_refs: dict[str, str] | None,
 ) -> list[dict[str, Any]]:
     filtered_chains: list[dict[str, Any]] = []
     for chain_raw in chains_raw:
@@ -833,14 +878,53 @@ def _filter_retry_chains_by_document_keys(
         if not isinstance(documents_raw, list):
             continue
 
+        document_idempotency_by_id: dict[str, str] = {}
+        included_document_ids: set[str] = set()
+        for document_raw in documents_raw:
+            if not isinstance(document_raw, dict):
+                continue
+            document_id = str(document_raw.get("document_id") or "").strip()
+            document_key = str(document_raw.get("idempotency_key") or "").strip()
+            if document_id and document_key:
+                document_idempotency_by_id[document_id] = document_key
+            if _is_document_selected_for_retry(
+                document=document_raw,
+                failed_document_keys=failed_document_keys,
+            ) and document_id:
+                included_document_ids.add(document_id)
+
         filtered_documents: list[dict[str, Any]] = []
         for document_raw in documents_raw:
             if not isinstance(document_raw, dict):
                 continue
-            document = dict(document_raw)
-            document_key = str(document.get("idempotency_key") or "").strip()
-            if failed_document_keys and document_key and document_key not in failed_document_keys:
+            if not _is_document_selected_for_retry(
+                document=document_raw,
+                failed_document_keys=failed_document_keys,
+            ):
                 continue
+            document = dict(document_raw)
+
+            resolved_link_refs = (
+                dict(document.get("resolved_link_refs"))
+                if isinstance(document.get("resolved_link_refs"), dict)
+                else {}
+            )
+            for dependency_document_id in _extract_document_ref_dependencies(document=document):
+                if dependency_document_id in included_document_ids:
+                    continue
+                dependency_document_key = document_idempotency_by_id.get(dependency_document_id)
+                if not dependency_document_key:
+                    continue
+                if not isinstance(successful_document_refs, dict):
+                    continue
+                dependency_document_ref = str(
+                    successful_document_refs.get(dependency_document_key) or ""
+                ).strip()
+                if dependency_document_ref:
+                    resolved_link_refs[dependency_document_id] = dependency_document_ref
+            if resolved_link_refs:
+                document["resolved_link_refs"] = resolved_link_refs
+
             filtered_documents.append(document)
 
         if not filtered_documents:
@@ -848,6 +932,53 @@ def _filter_retry_chains_by_document_keys(
         chain["documents"] = filtered_documents
         filtered_chains.append(chain)
     return filtered_chains
+
+
+def _is_document_selected_for_retry(
+    *,
+    document: dict[str, Any],
+    failed_document_keys: set[str] | None,
+) -> bool:
+    if not failed_document_keys:
+        return True
+    document_key = str(document.get("idempotency_key") or "").strip()
+    if not document_key:
+        return True
+    return document_key in failed_document_keys
+
+
+def _extract_document_ref_dependencies(*, document: dict[str, Any]) -> set[str]:
+    dependencies: set[str] = set()
+    link_to = str(document.get("link_to") or "").strip()
+    if link_to:
+        dependencies.add(link_to)
+
+    link_rules = document.get("link_rules")
+    if isinstance(link_rules, dict):
+        depends_on = str(link_rules.get("depends_on") or "").strip()
+        if depends_on:
+            dependencies.add(depends_on)
+
+    _collect_document_ref_dependencies(document.get("field_mapping"), dependencies)
+    _collect_document_ref_dependencies(document.get("table_parts_mapping"), dependencies)
+    return dependencies
+
+
+def _collect_document_ref_dependencies(value: object, dependencies: set[str]) -> None:
+    if isinstance(value, str):
+        token = value.strip()
+        if token.endswith(".ref"):
+            document_id = token.removesuffix(".ref").strip()
+            if document_id:
+                dependencies.add(document_id)
+        return
+    if isinstance(value, dict):
+        for nested_value in value.values():
+            _collect_document_ref_dependencies(nested_value, dependencies)
+        return
+    if isinstance(value, list):
+        for nested_value in value:
+            _collect_document_ref_dependencies(nested_value, dependencies)
 
 
 def _build_legacy_documents_by_database_from_chains(
