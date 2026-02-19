@@ -289,6 +289,9 @@ def start_pool_run_retry_workflow_execution(
         retry_input_context["pool_runtime_publication_payload"] = _build_retry_publication_payload(
             retry_request
         )
+        retry_input_context["pool_runtime_retry_settings"] = {
+            "use_retry_subset_payload": bool(retry_request.get("use_retry_subset_payload")),
+        }
         execution = workflow_template.create_execution(
             retry_input_context,
             tenant=locked_run.tenant,
@@ -407,7 +410,6 @@ def _build_input_context(
         "period_start": run.period_start.isoformat(),
         "period_end": run.period_end.isoformat() if run.period_end else None,
         "run_input": run_input,
-        "pool_runtime_publication_payload": _build_retry_publication_payload(run_input),
         "approval_required": run.mode == PoolRunMode.SAFE,
         "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
         "approval_state": _resolve_approval_state_for_input_context(run=run),
@@ -543,6 +545,7 @@ def _summarize_retry_request(retry_request: dict[str, Any]) -> dict[str, Any]:
         "requested_target_ids": target_ids,
         "requested_targets_count": len(target_ids),
         "requested_documents_count": documents_total,
+        "use_retry_subset_payload": bool(payload.get("use_retry_subset_payload")),
         "max_attempts": payload.get("max_attempts"),
         "retry_interval_seconds": payload.get("retry_interval_seconds"),
         "external_key_field": str(payload.get("external_key_field") or "").strip(),

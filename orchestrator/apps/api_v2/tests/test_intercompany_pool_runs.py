@@ -2340,6 +2340,7 @@ def test_retry_pool_run_failed_endpoint_returns_accepted_workflow_reference_and_
                     str(db_one.id): [{"Amount": "100.00"}, {"Amount": "110.00"}],
                     str(db_two.id): [{"Amount": "90.00"}],
                 },
+                "use_retry_subset_payload": True,
                 "max_attempts": 1,
             },
             format="json",
@@ -2371,6 +2372,10 @@ def test_retry_pool_run_failed_endpoint_returns_accepted_workflow_reference_and_
     assert retry_request.get("requested_target_ids") == [str(db_two.id)]
     assert retry_request.get("requested_targets_count") == 1
     assert retry_request.get("requested_documents_count") == 1
+    assert retry_request.get("use_retry_subset_payload") is True
+    assert retry_execution.input_context.get("pool_runtime_retry_settings") == {
+        "use_retry_subset_payload": True,
+    }
     publication_payload = retry_execution.input_context.get("pool_runtime_publication_payload")
     assert isinstance(publication_payload, dict)
     pool_runtime_payload = publication_payload.get("pool_runtime")

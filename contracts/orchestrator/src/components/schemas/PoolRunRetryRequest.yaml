@@ -21,6 +21,9 @@ properties:
   external_key_field:
     type: string
     default: ExternalRunKey
+  use_retry_subset_payload:
+    type: boolean
+    default: false
 required:
   - documents_by_database
   - entity_name

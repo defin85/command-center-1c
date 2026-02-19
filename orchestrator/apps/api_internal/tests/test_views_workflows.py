@@ -940,6 +940,61 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
             {"operation_type": "pool.publication_odata"},
         )
 
+    def test_update_workflow_status_distribution_coverage_gap_code_propagates_to_facade_diagnostics(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        username = f"pool-facade-coverage-user-{uuid4().hex[:8]}"
+        user = User.objects.create_user(username=username, password="pass")
+        TenantMember.objects.create(
+            tenant=tenant,
+            user=user,
+            role=TenantMember.ROLE_ADMIN,
+        )
+
+        update_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "failed",
+                "error_message": "missing publish-target nodes: node-1",
+                "error_code": "POOL_DISTRIBUTION_COVERAGE_GAP",
+                "error_details": {
+                    "node_id": "reconciliation_report",
+                    "missing_target_node_ids": ["node-1"],
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(update_response.data["success"])
+        self.assertEqual(update_response.data["error_code"], "POOL_DISTRIBUTION_COVERAGE_GAP")
+
+        facade_client = APIClient()
+        facade_client.force_authenticate(user=user)
+        facade_client.credentials(HTTP_X_CC1C_TENANT_ID=str(tenant.id))
+        facade_response = facade_client.get(f"/api/v2/pools/runs/{run.id}/")
+
+        self.assertEqual(facade_response.status_code, status.HTTP_200_OK)
+        run_payload = facade_response.data["run"]
+        self.assertEqual(run_payload["status"], "failed")
+        self.assertEqual(run_payload["workflow_status"], "failed")
+        diagnostics = run_payload.get("diagnostics")
+        self.assertIsInstance(diagnostics, list)
+        workflow_failure_diagnostic = next(
+            (
+                item
+                for item in diagnostics
+                if isinstance(item, dict)
+                and item.get("code") == "POOL_DISTRIBUTION_COVERAGE_GAP"
+            ),
+            None,
+        )
+        self.assertIsNotNone(workflow_failure_diagnostic)
+        self.assertEqual(
+            workflow_failure_diagnostic.get("error_details"),
+            {"node_id": "reconciliation_report"},
+        )
+
     def test_execute_pool_runtime_step_returns_completed_for_matching_context(self):
         tenant, run, execution, _ = self._create_pool_runtime_fixture()
         payload = self._build_bridge_request_payload(
@@ -1345,6 +1400,28 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["code"], "POOL_RUNTIME_BRIDGE_RETRY_BUDGET_EXHAUSTED")
         self.assertIn("retry budget exhausted", response.data["error"])
+
+    def test_execute_pool_runtime_step_returns_distribution_coverage_gap_machine_readable_code(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        payload = self._build_bridge_request_payload(
+            tenant_id=str(tenant.id),
+            pool_run_id=str(run.id),
+            workflow_execution_id=str(execution.id),
+        )
+
+        with patch(
+            "apps.intercompany_pools.pool_domain_steps.execute_pool_runtime_step",
+            side_effect=ValueError("POOL_DISTRIBUTION_COVERAGE_GAP: missing publish-target nodes: node-1"),
+        ):
+            response = self.client.post(
+                "/api/v2/internal/workflows/execute-pool-runtime-step",
+                payload,
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "POOL_DISTRIBUTION_COVERAGE_GAP")
+        self.assertIn("missing publish-target nodes", response.data["error"])
 
     def test_execute_pool_runtime_step_returns_internal_error_for_unhandled_exception(self):
         tenant, run, execution, _ = self._create_pool_runtime_fixture()

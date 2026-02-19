@@ -274,6 +274,7 @@ def _build_retry_command_fingerprint(
     max_attempts: int,
     retry_interval_seconds: int,
     external_key_field: str,
+    use_retry_subset_payload: bool,
 ) -> str:
     fingerprint_payload = "|".join(
         [
@@ -283,6 +284,7 @@ def _build_retry_command_fingerprint(
             f"max_attempts={max_attempts}",
             f"retry_interval_seconds={retry_interval_seconds}",
             f"external_key_field={external_key_field}",
+            f"use_retry_subset_payload={int(bool(use_retry_subset_payload))}",
         ]
     )
     digest = hashlib.sha256(fingerprint_payload.encode("utf-8")).hexdigest()
@@ -1426,6 +1428,7 @@ class PoolRunRetryRequestSerializer(serializers.Serializer):
         max_value=MAX_RETRY_INTERVAL_SECONDS,
     )
     external_key_field = serializers.CharField(required=False, default="ExternalRunKey")
+    use_retry_subset_payload = serializers.BooleanField(required=False, default=False)
 
 
 class PoolRunRetryTargetSummarySerializer(serializers.Serializer):
@@ -2945,6 +2948,7 @@ def retry_pool_run_failed(request, run_id: UUID):
             max_attempts=int(data.get("max_attempts", MAX_PUBLICATION_ATTEMPTS)),
             retry_interval_seconds=int(data.get("retry_interval_seconds", 0)),
             external_key_field=str(data.get("external_key_field") or "ExternalRunKey"),
+            use_retry_subset_payload=bool(data.get("use_retry_subset_payload")),
         )
         pending_snapshot = {
             "accepted": True,

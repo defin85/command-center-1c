@@ -27,6 +27,8 @@ def _create_pool_run(
     mode: str,
     direction: str = PoolRunDirection.BOTTOM_UP,
     run_input: dict[str, object] | None = None,
+    period_start: date = date(2026, 1, 1),
+    period_end: date | None = None,
 ) -> PoolRun:
     tenant = Tenant.objects.create(
         slug=f"pool-domain-{uuid4().hex[:8]}",
@@ -47,7 +49,8 @@ def _create_pool_run(
         pool=pool,
         mode=mode,
         direction=direction,
-        period_start=date(2026, 1, 1),
+        period_start=period_start,
+        period_end=period_end,
         run_input=payload,
     )
     run.mark_validated(summary={"rows": 1}, diagnostics=[])
@@ -164,6 +167,88 @@ def _attach_active_topology(*, run: PoolRun) -> dict[str, str]:
         "right_database_id": str(right_db.id),
         "left_node_id": str(left_node.id),
         "right_node_id": str(right_node.id),
+    }
+
+
+def _attach_interval_topology_with_rotating_targets(*, run: PoolRun) -> dict[str, str]:
+    if run.period_end is None:
+        raise AssertionError("run.period_end must be set for interval topology fixture")
+
+    first_day = run.period_start
+    second_day = run.period_end
+
+    root_day_1 = Organization.objects.create(
+        tenant=run.tenant,
+        name=f"Root Day 1 {uuid4().hex[:6]}",
+        inn=f"76{uuid4().hex[:10]}",
+    )
+    root_day_2 = Organization.objects.create(
+        tenant=run.tenant,
+        name=f"Root Day 2 {uuid4().hex[:6]}",
+        inn=f"77{uuid4().hex[:10]}",
+    )
+
+    first_db = _create_database(tenant=run.tenant, suffix="interval-first")
+    second_db = _create_database(tenant=run.tenant, suffix="interval-second")
+    first_org = Organization.objects.create(
+        tenant=run.tenant,
+        database=first_db,
+        name=f"First Target {uuid4().hex[:6]}",
+        inn=f"78{uuid4().hex[:10]}",
+    )
+    second_org = Organization.objects.create(
+        tenant=run.tenant,
+        database=second_db,
+        name=f"Second Target {uuid4().hex[:6]}",
+        inn=f"79{uuid4().hex[:10]}",
+    )
+
+    root_node_day_1 = PoolNodeVersion.objects.create(
+        pool=run.pool,
+        organization=root_day_1,
+        effective_from=first_day,
+        effective_to=first_day,
+        is_root=True,
+    )
+    first_target_node = PoolNodeVersion.objects.create(
+        pool=run.pool,
+        organization=first_org,
+        effective_from=first_day,
+        effective_to=first_day,
+    )
+    PoolEdgeVersion.objects.create(
+        pool=run.pool,
+        parent_node=root_node_day_1,
+        child_node=first_target_node,
+        effective_from=first_day,
+        effective_to=first_day,
+        weight=Decimal("1"),
+    )
+
+    root_node_day_2 = PoolNodeVersion.objects.create(
+        pool=run.pool,
+        organization=root_day_2,
+        effective_from=second_day,
+        is_root=True,
+    )
+    second_target_node = PoolNodeVersion.objects.create(
+        pool=run.pool,
+        organization=second_org,
+        effective_from=second_day,
+    )
+    PoolEdgeVersion.objects.create(
+        pool=run.pool,
+        parent_node=root_node_day_2,
+        child_node=second_target_node,
+        effective_from=second_day,
+        weight=Decimal("1"),
+    )
+
+    return {
+        "first_target_inn": first_org.inn,
+        "second_target_inn": second_org.inn,
+        "first_database_id": str(first_db.id),
+        "second_database_id": str(second_db.id),
     }
 
 
@@ -328,6 +413,156 @@ def test_distribution_bottom_up_converges_to_root_total() -> None:
 
 
 @pytest.mark.django_db
+def test_distribution_top_down_aggregates_over_period_interval() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 1, 2),
+        run_input={
+            "starting_amount": "100.00",
+            "entity_name": "Document_IntercompanyPoolDistribution",
+        },
+    )
+    topology = _attach_interval_topology_with_rotating_targets(run=run)
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+        },
+    )
+
+    output = execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    artifact = output["distribution_artifact"]
+    assert artifact["coverage"]["is_full"] is True
+    assert artifact["balance"]["is_balanced"] is True
+    documents_by_database = output["publication_payload"]["pool_runtime"]["documents_by_database"]
+    assert set(documents_by_database.keys()) == {
+        topology["first_database_id"],
+        topology["second_database_id"],
+    }
+    totals_by_database = {
+        db_id: sum(Decimal(str(item.get("Amount"))) for item in docs)
+        for db_id, docs in documents_by_database.items()
+    }
+    assert totals_by_database[topology["first_database_id"]] == Decimal("50.00")
+    assert totals_by_database[topology["second_database_id"]] == Decimal("50.00")
+
+
+@pytest.mark.django_db
+def test_distribution_bottom_up_uses_row_dates_across_period_interval() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.BOTTOM_UP,
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 1, 2),
+    )
+    topology = _attach_interval_topology_with_rotating_targets(run=run)
+    run.run_input = {
+        "entity_name": "Document_IntercompanyPoolDistribution",
+        "source_payload": [
+            {"inn": topology["first_target_inn"], "amount": "40.00", "date": "2026-01-01"},
+            {"inn": topology["second_target_inn"], "amount": "60.00", "date": "2026-01-02"},
+        ],
+    }
+    run.save(update_fields=["run_input", "updated_at"])
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+        },
+    )
+
+    output = execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.bottom_up",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    artifact = output["distribution_artifact"]
+    assert artifact["coverage"]["is_full"] is True
+    assert artifact["balance"]["source_total"] == "100.00"
+    assert artifact["balance"]["distributed_total"] == "100.00"
+    assert artifact["balance"]["is_balanced"] is True
+    documents_by_database = output["publication_payload"]["pool_runtime"]["documents_by_database"]
+    assert set(documents_by_database.keys()) == {
+        topology["first_database_id"],
+        topology["second_database_id"],
+    }
+    totals_by_database = {
+        db_id: sum(Decimal(str(item.get("Amount"))) for item in docs)
+        for db_id, docs in documents_by_database.items()
+    }
+    assert totals_by_database[topology["first_database_id"]] == Decimal("40.00")
+    assert totals_by_database[topology["second_database_id"]] == Decimal("60.00")
+
+
+@pytest.mark.django_db
+def test_retry_subset_payload_is_locked_when_flag_enabled() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={
+            "starting_amount": "100.00",
+            "entity_name": "Document_IntercompanyPoolDistribution",
+            "documents_by_database": {"db-raw-override": [{"Amount": "999.00"}]},
+        },
+    )
+    topology = _attach_active_topology(run=run)
+    locked_retry_payload = {
+        "pool_runtime": {
+            "entity_name": "Document_IntercompanyPoolDistribution",
+            "documents_by_database": {
+                topology["left_database_id"]: [{"Amount": "10.00"}],
+            },
+            "max_attempts": 1,
+            "retry_interval_seconds": 0,
+            "external_key_field": "ExternalRunKey",
+        }
+    }
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+            "pool_runtime_retry_settings": {"use_retry_subset_payload": True},
+            "pool_runtime_publication_payload": locked_retry_payload,
+        },
+    )
+
+    distribution_output = execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+    assert distribution_output["publication_payload"] == locked_retry_payload
+
+    reconciliation_output = execute_pool_runtime_step(
+        operation_type="pool.reconciliation_report",
+        rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+    assert reconciliation_output["publication_payload"] == locked_retry_payload
+
+
+@pytest.mark.django_db
 def test_reconciliation_fails_closed_on_balance_mismatch() -> None:
     run = _create_pool_run(
         mode=PoolRunMode.UNSAFE,
@@ -371,6 +606,55 @@ def test_reconciliation_fails_closed_on_balance_mismatch() -> None:
             context={"pool_run_id": str(run.id)},
             execution=execution,
         )
+
+
+@pytest.mark.django_db
+def test_reconciliation_failure_does_not_store_reconciliation_output() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={"starting_amount": "100.00"},
+    )
+    _attach_active_topology(run=run)
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+        },
+    )
+    distribution_output = execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    execution.refresh_from_db(fields=["input_context"])
+    artifact = dict(execution.input_context.get("pool_runtime_distribution_artifact") or {})
+    balance = dict(artifact.get("balance") or {})
+    balance["is_balanced"] = False
+    artifact["balance"] = balance
+    execution.input_context = {
+        **execution.input_context,
+        "pool_runtime_distribution_artifact": artifact,
+    }
+    execution.save(update_fields=["input_context"])
+
+    with pytest.raises(ValueError, match="POOL_DISTRIBUTION_BALANCE_MISMATCH"):
+        execute_pool_runtime_step(
+            operation_type="pool.reconciliation_report",
+            rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
+
+    execution.refresh_from_db(fields=["input_context"])
+    assert "pool_runtime_reconciliation" not in execution.input_context
+    assert execution.input_context.get("pool_runtime_publication_payload") == distribution_output["publication_payload"]
+    assert execution.input_context.get("publication_step_state") == "queued"
 
 
 @pytest.mark.django_db

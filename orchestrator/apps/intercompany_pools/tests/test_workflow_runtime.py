@@ -171,7 +171,7 @@ def test_start_pool_run_workflow_execution_sets_publication_auth_context() -> No
 
 
 @pytest.mark.django_db
-def test_start_pool_run_workflow_execution_sets_publication_payload_from_run_input() -> None:
+def test_start_pool_run_workflow_execution_does_not_prefill_publication_payload_from_run_input() -> None:
     run = _create_pool_run(mode=PoolRunMode.UNSAFE)
     run.run_input = {
         "entity_name": "Document_IntercompanyPoolDistribution",
@@ -198,15 +198,7 @@ def test_start_pool_run_workflow_execution_sets_publication_payload_from_run_inp
         result = start_pool_run_workflow_execution(run=run)
 
     execution = WorkflowExecution.objects.get(id=result.execution_id)
-    publication_payload = execution.input_context.get("pool_runtime_publication_payload")
-    assert isinstance(publication_payload, dict)
-    pool_runtime_payload = publication_payload.get("pool_runtime")
-    assert isinstance(pool_runtime_payload, dict)
-    assert pool_runtime_payload.get("documents_by_database") == run.run_input.get("documents_by_database")
-    assert pool_runtime_payload.get("entity_name") == "Document_IntercompanyPoolDistribution"
-    assert pool_runtime_payload.get("max_attempts") == 2
-    assert pool_runtime_payload.get("retry_interval_seconds") == 5
-    assert pool_runtime_payload.get("external_key_field") == "ExternalRunKey"
+    assert "pool_runtime_publication_payload" not in execution.input_context
 
 
 @pytest.mark.django_db
@@ -386,6 +378,7 @@ def test_retry_workflow_execution_keeps_operation_binding_snapshot() -> None:
         "documents_by_database": {
             "db-retry-1": [{"Amount": "100.00"}],
         },
+        "use_retry_subset_payload": True,
         "max_attempts": 1,
         "retry_interval_seconds": 0,
         "external_key_field": "ExternalRunKey",
@@ -433,6 +426,12 @@ def test_retry_workflow_execution_keeps_operation_binding_snapshot() -> None:
     assert lineage.get("attempt_kind") == "retry"
     assert int(lineage.get("attempt_number") or 0) >= 2
     assert str(lineage.get("parent_workflow_run_id") or "").strip()
+    assert execution.input_context.get("pool_runtime_retry_settings") == {
+        "use_retry_subset_payload": True,
+    }
+    retry_request = execution.input_context.get("retry_request")
+    assert isinstance(retry_request, dict)
+    assert retry_request.get("use_retry_subset_payload") is True
 
     publication_payload = execution.input_context.get("pool_runtime_publication_payload")
     assert isinstance(publication_payload, dict)

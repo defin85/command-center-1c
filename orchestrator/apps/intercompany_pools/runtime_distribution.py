@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from hashlib import sha256
 from typing import Any, Mapping
@@ -24,26 +25,46 @@ _MONEY_SCALE = 2
 _MONEY_QUANTIZER = Decimal("0.01")
 
 
+@dataclass(frozen=True)
+class _TopologySegment:
+    start_date: date
+    end_date: date
+    days: int
+    topology: dict[str, Any]
+
+
 def compute_distribution_runtime_state(
     *,
     run: PoolRun,
     run_input: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = run_input if isinstance(run_input, dict) else _run_input(run)
-    topology = _load_active_topology(run=run, target_date=run.period_start)
+    period_start = run.period_start
+    period_end = run.period_end or run.period_start
+    if period_end < period_start:
+        _fail(
+            ERROR_CODE_DISTRIBUTION_INPUT_INVALID,
+            f"period_end '{period_end.isoformat()}' must be >= period_start '{period_start.isoformat()}'",
+        )
+    topology_segments = _load_topology_segments(
+        run=run,
+        period_start=period_start,
+        period_end=period_end,
+    )
 
     if run.direction == PoolRunDirection.TOP_DOWN:
-        state = _compute_top_down_distribution(
+        state = _compute_top_down_distribution_over_segments(
             run=run,
             run_input=payload,
-            topology=topology,
+            segments=topology_segments,
         )
     else:
-        state = _compute_bottom_up_distribution(
+        state = _compute_bottom_up_distribution_over_segments(
             run=run,
             run_input=payload,
-            topology=topology,
+            segments=topology_segments,
         )
+    topology = state["topology"]
 
     artifact = _build_distribution_artifact(
         run=run,
@@ -65,6 +86,147 @@ def compute_distribution_runtime_state(
         "summary": summary,
         "publication_payload": publication_payload,
     }
+
+
+def _compute_top_down_distribution_over_segments(
+    *,
+    run: PoolRun,
+    run_input: dict[str, Any],
+    segments: list[_TopologySegment],
+) -> dict[str, Any]:
+    starting_amount = _parse_decimal(run_input.get("starting_amount"))
+    if starting_amount is None or starting_amount <= Decimal("0"):
+        _fail(
+            ERROR_CODE_DISTRIBUTION_INPUT_INVALID,
+            "top_down run_input.starting_amount must be a positive decimal",
+        )
+
+    normalized_starting_amount = _money(starting_amount)
+    segment_amounts = _allocate_total_by_segment_days(
+        total_amount=normalized_starting_amount,
+        segment_days=[segment.days for segment in segments],
+    )
+
+    node_totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    edge_allocations: dict[tuple[str, str], Decimal] = defaultdict(lambda: Decimal("0"))
+    distributed_total = Decimal("0")
+    diagnostics: list[dict[str, Any]] = []
+
+    for index, segment in enumerate(segments):
+        amount_for_segment = segment_amounts[index]
+        segment_input = dict(run_input)
+        segment_input["starting_amount"] = _decimal_to_string(amount_for_segment)
+        segment_state = _compute_top_down_distribution(
+            run=run,
+            run_input=segment_input,
+            topology=segment.topology,
+            seed_suffix=segment.start_date.isoformat(),
+        )
+        for node_id, amount in segment_state["node_totals"].items():
+            node_totals[node_id] = _money(node_totals[node_id] + amount)
+        for edge_key, amount in segment_state["edge_allocations"].items():
+            edge_allocations[edge_key] = _money(edge_allocations[edge_key] + amount)
+        distributed_total = _money(distributed_total + segment_state["distributed_total"])
+        diagnostics.append(
+            {
+                "code": "topology_segment",
+                "status": "info",
+                "segment_index": index + 1,
+                "segment_start": segment.start_date.isoformat(),
+                "segment_end": segment.end_date.isoformat(),
+                "segment_days": segment.days,
+                "topology_version_ref": segment.topology.get("topology_version_ref"),
+                "segment_source_total": _decimal_to_string(amount_for_segment),
+                "segment_distributed_total": _decimal_to_string(segment_state["distributed_total"]),
+            }
+        )
+
+    return {
+        "topology": _merge_topology_segments(segments=segments),
+        "node_totals": dict(node_totals),
+        "edge_allocations": dict(edge_allocations),
+        "source_total": normalized_starting_amount,
+        "distributed_total": _money(distributed_total),
+        "diagnostics": diagnostics,
+    }
+
+
+def _compute_bottom_up_distribution_over_segments(
+    *,
+    run: PoolRun,
+    run_input: dict[str, Any],
+    segments: list[_TopologySegment],
+) -> dict[str, Any]:
+    rows_by_segment = _partition_source_rows_by_topology_segments(
+        run_input=run_input,
+        segments=segments,
+    )
+
+    node_totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    edge_allocations: dict[tuple[str, str], Decimal] = defaultdict(lambda: Decimal("0"))
+    source_total = Decimal("0")
+    distributed_total = Decimal("0")
+    diagnostics: list[dict[str, Any]] = []
+
+    for index, segment in enumerate(segments):
+        segment_input = dict(run_input)
+        segment_input["source_payload"] = rows_by_segment[index]
+        segment_state = _compute_bottom_up_distribution(
+            run=run,
+            run_input=segment_input,
+            topology=segment.topology,
+        )
+        for node_id, amount in segment_state["node_totals"].items():
+            node_totals[node_id] = _money(node_totals[node_id] + amount)
+        for edge_key, amount in segment_state["edge_allocations"].items():
+            edge_allocations[edge_key] = _money(edge_allocations[edge_key] + amount)
+        source_total = _money(source_total + segment_state["source_total"])
+        distributed_total = _money(distributed_total + segment_state["distributed_total"])
+        diagnostics.extend(segment_state.get("diagnostics", []))
+        diagnostics.append(
+            {
+                "code": "topology_segment",
+                "status": "info",
+                "segment_index": index + 1,
+                "segment_start": segment.start_date.isoformat(),
+                "segment_end": segment.end_date.isoformat(),
+                "segment_days": segment.days,
+                "topology_version_ref": segment.topology.get("topology_version_ref"),
+                "source_rows_count": len(rows_by_segment[index]),
+            }
+        )
+
+    return {
+        "topology": _merge_topology_segments(segments=segments),
+        "node_totals": dict(node_totals),
+        "edge_allocations": dict(edge_allocations),
+        "source_total": _money(source_total),
+        "distributed_total": _money(distributed_total),
+        "diagnostics": diagnostics,
+    }
+
+
+def _partition_source_rows_by_topology_segments(
+    *,
+    run_input: dict[str, Any],
+    segments: list[_TopologySegment],
+) -> list[list[dict[str, Any]]]:
+    rows = _source_rows(run_input=run_input)
+    if not segments:
+        return [rows]
+
+    default_date = segments[0].start_date
+    rows_by_segment: list[list[dict[str, Any]]] = [[] for _ in segments]
+    for row in rows:
+        row_date = _resolve_source_row_date(row=row, default_date=default_date)
+        segment_index = _find_segment_index_for_date(segments=segments, target_date=row_date)
+        if segment_index is None:
+            _fail(
+                ERROR_CODE_DISTRIBUTION_INPUT_INVALID,
+                f"source row date '{row_date.isoformat()}' is out of run period range",
+            )
+        rows_by_segment[segment_index].append(dict(row))
+    return rows_by_segment
 
 
 def build_publication_payload_from_artifact(
@@ -127,6 +289,7 @@ def _compute_top_down_distribution(
     run: PoolRun,
     run_input: dict[str, Any],
     topology: dict[str, Any],
+    seed_suffix: str | None = None,
 ) -> dict[str, Any]:
     starting_amount = _parse_decimal(run_input.get("starting_amount"))
     if starting_amount is None or starting_amount <= Decimal("0"):
@@ -147,7 +310,8 @@ def _compute_top_down_distribution(
         for edge in edge_models
     ]
 
-    seed_value = run.seed if run.seed is not None else str(run.id)
+    seed_base = run.seed if run.seed is not None else str(run.id)
+    seed_value = f"{seed_base}:{seed_suffix}" if seed_suffix else seed_base
     try:
         result = distribute_top_down(
             total_amount=_money(starting_amount),
@@ -302,6 +466,15 @@ def _build_distribution_artifact(
     node_models: dict[str, PoolNodeVersion] = topology["node_models"]
     edge_models: dict[tuple[str, str], PoolEdgeVersion] = topology["edge_models"]
     publish_target_node_ids: list[str] = topology["publish_target_node_ids"]
+    root_node_ids = {
+        str(node_id).strip()
+        for node_id in (
+            topology.get("root_node_ids")
+            if isinstance(topology.get("root_node_ids"), list)
+            else [topology.get("root_node_id")]
+        )
+        if str(node_id).strip()
+    }
 
     covered_node_ids = sorted(
         node_id
@@ -338,7 +511,7 @@ def _build_distribution_artifact(
                 "node_id": node_id,
                 "organization_id": str(node.organization_id),
                 "database_id": database_id,
-                "is_root": node_id == topology["root_node_id"],
+                "is_root": node_id in root_node_ids,
                 "amount": _decimal_to_string(node_totals.get(node_id, Decimal("0"))),
             }
         )
@@ -465,6 +638,7 @@ def _load_active_topology(*, run: PoolRun, target_date: date) -> dict[str, Any]:
     )
     return {
         "root_node_id": graph.root_id,
+        "root_node_ids": [graph.root_id],
         "node_ids": list(graph.node_ids),
         "edge_pairs": list(graph.edge_pairs),
         "leaf_node_ids": leaf_node_ids,
@@ -476,6 +650,116 @@ def _load_active_topology(*, run: PoolRun, target_date: date) -> dict[str, Any]:
         "node_id_by_inn": node_id_by_inn,
         "topology_version_ref": topology_version_ref,
     }
+
+
+def _load_topology_segments(
+    *,
+    run: PoolRun,
+    period_start: date,
+    period_end: date,
+) -> list[_TopologySegment]:
+    end_exclusive = period_end + timedelta(days=1)
+    boundaries: set[date] = {period_start, end_exclusive}
+
+    node_versions = (
+        PoolNodeVersion.objects.filter(pool=run.pool, effective_from__lte=period_end)
+        .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=period_start))
+        .only("effective_from", "effective_to")
+    )
+    edge_versions = (
+        PoolEdgeVersion.objects.filter(pool=run.pool, effective_from__lte=period_end)
+        .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=period_start))
+        .only("effective_from", "effective_to")
+    )
+
+    for version in list(node_versions) + list(edge_versions):
+        if period_start < version.effective_from <= period_end:
+            boundaries.add(version.effective_from)
+        if version.effective_to is not None and period_start <= version.effective_to < period_end:
+            boundaries.add(version.effective_to + timedelta(days=1))
+
+    sorted_boundaries = sorted(boundaries)
+    segments: list[_TopologySegment] = []
+    for idx in range(len(sorted_boundaries) - 1):
+        segment_start = sorted_boundaries[idx]
+        next_boundary = sorted_boundaries[idx + 1]
+        if segment_start >= next_boundary:
+            continue
+        segment_end = next_boundary - timedelta(days=1)
+        topology = _load_active_topology(run=run, target_date=segment_start)
+        segment_days = (segment_end - segment_start).days + 1
+        segments.append(
+            _TopologySegment(
+                start_date=segment_start,
+                end_date=segment_end,
+                days=segment_days,
+                topology=topology,
+            )
+        )
+    if not segments:
+        _fail(
+            ERROR_CODE_DISTRIBUTION_GRAPH_INVALID,
+            f"no active topology segments for period {period_start.isoformat()}..{period_end.isoformat()}",
+        )
+    return segments
+
+
+def _merge_topology_segments(
+    *,
+    segments: list[_TopologySegment],
+) -> dict[str, Any]:
+    if not segments:
+        _fail(ERROR_CODE_DISTRIBUTION_GRAPH_INVALID, "topology segments are required")
+
+    node_ids: set[str] = set()
+    edge_pairs: set[tuple[str, str]] = set()
+    leaf_node_ids: set[str] = set()
+    publish_target_node_ids: set[str] = set()
+    root_node_ids: set[str] = set()
+    node_models: dict[str, PoolNodeVersion] = {}
+    edge_models: dict[tuple[str, str], PoolEdgeVersion] = {}
+    segment_refs: list[dict[str, str]] = []
+
+    for segment in segments:
+        topology = segment.topology
+        node_ids.update(str(node_id) for node_id in topology.get("node_ids", []))
+        edge_pairs.update(tuple(item) for item in topology.get("edge_pairs", []))
+        leaf_node_ids.update(str(node_id) for node_id in topology.get("leaf_node_ids", []))
+        publish_target_node_ids.update(str(node_id) for node_id in topology.get("publish_target_node_ids", []))
+        root_node_id = str(topology.get("root_node_id") or "").strip()
+        if root_node_id:
+            root_node_ids.add(root_node_id)
+        node_models.update(topology.get("node_models", {}))
+        edge_models.update(topology.get("edge_models", {}))
+        segment_refs.append(
+            {
+                "segment_start": segment.start_date.isoformat(),
+                "segment_end": segment.end_date.isoformat(),
+                "topology_version_ref": str(topology.get("topology_version_ref") or ""),
+            }
+        )
+
+    root_candidates = sorted(root_node_ids)
+    if not root_candidates:
+        _fail(ERROR_CODE_DISTRIBUTION_GRAPH_INVALID, "merged topology has no root nodes")
+    topology_version_ref = _build_period_topology_version_ref(segment_refs=segment_refs)
+    return {
+        "root_node_id": root_candidates[0],
+        "root_node_ids": root_candidates,
+        "node_ids": sorted(node_ids),
+        "edge_pairs": sorted(edge_pairs),
+        "leaf_node_ids": sorted(leaf_node_ids),
+        "publish_target_node_ids": sorted(publish_target_node_ids),
+        "node_models": node_models,
+        "edge_models": edge_models,
+        "topology_version_ref": topology_version_ref,
+    }
+
+
+def _build_period_topology_version_ref(*, segment_refs: list[dict[str, str]]) -> str:
+    payload = {"segments": segment_refs}
+    digest = sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    return f"pool_topology_window:{digest[:16]}"
 
 
 def _build_topology_version_ref(
@@ -516,6 +800,61 @@ def _normalize_documents_by_database(raw_value: Any) -> dict[str, list[dict[str,
         if docs:
             normalized[database_id] = docs
     return normalized
+
+
+def _resolve_source_row_date(*, row: Mapping[str, Any], default_date: date) -> date:
+    for key in ("date", "document_date", "operation_date"):
+        raw_value = row.get(key)
+        if raw_value in (None, ""):
+            continue
+        try:
+            return date.fromisoformat(str(raw_value))
+        except (TypeError, ValueError):
+            _fail(
+                ERROR_CODE_DISTRIBUTION_INPUT_INVALID,
+                f"source row field '{key}' must be ISO date (YYYY-MM-DD), got '{raw_value}'",
+            )
+    return default_date
+
+
+def _find_segment_index_for_date(*, segments: list[_TopologySegment], target_date: date) -> int | None:
+    for index, segment in enumerate(segments):
+        if segment.start_date <= target_date <= segment.end_date:
+            return index
+    return None
+
+
+def _allocate_total_by_segment_days(*, total_amount: Decimal, segment_days: list[int]) -> list[Decimal]:
+    if not segment_days:
+        return []
+    positive_days = [max(0, int(days)) for days in segment_days]
+    total_days = sum(positive_days)
+    if total_days <= 0:
+        return [_money(Decimal("0")) for _ in segment_days]
+
+    factor = Decimal(10) ** _MONEY_SCALE
+    total_units = int((total_amount * factor).to_integral_value(rounding=ROUND_HALF_UP))
+    unit_floors: list[int] = []
+    fractions: list[Decimal] = []
+    allocated_units = 0
+
+    for days in positive_days:
+        exact_units = (Decimal(total_units) * Decimal(days)) / Decimal(total_days)
+        floor_units = int(exact_units)
+        unit_floors.append(floor_units)
+        fractions.append(exact_units - Decimal(floor_units))
+        allocated_units += floor_units
+
+    remainder = total_units - allocated_units
+    if remainder > 0:
+        ordering = sorted(
+            range(len(fractions)),
+            key=lambda idx: (-fractions[idx], idx),
+        )
+        for idx in ordering[:remainder]:
+            unit_floors[idx] += 1
+
+    return [_money(Decimal(units) / factor) for units in unit_floors]
 
 
 def _split_amount_equally(*, amount: Decimal, buckets: int) -> list[Decimal]:

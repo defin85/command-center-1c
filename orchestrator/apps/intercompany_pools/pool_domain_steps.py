@@ -30,6 +30,7 @@ _OP_RECONCILIATION = "pool.reconciliation_report"
 _OP_APPROVAL_GATE = "pool.approval_gate"
 _OP_PUBLICATION = "pool.publication_odata"
 POOL_RUNTIME_PUBLICATION_PATH_DISABLED = "POOL_RUNTIME_PUBLICATION_PATH_DISABLED"
+POOL_RUNTIME_RETRY_PAYLOAD_INVALID = "POOL_RUNTIME_RETRY_PAYLOAD_INVALID"
 POOL_DISTRIBUTION_ARTIFACT_INVALID = "POOL_DISTRIBUTION_ARTIFACT_INVALID"
 POOL_DISTRIBUTION_BALANCE_MISMATCH = "POOL_DISTRIBUTION_BALANCE_MISMATCH"
 POOL_DISTRIBUTION_COVERAGE_GAP = "POOL_DISTRIBUTION_COVERAGE_GAP"
@@ -161,11 +162,11 @@ def _execute_distribution_top_down(
     execution: Any,
     execution_context: dict[str, Any],
 ) -> dict[str, Any]:
-    _ = execution_context
     return _execute_distribution_calculation(
         run=run,
         execution=execution,
         expected_direction=PoolRunDirection.TOP_DOWN,
+        execution_context=execution_context,
     )
 
 
@@ -175,11 +176,11 @@ def _execute_distribution_bottom_up(
     execution: Any,
     execution_context: dict[str, Any],
 ) -> dict[str, Any]:
-    _ = execution_context
     return _execute_distribution_calculation(
         run=run,
         execution=execution,
         expected_direction=PoolRunDirection.BOTTOM_UP,
+        execution_context=execution_context,
     )
 
 
@@ -222,6 +223,11 @@ def _execute_reconciliation(
         artifact=distribution_artifact,
         run_input=_run_input(run),
     )
+    locked_retry_payload = _resolve_locked_retry_publication_payload(
+        execution_context=execution_context
+    )
+    if locked_retry_payload is not None:
+        publication_payload = locked_retry_payload
     report: dict[str, Any] = {
         "run_direction": run.direction,
         "distribution_artifact_version": distribution_artifact.get("version"),
@@ -257,6 +263,7 @@ def _execute_distribution_calculation(
     run: PoolRun,
     execution: Any,
     expected_direction: str,
+    execution_context: dict[str, Any],
 ) -> dict[str, Any]:
     if run.direction != expected_direction:
         raise ValueError(
@@ -278,6 +285,11 @@ def _execute_distribution_calculation(
             run_input=_run_input(run),
         )
     )
+    locked_retry_payload = _resolve_locked_retry_publication_payload(
+        execution_context=execution_context
+    )
+    if locked_retry_payload is not None:
+        publication_payload = locked_retry_payload
     if not publication_payload:
         raise ValueError(
             f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: publication_payload is missing for distribution artifact"
@@ -392,6 +404,37 @@ def _execute_publication(
         f"{POOL_RUNTIME_PUBLICATION_PATH_DISABLED}: "
         "publication OData side effects are disabled in orchestrator pool-domain runtime"
     )
+
+
+def _resolve_locked_retry_publication_payload(
+    *,
+    execution_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    retry_settings_raw = execution_context.get("pool_runtime_retry_settings")
+    retry_settings = dict(retry_settings_raw) if isinstance(retry_settings_raw, Mapping) else {}
+    if not bool(retry_settings.get("use_retry_subset_payload")):
+        return None
+
+    payload_raw = execution_context.get("pool_runtime_publication_payload")
+    if not isinstance(payload_raw, Mapping):
+        raise ValueError(
+            f"{POOL_RUNTIME_RETRY_PAYLOAD_INVALID}: "
+            "pool_runtime_publication_payload is required when use_retry_subset_payload=true"
+        )
+    publication_payload = dict(payload_raw)
+    pool_runtime_payload = publication_payload.get("pool_runtime")
+    if not isinstance(pool_runtime_payload, Mapping):
+        raise ValueError(
+            f"{POOL_RUNTIME_RETRY_PAYLOAD_INVALID}: "
+            "pool_runtime_publication_payload.pool_runtime must be an object"
+        )
+    documents_by_database = pool_runtime_payload.get("documents_by_database")
+    if not isinstance(documents_by_database, Mapping):
+        raise ValueError(
+            f"{POOL_RUNTIME_RETRY_PAYLOAD_INVALID}: "
+            "pool_runtime_publication_payload.pool_runtime.documents_by_database must be an object"
+        )
+    return publication_payload
 
 
 def _run_input(run: PoolRun) -> dict[str, Any]:
