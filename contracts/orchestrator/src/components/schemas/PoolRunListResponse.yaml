@@ -1,0 +1,11 @@
+type: object
+properties:
+  runs:
+    type: array
+    items:
+      $ref: ./PoolRun.yaml
+  count:
+    type: integer
+required:
+  - count
+  - runs

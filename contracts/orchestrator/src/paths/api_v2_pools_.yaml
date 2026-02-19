@@ -1,0 +1,33 @@
+get:
+  operationId: v2_pools_list
+  summary: List organization pools
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/OrganizationPoolListResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

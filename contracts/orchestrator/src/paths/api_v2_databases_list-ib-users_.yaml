@@ -1,0 +1,70 @@
+get:
+  operationId: v2_databases_list_ib_users_retrieve
+  description: List manually mapped infobase users for a database.
+  summary: List infobase users
+  parameters:
+    - in: query
+      name: auth_type
+      schema:
+        type: string
+      description: Filter by auth type
+    - in: query
+      name: database_id
+      schema:
+        type: string
+      description: Database ID
+      required: true
+    - in: query
+      name: has_user
+      schema:
+        type: boolean
+      description: Filter by linked CC user
+    - in: query
+      name: is_service
+      schema:
+        type: boolean
+      description: Filter by service account
+    - in: query
+      name: limit
+      schema:
+        type: integer
+      description: 'Maximum results (default: 100, max: 1000)'
+    - in: query
+      name: offset
+      schema:
+        type: integer
+      description: 'Pagination offset (default: 0)'
+    - in: query
+      name: search
+      schema:
+        type: string
+      description: Search by username or display name
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/InfobaseUserListResponse.yaml
+      description: ''
+    '400':
+      description: Invalid request
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+    '404':
+      description: Database not found

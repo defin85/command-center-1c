@@ -1,0 +1,11 @@
+type: object
+properties:
+  alias:
+    type: string
+  version:
+    type: string
+  version_id:
+    type: string
+    format: uuid
+required:
+  - alias

@@ -1,0 +1,47 @@
+post:
+  operationId: v2_databases_bulk_health_check_create
+  description: >-
+    Queue health check on multiple databases. Provide either database_ids or
+    cluster_id.
+  summary: Bulk health check databases
+  tags:
+    - v2
+  requestBody:
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/BulkHealthCheckRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/BulkHealthCheckRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/BulkHealthCheckRequest.yaml
+  security:
+    - bearerAuth: []
+  responses:
+    '202':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/HealthCheckEnqueueResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/DatabaseErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

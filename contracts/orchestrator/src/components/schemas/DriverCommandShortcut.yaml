@@ -1,0 +1,29 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  driver:
+    type: string
+  command_id:
+    type: string
+  title:
+    type: string
+  payload: {}
+  catalog_base_version:
+    type: string
+  catalog_overrides_version:
+    type: string
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - command_id
+  - created_at
+  - driver
+  - id
+  - title
+  - updated_at

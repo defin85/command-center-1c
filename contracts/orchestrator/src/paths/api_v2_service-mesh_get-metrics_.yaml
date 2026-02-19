@@ -1,0 +1,46 @@
+get:
+  operationId: v2_service_mesh_get_metrics_retrieve
+  description: >-
+    Get service mesh metrics and health status for all monitored services
+    including Go services, Redis, and PostgreSQL.
+  summary: Get service mesh metrics
+  parameters:
+    - in: query
+      name: include_prometheus
+      schema:
+        type: boolean
+      description: 'Include raw Prometheus metrics (reserved, default: false)'
+    - in: query
+      name: service
+      schema:
+        type: string
+      description: Filter by service name (e.g., api-gateway, worker)
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ServiceMetricsResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ServiceMeshErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized

@@ -1,0 +1,38 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  code:
+    type: string
+  name:
+    type: string
+  format:
+    type: string
+  is_public:
+    type: boolean
+  is_active:
+    type: boolean
+  schema: {}
+  metadata: {}
+  workflow_template_id:
+    type: string
+    format: uuid
+    nullable: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - code
+  - format
+  - id
+  - is_active
+  - is_public
+  - name
+  - tenant_id

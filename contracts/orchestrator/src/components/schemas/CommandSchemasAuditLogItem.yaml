@@ -1,0 +1,32 @@
+type: object
+properties:
+  id:
+    type: integer
+  created_at:
+    type: string
+    format: date-time
+  action:
+    type: string
+  outcome:
+    type: string
+  actor_username:
+    type: string
+  target_type:
+    type: string
+  target_id:
+    type: string
+  metadata:
+    type: object
+    additionalProperties: {}
+  error_message:
+    type: string
+required:
+  - action
+  - actor_username
+  - created_at
+  - error_message
+  - id
+  - metadata
+  - outcome
+  - target_id
+  - target_type

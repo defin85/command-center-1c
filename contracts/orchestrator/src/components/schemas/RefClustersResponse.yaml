@@ -1,0 +1,14 @@
+type: object
+properties:
+  clusters:
+    type: array
+    items:
+      $ref: ./ClusterRef.yaml
+  count:
+    type: integer
+  total:
+    type: integer
+required:
+  - clusters
+  - count
+  - total

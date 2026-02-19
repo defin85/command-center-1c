@@ -1,0 +1,12 @@
+type: object
+properties:
+  pending_count:
+    type: integer
+  failed_count:
+    type: integer
+  poison_count:
+    type: integer
+required:
+  - failed_count
+  - pending_count
+  - poison_count

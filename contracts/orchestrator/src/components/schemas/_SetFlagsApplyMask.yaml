@@ -1,0 +1,12 @@
+type: object
+properties:
+  active:
+    type: boolean
+  safe_mode:
+    type: boolean
+  unsafe_action_protection:
+    type: boolean
+required:
+  - active
+  - safe_mode
+  - unsafe_action_protection

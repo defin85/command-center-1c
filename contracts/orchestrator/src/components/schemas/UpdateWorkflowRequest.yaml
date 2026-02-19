@@ -1,0 +1,20 @@
+type: object
+description: Request for update_workflow endpoint.
+properties:
+  workflow_id:
+    type: string
+    format: uuid
+  name:
+    type: string
+    maxLength: 200
+  description:
+    type: string
+  workflow_type:
+    type: string
+  dag_structure:
+    type: object
+    additionalProperties: {}
+  is_active:
+    type: boolean
+required:
+  - workflow_id

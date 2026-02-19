@@ -1,0 +1,13 @@
+type: object
+description: Minimal identity payload for SPA.
+properties:
+  id:
+    type: integer
+  username:
+    type: string
+  is_staff:
+    type: boolean
+required:
+  - id
+  - is_staff
+  - username

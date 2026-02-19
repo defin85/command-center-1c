@@ -1,0 +1,15 @@
+type: object
+properties:
+  plan_id:
+    type: string
+    format: uuid
+  strict:
+    type: boolean
+    default: true
+  preflight_timeout_seconds:
+    type: integer
+    maximum: 600
+    minimum: 1
+    default: 120
+required:
+  - plan_id

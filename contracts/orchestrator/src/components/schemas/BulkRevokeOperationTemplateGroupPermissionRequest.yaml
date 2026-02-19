@@ -1,0 +1,14 @@
+type: object
+properties:
+  group_id:
+    type: integer
+  template_ids:
+    type: array
+    items:
+      type: string
+  reason:
+    type: string
+required:
+  - group_id
+  - reason
+  - template_ids

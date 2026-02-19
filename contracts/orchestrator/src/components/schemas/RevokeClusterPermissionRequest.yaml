@@ -1,0 +1,13 @@
+type: object
+properties:
+  user_id:
+    type: integer
+  cluster_id:
+    type: string
+    format: uuid
+  reason:
+    type: string
+required:
+  - cluster_id
+  - reason
+  - user_id

@@ -1,0 +1,18 @@
+type: object
+properties:
+  exposures:
+    type: array
+    items:
+      $ref: ./OperationCatalogExposure.yaml
+  definitions:
+    type: array
+    items:
+      $ref: ./OperationCatalogDefinition.yaml
+  count:
+    type: integer
+  total:
+    type: integer
+required:
+  - count
+  - exposures
+  - total

@@ -1,0 +1,12 @@
+type: object
+properties:
+  driver:
+    type: string
+  alias:
+    type: string
+  version:
+    type: string
+required:
+  - alias
+  - driver
+  - version

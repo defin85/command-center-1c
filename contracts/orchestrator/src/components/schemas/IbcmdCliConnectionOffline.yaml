@@ -1,0 +1,39 @@
+type: object
+properties:
+  config:
+    type: string
+  data:
+    type: string
+  dbms:
+    type: string
+  db_server:
+    type: string
+  db_name:
+    type: string
+  db_path:
+    type: string
+  db_user:
+    type: string
+  db_pwd:
+    type: string
+    writeOnly: true
+  ftext2_data:
+    type: string
+  ftext_data:
+    type: string
+  lock:
+    type: string
+  log_data:
+    type: string
+  openid_data:
+    type: string
+  session_data:
+    type: string
+  stt_data:
+    type: string
+  system:
+    type: string
+  temp:
+    type: string
+  users_data:
+    type: string

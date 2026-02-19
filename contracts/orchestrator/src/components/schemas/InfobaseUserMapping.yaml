@@ -1,0 +1,54 @@
+type: object
+properties:
+  id:
+    type: integer
+    readOnly: true
+  database_id:
+    type: string
+    readOnly: true
+  user:
+    allOf:
+      - $ref: ./UserRef.yaml
+    nullable: true
+  ib_username:
+    type: string
+    maxLength: 128
+  ib_display_name:
+    type: string
+    maxLength: 255
+  ib_roles: {}
+  ib_password_configured:
+    type: boolean
+    readOnly: true
+  auth_type:
+    enum:
+      - local
+      - ad
+      - service
+      - other
+    type: string
+    description: |-
+      * `local` - Local
+      * `ad` - Active Directory
+      * `service` - Service
+      * `other` - Other
+    x-spec-enum-id: 562ca2bc45b62724
+  is_service:
+    type: boolean
+  notes:
+    type: string
+  created_at:
+    type: string
+    format: date-time
+    readOnly: true
+  updated_at:
+    type: string
+    format: date-time
+    readOnly: true
+required:
+  - created_at
+  - database_id
+  - ib_password_configured
+  - ib_username
+  - id
+  - updated_at

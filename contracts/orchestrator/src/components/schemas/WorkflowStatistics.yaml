@@ -1,0 +1,24 @@
+type: object
+description: Statistics for a workflow template.
+properties:
+  total_executions:
+    type: integer
+  successful:
+    type: integer
+  failed:
+    type: integer
+  cancelled:
+    type: integer
+  running:
+    type: integer
+  average_duration:
+    type: number
+    format: double
+    nullable: true
+required:
+  - average_duration
+  - cancelled
+  - failed
+  - running
+  - successful
+  - total_executions

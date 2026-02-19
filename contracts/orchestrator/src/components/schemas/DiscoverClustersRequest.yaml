@@ -1,0 +1,20 @@
+type: object
+description: Request body for discover_clusters endpoint.
+properties:
+  ras_host:
+    type: string
+    description: RAS host
+  ras_port:
+    type: integer
+    description: RAS port
+  cluster_service_url:
+    type: string
+    description: RAS adapter URL (optional, reserved for worker usage)
+  cluster_user:
+    type: string
+  cluster_pwd:
+    type: string
+    writeOnly: true
+required:
+  - ras_host
+  - ras_port

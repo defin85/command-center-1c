@@ -1,0 +1,11 @@
+type: object
+properties:
+  aliases:
+    type: array
+    items:
+      $ref: ./ArtifactAlias.yaml
+  count:
+    type: integer
+required:
+  - aliases
+  - count

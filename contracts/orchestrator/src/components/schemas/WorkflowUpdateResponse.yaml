@@ -1,0 +1,15 @@
+type: object
+description: Response for update_workflow endpoint.
+properties:
+  workflow:
+    $ref: ./WorkflowTemplateDetail.yaml
+  updated_fields:
+    type: array
+    items:
+      type: string
+  message:
+    type: string
+required:
+  - message
+  - updated_fields
+  - workflow

@@ -1,0 +1,20 @@
+type: object
+properties:
+  node_version_id:
+    type: string
+    format: uuid
+  organization_id:
+    type: string
+    format: uuid
+  inn:
+    type: string
+  name:
+    type: string
+  is_root:
+    type: boolean
+required:
+  - inn
+  - is_root
+  - name
+  - node_version_id
+  - organization_id

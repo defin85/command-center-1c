@@ -11,9 +11,11 @@ paths: contracts/**/*.yaml
 ```
 contracts/
 ├── ras-adapter/openapi.yaml      # ras-adapter API spec
-├── orchestrator/openapi.yaml     # Orchestrator API spec
+├── orchestrator/openapi.yaml     # Orchestrator generated bundle
+│   └── src/**                    # Orchestrator modular source-of-truth
 ├── api-gateway/openapi.yaml      # (future)
 └── scripts/
+    ├── build-orchestrator-openapi.sh # Build/check orchestrator bundle
     ├── generate-all.sh           # Generate all clients
     ├── validate-specs.sh         # Validate specs
     └── check-breaking-changes.sh # Check breaking changes
@@ -21,11 +23,16 @@ contracts/
 
 ## API Change Workflow
 
-1. **Update OpenAPI spec** (`contracts/<service>/openapi.yaml`)
-2. **Validate:** `./contracts/scripts/validate-specs.sh`
-3. **Generate clients:** `./contracts/scripts/generate-all.sh`
-4. **Implement handlers** using generated types
-5. **Commit** (pre-commit hook auto-validates)
+1. **Update OpenAPI source**
+   - orchestrator: `contracts/orchestrator/src/**`
+   - other services: `contracts/<service>/openapi.yaml`
+2. **Build/check orchestrator bundle** (if orchestrator changed):
+   - `./contracts/scripts/build-orchestrator-openapi.sh build`
+   - `./contracts/scripts/build-orchestrator-openapi.sh check`
+3. **Validate:** `./contracts/scripts/validate-specs.sh`
+4. **Generate clients:** `./contracts/scripts/generate-all.sh`
+5. **Implement handlers** using generated types
+6. **Commit** (pre-commit hook auto-validates)
 
 ## Generation
 

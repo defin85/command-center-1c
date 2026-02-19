@@ -1,0 +1,24 @@
+type: object
+properties:
+  pool_id:
+    type: string
+    format: uuid
+  date:
+    type: string
+    format: date
+  version:
+    type: string
+  nodes:
+    type: array
+    items:
+      $ref: ./PoolGraphNode.yaml
+  edges:
+    type: array
+    items:
+      $ref: ./PoolGraphEdge.yaml
+required:
+  - date
+  - edges
+  - nodes
+  - pool_id
+  - version

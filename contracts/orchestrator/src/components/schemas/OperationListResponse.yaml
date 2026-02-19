@@ -1,0 +1,17 @@
+type: object
+description: Response for list_operations endpoint.
+properties:
+  operations:
+    type: array
+    items:
+      $ref: ./BatchOperation.yaml
+  count:
+    type: integer
+    description: Number of operations in current page
+  total:
+    type: integer
+    description: Total number of operations matching filters
+required:
+  - count
+  - operations
+  - total

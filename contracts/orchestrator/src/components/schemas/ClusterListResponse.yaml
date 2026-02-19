@@ -1,0 +1,17 @@
+type: object
+description: Response for list_clusters endpoint.
+properties:
+  clusters:
+    type: array
+    items:
+      $ref: ./Cluster.yaml
+  count:
+    type: integer
+    description: Number of clusters in current page
+  total:
+    type: integer
+    description: Total number of clusters matching filters
+required:
+  - clusters
+  - count
+  - total

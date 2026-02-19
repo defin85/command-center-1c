@@ -1,0 +1,51 @@
+type: object
+description: |-
+  Binding provenance for execution plan.
+
+  IMPORTANT: This structure must never contain raw secret values.
+properties:
+  target_ref:
+    type: string
+    description: Where the value is applied (flag/argv index/workflow path).
+  source_ref:
+    type: string
+    description: Where the value comes from (typed source reference).
+  resolve_at:
+    enum:
+      - api
+      - worker
+    type: string
+    x-spec-enum-id: 322e5807054b95a4
+    description: |-
+      Where the binding is resolved.
+
+      * `api` - api
+      * `worker` - worker
+  sensitive:
+    type: boolean
+    description: True if the source is secret (value must not be stored/logged).
+  status:
+    enum:
+      - applied
+      - skipped
+      - unresolved
+    type: string
+    x-spec-enum-id: 6a95160f9de2839c
+    description: |-
+      Binding status. Preview may include unresolved bindings.
+
+      * `applied` - applied
+      * `skipped` - skipped
+      * `unresolved` - unresolved
+  reason:
+    type: string
+    nullable: true
+    description: >-
+      Reason for skipped/unresolved (e.g., missing_source,
+      blocked_by_allowlist).
+required:
+  - resolve_at
+  - sensitive
+  - source_ref
+  - status
+  - target_ref

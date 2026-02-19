@@ -1,0 +1,21 @@
+type: object
+properties:
+  driver:
+    type: string
+  etag:
+    type: string
+  base:
+    type: object
+    additionalProperties: {}
+  overrides:
+    type: object
+    additionalProperties: {}
+  catalogs:
+    type: object
+    additionalProperties: {}
+required:
+  - base
+  - catalogs
+  - driver
+  - etag
+  - overrides

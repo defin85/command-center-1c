@@ -1,0 +1,9 @@
+type: object
+properties:
+  remote:
+    type: string
+  pid:
+    type: integer
+    nullable: true
+  offline:
+    $ref: ./IbcmdCliConnectionOffline.yaml

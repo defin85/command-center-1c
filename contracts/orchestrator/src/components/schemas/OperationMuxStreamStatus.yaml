@@ -1,0 +1,20 @@
+type: object
+description: Response for multiplex stream status.
+properties:
+  active_streams:
+    type: integer
+    description: Active multiplex SSE streams for current user
+  max_streams:
+    type: integer
+    description: Maximum allowed multiplex SSE streams
+  active_subscriptions:
+    type: integer
+    description: Active operation subscriptions for user
+  max_subscriptions:
+    type: integer
+    description: Maximum allowed subscriptions
+required:
+  - active_streams
+  - active_subscriptions
+  - max_streams
+  - max_subscriptions

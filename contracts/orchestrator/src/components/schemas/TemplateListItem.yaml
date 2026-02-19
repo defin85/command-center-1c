@@ -1,0 +1,27 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  name:
+    type: string
+  description:
+    type: string
+  category:
+    type: string
+  icon:
+    type: string
+  workflow_type:
+    type: string
+  version_number:
+    type: integer
+  created_at:
+    type: string
+    format: date-time
+required:
+  - category
+  - created_at
+  - id
+  - name
+  - version_number
+  - workflow_type

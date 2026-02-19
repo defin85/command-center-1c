@@ -1,0 +1,14 @@
+type: object
+properties:
+  published:
+    type: boolean
+  exposure:
+    $ref: ./OperationCatalogExposure.yaml
+  validation_errors:
+    type: array
+    items:
+      $ref: ./OperationCatalogValidationError.yaml
+required:
+  - exposure
+  - published
+  - validation_errors

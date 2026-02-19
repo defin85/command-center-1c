@@ -1,0 +1,11 @@
+type: object
+properties:
+  key:
+    type: string
+  value: {}
+  status:
+    type: string
+required:
+  - key
+  - status
+  - value

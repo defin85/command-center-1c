@@ -1,0 +1,16 @@
+type: object
+properties:
+  run:
+    $ref: ./PoolRun.yaml
+  publication_attempts:
+    type: array
+    items:
+      $ref: ./PoolPublicationAttempt.yaml
+  audit_events:
+    type: array
+    items:
+      $ref: ./PoolRunAuditEvent.yaml
+required:
+  - audit_events
+  - publication_attempts
+  - run

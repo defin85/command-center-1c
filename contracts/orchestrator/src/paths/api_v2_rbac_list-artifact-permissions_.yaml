@@ -1,0 +1,49 @@
+get:
+  operationId: v2_rbac_list_artifact_permissions_retrieve
+  summary: List artifact permissions (user)
+  parameters:
+    - in: query
+      name: artifact_id
+      schema:
+        type: string
+    - in: query
+      name: level
+      schema:
+        type: string
+    - in: query
+      name: limit
+      schema:
+        type: integer
+    - in: query
+      name: offset
+      schema:
+        type: integer
+    - in: query
+      name: search
+      schema:
+        type: string
+    - in: query
+      name: user_id
+      schema:
+        type: integer
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ArtifactPermissionListResponse.yaml
+      description: ''

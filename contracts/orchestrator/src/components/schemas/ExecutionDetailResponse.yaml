@@ -1,0 +1,18 @@
+type: object
+description: Response for get_execution endpoint.
+properties:
+  execution:
+    $ref: ./WorkflowExecutionDetail.yaml
+  execution_plan:
+    $ref: ./ExecutionPlan.yaml
+  bindings:
+    type: array
+    items:
+      $ref: ./ExecutionBinding.yaml
+  steps:
+    type: array
+    items:
+      $ref: ./WorkflowStepResult.yaml
+required:
+  - execution
+  - steps

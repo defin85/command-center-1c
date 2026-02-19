@@ -1,0 +1,8 @@
+type: object
+properties:
+  policies:
+    type: array
+    items:
+      $ref: ./ExtensionsFlagsPolicy.yaml
+required:
+  - policies

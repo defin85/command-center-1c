@@ -1,0 +1,38 @@
+type: object
+properties:
+  database_id:
+    type: string
+  user_id:
+    type: integer
+    nullable: true
+  ib_username:
+    type: string
+  ib_display_name:
+    type: string
+  ib_roles:
+    type: array
+    items:
+      type: string
+  ib_password:
+    type: string
+    writeOnly: true
+  auth_type:
+    enum:
+      - local
+      - ad
+      - service
+      - other
+    type: string
+    description: |-
+      * `local` - Local
+      * `ad` - Active Directory
+      * `service` - Service
+      * `other` - Other
+    x-spec-enum-id: 562ca2bc45b62724
+  is_service:
+    type: boolean
+  notes:
+    type: string
+required:
+  - database_id
+  - ib_username

@@ -1,0 +1,37 @@
+post:
+  operationId: v2_rbac_revoke_cluster_group_permission_create
+  summary: Revoke cluster group permission
+  tags:
+    - v2
+  requestBody:
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/RevokeClusterGroupPermissionRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/RevokeClusterGroupPermissionRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/RevokeClusterGroupPermissionRequest.yaml
+    required: true
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/RevokePermissionResponse.yaml
+      description: ''
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

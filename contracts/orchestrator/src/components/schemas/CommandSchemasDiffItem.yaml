@@ -1,0 +1,16 @@
+type: object
+properties:
+  path:
+    type: string
+  base_present:
+    type: boolean
+  base:
+    nullable: true
+  effective_present:
+    type: boolean
+  effective:
+    nullable: true
+required:
+  - base_present
+  - effective_present
+  - path

@@ -1,0 +1,74 @@
+get:
+  operationId: v2_dlq_list_retrieve
+  description: List recent DLQ entries from Redis Stream `commands:worker:dlq`. Staff-only.
+  summary: List DLQ messages
+  parameters:
+    - in: query
+      name: error_code
+      schema:
+        type: string
+    - in: query
+      name: filters
+      schema:
+        type: string
+      description: JSON object with filter conditions
+    - in: query
+      name: limit
+      schema:
+        type: integer
+      description: 1..200 (default 50)
+    - in: query
+      name: offset
+      schema:
+        type: integer
+      description: Offset within the fetched window
+    - in: query
+      name: operation_id
+      schema:
+        type: string
+    - in: query
+      name: search
+      schema:
+        type: string
+      description: Search by operation ID or error message
+    - in: query
+      name: since
+      schema:
+        type: string
+      description: RFC3339 timestamp filter
+    - in: query
+      name: sort
+      schema:
+        type: string
+      description: JSON object with sort configuration
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/DLQListResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden

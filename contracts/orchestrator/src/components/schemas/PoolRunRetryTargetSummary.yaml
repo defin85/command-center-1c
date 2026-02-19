@@ -1,0 +1,18 @@
+type: object
+properties:
+  requested_targets:
+    type: integer
+  requested_documents:
+    type: integer
+  failed_targets:
+    type: integer
+  enqueued_targets:
+    type: integer
+  skipped_successful_targets:
+    type: integer
+required:
+  - enqueued_targets
+  - failed_targets
+  - requested_documents
+  - requested_targets
+  - skipped_successful_targets

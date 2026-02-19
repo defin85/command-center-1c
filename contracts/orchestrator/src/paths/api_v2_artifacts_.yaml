@@ -1,0 +1,41 @@
+get:
+  operationId: v2_artifacts_retrieve
+  summary: List artifacts
+  parameters:
+    - in: query
+      name: kind
+      schema:
+        type: string
+    - in: query
+      name: name
+      schema:
+        type: string
+    - in: query
+      name: tag
+      schema:
+        type: string
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ArtifactListResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden

@@ -1,0 +1,22 @@
+type: object
+description: Request for create_workflow endpoint.
+properties:
+  name:
+    type: string
+    maxLength: 200
+  description:
+    type: string
+    default: ''
+  workflow_type:
+    type: string
+    default: general
+  dag_structure:
+    type: object
+    additionalProperties: {}
+    description: DAG structure with nodes and edges
+  is_active:
+    type: boolean
+    default: true
+required:
+  - dag_structure
+  - name

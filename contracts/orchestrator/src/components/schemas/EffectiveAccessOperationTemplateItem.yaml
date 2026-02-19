@@ -1,0 +1,23 @@
+type: object
+properties:
+  template:
+    $ref: ./OperationTemplateRef.yaml
+  level:
+    type: string
+  source:
+    enum:
+      - direct
+      - group
+    type: string
+    description: |-
+      * `direct` - direct
+      * `group` - group
+    x-spec-enum-id: 95cc5059aa03e762
+  sources:
+    type: array
+    items:
+      $ref: ./EffectiveAccessOperationTemplateSourceItem.yaml
+required:
+  - level
+  - source
+  - template

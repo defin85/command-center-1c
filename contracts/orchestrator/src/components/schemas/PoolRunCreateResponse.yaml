@@ -1,0 +1,9 @@
+type: object
+properties:
+  run:
+    $ref: ./PoolRun.yaml
+  created:
+    type: boolean
+required:
+  - created
+  - run

@@ -1,0 +1,13 @@
+type: object
+properties:
+  ok:
+    type: boolean
+  errors:
+    type: array
+    items:
+      type: string
+  canonical: {}
+required:
+  - canonical
+  - errors
+  - ok

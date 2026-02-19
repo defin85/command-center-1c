@@ -1,0 +1,48 @@
+type: object
+properties:
+  id:
+    type: integer
+    readOnly: true
+  database_id:
+    type: string
+    readOnly: true
+  user:
+    allOf:
+      - $ref: ./UserRef.yaml
+    nullable: true
+  db_username:
+    type: string
+    maxLength: 128
+  db_password_configured:
+    type: boolean
+    readOnly: true
+  auth_type:
+    enum:
+      - local
+      - service
+      - other
+    type: string
+    description: |-
+      * `local` - Local
+      * `service` - Service
+      * `other` - Other
+    x-spec-enum-id: 2b98a5ef99ffe7da
+  is_service:
+    type: boolean
+  notes:
+    type: string
+  created_at:
+    type: string
+    format: date-time
+    readOnly: true
+  updated_at:
+    type: string
+    format: date-time
+    readOnly: true
+required:
+  - created_at
+  - database_id
+  - db_password_configured
+  - db_username
+  - id
+  - updated_at

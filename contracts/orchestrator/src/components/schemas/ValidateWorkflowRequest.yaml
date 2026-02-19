@@ -1,0 +1,9 @@
+type: object
+description: Request for validate_workflow endpoint.
+properties:
+  workflow_id:
+    type: string
+    format: uuid
+  dag_structure:
+    type: object
+    additionalProperties: {}

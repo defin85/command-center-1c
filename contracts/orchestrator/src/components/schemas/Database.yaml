@@ -1,0 +1,209 @@
+type: object
+description: Serializer для Database model.
+properties:
+  id:
+    type: string
+    readOnly: true
+  name:
+    type: string
+    maxLength: 255
+  description:
+    type: string
+  host:
+    type: string
+    maxLength: 255
+  port:
+    type: integer
+    maximum: 2147483647
+    minimum: -2147483648
+  base_name:
+    type: string
+    description: Infobase name from 1C cluster
+    maxLength: 255
+  odata_url:
+    type: string
+    format: uri
+    maxLength: 512
+  username:
+    type: string
+    maxLength: 255
+  password:
+    type: string
+    writeOnly: true
+  password_configured:
+    type: boolean
+    readOnly: true
+  server_address:
+    type: string
+    readOnly: true
+    description: 'Адрес сервера 1С (например: localhost, srv1c, 192.168.1.100)'
+  server_port:
+    type: integer
+    readOnly: true
+    description: Порт сервера 1С (обычно 1540 или 1541)
+  infobase_name:
+    type: string
+    readOnly: true
+    description: Имя информационной базы на сервере 1С (если отличается от name)
+  status:
+    enum:
+      - active
+      - inactive
+      - error
+      - maintenance
+    type: string
+    description: |-
+      * `active` - Active
+      * `inactive` - Inactive
+      * `error` - Error
+      * `maintenance` - Maintenance
+    x-spec-enum-id: c5c3d7086c0dc2cb
+  status_display:
+    type: string
+    readOnly: true
+  version:
+    type: string
+    maxLength: 50
+  last_check:
+    type: string
+    format: date-time
+    readOnly: true
+    nullable: true
+  last_check_status:
+    enum:
+      - ok
+      - degraded
+      - down
+      - unknown
+    type: string
+    description: |-
+      * `ok` - OK
+      * `degraded` - Degraded
+      * `down` - Down
+      * `unknown` - Unknown
+    x-spec-enum-id: b8b0456794b97d0a
+    readOnly: true
+  consecutive_failures:
+    type: integer
+    readOnly: true
+  avg_response_time:
+    type: number
+    format: double
+    readOnly: true
+    nullable: true
+    description: Average response time in milliseconds
+  max_connections:
+    type: integer
+    maximum: 2147483647
+    minimum: -2147483648
+    description: Maximum concurrent connections
+  connection_timeout:
+    type: integer
+    maximum: 2147483647
+    minimum: -2147483648
+    description: Connection timeout in seconds
+  health_check_enabled:
+    type: boolean
+  cluster_id:
+    type: string
+    format: uuid
+    description: 1C Cluster this infobase belongs to
+    nullable: true
+    readOnly: true
+  is_healthy:
+    type: boolean
+    readOnly: true
+  sessions_deny:
+    type: boolean
+    nullable: true
+    readOnly: true
+  scheduled_jobs_deny:
+    type: boolean
+    nullable: true
+    readOnly: true
+  dbms:
+    type: string
+    nullable: true
+    readOnly: true
+  db_server:
+    type: string
+    nullable: true
+    readOnly: true
+  db_name:
+    type: string
+    nullable: true
+    readOnly: true
+  ibcmd_connection:
+    type: object
+    additionalProperties: {}
+    nullable: true
+    readOnly: true
+  denied_from:
+    type: string
+    nullable: true
+    readOnly: true
+  denied_to:
+    type: string
+    nullable: true
+    readOnly: true
+  denied_message:
+    type: string
+    nullable: true
+    readOnly: true
+  permission_code:
+    type: string
+    nullable: true
+    readOnly: true
+  denied_parameter:
+    type: string
+    nullable: true
+    readOnly: true
+  last_health_error:
+    type: string
+    nullable: true
+    readOnly: true
+  last_health_error_code:
+    type: string
+    nullable: true
+    readOnly: true
+  created_at:
+    type: string
+    format: date-time
+    readOnly: true
+  updated_at:
+    type: string
+    format: date-time
+    readOnly: true
+required:
+  - avg_response_time
+  - cluster_id
+  - consecutive_failures
+  - created_at
+  - db_name
+  - db_server
+  - dbms
+  - denied_from
+  - denied_message
+  - denied_parameter
+  - denied_to
+  - host
+  - ibcmd_connection
+  - id
+  - infobase_name
+  - is_healthy
+  - last_check
+  - last_check_status
+  - last_health_error
+  - last_health_error_code
+  - name
+  - odata_url
+  - password
+  - password_configured
+  - permission_code
+  - scheduled_jobs_deny
+  - server_address
+  - server_port
+  - sessions_deny
+  - status_display
+  - updated_at
+  - username

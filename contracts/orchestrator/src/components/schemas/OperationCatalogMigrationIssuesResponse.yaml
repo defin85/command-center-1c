@@ -1,0 +1,14 @@
+type: object
+properties:
+  issues:
+    type: array
+    items:
+      $ref: ./OperationCatalogMigrationIssue.yaml
+  count:
+    type: integer
+  total:
+    type: integer
+required:
+  - count
+  - issues
+  - total

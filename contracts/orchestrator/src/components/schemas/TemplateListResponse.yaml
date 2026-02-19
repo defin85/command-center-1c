@@ -1,0 +1,11 @@
+type: object
+properties:
+  templates:
+    type: array
+    items:
+      $ref: ./TemplateListItem.yaml
+  count:
+    type: integer
+required:
+  - count
+  - templates

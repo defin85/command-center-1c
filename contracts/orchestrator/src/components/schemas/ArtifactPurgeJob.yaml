@@ -1,0 +1,47 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  artifact_id:
+    type: string
+    format: uuid
+  mode:
+    type: string
+  status:
+    type: string
+  reason:
+    type: string
+  created_at:
+    type: string
+    format: date-time
+  started_at:
+    type: string
+    format: date-time
+    nullable: true
+  completed_at:
+    type: string
+    format: date-time
+    nullable: true
+  total_objects:
+    type: integer
+  deleted_objects:
+    type: integer
+  total_bytes:
+    type: integer
+  deleted_bytes:
+    type: integer
+  error_code:
+    type: string
+  error_message:
+    type: string
+required:
+  - artifact_id
+  - created_at
+  - deleted_bytes
+  - deleted_objects
+  - id
+  - mode
+  - status
+  - total_bytes
+  - total_objects

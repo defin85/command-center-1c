@@ -1,0 +1,26 @@
+type: object
+properties:
+  entity_name:
+    type: string
+    maxLength: 255
+  documents_by_database:
+    type: object
+    additionalProperties:
+      type: array
+      items: {}
+  max_attempts:
+    type: integer
+    maximum: 5
+    minimum: 1
+    default: 5
+  retry_interval_seconds:
+    type: integer
+    maximum: 120
+    minimum: 0
+    default: 0
+  external_key_field:
+    type: string
+    default: ExternalRunKey
+required:
+  - documents_by_database
+  - entity_name

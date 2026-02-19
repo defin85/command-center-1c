@@ -1,0 +1,15 @@
+type: object
+properties:
+  run:
+    $ref: ./PoolRun.yaml
+  command_type:
+    type: string
+  result:
+    type: string
+  replayed:
+    type: boolean
+required:
+  - command_type
+  - replayed
+  - result
+  - run

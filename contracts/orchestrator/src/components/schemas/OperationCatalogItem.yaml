@@ -1,0 +1,56 @@
+type: object
+description: Operation catalog entry for Operations Center.
+properties:
+  id:
+    type: string
+    description: Catalog item identifier
+  kind:
+    enum:
+      - operation
+      - template
+    type: string
+    description: |-
+      * `operation` - operation
+      * `template` - template
+    x-spec-enum-id: 40ee2d2766dee835
+  operation_type:
+    type: string
+    nullable: true
+  template_id:
+    type: string
+    nullable: true
+  label:
+    type: string
+  description:
+    type: string
+  driver:
+    type: string
+    description: Driver group (ras/odata/cli/ibcmd/workflow)
+  category:
+    type: string
+  tags:
+    type: array
+    items:
+      type: string
+  requires_config:
+    type: boolean
+  has_ui_form:
+    type: boolean
+  icon:
+    type: string
+    nullable: true
+  deprecated:
+    type: boolean
+  deprecated_message:
+    type: string
+    nullable: true
+required:
+  - category
+  - deprecated
+  - description
+  - driver
+  - has_ui_form
+  - id
+  - kind
+  - label
+  - requires_config

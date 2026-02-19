@@ -7,6 +7,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTRACTS_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(dirname "$CONTRACTS_DIR")"
+ORCHESTRATOR_BUNDLE_SCRIPT="$SCRIPT_DIR/build-orchestrator-openapi.sh"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -16,6 +17,10 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 BASE_COMMIT="${1:-HEAD~1}"
+IS_CI=false
+if [[ -n "${CI:-}" || -n "${GITHUB_ACTIONS:-}" || -n "${GITLAB_CI:-}" || -n "${JENKINS_HOME:-}" ]]; then
+    IS_CI=true
+fi
 
 echo -e "${GREEN}=== Breaking Changes Detection ===${NC}"
 echo "Comparing against: $BASE_COMMIT"
@@ -28,10 +33,29 @@ if ! git rev-parse --git-dir > /dev/null 2>&1; then
 fi
 GIT_ROOT="$(git rev-parse --show-toplevel)"
 
+# For modularized orchestrator contract, ensure bundle is fresh before diff.
+if [[ -d "$CONTRACTS_DIR/orchestrator/src" ]]; then
+    echo -e "${BLUE}Checking orchestrator bundle freshness...${NC}"
+    if [[ ! -x "$ORCHESTRATOR_BUNDLE_SCRIPT" ]]; then
+        echo -e "${RED}Error: Bundle checker is missing: $ORCHESTRATOR_BUNDLE_SCRIPT${NC}"
+        exit 1
+    fi
+    if ! "$ORCHESTRATOR_BUNDLE_SCRIPT" check; then
+        exit 1
+    fi
+    echo ""
+fi
+
 # Check if oasdiff is installed
 if ! command -v oasdiff &> /dev/null; then
+    if [[ "$IS_CI" == "true" ]]; then
+        echo -e "${RED}Error: oasdiff is required in CI for breaking-change checks${NC}"
+        echo "Install with: go install github.com/oasdiff/oasdiff@latest"
+        exit 1
+    fi
+
     echo -e "${YELLOW}Warning: oasdiff not installed${NC}"
-    echo "Install with: go install github.com/tufin/oasdiff@latest"
+    echo "Install with: go install github.com/oasdiff/oasdiff@latest"
     echo ""
     echo "Falling back to simple git diff..."
     echo ""

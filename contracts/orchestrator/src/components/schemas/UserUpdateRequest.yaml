@@ -1,0 +1,18 @@
+type: object
+properties:
+  id:
+    type: integer
+  username:
+    type: string
+  email:
+    type: string
+  first_name:
+    type: string
+  last_name:
+    type: string
+  is_staff:
+    type: boolean
+  is_active:
+    type: boolean
+required:
+  - id

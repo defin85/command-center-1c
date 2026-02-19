@@ -1,0 +1,17 @@
+type: object
+description: Response for list_databases endpoint.
+properties:
+  databases:
+    type: array
+    items:
+      $ref: ./Database.yaml
+  count:
+    type: integer
+    description: Number of databases in current page
+  total:
+    type: integer
+    description: Total number of databases matching filters
+required:
+  - count
+  - databases
+  - total

@@ -1,0 +1,34 @@
+get:
+  operationId: v2_databases_stream_retrieve
+  summary: Database SSE stream
+  description: >-
+    SSE endpoint for database updates. Use ticket from
+    /databases/stream-ticket/.
+  tags:
+    - v2
+  parameters:
+    - name: ticket
+      in: query
+      required: true
+      schema:
+        type: string
+      description: Short-lived SSE ticket from /databases/stream-ticket/.
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  responses:
+    '200':
+      description: SSE stream (text/event-stream)
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+    '429':
+      description: Stream already active

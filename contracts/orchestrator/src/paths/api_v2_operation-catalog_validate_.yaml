@@ -1,0 +1,41 @@
+post:
+  operationId: v2_operation_catalog_validate_create
+  summary: Validate operation exposure
+  tags:
+    - v2
+  requestBody:
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/OperationCatalogValidateRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/OperationCatalogValidateRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/OperationCatalogValidateRequest.yaml
+    required: true
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/OperationCatalogValidateResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

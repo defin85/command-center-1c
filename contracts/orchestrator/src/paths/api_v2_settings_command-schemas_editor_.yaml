@@ -1,0 +1,54 @@
+get:
+  operationId: v2_settings_command_schemas_editor_retrieve
+  description: >-
+    Return base/overrides versions and catalogs for Command Schemas Editor
+    (staff-only).
+
+
+    Supports conditional requests via ETag/If-None-Match (returns 304).
+  summary: Get command schemas editor view (v2)
+  parameters:
+    - in: query
+      name: driver
+      schema:
+        type: string
+      description: Driver name (cli/ibcmd)
+      required: true
+    - in: query
+      name: mode
+      schema:
+        type: string
+      description: >-
+        Editor mode (guided/raw). In raw mode, base catalog is loaded from base
+        alias latest.
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/CommandSchemasEditorViewResponse.yaml
+      description: ''
+    '304':
+      description: Not Modified
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized

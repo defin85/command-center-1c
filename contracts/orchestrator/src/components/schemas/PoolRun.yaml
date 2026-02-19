@@ -1,0 +1,109 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  pool_id:
+    type: string
+    format: uuid
+  schema_template_id:
+    type: string
+    format: uuid
+    nullable: true
+  mode:
+    type: string
+  direction:
+    type: string
+  status:
+    type: string
+  status_reason:
+    type: string
+    nullable: true
+  period_start:
+    type: string
+    format: date
+  period_end:
+    type: string
+    format: date
+    nullable: true
+  run_input:
+    type: object
+    additionalProperties: {}
+    nullable: true
+  input_contract_version:
+    enum:
+      - run_input_v1
+      - legacy_pre_run_input
+    type: string
+    description: |-
+      * `run_input_v1` - run_input_v1
+      * `legacy_pre_run_input` - legacy_pre_run_input
+    x-spec-enum-id: c8d5b9a6cc21b4c3
+  idempotency_key:
+    type: string
+  workflow_execution_id:
+    type: string
+    format: uuid
+    nullable: true
+  workflow_status:
+    type: string
+    nullable: true
+  approval_state:
+    type: string
+    nullable: true
+  publication_step_state:
+    type: string
+    nullable: true
+  terminal_reason:
+    type: string
+    nullable: true
+  execution_backend:
+    type: string
+    nullable: true
+  provenance:
+    $ref: ./PoolRunProvenance.yaml
+  workflow_template_name:
+    type: string
+    nullable: true
+  seed:
+    type: integer
+    nullable: true
+  validation_summary: {}
+  publication_summary: {}
+  diagnostics: {}
+  last_error:
+    type: string
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+  validated_at:
+    type: string
+    format: date-time
+    nullable: true
+  publication_confirmed_at:
+    type: string
+    format: date-time
+    nullable: true
+  publishing_started_at:
+    type: string
+    format: date-time
+    nullable: true
+  completed_at:
+    type: string
+    format: date-time
+    nullable: true
+required:
+  - direction
+  - id
+  - idempotency_key
+  - mode
+  - period_start
+  - pool_id
+  - status
+  - tenant_id

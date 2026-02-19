@@ -1,0 +1,10 @@
+type: object
+properties:
+  driver:
+    type: string
+  catalog:
+    type: object
+    additionalProperties: {}
+required:
+  - catalog
+  - driver

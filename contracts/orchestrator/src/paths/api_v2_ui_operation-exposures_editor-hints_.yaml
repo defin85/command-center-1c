@@ -1,0 +1,32 @@
+get:
+  operationId: v2_ui_operation_exposures_editor_hints_retrieve
+  description: >-
+    Returns capability-driven UI hints for unified operation exposure editor
+    (staff-only).
+  summary: Get operation exposure editor hints (capability UI hints)
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ActionCatalogEditorHintsResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

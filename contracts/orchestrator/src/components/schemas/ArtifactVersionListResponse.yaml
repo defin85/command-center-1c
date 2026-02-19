@@ -1,0 +1,11 @@
+type: object
+properties:
+  versions:
+    type: array
+    items:
+      $ref: ./ArtifactVersion.yaml
+  count:
+    type: integer
+required:
+  - count
+  - versions

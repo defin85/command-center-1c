@@ -1,0 +1,7 @@
+type: object
+properties:
+  tenant_id:
+    type: string
+    format: uuid
+required:
+  - tenant_id

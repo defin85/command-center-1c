@@ -1,0 +1,30 @@
+type: object
+properties:
+  database_id:
+    type: string
+  user_id:
+    type: integer
+    nullable: true
+  db_username:
+    type: string
+  db_password:
+    type: string
+    writeOnly: true
+  auth_type:
+    enum:
+      - local
+      - service
+      - other
+    type: string
+    description: |-
+      * `local` - Local
+      * `service` - Service
+      * `other` - Other
+    x-spec-enum-id: 2b98a5ef99ffe7da
+  is_service:
+    type: boolean
+  notes:
+    type: string
+required:
+  - database_id
+  - db_username

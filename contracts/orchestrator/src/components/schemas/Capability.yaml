@@ -1,0 +1,18 @@
+type: object
+properties:
+  code:
+    type: string
+  name:
+    type: string
+  app_label:
+    type: string
+  codename:
+    type: string
+  exists:
+    type: boolean
+required:
+  - app_label
+  - code
+  - codename
+  - exists
+  - name

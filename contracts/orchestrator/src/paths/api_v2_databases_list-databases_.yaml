@@ -1,0 +1,70 @@
+get:
+  operationId: v2_databases_list_databases_retrieve
+  description: >-
+    List all databases with optional filtering by cluster, status, health
+    status, and search term. Supports pagination.
+  summary: List all databases
+  parameters:
+    - in: query
+      name: cluster_id
+      schema:
+        type: string
+      description: Filter by cluster UUID
+    - in: query
+      name: filters
+      schema:
+        type: string
+      description: JSON object with filter conditions
+    - in: query
+      name: health_status
+      schema:
+        type: string
+      description: Filter by health status (ok, degraded, down, unknown)
+    - in: query
+      name: limit
+      schema:
+        type: integer
+      description: 'Maximum results (default: 100, max: 1000)'
+    - in: query
+      name: offset
+      schema:
+        type: integer
+      description: 'Pagination offset (default: 0)'
+    - in: query
+      name: search
+      schema:
+        type: string
+      description: Search by name or description
+    - in: query
+      name: sort
+      schema:
+        type: string
+      description: JSON object with sort configuration
+    - in: query
+      name: status
+      schema:
+        type: string
+      description: Filter by status (active, inactive, error, maintenance)
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/DatabaseListResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized

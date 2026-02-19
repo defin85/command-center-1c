@@ -1,0 +1,21 @@
+type: object
+properties:
+  workflow_run_id:
+    type: string
+    format: uuid
+    nullable: true
+  workflow_status:
+    type: string
+    nullable: true
+  execution_backend:
+    type: string
+  retry_chain:
+    type: array
+    items:
+      $ref: ./PoolRunRetryChainAttempt.yaml
+  legacy_reference:
+    type: string
+    nullable: true
+required:
+  - execution_backend
+  - retry_chain

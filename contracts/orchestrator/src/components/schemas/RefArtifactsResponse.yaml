@@ -1,0 +1,14 @@
+type: object
+properties:
+  artifacts:
+    type: array
+    items:
+      $ref: ./ArtifactRef.yaml
+  count:
+    type: integer
+  total:
+    type: integer
+required:
+  - artifacts
+  - count
+  - total

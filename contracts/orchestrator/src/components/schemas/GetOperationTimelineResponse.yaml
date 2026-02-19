@@ -1,0 +1,23 @@
+type: object
+description: Response for get_operation_timeline endpoint.
+properties:
+  operation_id:
+    type: string
+    description: Operation ID
+  timeline:
+    type: array
+    items:
+      $ref: ./TimelineEvent.yaml
+    description: List of timeline events
+  total_events:
+    type: integer
+    description: Total number of events
+  duration_ms:
+    type: integer
+    nullable: true
+    description: Duration in milliseconds (null if < 2 events)
+required:
+  - duration_ms
+  - operation_id
+  - timeline
+  - total_events

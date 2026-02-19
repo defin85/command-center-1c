@@ -1,0 +1,48 @@
+post:
+  operationId: v2_files_upload_create
+  description: >-
+    Upload a file for use in operations. Supports operation_input, extension,
+    and export purposes.
+  summary: Upload file
+  tags:
+    - v2
+  requestBody:
+    content:
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/FileUploadRequest.yaml
+    required: true
+  security:
+    - bearerAuth: []
+  responses:
+    '201':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/FileUploadResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '413':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

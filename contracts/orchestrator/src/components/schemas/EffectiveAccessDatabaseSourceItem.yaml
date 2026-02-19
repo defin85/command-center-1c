@@ -1,0 +1,22 @@
+type: object
+properties:
+  source:
+    enum:
+      - direct
+      - group
+      - cluster
+    type: string
+    description: |-
+      * `direct` - direct
+      * `group` - group
+      * `cluster` - cluster
+    x-spec-enum-id: edab6beb8a874d70
+  level:
+    type: string
+  via_cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+required:
+  - level
+  - source

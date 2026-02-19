@@ -1,0 +1,36 @@
+type: object
+properties:
+  driver:
+    type: string
+  ok:
+    type: boolean
+  base_version:
+    type: string
+    nullable: true
+  base_version_id:
+    type: string
+    nullable: true
+  overrides_version:
+    type: string
+    nullable: true
+  overrides_version_id:
+    type: string
+    nullable: true
+  issues:
+    type: array
+    items:
+      $ref: ./CommandSchemasIssue.yaml
+  errors_count:
+    type: integer
+  warnings_count:
+    type: integer
+required:
+  - base_version
+  - base_version_id
+  - driver
+  - errors_count
+  - issues
+  - ok
+  - overrides_version
+  - overrides_version_id
+  - warnings_count

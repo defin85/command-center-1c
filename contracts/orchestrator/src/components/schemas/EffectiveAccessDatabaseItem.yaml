@@ -1,0 +1,29 @@
+type: object
+properties:
+  database:
+    $ref: ./DatabaseRef.yaml
+  level:
+    type: string
+  source:
+    enum:
+      - direct
+      - group
+      - cluster
+    type: string
+    description: |-
+      * `direct` - direct
+      * `group` - group
+      * `cluster` - cluster
+    x-spec-enum-id: edab6beb8a874d70
+  via_cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+  sources:
+    type: array
+    items:
+      $ref: ./EffectiveAccessDatabaseSourceItem.yaml
+required:
+  - database
+  - level
+  - source

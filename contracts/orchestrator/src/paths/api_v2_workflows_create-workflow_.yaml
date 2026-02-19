@@ -1,0 +1,46 @@
+post:
+  operationId: v2_workflows_create_workflow_create
+  description: Create a new workflow template. The DAG structure is auto-validated.
+  summary: Create workflow template
+  tags:
+    - v2
+  requestBody:
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/CreateWorkflowRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/CreateWorkflowRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/CreateWorkflowRequest.yaml
+    required: true
+  security:
+    - bearerAuth: []
+  responses:
+    '201':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/WorkflowCreateResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

@@ -243,8 +243,27 @@ echo -e "${BLUE}  Phase 1.5b: OpenAPI Validation & Generation${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-# Step 1: Validate OpenAPI specifications
-echo -e "${CYAN}   [1/3] Валидация OpenAPI спецификаций...${NC}"
+# Step 1: Check orchestrator bundle freshness (for modular source workflow)
+echo -e "${CYAN}   [1/4] Проверка актуальности OpenAPI bundle...${NC}"
+if [ -d "$PROJECT_ROOT/contracts/orchestrator/src" ]; then
+    if [ -f "$PROJECT_ROOT/contracts/scripts/build-orchestrator-openapi.sh" ]; then
+        if ! "$PROJECT_ROOT/contracts/scripts/build-orchestrator-openapi.sh" check; then
+            echo ""
+            echo -e "${RED}✗ Bundle orchestrator неактуален${NC}"
+            echo -e "${YELLOW}Совет: Запустите contracts/scripts/build-orchestrator-openapi.sh build${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${YELLOW}⚠️  Скрипт проверки bundle не найден (contracts/scripts/build-orchestrator-openapi.sh)${NC}"
+        exit 1
+    fi
+else
+    echo -e "${YELLOW}⊘ Modular source для orchestrator не обнаружен (skip)${NC}"
+fi
+echo ""
+
+# Step 2: Validate OpenAPI specifications
+echo -e "${CYAN}   [2/4] Валидация OpenAPI спецификаций...${NC}"
 if [ -f "$PROJECT_ROOT/contracts/scripts/validate-specs.sh" ]; then
     if ! "$PROJECT_ROOT/contracts/scripts/validate-specs.sh"; then
         echo ""
@@ -257,8 +276,8 @@ else
 fi
 echo ""
 
-# Step 2: Generate API clients from OpenAPI specs
-echo -e "${CYAN}   [2/3] Генерация API клиентов...${NC}"
+# Step 3: Generate API clients from OpenAPI specs
+echo -e "${CYAN}   [3/4] Генерация API клиентов...${NC}"
 if [ -f "$PROJECT_ROOT/contracts/scripts/generate-all.sh" ]; then
     if ! "$PROJECT_ROOT/contracts/scripts/generate-all.sh"; then
         echo ""
@@ -272,8 +291,8 @@ else
 fi
 echo ""
 
-# Step 3: Verify generated code compiles
-echo -e "${CYAN}   [3/3] Проверка сгенерированного кода...${NC}"
+# Step 4: Verify generated code compiles
+echo -e "${CYAN}   [4/4] Проверка сгенерированного кода...${NC}"
 if [ -f "$PROJECT_ROOT/contracts/scripts/verify-generated-code.sh" ]; then
     # Use --quick mode during startup for faster feedback
     if ! "$PROJECT_ROOT/contracts/scripts/verify-generated-code.sh" --quick; then

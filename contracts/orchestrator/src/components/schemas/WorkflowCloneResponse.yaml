@@ -1,0 +1,14 @@
+type: object
+description: Response for clone_workflow endpoint.
+properties:
+  workflow:
+    $ref: ./WorkflowTemplateDetail.yaml
+  cloned_from:
+    type: string
+    format: uuid
+  message:
+    type: string
+required:
+  - cloned_from
+  - message
+  - workflow

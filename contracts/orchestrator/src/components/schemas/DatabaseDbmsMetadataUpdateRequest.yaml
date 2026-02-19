@@ -1,0 +1,17 @@
+type: object
+description: Request body for update_dbms_metadata endpoint.
+properties:
+  database_id:
+    type: string
+    description: Database ID to update
+  dbms:
+    type: string
+  db_server:
+    type: string
+  db_name:
+    type: string
+  reset:
+    type: boolean
+    default: false
+required:
+  - database_id

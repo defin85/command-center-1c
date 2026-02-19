@@ -2,16 +2,22 @@
 # Validate OpenAPI specifications
 # Usage: ./contracts/scripts/validate-specs.sh
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTRACTS_DIR="$(dirname "$SCRIPT_DIR")"
+ORCHESTRATOR_BUNDLE_SCRIPT="$SCRIPT_DIR/build-orchestrator-openapi.sh"
 
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
+
+STRICT_OPENAPI_VALIDATION=false
+if [[ -n "${CI:-}" || -n "${GITHUB_ACTIONS:-}" || -n "${GITLAB_CI:-}" || -n "${JENKINS_HOME:-}" ]]; then
+    STRICT_OPENAPI_VALIDATION=true
+fi
 
 echo -e "${GREEN}=== OpenAPI Specification Validation ===${NC}"
 echo ""
@@ -55,6 +61,11 @@ validate_spec() {
     # Method 3: Basic YAML syntax check
     if command -v python3 &> /dev/null; then
         if python3 -c "import yaml; yaml.safe_load(open('$spec_file'))" 2> /dev/null; then
+            if [[ "$STRICT_OPENAPI_VALIDATION" == "true" ]]; then
+                echo -e "  ${RED}✗ YAML syntax is valid, but full OpenAPI validation tool is required in CI${NC}"
+                echo -e "  ${RED}  Install oapi-codegen or swagger-cli${NC}"
+                return 1
+            fi
             echo -e "  ${YELLOW}⊘ YAML syntax valid (Python PyYAML)${NC}"
             echo -e "  ${YELLOW}  Install oapi-codegen or swagger-cli for full validation${NC}"
             return 0
@@ -66,6 +77,11 @@ validate_spec() {
     fi
 
     # No validators available
+    if [[ "$STRICT_OPENAPI_VALIDATION" == "true" ]]; then
+        echo -e "  ${RED}✗ No OpenAPI validators available in CI${NC}"
+        echo -e "  ${RED}  Install one of: oapi-codegen or swagger-cli${NC}"
+        return 1
+    fi
     echo -e "  ${YELLOW}⊘ No validators available${NC}"
     echo -e "  ${YELLOW}  Install one of: oapi-codegen, swagger-cli, or python3 with PyYAML${NC}"
     return 0
@@ -84,6 +100,17 @@ fi
 
 # orchestrator (if exists)
 if [[ -f "$CONTRACTS_DIR/orchestrator/openapi.yaml" ]]; then
+    if [[ -d "$CONTRACTS_DIR/orchestrator/src" ]]; then
+        echo -e "${GREEN}Checking orchestrator bundle freshness...${NC}"
+        if [[ ! -x "$ORCHESTRATOR_BUNDLE_SCRIPT" ]]; then
+            echo -e "  ${RED}✗ Bundle checker is missing: $ORCHESTRATOR_BUNDLE_SCRIPT${NC}"
+            FAILED=$((FAILED + 1))
+        elif ! "$ORCHESTRATOR_BUNDLE_SCRIPT" check; then
+            FAILED=$((FAILED + 1))
+        fi
+        echo ""
+    fi
+
     if ! validate_spec "$CONTRACTS_DIR/orchestrator/openapi.yaml" "orchestrator"; then
         FAILED=$((FAILED + 1))
     fi

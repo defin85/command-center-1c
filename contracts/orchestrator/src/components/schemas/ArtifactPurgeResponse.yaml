@@ -1,0 +1,15 @@
+type: object
+properties:
+  job_id:
+    type: string
+    format: uuid
+    nullable: true
+  plan:
+    $ref: ./ArtifactPurgePlan.yaml
+  blockers:
+    type: array
+    items:
+      $ref: ./ArtifactPurgeBlocker.yaml
+required:
+  - blockers
+  - plan

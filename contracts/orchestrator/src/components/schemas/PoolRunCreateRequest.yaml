@@ -1,0 +1,52 @@
+type: object
+properties:
+  pool_id:
+    type: string
+    format: uuid
+  direction:
+    enum:
+      - top_down
+      - bottom_up
+    type: string
+    description: |-
+      * `top_down` - top_down
+      * `bottom_up` - bottom_up
+    x-spec-enum-id: d9ebd7a9e5097372
+  period_start:
+    type: string
+    format: date
+  period_end:
+    type: string
+    format: date
+    nullable: true
+  run_input:
+    oneOf:
+      - $ref: ./PoolRunInputTopDown.yaml
+      - $ref: ./PoolRunInputBottomUp.yaml
+    description: Direction-specific run input payload.
+  mode:
+    enum:
+      - safe
+      - unsafe
+    type: string
+    description: |-
+      * `safe` - safe
+      * `unsafe` - unsafe
+    x-spec-enum-id: 7203601382e63e68
+    default: safe
+  schema_template_id:
+    type: string
+    format: uuid
+    nullable: true
+  seed:
+    type: integer
+    nullable: true
+  validation_summary: {}
+  diagnostics:
+    type: array
+    items: {}
+required:
+  - direction
+  - period_start
+  - pool_id
+  - run_input

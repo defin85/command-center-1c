@@ -1,0 +1,18 @@
+type: object
+properties:
+  user_id:
+    type: integer
+  artifact_id:
+    type: string
+    format: uuid
+  level:
+    type: string
+  notes:
+    type: string
+  reason:
+    type: string
+required:
+  - artifact_id
+  - level
+  - reason
+  - user_id

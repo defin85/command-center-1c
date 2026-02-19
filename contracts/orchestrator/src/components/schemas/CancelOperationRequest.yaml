@@ -1,0 +1,8 @@
+type: object
+description: Request body for cancel_operation endpoint.
+properties:
+  operation_id:
+    type: string
+    description: ID of the operation to cancel (UUID)
+required:
+  - operation_id

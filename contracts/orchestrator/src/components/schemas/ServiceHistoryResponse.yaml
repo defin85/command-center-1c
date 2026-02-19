@@ -1,0 +1,22 @@
+type: object
+description: Response for get_history endpoint.
+properties:
+  service:
+    type: string
+    description: Service name
+  display_name:
+    type: string
+    description: Human-readable service name
+  minutes:
+    type: integer
+    description: History period in minutes
+  data_points:
+    type: array
+    items:
+      $ref: ./HistoryDataPoint.yaml
+    description: Historical data points
+required:
+  - data_points
+  - display_name
+  - minutes
+  - service

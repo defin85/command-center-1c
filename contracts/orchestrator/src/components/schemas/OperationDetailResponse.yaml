@@ -1,0 +1,21 @@
+type: object
+description: Response for get_operation endpoint.
+properties:
+  operation:
+    $ref: ./BatchOperation.yaml
+  execution_plan:
+    $ref: ./ExecutionPlan.yaml
+  bindings:
+    type: array
+    items:
+      $ref: ./ExecutionBinding.yaml
+  tasks:
+    type: array
+    items:
+      $ref: ./Task.yaml
+    description: Task details (if include_tasks=true)
+  progress:
+    $ref: ./OperationProgress.yaml
+required:
+  - operation
+  - progress

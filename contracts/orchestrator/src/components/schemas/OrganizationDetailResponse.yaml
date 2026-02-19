@@ -1,0 +1,9 @@
+type: object
+properties:
+  organization:
+    $ref: ./Organization.yaml
+  pool_bindings:
+    type: array
+    items: {}
+required:
+  - organization

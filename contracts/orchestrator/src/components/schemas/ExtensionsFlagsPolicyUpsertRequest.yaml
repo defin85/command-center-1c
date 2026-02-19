@@ -1,0 +1,18 @@
+type: object
+properties:
+  active:
+    type: boolean
+    nullable: true
+  safe_mode:
+    type: boolean
+    nullable: true
+  unsafe_action_protection:
+    type: boolean
+    nullable: true
+  reason:
+    type: string
+    nullable: true
+required:
+  - active
+  - safe_mode
+  - unsafe_action_protection

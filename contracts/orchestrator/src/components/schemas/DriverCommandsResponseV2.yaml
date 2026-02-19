@@ -1,0 +1,16 @@
+type: object
+properties:
+  driver:
+    type: string
+  base_version:
+    type: string
+  overrides_version:
+    type: string
+    nullable: true
+  generated_at:
+    type: string
+  catalog:
+    $ref: ./DriverCatalogV2.yaml
+required:
+  - catalog
+  - driver

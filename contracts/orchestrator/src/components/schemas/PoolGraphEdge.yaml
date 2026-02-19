@@ -1,0 +1,30 @@
+type: object
+properties:
+  edge_version_id:
+    type: string
+    format: uuid
+  parent_node_version_id:
+    type: string
+    format: uuid
+  child_node_version_id:
+    type: string
+    format: uuid
+  weight:
+    type: string
+    format: decimal
+    pattern: ^-?\d{0,6}(?:\.\d{0,6})?$
+  min_amount:
+    type: string
+    format: decimal
+    pattern: ^-?\d{0,16}(?:\.\d{0,2})?$
+    nullable: true
+  max_amount:
+    type: string
+    format: decimal
+    pattern: ^-?\d{0,16}(?:\.\d{0,2})?$
+    nullable: true
+required:
+  - child_node_version_id
+  - edge_version_id
+  - parent_node_version_id
+  - weight

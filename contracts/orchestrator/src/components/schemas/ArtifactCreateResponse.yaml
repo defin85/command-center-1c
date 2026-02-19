@@ -1,0 +1,9 @@
+type: object
+properties:
+  artifact:
+    $ref: ./Artifact.yaml
+  message:
+    type: string
+required:
+  - artifact
+  - message

@@ -1,0 +1,7 @@
+type: object
+properties:
+  starting_amount:
+    type: string
+    format: decimal
+required:
+  - starting_amount

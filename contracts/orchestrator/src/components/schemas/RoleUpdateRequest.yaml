@@ -1,0 +1,12 @@
+type: object
+properties:
+  group_id:
+    type: integer
+  name:
+    type: string
+  reason:
+    type: string
+required:
+  - group_id
+  - name
+  - reason

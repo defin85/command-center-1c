@@ -1,0 +1,10 @@
+type: object
+description: Request body for multiplex stream unsubscribe.
+properties:
+  operation_ids:
+    type: array
+    items:
+      type: string
+    description: Operation IDs to unsubscribe from
+required:
+  - operation_ids

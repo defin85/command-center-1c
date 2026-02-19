@@ -1,0 +1,9 @@
+type: object
+properties:
+  created:
+    type: boolean
+  permission:
+    $ref: ./ArtifactPermission.yaml
+required:
+  - created
+  - permission

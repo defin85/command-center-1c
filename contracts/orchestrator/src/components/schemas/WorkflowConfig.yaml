@@ -1,0 +1,15 @@
+type: object
+description: Serializer for WorkflowConfig Pydantic model.
+properties:
+  timeout_seconds:
+    type: integer
+    maximum: 86400
+    minimum: 60
+    default: 3600
+    description: Total workflow timeout (60-86400s)
+  max_retries:
+    type: integer
+    maximum: 3
+    minimum: 0
+    default: 0
+    description: Workflow-level retry attempts

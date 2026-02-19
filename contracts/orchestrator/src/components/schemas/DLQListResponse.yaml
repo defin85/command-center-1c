@@ -1,0 +1,14 @@
+type: object
+properties:
+  messages:
+    type: array
+    items:
+      $ref: ./DLQMessage.yaml
+  count:
+    type: integer
+  total:
+    type: integer
+required:
+  - count
+  - messages
+  - total

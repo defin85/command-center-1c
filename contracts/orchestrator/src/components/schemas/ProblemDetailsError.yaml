@@ -1,0 +1,20 @@
+type: object
+properties:
+  type:
+    type: string
+    default: about:blank
+  title:
+    type: string
+  status:
+    type: integer
+  detail:
+    type: string
+  code:
+    type: string
+  errors: {}
+required:
+  - code
+  - detail
+  - status
+  - title
+  - type

@@ -1,0 +1,20 @@
+type: object
+description: Aggregated statistics for all services.
+properties:
+  total:
+    type: integer
+    description: Total number of services
+  online:
+    type: integer
+    description: Number of online services
+  offline:
+    type: integer
+    description: Number of offline services
+  degraded:
+    type: integer
+    description: Number of degraded services
+required:
+  - degraded
+  - offline
+  - online
+  - total

@@ -1,0 +1,8 @@
+type: object
+properties:
+  cluster_id:
+    type: string
+    format: uuid
+  all:
+    type: boolean
+    default: false

@@ -1,0 +1,71 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  definition_id:
+    type: string
+    format: uuid
+  surface:
+    type: string
+  alias:
+    type: string
+  tenant_id:
+    type: string
+    format: uuid
+    nullable: true
+  name:
+    type: string
+  description:
+    type: string
+    nullable: true
+  is_active:
+    type: boolean
+  capability:
+    type: string
+  contexts:
+    type: array
+    items:
+      type: string
+  display_order:
+    type: integer
+  capability_config: {}
+  status:
+    type: string
+  system_managed:
+    type: boolean
+  domain:
+    type: string
+  operation_type:
+    type: string
+  target_entity:
+    type: string
+  template_data: {}
+  template_exposure_id:
+    type: string
+    format: uuid
+  exposure_revision:
+    type: integer
+    minimum: 1
+  template_exposure_revision:
+    type: integer
+    minimum: 1
+  executor_kind:
+    type: string
+  executor_command_id:
+    type: string
+    nullable: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - alias
+  - definition_id
+  - id
+  - is_active
+  - name
+  - status
+  - surface

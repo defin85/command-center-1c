@@ -1,0 +1,53 @@
+post:
+  operationId: v2_workflows_validate_workflow_create
+  description: >-
+    Validate a workflow DAG structure. Can validate by workflow_id or by
+    providing dag_structure directly.
+  summary: Validate workflow DAG
+  tags:
+    - v2
+  requestBody:
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/ValidateWorkflowRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/ValidateWorkflowRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/ValidateWorkflowRequest.yaml
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/WorkflowValidateResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '404':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

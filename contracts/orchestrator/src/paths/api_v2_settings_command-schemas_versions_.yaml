@@ -1,0 +1,56 @@
+get:
+  operationId: v2_settings_command_schemas_versions_retrieve
+  description: List base/overrides versions for Command Schemas Editor (staff-only).
+  summary: List command schema artifact versions (v2)
+  parameters:
+    - in: query
+      name: artifact
+      schema:
+        type: string
+      description: Artifact type (base/overrides)
+      required: true
+    - in: query
+      name: driver
+      schema:
+        type: string
+      description: Driver name (cli/ibcmd)
+      required: true
+    - in: query
+      name: limit
+      schema:
+        type: integer
+      description: Max items (default 50, max 200)
+    - in: query
+      name: offset
+      schema:
+        type: integer
+      description: Offset (default 0)
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/CommandSchemasVersionsListResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized

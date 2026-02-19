@@ -1,0 +1,15 @@
+type: object
+description: Response for discover_clusters endpoint.
+properties:
+  operation_id:
+    type: string
+    description: BatchOperation ID for tracking
+  status:
+    type: string
+    description: 'Status: discovering, error'
+  message:
+    type: string
+required:
+  - message
+  - operation_id
+  - status

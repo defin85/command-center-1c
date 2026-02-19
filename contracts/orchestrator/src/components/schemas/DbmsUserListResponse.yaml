@@ -1,0 +1,15 @@
+type: object
+description: Response for list_dbms_users endpoint.
+properties:
+  users:
+    type: array
+    items:
+      $ref: ./DbmsUserMapping.yaml
+  count:
+    type: integer
+  total:
+    type: integer
+required:
+  - count
+  - total
+  - users

@@ -1,0 +1,14 @@
+type: object
+description: Response for get_workflow endpoint.
+properties:
+  workflow:
+    $ref: ./WorkflowTemplateDetail.yaml
+  statistics:
+    $ref: ./WorkflowStatistics.yaml
+  executions:
+    type: array
+    items:
+      $ref: ./WorkflowExecutionList.yaml
+required:
+  - statistics
+  - workflow

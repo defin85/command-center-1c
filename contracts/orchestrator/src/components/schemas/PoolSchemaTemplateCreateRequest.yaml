@@ -1,0 +1,34 @@
+type: object
+properties:
+  code:
+    type: string
+    maxLength: 64
+    pattern: ^[-a-zA-Z0-9_]+$
+  name:
+    type: string
+    maxLength: 255
+  format:
+    enum:
+      - xlsx
+      - json
+    type: string
+    description: |-
+      * `xlsx` - xlsx
+      * `json` - json
+    x-spec-enum-id: 576543d83e3852b5
+  is_public:
+    type: boolean
+    default: true
+  is_active:
+    type: boolean
+    default: true
+  schema: {}
+  metadata: {}
+  workflow_template_id:
+    type: string
+    format: uuid
+    nullable: true
+required:
+  - code
+  - format
+  - name

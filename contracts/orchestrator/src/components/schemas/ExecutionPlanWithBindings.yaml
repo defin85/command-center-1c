@@ -1,0 +1,11 @@
+type: object
+properties:
+  execution_plan:
+    $ref: ./ExecutionPlan.yaml
+  bindings:
+    type: array
+    items:
+      $ref: ./ExecutionBinding.yaml
+required:
+  - bindings
+  - execution_plan

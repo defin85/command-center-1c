@@ -1,0 +1,45 @@
+type: object
+description: Request body for execute_operation endpoint.
+properties:
+  operation_type:
+    enum:
+      - lock_scheduled_jobs
+      - unlock_scheduled_jobs
+      - block_sessions
+      - unblock_sessions
+      - terminate_sessions
+      - create
+      - update
+      - delete
+      - query
+      - designer_cli
+    type: string
+    x-spec-enum-id: 4954ca7e120c9d20
+    description: |-
+      Operation type to execute
+
+      * `lock_scheduled_jobs` - Lock Scheduled Jobs
+      * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
+      * `block_sessions` - Block Sessions
+      * `unblock_sessions` - Unblock Sessions
+      * `terminate_sessions` - Terminate Sessions
+      * `create` - Create Records
+      * `update` - Update Records
+      * `delete` - Delete Records
+      * `query` - Query Records
+      * `designer_cli` - Designer CLI
+  database_ids:
+    type: array
+    items:
+      type: string
+      format: uuid
+    description: List of database UUIDs
+    maxItems: 500
+    minItems: 1
+  config:
+    type: object
+    additionalProperties: {}
+    description: Operation-specific configuration (e.g., message for block_sessions)
+required:
+  - database_ids
+  - operation_type

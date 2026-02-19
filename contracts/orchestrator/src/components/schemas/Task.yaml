@@ -1,0 +1,92 @@
+type: object
+description: Serializer for Task model.
+properties:
+  id:
+    type: string
+    readOnly: true
+  batch_operation:
+    type: string
+  database:
+    type: string
+    nullable: true
+  database_name:
+    type: string
+    nullable: true
+    readOnly: true
+  status:
+    enum:
+      - pending
+      - queued
+      - processing
+      - completed
+      - failed
+      - retry
+      - cancelled
+    type: string
+    description: |-
+      * `pending` - Pending
+      * `queued` - Queued
+      * `processing` - Processing
+      * `completed` - Completed
+      * `failed` - Failed
+      * `retry` - Retry
+      * `cancelled` - Cancelled
+    x-spec-enum-id: 4ebd79ea9fb09c30
+    readOnly: true
+  result:
+    readOnly: true
+    nullable: true
+    description: Task result data
+  error_message:
+    type: string
+    readOnly: true
+    description: Error message if failed
+  error_code:
+    type: string
+    description: Error code if failed
+    maxLength: 50
+  retry_count:
+    type: integer
+    maximum: 2147483647
+    minimum: -2147483648
+  max_retries:
+    type: integer
+    maximum: 2147483647
+    minimum: -2147483648
+  worker_id:
+    type: string
+    readOnly: true
+    description: Worker that processed this task
+  started_at:
+    type: string
+    format: date-time
+    nullable: true
+  completed_at:
+    type: string
+    format: date-time
+    nullable: true
+  duration_seconds:
+    type: number
+    format: double
+    readOnly: true
+    nullable: true
+    description: Task duration in seconds
+  created_at:
+    type: string
+    format: date-time
+    readOnly: true
+  updated_at:
+    type: string
+    format: date-time
+    readOnly: true
+required:
+  - batch_operation
+  - created_at
+  - database_name
+  - duration_seconds
+  - error_message
+  - id
+  - result
+  - status
+  - updated_at
+  - worker_id

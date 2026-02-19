@@ -1,0 +1,49 @@
+post:
+  operationId: v2_dlq_retry_create
+  description: >-
+    Retry an operation associated with a DLQ entry by re-enqueueing it to worker
+    stream. Staff-only.
+  summary: Retry DLQ message
+  tags:
+    - v2
+  requestBody:
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/DLQRetryRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/DLQRetryRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/DLQRetryRequest.yaml
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/DLQRetryResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

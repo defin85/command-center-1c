@@ -1,0 +1,9 @@
+type: object
+properties:
+  organization:
+    $ref: ./Organization.yaml
+  created:
+    type: boolean
+required:
+  - created
+  - organization

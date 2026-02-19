@@ -1,0 +1,42 @@
+get:
+  operationId: v2_operations_stream_retrieve
+  summary: Operation SSE stream
+  description: >-
+    SSE endpoint for operation updates. Prefer ticket from
+    /operations/stream-ticket/. Legacy token auth is deprecated.
+  tags:
+    - v2
+  parameters:
+    - name: ticket
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Short-lived SSE ticket from /operations/stream-ticket/.
+    - name: operation_id
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Operation ID (deprecated legacy token auth).
+    - name: token
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Legacy token auth (deprecated).
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  responses:
+    '200':
+      description: SSE stream (text/event-stream)
+    '401':
+      description: Unauthorized

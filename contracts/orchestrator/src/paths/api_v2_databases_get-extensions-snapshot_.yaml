@@ -1,0 +1,48 @@
+get:
+  operationId: v2_databases_get_extensions_snapshot_retrieve
+  description: Get latest known extensions snapshot for a database (if any).
+  summary: Get database extensions snapshot
+  parameters:
+    - in: query
+      name: database_id
+      schema:
+        type: string
+      description: Database UUID
+      required: true
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/DatabaseExtensionsSnapshotResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/DatabaseErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+    '404':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/DatabaseErrorResponse.yaml
+      description: ''

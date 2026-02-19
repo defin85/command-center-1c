@@ -1,0 +1,45 @@
+type: object
+description: Metrics for a single service.
+properties:
+  name:
+    type: string
+    description: Service name (e.g., api-gateway, worker)
+  type:
+    type: string
+    description: Service type (backend, internal)
+  status:
+    enum:
+      - healthy
+      - degraded
+      - timeout
+      - unreachable
+      - error
+      - unknown
+    type: string
+    x-spec-enum-id: dd0ce21dc8e37ee5
+    description: |-
+      Service health status
+
+      * `healthy` - healthy
+      * `degraded` - degraded
+      * `timeout` - timeout
+      * `unreachable` - unreachable
+      * `error` - error
+      * `unknown` - unknown
+  response_time_ms:
+    type: number
+    format: double
+    nullable: true
+    description: Response time in milliseconds
+  error:
+    type: string
+    nullable: true
+    description: Error message if any
+  details:
+    type: object
+    additionalProperties: {}
+    description: Additional service details
+required:
+  - name
+  - status
+  - type

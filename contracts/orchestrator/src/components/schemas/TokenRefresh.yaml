@@ -1,0 +1,10 @@
+type: object
+properties:
+  access:
+    type: string
+    readOnly: true
+  refresh:
+    type: string
+required:
+  - access
+  - refresh

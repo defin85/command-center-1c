@@ -1,0 +1,6 @@
+type: object
+properties:
+  binding:
+    $ref: ./ManualOperationBinding.yaml
+required:
+  - binding

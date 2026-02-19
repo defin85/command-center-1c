@@ -1,0 +1,11 @@
+type: object
+description: Request for delete_workflow endpoint.
+properties:
+  workflow_id:
+    type: string
+    format: uuid
+  force:
+    type: boolean
+    default: false
+required:
+  - workflow_id

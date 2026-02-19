@@ -1,0 +1,27 @@
+type: object
+properties:
+  parent_organization_id:
+    type: string
+    format: uuid
+  child_organization_id:
+    type: string
+    format: uuid
+  weight:
+    type: string
+    format: decimal
+    pattern: ^-?\d{0,6}(?:\.\d{0,6})?$
+    default: '1.000000'
+  min_amount:
+    type: string
+    format: decimal
+    pattern: ^-?\d{0,16}(?:\.\d{0,2})?$
+    nullable: true
+  max_amount:
+    type: string
+    format: decimal
+    pattern: ^-?\d{0,16}(?:\.\d{0,2})?$
+    nullable: true
+  metadata: {}
+required:
+  - child_organization_id
+  - parent_organization_id

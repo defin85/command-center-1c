@@ -1,0 +1,13 @@
+type: object
+properties:
+  cluster:
+    $ref: ./ClusterRef.yaml
+  level:
+    type: string
+  sources:
+    type: array
+    items:
+      $ref: ./EffectiveAccessClusterSourceItem.yaml
+required:
+  - cluster
+  - level

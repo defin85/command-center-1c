@@ -1,0 +1,12 @@
+type: object
+properties:
+  path:
+    type: string
+  code:
+    type: string
+  message:
+    type: string
+required:
+  - code
+  - message
+  - path

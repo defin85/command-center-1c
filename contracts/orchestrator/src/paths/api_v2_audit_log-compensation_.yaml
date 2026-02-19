@@ -1,0 +1,64 @@
+post:
+  operationId: v2_audit_log_compensation_create
+  description: |-
+    POST /api/v2/audit/log-compensation/
+
+    Internal endpoint for Go Worker to log compensation results.
+
+    Request body:
+    {
+        "operation_id": "op-123",
+        "results": [
+            {
+                "name": "unlock_infobase",
+                "success": true,
+                "attempts": 2,
+                "total_duration": 3.5,
+                "error": "",
+                "executed_at": "2025-11-28T12:00:00Z"
+            }
+        ]
+    }
+  summary: Log compensation results
+  tags:
+    - v2
+  requestBody:
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/CompensationLogRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/CompensationLogRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/CompensationLogRequest.yaml
+    required: true
+  security:
+    - bearerAuth: []
+  responses:
+    '201':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/CompensationLogResponse.yaml
+      description: ''
+    '400':
+      description: Bad request
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+    '500':
+      description: Internal server error
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

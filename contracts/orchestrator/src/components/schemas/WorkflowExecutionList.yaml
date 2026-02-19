@@ -1,0 +1,87 @@
+type: object
+description: |-
+  Lightweight serializer for WorkflowExecution list view.
+
+  Excludes step_results and detailed node_statuses for performance.
+properties:
+  id:
+    type: string
+    format: uuid
+    readOnly: true
+  workflow_template:
+    type: string
+    format: uuid
+    readOnly: true
+  template_name:
+    type: string
+    readOnly: true
+  template_version:
+    type: integer
+    readOnly: true
+  status:
+    enum:
+      - pending
+      - running
+      - completed
+      - failed
+      - cancelled
+    type: string
+    x-spec-enum-id: 1b7374f2553d22cc
+    readOnly: true
+    description: |-
+      Current execution status (FSM-protected)
+
+      * `pending` - Pending
+      * `running` - Running
+      * `completed` - Completed
+      * `failed` - Failed
+      * `cancelled` - Cancelled
+  progress_percent:
+    type: string
+    format: decimal
+    pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+    readOnly: true
+  current_node_id:
+    type: string
+    readOnly: true
+    description: Currently executing node ID
+  error_message:
+    type: string
+    readOnly: true
+    description: Error message if failed
+  error_node_id:
+    type: string
+    readOnly: true
+    description: Node ID where error occurred
+  trace_id:
+    type: string
+    readOnly: true
+    description: OpenTelemetry trace ID (hex)
+  started_at:
+    type: string
+    format: date-time
+    readOnly: true
+    nullable: true
+  completed_at:
+    type: string
+    format: date-time
+    readOnly: true
+    nullable: true
+  duration:
+    type: number
+    format: double
+    readOnly: true
+required:
+  - completed_at
+  - current_node_id
+  - duration
+  - error_message
+  - error_node_id
+  - id
+  - progress_percent
+  - started_at
+  - status
+  - template_name
+  - template_version
+  - trace_id
+  - workflow_template

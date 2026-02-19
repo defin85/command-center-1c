@@ -1,0 +1,67 @@
+get:
+  operationId: v2_extensions_overview_retrieve
+  description: >-
+    Aggregated extensions overview across accessible databases
+    (snapshot-driven).
+  summary: Extensions overview (aggregated)
+  parameters:
+    - in: query
+      name: cluster_id
+      schema:
+        type: string
+      description: Restrict to a cluster
+    - in: query
+      name: database_id
+      schema:
+        type: string
+      description: Restrict names to extensions present in this database snapshot
+    - in: query
+      name: limit
+      schema:
+        type: integer
+      description: Max items (default 100, max 1000)
+    - in: query
+      name: offset
+      schema:
+        type: integer
+      description: Offset (default 0)
+    - in: query
+      name: search
+      schema:
+        type: string
+      description: Search by extension name (substring)
+    - in: query
+      name: status
+      schema:
+        type: string
+      description: 'Filter by status: active|inactive|missing|unknown'
+    - in: query
+      name: version
+      schema:
+        type: string
+      description: Filter rows where this version exists
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ExtensionsOverviewResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden

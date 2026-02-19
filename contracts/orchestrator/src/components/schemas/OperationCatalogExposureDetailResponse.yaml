@@ -1,0 +1,9 @@
+type: object
+properties:
+  exposure:
+    $ref: ./OperationCatalogExposure.yaml
+  definition:
+    $ref: ./OperationCatalogDefinition.yaml
+required:
+  - definition
+  - exposure

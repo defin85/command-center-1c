@@ -1,0 +1,45 @@
+get:
+  operationId: v2_operations_driver_commands_retrieve
+  description: |-
+    Return schema-driven command catalog for the requested driver.
+
+    Supports conditional requests via ETag/If-None-Match (returns 304).
+  summary: Get driver command catalog (v2)
+  parameters:
+    - in: query
+      name: driver
+      schema:
+        type: string
+      description: Driver name (cli/ibcmd)
+      required: true
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/DriverCommandsResponseV2.yaml
+      description: ''
+    '304':
+      description: Not Modified
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/OperationErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized

@@ -1,0 +1,22 @@
+type: object
+properties:
+  success:
+    type: boolean
+  error_code:
+    type: string
+  error_message:
+    type: string
+  conflict_reason:
+    type: string
+  retryable:
+    type: boolean
+  run_id:
+    type: string
+    format: uuid
+required:
+  - conflict_reason
+  - error_code
+  - error_message
+  - retryable
+  - run_id
+  - success

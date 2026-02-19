@@ -1,0 +1,18 @@
+type: object
+properties:
+  driver:
+    enum:
+      - ibcmd
+    type: string
+    description: '* `ibcmd` - ibcmd'
+    x-spec-enum-id: b105587cae60755c
+  command_id:
+    type: string
+  title:
+    type: string
+    maxLength: 255
+  payload: {}
+required:
+  - command_id
+  - driver
+  - title

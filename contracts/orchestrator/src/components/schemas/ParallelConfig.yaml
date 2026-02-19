@@ -1,0 +1,21 @@
+type: object
+description: Serializer for ParallelConfig Pydantic model.
+properties:
+  parallel_nodes:
+    type: array
+    items:
+      type: string
+    description: List of node IDs to execute in parallel
+    maxItems: 50
+    minItems: 1
+  wait_for:
+    type: string
+    default: all
+    description: 'Wait condition: ''all'', ''any'', or number'
+  timeout_seconds:
+    type: integer
+    maximum: 3600
+    minimum: 1
+    default: 300
+required:
+  - parallel_nodes

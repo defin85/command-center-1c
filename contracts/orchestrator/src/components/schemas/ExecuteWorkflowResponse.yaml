@@ -1,0 +1,29 @@
+type: object
+description: Response for execute_workflow endpoint.
+properties:
+  execution_id:
+    type: string
+    format: uuid
+  status:
+    type: string
+  mode:
+    type: string
+  message:
+    type: string
+  task_id:
+    type: string
+  final_result:
+    type: object
+    additionalProperties: {}
+    nullable: true
+  duration:
+    type: number
+    format: double
+    nullable: true
+  error_message:
+    type: string
+required:
+  - execution_id
+  - message
+  - mode
+  - status

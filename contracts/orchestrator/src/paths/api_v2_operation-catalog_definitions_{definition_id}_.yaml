@@ -1,0 +1,38 @@
+get:
+  operationId: v2_operation_catalog_definitions_retrieve_2
+  summary: Get operation definition
+  parameters:
+    - in: path
+      name: definition_id
+      schema:
+        type: string
+        format: uuid
+      required: true
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: >-
+              ../components/schemas/OperationCatalogDefinitionDetailResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+    '404':
+      description: Not found

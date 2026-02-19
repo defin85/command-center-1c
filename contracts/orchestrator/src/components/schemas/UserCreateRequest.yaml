@@ -1,0 +1,20 @@
+type: object
+properties:
+  username:
+    type: string
+  password:
+    type: string
+    writeOnly: true
+  email:
+    type: string
+  first_name:
+    type: string
+  last_name:
+    type: string
+  is_staff:
+    type: boolean
+  is_active:
+    type: boolean
+required:
+  - password
+  - username

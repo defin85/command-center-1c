@@ -1,0 +1,9 @@
+type: object
+properties:
+  created:
+    type: boolean
+  permission:
+    $ref: ./ClusterPermission.yaml
+required:
+  - created
+  - permission

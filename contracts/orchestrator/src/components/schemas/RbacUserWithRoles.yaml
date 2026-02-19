@@ -1,0 +1,14 @@
+type: object
+properties:
+  id:
+    type: integer
+  username:
+    type: string
+  roles:
+    type: array
+    items:
+      $ref: ./RbacGroupRef.yaml
+required:
+  - id
+  - roles
+  - username

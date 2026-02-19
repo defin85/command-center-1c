@@ -1,0 +1,9 @@
+type: object
+properties:
+  group_id:
+    type: integer
+  reason:
+    type: string
+required:
+  - group_id
+  - reason

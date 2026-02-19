@@ -1,0 +1,33 @@
+get:
+  operationId: v2_operations_list_command_shortcuts_retrieve
+  description: List current user's saved command shortcuts (per driver).
+  summary: List driver command shortcuts
+  parameters:
+    - in: query
+      name: driver
+      schema:
+        type: string
+      description: 'Driver name (currently: ibcmd).'
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ListDriverCommandShortcutsResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized

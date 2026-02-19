@@ -1,0 +1,20 @@
+type: object
+properties:
+  driver:
+    type: string
+  command_id:
+    type: string
+  has_overrides:
+    type: boolean
+  changes:
+    type: array
+    items:
+      $ref: ./CommandSchemasDiffItem.yaml
+  count:
+    type: integer
+required:
+  - changes
+  - command_id
+  - count
+  - driver
+  - has_overrides

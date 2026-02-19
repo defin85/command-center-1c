@@ -1,0 +1,14 @@
+type: object
+description: Response for delete_workflow endpoint.
+properties:
+  workflow_id:
+    type: string
+    format: uuid
+  deleted:
+    type: boolean
+  message:
+    type: string
+required:
+  - deleted
+  - message
+  - workflow_id

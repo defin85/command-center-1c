@@ -1,0 +1,40 @@
+get:
+  operationId: v2_workflows_list_templates_retrieve
+  description: >-
+    List all active workflow templates available for Operations Center
+    (is_template=true, is_active=true).
+  summary: List workflow templates for Operations Center
+  parameters:
+    - in: query
+      name: category
+      schema:
+        type: string
+      description: Filter by category (ras, odata, system, custom)
+    - in: query
+      name: search
+      schema:
+        type: string
+      description: Search by name or description
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/TemplateListResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized

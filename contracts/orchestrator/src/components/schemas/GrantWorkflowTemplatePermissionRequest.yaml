@@ -1,0 +1,18 @@
+type: object
+properties:
+  user_id:
+    type: integer
+  template_id:
+    type: string
+    format: uuid
+  level:
+    type: string
+  notes:
+    type: string
+  reason:
+    type: string
+required:
+  - level
+  - reason
+  - template_id
+  - user_id

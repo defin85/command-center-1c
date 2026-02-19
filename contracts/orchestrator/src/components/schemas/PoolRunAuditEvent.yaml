@@ -1,0 +1,21 @@
+type: object
+properties:
+  id:
+    type: integer
+  event_type:
+    type: string
+  status_before:
+    type: string
+  status_after:
+    type: string
+  payload: {}
+  actor_id:
+    type: string
+    format: uuid
+    nullable: true
+  created_at:
+    type: string
+    format: date-time
+required:
+  - event_type
+  - id

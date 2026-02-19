@@ -1,0 +1,10 @@
+type: object
+description: Response for create_workflow endpoint.
+properties:
+  workflow:
+    $ref: ./WorkflowTemplateDetail.yaml
+  message:
+    type: string
+required:
+  - message
+  - workflow

@@ -1,0 +1,25 @@
+type: object
+properties:
+  type:
+    enum:
+      - batch_operation
+      - workflow_execution
+    type: string
+    description: |-
+      * `batch_operation` - batch_operation
+      * `workflow_execution` - workflow_execution
+    x-spec-enum-id: a58e5a11bda4f638
+  id:
+    type: string
+  status:
+    type: string
+  name:
+    type: string
+    default: ''
+  details:
+    type: string
+    default: ''
+required:
+  - id
+  - status
+  - type

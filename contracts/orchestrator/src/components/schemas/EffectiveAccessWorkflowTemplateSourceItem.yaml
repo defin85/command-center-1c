@@ -1,0 +1,16 @@
+type: object
+properties:
+  source:
+    enum:
+      - direct
+      - group
+    type: string
+    description: |-
+      * `direct` - direct
+      * `group` - group
+    x-spec-enum-id: 95cc5059aa03e762
+  level:
+    type: string
+required:
+  - level
+  - source

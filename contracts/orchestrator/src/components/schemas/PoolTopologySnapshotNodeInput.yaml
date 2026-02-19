@@ -1,0 +1,11 @@
+type: object
+properties:
+  organization_id:
+    type: string
+    format: uuid
+  is_root:
+    type: boolean
+    default: false
+  metadata: {}
+required:
+  - organization_id

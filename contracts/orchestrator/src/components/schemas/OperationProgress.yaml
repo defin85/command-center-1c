@@ -1,0 +1,28 @@
+type: object
+description: Progress information for an operation.
+properties:
+  total:
+    type: integer
+    description: Total number of tasks
+  completed:
+    type: integer
+    description: Number of completed tasks
+  failed:
+    type: integer
+    description: Number of failed tasks
+  pending:
+    type: integer
+    description: Number of pending/queued tasks
+  processing:
+    type: integer
+    description: Number of processing tasks
+  percent:
+    type: integer
+    description: Completion percentage (0-100)
+required:
+  - completed
+  - failed
+  - pending
+  - percent
+  - processing
+  - total

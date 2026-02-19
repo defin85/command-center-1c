@@ -1,0 +1,31 @@
+type: object
+description: Response for sync_cluster endpoint.
+properties:
+  cluster_id:
+    type: string
+    format: uuid
+  operation_id:
+    type: string
+    description: BatchOperation ID for tracking
+  status:
+    type: string
+    description: 'Sync status: syncing, success'
+  task_id:
+    type: string
+    description: Task ID (if async)
+  message:
+    type: string
+  databases_found:
+    type: integer
+  created:
+    type: integer
+  updated:
+    type: integer
+  errors:
+    type: array
+    items:
+      type: string
+required:
+  - cluster_id
+  - message
+  - status

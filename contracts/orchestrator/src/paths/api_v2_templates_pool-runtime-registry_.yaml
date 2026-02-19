@@ -1,0 +1,30 @@
+get:
+  operationId: v2_templates_pool_runtime_registry_retrieve
+  description: Read-only diagnostics for system-managed pool runtime template aliases.
+  summary: Inspect pool runtime template registry
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/PoolRuntimeRegistryInspectResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

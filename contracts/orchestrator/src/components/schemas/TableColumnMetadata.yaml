@@ -1,0 +1,24 @@
+type: object
+properties:
+  key:
+    type: string
+  label:
+    type: string
+  group_key:
+    type: string
+    nullable: true
+  group_label:
+    type: string
+    nullable: true
+  sortable:
+    type: boolean
+    default: false
+  data_type:
+    type: string
+  filter:
+    $ref: ./TableFilterMetadata.yaml
+  server_field:
+    type: string
+required:
+  - key
+  - label

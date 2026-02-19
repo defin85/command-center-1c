@@ -1,0 +1,29 @@
+type: object
+properties:
+  id:
+    type: integer
+  captured_at:
+    type: string
+    format: date-time
+  command_id:
+    type: string
+  driver:
+    type: string
+  database_id:
+    type: string
+    nullable: true
+  canonical_hash:
+    type: string
+  raw_payload: {}
+  normalized_payload: {}
+  canonical_payload: {}
+required:
+  - canonical_hash
+  - canonical_payload
+  - captured_at
+  - command_id
+  - database_id
+  - driver
+  - id
+  - normalized_payload
+  - raw_payload

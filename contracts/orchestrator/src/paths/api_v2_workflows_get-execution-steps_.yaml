@@ -1,0 +1,53 @@
+get:
+  operationId: v2_workflows_get_execution_steps_retrieve
+  description: >-
+    Get all step results for a workflow execution with optional filtering by
+    step status.
+  summary: Get execution steps
+  parameters:
+    - in: query
+      name: execution_id
+      schema:
+        type: string
+      description: Execution UUID
+      required: true
+    - in: query
+      name: status
+      schema:
+        type: string
+      description: Filter by step status (pending, running, completed, failed, skipped)
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ExecutionStepsResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '404':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''

@@ -1,0 +1,17 @@
+type: object
+description: Response for list_executions endpoint.
+properties:
+  executions:
+    type: array
+    items:
+      $ref: ./WorkflowExecutionList.yaml
+  count:
+    type: integer
+    description: Number of executions in current page
+  total:
+    type: integer
+    description: Total number of executions
+required:
+  - count
+  - executions
+  - total

@@ -1,0 +1,11 @@
+type: object
+properties:
+  organizations:
+    type: array
+    items:
+      $ref: ./Organization.yaml
+  count:
+    type: integer
+required:
+  - count
+  - organizations

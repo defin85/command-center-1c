@@ -1,0 +1,21 @@
+type: object
+description: Serializer for SubWorkflowConfig Pydantic model.
+properties:
+  subworkflow_id:
+    type: string
+    description: Subworkflow template ID
+  input_mapping:
+    type: object
+    additionalProperties:
+      type: string
+  output_mapping:
+    type: object
+    additionalProperties:
+      type: string
+  max_depth:
+    type: integer
+    maximum: 20
+    minimum: 1
+    default: 10
+required:
+  - subworkflow_id

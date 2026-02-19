@@ -1,0 +1,24 @@
+type: object
+properties:
+  database_ids:
+    type: array
+    items:
+      type: string
+      format: uuid
+    maxItems: 500
+    minItems: 1
+  manual_operation:
+    type: string
+  template_id:
+    type: string
+    nullable: true
+  extension_name:
+    type: string
+    nullable: true
+  flags_values:
+    $ref: ./_SetFlagsValues.yaml
+  apply_mask:
+    $ref: ./_SetFlagsApplyMask.yaml
+required:
+  - database_ids
+  - manual_operation

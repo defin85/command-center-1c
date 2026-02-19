@@ -1,0 +1,12 @@
+type: object
+description: Response for get_database endpoint.
+properties:
+  database:
+    $ref: ./Database.yaml
+  cluster:
+    allOf:
+      - $ref: ./Cluster.yaml
+    nullable: true
+    description: Cluster info if database belongs to a cluster
+required:
+  - database

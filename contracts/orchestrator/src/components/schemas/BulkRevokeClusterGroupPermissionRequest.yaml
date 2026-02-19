@@ -1,0 +1,15 @@
+type: object
+properties:
+  group_id:
+    type: integer
+  cluster_ids:
+    type: array
+    items:
+      type: string
+      format: uuid
+  reason:
+    type: string
+required:
+  - cluster_ids
+  - group_id
+  - reason

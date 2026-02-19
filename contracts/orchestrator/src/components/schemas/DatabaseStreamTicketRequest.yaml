@@ -1,0 +1,10 @@
+type: object
+description: Request body for database stream ticket endpoint.
+properties:
+  cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+  force:
+    type: boolean
+    default: false

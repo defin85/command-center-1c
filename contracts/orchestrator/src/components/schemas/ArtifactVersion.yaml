@@ -1,0 +1,33 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  version:
+    type: string
+  filename:
+    type: string
+  storage_key:
+    type: string
+  size:
+    type: integer
+  checksum:
+    type: string
+  content_type:
+    type: string
+  metadata:
+    type: object
+    additionalProperties: {}
+  created_at:
+    type: string
+    format: date-time
+required:
+  - checksum
+  - content_type
+  - created_at
+  - filename
+  - id
+  - metadata
+  - size
+  - storage_key
+  - version

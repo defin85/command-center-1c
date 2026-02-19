@@ -1,0 +1,9 @@
+type: object
+properties:
+  created:
+    type: boolean
+  permission:
+    $ref: ./OperationTemplateGroupPermission.yaml
+required:
+  - created
+  - permission

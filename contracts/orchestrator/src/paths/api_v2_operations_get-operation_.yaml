@@ -1,0 +1,73 @@
+get:
+  operationId: v2_operations_get_operation_retrieve
+  description: >-
+    Get detailed information about a specific operation including tasks and
+    progress.
+  summary: Get operation details
+  parameters:
+    - in: query
+      name: include_tasks
+      schema:
+        type: boolean
+      description: 'Include task details (default: true)'
+    - in: query
+      name: operation_id
+      schema:
+        type: string
+      description: Operation ID (UUID)
+      required: true
+    - in: query
+      name: task_filters
+      schema:
+        type: string
+      description: JSON object with task filter conditions
+    - in: query
+      name: task_limit
+      schema:
+        type: integer
+      description: 'Maximum tasks returned (default: 100)'
+    - in: query
+      name: task_offset
+      schema:
+        type: integer
+      description: 'Task pagination offset (default: 0)'
+    - in: query
+      name: task_sort
+      schema:
+        type: string
+      description: JSON object with task sort configuration
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/OperationDetailResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/OperationErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '404':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/OperationErrorResponse.yaml
+      description: ''

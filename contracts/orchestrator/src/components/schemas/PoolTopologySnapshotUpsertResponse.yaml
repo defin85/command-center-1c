@@ -1,0 +1,24 @@
+type: object
+properties:
+  pool_id:
+    type: string
+    format: uuid
+  version:
+    type: string
+  effective_from:
+    type: string
+    format: date
+  effective_to:
+    type: string
+    format: date
+    nullable: true
+  nodes_count:
+    type: integer
+  edges_count:
+    type: integer
+required:
+  - edges_count
+  - effective_from
+  - nodes_count
+  - pool_id
+  - version

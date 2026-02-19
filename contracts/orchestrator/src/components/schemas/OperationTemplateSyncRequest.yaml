@@ -1,0 +1,8 @@
+type: object
+properties:
+  dry_run:
+    type: boolean
+    default: false
+  include_pool_runtime:
+    type: boolean
+    default: false

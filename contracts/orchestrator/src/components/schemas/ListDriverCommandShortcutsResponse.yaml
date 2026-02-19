@@ -1,0 +1,11 @@
+type: object
+properties:
+  items:
+    type: array
+    items:
+      $ref: ./DriverCommandShortcut.yaml
+  count:
+    type: integer
+required:
+  - count
+  - items

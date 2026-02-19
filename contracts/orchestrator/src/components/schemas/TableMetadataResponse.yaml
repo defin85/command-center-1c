@@ -1,0 +1,14 @@
+type: object
+properties:
+  table_id:
+    type: string
+  version:
+    type: string
+  columns:
+    type: array
+    items:
+      $ref: ./TableColumnMetadata.yaml
+required:
+  - columns
+  - table_id
+  - version

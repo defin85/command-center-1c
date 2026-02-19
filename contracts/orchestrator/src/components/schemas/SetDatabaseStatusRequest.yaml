@@ -1,0 +1,28 @@
+type: object
+description: Request body for set_status endpoint.
+properties:
+  database_ids:
+    type: array
+    items:
+      type: string
+    description: List of database IDs to update
+    maxItems: 500
+    minItems: 1
+  status:
+    enum:
+      - active
+      - inactive
+      - maintenance
+    type: string
+    x-spec-enum-id: 57acec3bba8f977c
+    description: |-
+      New database status (active, inactive, maintenance)
+
+      * `active` - active
+      * `inactive` - inactive
+      * `maintenance` - maintenance
+  reason:
+    type: string
+required:
+  - database_ids
+  - status

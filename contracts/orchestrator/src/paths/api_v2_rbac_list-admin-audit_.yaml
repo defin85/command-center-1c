@@ -1,0 +1,66 @@
+get:
+  operationId: v2_rbac_list_admin_audit_retrieve
+  summary: List admin audit log entries
+  parameters:
+    - in: query
+      name: action
+      schema:
+        type: string
+    - in: query
+      name: actor
+      schema:
+        type: string
+      description: Filter by actor_username (contains)
+    - in: query
+      name: limit
+      schema:
+        type: integer
+    - in: query
+      name: offset
+      schema:
+        type: integer
+    - in: query
+      name: outcome
+      schema:
+        type: string
+    - in: query
+      name: search
+      schema:
+        type: string
+    - in: query
+      name: since
+      schema:
+        type: string
+    - in: query
+      name: target_id
+      schema:
+        type: string
+    - in: query
+      name: target_type
+      schema:
+        type: string
+    - in: query
+      name: until
+      schema:
+        type: string
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/AdminAuditLogListResponse.yaml
+      description: ''

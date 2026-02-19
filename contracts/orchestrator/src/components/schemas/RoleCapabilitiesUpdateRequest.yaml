@@ -1,0 +1,26 @@
+type: object
+properties:
+  group_id:
+    type: integer
+  permission_codes:
+    type: array
+    items:
+      type: string
+  mode:
+    enum:
+      - replace
+      - add
+      - remove
+    type: string
+    description: |-
+      * `replace` - replace
+      * `add` - add
+      * `remove` - remove
+    x-spec-enum-id: 93f4a33fb738abdd
+    default: replace
+  reason:
+    type: string
+required:
+  - group_id
+  - permission_codes
+  - reason

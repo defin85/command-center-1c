@@ -1,0 +1,15 @@
+type: object
+description: Response for set_status endpoint.
+properties:
+  updated:
+    type: integer
+  not_found:
+    type: array
+    items:
+      type: string
+  status:
+    type: string
+required:
+  - not_found
+  - status
+  - updated

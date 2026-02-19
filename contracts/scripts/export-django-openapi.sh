@@ -1,6 +1,11 @@
 #!/bin/bash
 # Export Django OpenAPI specification using drf-spectacular
 # Usage: ./contracts/scripts/export-django-openapi.sh
+#
+# NOTE:
+# This command is a manual runtime export utility.
+# It is NOT part of the default contract-first bundle workflow
+# (source of truth for public orchestrator contract is contracts/orchestrator/src/**).
 
 set -e
 

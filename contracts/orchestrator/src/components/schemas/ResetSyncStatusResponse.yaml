@@ -1,0 +1,15 @@
+type: object
+description: Response for reset_sync_status endpoint.
+properties:
+  message:
+    type: string
+  reset_count:
+    type: integer
+  clusters:
+    type: array
+    items:
+      $ref: ./ResetClusterInfo.yaml
+required:
+  - clusters
+  - message
+  - reset_count

@@ -1,0 +1,23 @@
+type: object
+properties:
+  id:
+    type: integer
+  captured_at:
+    type: string
+    format: date-time
+  command_id:
+    type: string
+  driver:
+    type: string
+  database_id:
+    type: string
+    nullable: true
+  canonical_hash:
+    type: string
+required:
+  - canonical_hash
+  - captured_at
+  - command_id
+  - database_id
+  - driver
+  - id

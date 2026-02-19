@@ -1,0 +1,47 @@
+get:
+  operationId: v2_service_mesh_get_history_retrieve
+  description: >-
+    Get historical metrics for a specific service from Prometheus. Returns
+    ops/minute, p95 latency, and error rate over time.
+  summary: Get service metrics history
+  parameters:
+    - in: query
+      name: minutes
+      schema:
+        type: integer
+      description: 'History period in minutes (default: 30, max: 1440)'
+    - in: query
+      name: service
+      schema:
+        type: string
+      description: Service name (e.g., api-gateway, worker)
+      required: true
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ServiceHistoryResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ServiceMeshErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized

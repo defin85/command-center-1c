@@ -1,0 +1,9 @@
+type: object
+properties:
+  deleted:
+    type: boolean
+  manual_operation:
+    type: string
+required:
+  - deleted
+  - manual_operation

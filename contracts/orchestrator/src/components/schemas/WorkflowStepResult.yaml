@@ -1,0 +1,82 @@
+type: object
+description: Serializer for WorkflowStepResult model.
+properties:
+  id:
+    type: string
+    format: uuid
+    readOnly: true
+  node_id:
+    type: string
+    readOnly: true
+    description: Node ID from DAG structure
+  node_name:
+    type: string
+    readOnly: true
+    description: Human-readable node name
+  node_type:
+    type: string
+    readOnly: true
+    description: Node type (operation/condition/etc)
+  status:
+    enum:
+      - pending
+      - running
+      - completed
+      - failed
+      - skipped
+    type: string
+    description: |-
+      * `pending` - Pending
+      * `running` - Running
+      * `completed` - Completed
+      * `failed` - Failed
+      * `skipped` - Skipped
+    x-spec-enum-id: 7ff15d3113147cc7
+    readOnly: true
+  input_data:
+    readOnly: true
+    description: Input data for this node
+  output_data:
+    readOnly: true
+    nullable: true
+    description: Output data from this node
+  error_message:
+    type: string
+    readOnly: true
+    description: Error message if failed
+  started_at:
+    type: string
+    format: date-time
+    readOnly: true
+    nullable: true
+  completed_at:
+    type: string
+    format: date-time
+    readOnly: true
+    nullable: true
+  duration_seconds:
+    type: number
+    format: double
+    readOnly: true
+  trace_id:
+    type: string
+    readOnly: true
+    description: OpenTelemetry trace ID (hex)
+  span_id:
+    type: string
+    readOnly: true
+    description: OpenTelemetry span ID (hex)
+required:
+  - completed_at
+  - duration_seconds
+  - error_message
+  - id
+  - input_data
+  - node_id
+  - node_name
+  - node_type
+  - output_data
+  - span_id
+  - started_at
+  - status
+  - trace_id

@@ -1,0 +1,17 @@
+type: object
+description: Response for cancel_execution endpoint.
+properties:
+  execution_id:
+    type: string
+    format: uuid
+  cancelled:
+    type: boolean
+  status:
+    type: string
+  message:
+    type: string
+required:
+  - cancelled
+  - execution_id
+  - message
+  - status

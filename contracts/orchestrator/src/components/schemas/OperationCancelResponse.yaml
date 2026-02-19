@@ -1,0 +1,16 @@
+type: object
+description: Response for cancel_operation endpoint.
+properties:
+  operation_id:
+    type: string
+    description: ID of the cancelled operation
+  cancelled:
+    type: boolean
+    description: Whether cancellation was successful
+  message:
+    type: string
+    description: Status message
+required:
+  - cancelled
+  - message
+  - operation_id

@@ -1,0 +1,25 @@
+type: object
+description: Serializer for OperationIO Pydantic model.
+properties:
+  mode:
+    enum:
+      - implicit_legacy
+      - explicit_strict
+    type: string
+    x-spec-enum-id: 60b12cac5eb4e268
+    default: implicit_legacy
+    description: |-
+      Data-flow mode for operation node
+
+      * `implicit_legacy` - implicit_legacy
+      * `explicit_strict` - explicit_strict
+  input_mapping:
+    type: object
+    additionalProperties:
+      type: string
+    description: 'Input mapping: target_path -> source_path'
+  output_mapping:
+    type: object
+    additionalProperties:
+      type: string
+    description: 'Output mapping: target_path -> source_path'

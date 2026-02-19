@@ -1,0 +1,17 @@
+type: object
+properties:
+  source_payload:
+    oneOf:
+      - type: object
+        additionalProperties: {}
+      - type: array
+        items:
+          type: object
+          additionalProperties: {}
+  source_artifact_id:
+    type: string
+anyOf:
+  - required:
+      - source_payload
+  - required:
+      - source_artifact_id

@@ -1,0 +1,14 @@
+type: object
+description: Info about reset cluster.
+properties:
+  id:
+    type: string
+    format: uuid
+  name:
+    type: string
+  old_status:
+    type: string
+required:
+  - id
+  - name
+  - old_status

@@ -1,0 +1,16 @@
+type: object
+properties:
+  manual_operation:
+    type: string
+  template_id:
+    type: string
+  updated_by:
+    type: string
+    nullable: true
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - manual_operation
+  - template_id
+  - updated_at

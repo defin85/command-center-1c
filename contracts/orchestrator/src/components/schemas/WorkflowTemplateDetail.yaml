@@ -1,0 +1,87 @@
+type: object
+description: |-
+  Full serializer for WorkflowTemplate detail view.
+
+  Includes dag_structure and config.
+properties:
+  id:
+    type: string
+    format: uuid
+    readOnly: true
+  name:
+    type: string
+    description: Workflow template name
+    maxLength: 200
+  description:
+    type: string
+    description: Workflow description
+  workflow_type:
+    enum:
+      - sequential
+      - conditional
+      - parallel
+      - complex
+    type: string
+    x-spec-enum-id: ed82a65c83be653d
+    description: |-
+      Workflow type: sequential, conditional, parallel, complex
+
+      * `sequential` - Sequential
+      * `conditional` - Conditional
+      * `parallel` - Parallel
+      * `complex` - Complex
+  dag_structure:
+    $ref: ./DAGStructure.yaml
+  config:
+    $ref: ./WorkflowConfig.yaml
+  is_valid:
+    type: boolean
+    readOnly: true
+    description: DAG structure is valid (cycles checked)
+  is_active:
+    type: boolean
+    description: Template is active and can be executed
+  version_number:
+    type: integer
+    readOnly: true
+    default: 1
+    description: Version number (auto-incremented)
+  parent_version:
+    type: string
+    format: uuid
+    nullable: true
+    description: Parent template if this is a new version
+  parent_version_name:
+    type: string
+    readOnly: true
+    nullable: true
+  created_by:
+    type: integer
+    nullable: true
+  created_by_username:
+    type: string
+    readOnly: true
+    nullable: true
+  execution_count:
+    type: integer
+    description: Return number of executions for this template.
+    readOnly: true
+  created_at:
+    type: string
+    format: date-time
+    readOnly: true
+  updated_at:
+    type: string
+    format: date-time
+    readOnly: true
+required:
+  - created_at
+  - created_by_username
+  - dag_structure
+  - execution_count
+  - id
+  - is_valid
+  - name
+  - parent_version_name
+  - updated_at
+  - version_number

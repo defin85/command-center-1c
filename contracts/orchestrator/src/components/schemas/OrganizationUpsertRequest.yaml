@@ -1,0 +1,39 @@
+type: object
+properties:
+  organization_id:
+    type: string
+    format: uuid
+  inn:
+    type: string
+    maxLength: 12
+  name:
+    type: string
+    maxLength: 255
+  full_name:
+    type: string
+    default: ''
+  kpp:
+    type: string
+    default: ''
+  status:
+    enum:
+      - active
+      - inactive
+      - archived
+    type: string
+    description: |-
+      * `active` - active
+      * `inactive` - inactive
+      * `archived` - archived
+    x-spec-enum-id: a20c200db15932ca
+  database_id:
+    type: string
+    format: uuid
+    nullable: true
+  external_ref:
+    type: string
+    default: ''
+  metadata: {}
+required:
+  - inn
+  - name

@@ -1,0 +1,15 @@
+type: object
+properties:
+  created:
+    type: integer
+  updated:
+    type: integer
+  unchanged:
+    type: integer
+  message:
+    type: string
+required:
+  - created
+  - message
+  - unchanged
+  - updated

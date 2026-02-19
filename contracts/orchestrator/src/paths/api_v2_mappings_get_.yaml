@@ -1,0 +1,41 @@
+get:
+  operationId: v2_mappings_get_retrieve
+  summary: Get mapping spec
+  parameters:
+    - in: query
+      name: entity_kind
+      schema:
+        type: string
+      required: true
+    - in: query
+      name: status
+      schema:
+        type: string
+      description: draft|published (default published)
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/MappingSpec.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+    '404':
+      description: Not found

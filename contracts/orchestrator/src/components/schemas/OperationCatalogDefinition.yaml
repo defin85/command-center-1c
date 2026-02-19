@@ -1,0 +1,30 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_scope:
+    type: string
+  executor_kind:
+    type: string
+  executor_payload: {}
+  contract_version:
+    type: integer
+  fingerprint:
+    type: string
+  status:
+    type: string
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - contract_version
+  - executor_kind
+  - executor_payload
+  - fingerprint
+  - id
+  - status
+  - tenant_scope

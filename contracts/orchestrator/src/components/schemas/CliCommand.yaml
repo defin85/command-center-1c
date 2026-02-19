@@ -1,0 +1,25 @@
+type: object
+description: Single CLI command descriptor.
+properties:
+  id:
+    type: string
+  label:
+    type: string
+  usage:
+    type: string
+  description:
+    type: string
+  params:
+    type: array
+    items:
+      type: object
+      additionalProperties: {}
+  source_section_id:
+    type: string
+    nullable: true
+  source_section:
+    type: string
+    nullable: true
+required:
+  - id
+  - label

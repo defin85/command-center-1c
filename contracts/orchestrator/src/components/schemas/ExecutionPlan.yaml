@@ -1,0 +1,62 @@
+type: object
+description: |-
+  Safe execution plan representation.
+
+  IMPORTANT: This structure must never contain raw secret values.
+properties:
+  kind:
+    enum:
+      - ibcmd_cli
+      - designer_cli
+      - workflow
+    type: string
+    description: |-
+      * `ibcmd_cli` - ibcmd_cli
+      * `designer_cli` - designer_cli
+      * `workflow` - workflow
+    x-spec-enum-id: c85d7aca906e8c83
+  plan_version:
+    type: integer
+    default: 1
+  argv_masked:
+    type: array
+    items:
+      type: string
+  stdin_masked:
+    type: string
+    nullable: true
+  workflow_id:
+    type: string
+    nullable: true
+  input_context_masked:
+    type: object
+    additionalProperties: {}
+    default: {}
+  targets:
+    type: object
+    additionalProperties: {}
+    description: Execution targets summary (e.g., scope, database_ids count).
+    default: {}
+  definition:
+    type: object
+    additionalProperties: {}
+    description: >-
+      Workflow definition provenance. Includes definition_key and resolved
+      workflow template metadata.
+    default: {}
+  execution_snapshot:
+    type: object
+    additionalProperties: {}
+    description: >-
+      Immutable run-specific workflow snapshot. Includes period/run_input/seed
+      and lineage metadata.
+    default: {}
+  operation_bindings:
+    type: array
+    items:
+      type: object
+      additionalProperties: {}
+    description: Pinned operation exposure snapshot used by workflow nodes.
+    default: []
+required:
+  - kind

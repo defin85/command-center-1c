@@ -1,0 +1,20 @@
+type: object
+description: Response for execute_operation endpoint.
+properties:
+  operation_id:
+    type: string
+    description: ID of the created operation
+  status:
+    type: string
+    description: Operation status (queued)
+  total_tasks:
+    type: integer
+    description: Number of tasks created
+  message:
+    type: string
+    description: Status message
+required:
+  - message
+  - operation_id
+  - status
+  - total_tasks

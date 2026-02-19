@@ -1,0 +1,14 @@
+type: object
+properties:
+  permissions:
+    type: array
+    items:
+      $ref: ./ClusterGroupPermission.yaml
+  count:
+    type: integer
+  total:
+    type: integer
+required:
+  - count
+  - permissions
+  - total

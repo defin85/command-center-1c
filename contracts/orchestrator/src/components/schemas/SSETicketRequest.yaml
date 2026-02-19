@@ -1,0 +1,11 @@
+type: object
+description: Request body for get_stream_ticket endpoint.
+properties:
+  operation_id:
+    type: string
+    description: Operation ID to subscribe to
+  client_id:
+    type: string
+    description: Optional client identifier
+required:
+  - operation_id

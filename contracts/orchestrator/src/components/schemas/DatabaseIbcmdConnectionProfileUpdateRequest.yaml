@@ -1,0 +1,23 @@
+type: object
+description: Request body for update_ibcmd_connection_profile endpoint.
+properties:
+  database_id:
+    type: string
+    description: Database ID to update
+  reset:
+    type: boolean
+    default: false
+  remote:
+    type: string
+    description: IBCMD --remote=<url> (SSH URL, must start with ssh://)
+  pid:
+    type: integer
+    nullable: true
+    description: IBCMD --pid=<pid> (optional)
+  offline:
+    type: object
+    additionalProperties:
+      type: string
+    description: IBCMD offline flags (raw dict, no secrets)
+required:
+  - database_id

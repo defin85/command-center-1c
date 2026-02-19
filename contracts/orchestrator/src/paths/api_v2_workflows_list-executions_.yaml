@@ -1,0 +1,56 @@
+get:
+  operationId: v2_workflows_list_executions_retrieve
+  description: >-
+    List workflow executions with optional filtering by workflow template and
+    status.
+  summary: List workflow executions
+  parameters:
+    - in: query
+      name: limit
+      schema:
+        type: integer
+      description: 'Maximum results (default: 50, max: 1000)'
+    - in: query
+      name: offset
+      schema:
+        type: integer
+      description: 'Pagination offset (default: 0)'
+    - in: query
+      name: status
+      schema:
+        type: string
+      description: Filter by status (pending, running, completed, failed, cancelled)
+    - in: query
+      name: workflow_id
+      schema:
+        type: string
+      description: Filter by workflow template UUID
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ExecutionListResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized

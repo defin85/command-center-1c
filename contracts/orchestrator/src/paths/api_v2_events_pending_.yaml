@@ -1,0 +1,27 @@
+get:
+  operationId: v2_events_pending_retrieve
+  description: Returns counts of pending and failed events (for monitoring).
+  summary: Get pending events stats
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+    - {}
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/PendingEventsResponse.yaml
+      description: ''
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

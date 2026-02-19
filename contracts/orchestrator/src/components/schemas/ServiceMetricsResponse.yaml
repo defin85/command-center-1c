@@ -1,0 +1,39 @@
+type: object
+description: Response for get_metrics endpoint.
+properties:
+  status:
+    enum:
+      - healthy
+      - degraded
+      - unhealthy
+    type: string
+    x-spec-enum-id: 4708a1ae8a2a7bbf
+    description: |-
+      Overall service mesh status
+
+      * `healthy` - healthy
+      * `degraded` - degraded
+      * `unhealthy` - unhealthy
+  services:
+    type: array
+    items:
+      $ref: ./ServiceMetric.yaml
+    description: List of service metrics
+  summary:
+    allOf:
+      - $ref: ./ServiceMeshSummary.yaml
+    description: Summary statistics
+  timestamp:
+    type: string
+    format: date-time
+    description: Timestamp of metrics collection
+  prometheus_metrics:
+    type: array
+    items:
+      $ref: ./PrometheusMetric.yaml
+    description: Raw Prometheus metrics (reserved, may be empty even if requested)
+required:
+  - services
+  - status
+  - summary
+  - timestamp

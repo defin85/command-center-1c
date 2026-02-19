@@ -1,0 +1,54 @@
+get:
+  operationId: v2_dlq_get_retrieve
+  description: >-
+    Fetch a single DLQ entry by stream entry id or original_message_id.
+    Staff-only.
+  summary: Get DLQ message
+  parameters:
+    - in: query
+      name: dlq_message_id
+      schema:
+        type: string
+      description: Redis Stream entry ID
+    - in: query
+      name: original_message_id
+      schema:
+        type: string
+      description: Original stream message ID
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/DLQMessage.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+    '404':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''

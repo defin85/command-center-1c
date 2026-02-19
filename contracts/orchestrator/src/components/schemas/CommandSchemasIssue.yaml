@@ -1,0 +1,25 @@
+type: object
+properties:
+  severity:
+    enum:
+      - error
+      - warning
+    type: string
+    description: |-
+      * `error` - error
+      * `warning` - warning
+    x-spec-enum-id: 81719efa66e0f221
+  code:
+    type: string
+  message:
+    type: string
+  command_id:
+    type: string
+    nullable: true
+  path:
+    type: string
+    nullable: true
+required:
+  - code
+  - message
+  - severity

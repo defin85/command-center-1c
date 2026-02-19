@@ -1,0 +1,32 @@
+type: object
+description: Timeline event structure.
+properties:
+  timestamp:
+    type: integer
+    description: Unix timestamp in milliseconds
+  event:
+    type: string
+    description: Event name (e.g., operation.started)
+  service:
+    type: string
+    description: Service that emitted the event
+  trace_id:
+    type: string
+    nullable: true
+    description: OpenTelemetry trace ID
+  workflow_execution_id:
+    type: string
+    nullable: true
+    description: Workflow execution ID
+  node_id:
+    type: string
+    nullable: true
+    description: Workflow node ID
+  metadata:
+    type: object
+    additionalProperties: {}
+    description: Additional event metadata
+required:
+  - event
+  - service
+  - timestamp

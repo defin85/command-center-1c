@@ -1,0 +1,9 @@
+type: object
+description: Request for cancel_execution endpoint.
+properties:
+  execution_id:
+    type: string
+    format: uuid
+    description: Execution UUID
+required:
+  - execution_id

@@ -1,0 +1,7 @@
+type: object
+description: Applied filters.
+properties:
+  status:
+    type: string
+  health_status:
+    type: string

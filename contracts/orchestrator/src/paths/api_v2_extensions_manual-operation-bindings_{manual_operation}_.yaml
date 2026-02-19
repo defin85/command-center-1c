@@ -1,0 +1,86 @@
+put:
+  operationId: v2_extensions_manual_operation_bindings_update
+  description: Upsert preferred template binding for the manual operation.
+  summary: Upsert preferred manual operation binding
+  parameters:
+    - in: path
+      name: manual_operation
+      schema:
+        type: string
+      required: true
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  requestBody:
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/ManualOperationBindingUpsertRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/ManualOperationBindingUpsertRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/ManualOperationBindingUpsertRequest.yaml
+    required: true
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ManualOperationBindingResponse.yaml
+      description: ''
+    '400':
+      description: Validation/configuration error
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+delete:
+  operationId: v2_extensions_manual_operation_bindings_destroy
+  description: Delete preferred template binding for the manual operation.
+  summary: Delete preferred manual operation binding
+  parameters:
+    - in: path
+      name: manual_operation
+      schema:
+        type: string
+      required: true
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ManualOperationBindingDeleteResponse.yaml
+      description: ''
+    '400':
+      description: Validation error
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden

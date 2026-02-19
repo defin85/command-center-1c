@@ -1,0 +1,17 @@
+type: object
+description: Response for list_workflows endpoint.
+properties:
+  workflows:
+    type: array
+    items:
+      $ref: ./WorkflowTemplateList.yaml
+  count:
+    type: integer
+    description: Number of workflows in current page
+  total:
+    type: integer
+    description: Total number of workflows
+required:
+  - count
+  - total
+  - workflows

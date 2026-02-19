@@ -1,0 +1,10 @@
+type: object
+properties:
+  definition:
+    $ref: ./OperationCatalogDefinition.yaml
+  exposures:
+    type: array
+    items: {}
+required:
+  - definition
+  - exposures

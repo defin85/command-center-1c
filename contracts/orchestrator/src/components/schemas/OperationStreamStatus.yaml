@@ -1,0 +1,12 @@
+type: object
+description: Response for operation stream status.
+properties:
+  active_streams:
+    type: integer
+    description: Active SSE streams for current user
+  max_streams:
+    type: integer
+    description: Maximum allowed SSE streams
+required:
+  - active_streams
+  - max_streams

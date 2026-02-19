@@ -1,0 +1,17 @@
+type: object
+properties:
+  extensions:
+    type: array
+    items:
+      $ref: ./ExtensionsOverviewRow.yaml
+  count:
+    type: integer
+  total:
+    type: integer
+  total_databases:
+    type: integer
+required:
+  - count
+  - extensions
+  - total
+  - total_databases

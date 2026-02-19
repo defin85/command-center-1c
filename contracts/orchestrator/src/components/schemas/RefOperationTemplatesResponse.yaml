@@ -1,0 +1,14 @@
+type: object
+properties:
+  templates:
+    type: array
+    items:
+      $ref: ./OperationTemplateRef.yaml
+  count:
+    type: integer
+  total:
+    type: integer
+required:
+  - count
+  - templates
+  - total

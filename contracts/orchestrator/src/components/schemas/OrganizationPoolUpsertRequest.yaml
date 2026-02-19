@@ -1,0 +1,22 @@
+type: object
+properties:
+  pool_id:
+    type: string
+    format: uuid
+  code:
+    type: string
+    maxLength: 64
+    pattern: ^[-a-zA-Z0-9_]+$
+  name:
+    type: string
+    maxLength: 255
+  description:
+    type: string
+    default: ''
+  is_active:
+    type: boolean
+    default: true
+  metadata: {}
+required:
+  - code
+  - name

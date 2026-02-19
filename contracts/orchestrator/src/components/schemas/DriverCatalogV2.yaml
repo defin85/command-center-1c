@@ -1,0 +1,23 @@
+type: object
+properties:
+  catalog_version:
+    type: integer
+  driver:
+    type: string
+  platform_version:
+    type: string
+  driver_schema:
+    type: object
+    additionalProperties: {}
+  source:
+    $ref: ./DriverCatalogV2Source.yaml
+  generated_at:
+    type: string
+  commands_by_id:
+    type: object
+    additionalProperties:
+      $ref: ./DriverCommandV2.yaml
+required:
+  - catalog_version
+  - commands_by_id
+  - driver

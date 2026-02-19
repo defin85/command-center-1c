@@ -1,0 +1,36 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  source_type:
+    type: string
+  source_id:
+    type: string
+  tenant_id:
+    type: string
+    format: uuid
+    nullable: true
+  exposure_id:
+    type: string
+    format: uuid
+    nullable: true
+  severity:
+    type: string
+  code:
+    type: string
+  message:
+    type: string
+  details: {}
+  created_at:
+    type: string
+    format: date-time
+required:
+  - code
+  - created_at
+  - details
+  - id
+  - message
+  - severity
+  - source_id
+  - source_type

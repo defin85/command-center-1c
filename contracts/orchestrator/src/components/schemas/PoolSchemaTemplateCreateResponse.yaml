@@ -1,0 +1,6 @@
+type: object
+properties:
+  template:
+    $ref: ./PoolSchemaTemplate.yaml
+required:
+  - template

@@ -1,0 +1,11 @@
+type: object
+properties:
+  group:
+    $ref: ./RbacGroupRef.yaml
+  permission_codes:
+    type: array
+    items:
+      type: string
+required:
+  - group
+  - permission_codes

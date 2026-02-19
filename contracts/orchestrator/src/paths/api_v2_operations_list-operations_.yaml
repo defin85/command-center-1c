@@ -1,0 +1,93 @@
+get:
+  operationId: v2_operations_list_operations_retrieve
+  description: >-
+    List all batch operations with optional filtering by status, type, and
+    creator.
+  summary: List batch operations
+  parameters:
+    - in: query
+      name: created_by
+      schema:
+        type: string
+      description: Filter by creator username
+    - in: query
+      name: filters
+      schema:
+        type: string
+      description: JSON object with filter conditions
+    - in: query
+      name: limit
+      schema:
+        type: integer
+      description: 'Maximum results (default: 50, max: 1000)'
+    - in: query
+      name: node_id
+      schema:
+        type: string
+      description: Filter by workflow node ID
+    - in: query
+      name: offset
+      schema:
+        type: integer
+      description: 'Pagination offset (default: 0)'
+    - in: query
+      name: operation_id
+      schema:
+        type: string
+      description: Filter by operation ID
+    - in: query
+      name: operation_type
+      schema:
+        type: string
+      description: Filter by type (create, update, delete, query, designer_cli)
+    - in: query
+      name: search
+      schema:
+        type: string
+      description: Search by name, description, or ID
+    - in: query
+      name: sort
+      schema:
+        type: string
+      description: JSON object with sort configuration
+    - in: query
+      name: status
+      schema:
+        type: string
+      description: >-
+        Filter by status (pending, queued, processing, completed, failed,
+        cancelled)
+    - in: query
+      name: workflow_execution_id
+      schema:
+        type: string
+      description: Filter by workflow execution ID
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/OperationListResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/OperationErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized

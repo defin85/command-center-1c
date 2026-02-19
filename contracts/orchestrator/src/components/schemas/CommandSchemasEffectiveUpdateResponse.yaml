@@ -1,0 +1,15 @@
+type: object
+properties:
+  driver:
+    type: string
+  base_version:
+    type: string
+  overrides_version:
+    type: string
+  etag:
+    type: string
+required:
+  - base_version
+  - driver
+  - etag
+  - overrides_version

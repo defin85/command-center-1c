@@ -1,0 +1,14 @@
+type: object
+description: Response for file delete endpoint.
+properties:
+  file_id:
+    type: string
+    format: uuid
+  deleted:
+    type: boolean
+  message:
+    type: string
+required:
+  - deleted
+  - file_id
+  - message

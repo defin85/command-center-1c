@@ -1,0 +1,62 @@
+type: object
+description: Serializer for WorkflowNode Pydantic model.
+properties:
+  id:
+    type: string
+    description: Unique node identifier
+    maxLength: 100
+    minLength: 1
+  name:
+    type: string
+    description: Human-readable name
+    maxLength: 200
+    minLength: 1
+  type:
+    enum:
+      - operation
+      - condition
+      - parallel
+      - loop
+      - subworkflow
+    type: string
+    x-spec-enum-id: ebf82c1de5d17dd6
+    description: |-
+      Node type
+
+      * `operation` - operation
+      * `condition` - condition
+      * `parallel` - parallel
+      * `loop` - loop
+      * `subworkflow` - subworkflow
+  template_id:
+    type: string
+    nullable: true
+    description: Template ID for Operation nodes
+  operation_ref:
+    allOf:
+      - $ref: ./OperationRef.yaml
+    nullable: true
+    description: OperationExposure binding for Operation nodes
+  io:
+    allOf:
+      - $ref: ./OperationIO.yaml
+    nullable: true
+    description: Operation node data-flow contract
+  config:
+    $ref: ./NodeConfig.yaml
+  parallel_config:
+    allOf:
+      - $ref: ./ParallelConfig.yaml
+    nullable: true
+  loop_config:
+    allOf:
+      - $ref: ./LoopConfig.yaml
+    nullable: true
+  subworkflow_config:
+    allOf:
+      - $ref: ./SubWorkflowConfig.yaml
+    nullable: true
+required:
+  - id
+  - name
+  - type

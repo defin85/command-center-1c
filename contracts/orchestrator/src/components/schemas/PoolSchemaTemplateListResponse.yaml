@@ -1,0 +1,11 @@
+type: object
+properties:
+  templates:
+    type: array
+    items:
+      $ref: ./PoolSchemaTemplate.yaml
+  count:
+    type: integer
+required:
+  - count
+  - templates

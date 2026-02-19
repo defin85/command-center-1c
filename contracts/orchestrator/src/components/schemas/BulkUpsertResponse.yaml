@@ -1,0 +1,15 @@
+type: object
+properties:
+  created:
+    type: integer
+  updated:
+    type: integer
+  skipped:
+    type: integer
+  total:
+    type: integer
+required:
+  - created
+  - skipped
+  - total
+  - updated

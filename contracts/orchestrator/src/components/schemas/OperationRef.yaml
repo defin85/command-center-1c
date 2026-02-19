@@ -1,0 +1,32 @@
+type: object
+description: Serializer for OperationRef Pydantic model.
+properties:
+  alias:
+    type: string
+    description: OperationExposure alias for template surface
+    maxLength: 200
+    minLength: 1
+  binding_mode:
+    enum:
+      - alias_latest
+      - pinned_exposure
+    type: string
+    x-spec-enum-id: b190d4b6dc3651f2
+    default: alias_latest
+    description: |-
+      Binding mode
+
+      * `alias_latest` - alias_latest
+      * `pinned_exposure` - pinned_exposure
+  template_exposure_id:
+    type: string
+    format: uuid
+    nullable: true
+    description: Pinned OperationExposure ID (required for pinned_exposure)
+  template_exposure_revision:
+    type: integer
+    minimum: 1
+    nullable: true
+    description: Pinned OperationExposure revision (required for pinned_exposure)
+required:
+  - alias

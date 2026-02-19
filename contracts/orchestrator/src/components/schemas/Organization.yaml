@@ -1,0 +1,37 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  database_id:
+    type: string
+    format: uuid
+    nullable: true
+  name:
+    type: string
+  full_name:
+    type: string
+  inn:
+    type: string
+  kpp:
+    type: string
+  status:
+    type: string
+  external_ref:
+    type: string
+  metadata: {}
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - inn
+  - name
+  - status
+  - tenant_id

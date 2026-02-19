@@ -1,0 +1,26 @@
+type: object
+description: >-
+  Custom TokenObtainPairSerializer that adds username and roles to JWT claims.
+
+
+  Go API Gateway expects:
+
+  - user_id: string (Django sends int, we convert)
+
+  - username: string
+
+  - roles: []string
+
+
+  This ensures compatibility between Django-generated tokens and Go JWT
+  validation.
+properties:
+  username:
+    type: string
+    writeOnly: true
+  password:
+    type: string
+    writeOnly: true
+required:
+  - password
+  - username

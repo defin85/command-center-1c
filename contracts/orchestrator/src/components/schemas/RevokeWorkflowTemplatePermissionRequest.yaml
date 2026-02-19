@@ -1,0 +1,13 @@
+type: object
+properties:
+  user_id:
+    type: integer
+  template_id:
+    type: string
+    format: uuid
+  reason:
+    type: string
+required:
+  - reason
+  - template_id
+  - user_id

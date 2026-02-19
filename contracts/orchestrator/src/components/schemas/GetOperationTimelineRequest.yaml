@@ -1,0 +1,19 @@
+type: object
+description: Request body for get_operation_timeline endpoint.
+properties:
+  operation_id:
+    type: string
+    description: Operation ID (UUID)
+  limit:
+    type: integer
+    maximum: 500
+    minimum: 1
+    default: 100
+    description: 'Maximum events to return (default: 100, max: 500)'
+  offset:
+    type: integer
+    minimum: 0
+    default: 0
+    description: 'Pagination offset (default: 0)'
+required:
+  - operation_id

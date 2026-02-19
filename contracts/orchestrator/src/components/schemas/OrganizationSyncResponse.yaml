@@ -1,0 +1,8 @@
+type: object
+properties:
+  stats: {}
+  total_rows:
+    type: integer
+required:
+  - stats
+  - total_rows

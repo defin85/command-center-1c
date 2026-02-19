@@ -1,0 +1,10 @@
+type: object
+description: Response for create_cluster endpoint.
+properties:
+  cluster:
+    $ref: ./Cluster.yaml
+  message:
+    type: string
+required:
+  - cluster
+  - message

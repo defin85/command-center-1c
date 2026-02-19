@@ -1,0 +1,53 @@
+post:
+  operationId: v2_artifacts_versions_upload_create
+  summary: Upload artifact version
+  parameters:
+    - in: path
+      name: artifact_id
+      schema:
+        type: string
+        format: uuid
+      required: true
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  requestBody:
+    content:
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/ArtifactVersionUploadRequest.yaml
+    required: true
+  security:
+    - bearerAuth: []
+  responses:
+    '201':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ArtifactVersion.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+    '500':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''

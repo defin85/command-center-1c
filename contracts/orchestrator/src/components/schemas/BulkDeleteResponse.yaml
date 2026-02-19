@@ -1,0 +1,12 @@
+type: object
+properties:
+  deleted:
+    type: integer
+  skipped:
+    type: integer
+  total:
+    type: integer
+required:
+  - deleted
+  - skipped
+  - total

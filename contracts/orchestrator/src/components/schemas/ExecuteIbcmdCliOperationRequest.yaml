@@ -1,0 +1,53 @@
+type: object
+description: Request body for execute_ibcmd_cli_operation endpoint.
+properties:
+  command_id:
+    type: string
+    description: IBCMD command id from driver catalog v2
+  mode:
+    enum:
+      - guided
+      - manual
+    type: string
+    description: |-
+      * `guided` - guided
+      * `manual` - manual
+    x-spec-enum-id: bd50d848143873c7
+    default: guided
+  database_ids:
+    type: array
+    items:
+      type: string
+      format: uuid
+    description: Target databases for per_database commands (empty for global)
+    maxItems: 500
+  auth_database_id:
+    type: string
+    format: uuid
+    description: Anchor database for global commands (RBAC + infobase user mapping)
+  connection:
+    $ref: ./IbcmdCliConnection.yaml
+  ib_auth:
+    $ref: ./IbcmdCliIbAuth.yaml
+  dbms_auth:
+    $ref: ./IbcmdCliDbmsAuth.yaml
+  params:
+    type: object
+    additionalProperties: {}
+  additional_args:
+    type: array
+    items:
+      type: string
+  stdin:
+    type: string
+    default: ''
+  confirm_dangerous:
+    type: boolean
+    default: false
+  timeout_seconds:
+    type: integer
+    maximum: 3600
+    minimum: 1
+    default: 900
+required:
+  - command_id

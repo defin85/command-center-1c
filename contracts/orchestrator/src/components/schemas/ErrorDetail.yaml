@@ -1,0 +1,12 @@
+type: object
+description: Error detail structure.
+properties:
+  code:
+    type: string
+    description: Error code (e.g., MISSING_PARAMETER)
+  message:
+    type: string
+    description: Human-readable error message
+required:
+  - code
+  - message

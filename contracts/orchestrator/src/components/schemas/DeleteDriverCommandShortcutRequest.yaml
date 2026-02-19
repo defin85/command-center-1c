@@ -1,0 +1,7 @@
+type: object
+properties:
+  shortcut_id:
+    type: string
+    format: uuid
+required:
+  - shortcut_id

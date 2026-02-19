@@ -1,0 +1,53 @@
+post:
+  operationId: v2_clusters_sync_cluster_create
+  description: >-
+    Trigger synchronization of a cluster with RAS. The sync runs asynchronously
+    via Celery if available.
+  summary: Sync cluster with RAS
+  parameters:
+    - in: query
+      name: cluster_id
+      schema:
+        type: string
+      description: Cluster UUID (can also be in request body)
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ClusterSyncResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ClusterErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '404':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ClusterErrorResponse.yaml
+      description: ''
+    '500':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ClusterErrorResponse.yaml
+      description: ''

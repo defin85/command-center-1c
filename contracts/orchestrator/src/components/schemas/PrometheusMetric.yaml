@@ -1,0 +1,12 @@
+type: object
+description: Prometheus metrics for a service.
+properties:
+  service:
+    type: string
+    description: Service name
+  metrics:
+    type: string
+    description: Raw Prometheus metrics text
+required:
+  - metrics
+  - service

@@ -1,0 +1,16 @@
+type: object
+properties:
+  accepted:
+    type: boolean
+  workflow_execution_id:
+    type: string
+    format: uuid
+  operation_id:
+    type: string
+    nullable: true
+  retry_target_summary:
+    $ref: ./PoolRunRetryTargetSummary.yaml
+required:
+  - accepted
+  - retry_target_summary
+  - workflow_execution_id

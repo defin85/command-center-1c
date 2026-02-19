@@ -1,0 +1,24 @@
+type: object
+properties:
+  key:
+    type: string
+  value: {}
+  source:
+    type: string
+  value_type:
+    type: string
+  description:
+    type: string
+  min_value:
+    type: integer
+    nullable: true
+  max_value:
+    type: integer
+    nullable: true
+  default: {}
+required:
+  - default
+  - description
+  - key
+  - value
+  - value_type

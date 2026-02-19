@@ -1,0 +1,25 @@
+type: object
+description: Serializer for NodeConfig Pydantic model.
+properties:
+  timeout_seconds:
+    type: integer
+    maximum: 3600
+    minimum: 1
+    default: 300
+    description: Node execution timeout (1-3600s)
+  max_retries:
+    type: integer
+    maximum: 5
+    minimum: 0
+    default: 0
+    description: Maximum retry attempts (0-5)
+  parallel_limit:
+    type: integer
+    maximum: 100
+    minimum: 1
+    nullable: true
+    description: Max parallel executions (Parallel nodes only)
+  expression:
+    type: string
+    nullable: true
+    description: Jinja2 boolean expression for Condition nodes

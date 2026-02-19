@@ -1,0 +1,22 @@
+type: object
+description: Request for file upload endpoint.
+properties:
+  file:
+    type: string
+    format: uri
+  purpose:
+    enum:
+      - operation_input
+      - extension
+      - export
+    type: string
+    description: |-
+      * `operation_input` - Operation Input
+      * `extension` - Extension File
+      * `export` - Export File
+    x-spec-enum-id: 3022bda57e4d40fb
+  expiry_hours:
+    type: integer
+required:
+  - file
+  - purpose

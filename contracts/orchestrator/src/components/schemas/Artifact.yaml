@@ -1,0 +1,46 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  name:
+    type: string
+  kind:
+    type: string
+  is_versioned:
+    type: boolean
+  tags:
+    type: array
+    items:
+      type: string
+  is_deleted:
+    type: boolean
+  deleted_at:
+    type: string
+    format: date-time
+    nullable: true
+  purge_state:
+    type: string
+  purge_after:
+    type: string
+    format: date-time
+    nullable: true
+  purge_blocked_until:
+    type: string
+    format: date-time
+    nullable: true
+  purge_blockers:
+    type: array
+    items:
+      $ref: ./ArtifactPurgeBlocker.yaml
+  created_at:
+    type: string
+    format: date-time
+required:
+  - created_at
+  - id
+  - is_deleted
+  - is_versioned
+  - kind
+  - name
+  - purge_state

@@ -1,0 +1,18 @@
+type: object
+properties:
+  entity_kind:
+    type: string
+  status:
+    enum:
+      - draft
+      - published
+    type: string
+    description: |-
+      * `draft` - draft
+      * `published` - published
+    x-spec-enum-id: e49ce86be5712ba2
+  spec: {}
+required:
+  - entity_kind
+  - spec
+  - status

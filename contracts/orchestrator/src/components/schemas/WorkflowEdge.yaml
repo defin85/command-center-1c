@@ -1,0 +1,16 @@
+type: object
+description: Serializer for WorkflowEdge Pydantic model.
+properties:
+  condition:
+    type: string
+    nullable: true
+    description: Jinja2 expression for conditional edges
+  from:
+    type: string
+    description: Source node ID
+  to:
+    type: string
+    description: Destination node ID
+required:
+  - from
+  - to

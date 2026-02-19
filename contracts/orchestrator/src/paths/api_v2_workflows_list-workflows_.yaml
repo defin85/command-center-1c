@@ -1,0 +1,76 @@
+get:
+  operationId: v2_workflows_list_workflows_retrieve
+  description: >-
+    List all workflow templates with optional filtering by type, active status,
+    and search.
+  summary: List workflow templates
+  parameters:
+    - in: query
+      name: filters
+      schema:
+        type: string
+      description: JSON object with filter conditions
+    - in: query
+      name: is_active
+      schema:
+        type: string
+      description: Filter by active status (true/false)
+    - in: query
+      name: is_valid
+      schema:
+        type: string
+      description: Filter by validation status (true/false)
+    - in: query
+      name: limit
+      schema:
+        type: integer
+      description: 'Maximum results (default: 50, max: 1000)'
+    - in: query
+      name: offset
+      schema:
+        type: integer
+      description: 'Pagination offset (default: 0)'
+    - in: query
+      name: search
+      schema:
+        type: string
+      description: Search by name or description
+    - in: query
+      name: sort
+      schema:
+        type: string
+      description: JSON object with sort configuration
+    - in: query
+      name: workflow_type
+      schema:
+        type: string
+      description: Filter by workflow type (general, user_management, database_ops, etc.)
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/WorkflowListResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized

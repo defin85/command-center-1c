@@ -1,0 +1,14 @@
+type: object
+properties:
+  definitions:
+    type: array
+    items:
+      $ref: ./OperationCatalogDefinition.yaml
+  count:
+    type: integer
+  total:
+    type: integer
+required:
+  - count
+  - definitions
+  - total

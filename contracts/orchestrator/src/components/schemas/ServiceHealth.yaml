@@ -1,0 +1,43 @@
+type: object
+description: Health status of a single service.
+properties:
+  name:
+    type: string
+    description: Service name (e.g., API Gateway, PostgreSQL)
+  type:
+    type: string
+    description: Service type (go-service, django, database, cache, monitoring, tracing)
+  url:
+    type: string
+    description: Health check URL
+  status:
+    enum:
+      - online
+      - offline
+      - degraded
+    type: string
+    x-spec-enum-id: 3d90d98f53f4bd85
+    description: |-
+      Service status
+
+      * `online` - online
+      * `offline` - offline
+      * `degraded` - degraded
+  response_time_ms:
+    type: number
+    format: double
+    nullable: true
+    description: Response time in milliseconds
+  last_check:
+    type: string
+    format: date-time
+    description: Timestamp of last health check
+  details:
+    type: object
+    additionalProperties: {}
+    description: Additional details (error info, etc.)
+required:
+  - last_check
+  - name
+  - status
+  - type

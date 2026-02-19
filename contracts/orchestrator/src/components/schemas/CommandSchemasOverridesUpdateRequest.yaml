@@ -1,0 +1,23 @@
+type: object
+properties:
+  driver:
+    enum:
+      - cli
+      - ibcmd
+    type: string
+    description: |-
+      * `cli` - cli
+      * `ibcmd` - ibcmd
+    x-spec-enum-id: 04e91cd3f4c47669
+  catalog:
+    type: object
+    additionalProperties: {}
+  reason:
+    type: string
+  expected_etag:
+    type: string
+    nullable: true
+required:
+  - catalog
+  - driver
+  - reason

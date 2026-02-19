@@ -1,0 +1,28 @@
+get:
+  operationId: v2_system_config_retrieve
+  description: Returns system configuration values for frontend defaults.
+  summary: Get system configuration
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/SystemConfig.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

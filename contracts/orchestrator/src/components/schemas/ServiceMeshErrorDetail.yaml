@@ -1,0 +1,17 @@
+type: object
+description: Error detail structure.
+properties:
+  code:
+    type: string
+    description: Error code
+  message:
+    type: string
+    description: Human-readable error message
+  available_services:
+    type: array
+    items:
+      type: string
+    description: List of available service names
+required:
+  - code
+  - message

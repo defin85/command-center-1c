@@ -1,0 +1,62 @@
+post:
+  operationId: v2_operations_execute_ibcmd_cli_create
+  description: |2-
+
+        Queue schema-driven IBCMD command for execution.
+
+        Uses driver catalog v2 (base@approved + overrides@active) to validate `command_id`
+        and build canonical `argv[]`.
+
+        Supports both scopes:
+        - per_database: executes per selected database
+        - global: executes once (requires `auth_database_id` for RBAC + IB user mapping)
+
+        Dangerous commands require `confirm_dangerous=true`.
+        
+  summary: Execute schema-driven IBCMD command (ibcmd_cli)
+  tags:
+    - v2
+  requestBody:
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/ExecuteIbcmdCliOperationRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/ExecuteIbcmdCliOperationRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/ExecuteIbcmdCliOperationRequest.yaml
+    required: true
+  security:
+    - bearerAuth: []
+  responses:
+    '202':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ExecuteOperationResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/OperationErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+    '409':
+      description: Conflict
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

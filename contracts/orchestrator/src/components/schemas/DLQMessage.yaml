@@ -1,0 +1,23 @@
+type: object
+properties:
+  dlq_message_id:
+    type: string
+    description: Redis Stream entry ID
+  original_message_id:
+    type: string
+  correlation_id:
+    type: string
+  operation_id:
+    type: string
+  event_type:
+    type: string
+  error_code:
+    type: string
+  error_message:
+    type: string
+  worker_id:
+    type: string
+  failed_at:
+    type: string
+required:
+  - dlq_message_id

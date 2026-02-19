@@ -1,0 +1,56 @@
+get:
+  operationId: v2_clusters_get_cluster_databases_retrieve
+  description: Get all databases for a specific cluster with optional filtering by status.
+  summary: Get cluster databases
+  parameters:
+    - in: query
+      name: cluster_id
+      schema:
+        type: string
+      description: Cluster UUID
+      required: true
+    - in: query
+      name: health_status
+      schema:
+        type: string
+      description: Filter by health check status
+    - in: query
+      name: status
+      schema:
+        type: string
+      description: Filter by database status
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ClusterDatabasesResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ClusterErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '404':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ClusterErrorResponse.yaml
+      description: ''

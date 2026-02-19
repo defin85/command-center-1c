@@ -1,0 +1,23 @@
+type: object
+properties:
+  group:
+    $ref: ./RbacGroupRef.yaml
+  template:
+    $ref: ./WorkflowTemplateRef.yaml
+  level:
+    type: string
+  granted_by:
+    allOf:
+      - $ref: ./RbacUserRef.yaml
+    nullable: true
+  granted_at:
+    type: string
+    format: date-time
+  notes:
+    type: string
+required:
+  - granted_at
+  - granted_by
+  - group
+  - level
+  - template

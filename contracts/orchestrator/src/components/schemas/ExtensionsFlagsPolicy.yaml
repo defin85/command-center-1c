@@ -1,0 +1,23 @@
+type: object
+properties:
+  extension_name:
+    type: string
+  active:
+    type: boolean
+    nullable: true
+  safe_mode:
+    type: boolean
+    nullable: true
+  unsafe_action_protection:
+    type: boolean
+    nullable: true
+  updated_at:
+    type: string
+    format: date-time
+    nullable: true
+required:
+  - active
+  - extension_name
+  - safe_mode
+  - unsafe_action_protection
+  - updated_at

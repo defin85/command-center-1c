@@ -1,0 +1,15 @@
+type: object
+description: Response for list_infobase_users endpoint.
+properties:
+  users:
+    type: array
+    items:
+      $ref: ./InfobaseUserMapping.yaml
+  count:
+    type: integer
+  total:
+    type: integer
+required:
+  - count
+  - total
+  - users

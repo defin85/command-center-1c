@@ -1,0 +1,61 @@
+post:
+  operationId: v2_operations_execute_create
+  description: |2-
+
+        Queue an operation for execution on selected databases.
+
+        **Supported operation types:**
+        - RAS: `lock_scheduled_jobs`, `unlock_scheduled_jobs`, `block_sessions`,
+          `unblock_sessions`, `terminate_sessions`
+        - OData: `create`, `update`, `delete`, `query`
+        - CLI: `designer_cli`
+
+        **Config notes:**
+        - RAS block_sessions: `message`, `permission_code`, `denied_from`, `denied_to`, `parameter`
+        - OData query: `entity`, `filter`, `select`, `top`, `skip`
+        - OData update/delete: `entity`, `entity_id`
+        - CLI designer_cli: `command` + `args` + optional `options`
+        
+  summary: Execute RAS operation
+  tags:
+    - v2
+  requestBody:
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/ExecuteOperationRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/ExecuteOperationRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/ExecuteOperationRequest.yaml
+    required: true
+  security:
+    - bearerAuth: []
+  responses:
+    '202':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ExecuteOperationResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/OperationErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

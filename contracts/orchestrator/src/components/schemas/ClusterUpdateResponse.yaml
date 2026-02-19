@@ -1,0 +1,10 @@
+type: object
+description: Response for update_cluster endpoint.
+properties:
+  cluster:
+    $ref: ./Cluster.yaml
+  message:
+    type: string
+required:
+  - cluster
+  - message

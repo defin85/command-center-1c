@@ -1,0 +1,151 @@
+type: object
+description: Serializer for BatchOperation model.
+properties:
+  id:
+    type: string
+    readOnly: true
+  name:
+    type: string
+    maxLength: 255
+  description:
+    type: string
+  operation_type:
+    enum:
+      - create
+      - update
+      - delete
+      - query
+      - lock_scheduled_jobs
+      - unlock_scheduled_jobs
+      - terminate_sessions
+      - block_sessions
+      - unblock_sessions
+      - sync_cluster
+      - discover_clusters
+      - health_check
+      - ibcmd_cli
+      - designer_cli
+    type: string
+    description: |-
+      * `create` - Create
+      * `update` - Update
+      * `delete` - Delete
+      * `query` - Query
+      * `lock_scheduled_jobs` - Lock Scheduled Jobs
+      * `unlock_scheduled_jobs` - Unlock Scheduled Jobs
+      * `terminate_sessions` - Terminate Sessions
+      * `block_sessions` - Block Sessions
+      * `unblock_sessions` - Unblock Sessions
+      * `sync_cluster` - Sync Cluster
+      * `discover_clusters` - Discover Clusters
+      * `health_check` - Health Check
+      * `ibcmd_cli` - IBCMD CLI (schema-driven)
+      * `designer_cli` - Designer CLI
+    x-spec-enum-id: 58cb78cdb3874a92
+  target_entity:
+    type: string
+    description: 1C entity name (e.g., Справочник_Пользователи)
+    maxLength: 255
+  status:
+    enum:
+      - pending
+      - queued
+      - processing
+      - completed
+      - failed
+      - cancelled
+    type: string
+    description: |-
+      * `pending` - Pending
+      * `queued` - Queued
+      * `processing` - Processing
+      * `completed` - Completed
+      * `failed` - Failed
+      * `cancelled` - Cancelled
+    x-spec-enum-id: 8a19812b789b972e
+    readOnly: true
+  progress:
+    type: integer
+    readOnly: true
+    description: Progress percentage (0-100)
+  total_tasks:
+    type: integer
+    readOnly: true
+    description: Total number of tasks
+  completed_tasks:
+    type: integer
+    readOnly: true
+    description: Number of completed tasks
+  failed_tasks:
+    type: integer
+    readOnly: true
+    description: Number of failed tasks
+  payload:
+    description: Operation payload/parameters
+  config:
+    description: Execution configuration (timeout, retries, etc.)
+  task_id:
+    type: string
+    nullable: true
+    maxLength: 255
+  started_at:
+    type: string
+    format: date-time
+    nullable: true
+  completed_at:
+    type: string
+    format: date-time
+    nullable: true
+  duration_seconds:
+    type: number
+    format: double
+    nullable: true
+    description: Calculate operation duration in seconds.
+    readOnly: true
+  success_rate:
+    type: number
+    format: double
+    nullable: true
+    description: Calculate success rate percentage.
+    readOnly: true
+  created_by:
+    type: string
+    description: User who created operation
+    maxLength: 255
+  metadata:
+    description: Additional metadata
+  created_at:
+    type: string
+    format: date-time
+    readOnly: true
+  updated_at:
+    type: string
+    format: date-time
+    readOnly: true
+  database_names:
+    type: array
+    items:
+      type: string
+    description: Get list of database names for this operation.
+    readOnly: true
+  tasks:
+    type: array
+    items:
+      $ref: ./Task.yaml
+    readOnly: true
+required:
+  - completed_tasks
+  - created_at
+  - database_names
+  - duration_seconds
+  - failed_tasks
+  - id
+  - name
+  - operation_type
+  - progress
+  - status
+  - success_rate
+  - target_entity
+  - tasks
+  - total_tasks
+  - updated_at

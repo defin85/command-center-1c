@@ -1,0 +1,34 @@
+type: object
+properties:
+  id:
+    type: integer
+  user_id:
+    type: integer
+    nullable: true
+  ib_username:
+    type: string
+  ib_display_name:
+    type: string
+  ib_roles:
+    type: array
+    items:
+      type: string
+  auth_type:
+    enum:
+      - local
+      - ad
+      - service
+      - other
+    type: string
+    description: |-
+      * `local` - Local
+      * `ad` - Active Directory
+      * `service` - Service
+      * `other` - Other
+    x-spec-enum-id: 562ca2bc45b62724
+  is_service:
+    type: boolean
+  notes:
+    type: string
+required:
+  - id

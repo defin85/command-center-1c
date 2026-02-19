@@ -1,0 +1,11 @@
+type: object
+description: Request for clone_workflow endpoint.
+properties:
+  workflow_id:
+    type: string
+    format: uuid
+  new_name:
+    type: string
+    maxLength: 200
+required:
+  - workflow_id

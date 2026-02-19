@@ -1,0 +1,14 @@
+type: object
+properties:
+  executor:
+    type: object
+    additionalProperties: {}
+  connection:
+    type: object
+    additionalProperties: {}
+  database_ids:
+    type: array
+    items:
+      type: string
+required:
+  - executor

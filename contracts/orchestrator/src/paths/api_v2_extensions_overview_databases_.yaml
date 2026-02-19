@@ -1,0 +1,68 @@
+get:
+  operationId: v2_extensions_overview_databases_retrieve
+  description: List databases for a given extension name/version/status (snapshot-driven).
+  summary: Extensions overview drill-down (databases)
+  parameters:
+    - in: query
+      name: cluster_id
+      schema:
+        type: string
+      description: Restrict to a cluster
+    - in: query
+      name: database_id
+      schema:
+        type: string
+      description: Restrict to a single database (requires permission)
+    - in: query
+      name: limit
+      schema:
+        type: integer
+      description: Max items (default 100, max 1000)
+    - in: query
+      name: name
+      schema:
+        type: string
+      description: Extension name (exact match)
+      required: true
+    - in: query
+      name: offset
+      schema:
+        type: integer
+      description: Offset (default 0)
+    - in: query
+      name: status
+      schema:
+        type: string
+      description: 'Filter by status: active|inactive|missing|unknown'
+    - in: query
+      name: version
+      schema:
+        type: string
+      description: Filter by exact version
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ExtensionsOverviewDatabasesResponse.yaml
+      description: ''
+    '400':
+      description: Bad request
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden

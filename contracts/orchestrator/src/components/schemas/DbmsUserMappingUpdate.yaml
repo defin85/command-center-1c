@@ -1,0 +1,26 @@
+type: object
+properties:
+  id:
+    type: integer
+  user_id:
+    type: integer
+    nullable: true
+  db_username:
+    type: string
+  auth_type:
+    enum:
+      - local
+      - service
+      - other
+    type: string
+    description: |-
+      * `local` - Local
+      * `service` - Service
+      * `other` - Other
+    x-spec-enum-id: 2b98a5ef99ffe7da
+  is_service:
+    type: boolean
+  notes:
+    type: string
+required:
+  - id

@@ -1,0 +1,11 @@
+type: object
+properties:
+  user:
+    $ref: ./RbacUserRef.yaml
+  roles:
+    type: array
+    items:
+      $ref: ./RbacGroupRef.yaml
+required:
+  - roles
+  - user

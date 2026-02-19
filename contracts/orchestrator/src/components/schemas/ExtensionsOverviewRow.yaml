@@ -1,0 +1,41 @@
+type: object
+properties:
+  name:
+    type: string
+  purpose:
+    type: string
+    nullable: true
+  safe_mode:
+    type: boolean
+    nullable: true
+  unsafe_action_protection:
+    type: boolean
+    nullable: true
+  flags: {}
+  installed_count:
+    type: integer
+  active_count:
+    type: integer
+  inactive_count:
+    type: integer
+  missing_count:
+    type: integer
+  unknown_count:
+    type: integer
+  versions:
+    type: array
+    items:
+      type: object
+      additionalProperties: {}
+  latest_snapshot_at:
+    type: string
+    format: date-time
+    nullable: true
+required:
+  - active_count
+  - inactive_count
+  - installed_count
+  - missing_count
+  - name
+  - unknown_count
+  - versions

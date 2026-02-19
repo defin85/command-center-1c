@@ -1,0 +1,38 @@
+type: object
+description: Serializer for LoopConfig Pydantic model.
+properties:
+  mode:
+    enum:
+      - count
+      - while
+      - foreach
+    type: string
+    x-spec-enum-id: c71adaa5d1874252
+    description: |-
+      Loop mode
+
+      * `count` - count
+      * `while` - while
+      * `foreach` - foreach
+  count:
+    type: integer
+    maximum: 1000
+    minimum: 1
+    nullable: true
+  condition:
+    type: string
+    nullable: true
+  items:
+    type: string
+    nullable: true
+  loop_node_id:
+    type: string
+    description: Node ID to loop
+  max_iterations:
+    type: integer
+    maximum: 10000
+    minimum: 1
+    default: 100
+required:
+  - loop_node_id
+  - mode

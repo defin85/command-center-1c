@@ -1,0 +1,56 @@
+type: object
+properties:
+  kind:
+    enum:
+      - flag
+      - positional
+    type: string
+    description: |-
+      * `flag` - flag
+      * `positional` - positional
+    x-spec-enum-id: 6bafa55ecb0406ba
+  flag:
+    type: string
+  position:
+    type: integer
+    nullable: true
+  required:
+    type: boolean
+  expects_value:
+    type: boolean
+  label:
+    type: string
+  description:
+    type: string
+  value_type:
+    enum:
+      - string
+      - int
+      - float
+      - bool
+      - null
+    type: string
+    description: |-
+      * `string` - string
+      * `int` - int
+      * `float` - float
+      * `bool` - bool
+    x-spec-enum-id: b0c0b04a584ed9d8
+    nullable: true
+  enum:
+    type: array
+    items:
+      type: string
+  default: {}
+  repeatable:
+    type: boolean
+  sensitive:
+    type: boolean
+  artifact: {}
+  ui: {}
+  disabled:
+    type: boolean
+required:
+  - expects_value
+  - kind
+  - required

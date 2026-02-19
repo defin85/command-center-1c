@@ -1,0 +1,24 @@
+type: object
+description: Single data point in history.
+properties:
+  timestamp:
+    type: string
+    format: date-time
+    description: Data point timestamp
+  ops_per_minute:
+    type: number
+    format: double
+    nullable: true
+    description: Operations per minute
+  p95_latency_ms:
+    type: number
+    format: double
+    nullable: true
+    description: 95th percentile latency in milliseconds
+  error_rate:
+    type: number
+    format: double
+    nullable: true
+    description: Error rate (0.0 to 1.0)
+required:
+  - timestamp

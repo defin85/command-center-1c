@@ -1,0 +1,9 @@
+type: object
+properties:
+  deleted:
+    type: boolean
+  exposure:
+    $ref: ./OperationCatalogExposure.yaml
+required:
+  - deleted
+  - exposure

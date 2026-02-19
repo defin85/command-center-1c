@@ -1,0 +1,43 @@
+type: object
+properties:
+  alias:
+    type: string
+  label:
+    type: string
+  status:
+    type: string
+  issues:
+    type: array
+    items:
+      type: string
+  exposure_id:
+    type: string
+    format: uuid
+    nullable: true
+  exposure_revision:
+    type: integer
+    minimum: 1
+    nullable: true
+  operation_type:
+    type: string
+  target_entity:
+    type: string
+  is_active:
+    type: boolean
+  exposure_status:
+    type: string
+  system_managed:
+    type: boolean
+  domain:
+    type: string
+required:
+  - alias
+  - domain
+  - exposure_status
+  - is_active
+  - issues
+  - label
+  - operation_type
+  - status
+  - system_managed
+  - target_entity

@@ -1,0 +1,20 @@
+type: object
+properties:
+  id:
+    type: integer
+  name:
+    type: string
+  users_count:
+    type: integer
+  permissions_count:
+    type: integer
+  permission_codes:
+    type: array
+    items:
+      type: string
+required:
+  - id
+  - name
+  - permission_codes
+  - permissions_count
+  - users_count

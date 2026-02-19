@@ -7,6 +7,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTRACTS_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(dirname "$CONTRACTS_DIR")"
+ORCHESTRATOR_BUNDLE_SCRIPT="$SCRIPT_DIR/build-orchestrator-openapi.sh"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -105,16 +106,16 @@ echo -e "${GREEN}[1/3] Orchestrator proxy routes...${NC}"
 ORCHESTRATOR_SPEC="$CONTRACTS_DIR/orchestrator/openapi.yaml"
 ORCHESTRATOR_ROUTES_OUTPUT="$PROJECT_ROOT/go-services/api-gateway/internal/routes/generated/orchestrator_routes.go"
 
-# Auto-export OpenAPI from Django if spec is missing or outdated
-DJANGO_API_DIR="$PROJECT_ROOT/orchestrator/apps/api_v2"
-if [[ ! -f "$ORCHESTRATOR_SPEC" ]] || [[ "$DJANGO_API_DIR" -nt "$ORCHESTRATOR_SPEC" ]] || [[ "$FORCE_REGEN" == "true" ]]; then
-    echo "  -> Exporting OpenAPI from Django..."
-    if [[ -f "$SCRIPT_DIR/export-django-openapi.sh" ]]; then
-        if "$SCRIPT_DIR/export-django-openapi.sh" > /dev/null 2>&1; then
-            echo -e "  ${GREEN}✓ OpenAPI exported${NC}"
-        else
-            echo -e "  ${YELLOW}! OpenAPI export failed (Django not running?)${NC}"
-        fi
+# For modularized orchestrator contract, require up-to-date bundle.
+# Runtime export from Django remains an explicit manual operation.
+if [[ -d "$CONTRACTS_DIR/orchestrator/src" ]]; then
+    echo "  -> Checking OpenAPI bundle freshness from contracts/orchestrator/src/**..."
+    if [[ ! -x "$ORCHESTRATOR_BUNDLE_SCRIPT" ]]; then
+        echo -e "  ${RED}✗ Bundle checker is missing: $ORCHESTRATOR_BUNDLE_SCRIPT${NC}"
+        exit 1
+    fi
+    if ! "$ORCHESTRATOR_BUNDLE_SCRIPT" check; then
+        exit 1
     fi
 fi
 

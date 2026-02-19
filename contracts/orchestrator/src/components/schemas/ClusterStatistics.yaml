@@ -1,0 +1,15 @@
+type: object
+description: Statistics for a cluster.
+properties:
+  total_databases:
+    type: integer
+  healthy_databases:
+    type: integer
+  databases_by_status:
+    type: object
+    additionalProperties:
+      type: integer
+required:
+  - databases_by_status
+  - healthy_databases
+  - total_databases

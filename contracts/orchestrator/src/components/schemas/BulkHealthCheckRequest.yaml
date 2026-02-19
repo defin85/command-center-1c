@@ -1,0 +1,12 @@
+type: object
+description: Request body for bulk_health_check endpoint.
+properties:
+  database_ids:
+    type: array
+    items:
+      type: string
+    description: List of database UUIDs to check
+  cluster_id:
+    type: string
+    format: uuid
+    description: Check all databases in this cluster

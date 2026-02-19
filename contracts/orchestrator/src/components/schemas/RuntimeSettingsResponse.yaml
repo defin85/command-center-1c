@@ -1,0 +1,8 @@
+type: object
+properties:
+  settings:
+    type: array
+    items:
+      $ref: ./RuntimeSetting.yaml
+required:
+  - settings

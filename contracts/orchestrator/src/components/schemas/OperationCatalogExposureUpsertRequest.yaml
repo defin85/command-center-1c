@@ -1,0 +1,13 @@
+type: object
+properties:
+  exposure_id:
+    type: string
+    format: uuid
+  definition_id:
+    type: string
+    format: uuid
+    nullable: true
+  definition: {}
+  exposure: {}
+required:
+  - exposure

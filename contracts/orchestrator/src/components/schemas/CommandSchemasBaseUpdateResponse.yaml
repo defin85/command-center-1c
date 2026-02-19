@@ -1,0 +1,12 @@
+type: object
+properties:
+  driver:
+    type: string
+  base_version:
+    type: string
+  etag:
+    type: string
+required:
+  - base_version
+  - driver
+  - etag

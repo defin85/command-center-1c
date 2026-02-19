@@ -1,0 +1,6 @@
+type: object
+description: Request body for multiplex stream ticket.
+properties:
+  client_id:
+    type: string
+    description: Optional client identifier

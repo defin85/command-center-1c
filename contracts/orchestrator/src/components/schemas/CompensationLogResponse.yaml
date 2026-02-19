@@ -1,0 +1,9 @@
+type: object
+properties:
+  status:
+    type: string
+  count:
+    type: integer
+required:
+  - count
+  - status

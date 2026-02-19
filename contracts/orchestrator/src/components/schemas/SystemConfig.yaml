@@ -1,0 +1,8 @@
+type: object
+description: System configuration for frontend defaults.
+properties:
+  ras_default_server:
+    type: string
+    description: Default RAS server address for new clusters (e.g., localhost:1545)
+required:
+  - ras_default_server

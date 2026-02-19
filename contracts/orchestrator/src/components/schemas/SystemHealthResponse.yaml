@@ -1,0 +1,34 @@
+type: object
+description: Response for system_health endpoint.
+properties:
+  timestamp:
+    type: string
+    format: date-time
+    description: Current timestamp
+  overall_status:
+    enum:
+      - healthy
+      - degraded
+      - critical
+    type: string
+    x-spec-enum-id: 5ea7e0918a689e75
+    description: |-
+      Overall system status
+
+      * `healthy` - healthy
+      * `degraded` - degraded
+      * `critical` - critical
+  services:
+    type: array
+    items:
+      $ref: ./ServiceHealth.yaml
+    description: List of service health statuses
+  statistics:
+    allOf:
+      - $ref: ./SystemStatistics.yaml
+    description: Aggregated statistics
+required:
+  - overall_status
+  - services
+  - statistics
+  - timestamp

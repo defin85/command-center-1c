@@ -1,0 +1,28 @@
+type: object
+properties:
+  workflow_run_id:
+    type: string
+    format: uuid
+  parent_workflow_run_id:
+    type: string
+    format: uuid
+    nullable: true
+  attempt_number:
+    type: integer
+    minimum: 1
+  attempt_kind:
+    enum:
+      - initial
+      - retry
+    type: string
+    description: |-
+      * `initial` - initial
+      * `retry` - retry
+    x-spec-enum-id: c70f3fcb8a5eaa72
+  status:
+    type: string
+required:
+  - attempt_kind
+  - attempt_number
+  - status
+  - workflow_run_id

@@ -1,0 +1,10 @@
+type: object
+properties:
+  hints_version:
+    type: integer
+  capabilities:
+    type: object
+    additionalProperties: {}
+required:
+  - capabilities
+  - hints_version

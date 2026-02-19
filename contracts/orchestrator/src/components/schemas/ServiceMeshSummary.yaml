@@ -1,0 +1,24 @@
+type: object
+description: Summary statistics for service mesh.
+properties:
+  total:
+    type: integer
+    description: Total number of services
+  healthy:
+    type: integer
+    description: Number of healthy services
+  degraded:
+    type: integer
+    description: Number of degraded services
+  unreachable:
+    type: integer
+    description: Number of unreachable services
+  error:
+    type: integer
+    description: Number of services in error state
+required:
+  - degraded
+  - error
+  - healthy
+  - total
+  - unreachable

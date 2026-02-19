@@ -1,0 +1,18 @@
+type: object
+description: Response for get_extensions_snapshot endpoint.
+properties:
+  database_id:
+    type: string
+    format: uuid
+    description: Database UUID
+  snapshot:
+    description: Latest known extensions snapshot (empty object if not available)
+  updated_at:
+    type: string
+    format: date-time
+    nullable: true
+  source_operation_id:
+    type: string
+required:
+  - database_id
+  - snapshot

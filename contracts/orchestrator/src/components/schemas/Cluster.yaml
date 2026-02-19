@@ -1,0 +1,121 @@
+type: object
+description: Serializer для Cluster model.
+properties:
+  id:
+    type: string
+    format: uuid
+    readOnly: true
+    description: Cluster UUID (auto-generated or from 1C)
+  name:
+    type: string
+    description: Cluster name from 1C
+    maxLength: 255
+  description:
+    type: string
+    description: Optional description
+  ras_host:
+    type: string
+    description: RAS host (e.g., localhost, srv1c, 192.168.1.100)
+    maxLength: 255
+  ras_port:
+    type: integer
+    maximum: 2147483647
+    minimum: -2147483648
+    nullable: true
+    description: 'RAS port (default: 1545)'
+  ras_server:
+    type: string
+    readOnly: true
+  rmngr_host:
+    type: string
+    description: RMNGR host (cluster manager)
+    maxLength: 255
+  rmngr_port:
+    type: integer
+    maximum: 2147483647
+    minimum: -2147483648
+    nullable: true
+    description: 'RMNGR port (default: 1541)'
+  ragent_host:
+    type: string
+    description: RAGENT host (server agent)
+    maxLength: 255
+  ragent_port:
+    type: integer
+    maximum: 2147483647
+    minimum: -2147483648
+    nullable: true
+    description: 'RAGENT port (default: 1540)'
+  rphost_port_from:
+    type: integer
+    maximum: 2147483647
+    minimum: -2147483648
+    nullable: true
+    description: 'RPHOST port range start (default: 1560)'
+  rphost_port_to:
+    type: integer
+    maximum: 2147483647
+    minimum: -2147483648
+    nullable: true
+    description: 'RPHOST port range end (default: 1591)'
+  cluster_service_url:
+    type: string
+    format: uri
+    description: Legacy URL for cluster integrations (currently unused)
+    maxLength: 512
+  cluster_user:
+    type: string
+    description: Cluster admin username (if required)
+    maxLength: 255
+  cluster_pwd:
+    type: string
+    writeOnly: true
+  cluster_pwd_configured:
+    type: boolean
+    readOnly: true
+  status:
+    enum:
+      - active
+      - inactive
+      - error
+      - maintenance
+    type: string
+    description: |-
+      * `active` - Active
+      * `inactive` - Inactive
+      * `error` - Error
+      * `maintenance` - Maintenance
+    x-spec-enum-id: c5c3d7086c0dc2cb
+  status_display:
+    type: string
+    readOnly: true
+  last_sync:
+    type: string
+    format: date-time
+    readOnly: true
+    nullable: true
+    description: Last sync timestamp
+  metadata:
+    description: Additional cluster metadata
+  databases_count:
+    type: integer
+    readOnly: true
+  created_at:
+    type: string
+    format: date-time
+    readOnly: true
+  updated_at:
+    type: string
+    format: date-time
+    readOnly: true
+required:
+  - cluster_pwd_configured
+  - cluster_service_url
+  - created_at
+  - databases_count
+  - id
+  - last_sync
+  - name
+  - ras_server
+  - status_display
+  - updated_at

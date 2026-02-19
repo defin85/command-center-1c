@@ -1,0 +1,16 @@
+type: object
+description: Response for get_stream_ticket endpoint.
+properties:
+  ticket:
+    type: string
+    description: Short-lived ticket for SSE connection
+  expires_in:
+    type: integer
+    description: Seconds until ticket expires
+  stream_url:
+    type: string
+    description: SSE endpoint URL to connect to
+required:
+  - expires_in
+  - stream_url
+  - ticket

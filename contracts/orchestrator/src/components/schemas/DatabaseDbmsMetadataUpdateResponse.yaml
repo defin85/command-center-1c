@@ -1,0 +1,10 @@
+type: object
+description: Response for update_dbms_metadata endpoint.
+properties:
+  database:
+    $ref: ./Database.yaml
+  message:
+    type: string
+required:
+  - database
+  - message

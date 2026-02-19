@@ -1,0 +1,444 @@
+openapi: 3.0.3
+info:
+  title: CommandCenter1C API
+  version: 1.0.0
+  description: API для управления операциями в 700+ базах 1С
+paths:
+  /api/token/:
+    $ref: paths/api_token_.yaml
+  /api/token/refresh/:
+    $ref: paths/api_token_refresh_.yaml
+  /api/token/verify/:
+    $ref: paths/api_token_verify_.yaml
+  /api/v2/artifacts/:
+    $ref: paths/api_v2_artifacts_.yaml
+  /api/v2/artifacts/{artifact_id}/:
+    $ref: paths/api_v2_artifacts_{artifact_id}_.yaml
+  /api/v2/artifacts/{artifact_id}/aliases/:
+    $ref: paths/api_v2_artifacts_{artifact_id}_aliases_.yaml
+  /api/v2/artifacts/{artifact_id}/aliases/upsert/:
+    $ref: paths/api_v2_artifacts_{artifact_id}_aliases_upsert_.yaml
+  /api/v2/artifacts/{artifact_id}/purge/:
+    $ref: paths/api_v2_artifacts_{artifact_id}_purge_.yaml
+  /api/v2/artifacts/{artifact_id}/restore/:
+    $ref: paths/api_v2_artifacts_{artifact_id}_restore_.yaml
+  /api/v2/artifacts/{artifact_id}/versions/:
+    $ref: paths/api_v2_artifacts_{artifact_id}_versions_.yaml
+  /api/v2/artifacts/{artifact_id}/versions/{version}/download/:
+    $ref: paths/api_v2_artifacts_{artifact_id}_versions_{version}_download_.yaml
+  /api/v2/artifacts/{artifact_id}/versions/upload/:
+    $ref: paths/api_v2_artifacts_{artifact_id}_versions_upload_.yaml
+  /api/v2/artifacts/create/:
+    $ref: paths/api_v2_artifacts_create_.yaml
+  /api/v2/artifacts/purge-jobs/{job_id}/:
+    $ref: paths/api_v2_artifacts_purge-jobs_{job_id}_.yaml
+  /api/v2/audit/log-compensation/:
+    $ref: paths/api_v2_audit_log-compensation_.yaml
+  /api/v2/clusters/create-cluster/:
+    $ref: paths/api_v2_clusters_create-cluster_.yaml
+  /api/v2/clusters/delete-cluster/:
+    $ref: paths/api_v2_clusters_delete-cluster_.yaml
+  /api/v2/clusters/discover-clusters/:
+    $ref: paths/api_v2_clusters_discover-clusters_.yaml
+  /api/v2/clusters/get-cluster/:
+    $ref: paths/api_v2_clusters_get-cluster_.yaml
+  /api/v2/clusters/get-cluster-databases/:
+    $ref: paths/api_v2_clusters_get-cluster-databases_.yaml
+  /api/v2/clusters/list-clusters/:
+    $ref: paths/api_v2_clusters_list-clusters_.yaml
+  /api/v2/clusters/reset-sync-status/:
+    $ref: paths/api_v2_clusters_reset-sync-status_.yaml
+  /api/v2/clusters/sync-cluster/:
+    $ref: paths/api_v2_clusters_sync-cluster_.yaml
+  /api/v2/clusters/update-cluster/:
+    $ref: paths/api_v2_clusters_update-cluster_.yaml
+  /api/v2/clusters/update-credentials/:
+    $ref: paths/api_v2_clusters_update-credentials_.yaml
+  /api/v2/databases/bulk-health-check/:
+    $ref: paths/api_v2_databases_bulk-health-check_.yaml
+  /api/v2/databases/create-dbms-user/:
+    $ref: paths/api_v2_databases_create-dbms-user_.yaml
+  /api/v2/databases/create-ib-user/:
+    $ref: paths/api_v2_databases_create-ib-user_.yaml
+  /api/v2/databases/delete-dbms-user/:
+    $ref: paths/api_v2_databases_delete-dbms-user_.yaml
+  /api/v2/databases/delete-ib-user/:
+    $ref: paths/api_v2_databases_delete-ib-user_.yaml
+  /api/v2/databases/get-database/:
+    $ref: paths/api_v2_databases_get-database_.yaml
+  /api/v2/databases/get-extensions-snapshot/:
+    $ref: paths/api_v2_databases_get-extensions-snapshot_.yaml
+  /api/v2/databases/health-check/:
+    $ref: paths/api_v2_databases_health-check_.yaml
+  /api/v2/databases/list-databases/:
+    $ref: paths/api_v2_databases_list-databases_.yaml
+  /api/v2/databases/list-dbms-users/:
+    $ref: paths/api_v2_databases_list-dbms-users_.yaml
+  /api/v2/databases/list-ib-users/:
+    $ref: paths/api_v2_databases_list-ib-users_.yaml
+  /api/v2/databases/reset-dbms-user-password/:
+    $ref: paths/api_v2_databases_reset-dbms-user-password_.yaml
+  /api/v2/databases/reset-ib-user-password/:
+    $ref: paths/api_v2_databases_reset-ib-user-password_.yaml
+  /api/v2/databases/set-dbms-user-password/:
+    $ref: paths/api_v2_databases_set-dbms-user-password_.yaml
+  /api/v2/databases/set-ib-user-password/:
+    $ref: paths/api_v2_databases_set-ib-user-password_.yaml
+  /api/v2/databases/set-status/:
+    $ref: paths/api_v2_databases_set-status_.yaml
+  /api/v2/databases/stream-ticket/:
+    $ref: paths/api_v2_databases_stream-ticket_.yaml
+  /api/v2/databases/update-credentials/:
+    $ref: paths/api_v2_databases_update-credentials_.yaml
+  /api/v2/databases/update-dbms-metadata/:
+    $ref: paths/api_v2_databases_update-dbms-metadata_.yaml
+  /api/v2/databases/update-dbms-user/:
+    $ref: paths/api_v2_databases_update-dbms-user_.yaml
+  /api/v2/databases/update-ib-user/:
+    $ref: paths/api_v2_databases_update-ib-user_.yaml
+  /api/v2/databases/update-ibcmd-connection-profile/:
+    $ref: paths/api_v2_databases_update-ibcmd-connection-profile_.yaml
+  /api/v2/dlq/get/:
+    $ref: paths/api_v2_dlq_get_.yaml
+  /api/v2/dlq/list/:
+    $ref: paths/api_v2_dlq_list_.yaml
+  /api/v2/dlq/retry/:
+    $ref: paths/api_v2_dlq_retry_.yaml
+  /api/v2/events/pending/:
+    $ref: paths/api_v2_events_pending_.yaml
+  /api/v2/events/store-failed/:
+    $ref: paths/api_v2_events_store-failed_.yaml
+  /api/v2/extensions/apply/:
+    $ref: paths/api_v2_extensions_apply_.yaml
+  /api/v2/extensions/flags-policy/:
+    $ref: paths/api_v2_extensions_flags-policy_.yaml
+  /api/v2/extensions/flags-policy/{extension_name}/:
+    $ref: paths/api_v2_extensions_flags-policy_{extension_name}_.yaml
+  /api/v2/extensions/flags-policy/adopt/:
+    $ref: paths/api_v2_extensions_flags-policy_adopt_.yaml
+  /api/v2/extensions/manual-operation-bindings/:
+    $ref: paths/api_v2_extensions_manual-operation-bindings_.yaml
+  /api/v2/extensions/manual-operation-bindings/{manual_operation}/:
+    $ref: paths/api_v2_extensions_manual-operation-bindings_{manual_operation}_.yaml
+  /api/v2/extensions/overview/:
+    $ref: paths/api_v2_extensions_overview_.yaml
+  /api/v2/extensions/overview/databases/:
+    $ref: paths/api_v2_extensions_overview_databases_.yaml
+  /api/v2/extensions/plan/:
+    $ref: paths/api_v2_extensions_plan_.yaml
+  /api/v2/files/delete/{file_id}/:
+    $ref: paths/api_v2_files_delete_{file_id}_.yaml
+  /api/v2/files/download/{file_id}/:
+    $ref: paths/api_v2_files_download_{file_id}_.yaml
+  /api/v2/files/upload/:
+    $ref: paths/api_v2_files_upload_.yaml
+  /api/v2/mappings/get/:
+    $ref: paths/api_v2_mappings_get_.yaml
+  /api/v2/mappings/preview/:
+    $ref: paths/api_v2_mappings_preview_.yaml
+  /api/v2/mappings/upsert/:
+    $ref: paths/api_v2_mappings_upsert_.yaml
+  /api/v2/operation-catalog/definitions/:
+    $ref: paths/api_v2_operation-catalog_definitions_.yaml
+  /api/v2/operation-catalog/definitions/{definition_id}/:
+    $ref: paths/api_v2_operation-catalog_definitions_{definition_id}_.yaml
+  /api/v2/operation-catalog/exposures/:
+    $ref: paths/api_v2_operation-catalog_exposures_.yaml
+  /api/v2/operation-catalog/exposures/{exposure_id}/:
+    $ref: paths/api_v2_operation-catalog_exposures_{exposure_id}_.yaml
+  /api/v2/operation-catalog/exposures/{exposure_id}/publish/:
+    $ref: paths/api_v2_operation-catalog_exposures_{exposure_id}_publish_.yaml
+  /api/v2/operation-catalog/migration-issues/:
+    $ref: paths/api_v2_operation-catalog_migration-issues_.yaml
+  /api/v2/operation-catalog/validate/:
+    $ref: paths/api_v2_operation-catalog_validate_.yaml
+  /api/v2/operations/cancel-operation/:
+    $ref: paths/api_v2_operations_cancel-operation_.yaml
+  /api/v2/operations/catalog/:
+    $ref: paths/api_v2_operations_catalog_.yaml
+  /api/v2/operations/cli-commands/:
+    $ref: paths/api_v2_operations_cli-commands_.yaml
+  /api/v2/operations/create-command-shortcut/:
+    $ref: paths/api_v2_operations_create-command-shortcut_.yaml
+  /api/v2/operations/delete-command-shortcut/:
+    $ref: paths/api_v2_operations_delete-command-shortcut_.yaml
+  /api/v2/operations/driver-commands/:
+    $ref: paths/api_v2_operations_driver-commands_.yaml
+  /api/v2/operations/execute/:
+    $ref: paths/api_v2_operations_execute_.yaml
+  /api/v2/operations/execute-ibcmd-cli/:
+    $ref: paths/api_v2_operations_execute-ibcmd-cli_.yaml
+  /api/v2/operations/get-operation/:
+    $ref: paths/api_v2_operations_get-operation_.yaml
+  /api/v2/operations/get-operation-timeline/:
+    $ref: paths/api_v2_operations_get-operation-timeline_.yaml
+  /api/v2/operations/list-command-shortcuts/:
+    $ref: paths/api_v2_operations_list-command-shortcuts_.yaml
+  /api/v2/operations/list-operations/:
+    $ref: paths/api_v2_operations_list-operations_.yaml
+  /api/v2/operations/stream-mux-status/:
+    $ref: paths/api_v2_operations_stream-mux-status_.yaml
+  /api/v2/operations/stream-mux-ticket/:
+    $ref: paths/api_v2_operations_stream-mux-ticket_.yaml
+  /api/v2/operations/stream-status/:
+    $ref: paths/api_v2_operations_stream-status_.yaml
+  /api/v2/operations/stream-subscribe/:
+    $ref: paths/api_v2_operations_stream-subscribe_.yaml
+  /api/v2/operations/stream-ticket/:
+    $ref: paths/api_v2_operations_stream-ticket_.yaml
+  /api/v2/operations/stream-unsubscribe/:
+    $ref: paths/api_v2_operations_stream-unsubscribe_.yaml
+  /api/v2/pools/:
+    $ref: paths/api_v2_pools_.yaml
+  /api/v2/pools/{pool_id}/graph/:
+    $ref: paths/api_v2_pools_{pool_id}_graph_.yaml
+  /api/v2/pools/{pool_id}/topology-snapshot/upsert/:
+    $ref: paths/api_v2_pools_{pool_id}_topology-snapshot_upsert_.yaml
+  /api/v2/pools/organizations/:
+    $ref: paths/api_v2_pools_organizations_.yaml
+  /api/v2/pools/organizations/{organization_id}/:
+    $ref: paths/api_v2_pools_organizations_{organization_id}_.yaml
+  /api/v2/pools/organizations/sync/:
+    $ref: paths/api_v2_pools_organizations_sync_.yaml
+  /api/v2/pools/organizations/upsert/:
+    $ref: paths/api_v2_pools_organizations_upsert_.yaml
+  /api/v2/pools/runs/:
+    $ref: paths/api_v2_pools_runs_.yaml
+  /api/v2/pools/runs/{run_id}/:
+    $ref: paths/api_v2_pools_runs_{run_id}_.yaml
+  /api/v2/pools/runs/{run_id}/abort-publication/:
+    $ref: paths/api_v2_pools_runs_{run_id}_abort-publication_.yaml
+  /api/v2/pools/runs/{run_id}/confirm-publication/:
+    $ref: paths/api_v2_pools_runs_{run_id}_confirm-publication_.yaml
+  /api/v2/pools/runs/{run_id}/report/:
+    $ref: paths/api_v2_pools_runs_{run_id}_report_.yaml
+  /api/v2/pools/runs/{run_id}/retry/:
+    $ref: paths/api_v2_pools_runs_{run_id}_retry_.yaml
+  /api/v2/pools/schema-templates/:
+    $ref: paths/api_v2_pools_schema-templates_.yaml
+  /api/v2/pools/upsert/:
+    $ref: paths/api_v2_pools_upsert_.yaml
+  /api/v2/rbac/bulk-grant-artifact-group-permission/:
+    $ref: paths/api_v2_rbac_bulk-grant-artifact-group-permission_.yaml
+  /api/v2/rbac/bulk-grant-cluster-group-permission/:
+    $ref: paths/api_v2_rbac_bulk-grant-cluster-group-permission_.yaml
+  /api/v2/rbac/bulk-grant-database-group-permission/:
+    $ref: paths/api_v2_rbac_bulk-grant-database-group-permission_.yaml
+  /api/v2/rbac/bulk-grant-operation-template-group-permission/:
+    $ref: paths/api_v2_rbac_bulk-grant-operation-template-group-permission_.yaml
+  /api/v2/rbac/bulk-grant-workflow-template-group-permission/:
+    $ref: paths/api_v2_rbac_bulk-grant-workflow-template-group-permission_.yaml
+  /api/v2/rbac/bulk-revoke-artifact-group-permission/:
+    $ref: paths/api_v2_rbac_bulk-revoke-artifact-group-permission_.yaml
+  /api/v2/rbac/bulk-revoke-cluster-group-permission/:
+    $ref: paths/api_v2_rbac_bulk-revoke-cluster-group-permission_.yaml
+  /api/v2/rbac/bulk-revoke-database-group-permission/:
+    $ref: paths/api_v2_rbac_bulk-revoke-database-group-permission_.yaml
+  /api/v2/rbac/bulk-revoke-operation-template-group-permission/:
+    $ref: paths/api_v2_rbac_bulk-revoke-operation-template-group-permission_.yaml
+  /api/v2/rbac/bulk-revoke-workflow-template-group-permission/:
+    $ref: paths/api_v2_rbac_bulk-revoke-workflow-template-group-permission_.yaml
+  /api/v2/rbac/create-role/:
+    $ref: paths/api_v2_rbac_create-role_.yaml
+  /api/v2/rbac/delete-role/:
+    $ref: paths/api_v2_rbac_delete-role_.yaml
+  /api/v2/rbac/get-effective-access/:
+    $ref: paths/api_v2_rbac_get-effective-access_.yaml
+  /api/v2/rbac/get-user-roles/:
+    $ref: paths/api_v2_rbac_get-user-roles_.yaml
+  /api/v2/rbac/grant-artifact-group-permission/:
+    $ref: paths/api_v2_rbac_grant-artifact-group-permission_.yaml
+  /api/v2/rbac/grant-artifact-permission/:
+    $ref: paths/api_v2_rbac_grant-artifact-permission_.yaml
+  /api/v2/rbac/grant-cluster-group-permission/:
+    $ref: paths/api_v2_rbac_grant-cluster-group-permission_.yaml
+  /api/v2/rbac/grant-cluster-permission/:
+    $ref: paths/api_v2_rbac_grant-cluster-permission_.yaml
+  /api/v2/rbac/grant-database-group-permission/:
+    $ref: paths/api_v2_rbac_grant-database-group-permission_.yaml
+  /api/v2/rbac/grant-database-permission/:
+    $ref: paths/api_v2_rbac_grant-database-permission_.yaml
+  /api/v2/rbac/grant-operation-template-group-permission/:
+    $ref: paths/api_v2_rbac_grant-operation-template-group-permission_.yaml
+  /api/v2/rbac/grant-operation-template-permission/:
+    $ref: paths/api_v2_rbac_grant-operation-template-permission_.yaml
+  /api/v2/rbac/grant-workflow-template-group-permission/:
+    $ref: paths/api_v2_rbac_grant-workflow-template-group-permission_.yaml
+  /api/v2/rbac/grant-workflow-template-permission/:
+    $ref: paths/api_v2_rbac_grant-workflow-template-permission_.yaml
+  /api/v2/rbac/list-admin-audit/:
+    $ref: paths/api_v2_rbac_list-admin-audit_.yaml
+  /api/v2/rbac/list-artifact-group-permissions/:
+    $ref: paths/api_v2_rbac_list-artifact-group-permissions_.yaml
+  /api/v2/rbac/list-artifact-permissions/:
+    $ref: paths/api_v2_rbac_list-artifact-permissions_.yaml
+  /api/v2/rbac/list-capabilities/:
+    $ref: paths/api_v2_rbac_list-capabilities_.yaml
+  /api/v2/rbac/list-cluster-group-permissions/:
+    $ref: paths/api_v2_rbac_list-cluster-group-permissions_.yaml
+  /api/v2/rbac/list-cluster-permissions/:
+    $ref: paths/api_v2_rbac_list-cluster-permissions_.yaml
+  /api/v2/rbac/list-database-group-permissions/:
+    $ref: paths/api_v2_rbac_list-database-group-permissions_.yaml
+  /api/v2/rbac/list-database-permissions/:
+    $ref: paths/api_v2_rbac_list-database-permissions_.yaml
+  /api/v2/rbac/list-operation-template-group-permissions/:
+    $ref: paths/api_v2_rbac_list-operation-template-group-permissions_.yaml
+  /api/v2/rbac/list-operation-template-permissions/:
+    $ref: paths/api_v2_rbac_list-operation-template-permissions_.yaml
+  /api/v2/rbac/list-roles/:
+    $ref: paths/api_v2_rbac_list-roles_.yaml
+  /api/v2/rbac/list-users/:
+    $ref: paths/api_v2_rbac_list-users_.yaml
+  /api/v2/rbac/list-users-with-roles/:
+    $ref: paths/api_v2_rbac_list-users-with-roles_.yaml
+  /api/v2/rbac/list-workflow-template-group-permissions/:
+    $ref: paths/api_v2_rbac_list-workflow-template-group-permissions_.yaml
+  /api/v2/rbac/list-workflow-template-permissions/:
+    $ref: paths/api_v2_rbac_list-workflow-template-permissions_.yaml
+  /api/v2/rbac/ref-artifacts/:
+    $ref: paths/api_v2_rbac_ref-artifacts_.yaml
+  /api/v2/rbac/ref-clusters/:
+    $ref: paths/api_v2_rbac_ref-clusters_.yaml
+  /api/v2/rbac/ref-databases/:
+    $ref: paths/api_v2_rbac_ref-databases_.yaml
+  /api/v2/rbac/ref-operation-templates/:
+    $ref: paths/api_v2_rbac_ref-operation-templates_.yaml
+  /api/v2/rbac/ref-workflow-templates/:
+    $ref: paths/api_v2_rbac_ref-workflow-templates_.yaml
+  /api/v2/rbac/revoke-artifact-group-permission/:
+    $ref: paths/api_v2_rbac_revoke-artifact-group-permission_.yaml
+  /api/v2/rbac/revoke-artifact-permission/:
+    $ref: paths/api_v2_rbac_revoke-artifact-permission_.yaml
+  /api/v2/rbac/revoke-cluster-group-permission/:
+    $ref: paths/api_v2_rbac_revoke-cluster-group-permission_.yaml
+  /api/v2/rbac/revoke-cluster-permission/:
+    $ref: paths/api_v2_rbac_revoke-cluster-permission_.yaml
+  /api/v2/rbac/revoke-database-group-permission/:
+    $ref: paths/api_v2_rbac_revoke-database-group-permission_.yaml
+  /api/v2/rbac/revoke-database-permission/:
+    $ref: paths/api_v2_rbac_revoke-database-permission_.yaml
+  /api/v2/rbac/revoke-operation-template-group-permission/:
+    $ref: paths/api_v2_rbac_revoke-operation-template-group-permission_.yaml
+  /api/v2/rbac/revoke-operation-template-permission/:
+    $ref: paths/api_v2_rbac_revoke-operation-template-permission_.yaml
+  /api/v2/rbac/revoke-workflow-template-group-permission/:
+    $ref: paths/api_v2_rbac_revoke-workflow-template-group-permission_.yaml
+  /api/v2/rbac/revoke-workflow-template-permission/:
+    $ref: paths/api_v2_rbac_revoke-workflow-template-permission_.yaml
+  /api/v2/rbac/set-role-capabilities/:
+    $ref: paths/api_v2_rbac_set-role-capabilities_.yaml
+  /api/v2/rbac/set-user-roles/:
+    $ref: paths/api_v2_rbac_set-user-roles_.yaml
+  /api/v2/rbac/update-role/:
+    $ref: paths/api_v2_rbac_update-role_.yaml
+  /api/v2/service-mesh/get-history/:
+    $ref: paths/api_v2_service-mesh_get-history_.yaml
+  /api/v2/service-mesh/get-metrics/:
+    $ref: paths/api_v2_service-mesh_get-metrics_.yaml
+  /api/v2/settings/command-schemas/audit/:
+    $ref: paths/api_v2_settings_command-schemas_audit_.yaml
+  /api/v2/settings/command-schemas/base/update/:
+    $ref: paths/api_v2_settings_command-schemas_base_update_.yaml
+  /api/v2/settings/command-schemas/diff/:
+    $ref: paths/api_v2_settings_command-schemas_diff_.yaml
+  /api/v2/settings/command-schemas/editor/:
+    $ref: paths/api_v2_settings_command-schemas_editor_.yaml
+  /api/v2/settings/command-schemas/effective/update/:
+    $ref: paths/api_v2_settings_command-schemas_effective_update_.yaml
+  /api/v2/settings/command-schemas/import-its/:
+    $ref: paths/api_v2_settings_command-schemas_import-its_.yaml
+  /api/v2/settings/command-schemas/overrides/rollback/:
+    $ref: paths/api_v2_settings_command-schemas_overrides_rollback_.yaml
+  /api/v2/settings/command-schemas/overrides/update/:
+    $ref: paths/api_v2_settings_command-schemas_overrides_update_.yaml
+  /api/v2/settings/command-schemas/preview/:
+    $ref: paths/api_v2_settings_command-schemas_preview_.yaml
+  /api/v2/settings/command-schemas/promote/:
+    $ref: paths/api_v2_settings_command-schemas_promote_.yaml
+  /api/v2/settings/command-schemas/validate/:
+    $ref: paths/api_v2_settings_command-schemas_validate_.yaml
+  /api/v2/settings/command-schemas/versions/:
+    $ref: paths/api_v2_settings_command-schemas_versions_.yaml
+  /api/v2/settings/runtime/:
+    $ref: paths/api_v2_settings_runtime_.yaml
+  /api/v2/settings/runtime-effective/:
+    $ref: paths/api_v2_settings_runtime-effective_.yaml
+  /api/v2/settings/runtime-overrides/:
+    $ref: paths/api_v2_settings_runtime-overrides_.yaml
+  /api/v2/settings/runtime-overrides/{key}/:
+    $ref: paths/api_v2_settings_runtime-overrides_{key}_.yaml
+  /api/v2/settings/runtime/{key}/:
+    $ref: paths/api_v2_settings_runtime_{key}_.yaml
+  /api/v2/snapshots/get/:
+    $ref: paths/api_v2_snapshots_get_.yaml
+  /api/v2/snapshots/list/:
+    $ref: paths/api_v2_snapshots_list_.yaml
+  /api/v2/system/config/:
+    $ref: paths/api_v2_system_config_.yaml
+  /api/v2/system/health/:
+    $ref: paths/api_v2_system_health_.yaml
+  /api/v2/system/me/:
+    $ref: paths/api_v2_system_me_.yaml
+  /api/v2/templates/sync-from-registry/:
+    $ref: paths/api_v2_templates_sync-from-registry_.yaml
+  /api/v2/templates/pool-runtime-registry/:
+    $ref: paths/api_v2_templates_pool-runtime-registry_.yaml
+  /api/v2/tenants/list-my-tenants/:
+    $ref: paths/api_v2_tenants_list-my-tenants_.yaml
+  /api/v2/tenants/set-active/:
+    $ref: paths/api_v2_tenants_set-active_.yaml
+  /api/v2/ui/execution-plan/preview/:
+    $ref: paths/api_v2_ui_execution-plan_preview_.yaml
+  /api/v2/ui/operation-exposures/editor-hints/:
+    $ref: paths/api_v2_ui_operation-exposures_editor-hints_.yaml
+  /api/v2/ui/table-metadata/:
+    $ref: paths/api_v2_ui_table-metadata_.yaml
+  /api/v2/users/create/:
+    $ref: paths/api_v2_users_create_.yaml
+  /api/v2/users/list/:
+    $ref: paths/api_v2_users_list_.yaml
+  /api/v2/users/set-password/:
+    $ref: paths/api_v2_users_set-password_.yaml
+  /api/v2/users/update/:
+    $ref: paths/api_v2_users_update_.yaml
+  /api/v2/workflows/cancel-execution/:
+    $ref: paths/api_v2_workflows_cancel-execution_.yaml
+  /api/v2/workflows/clone-workflow/:
+    $ref: paths/api_v2_workflows_clone-workflow_.yaml
+  /api/v2/workflows/create-workflow/:
+    $ref: paths/api_v2_workflows_create-workflow_.yaml
+  /api/v2/workflows/delete-workflow/:
+    $ref: paths/api_v2_workflows_delete-workflow_.yaml
+  /api/v2/workflows/execute-workflow/:
+    $ref: paths/api_v2_workflows_execute-workflow_.yaml
+  /api/v2/workflows/get-execution/:
+    $ref: paths/api_v2_workflows_get-execution_.yaml
+  /api/v2/workflows/get-execution-steps/:
+    $ref: paths/api_v2_workflows_get-execution-steps_.yaml
+  /api/v2/workflows/get-template-schema/:
+    $ref: paths/api_v2_workflows_get-template-schema_.yaml
+  /api/v2/workflows/get-workflow/:
+    $ref: paths/api_v2_workflows_get-workflow_.yaml
+  /api/v2/workflows/list-executions/:
+    $ref: paths/api_v2_workflows_list-executions_.yaml
+  /api/v2/workflows/list-templates/:
+    $ref: paths/api_v2_workflows_list-templates_.yaml
+  /api/v2/workflows/list-workflows/:
+    $ref: paths/api_v2_workflows_list-workflows_.yaml
+  /api/v2/workflows/update-workflow/:
+    $ref: paths/api_v2_workflows_update-workflow_.yaml
+  /api/v2/workflows/validate-workflow/:
+    $ref: paths/api_v2_workflows_validate-workflow_.yaml
+  /api/v2/databases/stream/:
+    $ref: paths/api_v2_databases_stream_.yaml
+  /api/v2/operations/stream/:
+    $ref: paths/api_v2_operations_stream_.yaml
+  /api/v2/operations/stream-mux/:
+    $ref: paths/api_v2_operations_stream-mux_.yaml
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

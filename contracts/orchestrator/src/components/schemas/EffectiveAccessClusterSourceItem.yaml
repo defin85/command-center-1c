@@ -1,0 +1,18 @@
+type: object
+properties:
+  source:
+    enum:
+      - direct
+      - group
+      - database
+    type: string
+    description: |-
+      * `direct` - direct
+      * `group` - group
+      * `database` - database
+    x-spec-enum-id: a24bcd1339c8c3f0
+  level:
+    type: string
+required:
+  - level
+  - source

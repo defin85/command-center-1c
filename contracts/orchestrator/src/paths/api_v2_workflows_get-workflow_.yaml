@@ -1,0 +1,53 @@
+get:
+  operationId: v2_workflows_get_workflow_retrieve
+  description: >-
+    Get detailed information about a specific workflow template including
+    statistics and recent executions.
+  summary: Get workflow template details
+  parameters:
+    - in: query
+      name: include_executions
+      schema:
+        type: string
+      description: 'Include recent executions (default: true)'
+    - in: query
+      name: workflow_id
+      schema:
+        type: string
+      description: Workflow template UUID
+      required: true
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/WorkflowDetailResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '404':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''

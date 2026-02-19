@@ -1,0 +1,43 @@
+type: object
+properties:
+  label:
+    type: string
+  description:
+    type: string
+  argv:
+    type: array
+    items:
+      type: string
+  scope:
+    enum:
+      - per_database
+      - global
+    type: string
+    description: |-
+      * `per_database` - per_database
+      * `global` - global
+    x-spec-enum-id: 7203fc0d89fbc902
+  risk_level:
+    enum:
+      - safe
+      - dangerous
+    type: string
+    description: |-
+      * `safe` - safe
+      * `dangerous` - dangerous
+    x-spec-enum-id: 13de6e877a80d4a5
+  params_by_name:
+    type: object
+    additionalProperties:
+      $ref: ./DriverCommandParamV2.yaml
+  ui: {}
+  source_section:
+    type: string
+  disabled:
+    type: boolean
+  permissions: {}
+required:
+  - argv
+  - label
+  - risk_level
+  - scope

@@ -1,0 +1,28 @@
+type: object
+properties:
+  driver:
+    type: string
+  command_id:
+    type: string
+  argv:
+    type: array
+    items:
+      type: string
+  argv_masked:
+    type: array
+    items:
+      type: string
+  risk_level:
+    type: string
+    nullable: true
+  scope:
+    type: string
+    nullable: true
+  disabled:
+    type: boolean
+    nullable: true
+required:
+  - argv
+  - argv_masked
+  - command_id
+  - driver

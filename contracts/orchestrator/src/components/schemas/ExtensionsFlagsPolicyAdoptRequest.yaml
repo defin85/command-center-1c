@@ -1,0 +1,13 @@
+type: object
+properties:
+  database_id:
+    type: string
+    format: uuid
+  extension_name:
+    type: string
+  reason:
+    type: string
+    nullable: true
+required:
+  - database_id
+  - extension_name

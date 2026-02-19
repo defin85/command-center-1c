@@ -1,0 +1,45 @@
+get:
+  operationId: v2_rbac_list_users_retrieve
+  description: List users for RBAC selection (staff only).
+  summary: List users
+  parameters:
+    - in: query
+      name: limit
+      schema:
+        type: integer
+      description: 'Maximum results (default: 100, max: 1000)'
+    - in: query
+      name: offset
+      schema:
+        type: integer
+      description: 'Pagination offset (default: 0)'
+    - in: query
+      name: search
+      schema:
+        type: string
+      description: Search by username or name
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/RbacUserListResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden

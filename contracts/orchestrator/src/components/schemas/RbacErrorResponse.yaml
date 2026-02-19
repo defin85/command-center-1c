@@ -1,0 +1,9 @@
+type: object
+properties:
+  success:
+    type: boolean
+    default: false
+  error:
+    $ref: ./RbacErrorDetail.yaml
+required:
+  - error

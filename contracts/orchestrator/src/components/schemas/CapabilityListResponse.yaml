@@ -1,0 +1,11 @@
+type: object
+properties:
+  capabilities:
+    type: array
+    items:
+      $ref: ./Capability.yaml
+  count:
+    type: integer
+required:
+  - capabilities
+  - count

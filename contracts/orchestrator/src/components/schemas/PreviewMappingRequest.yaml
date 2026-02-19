@@ -1,0 +1,18 @@
+type: object
+properties:
+  entity_kind:
+    type: string
+  snapshot_id:
+    type: integer
+  status:
+    enum:
+      - draft
+      - published
+    type: string
+    description: |-
+      * `draft` - draft
+      * `published` - published
+    x-spec-enum-id: e49ce86be5712ba2
+required:
+  - entity_kind
+  - snapshot_id

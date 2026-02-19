@@ -1,0 +1,11 @@
+type: object
+description: Response for delete_cluster endpoint.
+properties:
+  message:
+    type: string
+  cluster_id:
+    type: string
+    format: uuid
+required:
+  - cluster_id
+  - message

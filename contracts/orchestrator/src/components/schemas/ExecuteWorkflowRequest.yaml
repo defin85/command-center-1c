@@ -1,0 +1,25 @@
+type: object
+description: Request for execute_workflow endpoint.
+properties:
+  workflow_id:
+    type: string
+    format: uuid
+    description: Workflow template UUID
+  input_context:
+    type: object
+    additionalProperties: {}
+    description: Initial context for workflow
+  mode:
+    enum:
+      - sync
+      - async
+    type: string
+    x-spec-enum-id: fe1f80f0d1c48fc2
+    default: async
+    description: |-
+      Execution mode: sync (blocking) or async (background)
+
+      * `sync` - sync
+      * `async` - async
+required:
+  - workflow_id

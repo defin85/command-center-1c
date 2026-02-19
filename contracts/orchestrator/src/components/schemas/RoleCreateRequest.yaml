@@ -1,0 +1,9 @@
+type: object
+properties:
+  name:
+    type: string
+  reason:
+    type: string
+required:
+  - name
+  - reason

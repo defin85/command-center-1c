@@ -1,0 +1,39 @@
+type: object
+properties:
+  name:
+    type: string
+  kind:
+    enum:
+      - extension
+      - config_cf
+      - config_xml
+      - dt_backup
+      - epf
+      - erf
+      - ibcmd_package
+      - driver_catalog
+      - ras_script
+      - other
+    type: string
+    description: |-
+      * `extension` - Extension
+      * `config_cf` - Config CF
+      * `config_xml` - Config XML
+      * `dt_backup` - DT Backup
+      * `epf` - EPF
+      * `erf` - ERF
+      * `ibcmd_package` - IBCMD Package
+      * `driver_catalog` - Driver Catalog
+      * `ras_script` - RAS Script
+      * `other` - Other
+    x-spec-enum-id: a47d928e0c6b9959
+  is_versioned:
+    type: boolean
+    default: true
+  tags:
+    type: array
+    items:
+      type: string
+required:
+  - kind
+  - name

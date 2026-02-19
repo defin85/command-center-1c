@@ -1,0 +1,27 @@
+type: object
+properties:
+  database_id:
+    type: string
+    format: uuid
+  database_name:
+    type: string
+  cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+  cluster_name:
+    type: string
+  status:
+    type: string
+  version:
+    type: string
+    nullable: true
+  snapshot_updated_at:
+    type: string
+    format: date-time
+    nullable: true
+  flags: {}
+required:
+  - database_id
+  - database_name
+  - status

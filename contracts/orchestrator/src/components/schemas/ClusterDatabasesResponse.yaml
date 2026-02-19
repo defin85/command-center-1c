@@ -1,0 +1,22 @@
+type: object
+description: Response for get_cluster_databases endpoint.
+properties:
+  cluster_id:
+    type: string
+    format: uuid
+  cluster_name:
+    type: string
+  databases:
+    type: array
+    items:
+      $ref: ./Database.yaml
+  count:
+    type: integer
+  filters:
+    $ref: ./ClusterFilters.yaml
+required:
+  - cluster_id
+  - cluster_name
+  - count
+  - databases
+  - filters

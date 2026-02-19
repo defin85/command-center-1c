@@ -1,0 +1,9 @@
+type: object
+properties:
+  created:
+    type: boolean
+  permission:
+    $ref: ./DatabasePermission.yaml
+required:
+  - created
+  - permission

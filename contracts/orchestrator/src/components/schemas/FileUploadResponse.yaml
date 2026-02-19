@@ -1,0 +1,10 @@
+type: object
+description: Response for file upload endpoint.
+properties:
+  file:
+    $ref: ./UploadedFile.yaml
+  message:
+    type: string
+required:
+  - file
+  - message

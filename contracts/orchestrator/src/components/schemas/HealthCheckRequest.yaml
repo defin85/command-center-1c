@@ -1,0 +1,8 @@
+type: object
+description: Request body for health_check endpoint.
+properties:
+  database_id:
+    type: string
+    description: Database UUID to check
+required:
+  - database_id

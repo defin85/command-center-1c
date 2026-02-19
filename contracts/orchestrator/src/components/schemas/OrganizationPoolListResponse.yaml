@@ -1,0 +1,11 @@
+type: object
+properties:
+  pools:
+    type: array
+    items:
+      $ref: ./OrganizationPool.yaml
+  count:
+    type: integer
+required:
+  - count
+  - pools

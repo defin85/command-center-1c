@@ -1,0 +1,17 @@
+type: object
+description: Response for CLI command catalog endpoint.
+properties:
+  version:
+    type: string
+  source:
+    type: string
+  generated_at:
+    type: string
+  commands:
+    type: array
+    items:
+      $ref: ./CliCommand.yaml
+required:
+  - commands
+  - source
+  - version

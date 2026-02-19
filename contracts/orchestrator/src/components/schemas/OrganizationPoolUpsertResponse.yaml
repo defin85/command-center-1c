@@ -1,0 +1,9 @@
+type: object
+properties:
+  pool:
+    $ref: ./OrganizationPool.yaml
+  created:
+    type: boolean
+required:
+  - created
+  - pool

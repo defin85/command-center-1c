@@ -1,0 +1,65 @@
+get:
+  operationId: v2_clusters_list_clusters_retrieve
+  description: >-
+    List all clusters with database counts. Supports filtering by status and RAS
+    server.
+  summary: List all clusters
+  parameters:
+    - in: query
+      name: filters
+      schema:
+        type: string
+      description: JSON object with filter conditions
+    - in: query
+      name: limit
+      schema:
+        type: integer
+      description: 'Maximum results (default: 100, max: 1000)'
+    - in: query
+      name: offset
+      schema:
+        type: integer
+      description: 'Pagination offset (default: 0)'
+    - in: query
+      name: ras_server
+      schema:
+        type: string
+      description: Filter by RAS server address
+    - in: query
+      name: search
+      schema:
+        type: string
+      description: Search by name or RAS server
+    - in: query
+      name: sort
+      schema:
+        type: string
+      description: JSON object with sort configuration
+    - in: query
+      name: status
+      schema:
+        type: string
+      description: Filter by status (active, inactive, error, maintenance)
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ClusterListResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized

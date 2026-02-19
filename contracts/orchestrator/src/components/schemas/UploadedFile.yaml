@@ -1,0 +1,40 @@
+type: object
+description: Serializer for UploadedFile response.
+properties:
+  id:
+    type: string
+    format: uuid
+  filename:
+    type: string
+  original_filename:
+    type: string
+  size:
+    type: integer
+  size_human:
+    type: string
+  mime_type:
+    type: string
+  purpose:
+    type: string
+  created_at:
+    type: string
+    format: date-time
+  expires_at:
+    type: string
+    format: date-time
+  is_processed:
+    type: boolean
+  checksum:
+    type: string
+required:
+  - checksum
+  - created_at
+  - expires_at
+  - filename
+  - id
+  - is_processed
+  - mime_type
+  - original_filename
+  - purpose
+  - size
+  - size_human

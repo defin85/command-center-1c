@@ -1,0 +1,8 @@
+type: object
+properties:
+  bindings:
+    type: array
+    items:
+      $ref: ./ManualOperationBinding.yaml
+required:
+  - bindings

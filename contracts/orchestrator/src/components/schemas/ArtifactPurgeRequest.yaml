@@ -1,0 +1,8 @@
+type: object
+properties:
+  reason:
+    type: string
+    nullable: true
+  dry_run:
+    type: boolean
+    default: false

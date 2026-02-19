@@ -1,0 +1,15 @@
+type: object
+description: Serializer for DAGStructure Pydantic model.
+properties:
+  nodes:
+    type: array
+    items:
+      $ref: ./WorkflowNode.yaml
+    description: List of workflow nodes
+  edges:
+    type: array
+    items:
+      $ref: ./WorkflowEdge.yaml
+    description: List of directed edges
+required:
+  - nodes

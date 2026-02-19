@@ -1,0 +1,19 @@
+type: object
+properties:
+  name:
+    type: string
+  success:
+    type: boolean
+  attempts:
+    type: integer
+  total_duration:
+    type: number
+    format: double
+  error:
+    type: string
+  executed_at:
+    type: string
+    format: date-time
+required:
+  - name
+  - success

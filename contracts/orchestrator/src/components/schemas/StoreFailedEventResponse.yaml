@@ -1,0 +1,9 @@
+type: object
+properties:
+  status:
+    type: string
+  event_id:
+    type: integer
+required:
+  - event_id
+  - status

@@ -1,0 +1,11 @@
+type: object
+properties:
+  plan_id:
+    type: string
+    format: uuid
+  preconditions: {}
+  execution_plan: {}
+  bindings: {}
+required:
+  - plan_id
+  - preconditions

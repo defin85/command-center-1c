@@ -1,0 +1,14 @@
+type: object
+properties:
+  group_id:
+    type: integer
+  database_ids:
+    type: array
+    items:
+      type: string
+  reason:
+    type: string
+required:
+  - database_ids
+  - group_id
+  - reason

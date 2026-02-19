@@ -1,0 +1,15 @@
+type: object
+description: Response for get_cluster endpoint.
+properties:
+  cluster:
+    $ref: ./Cluster.yaml
+  databases:
+    type: array
+    items:
+      $ref: ./Database.yaml
+  statistics:
+    $ref: ./ClusterStatistics.yaml
+required:
+  - cluster
+  - databases
+  - statistics

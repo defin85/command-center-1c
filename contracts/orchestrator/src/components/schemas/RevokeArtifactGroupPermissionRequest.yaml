@@ -1,0 +1,13 @@
+type: object
+properties:
+  group_id:
+    type: integer
+  artifact_id:
+    type: string
+    format: uuid
+  reason:
+    type: string
+required:
+  - artifact_id
+  - group_id
+  - reason

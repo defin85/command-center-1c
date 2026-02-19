@@ -1,0 +1,12 @@
+type: object
+description: Response for get_execution_steps endpoint.
+properties:
+  steps:
+    type: array
+    items:
+      $ref: ./WorkflowStepResult.yaml
+  count:
+    type: integer
+required:
+  - count
+  - steps

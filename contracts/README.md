@@ -22,7 +22,12 @@
 contracts/
 ├── README.md                       # Этот файл
 ├── orchestrator/
-│   └── openapi.yaml                # Public API для Frontend/External clients
+│   ├── openapi.yaml                # Generated bundle (delivery artifact)
+│   └── src/                        # Editable source-of-truth
+│       ├── openapi.yaml            # Root modular OpenAPI file
+│       ├── paths/                  # PathItem modules
+│       └── components/             # Reusable components
+│           └── schemas/
 ├── orchestrator-internal/
 │   └── openapi.yaml                # Internal API для Go Worker <-> Django
 ├── api-gateway/                    # (будущее)
@@ -30,6 +35,7 @@ contracts/
 ├── worker/                         # (будущее)
 │   └── openapi.yaml
 └── scripts/
+    ├── build-orchestrator-openapi.sh # Build/check orchestrator bundle
     ├── generate-all.sh             # Генерация всех клиентов
     ├── validate-specs.sh           # Валидация спецификаций
     └── check-breaking-changes.sh   # Проверка breaking changes
@@ -37,31 +43,33 @@ contracts/
 
 ## Workflow: Как добавить новый endpoint
 
-### Шаг 1: Обновить OpenAPI спецификацию
+### Шаг 1: Обновить modular source
 
-Отредактируйте `contracts/<service>/openapi.yaml`:
+Для orchestrator редактируйте только `contracts/orchestrator/src/**`:
+
+```bash
+# PathItem модули
+vim contracts/orchestrator/src/paths/<path-module>.yaml
+
+# Schema модули (если нужен новый schema)
+vim contracts/orchestrator/src/components/schemas/<SchemaName>.yaml
+```
+
+Пример path-модуля:
 
 ```yaml
-paths:
-  /api/v2/my-new-endpoint/:
-    get:
-      summary: My new endpoint
-      operationId: getMyEndpoint
-      tags:
-        - my-tag
-      parameters:
-        - name: my_param
-          in: query
-          required: true
+get:
+  summary: My new endpoint
+  operationId: getMyEndpoint
+  tags:
+    - v2
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
           schema:
-            type: string
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MyResponse'
+            $ref: '../components/schemas/MyResponse.yaml'
 ```
 
 **ВАЖНО:**
@@ -70,17 +78,26 @@ paths:
 - Добавляйте описания (`description`) для документации
 - Переиспользуйте схемы через `$ref`
 
-### Шаг 2: Валидация
+Соглашения по именованию и размещению модулей описаны в `contracts/orchestrator/src/README.md`.
 
-Проверьте корректность спецификации:
+### Шаг 2: Собрать bundle и проверить актуальность
+
+```bash
+./contracts/scripts/build-orchestrator-openapi.sh build
+./contracts/scripts/build-orchestrator-openapi.sh check
+```
+
+Файл `contracts/orchestrator/openapi.yaml` является generated артефактом. Не редактируйте его вручную.
+
+### Шаг 3: Валидация
 
 ```bash
 ./contracts/scripts/validate-specs.sh
 ```
 
-### Шаг 3: Генерация кода
+### Шаг 4: Генерация кода
 
-Сгенерируйте клиенты и типы:
+Сгенерируйте маршруты/клиенты:
 
 ```bash
 ./contracts/scripts/generate-all.sh
@@ -90,7 +107,7 @@ paths:
 - **Go:** `go-services/<service>/internal/api/generated/server.go`
 - **Python:** `orchestrator/apps/databases/clients/generated/<service>_api_client/`
 
-### Шаг 4: Реализация
+### Шаг 5: Реализация
 
 **Go (server):**
 
@@ -130,7 +147,7 @@ if response.status_code == 200:
     infobases = response.parsed.infobases
 ```
 
-### Шаг 5: Коммит
+### Шаг 6: Коммит
 
 При коммите автоматически запустится:
 1. Валидация OpenAPI спецификаций
@@ -138,7 +155,10 @@ if response.status_code == 200:
 3. Регенерация клиентов
 
 ```bash
-git add contracts/<service>/openapi.yaml
+git add contracts/orchestrator/src/
+git add contracts/orchestrator/openapi.yaml
+git add go-services/api-gateway/internal/routes/generated/
+git add frontend/src/api/generated/
 git commit -m "feat(api): Add new endpoint"
 # Pre-commit hook выполнит все проверки
 ```
@@ -190,8 +210,11 @@ pip install openapi-python-client
 
 **Опционально (для расширенных проверок):**
 ```bash
+# Orchestrator modular bundle
+npx --yes @redocly/cli@2.19.1 --version
+
 # Breaking changes detection
-go install github.com/tufin/oasdiff@latest
+go install github.com/oasdiff/oasdiff@latest
 
 # OpenAPI validation
 npm install -g @apidevtools/swagger-cli
@@ -221,15 +244,15 @@ git config core.hooksPath .githooks
 ### Ручная
 
 ```bash
+# Build/check orchestrator bundle from modular source
+./contracts/scripts/build-orchestrator-openapi.sh build
+./contracts/scripts/build-orchestrator-openapi.sh check
+
 # Все сервисы
 ./contracts/scripts/generate-all.sh
 
 # С принудительной регенерацией
 ./contracts/scripts/generate-all.sh --force
-
-# Только конкретный сервис (пример)
-cd contracts/orchestrator
-oapi-codegen -config .oapi-codegen.yaml openapi.yaml
 ```
 
 ## Валидация
@@ -285,6 +308,19 @@ oapi-codegen -config .oapi-codegen.yaml openapi.yaml
 
 ## Troubleshooting
 
+### Ошибка "bundle is out of date"
+
+```
+Error: bundle is out of date: contracts/orchestrator/openapi.yaml
+```
+
+**Решение:**
+```bash
+./contracts/scripts/build-orchestrator-openapi.sh build
+```
+
+Если ошибка повторяется, проверьте изменения в `contracts/orchestrator/src/**` и повторите `build`.
+
 ### Ошибка генерации Go кода
 
 ```
@@ -309,8 +345,18 @@ Error parsing OpenAPI spec
 **Решение:** Установите `oasdiff`:
 
 ```bash
-go install github.com/tufin/oasdiff@latest
+go install github.com/oasdiff/oasdiff@latest
 ```
+
+В CI отсутствие `oasdiff` является блокирующей ошибкой.
+
+### В CI падает валидация из-за "no OpenAPI validators available"
+
+**Причина:** в CI отключён fallback на YAML-синтаксис без полноценного OpenAPI validator.
+
+**Решение:**
+1. Установите `oapi-codegen` или `swagger-cli`.
+2. Повторите `./contracts/scripts/validate-specs.sh`.
 
 ### Git hook не запускается
 
@@ -325,7 +371,8 @@ git config core.hooksPath .githooks
 
 ### Добавление нового endpoint
 
-См. `contracts/orchestrator/openapi.yaml` для полных примеров.
+- Source modules: `contracts/orchestrator/src/**`
+- Bundled contract: `contracts/orchestrator/openapi.yaml`
 
 ### Использование сгенерированных типов
 

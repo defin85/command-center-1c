@@ -1,0 +1,21 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  alias:
+    type: string
+  version:
+    type: string
+  version_id:
+    type: string
+    format: uuid
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - alias
+  - id
+  - updated_at
+  - version
+  - version_id

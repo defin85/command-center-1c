@@ -1,0 +1,22 @@
+type: object
+description: Response for validate_workflow endpoint.
+properties:
+  valid:
+    type: boolean
+  errors:
+    type: array
+    items:
+      $ref: ./ValidationIssue.yaml
+  warnings:
+    type: array
+    items:
+      $ref: ./ValidationIssue.yaml
+  metadata:
+    type: object
+    additionalProperties: {}
+  topological_order:
+    type: array
+    items:
+      type: string
+required:
+  - valid

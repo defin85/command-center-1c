@@ -1,0 +1,15 @@
+type: object
+properties:
+  run:
+    $ref: ./PoolRun.yaml
+  publication_attempts:
+    type: array
+    items:
+      $ref: ./PoolPublicationAttempt.yaml
+  validation_summary: {}
+  publication_summary: {}
+  diagnostics: {}
+  attempts_by_status: {}
+required:
+  - publication_attempts
+  - run

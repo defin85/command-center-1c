@@ -1,0 +1,33 @@
+type: object
+properties:
+  id:
+    type: integer
+  username:
+    type: string
+  email:
+    type: string
+  first_name:
+    type: string
+  last_name:
+    type: string
+  is_staff:
+    type: boolean
+  is_active:
+    type: boolean
+  last_login:
+    type: string
+    format: date-time
+    nullable: true
+  date_joined:
+    type: string
+    format: date-time
+required:
+  - date_joined
+  - email
+  - first_name
+  - id
+  - is_active
+  - is_staff
+  - last_login
+  - last_name
+  - username

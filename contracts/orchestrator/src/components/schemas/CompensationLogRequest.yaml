@@ -1,0 +1,11 @@
+type: object
+properties:
+  operation_id:
+    type: string
+  results:
+    type: array
+    items:
+      $ref: ./CompensationResult.yaml
+required:
+  - operation_id
+  - results

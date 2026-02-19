@@ -1,0 +1,36 @@
+type: object
+properties:
+  user:
+    $ref: ./RbacUserRef.yaml
+  clusters:
+    type: array
+    items:
+      $ref: ./EffectiveAccessClusterItem.yaml
+  databases:
+    type: array
+    items:
+      $ref: ./EffectiveAccessDatabaseItem.yaml
+  databases_count:
+    type: integer
+  databases_total:
+    type: integer
+  databases_limit:
+    type: integer
+  databases_offset:
+    type: integer
+  operation_templates:
+    type: array
+    items:
+      $ref: ./EffectiveAccessOperationTemplateItem.yaml
+  workflow_templates:
+    type: array
+    items:
+      $ref: ./EffectiveAccessWorkflowTemplateItem.yaml
+  artifacts:
+    type: array
+    items:
+      $ref: ./EffectiveAccessArtifactItem.yaml
+required:
+  - clusters
+  - databases
+  - user

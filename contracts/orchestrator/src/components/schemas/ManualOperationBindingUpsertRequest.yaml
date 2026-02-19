@@ -1,0 +1,6 @@
+type: object
+properties:
+  template_id:
+    type: string
+required:
+  - template_id

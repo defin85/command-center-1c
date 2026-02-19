@@ -1,0 +1,13 @@
+type: object
+properties:
+  strategy:
+    enum:
+      - actor
+      - service
+      - none
+    type: string
+    description: |-
+      * `actor` - actor
+      * `service` - service
+      * `none` - none
+    x-spec-enum-id: 9881a45e36c57532
