@@ -17,6 +17,8 @@ import (
 const (
 	poolPublicationOperationType     = "pool.publication_odata"
 	poolPublicationPayloadContextKey = "pool_runtime_publication_payload"
+	poolDistributionNodeID           = "distribution_calculation"
+	poolReconciliationNodeID         = "reconciliation_report"
 )
 
 // OperationHandler executes operation nodes.
@@ -304,7 +306,31 @@ func resolveOperationPayloadFromContext(
 	if execCtx == nil || operationType != poolPublicationOperationType {
 		return nil
 	}
+	if payload := resolvePoolPublicationPayloadFromNodeResult(execCtx, poolReconciliationNodeID); payload != nil {
+		return payload
+	}
+	if payload := resolvePoolPublicationPayloadFromNodeResult(execCtx, poolDistributionNodeID); payload != nil {
+		return payload
+	}
 	rawPayload, ok := execCtx.Get(poolPublicationPayloadContextKey)
+	if !ok {
+		return nil
+	}
+	payload, ok := rawPayload.(map[string]interface{})
+	if !ok || len(payload) == 0 {
+		return nil
+	}
+	return payload
+}
+
+func resolvePoolPublicationPayloadFromNodeResult(
+	execCtx *wfcontext.ExecutionContext,
+	nodeID string,
+) map[string]interface{} {
+	if execCtx == nil || strings.TrimSpace(nodeID) == "" {
+		return nil
+	}
+	rawPayload, ok := execCtx.Get(fmt.Sprintf("%s.output.publication_payload", nodeID))
 	if !ok {
 		return nil
 	}

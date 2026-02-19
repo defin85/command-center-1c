@@ -6,6 +6,11 @@ from typing import Any, Mapping
 from django.utils import timezone
 
 from .models import PoolRun, PoolRunDirection, PoolRunMode
+from .runtime_distribution import (
+    DISTRIBUTION_ARTIFACT_VERSION,
+    build_publication_payload_from_artifact,
+    compute_distribution_runtime_state,
+)
 
 
 APPROVAL_STATE_NOT_REQUIRED = "not_required"
@@ -25,6 +30,19 @@ _OP_RECONCILIATION = "pool.reconciliation_report"
 _OP_APPROVAL_GATE = "pool.approval_gate"
 _OP_PUBLICATION = "pool.publication_odata"
 POOL_RUNTIME_PUBLICATION_PATH_DISABLED = "POOL_RUNTIME_PUBLICATION_PATH_DISABLED"
+POOL_DISTRIBUTION_ARTIFACT_INVALID = "POOL_DISTRIBUTION_ARTIFACT_INVALID"
+POOL_DISTRIBUTION_BALANCE_MISMATCH = "POOL_DISTRIBUTION_BALANCE_MISMATCH"
+POOL_DISTRIBUTION_COVERAGE_GAP = "POOL_DISTRIBUTION_COVERAGE_GAP"
+
+_REQUIRED_DISTRIBUTION_ARTIFACT_FIELDS = {
+    "version",
+    "topology_version_ref",
+    "node_totals",
+    "edge_allocations",
+    "coverage",
+    "balance",
+    "input_provenance",
+}
 
 
 def execute_pool_runtime_step(
@@ -143,24 +161,12 @@ def _execute_distribution_top_down(
     execution: Any,
     execution_context: dict[str, Any],
 ) -> dict[str, Any]:
-    run_input = _run_input(run)
-    prepared_input = execution_context.get("pool_runtime_prepared_input")
-    prepared_payload = dict(prepared_input) if isinstance(prepared_input, dict) else {}
-    starting_amount = _parse_decimal(prepared_payload.get("starting_amount") or run_input.get("starting_amount"))
-    distribution_summary = {
-        "direction": "top_down",
-        "starting_amount": _decimal_to_string(starting_amount),
-        "source": "run_input",
-    }
-    _update_execution_context(
+    _ = execution_context
+    return _execute_distribution_calculation(
+        run=run,
         execution=execution,
-        updates={"pool_runtime_distribution": distribution_summary},
+        expected_direction=PoolRunDirection.TOP_DOWN,
     )
-    return {
-        "step": "distribution_calculation",
-        "pool_run_id": str(run.id),
-        "distribution": distribution_summary,
-    }
 
 
 def _execute_distribution_bottom_up(
@@ -169,29 +175,12 @@ def _execute_distribution_bottom_up(
     execution: Any,
     execution_context: dict[str, Any],
 ) -> dict[str, Any]:
-    run_input = _run_input(run)
-    source_rows = _source_rows(run_input=run_input)
-    source_total = _sum_source_amounts(source_rows)
-    distribution_summary = {
-        "direction": "bottom_up",
-        "source_rows_count": len(source_rows),
-        "source_total_amount": _decimal_to_string(source_total),
-    }
-
-    prepared_input = execution_context.get("pool_runtime_prepared_input")
-    if isinstance(prepared_input, dict):
-        prepared_total = _parse_decimal(prepared_input.get("source_total_amount"))
-        distribution_summary["prepared_total_amount"] = _decimal_to_string(prepared_total)
-
-    _update_execution_context(
+    _ = execution_context
+    return _execute_distribution_calculation(
+        run=run,
         execution=execution,
-        updates={"pool_runtime_distribution": distribution_summary},
+        expected_direction=PoolRunDirection.BOTTOM_UP,
     )
-    return {
-        "step": "distribution_calculation",
-        "pool_run_id": str(run.id),
-        "distribution": distribution_summary,
-    }
 
 
 def _execute_reconciliation(
@@ -200,39 +189,158 @@ def _execute_reconciliation(
     execution: Any,
     execution_context: dict[str, Any],
 ) -> dict[str, Any]:
-    distribution = execution_context.get("pool_runtime_distribution")
-    distribution_payload = dict(distribution) if isinstance(distribution, dict) else {}
-    prepared = execution_context.get("pool_runtime_prepared_input")
-    prepared_payload = dict(prepared) if isinstance(prepared, dict) else {}
+    distribution_artifact = _validate_distribution_artifact_contract(
+        artifact=execution_context.get("pool_runtime_distribution_artifact")
+    )
+    coverage_payload = distribution_artifact.get("coverage")
+    coverage = dict(coverage_payload) if isinstance(coverage_payload, Mapping) else {}
+    balance_payload = distribution_artifact.get("balance")
+    balance = dict(balance_payload) if isinstance(balance_payload, Mapping) else {}
 
+    if not bool(balance.get("is_balanced")):
+        delta = _decimal_to_string(_parse_decimal(balance.get("delta")))
+        source_total = _decimal_to_string(_parse_decimal(balance.get("source_total")))
+        distributed_total = _decimal_to_string(_parse_decimal(balance.get("distributed_total")))
+        raise ValueError(
+            f"{POOL_DISTRIBUTION_BALANCE_MISMATCH}: "
+            f"source_total={source_total}, distributed_total={distributed_total}, delta={delta}"
+        )
+
+    if not bool(coverage.get("is_full")):
+        missing_nodes_raw = coverage.get("missing_target_node_ids")
+        missing_nodes = (
+            [str(node_id).strip() for node_id in missing_nodes_raw if str(node_id).strip()]
+            if isinstance(missing_nodes_raw, list)
+            else []
+        )
+        missing_nodes_text = ", ".join(missing_nodes) if missing_nodes else "unknown"
+        raise ValueError(
+            f"{POOL_DISTRIBUTION_COVERAGE_GAP}: missing publish-target nodes: {missing_nodes_text}"
+        )
+
+    publication_payload = build_publication_payload_from_artifact(
+        artifact=distribution_artifact,
+        run_input=_run_input(run),
+    )
     report: dict[str, Any] = {
         "run_direction": run.direction,
-        "distribution_available": bool(distribution_payload),
-        "prepared_input_available": bool(prepared_payload),
+        "distribution_artifact_version": distribution_artifact.get("version"),
+        "topology_version_ref": distribution_artifact.get("topology_version_ref"),
+        "balanced": True,
+        "coverage_full": True,
+        "missing_target_node_ids": [],
+        "source_total_amount": balance.get("source_total"),
+        "distributed_total_amount": balance.get("distributed_total"),
+        "delta": balance.get("delta"),
         "status": "ok",
         "generated_at": timezone.now().isoformat(),
     }
 
-    source_total = _parse_decimal(
-        distribution_payload.get("source_total_amount") or prepared_payload.get("source_total_amount")
+    _update_execution_context(
+        execution=execution,
+        updates={
+            "pool_runtime_reconciliation": report,
+            "pool_runtime_publication_payload": publication_payload,
+        },
     )
-    starting_amount = _parse_decimal(
-        distribution_payload.get("starting_amount") or prepared_payload.get("starting_amount")
-    )
-    if source_total is not None and starting_amount is not None:
-        report["balanced"] = source_total == starting_amount
-        report["source_total_amount"] = _decimal_to_string(source_total)
-        report["starting_amount"] = _decimal_to_string(starting_amount)
-        if source_total != starting_amount:
-            report["status"] = "drift"
-            report["delta"] = _decimal_to_string(source_total - starting_amount)
-
-    _update_execution_context(execution=execution, updates={"pool_runtime_reconciliation": report})
     return {
         "step": "reconciliation_report",
         "pool_run_id": str(run.id),
         "report": report,
+        "distribution_artifact": distribution_artifact,
+        "publication_payload": publication_payload,
     }
+
+
+def _execute_distribution_calculation(
+    *,
+    run: PoolRun,
+    execution: Any,
+    expected_direction: str,
+) -> dict[str, Any]:
+    if run.direction != expected_direction:
+        raise ValueError(
+            "POOL_DISTRIBUTION_DIRECTION_MISMATCH: "
+            f"run direction '{run.direction}' does not match operation direction '{expected_direction}'"
+        )
+
+    runtime_state = compute_distribution_runtime_state(run=run, run_input=_run_input(run))
+    summary_payload = runtime_state.get("summary")
+    distribution_summary = dict(summary_payload) if isinstance(summary_payload, Mapping) else {}
+    artifact_payload = runtime_state.get("artifact")
+    distribution_artifact = _validate_distribution_artifact_contract(artifact=artifact_payload)
+    publication_payload_raw = runtime_state.get("publication_payload")
+    publication_payload = (
+        dict(publication_payload_raw)
+        if isinstance(publication_payload_raw, Mapping)
+        else build_publication_payload_from_artifact(
+            artifact=distribution_artifact,
+            run_input=_run_input(run),
+        )
+    )
+    if not publication_payload:
+        raise ValueError(
+            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: publication_payload is missing for distribution artifact"
+        )
+
+    _update_execution_context(
+        execution=execution,
+        updates={
+            "pool_runtime_distribution": distribution_summary,
+            "pool_runtime_distribution_artifact": distribution_artifact,
+            "pool_runtime_publication_payload": publication_payload,
+        },
+    )
+    return {
+        "step": "distribution_calculation",
+        "pool_run_id": str(run.id),
+        "distribution": distribution_summary,
+        "distribution_artifact": distribution_artifact,
+        "publication_payload": publication_payload,
+    }
+
+
+def _validate_distribution_artifact_contract(*, artifact: Any) -> dict[str, Any]:
+    if not isinstance(artifact, Mapping):
+        raise ValueError(
+            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: distribution_artifact.v1 is missing in execution context"
+        )
+    artifact_payload = dict(artifact)
+    missing_fields = sorted(
+        field_name
+        for field_name in _REQUIRED_DISTRIBUTION_ARTIFACT_FIELDS
+        if field_name not in artifact_payload
+    )
+    if missing_fields:
+        raise ValueError(
+            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: missing required artifact fields: {', '.join(missing_fields)}"
+        )
+    version = str(artifact_payload.get("version") or "").strip()
+    if version != DISTRIBUTION_ARTIFACT_VERSION:
+        raise ValueError(
+            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: unexpected artifact version '{version or '<empty>'}'"
+        )
+    if not isinstance(artifact_payload.get("coverage"), Mapping):
+        raise ValueError(
+            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: field 'coverage' must be an object in distribution_artifact.v1"
+        )
+    if not isinstance(artifact_payload.get("balance"), Mapping):
+        raise ValueError(
+            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: field 'balance' must be an object in distribution_artifact.v1"
+        )
+    if not isinstance(artifact_payload.get("node_totals"), list):
+        raise ValueError(
+            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: field 'node_totals' must be an array in distribution_artifact.v1"
+        )
+    if not isinstance(artifact_payload.get("edge_allocations"), list):
+        raise ValueError(
+            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: field 'edge_allocations' must be an array in distribution_artifact.v1"
+        )
+    if not isinstance(artifact_payload.get("input_provenance"), Mapping):
+        raise ValueError(
+            f"{POOL_DISTRIBUTION_ARTIFACT_INVALID}: field 'input_provenance' must be an object in distribution_artifact.v1"
+        )
+    return artifact_payload
 
 
 def _execute_approval_gate(
