@@ -214,6 +214,39 @@ func TestODataPublicationTransport_ExecutePublicationOData_Success(t *testing.T)
 	assert.Equal(t, publicationCredentialsPurpose, fetcher.lastCredentialsPurpose)
 }
 
+func TestODataPublicationTransport_ExecutePublicationOData_ServiceStrategySetsCredentialsContext(t *testing.T) {
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockPublicationODataService{}
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationType:   "pool.publication_odata",
+		PublicationAuth: publicationAuthServiceForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"documents_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{"Amount": "100.00"},
+					},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.Equal(t, "", fetcher.lastRequestedBy)
+	assert.Equal(t, "service", fetcher.lastIbAuthStrategy)
+	assert.Equal(t, publicationCredentialsPurpose, fetcher.lastCredentialsPurpose)
+}
+
 func TestODataPublicationTransport_ExecutePublicationOData_InvalidPayload(t *testing.T) {
 	fetcher := &mockPublicationCredentialsFetcher{}
 	service := &mockPublicationODataService{}
@@ -256,6 +289,60 @@ func TestODataPublicationTransport_ExecutePublicationOData_FailsClosedWithoutPub
 	require.True(t, errors.As(err, &opErr))
 	assert.Equal(t, ErrorCodeODataPublicationAuthContextInvalid, opErr.Code)
 	assert.Equal(t, 0, service.createCalls)
+}
+
+func TestODataPublicationTransport_ExecutePublicationOData_FailsClosedForInvalidPublicationAuthVariants(t *testing.T) {
+	testCases := []struct {
+		name            string
+		publicationAuth *handlers.PublicationAuth
+	}{
+		{
+			name: "missing source",
+			publicationAuth: &handlers.PublicationAuth{
+				Strategy: "service",
+			},
+		},
+		{
+			name: "actor strategy without actor username",
+			publicationAuth: &handlers.PublicationAuth{
+				Strategy: "actor",
+				Source:   "confirm_publication",
+			},
+		},
+		{
+			name: "unknown strategy",
+			publicationAuth: &handlers.PublicationAuth{
+				Strategy: "invalid",
+				Source:   "run_create",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fetcher := &mockPublicationCredentialsFetcher{}
+			service := &mockPublicationODataService{}
+			transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+			_, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+				OperationType:   "pool.publication_odata",
+				PublicationAuth: tc.publicationAuth,
+				Payload: map[string]interface{}{
+					"pool_runtime": map[string]interface{}{
+						"documents_by_database": map[string]interface{}{
+							"db-1": []interface{}{map[string]interface{}{"Amount": "100.00"}},
+						},
+					},
+				},
+			})
+
+			require.Error(t, err)
+			var opErr *handlers.OperationExecutionError
+			require.True(t, errors.As(err, &opErr))
+			assert.Equal(t, ErrorCodeODataPublicationAuthContextInvalid, opErr.Code)
+			assert.Equal(t, 0, service.createCalls)
+		})
+	}
 }
 
 func TestODataPublicationTransport_ExecutePublicationOData_TransientErrorRetriesToBudget(t *testing.T) {

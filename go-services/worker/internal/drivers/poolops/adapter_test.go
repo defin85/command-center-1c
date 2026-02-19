@@ -116,12 +116,21 @@ func TestAdapter_ExecutePoolOperationCallsBridge(t *testing.T) {
 		Payload:         map[string]interface{}{"k": "v"},
 		TargetDatabases: []string{"db-1"},
 		TimeoutSeconds:  30,
+		PublicationAuth: &handlers.PublicationAuth{
+			Strategy:      "actor",
+			ActorUsername: "alice",
+			Source:        "confirm_publication",
+		},
 	})
 
 	assert.NoError(t, err)
 	assert.Equal(t, 1, bridge.callCount)
 	assert.NotNil(t, bridge.lastReq)
 	assert.Equal(t, "pool.prepare_input", bridge.lastReq.OperationType)
+	require.NotNil(t, bridge.lastReq.PublicationAuth)
+	assert.Equal(t, "actor", bridge.lastReq.PublicationAuth.Strategy)
+	assert.Equal(t, "alice", bridge.lastReq.PublicationAuth.ActorUsername)
+	assert.Equal(t, "confirm_publication", bridge.lastReq.PublicationAuth.Source)
 	assert.Equal(t, "ok", out["status"])
 }
 

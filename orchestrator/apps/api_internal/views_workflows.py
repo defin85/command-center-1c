@@ -859,6 +859,7 @@ def execute_pool_runtime_step_v2(request):
     transport_attempt = int(data["transport_attempt"])
     idempotency_key = str(data["idempotency_key"] or "").strip()
     operation_ref = dict(data.get("operation_ref") or {})
+    publication_auth = data.get("publication_auth") if isinstance(data.get("publication_auth"), dict) else None
     rendered_payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
 
     try:
@@ -947,10 +948,14 @@ def execute_pool_runtime_step_v2(request):
                     status=status.HTTP_200_OK,
                 )
 
+            runtime_context = {"pool_run_id": str(run.id)}
+            if publication_auth:
+                runtime_context["publication_auth"] = publication_auth
+
             step_result = execute_pool_runtime_step(
                 operation_type=operation_type,
                 rendered_data=rendered_payload,
-                context={"pool_run_id": str(run.id)},
+                context=runtime_context,
                 execution=execution,
             )
 

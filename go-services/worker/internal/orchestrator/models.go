@@ -205,18 +205,26 @@ type PoolRuntimeOperationRef struct {
 	TemplateExposureRevision int    `json:"template_exposure_revision,omitempty"`
 }
 
+// PoolRuntimePublicationAuth carries publication credentials provenance for pool publication step.
+type PoolRuntimePublicationAuth struct {
+	Strategy      string `json:"strategy,omitempty"`
+	ActorUsername string `json:"actor_username,omitempty"`
+	Source        string `json:"source,omitempty"`
+}
+
 // PoolRuntimeStepExecutionRequest represents request to pool runtime bridge endpoint.
 type PoolRuntimeStepExecutionRequest struct {
-	TenantID            string                   `json:"tenant_id"`
-	PoolRunID           string                   `json:"pool_run_id"`
-	WorkflowExecutionID string                   `json:"workflow_execution_id"`
-	NodeID              string                   `json:"node_id"`
-	OperationType       string                   `json:"operation_type"`
-	OperationRef        *PoolRuntimeOperationRef `json:"operation_ref,omitempty"`
-	StepAttempt         int                      `json:"step_attempt"`
-	TransportAttempt    int                      `json:"transport_attempt"`
-	IdempotencyKey      string                   `json:"idempotency_key"`
-	Payload             map[string]interface{}   `json:"payload"`
+	TenantID            string                      `json:"tenant_id"`
+	PoolRunID           string                      `json:"pool_run_id"`
+	WorkflowExecutionID string                      `json:"workflow_execution_id"`
+	NodeID              string                      `json:"node_id"`
+	OperationType       string                      `json:"operation_type"`
+	OperationRef        *PoolRuntimeOperationRef    `json:"operation_ref,omitempty"`
+	StepAttempt         int                         `json:"step_attempt"`
+	TransportAttempt    int                         `json:"transport_attempt"`
+	IdempotencyKey      string                      `json:"idempotency_key"`
+	PublicationAuth     *PoolRuntimePublicationAuth `json:"publication_auth,omitempty"`
+	Payload             map[string]interface{}      `json:"payload"`
 }
 
 // SetTransportAttempt updates transport attempt for retries in orchestrator HTTP client.

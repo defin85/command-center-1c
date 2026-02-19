@@ -110,8 +110,9 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
         workflow_execution_id: str,
         node_id: str = "n1",
         operation_type: str = "pool.prepare_input",
+        publication_auth: dict[str, object] | None = None,
     ) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "tenant_id": tenant_id,
             "pool_run_id": pool_run_id,
             "workflow_execution_id": workflow_execution_id,
@@ -128,6 +129,9 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
             "idempotency_key": "bridge-key-0001",
             "payload": {"pool_runtime": {"step_id": "prepare_input"}},
         }
+        if isinstance(publication_auth, dict):
+            payload["publication_auth"] = publication_auth
+        return payload
 
     def test_update_workflow_status_advances_pools_approval_state_on_complete(self):
         tenant = Tenant.objects.create(slug=f"tenant-{uuid4().hex[:8]}", name="Tenant")
@@ -984,6 +988,63 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["code"], "BAD_REQUEST")
+
+    def test_execute_pool_runtime_step_propagates_publication_auth_context_when_present(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        payload = self._build_bridge_request_payload(
+            tenant_id=str(tenant.id),
+            pool_run_id=str(run.id),
+            workflow_execution_id=str(execution.id),
+            publication_auth={
+                "strategy": "actor",
+                "actor_username": "alice",
+                "source": "confirm_publication",
+            },
+        )
+
+        with patch(
+            "apps.intercompany_pools.pool_domain_steps.execute_pool_runtime_step",
+            return_value={"step": "prepare_input", "status": "ok"},
+        ) as bridge_step_mock:
+            response = self.client.post(
+                "/api/v2/internal/workflows/execute-pool-runtime-step",
+                payload,
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        bridge_step_mock.assert_called_once()
+        _, kwargs = bridge_step_mock.call_args
+        self.assertEqual(
+            kwargs["context"].get("publication_auth"),
+            {
+                "strategy": "actor",
+                "actor_username": "alice",
+                "source": "confirm_publication",
+            },
+        )
+
+    def test_execute_pool_runtime_step_rejects_invalid_publication_auth_context(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        payload = self._build_bridge_request_payload(
+            tenant_id=str(tenant.id),
+            pool_run_id=str(run.id),
+            workflow_execution_id=str(execution.id),
+            publication_auth={
+                "strategy": "actor",
+                "source": "confirm_publication",
+            },
+        )
+
+        response = self.client.post(
+            "/api/v2/internal/workflows/execute-pool-runtime-step",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "BAD_REQUEST")
+        self.assertIn("actor_username", str(response.data.get("details", "")))
 
     def test_execute_pool_runtime_step_returns_not_found_for_unknown_execution(self):
         tenant, run, _, _ = self._create_pool_runtime_fixture()

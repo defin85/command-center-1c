@@ -2016,6 +2016,7 @@ def test_abort_publication_after_started_step_returns_publication_started_confli
 @pytest.mark.django_db
 def test_confirm_publication_returns_accepted_and_deterministic_replay(
     authenticated_client: APIClient,
+    user: User,
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
@@ -2063,6 +2064,12 @@ def test_confirm_publication_returns_accepted_and_deterministic_replay(
     assert replay_payload["result"] == "accepted"
     assert replay_payload["replayed"] is True
 
+    execution = WorkflowExecution.objects.get(id=run.workflow_execution_id)
+    assert execution.input_context.get("publication_auth") == {
+        "strategy": "actor",
+        "actor_username": user.username,
+        "source": "confirm_publication",
+    }
     assert PoolRunCommandLog.objects.filter(run=run).count() == 1
     assert PoolRunCommandOutbox.objects.filter(run=run).count() == 1
 
@@ -2286,6 +2293,7 @@ def test_confirm_publication_cross_tenant_and_unknown_run_are_indistinguishable(
 @pytest.mark.django_db
 def test_retry_pool_run_failed_endpoint_returns_accepted_workflow_reference_and_avoids_direct_publication(
     authenticated_client: APIClient,
+    user: User,
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
@@ -2370,6 +2378,11 @@ def test_retry_pool_run_failed_endpoint_returns_accepted_workflow_reference_and_
     assert pool_runtime_payload.get("entity_name") == "Document_IntercompanyPoolDistribution"
     assert pool_runtime_payload.get("documents_by_database") == {
         str(db_two.id): [{"Amount": "90.00"}],
+    }
+    assert retry_execution.input_context.get("publication_auth") == {
+        "strategy": "actor",
+        "actor_username": user.username,
+        "source": "retry_publication",
     }
 
 

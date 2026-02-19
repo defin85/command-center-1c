@@ -75,6 +75,7 @@ func (c *OrchestratorBridgeClient) ExecutePoolRuntimeStep(
 		NodeID:              req.NodeID,
 		OperationType:       req.OperationType,
 		OperationRef:        toOrchestratorOperationRef(req.OperationRef),
+		PublicationAuth:     toOrchestratorPublicationAuth(req.PublicationAuth),
 		StepAttempt:         normalizeStepAttempt(req.StepAttempt),
 		TransportAttempt:    1,
 		IdempotencyKey:      idempotencyKey,
@@ -118,5 +119,16 @@ func toOrchestratorOperationRef(ref *BridgeOperationRef) *orchestrator.PoolRunti
 		BindingMode:              ref.BindingMode,
 		TemplateExposureID:       ref.TemplateExposureID,
 		TemplateExposureRevision: ref.TemplateExposureRevision,
+	}
+}
+
+func toOrchestratorPublicationAuth(ref *BridgePublicationAuth) *orchestrator.PoolRuntimePublicationAuth {
+	if ref == nil {
+		return nil
+	}
+	return &orchestrator.PoolRuntimePublicationAuth{
+		Strategy:      strings.TrimSpace(ref.Strategy),
+		ActorUsername: strings.TrimSpace(ref.ActorUsername),
+		Source:        strings.TrimSpace(ref.Source),
 	}
 }

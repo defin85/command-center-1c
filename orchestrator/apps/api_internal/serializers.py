@@ -245,6 +245,32 @@ class PoolRuntimeOperationRefSerializer(serializers.Serializer):
     template_exposure_revision = serializers.IntegerField(min_value=1)
 
 
+class PoolRuntimePublicationAuthSerializer(serializers.Serializer):
+    """Publication auth provenance context for pool.publication_odata credentials resolution."""
+
+    strategy = serializers.ChoiceField(choices=["actor", "service"])
+    actor_username = serializers.CharField(max_length=255, required=False, allow_blank=False)
+    source = serializers.CharField(max_length=64)
+
+    def validate(self, attrs):
+        strategy = str(attrs.get("strategy") or "").strip().lower()
+        source = str(attrs.get("source") or "").strip()
+        actor_username = str(attrs.get("actor_username") or "").strip()
+
+        if not source:
+            raise serializers.ValidationError({"source": "source is required."})
+        if strategy == "actor" and not actor_username:
+            raise serializers.ValidationError({"actor_username": "actor_username is required for actor strategy."})
+        if strategy == "service":
+            attrs.pop("actor_username", None)
+
+        attrs["strategy"] = strategy
+        attrs["source"] = source
+        if actor_username:
+            attrs["actor_username"] = actor_username
+        return attrs
+
+
 class PoolRuntimeStepExecutionSerializer(serializers.Serializer):
     """Input serializer for canonical pool runtime bridge endpoint."""
 
@@ -257,6 +283,7 @@ class PoolRuntimeStepExecutionSerializer(serializers.Serializer):
     step_attempt = serializers.IntegerField(min_value=1)
     transport_attempt = serializers.IntegerField(min_value=1)
     idempotency_key = serializers.CharField(min_length=8, max_length=255)
+    publication_auth = PoolRuntimePublicationAuthSerializer(required=False, allow_null=True)
     step_deadline_utc = serializers.DateTimeField(required=False, allow_null=True)
     payload = serializers.JSONField()
 

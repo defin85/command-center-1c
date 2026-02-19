@@ -278,6 +278,46 @@ describe('PoolRunsPage', () => {
     expect(await screen.findByText('top_down starting_amount must be greater than 0.')).toBeInTheDocument()
   }, 15000)
 
+  it.each([
+    [
+      'ODATA_MAPPING_NOT_CONFIGURED',
+      'Для target databases не настроены OData Infobase Users. Проверьте /rbac → Infobase Users.',
+    ],
+    [
+      'ODATA_MAPPING_AMBIGUOUS',
+      'Обнаружены неоднозначные OData Infobase Users mappings. Исправьте дубликаты в /rbac → Infobase Users.',
+    ],
+    [
+      'ODATA_PUBLICATION_AUTH_CONTEXT_INVALID',
+      'Некорректный publication auth context. Проверьте запуск run и настройки /rbac → Infobase Users.',
+    ],
+  ])(
+    'maps create-run problem+json %s to publication mapping message',
+    async (errorCode: string, expectedMessage: string) => {
+      const user = userEvent.setup()
+      mockCreatePoolRun.mockRejectedValueOnce({
+        response: {
+          data: {
+            type: 'about:blank',
+            title: 'Pool Runtime Configuration Error',
+            status: 400,
+            detail: 'Configure Infobase Users in /rbac.',
+            code: errorCode,
+          },
+        },
+      })
+
+      renderPage()
+
+      const submitButton = await screen.findByTestId('pool-runs-create-submit')
+      await user.click(submitButton)
+
+      await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
+      expect(await screen.findByText(expectedMessage)).toBeInTheDocument()
+    },
+    15000
+  )
+
   it('sends abort-publication with generated idempotency key', async () => {
     const user = userEvent.setup()
     renderPage()
@@ -350,6 +390,34 @@ describe('PoolRunsPage', () => {
     expect(screen.getAllByText('legacy_pre_run_input').length).toBeGreaterThan(0)
     expect(screen.getByTestId('pool-runs-run-input')).toHaveValue('null')
     expect(screen.getByText('legacy alias message')).toBeInTheDocument()
+  })
+
+  it('shows remediation hint for publication mapping errors in attempts table', async () => {
+    const run = buildRun()
+    mockListPoolRuns.mockResolvedValue([run])
+    mockGetPoolRunReport.mockResolvedValue(
+      buildReport(run, {
+        domain_error_code: 'ODATA_MAPPING_NOT_CONFIGURED',
+        domain_error_message: 'mapping missing',
+        error_message: 'mapping missing',
+      })
+    )
+
+    renderPage()
+
+    expect(await screen.findByText('ODATA_MAPPING_NOT_CONFIGURED')).toBeInTheDocument()
+    expect(screen.getByText('Remediation: /rbac - Infobase Users')).toBeInTheDocument()
+  })
+
+  it('renders publication credentials source hint in create run form', async () => {
+    renderPage()
+
+    expect(await screen.findByText('Pool publication OData credentials source: /rbac')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        '`odata_url` берётся из Databases, а OData user/password для публикации — из /rbac → Infobase Users (actor/service mapping).'
+      )
+    ).toBeInTheDocument()
   })
 
   it('submits top_down create-run payload with run_input and without source_hash', async () => {

@@ -53,7 +53,12 @@ func TestOrchestratorBridgeClient_ExecutePoolRuntimeStep_BuildsPayload(t *testin
 		TenantID:      "tenant-1",
 		PoolRunID:     "pool-run-1",
 		StepAttempt:   3,
-		Payload:       map[string]interface{}{"k": "v"},
+		PublicationAuth: &BridgePublicationAuth{
+			Strategy:      "actor",
+			ActorUsername: "alice",
+			Source:        "confirm_publication",
+		},
+		Payload: map[string]interface{}{"k": "v"},
 		OperationRef: &BridgeOperationRef{
 			Alias:                    "pool.publication_odata",
 			BindingMode:              "pinned_exposure",
@@ -73,6 +78,10 @@ func TestOrchestratorBridgeClient_ExecutePoolRuntimeStep_BuildsPayload(t *testin
 	assert.Equal(t, 3, api.lastReq.StepAttempt)
 	assert.Equal(t, "exec-1:node-1:3", api.lastReq.IdempotencyKey)
 	assert.Equal(t, "pool.publication_odata", api.lastReq.OperationRef.Alias)
+	require.NotNil(t, api.lastReq.PublicationAuth)
+	assert.Equal(t, "actor", api.lastReq.PublicationAuth.Strategy)
+	assert.Equal(t, "alice", api.lastReq.PublicationAuth.ActorUsername)
+	assert.Equal(t, "confirm_publication", api.lastReq.PublicationAuth.Source)
 	assert.Equal(t, true, res.Result["ok"])
 
 	deadline, ok := api.lastCtx.Deadline()

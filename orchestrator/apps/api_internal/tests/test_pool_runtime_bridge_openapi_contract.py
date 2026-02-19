@@ -86,6 +86,21 @@ def test_pool_runtime_step_request_schema_contains_context_and_retry_fields() ->
     assert isinstance(properties, dict)
     operation_ref = properties.get("operation_ref")
     assert operation_ref == {"$ref": "#/components/schemas/PoolRuntimeOperationRef"}
+    publication_auth = properties.get("publication_auth")
+    assert publication_auth == {"$ref": "#/components/schemas/PoolRuntimePublicationAuth"}
+
+
+def test_pool_runtime_publication_auth_schema_contains_fail_closed_fields() -> None:
+    contract = _load_internal_contract()
+    publication_auth_schema = _schema(contract, "PoolRuntimePublicationAuth")
+
+    required = set(publication_auth_schema.get("required") or [])
+    assert {"strategy", "source"}.issubset(required)
+
+    properties = publication_auth_schema.get("properties")
+    assert isinstance(properties, dict)
+    assert set(properties.get("strategy", {}).get("enum") or []) == {"actor", "service"}
+    assert "actor_username" in properties
 
 
 def test_pool_runtime_step_response_schema_contains_idempotency_and_status_fields() -> None:

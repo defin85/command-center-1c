@@ -25,6 +25,7 @@ type BridgeRequest struct {
 	TemplateID      string
 	TargetEntity    string
 	OperationRef    *BridgeOperationRef
+	PublicationAuth *BridgePublicationAuth
 	Payload         map[string]interface{}
 	TargetDatabases []string
 	TimeoutSeconds  int
@@ -52,6 +53,13 @@ type BridgeOperationRef struct {
 	BindingMode              string
 	TemplateExposureID       string
 	TemplateExposureRevision int
+}
+
+// BridgePublicationAuth carries publication auth provenance in pool bridge payload.
+type BridgePublicationAuth struct {
+	Strategy      string
+	ActorUsername string
+	Source        string
 }
 
 // Adapter bridges workflow operation nodes to pool runtime backend.
@@ -162,6 +170,7 @@ func (a *Adapter) Execute(ctx context.Context, req *handlers.OperationRequest) (
 		TemplateID:      req.TemplateID,
 		TargetEntity:    req.TargetEntity,
 		OperationRef:    toBridgeOperationRef(req.OperationRef),
+		PublicationAuth: toBridgePublicationAuth(req.PublicationAuth),
 		Payload:         req.Payload,
 		TargetDatabases: req.TargetDatabases,
 		TimeoutSeconds:  req.TimeoutSeconds,
@@ -265,5 +274,16 @@ func toBridgeOperationRef(src *models.OperationRef) *BridgeOperationRef {
 		BindingMode:              src.BindingMode,
 		TemplateExposureID:       src.TemplateExposureID,
 		TemplateExposureRevision: src.TemplateExposureRevision,
+	}
+}
+
+func toBridgePublicationAuth(src *handlers.PublicationAuth) *BridgePublicationAuth {
+	if src == nil {
+		return nil
+	}
+	return &BridgePublicationAuth{
+		Strategy:      strings.TrimSpace(src.Strategy),
+		ActorUsername: strings.TrimSpace(src.ActorUsername),
+		Source:        strings.TrimSpace(src.Source),
 	}
 }
