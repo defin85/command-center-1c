@@ -1,0 +1,29 @@
+## 1. Contract and Policy Model
+- [ ] 1.1 Описать и зафиксировать versioned contract `document_policy.v1` (структура цепочек, документы, маппинги реквизитов/табличных частей, link rules, invoice_mode).
+- [ ] 1.2 Зафиксировать machine-readable taxonomy ошибок policy (`*_POLICY_INVALID`, `*_CHAIN_INVALID`, `*_MAPPING_INVALID`, `*_MISSING_REQUIRED_INVOICE`).
+- [ ] 1.3 Зафиксировать backward-compatible migration path для существующих run-ов без document-policy.
+
+## 2. Topology Storage and Operator Management
+- [ ] 2.1 Добавить backend валидацию `edge.metadata.document_policy` в topology snapshot upsert.
+- [ ] 2.2 Добавить read-path возврата metadata (включая `document_policy`) в graph/topology response для операторского редактирования.
+- [ ] 2.3 Добавить UI-path редактирования document-policy на рёбрах пула (минимальный operator-friendly редактор + client-side preflight).
+
+## 3. Runtime Planning Layer
+- [ ] 3.1 Реализовать resolver policy c deterministic precedence (edge-level config -> pool defaults, если заданы).
+- [ ] 3.2 Добавить компиляцию `document_plan_artifact` из distribution artifact + topology + policy до шага publication.
+- [ ] 3.3 Зафиксировать fail-closed gate: publication не стартует при невалидной policy/цепочке/маппинге.
+
+## 4. Publication Execution
+- [ ] 4.1 Расширить publication payload contract до per-document chain (несколько entity в одной target database) с backward compatibility.
+- [ ] 4.2 Реализовать обязательное создание связанной счёт-фактуры для policy, где `invoice_mode=required`.
+- [ ] 4.3 Сохранить selective retry semantics: retry работает от persisted `document_plan_artifact` и не дублирует успешные документы.
+
+## 5. Tests
+- [ ] 5.1 Добавить unit-тесты валидации `document_policy.v1` (валидные/невалидные цепочки, required invoice, mapping rules).
+- [ ] 5.2 Добавить интеграционные тесты runtime compile (`document_plan_artifact`) и fail-closed gate до publication.
+- [ ] 5.3 Добавить worker tests для multi-document publication chain и retry на уровне цепочки документов.
+- [ ] 5.4 Добавить API/UI regression tests для topology metadata read/write и operator error handling.
+
+## 6. Validation
+- [ ] 6.1 Прогнать `openspec validate add-pool-document-policy --strict --no-interactive`.
+- [ ] 6.2 Прогнать целевые тесты backend/worker/frontend, затронутые новым policy-контрактом.
