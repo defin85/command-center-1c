@@ -50,6 +50,17 @@
 - **THEN** структура и порядок `document_plan_artifact` совпадают
 - **AND** idempotency ключи документов совпадают
 
+### Requirement: Document plan artifact MUST быть downstream execution-контрактом для атомарного workflow compile
+Система ДОЛЖНА (SHALL) публиковать versioned `document_plan_artifact` как downstream input-контракт для атомарного workflow compiler.
+
+Система НЕ ДОЛЖНА (SHALL NOT) требовать повторного compile policy на этапе атомарного execution graph compile.
+
+#### Scenario: Atomic workflow compiler получает готовый document plan artifact
+- **GIVEN** `document_plan_artifact.v1` сохранён после compile policy
+- **WHEN** downstream runtime компилирует атомарный workflow graph
+- **THEN** compiler использует сохранённый artifact без повторной policy-компиляции
+- **AND** шаги документа/счёт-фактуры соответствуют сохранённому плану
+
 ### Requirement: Document policy errors MUST быть machine-readable и диагностируемыми
 Система ДОЛЖНА (SHALL) возвращать стабильные machine-readable коды для policy-ошибок до OData side effects.
 

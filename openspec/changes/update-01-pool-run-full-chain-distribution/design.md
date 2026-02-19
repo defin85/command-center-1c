@@ -52,6 +52,15 @@ Retry path сохраняет selective-subset контракт, но опира
 
 Коды проходят цепочку runtime -> execution diagnostics -> facade report/problem details без деградации в generic ошибки.
 
+### Decision 6: Distribution artifact — upstream контракт для последующих change-ов
+Этот change фиксирует `distribution_artifact` как отдельный integration contract (`distribution_artifact.v1`) и source-of-truth для распределения.
+
+Дальнейшие слои:
+- `add-02-pool-document-policy` используют этот artifact как вход для compile `document_plan_artifact`;
+- `refactor-03-unify-platform-execution-runtime` используют оба artifact для атомарного workflow compiler.
+
+Семантика document chains/invoice и platform execution observability в данном change не переопределяется.
+
 ## Alternatives Considered
 ### A1. Оставить текущий summary-only runtime и добавить только post-check в worker
 Отклонено: проблема появляется до worker и не гарантирует согласованность publication payload с topology.
@@ -75,7 +84,8 @@ Retry path сохраняет selective-subset контракт, но опира
 2. Подключить алгоритмы в runtime distribution steps и сохранять canonical artifact.
 3. Переключить reconciliation/publication payload на artifact.
 4. Включить fail-closed gate и machine-readable diagnostics.
-5. Дополнить unit/integration/e2e тесты и пройти quality gates.
+5. Зафиксировать `distribution_artifact.v1` как стабильный input-контракт для downstream change-ов.
+6. Дополнить unit/integration/e2e тесты и пройти quality gates.
 
 ## Open Questions
 - В рамках данного change подразумевается, что create-run с явным `run_input.documents_by_database` остаётся допустимым как входные данные-provenance, но не authoritative для публикации. Если требуется stricter policy (полный reject таких полей), это нужно зафиксировать отдельным решением.

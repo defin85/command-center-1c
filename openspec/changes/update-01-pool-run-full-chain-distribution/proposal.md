@@ -38,6 +38,13 @@ Code-first evidence:
   - публичный pools facade API сохраняется;
   - runtime semantics для distribution/reconciliation/publication payload становятся строже (full-chain + balance guarantees).
 
+## Coordination with sibling changes
+- Этот change является upstream для:
+  - `add-02-pool-document-policy` (использует distribution artifact как вход compile document chains);
+  - `refactor-03-unify-platform-execution-runtime` (использует distribution artifact как вход атомарного workflow compiler).
+- В этом change НЕ фиксируются правила document chain/invoice policy; они принадлежат `add-02-pool-document-policy`.
+- В этом change НЕ фиксируются platform-wide execution/observability правила (`/operations`, queue-only workflow execute path); они принадлежат `refactor-03-unify-platform-execution-runtime`.
+
 ## Non-Goals
 - Не менять rollout/auth semantics `pool.publication_odata` (RBAC mapping и related контракты остаются в отдельном change).
 - Не вводить новый public endpoint для запуска run.

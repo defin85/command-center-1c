@@ -34,8 +34,17 @@
   - `frontend/src/api/queries/operations.ts`
   - `frontend/src/pages/Operations/**`
 - Dependencies:
-  - `update-pool-run-full-chain-distribution` (distribution artifact как source-of-truth).
-  - `add-pool-document-policy` (document plan/policy для document-chain детализации).
+  - `update-01-pool-run-full-chain-distribution` (distribution artifact как source-of-truth).
+  - `add-02-pool-document-policy` (document plan/policy для document-chain детализации).
+
+## Coordination with sibling changes
+- Track A (platform runtime unification + `/operations` projection) может реализовываться независимо от pool domain эволюции.
+- Track B (pool atomic workflow expansion) ДОЛЖЕН (SHALL) использовать готовые артефакты:
+  - `distribution_artifact.v1` из `update-01-pool-run-full-chain-distribution`;
+  - `document_plan_artifact.v1` из `add-02-pool-document-policy`.
+- Этот change НЕ переопределяет:
+  - формулы распределения и reconciliation инварианты (scope `update-01-pool-run-full-chain-distribution`);
+  - policy schema/валидацию document chains (scope `add-02-pool-document-policy`).
 
 ## Non-Goals
 - Не объединять физически все streams в один stream-name.

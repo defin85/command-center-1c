@@ -59,6 +59,13 @@ Publication payload расширяется до per-document chain semantics (н
 
 Коды проходят цепочку runtime -> diagnostics -> facade/API.
 
+### Decision 6: Document plan artifact как промежуточный контракт между distribution и execution runtime
+`document_plan_artifact` фиксируется как отдельный versioned контракт (`document_plan_artifact.v1`):
+- вход: `distribution_artifact.v1` + active topology + `document_policy.v1`;
+- выход: детализированный план document chains, пригодный для atomic workflow compile.
+
+Этот change не вводит platform-level execution orchestration; downstream исполнение атомарных шагов принадлежит `refactor-03-unify-platform-execution-runtime`.
+
 ## Alternatives Considered
 ### A1. Хранить policy только в `run_input`
 Отклонено: плохо переиспользуется между run-ами и повышает риск drift/дубликатов конфигурации.
@@ -74,16 +81,18 @@ Publication payload расширяется до per-document chain semantics (н
   - Mitigation: ограниченный `v1` schema + preflight + preview.
 - Риск несовместимости разных 1С-конфигураций по документам/полям.
   - Mitigation: whitelist supported entities + явные fail-closed коды.
-- Риск конфликтов с in-flight change `update-pool-run-full-chain-distribution`.
+- Риск конфликтов с in-flight change `update-01-pool-run-full-chain-distribution`.
   - Mitigation: явная зависимость от distribution artifact и staged delivery.
 
 ## Migration Plan
 1. Зафиксировать OpenSpec контракты `document_policy` + связанные runtime/publication требования.
-2. Добавить topology metadata read/write + validation для policy.
-3. Добавить runtime compile `document_plan_artifact`.
-4. Добавить publication support для document chains и required invoice rules.
-5. Обновить retry и diagnostics path на работу от persisted artifact.
-6. Прогнать contract/tests/rollout preflight.
+2. Привязать compile вход к upstream `distribution_artifact.v1`.
+3. Добавить topology metadata read/write + validation для policy.
+4. Добавить runtime compile `document_plan_artifact.v1`.
+5. Добавить publication support для document chains и required invoice rules.
+6. Обновить retry и diagnostics path на работу от persisted artifact.
+7. Зафиксировать downstream handoff контракта для atomic workflow compile в `refactor-03-unify-platform-execution-runtime`.
+8. Прогнать contract/tests/rollout preflight.
 
 ## Open Questions
 - Нужен ли в `v1` отдельный catalog поддерживаемых типов документов и их обязательных полей per configuration profile, или достаточно fail-closed whitelist в runtime?

@@ -31,3 +31,14 @@
 - **WHEN** runtime выполняет reconciliation gate
 - **THEN** run останавливается до publication
 - **AND** оператор получает machine-readable diagnostics с причиной gap coverage
+
+### Requirement: Distribution artifact MUST быть стабильным upstream контрактом для downstream compile слоёв
+Система ДОЛЖНА (SHALL) формировать versioned `distribution_artifact`, пригодный для потребления downstream compile слоями (`document_plan_artifact`, atomic workflow graph compile) без повторного чтения/доверия к raw `run_input`.
+
+Система НЕ ДОЛЖНА (SHALL NOT) допускать обход этого контракта в create-run path через произвольный raw payload.
+
+#### Scenario: Downstream compile использует только distribution artifact как вход распределения
+- **GIVEN** create-run distribution завершён и сохранён versioned `distribution_artifact`
+- **WHEN** runtime переходит к downstream compile (document plan или atomic graph)
+- **THEN** вход распределения берётся из `distribution_artifact`
+- **AND** raw `run_input` не используется как authoritative источник распределённых сумм

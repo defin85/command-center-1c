@@ -1,3 +1,8 @@
+## 0. Coordination with sibling changes
+- [ ] 0.1 Зафиксировать стабильный runtime контракт `distribution_artifact.v1` (версия, обязательные поля coverage/balance/allocations) как upstream input для document-policy и atomic workflow compiler.
+- [ ] 0.2 Добавить integration checks, подтверждающие, что downstream paths (`document_plan_artifact`, atomic workflow compile) не обходят `distribution_artifact` через raw `run_input`.
+- [ ] 0.3 Зафиксировать delivery order: сначала full-chain distribution invariants, затем document-policy compile, затем atomic workflow expansion.
+
 ## 1. Contract and Domain Baseline
 - [ ] 1.1 Зафиксировать в спеках canonical full-distribution инварианты для create-run execution path (active DAG coverage + balance preservation).
 - [ ] 1.2 Зафиксировать, что publication payload для create-run формируется из runtime distribution artifacts, а не из произвольного raw `run_input`.
@@ -14,7 +19,7 @@
 - [ ] 3.3 Гарантировать, что publication step не стартует, если distribution/reconciliation не подтвердили полное покрытие и сходимость суммы.
 
 ## 4. Publication Payload Source-of-Truth
-- [ ] 4.1 Собирать `pool_runtime_publication_payload.documents_by_database` из distribution artifact (create-run), а не из raw `run_input`.
+- [ ] 4.1 Собирать base publication input для create-run из distribution artifact (без обхода через raw `run_input`); document-chain детализация для per-document/invoice выполняется downstream change `add-02-pool-document-policy`.
 - [ ] 4.2 Сохранить совместимость retry failed-subset контракта, но явно зафиксировать связь retry с ранее рассчитанным run distribution state.
 
 ## 5. Validation and Tests
@@ -24,5 +29,5 @@
 - [ ] 5.4 Обновить regression tests для create-run/retry, чтобы подтвердить source-of-truth semantics publication payload.
 
 ## 6. Quality Gates
-- [ ] 6.1 Прогнать `openspec validate update-pool-run-full-chain-distribution --strict --no-interactive`.
+- [ ] 6.1 Прогнать `openspec validate update-01-pool-run-full-chain-distribution --strict --no-interactive`.
 - [ ] 6.2 Прогнать целевые backend/worker/frontend тесты, затронутые изменением runtime semantics.

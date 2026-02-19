@@ -1,17 +1,24 @@
 # Change: Модульная структура OpenAPI для orchestrator с bundle в единый контракт
 
 ## Why
-`contracts/orchestrator/openapi.yaml` разросся до большого монолитного файла, который сложно сопровождать: растут риски merge-конфликтов, ошибок YAML и длительного цикла правок даже для локальных изменений схем/эндпоинтов.
+`contracts/orchestrator/openapi.yaml` стал крупным монолитом, из-за чего растут риски merge-конфликтов, ошибок YAML и длительного цикла review даже для локальных правок.
 
-При этом текущий toolchain проекта ожидает единый файл `contracts/orchestrator/openapi.yaml` как вход для validate/codegen/route generation. Нужен безопасный переход к модульным исходникам без слома существующего pipeline.
+При этом текущие потребители контракта жёстко завязаны на единый файл `contracts/orchestrator/openapi.yaml`:
+- валидация (`contracts/scripts/validate-specs.sh`);
+- генерация маршрутов/клиентов (`contracts/scripts/generate-all.sh`, `frontend/orval.config.ts`);
+- contract parity тесты (`orchestrator/apps/api_v2/tests/*openapi*`).
+
+Нужна модульная структура source-файлов без потери совместимости с текущим pipeline.
 
 ## What Changes
-- Ввести модульную структуру исходников OpenAPI для orchestrator (разделение `paths` и `components` на доменные файлы под `contracts/orchestrator/src/**`).
-- Добавить обязательный bundle-step, который собирает модульные исходники в единый артефакт `contracts/orchestrator/openapi.yaml`.
-- Обновить contract tooling (`validate-specs.sh`, `generate-all.sh`, `check-breaking-changes.sh`) так, чтобы он работал через собранный bundle и не ломался на относительных `$ref`.
-- Добавить проверку "source -> bundle не устарел" для локального workflow и CI.
-- Обновить документацию по редактированию контрактов и отладке проблем bundle/refs.
-- API-семантика НЕ меняется: change затрагивает структуру хранения и процесс сборки контракта.
+- Закрепить `contracts/orchestrator/src/**` как единственный editable source-of-truth для public OpenAPI orchestrator.
+- Стандартизовать bundle pipeline на одном инструменте (`Redocly CLI`) и собирать детерминированный `contracts/orchestrator/openapi.yaml`.
+- Добавить отдельный шаг сборки/проверки актуальности bundle (`build` + `check`) с fail-fast диагностикой.
+- Обновить `validate-specs.sh`, `generate-all.sh`, `check-breaking-changes.sh` на bundle-first workflow.
+- Убрать неявное перезаписывание `contracts/orchestrator/openapi.yaml` через `manage.py spectacular` из обычного generate workflow; экспорт из Django оставить только явной ручной операцией.
+- Усилить quality gates для локальной разработки и CI: drift-check source->bundle, строгая OpenAPI-валидация, корректный breaking-check по bundle.
+- Обновить документацию (`contracts/README.md`, `docs/QUICKSTART_OPENAPI.md`, `docs/OPENAPI_CONTRACT_CHECKLIST.md`) под новый процесс.
+- API-семантика НЕ меняется: change затрагивает хранение и процесс сборки контракта.
 
 ## Impact
 - Affected specs:
@@ -19,9 +26,13 @@
 - Affected code (high-level):
   - `contracts/orchestrator/openapi.yaml`
   - `contracts/orchestrator/src/**` (new)
+  - `contracts/scripts/build-orchestrator-openapi.sh` (new)
   - `contracts/scripts/validate-specs.sh`
   - `contracts/scripts/generate-all.sh`
   - `contracts/scripts/check-breaking-changes.sh`
+  - `contracts/scripts/export-django-openapi.sh`
+  - `.githooks/pre-commit`
+  - `scripts/dev/start-all.sh`
   - `contracts/README.md`
   - `docs/QUICKSTART_OPENAPI.md`
   - `docs/OPENAPI_CONTRACT_CHECKLIST.md`
@@ -29,4 +40,5 @@
 ## Non-Goals
 - Добавление/удаление endpoint-ов, параметров и бизнес-логики API.
 - Введение новой версии API.
-- Изменение внешних контрактов клиентов из-за этого change (кроме тех, что реально уже были в исходниках).
+- Переход на OpenAPI 3.1 в рамках этого change.
+- Изменение внешних контрактов клиентов из-за этой миграции (кроме уже существующих изменений в исходниках).

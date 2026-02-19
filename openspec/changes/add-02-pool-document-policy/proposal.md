@@ -34,7 +34,15 @@
   - `frontend/src/pages/PoolsCatalog/**`
   - `frontend/src/pages/PoolsRuns/**`
 - Dependencies:
-  - change `update-pool-run-full-chain-distribution` должен предоставить канонический distribution artifact для create-run path.
+  - change `update-01-pool-run-full-chain-distribution` должен предоставить канонический distribution artifact для create-run path.
+  - change `refactor-03-unify-platform-execution-runtime` должен использовать `document_plan_artifact` как вход для атомарного workflow compile и единого observability path.
+
+## Coordination with sibling changes
+- Этот change — средний слой между:
+  - upstream `update-01-pool-run-full-chain-distribution` (даёт `distribution_artifact`);
+  - downstream `refactor-03-unify-platform-execution-runtime` (исполняет атомарный workflow graph и unified runtime/operations projection).
+- В этом change НЕ переопределяется формула распределения суммы по DAG; используется upstream artifact.
+- В этом change НЕ фиксируются platform-wide execution controls (`/operations` projection, queue-only workflow API path); это scope `refactor-03-unify-platform-execution-runtime`.
 
 ## Non-Goals
 - Не вводить полноценный script/DSL engine для произвольной бизнес-логики.

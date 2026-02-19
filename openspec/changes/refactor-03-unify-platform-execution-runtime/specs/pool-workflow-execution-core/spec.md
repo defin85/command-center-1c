@@ -33,3 +33,16 @@
 - **WHEN** оператор инициирует retry
 - **THEN** runtime формирует retry graph только для failed subset и необходимых зависимостей
 - **AND** успешные шаги не исполняются повторно
+
+### Requirement: Atomic compiler MUST использовать upstream artifact контракты без переопределения их семантики
+Система ДОЛЖНА (SHALL) компилировать атомарный workflow graph, используя:
+- `distribution_artifact.v1` как единственный source-of-truth распределённых сумм;
+- `document_plan_artifact.v1` как единственный source-of-truth document chains и invoice rules.
+
+Система НЕ ДОЛЖНА (SHALL NOT) переопределять формулы распределения или правила policy compile внутри atomic compiler.
+
+#### Scenario: Atomic compiler потребляет готовые artifacts и не использует raw run_input для доменной семантики
+- **GIVEN** run имеет сохранённые `distribution_artifact.v1` и `document_plan_artifact.v1`
+- **WHEN** runtime компилирует атомарный workflow graph
+- **THEN** node semantics формируются из этих artifacts
+- **AND** raw `run_input` не используется для переопределения распределения/chain правил
