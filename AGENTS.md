@@ -209,3 +209,12 @@ For full workflow details: `bd prime`
 - `contracts/**`
 - `frontend/tests/**`
 - `openspec/specs/**`
+
+## Локальная отладка (autonomous-feedback-loop)
+
+Практические команды runtime-debugging собраны в `DEBUG.md`:
+- inventory: `./debug/runtime-inventory.sh`
+- probes: `./debug/probe.sh all`
+- restart+probe: `./debug/restart-runtime.sh <runtime>`
+- django eval: `./debug/eval-django.sh "<python code>"`
+- frontend eval: `./debug/eval-frontend.sh "<js expression>"`

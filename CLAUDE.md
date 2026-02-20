@@ -22,6 +22,8 @@
 ./scripts/dev/lint.sh           # Lint all (--fix for auto-fix)
 ```
 
+Runtime-debug команды для AI-цикла (inventory/probe/eval/restart): `DEBUG.md`.
+
 ## Critical Constraints
 
 - **1C Transactions < 15 seconds** - CRITICAL!
