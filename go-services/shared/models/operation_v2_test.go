@@ -149,6 +149,9 @@ func TestOperationMessage_JSONSerialization(t *testing.T) {
 			TemplateID:               "tpl-users-create",
 			TemplateExposureID:       "550e8400-e29b-41d4-a716-446655440000",
 			TemplateExposureRevision: 3,
+			RootOperationID:          "wf-root-1",
+			ExecutionConsumer:        "workflows",
+			Lane:                     "workflows",
 		},
 	}
 
@@ -179,6 +182,27 @@ func TestOperationMessage_JSONSerialization(t *testing.T) {
 			"TemplateExposureRevision mismatch: got %d, want %d",
 			decoded.Metadata.TemplateExposureRevision,
 			msg.Metadata.TemplateExposureRevision,
+		)
+	}
+	if decoded.Metadata.RootOperationID != msg.Metadata.RootOperationID {
+		t.Errorf(
+			"RootOperationID mismatch: got %s, want %s",
+			decoded.Metadata.RootOperationID,
+			msg.Metadata.RootOperationID,
+		)
+	}
+	if decoded.Metadata.ExecutionConsumer != msg.Metadata.ExecutionConsumer {
+		t.Errorf(
+			"ExecutionConsumer mismatch: got %s, want %s",
+			decoded.Metadata.ExecutionConsumer,
+			msg.Metadata.ExecutionConsumer,
+		)
+	}
+	if decoded.Metadata.Lane != msg.Metadata.Lane {
+		t.Errorf(
+			"Lane mismatch: got %s, want %s",
+			decoded.Metadata.Lane,
+			msg.Metadata.Lane,
 		)
 	}
 }

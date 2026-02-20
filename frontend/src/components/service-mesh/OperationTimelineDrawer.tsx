@@ -120,18 +120,42 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
 
   const timelineMeta = useMemo(() => {
     if (!timelineData?.timeline?.length) {
-      return { traceId: undefined, workflowExecutionId: undefined, nodeId: undefined }
+      return {
+        traceId: undefined,
+        workflowExecutionId: undefined,
+        nodeId: undefined,
+        rootOperationId: undefined,
+        executionConsumer: undefined,
+        lane: undefined,
+      }
     }
     for (const event of timelineData.timeline) {
-      if (event.trace_id || event.workflow_execution_id || event.node_id) {
+      if (
+        event.trace_id ||
+        event.workflow_execution_id ||
+        event.node_id ||
+        event.root_operation_id ||
+        event.execution_consumer ||
+        event.lane
+      ) {
         return {
           traceId: event.trace_id || undefined,
           workflowExecutionId: event.workflow_execution_id || undefined,
           nodeId: event.node_id || undefined,
+          rootOperationId: event.root_operation_id || undefined,
+          executionConsumer: event.execution_consumer || undefined,
+          lane: event.lane || undefined,
         }
       }
     }
-    return { traceId: undefined, workflowExecutionId: undefined, nodeId: undefined }
+    return {
+      traceId: undefined,
+      workflowExecutionId: undefined,
+      nodeId: undefined,
+      rootOperationId: undefined,
+      executionConsumer: undefined,
+      lane: undefined,
+    }
   }, [timelineData])
 
   /**
@@ -229,13 +253,27 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
                 />
               </Col>
             </Row>
-            {(timelineMeta.traceId || timelineMeta.workflowExecutionId || timelineMeta.nodeId) && (
+            {(
+              timelineMeta.traceId ||
+              timelineMeta.workflowExecutionId ||
+              timelineMeta.nodeId ||
+              timelineMeta.rootOperationId ||
+              timelineMeta.executionConsumer ||
+              timelineMeta.lane
+            ) && (
               <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {timelineMeta.traceId && <Tag>Trace: {timelineMeta.traceId.slice(0, 8)}{'\u2026'}</Tag>}
                 {timelineMeta.workflowExecutionId && (
                   <Tag>Workflow: {timelineMeta.workflowExecutionId.slice(0, 8)}{'\u2026'}</Tag>
                 )}
                 {timelineMeta.nodeId && <Tag>Node: {timelineMeta.nodeId}</Tag>}
+                {timelineMeta.rootOperationId && (
+                  <Tag>Root: {timelineMeta.rootOperationId.slice(0, 8)}{'\u2026'}</Tag>
+                )}
+                {timelineMeta.executionConsumer && (
+                  <Tag>Consumer: {timelineMeta.executionConsumer}</Tag>
+                )}
+                {timelineMeta.lane && <Tag>Lane: {timelineMeta.lane}</Tag>}
               </div>
             )}
           </div>

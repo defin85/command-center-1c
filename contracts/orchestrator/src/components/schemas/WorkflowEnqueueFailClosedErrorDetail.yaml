@@ -1,0 +1,13 @@
+type: object
+properties:
+  code:
+    type: string
+    default: WORKFLOW_ENQUEUE_FAILED
+  message:
+    type: string
+  details:
+    $ref: ./WorkflowEnqueueFailClosedErrorDetails.yaml
+required:
+  - code
+  - details
+  - message

@@ -9408,17 +9408,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
           description: ''
-        '503':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowEnqueueFailClosedErrorResponse'
-          description: ''
         '500':
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowEnqueueFailClosedErrorResponse'
           description: ''
       parameters:
         - name: X-CC1C-Tenant-ID

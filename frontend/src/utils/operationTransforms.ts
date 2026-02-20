@@ -66,6 +66,9 @@ export interface UIBatchOperation {
   bindings?: unknown
   workflow_execution_id?: string
   node_id?: string
+  root_operation_id?: string
+  execution_consumer?: string
+  lane?: string
   trace_id?: string
   created_at: string
   updated_at: string
@@ -102,6 +105,9 @@ export function parseNumericField(value: string | number | null | undefined): nu
   return Number.isNaN(num) ? null : num
 }
 
+const toOptionalString = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.length > 0 ? value : undefined
+
 /**
  * Convert generated Task to UI Task format.
  */
@@ -129,19 +135,30 @@ export function transformTask(task: GeneratedTask): UITask {
  * Convert generated BatchOperation to UI BatchOperation format.
  */
 export function transformBatchOperation(op: GeneratedBatchOperation): UIBatchOperation {
-  const metadata = op.metadata as Record<string, unknown> | null
+  const metadata =
+    op.metadata && typeof op.metadata === 'object'
+      ? (op.metadata as Record<string, unknown>)
+      : null
+
   const workflowExecutionId =
-    metadata && typeof metadata === 'object'
-      ? (metadata.workflow_execution_id as string | undefined)
-      : undefined
+    toOptionalString(op.workflow_execution_id) ??
+    toOptionalString(metadata?.workflow_execution_id)
   const nodeId =
-    metadata && typeof metadata === 'object'
-      ? (metadata.node_id as string | undefined)
-      : undefined
-  const traceId =
-    metadata && typeof metadata === 'object'
-      ? (metadata.trace_id as string | undefined)
-      : undefined
+    toOptionalString(op.node_id) ??
+    toOptionalString(metadata?.node_id)
+  const rootOperationId =
+    toOptionalString(op.root_operation_id) ??
+    toOptionalString(metadata?.root_operation_id) ??
+    op.id
+  const executionConsumer =
+    toOptionalString(op.execution_consumer) ??
+    toOptionalString(metadata?.execution_consumer) ??
+    'operations'
+  const lane =
+    toOptionalString(op.lane) ??
+    toOptionalString(metadata?.lane) ??
+    executionConsumer
+  const traceId = toOptionalString(metadata?.trace_id)
 
   return {
     id: op.id,
@@ -165,6 +182,9 @@ export function transformBatchOperation(op: GeneratedBatchOperation): UIBatchOpe
     metadata: op.metadata,
     workflow_execution_id: workflowExecutionId,
     node_id: nodeId,
+    root_operation_id: rootOperationId,
+    execution_consumer: executionConsumer,
+    lane,
     trace_id: traceId,
     created_at: op.created_at,
     updated_at: op.updated_at,

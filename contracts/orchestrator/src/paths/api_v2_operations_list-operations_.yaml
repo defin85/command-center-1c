@@ -26,6 +26,11 @@ get:
         type: string
       description: Filter by workflow node ID
     - in: query
+      name: root_operation_id
+      schema:
+        type: string
+      description: Filter by workflow root operation ID
+    - in: query
       name: offset
       schema:
         type: integer
@@ -45,6 +50,16 @@ get:
       schema:
         type: string
       description: Search by name, description, or ID
+    - in: query
+      name: execution_consumer
+      schema:
+        type: string
+      description: Filter by execution consumer
+    - in: query
+      name: lane
+      schema:
+        type: string
+      description: Filter by QoS lane
     - in: query
       name: sort
       schema:

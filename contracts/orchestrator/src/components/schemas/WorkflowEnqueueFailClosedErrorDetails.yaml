@@ -1,0 +1,9 @@
+type: object
+properties:
+  execution_id:
+    type: string
+    format: uuid
+  enqueue_error_code:
+    type: string
+required:
+  - execution_id

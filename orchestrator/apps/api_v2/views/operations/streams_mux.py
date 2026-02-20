@@ -53,6 +53,7 @@ from .streams_common import (
     _get_redis_connection,
     _validate_mux_ticket_async,
 )
+from .streams_sse import _normalize_observability_fields
 
 logger = logging.getLogger(__name__)
 
@@ -407,6 +408,17 @@ async def operation_stream_mux(request):
                     for msg_id, fields in stream_messages:
                         event_data = fields.get('data', '{}')
                         event_type = fields.get('event_type') or 'message'
+                        try:
+                            decoded_event = json.loads(event_data)
+                            if isinstance(decoded_event, dict):
+                                event_data = json.dumps(
+                                    _normalize_observability_fields(
+                                        decoded_event,
+                                        operation_id=str(op_id),
+                                    )
+                                )
+                        except (TypeError, json.JSONDecodeError):
+                            pass
                         try:
                             await redis_conn.hset(last_key, op_id, msg_id)
                             await redis_conn.expire(active_key, OP_MUX_ACTIVE_TTL)

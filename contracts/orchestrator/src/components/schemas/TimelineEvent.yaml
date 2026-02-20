@@ -22,6 +22,18 @@ properties:
     type: string
     nullable: true
     description: Workflow node ID
+  root_operation_id:
+    type: string
+    nullable: true
+    description: Root operation ID
+  execution_consumer:
+    type: string
+    nullable: true
+    description: Execution consumer
+  lane:
+    type: string
+    nullable: true
+    description: QoS lane
   metadata:
     type: object
     additionalProperties: {}

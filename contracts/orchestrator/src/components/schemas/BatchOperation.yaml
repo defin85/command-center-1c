@@ -114,6 +114,18 @@ properties:
     maxLength: 255
   metadata:
     description: Additional metadata
+  workflow_execution_id:
+    type: string
+    nullable: true
+  node_id:
+    type: string
+    nullable: true
+  root_operation_id:
+    type: string
+  execution_consumer:
+    type: string
+  lane:
+    type: string
   created_at:
     type: string
     format: date-time

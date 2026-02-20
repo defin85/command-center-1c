@@ -1,8 +1,11 @@
 post:
   operationId: v2_workflows_execute_workflow_create
   description: >-
-    Execute a workflow template. Supports sync (blocking) and async (Go Worker
-    if enabled, else in-process background runner) modes.
+    Execute a workflow template. Sync mode is blocking. Async production
+    profile is queue-only with fail-closed enqueue errors. Workflow enqueue
+    uses transactional outbox; root operation projection is queued only after
+    dispatch succeeds. Local debug fallback is available only with explicit
+    non-production flag.
   summary: Execute workflow
   tags:
     - v2
@@ -40,6 +43,12 @@ post:
         application/json:
           schema:
             $ref: ../components/schemas/ErrorResponse.yaml
+      description: ''
+    '503':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/WorkflowEnqueueFailClosedErrorResponse.yaml
       description: ''
     '500':
       content:

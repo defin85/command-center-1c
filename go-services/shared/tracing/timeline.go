@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -81,10 +82,10 @@ type TimelineConfig struct {
 // DefaultTimelineConfig returns a TimelineConfig with default values.
 func DefaultTimelineConfig(serviceName string) TimelineConfig {
 	return TimelineConfig{
-		Enabled:     true,
-		TTL:         24 * time.Hour,
-		ServiceName: serviceName,
-		MaxEntries:  1000,
+		Enabled:       true,
+		TTL:           24 * time.Hour,
+		ServiceName:   serviceName,
+		MaxEntries:    1000,
 		StreamEnabled: false,
 		StreamMaxLen:  1000,
 		QueueSize:     10000,
@@ -102,13 +103,13 @@ type timelineRecord struct {
 
 // RedisTimeline implements TimelineRecorder using Redis ZSET.
 type RedisTimeline struct {
-	client *redis.Client
-	cfg    TimelineConfig
-	logger *logrus.Logger
-	recordWG   sync.WaitGroup
-	queue      chan timelineRecord
+	client      *redis.Client
+	cfg         TimelineConfig
+	logger      *logrus.Logger
+	recordWG    sync.WaitGroup
+	queue       chan timelineRecord
 	workerCount int
-	mu         sync.RWMutex
+	mu          sync.RWMutex
 }
 
 // NewRedisTimeline creates a new RedisTimeline instance.
@@ -281,20 +282,52 @@ func (rt *RedisTimeline) publishToStream(
 	entry timelineEntryStorage,
 	timestampMs float64,
 ) {
-	payload := map[string]interface{}{
-		"operation_id": operationID,
-		"timestamp":    int64(timestampMs),
-		"event":        entry.Event,
-		"service":      entry.Service,
-		"metadata":     entry.Metadata,
+	normalizedMetadata := map[string]interface{}{}
+	for key, value := range entry.Metadata {
+		normalizedMetadata[key] = value
 	}
-	if traceID, ok := entry.Metadata["trace_id"]; ok {
+	rootOperationID := operationID
+	if value, ok := normalizedMetadata["root_operation_id"]; ok {
+		candidate := strings.TrimSpace(fmt.Sprint(value))
+		if candidate != "" {
+			rootOperationID = candidate
+		}
+	}
+	executionConsumer := "operations"
+	if value, ok := normalizedMetadata["execution_consumer"]; ok {
+		candidate := strings.TrimSpace(fmt.Sprint(value))
+		if candidate != "" {
+			executionConsumer = candidate
+		}
+	}
+	lane := executionConsumer
+	if value, ok := normalizedMetadata["lane"]; ok {
+		candidate := strings.TrimSpace(fmt.Sprint(value))
+		if candidate != "" {
+			lane = candidate
+		}
+	}
+	normalizedMetadata["root_operation_id"] = rootOperationID
+	normalizedMetadata["execution_consumer"] = executionConsumer
+	normalizedMetadata["lane"] = lane
+
+	payload := map[string]interface{}{
+		"operation_id":       operationID,
+		"timestamp":          int64(timestampMs),
+		"event":              entry.Event,
+		"service":            entry.Service,
+		"metadata":           normalizedMetadata,
+		"root_operation_id":  rootOperationID,
+		"execution_consumer": executionConsumer,
+		"lane":               lane,
+	}
+	if traceID, ok := normalizedMetadata["trace_id"]; ok {
 		payload["trace_id"] = traceID
 	}
-	if workflowID, ok := entry.Metadata["workflow_execution_id"]; ok {
+	if workflowID, ok := normalizedMetadata["workflow_execution_id"]; ok {
 		payload["workflow_execution_id"] = workflowID
 	}
-	if nodeID, ok := entry.Metadata["node_id"]; ok {
+	if nodeID, ok := normalizedMetadata["node_id"]; ok {
 		payload["node_id"] = nodeID
 	}
 

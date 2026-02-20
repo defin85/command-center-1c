@@ -115,6 +115,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "POST", Path: "/pools/runs/:run_id/retry/", OperationID: "v2_pools_runs_retry"},
 	{Method: "GET", Path: "/pools/schema-templates/", OperationID: "v2_pools_schema_templates_list"},
 	{Method: "POST", Path: "/pools/schema-templates/", OperationID: "v2_pools_schema_templates_create"},
+	{Method: "PUT", Path: "/pools/schema-templates/:template_id/", OperationID: "v2_pools_schema_templates_update"},
 	{Method: "POST", Path: "/pools/upsert/", OperationID: "v2_pools_upsert"},
 	{Method: "POST", Path: "/rbac/bulk-grant-artifact-group-permission/", OperationID: "v2_rbac_bulk_grant_artifact_group_permission_create"},
 	{Method: "POST", Path: "/rbac/bulk-grant-cluster-group-permission/", OperationID: "v2_rbac_bulk_grant_cluster_group_permission_create"},

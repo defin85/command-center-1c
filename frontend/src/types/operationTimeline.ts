@@ -19,6 +19,9 @@ export interface TimelineEvent {
   trace_id?: string | null
   workflow_execution_id?: string | null
   node_id?: string | null
+  root_operation_id?: string | null
+  execution_consumer?: string | null
+  lane?: string | null
   metadata: Record<string, unknown>
 }
 

@@ -11,6 +11,9 @@ export interface TimelineStreamEvent {
   trace_id?: string
   workflow_execution_id?: string
   node_id?: string
+  root_operation_id?: string
+  execution_consumer?: string
+  lane?: string
 }
 
 export interface UseOperationTimelineStreamResult {

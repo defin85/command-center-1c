@@ -71,6 +71,9 @@ export const OperationsPage = () => {
   const operationIdFilter = (searchParams.get('operation_id') || '').trim() || undefined
   const workflowExecutionId = searchParams.get('workflow_execution_id') || undefined
   const nodeId = searchParams.get('node_id') || undefined
+  const rootOperationId = searchParams.get('root_operation_id') || undefined
+  const executionConsumer = searchParams.get('execution_consumer') || undefined
+  const lane = searchParams.get('lane') || undefined
   const canOperateAny = authz.isStaff || authz.canAnyDatabase('OPERATE')
   const canViewAny = authz.isStaff || authz.canAnyDatabase('VIEW')
   const canCreateOperation = canOperateAny
@@ -93,6 +96,21 @@ export const OperationsPage = () => {
       const progressPercent = toNumber(metadata.progress_percent)
 
       const updated = { ...current }
+      if (event.workflow_execution_id) {
+        updated.workflow_execution_id = event.workflow_execution_id
+      }
+      if (event.node_id) {
+        updated.node_id = event.node_id
+      }
+      if (event.root_operation_id) {
+        updated.root_operation_id = event.root_operation_id
+      }
+      if (event.execution_consumer) {
+        updated.execution_consumer = event.execution_consumer
+      }
+      if (event.lane) {
+        updated.lane = event.lane
+      }
       if (totalTasks !== null) {
         updated.total_tasks = totalTasks
       }
@@ -233,7 +251,12 @@ export const OperationsPage = () => {
       search: table.search,
       filters: table.filtersPayload,
       sort: table.sortPayload,
+      operation_id: operationIdFilter,
+      workflow_execution_id: workflowExecutionId,
       node_id: nodeId,
+      root_operation_id: rootOperationId,
+      execution_consumer: executionConsumer,
+      lane,
       limit: table.pagination.pageSize,
       offset: pageStart,
     },
@@ -579,6 +602,21 @@ export const OperationsPage = () => {
       {nodeId && (
         <Tag closable onClose={() => updateSearchParams({ node_id: null })}>
           Node: {nodeId}
+        </Tag>
+      )}
+      {rootOperationId && (
+        <Tag closable onClose={() => updateSearchParams({ root_operation_id: null })}>
+          Root: {rootOperationId}
+        </Tag>
+      )}
+      {executionConsumer && (
+        <Tag closable onClose={() => updateSearchParams({ execution_consumer: null })}>
+          Consumer: {executionConsumer}
+        </Tag>
+      )}
+      {lane && (
+        <Tag closable onClose={() => updateSearchParams({ lane: null })}>
+          Lane: {lane}
         </Tag>
       )}
 

@@ -1,6 +1,10 @@
 package events
 
-import "github.com/commandcenter1c/commandcenter/shared/models"
+import (
+	"strings"
+
+	"github.com/commandcenter1c/commandcenter/shared/models"
+)
 
 // WorkflowMetadataFromMessage extracts workflow correlation fields from a message.
 func WorkflowMetadataFromMessage(msg *models.OperationMessage) map[string]interface{} {
@@ -18,6 +22,23 @@ func WorkflowMetadataFromMessage(msg *models.OperationMessage) map[string]interf
 	if msg.Metadata.TraceID != "" {
 		metadata["trace_id"] = msg.Metadata.TraceID
 	}
+	rootOperationID := strings.TrimSpace(msg.Metadata.RootOperationID)
+	if rootOperationID == "" {
+		rootOperationID = strings.TrimSpace(msg.OperationID)
+	}
+	if rootOperationID != "" {
+		metadata["root_operation_id"] = rootOperationID
+	}
+	executionConsumer := strings.TrimSpace(msg.Metadata.ExecutionConsumer)
+	if executionConsumer == "" {
+		executionConsumer = "operations"
+	}
+	metadata["execution_consumer"] = executionConsumer
+	lane := strings.TrimSpace(msg.Metadata.Lane)
+	if lane == "" {
+		lane = executionConsumer
+	}
+	metadata["lane"] = lane
 
 	if len(metadata) == 0 {
 		return nil

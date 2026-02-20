@@ -64,6 +64,9 @@ type MessageMetadata struct {
 	Tags                     []string  `json:"tags,omitempty"`
 	WorkflowExecutionID      string    `json:"workflow_execution_id,omitempty"`
 	NodeID                   string    `json:"node_id,omitempty"`
+	RootOperationID          string    `json:"root_operation_id,omitempty"`
+	ExecutionConsumer        string    `json:"execution_consumer,omitempty"`
+	Lane                     string    `json:"lane,omitempty"`
 	TraceID                  string    `json:"trace_id,omitempty"`
 }
 

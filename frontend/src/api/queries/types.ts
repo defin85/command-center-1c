@@ -8,6 +8,9 @@ export interface OperationFilters {
   operation_id?: string
   workflow_execution_id?: string
   node_id?: string
+  root_operation_id?: string
+  execution_consumer?: string
+  lane?: string
   limit?: number
   offset?: number
 }
