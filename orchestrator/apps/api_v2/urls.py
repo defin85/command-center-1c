@@ -146,6 +146,11 @@ urlpatterns = [
     path('pools/runs/<uuid:run_id>/report/', intercompany_pools.get_pool_run_report, name='pools-run-report'),
     path('pools/runs/<uuid:run_id>/retry/', intercompany_pools.retry_pool_run_failed, name='pools-run-retry'),
     path('pools/schema-templates/', intercompany_pools.list_or_create_schema_templates, name='pools-schema-templates'),
+    path(
+        'pools/schema-templates/<uuid:template_id>/',
+        intercompany_pools.update_schema_template,
+        name='pools-schema-templates-update',
+    ),
 
     # ========================================================================
     # Clusters

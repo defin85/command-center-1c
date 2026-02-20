@@ -23,12 +23,24 @@
 - **THEN** локальный fallback не используется
 - **AND** клиент получает fail-closed enqueue error
 
-### Requirement: Workflow execution MUST проецироваться в `/operations` как root operation record
-Система ДОЛЖНА (SHALL) создавать/обновлять канонический operation record для workflow execution (`operation_id = workflow_execution_id`) с едиными status/timeline semantics.
+### Requirement: Workflow enqueue MUST использовать transactional outbox как canonical delivery boundary
+Система ДОЛЖНА (SHALL) использовать transactional outbox для workflow enqueue, чтобы запись состояния в БД и публикация команды в stream были согласованы по commit semantics.
+
+Система НЕ ДОЛЖНА (SHALL NOT) публиковать enqueue-команду из транзакции, которая в итоге не была зафиксирована.
+
+#### Scenario: Rollback транзакции не приводит к публикации enqueue команды
+- **GIVEN** создан execution context и root record в рамках транзакции
+- **AND** до commit возникает ошибка, вызывающая rollback
+- **WHEN** обработка завершается
+- **THEN** workflow enqueue команда не публикуется в worker stream
+- **AND** `/operations` не показывает ложный queued state для этого execution
+
+### Requirement: Workflow execution MUST проецироваться в `/operations` как root `BatchOperation`
+Система ДОЛЖНА (SHALL) создавать/обновлять канонический root `BatchOperation` для workflow execution (`operation_id = workflow_execution_id`) с едиными status/timeline semantics.
 
 Система ДОЛЖНА (SHALL) обеспечивать, что `/api/v2/operations/list-operations/`, `/api/v2/operations/get-operation/`, `/api/v2/operations/stream*` и timeline API возвращают этот root record и его progression.
 
-Система ДОЛЖНА (SHALL) выполнять idempotent upsert root record для повторных enqueue и не создавать duplicate operation records для одного `workflow_execution_id`.
+Система ДОЛЖНА (SHALL) выполнять idempotent upsert root record для повторных enqueue и не создавать duplicate records для одного `workflow_execution_id`.
 
 #### Scenario: Workflow execution виден оператору в `/operations`
 - **GIVEN** workflow execution успешно enqueue
@@ -45,13 +57,19 @@
 ### Requirement: Unified observability MUST сохранять корреляцию root execution и атомарных шагов
 Система ДОЛЖНА (SHALL) поддерживать correlation metadata между root execution и атомарными шагами (`workflow_execution_id`, `node_id`, `root_operation_id`, `execution_consumer`, `lane`).
 
-Система ДОЛЖНА (SHALL) обеспечивать единообразную диагностику для manual operations, workflow execution и pool atomic steps в общем `/operations` read-model.
+Система ДОЛЖНА (SHALL) обеспечивать единообразную диагностику для manual operations, workflow execution и pool atomic steps в общем `/operations` read-model и в stream API.
 
 #### Scenario: Оператор трассирует инцидент от root workflow к проблемному step
 - **GIVEN** root workflow execution завершился `failed`
 - **WHEN** оператор открывает timeline/details в `/operations`
 - **THEN** root record содержит ссылки на проблемный atomic step (`node_id`)
 - **AND** machine-readable код ошибки совпадает между root и step diagnostics
+
+#### Scenario: API отдает observability поля одинаково в list и stream
+- **GIVEN** workflow execution и его atomic nodes публикуют lifecycle события
+- **WHEN** оператор использует `/operations/list` и `/operations/stream*`
+- **THEN** поля `workflow_execution_id`, `node_id`, `root_operation_id`, `execution_consumer`, `lane` доступны в обоих каналах
+- **AND** для клиента не требуется lane-specific ветвление логики разбора
 
 ### Requirement: Stream split MUST трактоваться как QoS lanes единого runtime
 Система ДОЛЖНА (SHALL) трактовать разные streams (`commands:worker:operations`, `commands:worker:workflows`) как transport lanes единой runtime модели, а не как разные execution semantics.

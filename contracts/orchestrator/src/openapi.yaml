@@ -216,6 +216,8 @@ paths:
     $ref: paths/api_v2_pools_runs_{run_id}_retry_.yaml
   /api/v2/pools/schema-templates/:
     $ref: paths/api_v2_pools_schema-templates_.yaml
+  /api/v2/pools/schema-templates/{template_id}/:
+    $ref: paths/api_v2_pools_schema-templates_{template_id}_.yaml
   /api/v2/pools/upsert/:
     $ref: paths/api_v2_pools_upsert_.yaml
   /api/v2/rbac/bulk-grant-artifact-group-permission/:

@@ -3086,6 +3086,70 @@ def test_create_schema_template_with_optional_workflow_binding(
 
 
 @pytest.mark.django_db
+def test_update_schema_template(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    template = PoolSchemaTemplate.objects.create(
+        tenant=default_tenant,
+        code="json-import-v1",
+        name="JSON Import V1",
+        format=PoolSchemaTemplateFormat.JSON,
+        is_public=True,
+        is_active=True,
+        schema={"columns": {"inn": "inn"}},
+        metadata={"workflow_binding": {"label": "legacy"}},
+    )
+
+    response = authenticated_client.put(
+        f"/api/v2/pools/schema-templates/{template.id}/",
+        {
+            "code": "json-import-v2",
+            "name": "JSON Import V2",
+            "format": PoolSchemaTemplateFormat.JSON,
+            "is_public": False,
+            "is_active": True,
+            "schema": {"columns": {"inn": "inn", "amount": "amount"}},
+            "metadata": {"workflow_binding": {"label": "compat-v2"}},
+            "workflow_template_id": "33333333-3333-3333-3333-333333333333",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["template"]["code"] == "json-import-v2"
+    assert payload["template"]["name"] == "JSON Import V2"
+    assert payload["template"]["is_public"] is False
+    assert payload["template"]["workflow_template_id"] == "33333333-3333-3333-3333-333333333333"
+
+    template.refresh_from_db()
+    assert template.code == "json-import-v2"
+    assert template.name == "JSON Import V2"
+    assert template.is_public is False
+    assert template.schema == {"columns": {"inn": "inn", "amount": "amount"}}
+    assert template.metadata["workflow_template_id"] == "33333333-3333-3333-3333-333333333333"
+
+
+@pytest.mark.django_db
+def test_update_schema_template_returns_404_for_missing_template(
+    authenticated_client: APIClient,
+) -> None:
+    response = authenticated_client.put(
+        f"/api/v2/pools/schema-templates/{uuid4()}/",
+        {
+            "code": "json-import-v2",
+            "name": "JSON Import V2",
+            "format": PoolSchemaTemplateFormat.JSON,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "TEMPLATE_NOT_FOUND"
+
+
+@pytest.mark.django_db
 def test_graph_endpoint_filters_versions_by_requested_date(
     authenticated_client: APIClient,
     default_tenant: Tenant,

@@ -19,6 +19,7 @@ import type { ColumnsType } from 'antd/es/table'
 import {
   createPoolSchemaTemplate,
   listPoolSchemaTemplates,
+  updatePoolSchemaTemplate,
   type PoolSchemaTemplate,
   type PoolSchemaTemplateFormat,
 } from '../../api/intercompanyPools'
@@ -37,6 +38,8 @@ type FormValues = {
   metadata_json: string
 }
 
+type TemplateModalMode = 'create' | 'edit'
+
 const DEFAULT_SCHEMA_JSON = JSON.stringify(
   {
     columns: {
@@ -49,6 +52,13 @@ const DEFAULT_SCHEMA_JSON = JSON.stringify(
 )
 
 const DEFAULT_METADATA_JSON = JSON.stringify({}, null, 2)
+
+const stringifyJsonObject = (value: unknown): string => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return DEFAULT_METADATA_JSON
+  }
+  return JSON.stringify(value, null, 2)
+}
 
 const parseJsonObject = (text: string, fieldLabel: string): Record<string, unknown> => {
   let parsed: unknown
@@ -93,8 +103,10 @@ export function PoolSchemaTemplatesPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [isCreating, setIsCreating] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
+  const [modalMode, setModalMode] = useState<TemplateModalMode>('create')
+  const [editingTemplate, setEditingTemplate] = useState<PoolSchemaTemplate | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [formatFilter, setFormatFilter] = useState<'all' | PoolSchemaTemplateFormat>('all')
   const [includePrivate, setIncludePrivate] = useState(false)
   const [includeInactive, setIncludeInactive] = useState(false)
@@ -122,7 +134,9 @@ export function PoolSchemaTemplatesPage() {
   }, [loadTemplates])
 
   const openCreateModal = useCallback(() => {
-    setCreateError(null)
+    setModalMode('create')
+    setEditingTemplate(null)
+    setSubmitError(null)
     form.setFieldsValue({
       code: '',
       name: '',
@@ -136,13 +150,33 @@ export function PoolSchemaTemplatesPage() {
     setIsModalOpen(true)
   }, [form])
 
-  const closeCreateModal = useCallback(() => {
-    setIsModalOpen(false)
-    setCreateError(null)
-  }, [])
+  const openEditModal = useCallback((template: PoolSchemaTemplate) => {
+    setModalMode('edit')
+    setEditingTemplate(template)
+    setSubmitError(null)
+    form.setFieldsValue({
+      code: template.code,
+      name: template.name,
+      format: template.format,
+      is_public: template.is_public,
+      is_active: template.is_active,
+      workflow_template_id: template.workflow_template_id ?? '',
+      schema_json: stringifyJsonObject(template.schema),
+      metadata_json: stringifyJsonObject(template.metadata),
+    })
+    setIsModalOpen(true)
+  }, [form])
 
-  const handleCreateTemplate = useCallback(async () => {
-    setCreateError(null)
+  const closeModal = useCallback(() => {
+    if (isSubmitting) {
+      return
+    }
+    setIsModalOpen(false)
+    setSubmitError(null)
+  }, [isSubmitting])
+
+  const handleSubmitTemplate = useCallback(async () => {
+    setSubmitError(null)
     let values: FormValues
     try {
       values = await form.validateFields()
@@ -156,13 +190,13 @@ export function PoolSchemaTemplatesPage() {
       schema = parseJsonObject(values.schema_json, 'Schema')
       metadata = parseJsonObject(values.metadata_json, 'Metadata')
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Неверный JSON.')
+      setSubmitError(err instanceof Error ? err.message : 'Неверный JSON.')
       return
     }
 
-    setIsCreating(true)
+    setIsSubmitting(true)
     try {
-      await createPoolSchemaTemplate({
+      const payload = {
         code: values.code,
         name: values.name,
         format: values.format,
@@ -171,16 +205,26 @@ export function PoolSchemaTemplatesPage() {
         schema,
         metadata,
         workflow_template_id: values.workflow_template_id?.trim() || null,
-      })
-      message.success('Шаблон создан')
-      closeCreateModal()
+      }
+      if (modalMode === 'edit') {
+        if (!editingTemplate) {
+          setSubmitError('Шаблон для редактирования не выбран.')
+          return
+        }
+        await updatePoolSchemaTemplate(editingTemplate.id, payload)
+        message.success('Шаблон обновлён')
+      } else {
+        await createPoolSchemaTemplate(payload)
+        message.success('Шаблон создан')
+      }
+      closeModal()
       await loadTemplates()
     } catch {
-      setCreateError('Не удалось создать шаблон.')
+      setSubmitError(modalMode === 'edit' ? 'Не удалось обновить шаблон.' : 'Не удалось создать шаблон.')
     } finally {
-      setIsCreating(false)
+      setIsSubmitting(false)
     }
-  }, [closeCreateModal, form, loadTemplates, message])
+  }, [closeModal, editingTemplate, form, loadTemplates, message, modalMode])
 
   const columns: ColumnsType<PoolSchemaTemplate> = useMemo(
     () => [
@@ -258,8 +302,22 @@ export function PoolSchemaTemplatesPage() {
         width: 200,
         render: (value: string) => new Date(value).toLocaleString(),
       },
+      {
+        title: 'Actions',
+        key: 'actions',
+        width: 120,
+        render: (_value, record) => (
+          <Button
+            size="small"
+            onClick={() => openEditModal(record)}
+            data-testid={`pool-template-edit-${record.id}`}
+          >
+            Edit
+          </Button>
+        ),
+      },
     ],
-    []
+    [openEditModal]
   )
 
   return (
@@ -322,16 +380,16 @@ export function PoolSchemaTemplatesPage() {
       </Card>
 
       <Modal
-        title="Create Pool Schema Template"
+        title={modalMode === 'edit' ? 'Edit Pool Schema Template' : 'Create Pool Schema Template'}
         open={isModalOpen}
-        onCancel={closeCreateModal}
-        onOk={() => void handleCreateTemplate()}
-        confirmLoading={isCreating}
-        okText="Create"
+        onCancel={closeModal}
+        onOk={() => void handleSubmitTemplate()}
+        confirmLoading={isSubmitting}
+        okText={modalMode === 'edit' ? 'Save' : 'Create'}
         width={760}
       >
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          {createError && <Alert type="error" message={createError} />}
+          {submitError && <Alert type="error" message={submitError} />}
           <Form form={form} layout="vertical" requiredMark={false}>
             <Form.Item
               name="code"

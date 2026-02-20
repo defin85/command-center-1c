@@ -235,6 +235,8 @@ export type CreatePoolSchemaTemplatePayload = {
   workflow_template_id?: string | null
 }
 
+export type UpdatePoolSchemaTemplatePayload = CreatePoolSchemaTemplatePayload
+
 export type ListPoolRunsParams = {
   poolId?: string
   status?: string
@@ -345,6 +347,18 @@ export async function createPoolSchemaTemplate(
 ): Promise<PoolSchemaTemplate> {
   const response = await apiClient.post<{ template: PoolSchemaTemplate }>(
     '/api/v2/pools/schema-templates/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data.template
+}
+
+export async function updatePoolSchemaTemplate(
+  templateId: string,
+  payload: UpdatePoolSchemaTemplatePayload
+): Promise<PoolSchemaTemplate> {
+  const response = await apiClient.put<{ template: PoolSchemaTemplate }>(
+    `/api/v2/pools/schema-templates/${templateId}/`,
     payload,
     { skipGlobalError: true }
   )

@@ -1,7 +1,7 @@
 ## ADDED Requirements
 ### Requirement: Workflow enqueue consistency MUST включать root operation projection
 Система ДОЛЖНА (SHALL) применять enqueue consistency правило к workflow execution path:
-- root operation projection record создается/обновляется до enqueue как `pending`;
+- root `BatchOperation` projection record создается/обновляется до enqueue как `pending`;
 - переход root record в `queued` выполняется только после успешного XADD;
 - при неуспешном XADD root record НЕ ДОЛЖЕН (SHALL NOT) становиться `queued`.
 
@@ -19,6 +19,24 @@
 - **WHEN** выполняется повторный enqueue с тем же idempotency ключом
 - **THEN** система выполняет idempotent upsert существующего root record
 - **AND** дублирующая запись operation в `/operations` не создаётся
+
+### Requirement: Workflow enqueue consistency MUST использовать transactional outbox
+Система ДОЛЖНА (SHALL) использовать transactional outbox для workflow enqueue, чтобы состояние root projection и публикация stream-команды были согласованы по commit semantics.
+
+Система ДОЛЖНА (SHALL) гарантировать, что outbox relay публикует событие не более одного раза логически (idempotent delivery contract для потребителя).
+
+#### Scenario: Commit транзакции приводит к публикации outbox команды
+- **GIVEN** root projection подготовлен в транзакции и транзакция успешно зафиксирована
+- **WHEN** outbox relay обрабатывает запись
+- **THEN** команда enqueue публикуется в worker stream
+- **AND** root projection переходит в `queued` только после подтвержденной публикации
+
+#### Scenario: Rollback транзакции не оставляет outbox side effects
+- **GIVEN** root projection и outbox запись подготовлены в транзакции
+- **AND** транзакция откатывается
+- **WHEN** outbox relay выполняет очередной цикл
+- **THEN** enqueue команда не публикуется
+- **AND** в `/operations` отсутствует ложный queued state
 
 ### Requirement: Workflow projection consistency MUST включать detect+repair/backfill для пропущенных root records
 Система ДОЛЖНА (SHALL) детектировать workflow execution записи, для которых отсутствует root operation projection в `/operations`, и выполнять idempotent repair/backfill.

@@ -1518,6 +1518,10 @@ class PoolSchemaTemplateCreateRequestSerializer(serializers.Serializer):
     workflow_template_id = serializers.UUIDField(required=False, allow_null=True)
 
 
+class PoolSchemaTemplateUpdateRequestSerializer(PoolSchemaTemplateCreateRequestSerializer):
+    pass
+
+
 class PoolSchemaTemplateCreateResponseSerializer(serializers.Serializer):
     template = PoolSchemaTemplateSerializer()
 
@@ -2718,6 +2722,76 @@ def list_or_create_schema_templates(request):
     return Response(
         {"template": _serialize_schema_template(template)},
         status=http_status.HTTP_201_CREATED,
+    )
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_schema_templates_update",
+    summary="Update pool schema template",
+    request=PoolSchemaTemplateUpdateRequestSerializer,
+    responses={
+        200: PoolSchemaTemplateCreateResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        404: ErrorResponseSerializer,
+    },
+    methods=["PUT"],
+)
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def update_schema_template(request, template_id):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _error(
+            code="TENANT_CONTEXT_REQUIRED",
+            message="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    template = PoolSchemaTemplate.objects.filter(id=template_id, tenant_id=tenant_id).first()
+    if template is None:
+        return _error(
+            code="TEMPLATE_NOT_FOUND",
+            message="Pool schema template not found.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    serializer = PoolSchemaTemplateUpdateRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return Response(
+            {"success": False, "error": serializer.errors},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = serializer.validated_data
+    metadata = dict(data.get("metadata") or {})
+    workflow_template_id = data.get("workflow_template_id")
+    if workflow_template_id is not None:
+        metadata["workflow_template_id"] = str(workflow_template_id)
+    else:
+        metadata.pop("workflow_template_id", None)
+
+    template.code = data["code"]
+    template.name = data["name"]
+    template.format = data["format"]
+    template.is_public = data.get("is_public", True)
+    template.is_active = data.get("is_active", True)
+    template.schema = data.get("schema") if isinstance(data.get("schema"), dict) else {}
+    template.metadata = metadata
+
+    try:
+        template.save()
+    except IntegrityError:
+        return _error(
+            code="DUPLICATE_TEMPLATE_CODE",
+            message="Template with this code already exists in current tenant.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        {"template": _serialize_schema_template(template)},
+        status=http_status.HTTP_200_OK,
     )
 
 
