@@ -50,9 +50,9 @@
 - [x] 6.2 Добавить tests на transactional outbox semantics (успешный commit публикует событие, rollback не публикует).
 - [x] 6.3 Добавить tests на projection consistency: enqueue -> queued -> completed/failed для root `BatchOperation`.
 - [x] 6.4 Добавить pool runtime tests на atomic graph compile и selective retry по failed atomic nodes.
-- [ ] 6.5 Добавить frontend tests на отображение unified операций (manual + workflow + pool atomic steps) в `/operations`.
+- [x] 6.5 Добавить frontend tests на отображение unified операций (manual + workflow + pool atomic steps) в `/operations`.
 - [x] 6.6 Добавить integration tests на detect+repair/backfill для workflow execution без root projection record.
 
 ## 7. Validation
-- [ ] 7.1 Прогнать `openspec validate refactor-03-unify-platform-execution-runtime --strict --no-interactive`.
-- [ ] 7.2 Прогнать целевые backend/worker/frontend тесты для execution и observability paths.
+- [x] 7.1 Прогнать `openspec validate refactor-03-unify-platform-execution-runtime --strict --no-interactive`.
+- [x] 7.2 Прогнать целевые backend/worker/frontend тесты для execution и observability paths.

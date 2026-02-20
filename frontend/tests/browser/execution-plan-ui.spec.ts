@@ -388,3 +388,156 @@ test('Workflow executions: staff details page shows Execution Plan (smoke)', asy
   await expect(page.getByText('Binding Provenance (staff):', { exact: true })).toBeVisible()
   await expect(page.getByRole('cell', { name: 'workflow_id', exact: true })).toBeVisible()
 })
+
+test('Operations: mixed manual/workflow/pool atomic rows are shown and node filter updates URL/query', async ({ page }) => {
+  await setupAuth(page, true)
+  const requestedNodeFilters: string[] = []
+  await setupCommonApiMocks(page, {
+    isStaff: true,
+    handlers: async (method, path, url) => {
+      if (method === 'GET' && path === '/api/v2/rbac/get-effective-access/') {
+        return {
+          status: 200,
+          data: {
+            user: { id: 1, username: 'admin' },
+            clusters: [],
+            databases: [],
+          },
+        }
+      }
+
+      if (method === 'GET' && path === '/api/v2/operations/list-operations/') {
+        requestedNodeFilters.push(String(url.searchParams.get('node_id') || ''))
+        return {
+          status: 200,
+          data: {
+            operations: [
+              {
+                id: 'manual-op-1',
+                name: 'manual lock scheduled jobs',
+                description: '',
+                operation_type: 'lock_scheduled_jobs',
+                target_entity: 'Infobase',
+                status: 'completed',
+                progress: 100,
+                total_tasks: 1,
+                completed_tasks: 1,
+                failed_tasks: 0,
+                payload: {},
+                config: {},
+                task_id: null,
+                started_at: null,
+                completed_at: null,
+                duration_seconds: 1,
+                success_rate: 100,
+                created_by: 'admin',
+                metadata: {},
+                created_at: '2026-01-01T00:00:00Z',
+                updated_at: '2026-01-01T00:00:00Z',
+                database_names: [],
+                tasks: [],
+              },
+              {
+                id: 'workflow-root-1',
+                name: 'workflow root execute',
+                description: '',
+                operation_type: 'query',
+                target_entity: 'Workflow',
+                status: 'completed',
+                progress: 100,
+                total_tasks: 3,
+                completed_tasks: 3,
+                failed_tasks: 0,
+                payload: {},
+                config: {},
+                task_id: null,
+                started_at: null,
+                completed_at: null,
+                duration_seconds: 2,
+                success_rate: 100,
+                created_by: 'admin',
+                metadata: {
+                  workflow_execution_id: 'wf-exec-1',
+                  root_operation_id: 'wf-exec-1',
+                  execution_consumer: 'workflows',
+                  lane: 'workflows',
+                },
+                created_at: '2026-01-01T00:00:00Z',
+                updated_at: '2026-01-01T00:00:00Z',
+                database_names: [],
+                tasks: [],
+              },
+              {
+                id: 'pool-atomic-1',
+                name: 'pool atomic invoice publish',
+                description: '',
+                operation_type: 'update',
+                target_entity: 'Pool',
+                status: 'failed',
+                progress: 100,
+                total_tasks: 1,
+                completed_tasks: 0,
+                failed_tasks: 1,
+                payload: {},
+                config: {},
+                task_id: null,
+                started_at: null,
+                completed_at: null,
+                duration_seconds: 1,
+                success_rate: 0,
+                created_by: 'admin',
+                metadata: {
+                  workflow_execution_id: 'wf-exec-1',
+                  node_id: 'pool-node-invoice-1',
+                  root_operation_id: 'wf-exec-1',
+                  execution_consumer: 'pool',
+                  lane: 'workflows',
+                },
+                created_at: '2026-01-01T00:00:00Z',
+                updated_at: '2026-01-01T00:00:00Z',
+                database_names: [],
+                tasks: [],
+              },
+            ],
+            count: 3,
+            total: 3,
+          },
+        }
+      }
+
+      return null
+    },
+  })
+
+  await page.goto('/operations', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Operations Monitor', exact: true })).toBeVisible()
+  await expect(page.getByText('manual lock scheduled jobs', { exact: true })).toBeVisible()
+  await expect(page.getByText('workflow root execute', { exact: true })).toBeVisible()
+  await expect(page.getByText('pool atomic invoice publish', { exact: true })).toBeVisible()
+
+  const manualRow = page.locator('tr', {
+    has: page.getByText('manual lock scheduled jobs', { exact: true }),
+  })
+  await expect(manualRow.getByLabel('Filter by workflow')).toHaveCount(0)
+  await expect(manualRow.getByLabel('Filter by node')).toHaveCount(0)
+
+  const workflowRootRow = page.locator('tr', {
+    has: page.getByText('workflow root execute', { exact: true }),
+  })
+  await expect(workflowRootRow.getByLabel('Filter by workflow')).toHaveCount(1)
+  await expect(workflowRootRow.getByLabel('Filter by node')).toHaveCount(0)
+
+  const poolAtomicRow = page.locator('tr', {
+    has: page.getByText('pool atomic invoice publish', { exact: true }),
+  })
+  await expect(poolAtomicRow.getByLabel('Filter by workflow')).toHaveCount(1)
+  await expect(poolAtomicRow.getByLabel('Filter by node')).toHaveCount(1)
+
+  await poolAtomicRow.getByLabel('Filter by node').click()
+  await expect(page).toHaveURL(/node_id=pool-node-invoice-1/)
+  await expect(page.getByText('Node: pool-node-invoice-1', { exact: true })).toBeVisible()
+  await expect.poll(
+    () => requestedNodeFilters.includes('pool-node-invoice-1'),
+    { message: 'operations list query should include node_id after clicking node filter' }
+  ).toBeTruthy()
+})

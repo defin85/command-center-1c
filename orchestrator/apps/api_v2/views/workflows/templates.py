@@ -22,7 +22,6 @@ from apps.templates.workflow.serializers import (
 )
 from apps.api_v2.serializers.common import ErrorResponseSerializer
 from apps.operations.utils.feature_flags import (
-    is_go_workflow_engine_enabled,
     is_production_execution_profile,
     is_workflow_debug_fallback_enabled,
 )
@@ -502,7 +501,7 @@ def execute_workflow(request):
                     'message': 'Workflow execution failed',
                 }, status=500)
 
-        # Execute asynchronously via Go Worker (feature-flag), legacy Celery, or in-process runner
+        # Execute asynchronously via unified enqueue contract with optional debug fallback.
         execution = workflow.create_execution(input_context)
         try:
             raw_database_ids = input_context.get("database_ids")
@@ -557,146 +556,66 @@ def execute_workflow(request):
         production_profile = is_production_execution_profile()
         debug_fallback_enabled = is_workflow_debug_fallback_enabled()
         allow_local_debug_fallback = debug_fallback_enabled and not production_profile
+        enqueue_mode = "async_go_worker_production" if production_profile else "async_go_worker"
 
-        if production_profile:
-            # Production path is queue-only: no local fallback runtime.
-            try:
-                result = OperationsService.enqueue_workflow_execution(str(execution.id))
-            except Exception:
-                logger.exception(
-                    "Workflow enqueue failed in production profile",
-                    extra={
-                        'execution_id': str(execution.id),
-                        'workflow_id': str(workflow_id),
-                        'executed_by': request.user.username if request.user else 'anonymous',
-                        'mode': 'async_go_worker_production',
-                        'profile': 'production',
-                    }
-                )
-                return _build_workflow_enqueue_fail_closed_response(execution_id=str(execution.id))
-
-            if result.success:
-                logger.info(
-                    "Workflow execution started via Go Worker (production profile)",
-                    extra={
-                        'execution_id': str(execution.id),
-                        'workflow_id': str(workflow_id),
-                        'executed_by': request.user.username if request.user else 'anonymous',
-                        'mode': 'async_go_worker_production',
-                        'operation_id': result.operation_id,
-                    }
-                )
-                return Response({
-                    'execution_id': str(execution.id),
-                    'status': 'pending',
-                    'mode': 'async',
-                    'operation_id': result.operation_id,
-                    'message': 'Workflow execution started (Go Worker)',
-                })
-
-            logger.warning(
-                "Workflow enqueue rejected in production profile",
+        try:
+            result = OperationsService.enqueue_workflow_execution(str(execution.id))
+        except Exception:
+            logger.exception(
+                "Workflow enqueue failed",
                 extra={
                     'execution_id': str(execution.id),
                     'workflow_id': str(workflow_id),
                     'executed_by': request.user.username if request.user else 'anonymous',
-                    'mode': 'async_go_worker_production',
-                    'profile': 'production',
-                    'enqueue_error_code': result.error_code,
+                    'mode': enqueue_mode,
+                    'profile': 'production' if production_profile else 'non_production',
                 },
             )
-            return _build_workflow_enqueue_fail_closed_response(
-                execution_id=str(execution.id),
-                enqueue_error_code=result.error_code,
-            )
-
-        if OperationsService.is_celery_enabled():
-            # Legacy Celery path (feature flag enabled)
-            try:
-                from apps.templates.tasks import execute_existing_workflow
-                task = execute_existing_workflow.delay(str(execution.id))
-
-                logger.info(
-                    "Workflow execution started via Celery (legacy mode)",
-                    extra={
-                        'execution_id': str(execution.id),
-                        'workflow_id': str(workflow_id),
-                        'executed_by': request.user.username if request.user else 'anonymous',
-                        'mode': 'async_celery',
-                        'task_id': task.id,
-                    }
-                )
-
-                return Response({
-                    'execution_id': str(execution.id),
-                    'status': 'pending',
-                    'mode': 'async',
-                    'task_id': task.id,
-                    'message': 'Workflow execution started (Celery)',
-                })
-            except Exception as e:
-                logger.warning(f"Celery unavailable, fallback candidate: {e}")
-                if not allow_local_debug_fallback:
-                    return _build_workflow_enqueue_fail_closed_response(
-                        execution_id=str(execution.id),
-                        enqueue_error_code="CELERY_UNAVAILABLE",
-                    )
-        elif is_go_workflow_engine_enabled():
-            # Go Workflow Engine path (Go Worker executes workflow DAG)
-            try:
-                result = OperationsService.enqueue_workflow_execution(str(execution.id))
-
-                if result.success:
-                    logger.info(
-                        "Workflow execution started via Go Worker",
-                        extra={
-                            'execution_id': str(execution.id),
-                            'workflow_id': str(workflow_id),
-                            'executed_by': request.user.username if request.user else 'anonymous',
-                            'mode': 'async_go_worker',
-                            'operation_id': result.operation_id,
-                        }
-                    )
-
-                    return Response({
-                        'execution_id': str(execution.id),
-                        'status': 'pending',
-                        'mode': 'async',
-                        'operation_id': result.operation_id,
-                        'message': 'Workflow execution started (Go Worker)',
-                    })
-                else:
-                    logger.warning(
-                        f"Go Worker enqueue failed: {result.error}, fallback candidate"
-                    )
-                    if not allow_local_debug_fallback:
-                        return _build_workflow_enqueue_fail_closed_response(
-                            execution_id=str(execution.id),
-                            enqueue_error_code=result.error_code,
-                        )
-            except Exception as e:
-                logger.warning(f"Go Worker unavailable, fallback candidate: {e}")
-                if not allow_local_debug_fallback:
-                    return _build_workflow_enqueue_fail_closed_response(
-                        execution_id=str(execution.id),
-                        enqueue_error_code="GO_WORKER_UNAVAILABLE",
-                    )
-        else:
             if not allow_local_debug_fallback:
                 return _build_workflow_enqueue_fail_closed_response(
                     execution_id=str(execution.id),
-                    enqueue_error_code="LOCAL_FALLBACK_DISABLED",
+                    enqueue_error_code="GO_WORKER_UNAVAILABLE",
                 )
+            result = None
+
+        if result is not None and result.success:
             logger.info(
-                "Go workflow engine disabled (ENABLE_GO_WORKFLOW_ENGINE=false), using explicit debug fallback",
+                "Workflow execution started via Go Worker",
                 extra={
                     'execution_id': str(execution.id),
                     'workflow_id': str(workflow_id),
                     'executed_by': request.user.username if request.user else 'anonymous',
-                    'mode': 'async_runner_disabled_go_engine',
-                    'debug_fallback_enabled': True,
-                }
+                    'mode': enqueue_mode,
+                    'profile': 'production' if production_profile else 'non_production',
+                    'operation_id': result.operation_id,
+                },
             )
+            return Response({
+                'execution_id': str(execution.id),
+                'status': 'pending',
+                'mode': 'async',
+                'operation_id': result.operation_id,
+                'message': 'Workflow execution started (Go Worker)',
+            })
+
+        if result is not None:
+            logger.warning(
+                "Workflow enqueue rejected",
+                extra={
+                    'execution_id': str(execution.id),
+                    'workflow_id': str(workflow_id),
+                    'executed_by': request.user.username if request.user else 'anonymous',
+                    'mode': enqueue_mode,
+                    'profile': 'production' if production_profile else 'non_production',
+                    'enqueue_error_code': result.error_code,
+                    'debug_fallback_enabled': allow_local_debug_fallback,
+                },
+            )
+            if not allow_local_debug_fallback:
+                return _build_workflow_enqueue_fail_closed_response(
+                    execution_id=str(execution.id),
+                    enqueue_error_code=result.error_code,
+                )
 
         if not allow_local_debug_fallback:
             return _build_workflow_enqueue_fail_closed_response(

@@ -54,21 +54,31 @@ def workflow_template(user):
 
 
 @pytest.mark.django_db
-def test_execute_workflow_async_uses_background_runner_when_go_engine_disabled(
+def test_execute_workflow_async_uses_background_runner_when_enqueue_rejected_and_debug_fallback_enabled(
     client,
     settings,
     workflow_template,
 ):
-    settings.CELERY_ENABLED = False
+    settings.CELERY_ENABLED = True
     settings.ENABLE_GO_WORKFLOW_ENGINE = False
     settings.WORKFLOW_EXECUTION_DEBUG_FALLBACK_ENABLED = True
+    fake_result = EnqueueResult(
+        success=False,
+        operation_id="",
+        status="error",
+        error="redis unavailable",
+        error_code="REDIS_UNAVAILABLE",
+    )
 
     with (
         patch(
             "apps.api_v2.views.workflows._start_async_workflow_execution",
             return_value=True,
         ) as start_bg,
-        patch("apps.operations.services.OperationsService.enqueue_workflow_execution") as enqueue,
+        patch(
+            "apps.operations.services.OperationsService.enqueue_workflow_execution",
+            return_value=fake_result,
+        ) as enqueue,
     ):
         resp = client.post(
             "/api/v2/workflows/execute-workflow/",
@@ -84,22 +94,32 @@ def test_execute_workflow_async_uses_background_runner_when_go_engine_disabled(
     assert execution.input_context["executed_by"] == "workflow_user"
 
     start_bg.assert_called_once()
-    enqueue.assert_not_called()
+    enqueue.assert_called_once()
 
 
 @pytest.mark.django_db
-def test_execute_workflow_async_without_debug_fallback_fails_closed_when_go_engine_disabled(
+def test_execute_workflow_async_without_debug_fallback_fails_closed_on_enqueue_rejection(
     client,
     settings,
     workflow_template,
 ):
-    settings.CELERY_ENABLED = False
+    settings.CELERY_ENABLED = True
     settings.ENABLE_GO_WORKFLOW_ENGINE = False
     settings.WORKFLOW_EXECUTION_DEBUG_FALLBACK_ENABLED = False
+    fake_result = EnqueueResult(
+        success=False,
+        operation_id="",
+        status="error",
+        error="redis unavailable",
+        error_code="REDIS_UNAVAILABLE",
+    )
 
     with (
         patch("apps.api_v2.views.workflows._start_async_workflow_execution") as start_bg,
-        patch("apps.operations.services.OperationsService.enqueue_workflow_execution") as enqueue,
+        patch(
+            "apps.operations.services.OperationsService.enqueue_workflow_execution",
+            return_value=fake_result,
+        ) as enqueue,
     ):
         resp = client.post(
             "/api/v2/workflows/execute-workflow/",
@@ -111,19 +131,19 @@ def test_execute_workflow_async_without_debug_fallback_fails_closed_when_go_engi
     payload = resp.json()
     assert payload["success"] is False
     assert payload["error"]["code"] == "WORKFLOW_ENQUEUE_FAILED"
-    assert payload["error"]["details"]["enqueue_error_code"] == "LOCAL_FALLBACK_DISABLED"
+    assert payload["error"]["details"]["enqueue_error_code"] == "REDIS_UNAVAILABLE"
     start_bg.assert_not_called()
-    enqueue.assert_not_called()
+    enqueue.assert_called_once()
 
 
 @pytest.mark.django_db
-def test_execute_workflow_async_uses_go_worker_when_flag_enabled(
+def test_execute_workflow_async_uses_unified_enqueue_even_when_celery_enabled(
     client,
     settings,
     workflow_template,
 ):
-    settings.CELERY_ENABLED = False
-    settings.ENABLE_GO_WORKFLOW_ENGINE = True
+    settings.CELERY_ENABLED = True
+    settings.ENABLE_GO_WORKFLOW_ENGINE = False
 
     fake_result = EnqueueResult(success=True, operation_id="op-123", status="queued")
 
@@ -157,13 +177,13 @@ def test_execute_workflow_async_uses_go_worker_when_flag_enabled(
 
 
 @pytest.mark.django_db
-def test_execute_workflow_async_go_engine_enqueues_to_workflows_stream(
+def test_execute_workflow_async_enqueues_to_workflows_stream(
     client,
     settings,
     workflow_template,
 ):
-    settings.CELERY_ENABLED = False
-    settings.ENABLE_GO_WORKFLOW_ENGINE = True
+    settings.CELERY_ENABLED = True
+    settings.ENABLE_GO_WORKFLOW_ENGINE = False
 
     with (
         patch("apps.api_v2.views.workflows._start_async_workflow_execution") as start_bg,
@@ -198,7 +218,7 @@ def test_execute_workflow_async_production_profile_is_queue_only(
     workflow_template,
     monkeypatch,
 ):
-    settings.CELERY_ENABLED = False
+    settings.CELERY_ENABLED = True
     settings.ENABLE_GO_WORKFLOW_ENGINE = False
     monkeypatch.setenv("APP_ENV", "production")
 
@@ -237,7 +257,7 @@ def test_execute_workflow_async_production_profile_fails_closed_on_enqueue_error
     workflow_template,
     monkeypatch,
 ):
-    settings.CELERY_ENABLED = False
+    settings.CELERY_ENABLED = True
     settings.ENABLE_GO_WORKFLOW_ENGINE = False
     settings.WORKFLOW_EXECUTION_DEBUG_FALLBACK_ENABLED = True
     monkeypatch.setenv("APP_ENV", "production")
