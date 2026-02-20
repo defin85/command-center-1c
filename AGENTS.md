@@ -168,7 +168,8 @@ For full workflow details: `bd prime`
 
 ## Индексация (уменьшение шума)
 
-При ручной переиндексации использовать `force=true` и `ignorePatterns` ниже.
+При ручной переиндексации использовать `force=true`.
+Игнор-паттерны для индексации задаются централизованно в `.codex/config.toml`.
 
 Важно: для `claude-context` использовать один и тот же канонический абсолютный путь с завершающим `/`.
 
@@ -179,36 +180,6 @@ For full workflow details: `bd prime`
   - `mcp__claude-context__clear_index`
   - `mcp__claude-context__search_code`
 - Не смешивать варианты с `/` и без `/`: инструмент может воспринимать их как разные индексные ключи.
-
-Рекомендуемый профиль `ignorePatterns`:
-
-- `.git/**`
-- `.venv/**`
-- `.beads/**`
-- `.agent-browser/**`
-- `.ruff_cache/**`
-- `frontend/node_modules/**`
-- `frontend/dist/**`
-- `frontend/test-results/**`
-- `orchestrator/.pytest_cache/**`
-- `orchestrator/__pycache__/**`
-- `orchestrator/htmlcov/**`
-- `logs/**`
-- `pids/**`
-- `bin/**`
-- `openspec/changes/**`
-- `docs/archive/**`
-- `frontend/src/api/generated/**`
-- `generated/**`
-- `com._1c.v8.ibis.admin-1.6.7/**`
-
-Важно не игнорировать:
-
-- `frontend/src/**`
-- `orchestrator/apps/**`
-- `contracts/**`
-- `frontend/tests/**`
-- `openspec/specs/**`
 
 ## Локальная отладка (autonomous-feedback-loop)
 
