@@ -9,7 +9,6 @@ from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
-from apps.operations.cli_catalog import validate_cli_catalog
 from apps.operations.ibcmd_catalog_v2 import validate_catalog_v2 as validate_ibcmd_catalog_v2
 
 from .common import (
@@ -28,7 +27,6 @@ from .common import (
 from .helpers import (
     _collect_command_param_issues,
     _collect_ibcmd_driver_schema_issues,
-    _collect_params_by_name_issues,
     _deep_merge_dict,
     _get_commands_by_id,
     _issue,

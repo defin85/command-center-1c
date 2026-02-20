@@ -48,7 +48,6 @@ from .helpers import (
     _resolve_driver_base_version,
     _upload_overrides_catalog_version,
     _validate_cli_catalog_v2,
-    _collect_ibcmd_driver_schema_issues,
 )
 
 @extend_schema(

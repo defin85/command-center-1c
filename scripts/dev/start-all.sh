@@ -465,15 +465,47 @@ echo -e "${BLUE}[2/9] Применение миграций Django...${NC}"
 
 cd "$PROJECT_ROOT/orchestrator"
 
-# Активировать виртуальное окружение если есть
-if [ -d "venv" ]; then
-    activate_venv "$(pwd)/venv"
+# Для Django команд всегда используем локальный orchestrator/venv
+# и не падаем обратно на системный python.
+ORCH_VENV_DIR="$(pwd)/venv"
+ORCH_VENV_BIN_DIR="$ORCH_VENV_DIR/$VENV_BIN_DIR"
+DJANGO_PYTHON_BIN=""
+
+if [[ ! -d "$ORCH_VENV_DIR" ]]; then
+    echo -e "${RED}✗ Не найдено виртуальное окружение: $ORCH_VENV_DIR${NC}"
+    echo -e "${YELLOW}Создай окружение и установи зависимости:${NC}"
+    echo -e "${YELLOW}  cd $PROJECT_ROOT/orchestrator && python -m venv venv && source venv/$VENV_BIN_DIR/activate && pip install -r requirements.txt${NC}"
+    exit 1
 fi
 
-if ! python manage.py makemigrations --check --dry-run >/dev/null 2>&1; then
+if ! activate_venv "$ORCH_VENV_DIR"; then
+    echo -e "${RED}✗ Не удалось активировать виртуальное окружение: $ORCH_VENV_DIR${NC}"
+    exit 1
+fi
+
+for candidate in "$ORCH_VENV_BIN_DIR/python" "$ORCH_VENV_BIN_DIR/python3" "$ORCH_VENV_BIN_DIR/python.exe"; do
+    if [[ -x "$candidate" ]]; then
+        DJANGO_PYTHON_BIN="$candidate"
+        break
+    fi
+done
+
+if [[ -z "$DJANGO_PYTHON_BIN" ]]; then
+    echo -e "${RED}✗ Python интерпретатор в venv недоступен (битое окружение?)${NC}"
+    echo -e "${YELLOW}Проверь venv или пересоздай его: cd $PROJECT_ROOT/orchestrator && rm -rf venv && python -m venv venv${NC}"
+    exit 1
+fi
+
+if ! "$DJANGO_PYTHON_BIN" -c "import django" >/dev/null 2>&1; then
+    echo -e "${RED}✗ Django не найден в venv: $DJANGO_PYTHON_BIN${NC}"
+    echo -e "${YELLOW}Установи зависимости: cd $PROJECT_ROOT/orchestrator && source venv/$VENV_BIN_DIR/activate && pip install -r requirements.txt${NC}"
+    exit 1
+fi
+
+if ! "$DJANGO_PYTHON_BIN" manage.py makemigrations --check --dry-run >/dev/null 2>&1; then
     if [[ "$RUN_MAKEMIGRATIONS" == "true" ]]; then
         echo -e "${CYAN}   Есть изменения моделей — создаю миграции...${NC}"
-        python manage.py makemigrations
+        "$DJANGO_PYTHON_BIN" manage.py makemigrations
     else
         echo -e "${RED}✗ Есть изменения моделей без миграций${NC}"
         echo -e "${YELLOW}Запусти: python manage.py makemigrations${NC}"
@@ -482,7 +514,7 @@ if ! python manage.py makemigrations --check --dry-run >/dev/null 2>&1; then
     fi
 fi
 
-python manage.py migrate --noinput
+"$DJANGO_PYTHON_BIN" manage.py migrate --noinput
 echo -e "${GREEN}✓ Миграции применены${NC}"
 
 # Создание superuser если не существует
@@ -492,11 +524,11 @@ DJANGO_SUPERUSER_EMAIL="${DJANGO_SUPERUSER_EMAIL:-admin@localhost}"
 DJANGO_SUPERUSER_PASSWORD="${DJANGO_SUPERUSER_PASSWORD:-p-123456}"
 
 # Проверяем существование пользователя и создаем если нет
-if python manage.py shell -c "from django.contrib.auth import get_user_model; User = get_user_model(); exit(0 if User.objects.filter(username='$DJANGO_SUPERUSER_USERNAME').exists() else 1)" 2>/dev/null; then
+if "$DJANGO_PYTHON_BIN" manage.py shell -c "from django.contrib.auth import get_user_model; User = get_user_model(); exit(0 if User.objects.filter(username='$DJANGO_SUPERUSER_USERNAME').exists() else 1)" 2>/dev/null; then
     echo -e "${GREEN}✓ Superuser '$DJANGO_SUPERUSER_USERNAME' уже существует${NC}"
 else
     echo -e "${CYAN}   Создание superuser '$DJANGO_SUPERUSER_USERNAME'...${NC}"
-    DJANGO_SUPERUSER_PASSWORD="$DJANGO_SUPERUSER_PASSWORD" python manage.py createsuperuser --noinput --username "$DJANGO_SUPERUSER_USERNAME" --email "$DJANGO_SUPERUSER_EMAIL" 2>/dev/null
+    DJANGO_SUPERUSER_PASSWORD="$DJANGO_SUPERUSER_PASSWORD" "$DJANGO_PYTHON_BIN" manage.py createsuperuser --noinput --username "$DJANGO_SUPERUSER_USERNAME" --email "$DJANGO_SUPERUSER_EMAIL" 2>/dev/null
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ Superuser '$DJANGO_SUPERUSER_USERNAME' создан (пароль: $DJANGO_SUPERUSER_PASSWORD)${NC}"
     else
@@ -511,11 +543,11 @@ if [[ -f "$manifest_file" && ! -s "$manifest_file" ]]; then
     echo -e "${YELLOW}⚠️  Найден пустой staticfiles manifest, удаляю перед collectstatic...${NC}"
     rm -f "$manifest_file"
 fi
-if ! python manage.py collectstatic --noinput -v 0; then
+if ! "$DJANGO_PYTHON_BIN" manage.py collectstatic --noinput -v 0; then
     if [[ -f "$manifest_file" ]]; then
         echo -e "${YELLOW}⚠️  collectstatic не прошел, удаляю поврежденный manifest и пробую повторно...${NC}"
         rm -f "$manifest_file"
-        python manage.py collectstatic --noinput -v 0
+        "$DJANGO_PYTHON_BIN" manage.py collectstatic --noinput -v 0
     else
         exit 1
     fi

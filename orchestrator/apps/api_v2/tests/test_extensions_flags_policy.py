@@ -4,7 +4,7 @@ from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
 from rest_framework.test import APIClient
 
-from apps.databases.models import Database, DatabaseExtensionsSnapshot, DatabasePermission, ExtensionFlagsPolicy, PermissionLevel
+from apps.databases.models import Database, DatabaseExtensionsSnapshot, ExtensionFlagsPolicy
 from apps.tenancy.models import Tenant, TenantMember
 
 

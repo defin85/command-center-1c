@@ -1,3 +1,4 @@
+# ruff: noqa: F405
 """Cluster read/sync endpoints."""
 
 from __future__ import annotations

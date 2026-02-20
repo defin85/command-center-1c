@@ -1,3 +1,4 @@
+# ruff: noqa: F405
 """DBMS user endpoints."""
 
 from __future__ import annotations

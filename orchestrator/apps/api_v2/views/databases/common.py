@@ -1,3 +1,4 @@
+# ruff: noqa: F401
 """
 Database endpoints for API v2.
 
@@ -13,16 +14,15 @@ from datetime import date
 
 import redis as redis_module
 import redis.asyncio as redis_async
+from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
-from asgiref.sync import sync_to_async
-from rest_framework import serializers, status as http_status
 from django.views.decorators.http import require_GET
+from rest_framework import serializers, status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
@@ -30,35 +30,42 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 
 from apps.core import permission_codes as perms
 from apps.databases.extensions_snapshot import normalize_extensions_snapshot
-from apps.databases.models import Cluster, Database, DatabaseExtensionsSnapshot, InfobaseUserMapping, DbmsUserMapping, PermissionLevel
+from apps.databases.models import (
+    Cluster,
+    Database,
+    DatabaseExtensionsSnapshot,
+    DbmsUserMapping,
+    InfobaseUserMapping,
+    PermissionLevel,
+)
 from apps.databases.services import PermissionService
 from apps.databases.serializers import (
-    DatabaseSerializer,
     ClusterSerializer,
-    InfobaseUserMappingSerializer,
-    InfobaseUserMappingCreateSerializer,
-    InfobaseUserMappingUpdateSerializer,
-    InfobaseUserMappingDeleteSerializer,
-    InfobaseUserPasswordSetSerializer,
-    InfobaseUserPasswordResetSerializer,
+    DatabaseSerializer,
     DbmsUserMappingSerializer,
     DbmsUserMappingCreateSerializer,
-    DbmsUserMappingUpdateSerializer,
     DbmsUserMappingDeleteSerializer,
-    DbmsUserPasswordSetSerializer,
+    DbmsUserMappingUpdateSerializer,
     DbmsUserPasswordResetSerializer,
+    DbmsUserPasswordSetSerializer,
+    InfobaseUserMappingSerializer,
+    InfobaseUserMappingCreateSerializer,
+    InfobaseUserMappingDeleteSerializer,
+    InfobaseUserMappingUpdateSerializer,
+    InfobaseUserPasswordResetSerializer,
+    InfobaseUserPasswordSetSerializer,
 )
-from apps.operations.services import OperationsService
-from apps.operations.services.admin_action_audit import log_admin_action
 from apps.operations.prometheus_metrics import (
     record_api_v2_duration,
     record_api_v2_error,
-    record_sse_ticket,
-    sse_connection_open,
-    sse_connection_close,
-    record_sse_stream_error,
     record_sse_loop_duration,
+    record_sse_stream_error,
+    record_sse_ticket,
+    sse_connection_close,
+    sse_connection_open,
 )
+from apps.operations.services import OperationsService
+from apps.operations.services.admin_action_audit import log_admin_action
 
 logger = logging.getLogger(__name__)
 User = get_user_model()

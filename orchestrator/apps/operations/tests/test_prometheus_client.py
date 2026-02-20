@@ -20,7 +20,6 @@ from apps.operations.services.prometheus_client import (
     ServiceConnection,
     SERVICE_CONFIG,
     SERVICE_TOPOLOGY,
-    get_prometheus_client,
 )
 
 

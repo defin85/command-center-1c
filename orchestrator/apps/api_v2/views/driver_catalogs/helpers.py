@@ -2,22 +2,11 @@
 
 from __future__ import annotations
 
-import copy
-import json
 
-from apps.operations.cli_catalog import validate_cli_catalog
 from apps.operations.driver_catalog_effective import (
     compute_driver_catalog_etag,
-    get_effective_driver_catalog,
-    load_catalog_json,
 )
-from apps.operations.driver_catalog_v2 import cli_catalog_v1_to_v2
 from apps.operations.ibcmd_cli_builder import (
-    build_ibcmd_cli_argv,
-    build_ibcmd_cli_argv_manual,
-    build_ibcmd_connection_args,
-    detect_connection_option_conflicts,
-    flatten_connection_params,
     mask_argv,
 )
 

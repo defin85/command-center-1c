@@ -18,7 +18,6 @@ from rest_framework.response import Response
 from apps.operations.models import BatchOperation
 from apps.operations.prometheus_metrics import (
     record_api_v2_duration,
-    record_api_v2_error,
     record_sse_loop_duration,
     record_sse_stream_error,
     sse_connection_close,
@@ -51,7 +50,6 @@ from .streams_common import (
     _get_max_mux_streams,
     _get_max_mux_streams_async,
     _get_max_mux_subscriptions,
-    _get_max_mux_subscriptions_async,
     _get_redis_connection,
     _validate_mux_ticket_async,
 )

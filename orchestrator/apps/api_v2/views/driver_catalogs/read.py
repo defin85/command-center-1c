@@ -11,7 +11,6 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 
 from apps.operations.driver_catalog_effective import get_effective_driver_catalog
 from apps.operations.prometheus_metrics import (
-    record_driver_catalog_editor_conflict,
     record_driver_catalog_editor_error,
 )
 

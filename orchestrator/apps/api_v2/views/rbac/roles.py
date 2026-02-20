@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from django.contrib.auth.models import Group, Permission, User
-from django.db import transaction
 from django.db.models import Count, Q
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework.decorators import api_view, permission_classes

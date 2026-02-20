@@ -10,7 +10,6 @@ from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
-from apps.operations.driver_catalog_effective import get_effective_driver_catalog
 
 from .common import (
     CommandSchemasPreviewRequestSerializer,
@@ -33,7 +32,6 @@ from .helpers import (
     _build_command_argv,
     _deep_merge_dict,
     _get_commands_by_id,
-    _issue,
     _resolve_driver_base_version,
     _validate_overrides_catalog_v2,
 )

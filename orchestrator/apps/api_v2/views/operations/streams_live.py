@@ -12,8 +12,6 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.databases.models import Database, PermissionLevel
-from apps.databases.services import PermissionService
 from apps.operations.models import BatchOperation
 from apps.operations.prometheus_metrics import record_api_v2_duration, record_api_v2_error, record_sse_ticket
 

@@ -1,3 +1,4 @@
+# ruff: noqa: F401
 """
 Command Schemas management endpoints (staff-only).
 
@@ -11,21 +12,21 @@ from __future__ import annotations
 import copy
 import json
 
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status as http_status
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
+from apps.api_v2.serializers.common import ErrorResponseSerializer
 from apps.artifacts.models import ArtifactAlias, ArtifactVersion
+from apps.artifacts.storage import ArtifactStorageError
 from apps.core import permission_codes as perms
 from apps.operations.cli_catalog import (
     build_cli_catalog_from_its,
     validate_cli_catalog,
 )
-from apps.operations.ibcmd_catalog_v2 import build_base_catalog_from_its as build_ibcmd_catalog_v2_from_its
-from apps.operations.ibcmd_catalog_v2 import validate_catalog_v2 as validate_ibcmd_catalog_v2
 from apps.operations.driver_catalog_artifacts import (
     build_empty_overrides_catalog,
     get_or_create_catalog_artifacts,
@@ -33,13 +34,15 @@ from apps.operations.driver_catalog_artifacts import (
     upload_base_catalog_version,
     upload_overrides_catalog_version,
 )
-from apps.operations.driver_catalog_v2 import cli_catalog_v1_to_v2
 from apps.operations.driver_catalog_effective import (
     compute_driver_catalog_etag,
     get_effective_driver_catalog,
     invalidate_driver_catalog_cache,
     load_catalog_json,
 )
+from apps.operations.driver_catalog_v2 import cli_catalog_v1_to_v2
+from apps.operations.ibcmd_catalog_v2 import build_base_catalog_from_its as build_ibcmd_catalog_v2_from_its
+from apps.operations.ibcmd_catalog_v2 import validate_catalog_v2 as validate_ibcmd_catalog_v2
 from apps.operations.ibcmd_cli_builder import (
     build_ibcmd_cli_argv,
     build_ibcmd_cli_argv_manual,
@@ -49,14 +52,12 @@ from apps.operations.ibcmd_cli_builder import (
     mask_argv,
 )
 from apps.operations.models import AdminActionAuditLog
-from apps.operations.services.admin_action_audit import log_admin_action
 from apps.operations.prometheus_metrics import (
     record_driver_catalog_editor_conflict,
     record_driver_catalog_editor_validation_failed,
     record_driver_catalog_editor_error,
 )
-from apps.api_v2.serializers.common import ErrorResponseSerializer
-from apps.artifacts.storage import ArtifactStorageError
+from apps.operations.services.admin_action_audit import log_admin_action
 
 COMMAND_SCHEMA_DRIVERS = {
     "cli": {
@@ -281,6 +282,4 @@ class CommandSchemasAuditListResponseSerializer(serializers.Serializer):
     items = CommandSchemasAuditLogItemSerializer(many=True)
     count = serializers.IntegerField()
     total = serializers.IntegerField()
-
-
 

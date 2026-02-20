@@ -10,7 +10,7 @@ import os
 import signal
 import sys
 import time
-from typing import Any, Dict, Optional
+from typing import Dict
 
 import redis
 from django.conf import settings

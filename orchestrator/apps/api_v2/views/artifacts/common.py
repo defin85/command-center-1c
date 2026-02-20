@@ -1,11 +1,12 @@
+# ruff: noqa: F401
 """
 Artifact storage endpoints (v2).
 
 Provides artifact registry with versions and aliases backed by MinIO + Postgres.
 """
 
-import logging
 import json
+import logging
 from datetime import timedelta
 
 from django.conf import settings
@@ -22,7 +23,6 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from apps.api_v2.serializers.common import ErrorResponseSerializer
-from apps.core import permission_codes as perms
 from apps.artifacts.models import (
     Artifact,
     ArtifactAlias,
@@ -33,10 +33,11 @@ from apps.artifacts.models import (
     ArtifactPurgeState,
     ArtifactVersion,
 )
+from apps.artifacts.purge_blockers import find_purge_blockers
 from apps.artifacts.rbac import ArtifactPermissionService
 from apps.artifacts.services import ArtifactService
 from apps.artifacts.storage import ArtifactStorageClient, ArtifactStorageError
-from apps.artifacts.purge_blockers import find_purge_blockers
+from apps.core import permission_codes as perms
 from apps.databases.models import PermissionLevel
 from apps.files.services import FileStorageService
 from apps.operations.prometheus_metrics import record_artifact_purge_job_created
@@ -224,5 +225,4 @@ def _build_purge_plan(artifact: Artifact, keys_limit: int = 200) -> dict:
 # =============================================================================
 # Endpoints
 # =============================================================================
-
 

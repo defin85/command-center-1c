@@ -1,3 +1,4 @@
+# ruff: noqa: F405
 """Infobase user endpoints."""
 
 from __future__ import annotations

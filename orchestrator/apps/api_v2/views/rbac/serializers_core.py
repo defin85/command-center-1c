@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from django.contrib.auth.models import Group, Permission, User
 from drf_spectacular.utils import OpenApiTypes, extend_schema_field
 from rest_framework import serializers
 
-from apps.core import permission_codes as perms
-from apps.databases.models import Cluster, Database, PermissionLevel
-from apps.templates.workflow.models import WorkflowTemplate
-from apps.artifacts.models import Artifact
+from apps.databases.models import PermissionLevel
 
 @extend_schema_field(OpenApiTypes.STR)
 class PermissionLevelCodeField(serializers.Field):

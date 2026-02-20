@@ -10,17 +10,13 @@ from typing import Any
 from rest_framework import status as http_status
 from rest_framework.response import Response
 
-from apps.artifacts.storage import ArtifactStorageError
 from apps.core import permission_codes as perms
 from apps.operations.driver_catalog_effective import (
-    compute_actor_roles_hash,
-    compute_driver_catalog_etag,
     explain_command_denied,
     filter_catalog_for_user,
     get_actor_roles,
     get_command_min_db_level,
     get_effective_driver_catalog,
-    get_effective_driver_catalog_lkg,
     resolve_driver_catalog_versions,
 )
 from apps.operations.ibcmd_cli_builder import (
@@ -181,7 +177,7 @@ def _execute_ibcmd_cli_validated(
     legacy_operation_type: str | None = None,
     metadata_overrides: dict[str, Any] | None = None,
 ):
-    from apps.databases.models import Database, PermissionLevel, DbmsUserMapping
+    from apps.databases.models import Database, PermissionLevel
     from apps.databases.services import PermissionService
     from apps.operations.models import BatchOperation, Task
     command_id = str(validated_data.get('command_id') or '').strip()

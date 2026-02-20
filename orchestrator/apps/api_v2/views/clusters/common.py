@@ -1,3 +1,4 @@
+# ruff: noqa: F401
 """
 Cluster endpoints for API v2.
 
@@ -320,6 +321,5 @@ class ResetSyncStatusResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
     reset_count = serializers.IntegerField()
     clusters = ResetClusterInfoSerializer(many=True)
-
 
 

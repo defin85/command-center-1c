@@ -1,3 +1,4 @@
+# ruff: noqa: F405
 """Cluster CRUD endpoints."""
 
 from __future__ import annotations

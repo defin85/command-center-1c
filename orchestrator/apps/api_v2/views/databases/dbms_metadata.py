@@ -1,3 +1,4 @@
+# ruff: noqa: F405
 """DBMS metadata endpoints (Database.metadata)."""
 
 from __future__ import annotations

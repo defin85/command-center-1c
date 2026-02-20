@@ -1,3 +1,4 @@
+# ruff: noqa: F405
 """Database core endpoints."""
 
 from __future__ import annotations

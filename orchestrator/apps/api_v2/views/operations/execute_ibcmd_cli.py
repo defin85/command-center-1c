@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.decorators import api_view, permission_classes, throttle_classes

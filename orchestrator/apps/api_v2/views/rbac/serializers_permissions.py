@@ -2,24 +2,8 @@
 
 from __future__ import annotations
 
-from django.contrib.auth.models import Group, User
 from rest_framework import serializers
 
-from apps.databases.models import (
-    Cluster,
-    ClusterGroupPermission,
-    ClusterPermission,
-    Database,
-    DatabaseGroupPermission,
-    DatabasePermission,
-    PermissionLevel,
-)
-from apps.templates.models import (
-    WorkflowTemplateGroupPermission,
-    WorkflowTemplatePermission,
-)
-from apps.templates.workflow.models import WorkflowTemplate
-from apps.artifacts.models import Artifact, ArtifactGroupPermission, ArtifactPermission
 
 from .serializers_core import (
     ArtifactRefSerializer,

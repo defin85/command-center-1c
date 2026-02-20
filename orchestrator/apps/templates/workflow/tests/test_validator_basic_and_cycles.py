@@ -9,7 +9,6 @@ from apps.templates.workflow.models import (
     DAGStructure,
     WorkflowNode,
     WorkflowEdge,
-    NodeConfig,
 )
 
 

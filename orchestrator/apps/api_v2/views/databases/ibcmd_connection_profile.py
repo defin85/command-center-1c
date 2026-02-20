@@ -1,3 +1,4 @@
+# ruff: noqa: F405
 """IBCMD connection profile endpoints (Database.metadata.ibcmd_connection)."""
 
 from __future__ import annotations

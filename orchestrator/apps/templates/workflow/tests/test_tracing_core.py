@@ -3,7 +3,6 @@ Tests for OpenTelemetry tracing integration (core helpers and workflow spans).
 """
 
 import pytest
-from unittest.mock import patch, MagicMock
 
 from apps.templates.tracing import (
     OTEL_AVAILABLE,

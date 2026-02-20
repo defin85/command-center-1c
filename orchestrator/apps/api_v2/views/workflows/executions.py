@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
-import json
 import logging
 
-from django.db import close_old_connections
-from django.db.models import Count, Q
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -19,18 +15,13 @@ import uuid
 from apps.core import permission_codes as perms
 from apps.databases.models import PermissionLevel
 from apps.templates.rbac import TemplatePermissionService
-from apps.templates.workflow.models import WorkflowTemplate, WorkflowExecution, WorkflowStepResult
+from apps.templates.workflow.models import WorkflowExecution, WorkflowStepResult
 from apps.templates.workflow.serializers import (
-    WorkflowTemplateListSerializer,
-    WorkflowTemplateDetailSerializer,
     WorkflowExecutionListSerializer,
     WorkflowExecutionDetailSerializer,
     WorkflowStepResultSerializer,
 )
-from apps.api_v2.serializers.common import ErrorResponseSerializer, ExecutionBindingSerializer, ExecutionPlanSerializer
-from apps.operations.utils.feature_flags import is_go_workflow_engine_enabled
-
-logger = logging.getLogger(__name__)
+from apps.api_v2.serializers.common import ErrorResponseSerializer
 
 from .common import (
     _permission_denied,
@@ -40,6 +31,8 @@ from .common import (
     ExecutionListResponseSerializer,
     ExecutionStepsResponseSerializer,
 )
+
+logger = logging.getLogger(__name__)
 
 @extend_schema(
     tags=['v2'],
@@ -560,6 +553,5 @@ class TemplateSchemaResponseSerializer(serializers.Serializer):
     category = serializers.CharField()
     icon = serializers.CharField()
     input_schema = serializers.DictField(allow_null=True)
-
 
 

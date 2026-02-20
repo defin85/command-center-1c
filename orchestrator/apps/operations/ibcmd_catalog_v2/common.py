@@ -1,3 +1,4 @@
+# ruff: noqa: F401
 from __future__ import annotations
 
 import re
@@ -10,6 +11,7 @@ from ..driver_catalog_v2 import (
     CATALOG_SCOPE_GLOBAL,
     CATALOG_SCOPE_PER_DATABASE,
 )
+
 
 _RU_MODE = "\u0420\u0435\u0436\u0438\u043c"
 _RU_GROUP_COMMANDS = "\u041a\u043e\u043c\u0430\u043d\u0434\u044b \u0433\u0440\u0443\u043f\u043f\u044b"
@@ -71,4 +73,3 @@ class _TitleEntry:
     kind: str  # mode|group|command|info
     token: str | None = None
     command_tokens: list[str] | None = None
-

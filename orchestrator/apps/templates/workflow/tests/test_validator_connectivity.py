@@ -2,7 +2,6 @@
 Unit tests for DAGValidator class: connectivity validation.
 """
 
-import pytest
 
 from apps.templates.workflow.validator import DAGValidator
 from apps.templates.workflow.models import DAGStructure, WorkflowEdge, WorkflowNode

@@ -5,13 +5,12 @@ from __future__ import annotations
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
+from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from apps.operations.models import AdminActionAuditLog
 
 from .common import (
     CommandSchemasAuditListResponseSerializer,
-    ErrorResponseSerializer,
     COMMAND_SCHEMA_DRIVER_CHOICES,
     record_driver_catalog_editor_error,
     _ensure_manage_driver_catalogs,

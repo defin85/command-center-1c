@@ -8,7 +8,6 @@ from unittest.mock import patch, MagicMock
 from apps.templates.tracing import (
     OTEL_AVAILABLE,
     get_tracer,
-    start_span,
     get_current_trace_id,
     inject_trace_headers,
     extract_trace_context,

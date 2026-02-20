@@ -549,7 +549,12 @@ function OperationTemplateListShell({
   }, [editingTemplate])
 
   const clearMappedFieldErrors = useCallback(() => {
-    form.setFields(TEMPLATE_EDITOR_FIELD_PATHS.map((name) => ({ name, errors: [] })) as any)
+    type SetFieldsPayload = Parameters<(typeof form)['setFields']>[0]
+    const fields: SetFieldsPayload = TEMPLATE_EDITOR_FIELD_PATHS.map((name) => ({
+      name: name as SetFieldsPayload[number]['name'],
+      errors: [],
+    }))
+    form.setFields(fields)
   }, [form])
 
   const applyBackendValidationIssues = useCallback((issues: ModalValidationIssue[]) => {
@@ -558,20 +563,25 @@ function OperationTemplateListShell({
 
     if (issues.length === 0) return
 
-    const fieldIssues = new Map<string, { name: string[]; errors: string[] }>()
+    type SetFieldsPayload = Parameters<(typeof form)['setFields']>[0]
+    const fieldIssues = new Map<string, SetFieldsPayload[number]>()
     for (const issue of issues) {
       const fieldName = mapValidationPathToField(issue.path)
       if (!fieldName) continue
       const key = fieldName.join('.')
       const entry = fieldIssues.get(key)
       if (entry) {
-        entry.errors.push(issue.message)
+        const existingErrors = Array.isArray(entry.errors) ? entry.errors : []
+        entry.errors = [...existingErrors, issue.message]
       } else {
-        fieldIssues.set(key, { name: fieldName, errors: [issue.message] })
+        fieldIssues.set(key, {
+          name: fieldName as SetFieldsPayload[number]['name'],
+          errors: [issue.message],
+        })
       }
     }
     if (fieldIssues.size > 0) {
-      form.setFields(Array.from(fieldIssues.values()) as any)
+      form.setFields(Array.from(fieldIssues.values()))
     }
   }, [clearMappedFieldErrors, form])
 

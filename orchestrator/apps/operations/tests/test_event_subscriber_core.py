@@ -3,7 +3,6 @@ Unit tests for EventSubscriber (core loop, routing, correlation parsing).
 """
 
 import json
-import uuid
 from unittest.mock import MagicMock, Mock, patch
 
 from apps.databases.models import Database

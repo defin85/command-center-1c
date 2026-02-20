@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
 
 from django.db import transaction
 from rest_framework.authentication import BaseAuthentication, SessionAuthentication
