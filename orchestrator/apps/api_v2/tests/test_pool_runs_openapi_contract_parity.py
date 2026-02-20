@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import yaml
+from rest_framework import serializers
 
 from apps.api_v2.serializers.common import ExecutionPlanSerializer
 from apps.api_v2.views import intercompany_pools as pools_view
@@ -91,6 +93,37 @@ def test_pool_run_retry_path_and_payload_schema_are_in_contract_with_expected_re
     assert isinstance(summary_properties, dict)
     runtime_summary_fields = set(pools_view.PoolRunRetryTargetSummarySerializer().fields.keys())
     assert runtime_summary_fields.issubset(set(summary_properties.keys()))
+
+
+def test_pool_run_retry_request_target_database_ids_parity_with_runtime_serializer() -> None:
+    contract = _load_openapi_contract()
+    retry_request_schema = _schema(contract, "PoolRunRetryRequest")
+    properties = retry_request_schema.get("properties")
+    assert isinstance(properties, dict)
+
+    target_ids_schema = properties.get("target_database_ids")
+    assert isinstance(target_ids_schema, dict)
+    assert target_ids_schema.get("type") == "array"
+    assert target_ids_schema.get("minItems") == 1
+    assert target_ids_schema.get("items") == {"type": "string", "format": "uuid"}
+
+    runtime_field = pools_view.PoolRunRetryRequestSerializer().fields.get("target_database_ids")
+    assert isinstance(runtime_field, serializers.ListField)
+    assert runtime_field.required is False
+    assert runtime_field.allow_empty is False
+    assert isinstance(runtime_field.child, serializers.UUIDField)
+
+    raw_target_ids = [
+        UUID("11111111-1111-1111-1111-111111111111"),
+        UUID("77777777-7777-7777-7777-777777777777"),
+        "11111111-1111-1111-1111-111111111111",
+        "   ",
+        None,
+    ]
+    assert pools_view._normalize_retry_target_ids(raw_target_ids) == [
+        "11111111-1111-1111-1111-111111111111",
+        "77777777-7777-7777-7777-777777777777",
+    ]
 
 
 def test_pool_run_schema_covers_runtime_serializer_fields() -> None:

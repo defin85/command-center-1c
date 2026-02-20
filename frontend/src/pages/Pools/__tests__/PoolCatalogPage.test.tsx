@@ -489,6 +489,110 @@ describe('PoolCatalogPage', () => {
     )
   }, 15000)
 
+  it('preserves existing node and edge metadata when editing edge document_policy', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-with-metadata',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: { node_hint: 'keep-me' },
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: { node_priority: 2 },
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: '10.00',
+          max_amount: '20.00',
+          metadata: {
+            custom_edge_key: 'preserve-this',
+            document_policy: {
+              version: 'document_policy.v1',
+              chains: [
+                {
+                  chain_id: 'sale_chain',
+                  documents: [
+                    {
+                      document_id: 'sale',
+                      entity_name: 'Document_Sales',
+                      document_role: 'sale',
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+    expect(await screen.findByText('Org Two')).toBeInTheDocument()
+
+    const edgePolicyInput = await screen.findByTestId('pool-catalog-topology-edge-policy-0')
+    await user.click(edgePolicyInput)
+    await user.clear(edgePolicyInput)
+    await user.paste(
+      '{"version":"document_policy.v1","chains":[{"chain_id":"sale_chain","documents":[{"document_id":"sale","entity_name":"Document_Sales","document_role":"sale","invoice_mode":"required"}]}]}'
+    )
+    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+
+    await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
+    expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledWith(
+      '44444444-4444-4444-4444-444444444444',
+      expect.objectContaining({
+        version: 'v1:topology-with-metadata',
+        nodes: expect.arrayContaining([
+          expect.objectContaining({
+            organization_id: '11111111-1111-1111-1111-111111111111',
+            metadata: expect.objectContaining({
+              node_hint: 'keep-me',
+            }),
+          }),
+          expect.objectContaining({
+            organization_id: '77777777-7777-7777-7777-777777777777',
+            metadata: expect.objectContaining({
+              node_priority: 2,
+            }),
+          }),
+        ]),
+        edges: [
+          expect.objectContaining({
+            parent_organization_id: '11111111-1111-1111-1111-111111111111',
+            child_organization_id: '77777777-7777-7777-7777-777777777777',
+            metadata: expect.objectContaining({
+              custom_edge_key: 'preserve-this',
+              document_policy: expect.objectContaining({
+                version: 'document_policy.v1',
+              }),
+            }),
+          }),
+        ],
+      })
+    )
+  }, 15000)
+
   it('sends topology version token and shows conflict error without clearing form data', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()

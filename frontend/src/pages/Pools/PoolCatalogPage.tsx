@@ -84,6 +84,7 @@ type PoolFormValues = {
 type TopologyNodeFormValue = {
   organization_id?: string
   is_root?: boolean
+  metadata_json?: string
 }
 
 type TopologyEdgeFormValue = {
@@ -93,6 +94,7 @@ type TopologyEdgeFormValue = {
   min_amount?: number | null
   max_amount?: number | null
   document_policy_json?: string
+  metadata_json?: string
 }
 
 type TopologyFormValues = {
@@ -374,6 +376,60 @@ const formatOptionalDecimal = (value: number | null | undefined): string | null 
   return Number(value).toFixed(2)
 }
 
+const normalizeMetadataObject = (rawMetadata: unknown): Record<string, unknown> => {
+  if (!rawMetadata || typeof rawMetadata !== 'object' || Array.isArray(rawMetadata)) {
+    return {}
+  }
+  return { ...(rawMetadata as Record<string, unknown>) }
+}
+
+const parseTopologyMetadata = (
+  rawMetadataJson: string | undefined,
+  rowLabel: string
+): {
+  metadata: Record<string, unknown>
+  errors: string[]
+} => {
+  const source = String(rawMetadataJson ?? '').trim()
+  if (!source) {
+    return { metadata: {}, errors: [] }
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(source)
+  } catch {
+    return {
+      metadata: {},
+      errors: [`${rowLabel}: metadata должен быть валидным JSON.`],
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {
+      metadata: {},
+      errors: [`${rowLabel}: metadata должен быть JSON object.`],
+    }
+  }
+
+  return {
+    metadata: { ...(parsed as Record<string, unknown>) },
+    errors: [],
+  }
+}
+
+const stringifyMetadataForForm = (rawMetadata: unknown): string => {
+  const metadata = normalizeMetadataObject(rawMetadata)
+  if (Object.keys(metadata).length === 0) {
+    return ''
+  }
+  try {
+    return JSON.stringify(metadata, null, 2)
+  } catch {
+    return ''
+  }
+}
+
 const parseDocumentPolicyMetadata = (
   rawPolicyJson: string,
   rowNo: number
@@ -480,13 +536,23 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
   }
 
   const nodesSource = Array.isArray(values.nodes) ? values.nodes : []
-  const nodes = nodesSource
-    .filter((item) => String(item.organization_id || '').trim().length > 0)
-    .map((item) => ({
-      organization_id: String(item.organization_id || '').trim(),
+  const nodes: PoolTopologySnapshotNodeInput[] = []
+  nodesSource.forEach((item, index) => {
+    const organizationId = String(item.organization_id || '').trim()
+    if (!organizationId) {
+      return
+    }
+    const metadataParseResult = parseTopologyMetadata(item.metadata_json, `Node #${index + 1}`)
+    errors.push(...metadataParseResult.errors)
+    if (metadataParseResult.errors.length > 0) {
+      return
+    }
+    nodes.push({
+      organization_id: organizationId,
       is_root: Boolean(item.is_root),
-      metadata: {},
-    }))
+      metadata: metadataParseResult.metadata,
+    })
+  })
   if (nodes.length === 0) {
     errors.push('Добавьте хотя бы один topology node.')
   }
@@ -536,7 +602,13 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
     if (policyParseResult.errors.length > 0) {
       return
     }
-    const metadata: Record<string, unknown> = {}
+    const metadataParseResult = parseTopologyMetadata(edge.metadata_json, `Edge #${rowNo}`)
+    errors.push(...metadataParseResult.errors)
+    if (metadataParseResult.errors.length > 0) {
+      return
+    }
+    const metadata: Record<string, unknown> = { ...metadataParseResult.metadata }
+    delete metadata.document_policy
     if (policyParseResult.policy) {
       metadata.document_policy = policyParseResult.policy
     }
@@ -745,6 +817,44 @@ export function PoolCatalogPage() {
     setTopologyPreflightErrors([])
     setTopologySubmitError(null)
   }, [selectedPoolId, topologyForm])
+
+  useEffect(() => {
+    if (!selectedPoolId || !graph) return
+    const organizationByNodeVersion = new Map(
+      graph.nodes.map((node) => [node.node_version_id, node.organization_id])
+    )
+    const nodes = graph.nodes.map<TopologyNodeFormValue>((node) => ({
+      organization_id: node.organization_id,
+      is_root: Boolean(node.is_root),
+      metadata_json: stringifyMetadataForForm(node.metadata),
+    }))
+    const edges = graph.edges.map<TopologyEdgeFormValue>((edge) => {
+      const metadata = normalizeMetadataObject(edge.metadata)
+      const rawPolicy = metadata.document_policy
+      const policy =
+        rawPolicy && typeof rawPolicy === 'object' && !Array.isArray(rawPolicy)
+          ? rawPolicy as Record<string, unknown>
+          : null
+      const weight = Number(edge.weight)
+      const minAmount = edge.min_amount == null ? null : Number(edge.min_amount)
+      const maxAmount = edge.max_amount == null ? null : Number(edge.max_amount)
+      return {
+        parent_organization_id: organizationByNodeVersion.get(edge.parent_node_version_id),
+        child_organization_id: organizationByNodeVersion.get(edge.child_node_version_id),
+        weight: Number.isFinite(weight) ? weight : undefined,
+        min_amount: minAmount == null || Number.isNaN(minAmount) ? null : minAmount,
+        max_amount: maxAmount == null || Number.isNaN(maxAmount) ? null : maxAmount,
+        document_policy_json: policy ? JSON.stringify(policy, null, 2) : '',
+        metadata_json: stringifyMetadataForForm(metadata),
+      }
+    })
+    topologyForm.setFieldsValue({
+      effective_from: String(graph.date || '').trim() || new Date().toISOString().slice(0, 10),
+      effective_to: '',
+      nodes,
+      edges,
+    })
+  }, [graph, selectedPoolId, topologyForm])
 
   const openCreateOrganizationDrawer = useCallback(() => {
     if (mutatingDisabled) return
@@ -1413,10 +1523,13 @@ export function PoolCatalogPage() {
                               Remove
                             </Button>
                           </Col>
+                          <Form.Item name={[field.name, 'metadata_json']} hidden>
+                            <Input />
+                          </Form.Item>
                         </Row>
                       ))}
                       <Button
-                        onClick={() => add({ organization_id: undefined, is_root: false })}
+                        onClick={() => add({ organization_id: undefined, is_root: false, metadata_json: '' })}
                         data-testid="pool-catalog-topology-add-node"
                       >
                         Add node
@@ -1488,6 +1601,9 @@ export function PoolCatalogPage() {
                           </Row>
                           <Row gutter={8}>
                             <Col span={23}>
+                              <Form.Item name={[field.name, 'metadata_json']} hidden>
+                                <Input />
+                              </Form.Item>
                               <Form.Item
                                 name={[field.name, 'document_policy_json']}
                                 label={field.name === 0 ? 'Document policy (JSON)' : ''}
@@ -1509,6 +1625,7 @@ export function PoolCatalogPage() {
                           min_amount: null,
                           max_amount: null,
                           document_policy_json: '',
+                          metadata_json: '',
                         })}
                         data-testid="pool-catalog-topology-add-edge"
                       >

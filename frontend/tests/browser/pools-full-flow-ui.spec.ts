@@ -39,6 +39,9 @@ async function setupApiMocks(page: Page, state: {
   createRunCalls: number
   confirmCalls: number
   topologyUpsertCalls: number
+  retryCalls: number
+  lastRetryPayload: AnyRecord | null
+  retryResponse?: AnyRecord
 }) {
   const organizations: AnyRecord[] = [
     {
@@ -364,18 +367,23 @@ async function setupApiMocks(page: Page, state: {
       })
     }
     if (method === 'POST' && path.startsWith('/api/v2/pools/runs/') && path.endsWith('/retry/')) {
-      return fulfillJson(route, {
-        accepted: true,
-        workflow_execution_id: '95000000-0000-4000-8000-000000000001',
-        operation_id: null,
-        retry_target_summary: {
-          requested_targets: 0,
-          requested_documents: 0,
-          failed_targets: 0,
-          enqueued_targets: 0,
-          skipped_successful_targets: 0,
-        },
-      })
+      state.retryCalls += 1
+      state.lastRetryPayload = (request.postDataJSON() as AnyRecord) || {}
+      const retryResponse = state.retryResponse && typeof state.retryResponse === 'object'
+        ? state.retryResponse
+        : {
+          accepted: true,
+          workflow_execution_id: '95000000-0000-4000-8000-000000000001',
+          operation_id: null,
+          retry_target_summary: {
+            requested_targets: 0,
+            requested_documents: 0,
+            failed_targets: 0,
+            enqueued_targets: 0,
+            skipped_successful_targets: 0,
+          },
+        }
+      return fulfillJson(route, retryResponse)
     }
 
     return fulfillJson(route, {}, 200)
@@ -390,6 +398,8 @@ test('Pools full flow smoke: 3 org -> minimal pool -> top_down run -> confirm pu
     createRunCalls: 0,
     confirmCalls: 0,
     topologyUpsertCalls: 0,
+    retryCalls: 0,
+    lastRetryPayload: null as AnyRecord | null,
   }
 
   await setupAuth(page)
@@ -428,4 +438,140 @@ test('Pools full flow smoke: 3 org -> minimal pool -> top_down run -> confirm pu
 
   await expect.poll(() => state.confirmCalls).toBe(1)
   await expect(page.getByText('approved', { exact: false })).toBeVisible()
+})
+
+test('Pools retry smoke: invoice_mode=required chain keeps linkage and skips already-successful targets', async ({ page }) => {
+  const run = {
+    id: '91000000-0000-4000-8000-000000000111',
+    tenant_id: TENANT_ID,
+    pool_id: '90000000-0000-4000-8000-000000000111',
+    schema_template_id: null,
+    mode: 'safe',
+    direction: 'top_down',
+    status: 'failed',
+    status_reason: null,
+    period_start: '2026-01-01',
+    period_end: null,
+    run_input: { starting_amount: '100.00' },
+    input_contract_version: 'run_input_v1',
+    idempotency_key: 'idem-retry-smoke',
+    workflow_execution_id: '94000000-0000-4000-8000-000000000111',
+    workflow_status: 'failed',
+    approval_state: 'approved',
+    publication_step_state: 'completed',
+    terminal_reason: null,
+    execution_backend: 'workflow_core',
+    provenance: {
+      workflow_run_id: '94000000-0000-4000-8000-000000000111',
+      workflow_status: 'failed',
+      execution_backend: 'workflow_core',
+      retry_chain: [
+        {
+          workflow_run_id: '94000000-0000-4000-8000-000000000111',
+          parent_workflow_run_id: null,
+          attempt_number: 1,
+          attempt_kind: 'initial',
+          status: 'failed',
+        },
+      ],
+    },
+    workflow_template_name: 'pool-template-v1',
+    seed: null,
+    validation_summary: { rows: 2 },
+    publication_summary: { total_targets: 2 },
+    diagnostics: [],
+    last_error: 'publication failed',
+    created_at: NOW,
+    updated_at: NOW,
+    validated_at: NOW,
+    publication_confirmed_at: NOW,
+    publishing_started_at: NOW,
+    completed_at: NOW,
+  }
+
+  const state = {
+    pools: [
+      {
+        id: '90000000-0000-4000-8000-000000000111',
+        code: 'pool-retry',
+        name: 'Retry Pool',
+        description: 'Pool for retry smoke',
+        is_active: true,
+        metadata: {},
+        updated_at: NOW,
+      },
+    ] as AnyRecord[],
+    graphByPoolId: {
+      '90000000-0000-4000-8000-000000000111': {
+        pool_id: '90000000-0000-4000-8000-000000000111',
+        date: '2026-01-01',
+        version: 'v1:pool-topology-retry',
+        nodes: [],
+        edges: [],
+      },
+    } as Record<string, AnyRecord>,
+    runs: [run] as AnyRecord[],
+    createRunCalls: 0,
+    confirmCalls: 0,
+    topologyUpsertCalls: 0,
+    retryCalls: 0,
+    lastRetryPayload: null as AnyRecord | null,
+    retryResponse: {
+      accepted: true,
+      workflow_execution_id: '95000000-0000-4000-8000-000000000222',
+      operation_id: null,
+      retry_target_summary: {
+        requested_targets: 2,
+        requested_documents: 3,
+        failed_targets: 2,
+        enqueued_targets: 1,
+        skipped_successful_targets: 1,
+      },
+    } as AnyRecord,
+  }
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/pools/runs', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Pool Runs', exact: true })).toBeVisible()
+
+  const retryDocumentsPayload = JSON.stringify(
+    {
+      '20202020-2020-2020-2020-202020202020': [
+        {
+          document_id: 'sale-001',
+          document_role: 'sale',
+          invoice_mode: 'required',
+        },
+        {
+          document_id: 'invoice-001',
+          document_role: 'invoice',
+          links: [{ link_kind: 'follows', source_document_id: 'sale-001' }],
+        },
+      ],
+      '30303030-3030-3030-3030-303030303030': [
+        {
+          document_id: 'sale-success',
+          document_role: 'sale',
+        },
+      ],
+    },
+    null,
+    2
+  )
+
+  await page.getByLabel('documents_by_database JSON').fill(retryDocumentsPayload)
+  await page.getByRole('button', { name: 'Retry Failed' }).click()
+
+  await expect.poll(() => state.retryCalls).toBe(1)
+  const sentPayload = state.lastRetryPayload || {}
+  const sentDocuments = sentPayload.documents_by_database as Record<string, Array<Record<string, unknown>>>
+  expect(Array.isArray(sentDocuments?.['20202020-2020-2020-2020-202020202020'])).toBeTruthy()
+  expect(sentDocuments['20202020-2020-2020-2020-202020202020']).toHaveLength(2)
+  expect(
+    sentDocuments['20202020-2020-2020-2020-202020202020']?.[1]?.links
+  ).toEqual([{ link_kind: 'follows', source_document_id: 'sale-001' }])
+
+  await expect(page.getByText('Retry accepted: 1/2 failed targets enqueued')).toBeVisible()
 })
