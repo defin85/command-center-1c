@@ -110,6 +110,75 @@ def _attach_pool_target_database(
     return database
 
 
+def _build_document_plan_artifact_for_compile() -> dict[str, object]:
+    return {
+        "version": "document_plan_artifact.v1",
+        "run_id": str(uuid4()),
+        "distribution_artifact_ref": {
+            "version": "distribution_artifact.v1",
+            "topology_version_ref": "topology-v1",
+        },
+        "topology_version_ref": "topology-v1",
+        "policy_refs": [
+            {
+                "edge_ref": {
+                    "parent_node_id": "node-parent",
+                    "child_node_id": "node-child",
+                },
+                "policy_version": "document_policy.v1",
+                "source": "edge.metadata.document_policy",
+            }
+        ],
+        "targets": [
+            {
+                "database_id": "db-001",
+                "chains": [
+                    {
+                        "chain_id": "sale-chain",
+                        "edge_ref": {
+                            "parent_node_id": "node-parent",
+                            "child_node_id": "node-child",
+                        },
+                        "policy_source": "edge.metadata.document_policy",
+                        "policy_version": "document_policy.v1",
+                        "allocation": {"amount": "100.00"},
+                        "documents": [
+                            {
+                                "document_id": "sale-doc",
+                                "entity_name": "Document_Sales",
+                                "document_role": "base",
+                                "field_mapping": {},
+                                "table_parts_mapping": {},
+                                "link_rules": {},
+                                "invoice_mode": "optional",
+                                "idempotency_key": "doc-sale-key",
+                            },
+                            {
+                                "document_id": "invoice-doc",
+                                "entity_name": "Document_Invoice",
+                                "document_role": "invoice",
+                                "field_mapping": {},
+                                "table_parts_mapping": {},
+                                "link_rules": {},
+                                "invoice_mode": "required",
+                                "idempotency_key": "doc-invoice-key",
+                                "link_to": "sale-doc",
+                            },
+                        ],
+                    }
+                ],
+            }
+        ],
+        "compile_summary": {
+            "compiled_edges": 1,
+            "targets_count": 1,
+            "chains_count": 1,
+            "documents_count": 2,
+            "compiled_at": "2026-01-01T00:00:00+00:00",
+        },
+    }
+
+
 @pytest.mark.django_db
 def test_start_pool_run_workflow_execution_persists_pinned_binding_snapshot() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
@@ -141,6 +210,86 @@ def test_start_pool_run_workflow_execution_persists_pinned_binding_snapshot() ->
     ]
     assert len(binding_entries) == len(operation_bindings)
     assert all(item.get("binding_mode") == "pinned_exposure" for item in binding_entries)
+
+
+@pytest.mark.django_db
+def test_start_pool_run_workflow_execution_uses_atomic_publication_nodes_when_document_plan_artifact_is_available() -> None:
+    run = _create_pool_run(mode=PoolRunMode.SAFE)
+    artifact = _build_document_plan_artifact_for_compile()
+
+    with (
+        patch(
+            "apps.intercompany_pools.workflow_runtime._build_atomic_compile_document_plan_artifact",
+            return_value=artifact,
+        ),
+        patch(
+            "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+            return_value=EnqueueResult(
+                success=True,
+                operation_id="workflow-op-atomic",
+                status="queued",
+                error=None,
+                error_code=None,
+            ),
+        ),
+    ):
+        result = start_pool_run_workflow_execution(run=run)
+
+    execution = WorkflowExecution.objects.get(id=result.execution_id)
+    node_ids = [node.id for node in execution.workflow_template.dag_structure.nodes]
+    atomic_publication_node_ids = [node_id for node_id in node_ids if node_id.startswith("publication_odata_")]
+
+    assert len(atomic_publication_node_ids) == 2
+    assert "publication_odata" not in node_ids
+
+    operation_bindings = execution.execution_plan.get("operation_bindings")
+    assert isinstance(operation_bindings, list)
+    publication_binding_node_ids = sorted(
+        str(item.get("node_id") or "")
+        for item in operation_bindings
+        if str(item.get("alias") or "") == "pool.publication_odata"
+    )
+    assert publication_binding_node_ids == sorted(atomic_publication_node_ids)
+    publication_provenance_items = [
+        item.get("provenance")
+        for item in operation_bindings
+        if str(item.get("alias") or "") == "pool.publication_odata"
+    ]
+    assert len(publication_provenance_items) == 2
+    assert all(isinstance(item, dict) for item in publication_provenance_items)
+    assert all(item.get("kind") == "pool_atomic_publication" for item in publication_provenance_items)
+    assert all(item.get("action_kind") == "publish_odata" for item in publication_provenance_items)
+    assert all(item.get("attempt_scope") == "run_execution" for item in publication_provenance_items)
+
+
+@pytest.mark.django_db
+def test_start_pool_run_workflow_execution_fails_closed_when_required_invoice_step_is_missing() -> None:
+    run = _create_pool_run(mode=PoolRunMode.SAFE)
+    invalid_artifact = _build_document_plan_artifact_for_compile()
+    invalid_artifact["targets"][0]["chains"][0]["documents"] = [
+        {
+            "document_id": "sale-doc",
+            "entity_name": "Document_Sales",
+            "document_role": "base",
+            "field_mapping": {},
+            "table_parts_mapping": {},
+            "link_rules": {},
+            "invoice_mode": "required",
+            "idempotency_key": "doc-sale-key",
+        }
+    ]
+
+    with (
+        patch(
+            "apps.intercompany_pools.workflow_runtime._build_atomic_compile_document_plan_artifact",
+            return_value=invalid_artifact,
+        ),
+        patch("apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution") as enqueue_mock,
+    ):
+        with pytest.raises(ValueError, match="POOL_RUNTIME_REQUIRED_INVOICE_STEP_MISSING"):
+            start_pool_run_workflow_execution(run=run)
+
+    enqueue_mock.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -707,3 +856,26 @@ def test_retry_workflow_execution_uses_persisted_document_plan_and_skips_success
     assert pool_runtime_payload.get("documents_by_database") == {
         str(failed_database.id): [{"Amount": "100.00"}]
     }
+
+    node_ids = [node.id for node in execution.workflow_template.dag_structure.nodes]
+    atomic_publication_node_ids = [
+        node_id for node_id in node_ids if node_id.startswith("publication_odata_")
+    ]
+    assert "publication_odata" not in node_ids
+    assert len(atomic_publication_node_ids) == 1
+
+    operation_bindings = execution.execution_plan.get("operation_bindings")
+    assert isinstance(operation_bindings, list)
+    publication_bindings = [
+        item
+        for item in operation_bindings
+        if str(item.get("alias") or "") == "pool.publication_odata"
+    ]
+    assert len(publication_bindings) == 1
+
+    publication_provenance = publication_bindings[0].get("provenance")
+    assert isinstance(publication_provenance, dict)
+    assert publication_provenance.get("database_id") == str(failed_database.id)
+    assert publication_provenance.get("chain_id") == "sale-chain"
+    assert publication_provenance.get("document_id") == "invoice-doc"
+    assert publication_provenance.get("document_role") == "invoice"

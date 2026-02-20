@@ -11,6 +11,7 @@ from .stream_message_receipt import StreamMessageReceipt
 from .task_execution_log import TaskExecutionLog
 from .command_result_snapshot import CommandResultSnapshot
 from .extensions_plan import ExtensionsPlan
+from .workflow_enqueue_outbox import WorkflowEnqueueOutbox
 
 __all__ = [
     'BatchOperation',
@@ -24,4 +25,5 @@ __all__ = [
     'TaskExecutionLog',
     'CommandResultSnapshot',
     'ExtensionsPlan',
+    'WorkflowEnqueueOutbox',
 ]

@@ -90,6 +90,9 @@ class TestOperationsServiceBuildMessage:
         assert message["metadata"]["template_id"] == template.id
         assert message["metadata"]["template_exposure_id"] is None
         assert message["metadata"]["template_exposure_revision"] is None
+        assert message["metadata"]["root_operation_id"] == str(operation.id)
+        assert message["metadata"]["execution_consumer"] == "operations"
+        assert message["metadata"]["lane"] == "operations"
 
     def test_build_message_protocol_payload_keeps_sections(self, test_database, db):
         template = SimpleNamespace(
@@ -177,6 +180,38 @@ class TestOperationsServiceBuildMessage:
         assert message["metadata"]["template_id"] == template.id
         assert message["metadata"]["template_exposure_id"] == str(exposure.id)
         assert message["metadata"]["template_exposure_revision"] == 1
+
+    def test_build_message_includes_correlation_and_provenance_metadata(self, test_database, db):
+        template = SimpleNamespace(
+            id="tpl_wf_meta_" + str(uuid4())[:8],
+            name="Workflow Metadata Template",
+            operation_type="designer_cli",
+            target_entity="Infobase",
+            exposure_id="",
+        )
+        operation = BatchOperationFactory.create(
+            template=template,
+            rendered_data={"command": "Any", "args": [], "options": {}},
+            target_databases=[str(test_database.id)],
+        )
+        operation.metadata = {
+            "tags": ["workflow", "pools"],
+            "workflow_execution_id": "wf-123",
+            "node_id": "approval_gate",
+            "root_operation_id": "wf-123",
+            "execution_consumer": "pools",
+            "lane": "workflows",
+            "trace_id": "trace-xyz",
+        }
+        operation.save(update_fields=["metadata", "updated_at"])
+
+        message = OperationsService._build_message(operation)
+        assert message["metadata"]["workflow_execution_id"] == "wf-123"
+        assert message["metadata"]["node_id"] == "approval_gate"
+        assert message["metadata"]["root_operation_id"] == "wf-123"
+        assert message["metadata"]["execution_consumer"] == "pools"
+        assert message["metadata"]["lane"] == "workflows"
+        assert message["metadata"]["trace_id"] == "trace-xyz"
 
     def test_build_message_resolves_template_exposure_revision_from_alias_when_template_has_no_ref(
         self,

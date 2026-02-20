@@ -40,6 +40,39 @@ from .streams_common import (
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_observability_fields(event_payload: dict, *, operation_id: str) -> dict:
+    event = dict(event_payload if isinstance(event_payload, dict) else {})
+    metadata = event.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    workflow_execution_id = event.get("workflow_execution_id") or metadata.get("workflow_execution_id")
+    node_id = event.get("node_id") or metadata.get("node_id")
+    root_operation_id = event.get("root_operation_id") or metadata.get("root_operation_id") or operation_id
+    execution_consumer = (
+        str(event.get("execution_consumer") or metadata.get("execution_consumer") or "").strip()
+        or "operations"
+    )
+    lane = str(event.get("lane") or metadata.get("lane") or "").strip() or execution_consumer
+
+    metadata["root_operation_id"] = root_operation_id
+    metadata["execution_consumer"] = execution_consumer
+    metadata["lane"] = lane
+    if workflow_execution_id:
+        metadata["workflow_execution_id"] = workflow_execution_id
+    if node_id:
+        metadata["node_id"] = node_id
+
+    event["workflow_execution_id"] = workflow_execution_id
+    event["node_id"] = node_id
+    event["root_operation_id"] = root_operation_id
+    event["execution_consumer"] = execution_consumer
+    event["lane"] = lane
+    event["metadata"] = metadata
+    return event
+
+
 @extend_schema(
     tags=['v2'],
     summary='Operation SSE stream',
@@ -219,11 +252,24 @@ async def operation_stream(request):
                 "trace_id": operation_metadata.get("trace_id"),
                 "workflow_execution_id": operation_metadata.get("workflow_execution_id"),
                 "node_id": operation_metadata.get("node_id"),
+                "root_operation_id": operation_metadata.get("root_operation_id") or str(operation_id),
+                "execution_consumer": (
+                    str(operation_metadata.get("execution_consumer") or "").strip() or "operations"
+                ),
+                "lane": (
+                    str(operation_metadata.get("lane") or "").strip()
+                    or str(operation_metadata.get("execution_consumer") or "").strip()
+                    or "operations"
+                ),
                 "metadata": {
                     "operation_type": operation.operation_type,
                     "created_at": operation.created_at.isoformat(),
                 }
             }
+            initial_event = _normalize_observability_fields(
+                initial_event,
+                operation_id=str(operation_id),
+            )
             logger.info("event_generator: Sending initial event")
             yield f"data: {json.dumps(initial_event)}\n\n"
             logger.info("event_generator: Initial event sent")
@@ -278,6 +324,17 @@ async def operation_stream(request):
                         # Extract event data from stream message
                         # Format: {"event_type": "...", "data": "json_string", "operation_id": "..."}
                         event_data = fields.get('data', '{}')
+                        try:
+                            decoded_event = json.loads(event_data)
+                            if isinstance(decoded_event, dict):
+                                event_data = json.dumps(
+                                    _normalize_observability_fields(
+                                        decoded_event,
+                                        operation_id=str(operation_id),
+                                    )
+                                )
+                        except (TypeError, json.JSONDecodeError):
+                            pass
                         event_type = fields.get('event_type') or 'message'
                         if active_key:
                             try:

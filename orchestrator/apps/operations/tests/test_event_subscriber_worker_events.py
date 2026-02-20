@@ -235,6 +235,118 @@ class EventSubscriberWorkerEventsTest(EventSubscriberBaseTestCase):
 
     @patch("apps.operations.event_subscriber.runtime.operations_redis_client")
     @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_worker_failed_skips_terminal_workflow_root_regression(
+        self, mock_redis_class, mock_ops_redis
+    ):
+        subscriber = EventSubscriber()
+
+        operation_id = str(uuid.uuid4())
+        op = BatchOperation.objects.create(
+            id=operation_id,
+            name="Workflow root completed",
+            operation_type="execute_workflow",
+            target_entity="Workflow",
+            status=BatchOperation.STATUS_COMPLETED,
+            metadata={
+                "workflow_execution_id": operation_id,
+                "root_operation_id": operation_id,
+            },
+        )
+
+        subscriber.handle_worker_failed(
+            {
+                "operation_id": operation_id,
+                "error": "late worker failure",
+            },
+            "corr-root-failed-regression",
+        )
+
+        op.refresh_from_db()
+        self.assertEqual(op.status, BatchOperation.STATUS_COMPLETED)
+        self.assertNotIn("error", op.metadata or {})
+
+    @patch("apps.operations.event_subscriber.runtime.operations_redis_client")
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_worker_completed_skips_conflicting_terminal_update_for_workflow_root(
+        self, mock_redis_class, mock_ops_redis
+    ):
+        subscriber = EventSubscriber()
+
+        operation_id = str(uuid.uuid4())
+        op = BatchOperation.objects.create(
+            id=operation_id,
+            name="Workflow root failed",
+            operation_type="execute_workflow",
+            target_entity="Workflow",
+            status=BatchOperation.STATUS_FAILED,
+            metadata={
+                "workflow_execution_id": operation_id,
+                "root_operation_id": operation_id,
+                "error": "initial failure",
+            },
+        )
+
+        subscriber.handle_worker_completed(
+            {
+                "operation_id": operation_id,
+                "status": "completed",
+                "results": [],
+                "summary": {"total": 1, "succeeded": 1, "failed": 0},
+            },
+            "corr-root-completed-regression",
+        )
+
+        op.refresh_from_db()
+        self.assertEqual(op.status, BatchOperation.STATUS_FAILED)
+        self.assertEqual((op.metadata or {}).get("error"), "initial failure")
+
+    @patch("apps.operations.event_subscriber.runtime.operations_redis_client")
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_worker_completed_propagates_lane_metadata_for_workflow_root_timeline(
+        self, mock_redis_class, mock_ops_redis
+    ):
+        subscriber = EventSubscriber()
+
+        operation_id = str(uuid.uuid4())
+        op = BatchOperation.objects.create(
+            id=operation_id,
+            name="Workflow root processing",
+            operation_type="execute_workflow",
+            target_entity="Workflow",
+            status=BatchOperation.STATUS_PROCESSING,
+            metadata={
+                "workflow_execution_id": operation_id,
+                "node_id": "n1",
+                "trace_id": "trace-1",
+                "root_operation_id": operation_id,
+                "execution_consumer": "pools",
+                "lane": "workflows",
+            },
+        )
+
+        subscriber.handle_worker_completed(
+            {
+                "operation_id": operation_id,
+                "status": "completed",
+                "results": [],
+                "summary": {"total": 0, "succeeded": 0, "failed": 0},
+            },
+            "corr-root-lane-metadata",
+        )
+
+        op.refresh_from_db()
+        self.assertEqual(op.status, BatchOperation.STATUS_COMPLETED)
+
+        metadata = mock_ops_redis.add_timeline_event.call_args.kwargs["metadata"]
+        self.assertEqual(metadata["root_operation_id"], operation_id)
+        self.assertEqual(metadata["execution_consumer"], "pools")
+        self.assertEqual(metadata["lane"], "workflows")
+        self.assertEqual(metadata["workflow_execution_id"], operation_id)
+        self.assertEqual(metadata["node_id"], "n1")
+        self.assertEqual(metadata["trace_id"], "trace-1")
+
+    @patch("apps.operations.event_subscriber.runtime.operations_redis_client")
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
     def test_handle_worker_completed_releases_sync_cluster_idempotency_lock(
         self, mock_redis_class, mock_ops_redis
     ):

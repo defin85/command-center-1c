@@ -65,15 +65,24 @@ class TestRedisClientTimeline:
         assert events[0]['service'] == 'worker'
         assert events[0]['metadata'] == {}
         assert events[0]['trace_id'] == "trace-1"
+        assert events[0]['root_operation_id'] == "op-456"
+        assert events[0]['execution_consumer'] == "operations"
+        assert events[0]['lane'] == "operations"
 
         assert events[1]['timestamp'] == 1734567890456
         assert events[1]['event'] == 'batch.created'
         assert events[1]['metadata'] == {"batch_size": 100}
         assert events[1]['workflow_execution_id'] == "wf-1"
+        assert events[1]['root_operation_id'] == "op-456"
+        assert events[1]['execution_consumer'] == "operations"
+        assert events[1]['lane'] == "operations"
 
         assert events[2]['timestamp'] == 1734567891234
         assert events[2]['event'] == 'operation.completed'
         assert events[2]['node_id'] == "node-1"
+        assert events[2]['root_operation_id'] == "op-456"
+        assert events[2]['execution_consumer'] == "operations"
+        assert events[2]['lane'] == "operations"
 
     def test_get_timeline_pagination_limit(self, redis_client):
         """Test get_timeline respects limit parameter."""

@@ -66,6 +66,26 @@ def _build_status_update_response(*, execution) -> dict[str, object]:
     return payload
 
 
+def _sync_workflow_root_projection_from_execution(*, execution) -> None:
+    try:
+        from apps.operations.services import OperationsService
+
+        OperationsService.sync_workflow_root_operation_status(
+            execution_id=str(execution.id),
+            workflow_status=execution.status,
+            node_id=execution.current_node_id,
+            trace_id=execution.trace_id,
+            error_message=execution.error_message,
+            error_code=execution.error_code,
+            error_details=execution.error_details,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to sync workflow root projection status",
+            extra={"execution_id": str(getattr(execution, "id", "")), "status": getattr(execution, "status", "")},
+        )
+
+
 def _build_error_response_payload(*, error: str, code: str, details: str | None = None) -> dict[str, str]:
     payload = {"error": error, "code": code}
     if details:
@@ -1114,6 +1134,7 @@ def update_workflow_execution_status(request):
                 update_fields.append("error_details")
             if update_fields:
                 execution.save(update_fields=update_fields)
+        _sync_workflow_root_projection_from_execution(execution=execution)
         return Response(_build_status_update_response(execution=execution))
 
     try:
@@ -1153,6 +1174,7 @@ def update_workflow_execution_status(request):
 
         _advance_pools_runtime_metadata_on_status_update(execution=execution, target_status=target_status)
         execution.save()
+        _sync_workflow_root_projection_from_execution(execution=execution)
 
     except Exception:
         logger.exception("Failed to update workflow execution status")

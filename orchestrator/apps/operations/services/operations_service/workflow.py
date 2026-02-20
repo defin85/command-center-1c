@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import timedelta
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from ...events import event_publisher, flow_publisher
@@ -11,6 +13,531 @@ from .types import EnqueueResult, classify_enqueue_error_code, logger
 
 
 class OperationsServiceWorkflowMixin:
+    @staticmethod
+    def _extract_actor_username_from_input_context(input_context: dict[str, Any] | None) -> str:
+        context = input_context if isinstance(input_context, dict) else {}
+
+        for key in ("executed_by", "created_by", "requested_by", "actor_username"):
+            candidate = str(context.get(key) or "").strip()
+            if candidate:
+                return candidate
+
+        publication_auth = context.get("publication_auth")
+        if isinstance(publication_auth, dict):
+            strategy = str(publication_auth.get("strategy") or "").strip().lower()
+            actor_username = str(publication_auth.get("actor_username") or "").strip()
+            if strategy == "actor" and actor_username:
+                return actor_username
+
+        return ""
+
+    @classmethod
+    def _resolve_workflow_created_by(
+        cls,
+        *,
+        execution_id: str,
+        workflow_config: Optional[dict[str, Any]] = None,
+        execution: Any = None,
+    ) -> str:
+        config = workflow_config if isinstance(workflow_config, dict) else {}
+        for key in ("created_by", "executed_by", "requested_by", "actor_username"):
+            candidate = str(config.get(key) or "").strip()
+            if candidate:
+                return candidate
+
+        if execution is None:
+            try:
+                from apps.templates.workflow.models import WorkflowExecution
+
+                execution = WorkflowExecution.objects.only("input_context").filter(id=execution_id).first()
+            except Exception:
+                execution = None
+
+        input_context = (
+            execution.input_context
+            if isinstance(getattr(execution, "input_context", None), dict)
+            else {}
+        )
+        actor_username = cls._extract_actor_username_from_input_context(input_context)
+        if actor_username:
+            return actor_username
+
+        return "workflow_engine"
+
+    @classmethod
+    def _upsert_workflow_root_operation(
+        cls,
+        *,
+        execution_id: str,
+        message_payload: dict[str, Any],
+    ):
+        from ...models import BatchOperation
+
+        message = message_payload if isinstance(message_payload, dict) else {}
+        payload = message.get("payload") if isinstance(message.get("payload"), dict) else {}
+        execution_config = (
+            message.get("execution_config") if isinstance(message.get("execution_config"), dict) else {}
+        )
+        message_metadata = message.get("metadata") if isinstance(message.get("metadata"), dict) else {}
+
+        normalized_payload = {
+            "data": payload.get("data") if isinstance(payload.get("data"), dict) else {},
+            "filters": payload.get("filters") if isinstance(payload.get("filters"), dict) else {},
+            "options": payload.get("options") if isinstance(payload.get("options"), dict) else {},
+        }
+
+        normalized_metadata = cls._build_execution_metadata(
+            operation_id=execution_id,
+            metadata=message_metadata,
+        )
+        normalized_metadata["workflow_execution_id"] = execution_id
+        normalized_metadata["root_operation_id"] = execution_id
+
+        name = f"Workflow execution {execution_id}"
+        description = "Root workflow execution projection"
+        created_by = str(normalized_metadata.get("created_by") or "workflow_engine").strip() or "workflow_engine"
+
+        with transaction.atomic():
+            existing = BatchOperation.objects.select_for_update().filter(id=execution_id).first()
+            if existing is None:
+                root = BatchOperation.objects.create(
+                    id=execution_id,
+                    name=name,
+                    description=description,
+                    operation_type="execute_workflow",
+                    target_entity="Workflow",
+                    status=BatchOperation.STATUS_PENDING,
+                    payload=normalized_payload,
+                    config=execution_config,
+                    total_tasks=0,
+                    created_by=created_by,
+                    metadata=normalized_metadata,
+                )
+                return root, True
+
+            existing_metadata = existing.metadata if isinstance(existing.metadata, dict) else {}
+            existing_created_at = existing_metadata.get("created_at")
+            if existing_created_at:
+                normalized_metadata["created_at"] = existing_created_at
+            merged_metadata = dict(existing_metadata)
+            merged_metadata.update(normalized_metadata)
+
+            update_fields: list[str] = []
+            if existing.name != name:
+                existing.name = name
+                update_fields.append("name")
+            if existing.description != description:
+                existing.description = description
+                update_fields.append("description")
+            if existing.operation_type != "execute_workflow":
+                existing.operation_type = "execute_workflow"
+                update_fields.append("operation_type")
+            if existing.target_entity != "Workflow":
+                existing.target_entity = "Workflow"
+                update_fields.append("target_entity")
+            if existing.created_by != created_by:
+                existing.created_by = created_by
+                update_fields.append("created_by")
+            if existing.payload != normalized_payload:
+                existing.payload = normalized_payload
+                update_fields.append("payload")
+            if existing.config != execution_config:
+                existing.config = execution_config
+                update_fields.append("config")
+            if existing.metadata != merged_metadata:
+                existing.metadata = merged_metadata
+                update_fields.append("metadata")
+            if update_fields:
+                existing.save(update_fields=[*update_fields, "updated_at"])
+            return existing, False
+
+    @classmethod
+    def _mark_workflow_root_operation_queued(
+        cls,
+        *,
+        execution_id: str,
+    ) -> None:
+        from ...models import BatchOperation
+
+        with transaction.atomic():
+            root = BatchOperation.objects.select_for_update().filter(id=execution_id).first()
+            if root is None:
+                return
+            if root.status != BatchOperation.STATUS_PENDING:
+                return
+            root.status = BatchOperation.STATUS_QUEUED
+            root.save(update_fields=["status", "updated_at"])
+
+    @classmethod
+    def sync_workflow_root_operation_status(
+        cls,
+        *,
+        execution_id: str,
+        workflow_status: str,
+        node_id: Any = None,
+        trace_id: Any = None,
+        error_message: str = "",
+        error_code: str = "",
+        error_details: Any = None,
+    ) -> bool:
+        from ...models import BatchOperation
+
+        normalized_execution_id = str(execution_id or "").strip()
+        if not normalized_execution_id:
+            return False
+
+        normalized_workflow_status = str(workflow_status or "").strip().lower()
+        status_map = {
+            "pending": BatchOperation.STATUS_PENDING,
+            "running": BatchOperation.STATUS_PROCESSING,
+            "completed": BatchOperation.STATUS_COMPLETED,
+            "failed": BatchOperation.STATUS_FAILED,
+            "cancelled": BatchOperation.STATUS_CANCELLED,
+        }
+        next_status = status_map.get(normalized_workflow_status)
+        if next_status is None:
+            return False
+
+        if not cls._workflow_root_operation_exists(execution_id=normalized_execution_id):
+            if not cls._reconcile_missing_workflow_root_operation(
+                execution_id=normalized_execution_id,
+                workflow_status=normalized_workflow_status,
+                node_id=node_id,
+                trace_id=trace_id,
+            ):
+                return False
+
+        terminal_statuses = {
+            BatchOperation.STATUS_COMPLETED,
+            BatchOperation.STATUS_FAILED,
+            BatchOperation.STATUS_CANCELLED,
+        }
+
+        with transaction.atomic():
+            root = BatchOperation.objects.select_for_update().filter(id=normalized_execution_id).first()
+            if root is None:
+                return False
+
+            if root.status in terminal_statuses and root.status != next_status:
+                logger.info(
+                    "Skipping workflow root status regression",
+                    extra={
+                        "execution_id": normalized_execution_id,
+                        "current_status": root.status,
+                        "requested_status": next_status,
+                    },
+                )
+                return False
+
+            metadata = root.metadata if isinstance(root.metadata, dict) else {}
+            merged_metadata = dict(metadata)
+            merged_metadata["workflow_execution_id"] = normalized_execution_id
+            merged_metadata["root_operation_id"] = normalized_execution_id
+            merged_metadata["workflow_status"] = normalized_workflow_status
+
+            normalized_node_id = str(node_id or "").strip()
+            if normalized_node_id:
+                merged_metadata["node_id"] = normalized_node_id
+            normalized_trace_id = str(trace_id or "").strip()
+            if normalized_trace_id:
+                merged_metadata["trace_id"] = normalized_trace_id
+
+            if next_status == BatchOperation.STATUS_FAILED:
+                normalized_error_message = str(error_message or "").strip()
+                if normalized_error_message:
+                    merged_metadata["error"] = normalized_error_message
+                normalized_error_code = str(error_code or "").strip()
+                if normalized_error_code:
+                    merged_metadata["error_code"] = normalized_error_code
+                if error_details is not None:
+                    merged_metadata["error_details"] = error_details
+            elif next_status == BatchOperation.STATUS_COMPLETED:
+                merged_metadata.pop("error", None)
+                merged_metadata.pop("error_code", None)
+                merged_metadata.pop("error_details", None)
+
+            update_fields: list[str] = []
+            if root.status != next_status:
+                root.status = next_status
+                update_fields.append("status")
+
+            now = timezone.now()
+            if next_status in terminal_statuses:
+                if root.progress != 100:
+                    root.progress = 100
+                    update_fields.append("progress")
+                if root.completed_at is None:
+                    root.completed_at = now
+                    update_fields.append("completed_at")
+            elif next_status == BatchOperation.STATUS_PROCESSING and root.progress == 100:
+                root.progress = 0
+                update_fields.append("progress")
+
+            if root.metadata != merged_metadata:
+                root.metadata = merged_metadata
+                update_fields.append("metadata")
+
+            if not update_fields:
+                return False
+
+            root.save(update_fields=[*update_fields, "updated_at"])
+            return True
+
+    @classmethod
+    def _workflow_root_operation_exists(
+        cls,
+        *,
+        execution_id: str,
+    ) -> bool:
+        from ...models import BatchOperation
+
+        return BatchOperation.objects.filter(id=execution_id).exists()
+
+    @classmethod
+    def _reconcile_missing_workflow_root_operation(
+        cls,
+        *,
+        execution_id: str,
+        workflow_status: str,
+        node_id: Any = None,
+        trace_id: Any = None,
+    ) -> bool:
+        from apps.templates.workflow.models import WorkflowExecution
+
+        normalized_execution_id = str(execution_id or "").strip()
+        if not normalized_execution_id:
+            return False
+
+        execution = (
+            WorkflowExecution.objects.select_related("workflow_template")
+            .filter(id=normalized_execution_id)
+            .first()
+        )
+        if execution is None:
+            logger.warning(
+                "Workflow reconciliation skipped: execution missing",
+                extra={"execution_id": normalized_execution_id},
+            )
+            return False
+
+        execution_consumer = str(execution.execution_consumer or "").strip() or "workflows"
+        lane = "workflows"
+        execution_trace_id = str(trace_id or execution.trace_id or "").strip() or None
+        execution_node_id = str(node_id or execution.current_node_id or "").strip() or None
+        created_by = cls._resolve_workflow_created_by(
+            execution_id=normalized_execution_id,
+            execution=execution,
+        )
+
+        message = cls._build_execution_envelope(
+            operation_id=normalized_execution_id,
+            operation_type="execute_workflow",
+            entity="Workflow",
+            target_databases=[],
+            payload_data={"execution_id": normalized_execution_id},
+            execution_config={
+                "batch_size": 100,
+                "timeout_seconds": 300,
+                "retry_count": 1,
+                "priority": "normal",
+                "idempotency_key": normalized_execution_id,
+            },
+            metadata={
+                "created_by": created_by,
+                "template_id": str(execution.workflow_template_id) if execution.workflow_template_id else None,
+                "tags": ["workflow", "reconciled_projection"],
+                "workflow_execution_id": normalized_execution_id,
+                "node_id": execution_node_id,
+                "root_operation_id": normalized_execution_id,
+                "execution_consumer": execution_consumer,
+                "lane": lane,
+                "trace_id": execution_trace_id,
+            },
+        )
+
+        _, created = cls._upsert_workflow_root_operation(
+            execution_id=normalized_execution_id,
+            message_payload=message,
+        )
+
+        try:
+            redis_client.add_timeline_event(
+                normalized_execution_id,
+                event="projection.repaired",
+                service="orchestrator",
+                metadata={
+                    "workflow_execution_id": normalized_execution_id,
+                    "root_operation_id": normalized_execution_id,
+                    "execution_consumer": execution_consumer,
+                    "lane": lane,
+                    "workflow_status": str(workflow_status or "").strip().lower(),
+                    "repair_reason": "missing_root_projection",
+                    "projection_created": created,
+                },
+                trace_id=execution_trace_id,
+                workflow_execution_id=normalized_execution_id,
+                node_id=execution_node_id,
+            )
+        except Exception:
+            pass
+
+        logger.warning(
+            "Workflow root projection reconciled",
+            extra={
+                "execution_id": normalized_execution_id,
+                "workflow_status": str(workflow_status or "").strip().lower(),
+                "projection_created": created,
+            },
+        )
+        return True
+
+    @classmethod
+    def _enqueue_workflow_outbox_intent(
+        cls,
+        *,
+        operation_id: str,
+        message_payload: dict[str, Any],
+        stream_name: str,
+    ):
+        from ...models import WorkflowEnqueueOutbox
+
+        normalized_stream_name = str(stream_name or "").strip()
+        if not normalized_stream_name:
+            raise ValueError("stream_name must be non-empty")
+
+        normalized_payload = message_payload if isinstance(message_payload, dict) else {}
+
+        with transaction.atomic():
+            existing = WorkflowEnqueueOutbox.objects.select_for_update().filter(operation_id=operation_id).first()
+            if existing is not None:
+                return existing, False
+
+            try:
+                entry = WorkflowEnqueueOutbox.objects.create(
+                    operation_id=operation_id,
+                    stream_name=normalized_stream_name,
+                    message_payload=normalized_payload,
+                    next_retry_at=timezone.now(),
+                )
+                return entry, True
+            except IntegrityError:
+                existing = WorkflowEnqueueOutbox.objects.select_for_update().filter(operation_id=operation_id).first()
+                if existing is None:
+                    raise
+                return existing, False
+
+    @classmethod
+    def _dispatch_workflow_outbox_entry(
+        cls,
+        *,
+        outbox_id: int,
+    ) -> dict[str, Any]:
+        from ...models import WorkflowEnqueueOutbox
+
+        dispatch_now = timezone.now()
+        stream_name = ""
+        message_payload: dict[str, Any] = {}
+
+        with transaction.atomic():
+            outbox = WorkflowEnqueueOutbox.objects.select_for_update().filter(id=outbox_id).first()
+            if outbox is None:
+                return {
+                    "success": False,
+                    "stream_message_id": "",
+                    "error_code": "OUTBOX_NOT_FOUND",
+                    "error_message": "Workflow enqueue outbox entry not found",
+                    "dispatched_now": False,
+                }
+            if outbox.status == WorkflowEnqueueOutbox.STATUS_DISPATCHED:
+                return {
+                    "success": True,
+                    "stream_message_id": outbox.stream_message_id,
+                    "error_code": "",
+                    "error_message": "",
+                    "dispatched_now": False,
+                }
+
+            outbox.dispatch_attempts += 1
+            outbox.last_attempted_at = dispatch_now
+            outbox.save(update_fields=["dispatch_attempts", "last_attempted_at", "updated_at"])
+
+            stream_name = outbox.stream_name
+            message_payload = outbox.message_payload if isinstance(outbox.message_payload, dict) else {}
+
+        try:
+            stream_message_id = str(
+                redis_client.enqueue_operation_stream(message_payload, stream_name=stream_name) or ""
+            )
+        except Exception as exc:
+            error_code = classify_enqueue_error_code(exc)
+            error_message = str(exc or "").strip()[:4000]
+            with transaction.atomic():
+                outbox = WorkflowEnqueueOutbox.objects.select_for_update().filter(id=outbox_id).first()
+                if outbox is not None and outbox.status != WorkflowEnqueueOutbox.STATUS_DISPATCHED:
+                    backoff_seconds = min(120, 5 * (2 ** max(0, int(outbox.dispatch_attempts) - 1)))
+                    outbox.last_error_code = str(error_code or "")[:64]
+                    outbox.last_error = error_message
+                    outbox.next_retry_at = dispatch_now + timedelta(seconds=backoff_seconds)
+                    outbox.save(
+                        update_fields=[
+                            "last_error_code",
+                            "last_error",
+                            "next_retry_at",
+                            "updated_at",
+                        ]
+                    )
+            return {
+                "success": False,
+                "stream_message_id": "",
+                "error_code": error_code,
+                "error_message": error_message or "Failed to dispatch workflow enqueue outbox",
+                "dispatched_now": False,
+            }
+
+        with transaction.atomic():
+            outbox = WorkflowEnqueueOutbox.objects.select_for_update().filter(id=outbox_id).first()
+            if outbox is None:
+                return {
+                    "success": True,
+                    "stream_message_id": stream_message_id,
+                    "error_code": "",
+                    "error_message": "",
+                    "dispatched_now": True,
+                }
+            if outbox.status == WorkflowEnqueueOutbox.STATUS_DISPATCHED:
+                return {
+                    "success": True,
+                    "stream_message_id": outbox.stream_message_id,
+                    "error_code": "",
+                    "error_message": "",
+                    "dispatched_now": False,
+                }
+
+            outbox.status = WorkflowEnqueueOutbox.STATUS_DISPATCHED
+            outbox.dispatched_at = dispatch_now
+            outbox.stream_message_id = stream_message_id[:64]
+            outbox.last_error_code = ""
+            outbox.last_error = ""
+            outbox.next_retry_at = dispatch_now
+            outbox.save(
+                update_fields=[
+                    "status",
+                    "dispatched_at",
+                    "stream_message_id",
+                    "last_error_code",
+                    "last_error",
+                    "next_retry_at",
+                    "updated_at",
+                ]
+            )
+            return {
+                "success": True,
+                "stream_message_id": outbox.stream_message_id,
+                "error_code": "",
+                "error_message": "",
+                "dispatched_now": True,
+            }
+
     @classmethod
     def enqueue_extension_install(
         cls,
@@ -50,39 +577,87 @@ class OperationsServiceWorkflowMixin:
         data = dict(workflow_config or {})
         data["execution_id"] = execution_id
         idempotency_key = str(data.get("idempotency_key") or execution_id).strip() or execution_id
+        execution_consumer = str(data.get("execution_consumer") or "").strip() or "workflows"
+        created_by = cls._resolve_workflow_created_by(
+            execution_id=execution_id,
+            workflow_config=data,
+        )
 
-        message = {
-            "version": cls.VERSION,
-            "operation_id": execution_id,
-            "batch_id": None,
-            "operation_type": "execute_workflow",
-            "entity": "Workflow",
-            "target_databases": [],  # Workflow determines targets
-            "payload": {"data": data, "filters": {}, "options": {}},
-            "execution_config": {
+        message = cls._build_execution_envelope(
+            operation_id=execution_id,
+            operation_type="execute_workflow",
+            entity="Workflow",
+            target_databases=[],
+            payload_data=data,
+            execution_config={
                 "batch_size": 100,
                 "timeout_seconds": 300,  # 5 minutes for workflow
                 "retry_count": 1,
-                "priority": "normal",
+                "priority": str(data.get("priority") or "normal"),
                 "idempotency_key": idempotency_key,
             },
-            "metadata": {
-                "created_by": "workflow_engine",
-                "created_at": timezone.now().isoformat(),
+            metadata={
+                "created_by": created_by,
                 "template_id": None,
                 "tags": ["workflow"],
+                "workflow_execution_id": execution_id,
+                "node_id": data.get("node_id"),
+                "root_operation_id": execution_id,
+                "execution_consumer": execution_consumer,
+                "lane": "workflows",
+                "trace_id": data.get("trace_id"),
             },
-        }
+        )
 
-        try:
-            msg_id = redis_client.enqueue_operation_stream(message, stream_name=redis_client.STREAM_WORKFLOWS)
-
+        def _publish_queued_event() -> None:
             event_publisher.publish(
                 operation_id=execution_id,
                 state="QUEUED",
                 microservice="orchestrator",
                 queue=cls.QUEUE_KEY,
+                workflow_execution_id=execution_id,
+                node_id=data.get("node_id"),
+                trace_id=data.get("trace_id"),
+                execution_consumer=execution_consumer,
+                lane="workflows",
             )
+
+        try:
+            with transaction.atomic():
+                cls._upsert_workflow_root_operation(
+                    execution_id=execution_id,
+                    message_payload=message,
+                )
+                outbox_entry, _created = cls._enqueue_workflow_outbox_intent(
+                    operation_id=execution_id,
+                    message_payload=message,
+                    stream_name=redis_client.STREAM_WORKFLOWS,
+                )
+
+            dispatch = cls._dispatch_workflow_outbox_entry(outbox_id=outbox_entry.id)
+            if not dispatch["success"]:
+                logger.error(
+                    "Workflow enqueue outbox dispatch failed",
+                    extra={
+                        "execution_id": execution_id,
+                        "outbox_id": outbox_entry.id,
+                        "error_code": dispatch.get("error_code"),
+                    },
+                )
+                return EnqueueResult(
+                    success=False,
+                    operation_id=execution_id,
+                    status="error",
+                    error=str(dispatch.get("error_message") or "Failed to dispatch workflow enqueue outbox"),
+                    error_code=str(dispatch.get("error_code") or "ENQUEUE_DISPATCH_FAILED"),
+                )
+
+            cls._mark_workflow_root_operation_queued(execution_id=execution_id)
+
+            if dispatch["dispatched_now"]:
+                _publish_queued_event()
+
+            msg_id = str(dispatch["stream_message_id"] or "")
 
             logger.info(f"Workflow execution {execution_id} enqueued")
 
@@ -90,7 +665,11 @@ class OperationsServiceWorkflowMixin:
                 success=True,
                 operation_id=execution_id,
                 status="queued",
-                metadata={"stream_message_id": msg_id},
+                metadata={
+                    "stream_message_id": msg_id,
+                    "outbox_id": outbox_entry.id,
+                    "root_operation_id": execution_id,
+                },
             )
 
         except Exception as exc:
@@ -176,28 +755,25 @@ class OperationsServiceWorkflowMixin:
             "cluster_pwd": cluster.cluster_pwd or "",
         }
 
-        message = {
-            "version": cls.VERSION,
-            "operation_id": op_id,
-            "batch_id": None,
-            "operation_type": "sync_cluster",
-            "entity": "Cluster",
-            "target_databases": [],  # Sync discovers databases
-            "payload": {"data": cluster_data, "filters": {}, "options": {}},
-            "execution_config": {
+        message = cls._build_execution_envelope(
+            operation_id=op_id,
+            operation_type="sync_cluster",
+            entity="Cluster",
+            target_databases=[],
+            payload_data=cluster_data,
+            execution_config={
                 "batch_size": 50,
                 "timeout_seconds": 180,
                 "retry_count": 3,
                 "priority": "normal",
                 "idempotency_key": op_id,
             },
-            "metadata": {
+            metadata={
                 "created_by": created_by,
-                "created_at": timezone.now().isoformat(),
                 "template_id": None,
                 "tags": ["cluster", "sync"],
             },
-        }
+        )
 
         try:
             # Acquire enqueue lock (separate key from Worker's task lock)

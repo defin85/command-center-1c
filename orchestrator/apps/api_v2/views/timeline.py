@@ -29,6 +29,9 @@ class TimelineEventSerializer(serializers.Serializer):
     trace_id = serializers.CharField(required=False, allow_null=True, help_text="OpenTelemetry trace ID")
     workflow_execution_id = serializers.CharField(required=False, allow_null=True, help_text="Workflow execution ID")
     node_id = serializers.CharField(required=False, allow_null=True, help_text="Workflow node ID")
+    root_operation_id = serializers.CharField(required=False, allow_null=True, help_text="Root operation ID")
+    execution_consumer = serializers.CharField(required=False, allow_null=True, help_text="Execution consumer")
+    lane = serializers.CharField(required=False, allow_null=True, help_text="QoS lane")
     metadata = serializers.DictField(required=False, help_text="Additional event metadata")
 
 

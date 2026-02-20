@@ -4192,6 +4192,11 @@ paths:
             type: string
           description: Filter by workflow node ID
         - in: query
+          name: root_operation_id
+          schema:
+            type: string
+          description: Filter by workflow root operation ID
+        - in: query
           name: offset
           schema:
             type: integer
@@ -4211,6 +4216,16 @@ paths:
           schema:
             type: string
           description: Search by name, description, or ID
+        - in: query
+          name: execution_consumer
+          schema:
+            type: string
+          description: Filter by execution consumer
+        - in: query
+          name: lane
+          schema:
+            type: string
+          description: Filter by QoS lane
         - in: query
           name: sort
           schema:
@@ -9354,7 +9369,7 @@ paths:
   /api/v2/workflows/execute-workflow/:
     post:
       operationId: v2_workflows_execute_workflow_create
-      description: Execute a workflow template. Supports sync (blocking) and async (Go Worker if enabled, else in-process background runner) modes.
+      description: Execute a workflow template. Sync mode is blocking. Async production profile is queue-only with fail-closed enqueue errors. Workflow enqueue uses transactional outbox; root operation projection is queued only after dispatch succeeds. Local debug fallback is available only with explicit non-production flag.
       summary: Execute workflow
       tags:
         - v2
@@ -9392,6 +9407,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowEnqueueFailClosedErrorResponse'
           description: ''
         '500':
           content:
@@ -13291,6 +13312,18 @@ components:
           maxLength: 255
         metadata:
           description: Additional metadata
+        workflow_execution_id:
+          type: string
+          nullable: true
+        node_id:
+          type: string
+          nullable: true
+        root_operation_id:
+          type: string
+        execution_consumer:
+          type: string
+        lane:
+          type: string
         created_at:
           type: string
           format: date-time
@@ -13531,6 +13564,18 @@ components:
           type: string
           nullable: true
           description: Workflow node ID
+        root_operation_id:
+          type: string
+          nullable: true
+          description: Root operation ID
+        execution_consumer:
+          type: string
+          nullable: true
+          description: Execution consumer
+        lane:
+          type: string
+          nullable: true
+          description: QoS lane
         metadata:
           type: object
           additionalProperties: {}
@@ -18298,6 +18343,8 @@ components:
           type: string
         message:
           type: string
+        operation_id:
+          type: string
         task_id:
           type: string
         final_result:
@@ -18315,6 +18362,40 @@ components:
         - message
         - mode
         - status
+    WorkflowEnqueueFailClosedErrorDetails:
+      type: object
+      properties:
+        execution_id:
+          type: string
+          format: uuid
+        enqueue_error_code:
+          type: string
+      required:
+        - execution_id
+    WorkflowEnqueueFailClosedErrorDetail:
+      type: object
+      properties:
+        code:
+          type: string
+          default: WORKFLOW_ENQUEUE_FAILED
+        message:
+          type: string
+        details:
+          $ref: '#/components/schemas/WorkflowEnqueueFailClosedErrorDetails'
+      required:
+        - code
+        - details
+        - message
+    WorkflowEnqueueFailClosedErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          default: false
+        error:
+          $ref: '#/components/schemas/WorkflowEnqueueFailClosedErrorDetail'
+      required:
+        - error
     WorkflowStepResult:
       type: object
       description: Serializer for WorkflowStepResult model.

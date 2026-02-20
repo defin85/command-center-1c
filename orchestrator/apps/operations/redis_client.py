@@ -252,6 +252,9 @@ class RedisClient:
         trace_id: Optional[str] = None,
         workflow_execution_id: Optional[str] = None,
         node_id: Optional[str] = None,
+        root_operation_id: Optional[str] = None,
+        execution_consumer: Optional[str] = None,
+        lane: Optional[str] = None,
         timestamp_ms: Optional[int] = None,
     ) -> None:
         """
@@ -267,6 +270,15 @@ class RedisClient:
         trace_id_value = trace_id or metadata.get("trace_id")
         workflow_execution_id_value = workflow_execution_id or metadata.get("workflow_execution_id")
         node_id_value = node_id or metadata.get("node_id")
+        root_operation_id_value = root_operation_id or metadata.get("root_operation_id") or operation_id
+        execution_consumer_value = (
+            str(execution_consumer or metadata.get("execution_consumer") or "").strip() or "operations"
+        )
+        lane_value = str(lane or metadata.get("lane") or "").strip() or execution_consumer_value
+        normalized_metadata = dict(metadata)
+        normalized_metadata["root_operation_id"] = root_operation_id_value
+        normalized_metadata["execution_consumer"] = execution_consumer_value
+        normalized_metadata["lane"] = lane_value
         member = json.dumps(
             {
                 "id": str(uuid.uuid4()),
@@ -275,7 +287,10 @@ class RedisClient:
                 "trace_id": trace_id_value,
                 "workflow_execution_id": workflow_execution_id_value,
                 "node_id": node_id_value,
-                "metadata": metadata,
+                "root_operation_id": root_operation_id_value,
+                "execution_consumer": execution_consumer_value,
+                "lane": lane_value,
+                "metadata": normalized_metadata,
             }
         )
 
@@ -329,6 +344,22 @@ class RedisClient:
                     "trace_id": data.get("trace_id") or data.get("metadata", {}).get("trace_id"),
                     "workflow_execution_id": data.get("workflow_execution_id") or data.get("metadata", {}).get("workflow_execution_id"),
                     "node_id": data.get("node_id") or data.get("metadata", {}).get("node_id"),
+                    "root_operation_id": (
+                        data.get("root_operation_id")
+                        or data.get("metadata", {}).get("root_operation_id")
+                        or operation_id
+                    ),
+                    "execution_consumer": (
+                        data.get("execution_consumer")
+                        or data.get("metadata", {}).get("execution_consumer")
+                        or "operations"
+                    ),
+                    "lane": (
+                        data.get("lane")
+                        or data.get("metadata", {}).get("lane")
+                        or data.get("metadata", {}).get("execution_consumer")
+                        or "operations"
+                    ),
                     "metadata": data.get("metadata", {})
                 })
             except json.JSONDecodeError as e:

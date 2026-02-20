@@ -14,8 +14,10 @@ from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate
 from .document_plan_artifact_contract import (
     POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
     build_publication_payload_from_document_plan_artifact,
+    compile_document_plan_artifact_v1,
     validate_document_plan_artifact_v1,
 )
+from .distribution_artifact_contract import validate_distribution_artifact_v1
 from .models import PoolRun, PoolRunMode, PoolSchemaTemplate, PoolSchemaTemplateFormat
 from .models import PoolPublicationAttempt, PoolPublicationAttemptStatus
 from .publication_auth_mapping import (
@@ -25,6 +27,7 @@ from .publication_auth_mapping import (
     evaluate_publication_auth_coverage,
 )
 from .runtime_template_registry import sync_pool_runtime_template_registry
+from .runtime_distribution import compute_distribution_runtime_state, load_runtime_topology_for_period
 from .run_input_sanitizer import sanitize_run_input_for_runtime_contract
 from .workflow_compiler import PoolWorkflowRunContext, compile_pool_execution_plan
 
@@ -101,6 +104,11 @@ def start_pool_run_workflow_execution(
 
         sync_pool_runtime_template_registry()
         schema_template = locked_run.schema_template or _get_or_create_default_schema_template(locked_run)
+        sanitized_run_input = sanitize_run_input_for_runtime_contract(run_input=locked_run.run_input)
+        document_plan_artifact = _build_atomic_compile_document_plan_artifact(
+            run=locked_run,
+            run_input=sanitized_run_input,
+        )
         plan = compile_pool_execution_plan(
             schema_template=schema_template,
             run_context=PoolWorkflowRunContext(
@@ -109,7 +117,8 @@ def start_pool_run_workflow_execution(
                 period_end=locked_run.period_end,
                 direction=locked_run.direction,
                 mode=locked_run.mode,
-                run_input=sanitize_run_input_for_runtime_contract(run_input=locked_run.run_input),
+                run_input=sanitized_run_input,
+                document_plan_artifact=document_plan_artifact,
             ),
         )
         save_fields = {
@@ -275,6 +284,21 @@ def start_pool_run_retry_workflow_execution(
 
         sync_pool_runtime_template_registry()
         schema_template = locked_run.schema_template or _get_or_create_default_schema_template(locked_run)
+        sanitized_run_input = sanitize_run_input_for_runtime_contract(run_input=locked_run.run_input)
+        retry_publication_payload = _build_retry_publication_payload(
+            run=locked_run,
+            retry_request=retry_request,
+            parent_input_context=parent_input_context,
+        )
+        document_plan_artifact = _build_retry_compile_document_plan_artifact(
+            parent_input_context=parent_input_context,
+            retry_publication_payload=retry_publication_payload,
+        )
+        if document_plan_artifact is None:
+            document_plan_artifact = _build_atomic_compile_document_plan_artifact(
+                run=locked_run,
+                run_input=sanitized_run_input,
+            )
         plan = compile_pool_execution_plan(
             schema_template=schema_template,
             run_context=PoolWorkflowRunContext(
@@ -283,7 +307,8 @@ def start_pool_run_retry_workflow_execution(
                 period_end=locked_run.period_end,
                 direction=locked_run.direction,
                 mode=locked_run.mode,
-                run_input=sanitize_run_input_for_runtime_contract(run_input=locked_run.run_input),
+                run_input=sanitized_run_input,
+                document_plan_artifact=document_plan_artifact,
             ),
         )
         workflow_template = _resolve_or_create_workflow_template(plan=plan, requested_by=requested_by)
@@ -293,11 +318,6 @@ def start_pool_run_retry_workflow_execution(
             requested_by=requested_by,
             publication_auth_source=PUBLICATION_AUTH_SOURCE_RETRY_PUBLICATION,
             fallback_publication_auth=parent_input_context.get("publication_auth"),
-        )
-        retry_publication_payload = _build_retry_publication_payload(
-            run=locked_run,
-            retry_request=retry_request,
-            parent_input_context=parent_input_context,
         )
         retry_input_context["retry_request"] = _summarize_retry_request(retry_request)
         retry_input_context["pool_runtime_publication_payload"] = retry_publication_payload
@@ -515,6 +535,29 @@ def _validate_publication_auth_mapping_for_run(
     raise ValueError(f"{error_code}: {detail}")
 
 
+def _build_atomic_compile_document_plan_artifact(
+    *,
+    run: PoolRun,
+    run_input: dict[str, Any],
+) -> dict[str, Any] | None:
+    try:
+        distribution_state = compute_distribution_runtime_state(
+            run=run,
+            run_input=run_input,
+        )
+        distribution_artifact = validate_distribution_artifact_v1(
+            artifact=distribution_state.get("artifact"),
+        )
+        topology = load_runtime_topology_for_period(run=run)
+        return compile_document_plan_artifact_v1(
+            run=run,
+            distribution_artifact=distribution_artifact,
+            topology=topology,
+        )
+    except Exception:
+        return None
+
+
 def _with_lineage_metadata(
     *,
     input_context: dict[str, Any] | None,
@@ -589,6 +632,84 @@ def _build_retry_publication_payload(
         payload=payload,
         target_database_ids=target_database_ids,
     )
+
+
+def _build_retry_compile_document_plan_artifact(
+    *,
+    parent_input_context: dict[str, Any],
+    retry_publication_payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    artifact = _resolve_retry_document_plan_artifact(parent_input_context)
+    if artifact is None:
+        return None
+
+    pool_runtime_payload = retry_publication_payload.get("pool_runtime")
+    if not isinstance(pool_runtime_payload, dict):
+        return None
+    chains_by_database_raw = pool_runtime_payload.get("document_chains_by_database")
+    if not isinstance(chains_by_database_raw, dict):
+        return None
+
+    targets_raw = artifact.get("targets")
+    if not isinstance(targets_raw, list):
+        return None
+
+    filtered_targets: list[dict[str, Any]] = []
+    filtered_chains_count = 0
+    filtered_documents_count = 0
+
+    for target_raw in targets_raw:
+        if not isinstance(target_raw, dict):
+            continue
+        target = dict(target_raw)
+        database_id = str(target.get("database_id") or "").strip()
+        if not database_id:
+            continue
+        chains_raw = chains_by_database_raw.get(database_id)
+        if not isinstance(chains_raw, list):
+            continue
+
+        filtered_chains: list[dict[str, Any]] = []
+        for chain_raw in chains_raw:
+            if not isinstance(chain_raw, dict):
+                continue
+            chain = dict(chain_raw)
+            documents_raw = chain.get("documents")
+            if not isinstance(documents_raw, list):
+                continue
+            documents = [
+                dict(document_raw)
+                for document_raw in documents_raw
+                if isinstance(document_raw, dict)
+            ]
+            if not documents:
+                continue
+            chain["documents"] = documents
+            filtered_chains.append(chain)
+            filtered_documents_count += len(documents)
+
+        if not filtered_chains:
+            continue
+        target["chains"] = filtered_chains
+        filtered_targets.append(target)
+        filtered_chains_count += len(filtered_chains)
+
+    if not filtered_targets:
+        return None
+
+    retry_artifact = dict(artifact)
+    retry_artifact["targets"] = filtered_targets
+    compile_summary_raw = retry_artifact.get("compile_summary")
+    compile_summary = (
+        dict(compile_summary_raw)
+        if isinstance(compile_summary_raw, dict)
+        else {}
+    )
+    compile_summary["targets_count"] = len(filtered_targets)
+    compile_summary["chains_count"] = filtered_chains_count
+    compile_summary["documents_count"] = filtered_documents_count
+    retry_artifact["compile_summary"] = compile_summary
+    return validate_document_plan_artifact_v1(artifact=retry_artifact)
 
 
 def _build_retry_publication_payload_from_request(
@@ -1120,17 +1241,19 @@ def _build_execution_bindings(*, plan) -> list[dict[str, Any]]:
         template_exposure_revision = getattr(step, "template_exposure_revision", None)
         if not template_exposure_id or template_exposure_revision is None:
             continue
-        bindings.append(
-            {
-                "target_ref": f"workflow.operation_ref.{step.node_id}",
-                "source_ref": f"operation_exposure:{template_exposure_id}@{template_exposure_revision}",
-                "resolve_at": "compile",
-                "sensitive": False,
-                "status": "applied",
-                "binding_mode": "pinned_exposure",
-                "alias": step.operation_alias,
-            }
-        )
+        binding = {
+            "target_ref": f"workflow.operation_ref.{step.node_id}",
+            "source_ref": f"operation_exposure:{template_exposure_id}@{template_exposure_revision}",
+            "resolve_at": "compile",
+            "sensitive": False,
+            "status": "applied",
+            "binding_mode": "pinned_exposure",
+            "alias": step.operation_alias,
+        }
+        provenance = getattr(step, "provenance", None)
+        if isinstance(provenance, dict) and provenance:
+            binding["provenance"] = dict(provenance)
+        bindings.append(binding)
     return bindings
 
 
@@ -1141,15 +1264,17 @@ def _build_operation_binding_snapshot(*, plan) -> list[dict[str, Any]]:
         template_exposure_revision = getattr(step, "template_exposure_revision", None)
         if not template_exposure_id or template_exposure_revision is None:
             continue
-        snapshot.append(
-            {
-                "node_id": step.node_id,
-                "alias": step.operation_alias,
-                "binding_mode": "pinned_exposure",
-                "template_exposure_id": template_exposure_id,
-                "template_exposure_revision": int(template_exposure_revision),
-            }
-        )
+        item = {
+            "node_id": step.node_id,
+            "alias": step.operation_alias,
+            "binding_mode": "pinned_exposure",
+            "template_exposure_id": template_exposure_id,
+            "template_exposure_revision": int(template_exposure_revision),
+        }
+        provenance = getattr(step, "provenance", None)
+        if isinstance(provenance, dict) and provenance:
+            item["provenance"] = dict(provenance)
+        snapshot.append(item)
     return snapshot
 
 

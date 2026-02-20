@@ -2,11 +2,13 @@
 
 from copy import deepcopy
 from datetime import date
+import io
 import json
 from unittest.mock import patch
 from uuid import uuid4
 
 from django.contrib.auth.models import User
+from django.core.management import call_command
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -20,6 +22,7 @@ from apps.intercompany_pools.models import (
     PoolRunMode,
     PoolRuntimeStepIdempotencyLog,
 )
+from apps.operations.models import BatchOperation
 from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate, WorkflowType
 from apps.tenancy.models import Tenant, TenantMember
 
@@ -133,6 +136,31 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
             payload["publication_auth"] = publication_auth
         return payload
 
+    def _create_workflow_root_operation(
+        self,
+        *,
+        execution: WorkflowExecution,
+        status_value: str = BatchOperation.STATUS_QUEUED,
+    ) -> BatchOperation:
+        execution_id = str(execution.id)
+        return BatchOperation.objects.create(
+            id=execution_id,
+            name=f"Workflow execution {execution_id}",
+            description="Root workflow execution projection",
+            operation_type="execute_workflow",
+            target_entity="Workflow",
+            status=status_value,
+            payload={"data": {"execution_id": execution_id}, "filters": {}, "options": {}},
+            config={"idempotency_key": execution_id},
+            created_by="workflow_engine",
+            metadata={
+                "workflow_execution_id": execution_id,
+                "root_operation_id": execution_id,
+                "execution_consumer": "workflows",
+                "lane": "workflows",
+            },
+        )
+
     def test_update_workflow_status_advances_pools_approval_state_on_complete(self):
         tenant = Tenant.objects.create(slug=f"tenant-{uuid4().hex[:8]}", name="Tenant")
         template = self._create_template()
@@ -223,6 +251,171 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
 
         saved = WorkflowExecution.objects.get(id=execution.id)
         self.assertEqual(saved.input_context.get("publication_step_state"), "queued")
+
+    def test_update_workflow_status_syncs_root_projection_running_to_completed(self):
+        template = self._create_template()
+        execution = template.create_execution({}, execution_consumer="legacy")
+        self._create_workflow_root_operation(
+            execution=execution,
+            status_value=BatchOperation.STATUS_QUEUED,
+        )
+
+        running_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "running",
+            },
+            format="json",
+        )
+        self.assertEqual(running_response.status_code, status.HTTP_200_OK)
+
+        root = BatchOperation.objects.get(id=str(execution.id))
+        self.assertEqual(root.status, BatchOperation.STATUS_PROCESSING)
+        self.assertEqual(root.metadata.get("workflow_status"), WorkflowExecution.STATUS_RUNNING)
+
+        completed_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "completed",
+                "result": {"ok": True},
+            },
+            format="json",
+        )
+        self.assertEqual(completed_response.status_code, status.HTTP_200_OK)
+
+        root.refresh_from_db()
+        self.assertEqual(root.status, BatchOperation.STATUS_COMPLETED)
+        self.assertEqual(root.metadata.get("workflow_status"), WorkflowExecution.STATUS_COMPLETED)
+        self.assertEqual(root.progress, 100)
+        self.assertIsNotNone(root.completed_at)
+
+        repeated_completed = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "completed",
+                "result": {"ok": True},
+            },
+            format="json",
+        )
+        self.assertEqual(repeated_completed.status_code, status.HTTP_200_OK)
+
+        root.refresh_from_db()
+        self.assertEqual(root.status, BatchOperation.STATUS_COMPLETED)
+        self.assertEqual(root.metadata.get("workflow_status"), WorkflowExecution.STATUS_COMPLETED)
+
+    def test_update_workflow_status_failed_idempotent_syncs_root_projection_error_metadata(self):
+        template = self._create_template()
+        execution = template.create_execution({}, execution_consumer="legacy")
+        self._create_workflow_root_operation(
+            execution=execution,
+            status_value=BatchOperation.STATUS_QUEUED,
+        )
+
+        first_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "failed",
+                "error_message": "bridge failed",
+                "error_code": "POOL_RUNTIME_ROUTE_DISABLED",
+                "error_details": {"attempts": 1},
+            },
+            format="json",
+        )
+        self.assertEqual(first_response.status_code, status.HTTP_200_OK)
+
+        second_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "failed",
+                "error_message": "bridge retry budget exhausted",
+                "error_code": "POOL_RUNTIME_BRIDGE_RETRY_BUDGET_EXHAUSTED",
+                "error_details": {"attempts": 4, "deadline_reached": True},
+            },
+            format="json",
+        )
+        self.assertEqual(second_response.status_code, status.HTTP_200_OK)
+
+        root = BatchOperation.objects.get(id=str(execution.id))
+        self.assertEqual(root.status, BatchOperation.STATUS_FAILED)
+        self.assertEqual(root.metadata.get("workflow_status"), WorkflowExecution.STATUS_FAILED)
+        self.assertEqual(root.metadata.get("error"), "bridge retry budget exhausted")
+        self.assertEqual(root.metadata.get("error_code"), "POOL_RUNTIME_BRIDGE_RETRY_BUDGET_EXHAUSTED")
+        self.assertEqual(root.metadata.get("error_details"), {"attempts": 4, "deadline_reached": True})
+
+    def test_detect_repair_then_backfill_is_idempotent_for_missing_root_projection(self):
+        template = self._create_template()
+        execution = template.create_execution({}, execution_consumer="legacy")
+        execution_id = str(execution.id)
+        self.assertFalse(BatchOperation.objects.filter(id=execution_id).exists())
+
+        running_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": execution_id,
+                "status": "running",
+            },
+            format="json",
+        )
+        self.assertEqual(running_response.status_code, status.HTTP_200_OK)
+
+        root = BatchOperation.objects.get(id=execution_id)
+        self.assertEqual(root.status, BatchOperation.STATUS_PROCESSING)
+        self.assertEqual(root.metadata.get("workflow_status"), WorkflowExecution.STATUS_RUNNING)
+        self.assertEqual(root.metadata.get("root_operation_id"), execution_id)
+
+        out = io.StringIO()
+        call_command("backfill_workflow_root_projections", "--json", stdout=out)
+        backfill_payload = json.loads(out.getvalue())
+
+        self.assertEqual(backfill_payload["executions_scanned"], 1)
+        self.assertEqual(backfill_payload["executions_missing_root"], 0)
+        self.assertEqual(backfill_payload["executions_repaired"], 0)
+        self.assertEqual(backfill_payload["executions_repair_failed"], 0)
+
+    def test_backfill_repairs_missing_root_before_failed_status_update(self):
+        template = self._create_template()
+        execution = template.create_execution({}, execution_consumer="legacy")
+        execution_id = str(execution.id)
+        self.assertFalse(BatchOperation.objects.filter(id=execution_id).exists())
+
+        out = io.StringIO()
+        call_command("backfill_workflow_root_projections", "--json", stdout=out)
+        backfill_payload = json.loads(out.getvalue())
+
+        self.assertEqual(backfill_payload["executions_scanned"], 1)
+        self.assertEqual(backfill_payload["executions_missing_root"], 1)
+        self.assertEqual(backfill_payload["executions_repaired"], 1)
+        self.assertEqual(backfill_payload["executions_repair_failed"], 0)
+
+        root = BatchOperation.objects.get(id=execution_id)
+        self.assertEqual(root.status, BatchOperation.STATUS_PENDING)
+        self.assertEqual(root.metadata.get("workflow_status"), WorkflowExecution.STATUS_PENDING)
+        self.assertEqual(root.metadata.get("root_operation_id"), execution_id)
+
+        failed_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": execution_id,
+                "status": "failed",
+                "error_message": "bridge failed after backfill",
+                "error_code": "POOL_RUNTIME_BRIDGE_RETRY_BUDGET_EXHAUSTED",
+                "error_details": {"attempts": 4},
+            },
+            format="json",
+        )
+        self.assertEqual(failed_response.status_code, status.HTTP_200_OK)
+
+        root.refresh_from_db()
+        self.assertEqual(root.status, BatchOperation.STATUS_FAILED)
+        self.assertEqual(root.metadata.get("workflow_status"), WorkflowExecution.STATUS_FAILED)
+        self.assertEqual(root.metadata.get("error"), "bridge failed after backfill")
+        self.assertEqual(root.metadata.get("error_code"), "POOL_RUNTIME_BRIDGE_RETRY_BUDGET_EXHAUSTED")
+        self.assertEqual(root.metadata.get("error_details"), {"attempts": 4})
 
     def test_update_workflow_status_persists_structured_failure_diagnostics(self):
         tenant = Tenant.objects.create(slug=f"tenant-{uuid4().hex[:8]}", name="Tenant")

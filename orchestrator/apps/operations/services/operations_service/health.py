@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import uuid
 
-from django.utils import timezone
-
 from ...models import BatchOperation
 from ...events import event_publisher, flow_publisher
 from ...redis_client import redis_client
@@ -87,28 +85,26 @@ class OperationsServiceHealthMixin:
         except Exception:
             pass
 
-        message = {
-            "version": cls.VERSION,
-            "operation_id": operation_id,
-            "batch_id": None,
-            "operation_type": "health_check",
-            "entity": "Database",
-            "target_databases": [cls._build_target_database_data(db) for db in databases],
-            "payload": {"data": {}, "filters": {}, "options": {"check_odata": True}},
-            "execution_config": {
+        message = cls._build_execution_envelope(
+            operation_id=operation_id,
+            operation_type="health_check",
+            entity="Database",
+            target_databases=[cls._build_target_database_data(db) for db in databases],
+            payload_data={},
+            payload_options={"check_odata": True},
+            execution_config={
                 "batch_size": 50,  # Check 50 at a time
                 "timeout_seconds": 30,  # 30 seconds per database
                 "retry_count": 1,
                 "priority": "low",
                 "idempotency_key": operation_id,
             },
-            "metadata": {
+            metadata={
                 "created_by": created_by,
-                "created_at": timezone.now().isoformat(),
                 "template_id": None,
                 "tags": ["health_check", "monitoring"],
             },
-        }
+        )
 
         try:
             redis_client.acquire_enqueue_lock(task_id=operation_id, ttl_seconds=3600)

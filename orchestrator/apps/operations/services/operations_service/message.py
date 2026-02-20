@@ -4,6 +4,8 @@ import hashlib
 import json
 from typing import Any
 
+from django.utils import timezone
+
 from ...models import BatchOperation
 
 
@@ -26,6 +28,105 @@ class OperationsServiceMessageMixin:
             "ras_infobase_id": (
                 str(db.ras_infobase_id) if hasattr(db, "ras_infobase_id") and db.ras_infobase_id else str(db.id)
             ),
+        }
+
+    @staticmethod
+    def _normalize_text(value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    @staticmethod
+    def _normalize_created_at(value: Any) -> str:
+        if value is None:
+            return timezone.now().isoformat()
+        if hasattr(value, "isoformat"):
+            try:
+                return value.isoformat()
+            except Exception:
+                pass
+        text = str(value).strip()
+        return text or timezone.now().isoformat()
+
+    @staticmethod
+    def _normalize_tags(value: Any) -> list[str]:
+        if isinstance(value, (list, tuple)):
+            tags: list[str] = []
+            for raw_tag in value:
+                tag = str(raw_tag or "").strip()
+                if tag:
+                    tags.append(tag)
+            return tags
+        return []
+
+    @classmethod
+    def _build_execution_metadata(
+        cls,
+        *,
+        operation_id: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        raw_metadata = metadata if isinstance(metadata, dict) else {}
+        execution_consumer = cls._normalize_text(raw_metadata.get("execution_consumer")) or "operations"
+        lane = cls._normalize_text(raw_metadata.get("lane")) or execution_consumer
+
+        root_operation_id = cls._normalize_text(raw_metadata.get("root_operation_id")) or operation_id
+
+        return {
+            "created_by": cls._normalize_text(raw_metadata.get("created_by")) or "system",
+            "created_at": cls._normalize_created_at(raw_metadata.get("created_at")),
+            "template_id": raw_metadata.get("template_id"),
+            "template_exposure_id": raw_metadata.get("template_exposure_id"),
+            "template_exposure_revision": raw_metadata.get("template_exposure_revision"),
+            "tags": cls._normalize_tags(raw_metadata.get("tags")),
+            "workflow_execution_id": raw_metadata.get("workflow_execution_id"),
+            "node_id": raw_metadata.get("node_id"),
+            "root_operation_id": root_operation_id,
+            "execution_consumer": execution_consumer,
+            "lane": lane,
+            "trace_id": raw_metadata.get("trace_id"),
+        }
+
+    @classmethod
+    def _build_execution_envelope(
+        cls,
+        *,
+        operation_id: str,
+        operation_type: str,
+        entity: str,
+        target_databases: list[dict[str, Any]],
+        payload_data: dict[str, Any] | None = None,
+        payload_filters: dict[str, Any] | None = None,
+        payload_options: dict[str, Any] | None = None,
+        execution_config: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        config = {
+            "batch_size": 100,
+            "timeout_seconds": 30,
+            "retry_count": 3,
+            "priority": "normal",
+        }
+        if isinstance(execution_config, dict):
+            config.update(execution_config)
+
+        idempotency_key = cls._normalize_text(config.get("idempotency_key")) or operation_id
+        config["idempotency_key"] = idempotency_key
+
+        return {
+            "version": cls.VERSION,
+            "operation_id": operation_id,
+            "batch_id": None,
+            "operation_type": operation_type,
+            "entity": entity,
+            "target_databases": target_databases,
+            "payload": {
+                "data": payload_data if isinstance(payload_data, dict) else {},
+                "filters": payload_filters if isinstance(payload_filters, dict) else {},
+                "options": payload_options if isinstance(payload_options, dict) else {},
+            },
+            "execution_config": config,
+            "metadata": cls._build_execution_metadata(operation_id=operation_id, metadata=metadata),
         }
 
     @classmethod
@@ -66,37 +167,38 @@ class OperationsServiceMessageMixin:
                         if key in raw_options:
                             payload_options[key] = raw_options.get(key)
 
-        return {
-            "version": cls.VERSION,
-            "operation_id": str(operation.id),
-            "batch_id": None,  # TODO: Implement batch grouping in Phase 2
-            "operation_type": operation.operation_type,
-            "entity": operation.target_entity,
-            "target_databases": [cls._build_target_database_data(db) for db in operation.target_databases.all()],
-            "payload": {
-                "data": payload_data,
-                "filters": payload_filters,
-                "options": payload_options,
-            },
-            "execution_config": {
+        operation_metadata = operation.metadata if isinstance(operation.metadata, dict) else {}
+        operation_id = str(operation.id)
+        return cls._build_execution_envelope(
+            operation_id=operation_id,
+            operation_type=operation.operation_type,
+            entity=operation.target_entity,
+            target_databases=[cls._build_target_database_data(db) for db in operation.target_databases.all()],
+            payload_data=payload_data,
+            payload_filters=payload_filters,
+            payload_options=payload_options,
+            execution_config={
                 "batch_size": operation.config.get("batch_size", 100),
                 "timeout_seconds": operation.config.get("timeout_seconds", 30),
                 "retry_count": operation.config.get("retry_count", 3),
                 "priority": operation.config.get("priority", "normal"),
-                "idempotency_key": str(operation.id),
+                "idempotency_key": operation_id,
             },
-            "metadata": {
+            metadata={
                 "created_by": operation.created_by or "system",
-                "created_at": operation.created_at.isoformat(),
+                "created_at": operation.created_at,
                 "template_id": operation.template_id,
                 "template_exposure_id": operation.template_exposure_id,
                 "template_exposure_revision": operation.template_exposure_revision,
-                "tags": operation.metadata.get("tags", []),
-                "workflow_execution_id": operation.metadata.get("workflow_execution_id"),
-                "node_id": operation.metadata.get("node_id"),
-                "trace_id": operation.metadata.get("trace_id"),
+                "tags": operation_metadata.get("tags", []),
+                "workflow_execution_id": operation_metadata.get("workflow_execution_id"),
+                "node_id": operation_metadata.get("node_id"),
+                "root_operation_id": operation_metadata.get("root_operation_id") or operation_id,
+                "execution_consumer": operation_metadata.get("execution_consumer") or "operations",
+                "lane": operation_metadata.get("lane") or "operations",
+                "trace_id": operation_metadata.get("trace_id"),
             },
-        }
+        )
 
     @classmethod
     def _extract_target_scope(cls, payload: Any) -> str:

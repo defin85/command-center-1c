@@ -40,6 +40,7 @@ def _create_context(
     direction: str = PoolRunDirection.BOTTOM_UP,
     mode: str = PoolRunMode.SAFE,
     run_input: dict | None = None,
+    document_plan_artifact: dict | None = None,
 ) -> PoolWorkflowRunContext:
     return PoolWorkflowRunContext(
         pool_id=pool_id or str(uuid4()),
@@ -48,11 +49,81 @@ def _create_context(
         direction=direction,
         mode=mode,
         run_input=run_input if isinstance(run_input, dict) else {"source_payload": [{"inn": "770000000001", "amount": "10.00"}]},
+        document_plan_artifact=document_plan_artifact if isinstance(document_plan_artifact, dict) else None,
     )
 
 
 def _sync_runtime_templates() -> None:
     sync_pool_runtime_template_registry()
+
+
+def _build_document_plan_artifact() -> dict[str, object]:
+    return {
+        "version": "document_plan_artifact.v1",
+        "run_id": str(uuid4()),
+        "distribution_artifact_ref": {
+            "version": "distribution_artifact.v1",
+            "topology_version_ref": "topology-v1",
+        },
+        "topology_version_ref": "topology-v1",
+        "policy_refs": [
+            {
+                "edge_ref": {
+                    "parent_node_id": "node-parent",
+                    "child_node_id": "node-child",
+                },
+                "policy_version": "document_policy.v1",
+                "source": "edge.metadata.document_policy",
+            }
+        ],
+        "targets": [
+            {
+                "database_id": "db-001",
+                "chains": [
+                    {
+                        "chain_id": "sale-chain",
+                        "edge_ref": {
+                            "parent_node_id": "node-parent",
+                            "child_node_id": "node-child",
+                        },
+                        "policy_source": "edge.metadata.document_policy",
+                        "policy_version": "document_policy.v1",
+                        "allocation": {"amount": "100.00"},
+                        "documents": [
+                            {
+                                "document_id": "sale-doc",
+                                "entity_name": "Document_Sales",
+                                "document_role": "base",
+                                "field_mapping": {},
+                                "table_parts_mapping": {},
+                                "link_rules": {},
+                                "invoice_mode": "optional",
+                                "idempotency_key": "doc-sale-key",
+                            },
+                            {
+                                "document_id": "invoice-doc",
+                                "entity_name": "Document_Invoice",
+                                "document_role": "invoice",
+                                "field_mapping": {},
+                                "table_parts_mapping": {},
+                                "link_rules": {},
+                                "invoice_mode": "required",
+                                "idempotency_key": "doc-invoice-key",
+                                "link_to": "sale-doc",
+                            },
+                        ],
+                    }
+                ],
+            }
+        ],
+        "compile_summary": {
+            "compiled_edges": 1,
+            "targets_count": 1,
+            "chains_count": 1,
+            "documents_count": 2,
+            "compiled_at": "2026-01-01T00:00:00+00:00",
+        },
+    }
 
 
 @pytest.mark.django_db
@@ -146,6 +217,90 @@ def test_compile_pool_execution_plan_unsafe_mode_skips_approval_gate() -> None:
         "publication_odata",
     ]
     assert all("condition" not in edge for edge in plan.dag_structure["edges"])
+
+
+@pytest.mark.django_db
+def test_compile_pool_execution_plan_uses_atomic_publication_nodes_from_document_plan_artifact() -> None:
+    tenant = Tenant.objects.create(slug=f"pool-atomic-{uuid4().hex[:8]}", name="Pool Atomic")
+    schema_template = _create_schema_template(tenant=tenant, code="atomic-template")
+    _sync_runtime_templates()
+
+    artifact = _build_document_plan_artifact()
+    plan = compile_pool_execution_plan(
+        schema_template=schema_template,
+        run_context=_create_context(
+            mode=PoolRunMode.SAFE,
+            document_plan_artifact=artifact,
+        ),
+    )
+
+    publication_steps = [step for step in plan.steps if step.operation_alias == "pool.publication_odata"]
+    node_ids = [node["id"] for node in plan.dag_structure["nodes"]]
+
+    assert len(publication_steps) == 2
+    assert "publication_odata" not in node_ids
+    assert all(step.node_id.startswith("publication_odata_") for step in publication_steps)
+    assert all(step.node_id in node_ids for step in publication_steps)
+    assert all(isinstance(step.provenance, dict) for step in publication_steps)
+    assert all(step.provenance.get("kind") == "pool_atomic_publication" for step in publication_steps)
+    assert all(step.provenance.get("action_kind") == "publish_odata" for step in publication_steps)
+    assert all(step.provenance.get("attempt_scope") == "run_execution" for step in publication_steps)
+    assert all("edge_ref" in step.provenance for step in publication_steps)
+
+    first_publication_node_id = publication_steps[0].node_id
+    approval_edge = next(
+        edge
+        for edge in plan.dag_structure["edges"]
+        if edge["from"] == "approval_gate" and edge["to"] == first_publication_node_id
+    )
+    assert approval_edge["condition"] == "{{approved_at}}"
+
+
+@pytest.mark.django_db
+def test_compile_pool_execution_plan_atomic_publication_node_ids_are_deterministic() -> None:
+    tenant = Tenant.objects.create(slug=f"pool-atomic-deterministic-{uuid4().hex[:8]}", name="Pool Atomic Deterministic")
+    schema_template = _create_schema_template(tenant=tenant, code="atomic-deterministic-template")
+    _sync_runtime_templates()
+
+    artifact = _build_document_plan_artifact()
+    context = _create_context(mode=PoolRunMode.SAFE, document_plan_artifact=artifact)
+    plan_1 = compile_pool_execution_plan(schema_template=schema_template, run_context=context)
+    plan_2 = compile_pool_execution_plan(schema_template=schema_template, run_context=context)
+
+    publication_ids_1 = [step.node_id for step in plan_1.steps if step.operation_alias == "pool.publication_odata"]
+    publication_ids_2 = [step.node_id for step in plan_2.steps if step.operation_alias == "pool.publication_odata"]
+
+    assert publication_ids_1 == publication_ids_2
+
+
+@pytest.mark.django_db
+def test_compile_pool_execution_plan_fails_closed_when_required_invoice_step_is_missing() -> None:
+    tenant = Tenant.objects.create(slug=f"pool-atomic-invoice-{uuid4().hex[:8]}", name="Pool Atomic Invoice")
+    schema_template = _create_schema_template(tenant=tenant, code="atomic-invoice-template")
+    _sync_runtime_templates()
+
+    artifact = _build_document_plan_artifact()
+    artifact["targets"][0]["chains"][0]["documents"] = [
+        {
+            "document_id": "sale-doc",
+            "entity_name": "Document_Sales",
+            "document_role": "base",
+            "field_mapping": {},
+            "table_parts_mapping": {},
+            "link_rules": {},
+            "invoice_mode": "required",
+            "idempotency_key": "doc-sale-key",
+        }
+    ]
+
+    with pytest.raises(ValueError, match="POOL_RUNTIME_REQUIRED_INVOICE_STEP_MISSING"):
+        compile_pool_execution_plan(
+            schema_template=schema_template,
+            run_context=_create_context(
+                mode=PoolRunMode.SAFE,
+                document_plan_artifact=artifact,
+            ),
+        )
 
 
 @pytest.mark.django_db

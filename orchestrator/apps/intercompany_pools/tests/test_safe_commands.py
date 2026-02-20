@@ -126,6 +126,10 @@ def test_safe_commands_confirm_then_abort_keeps_single_winner_outbox() -> None:
     assert outbox_entries[0].intent_type == PoolRunCommandOutboxIntent.ENQUEUE_WORKFLOW_EXECUTION
     metadata = (outbox_entries[0].message_payload or {}).get("metadata") or {}
     assert metadata.get("created_by") == operator.username
+    assert metadata.get("workflow_execution_id") == str(run.workflow_execution_id)
+    assert metadata.get("root_operation_id") == str(run.workflow_execution_id)
+    assert metadata.get("execution_consumer") == "pools"
+    assert metadata.get("lane") == "workflows"
 
     execution = WorkflowExecution.objects.get(id=run.workflow_execution_id)
     publication_auth = execution.input_context.get("publication_auth")

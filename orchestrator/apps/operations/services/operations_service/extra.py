@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import uuid
 
-from django.utils import timezone
-
 from ...models import BatchOperation
 from ...events import event_publisher, flow_publisher
 from ...redis_client import redis_client
@@ -106,28 +104,25 @@ class OperationsServiceExtraMixin:
         Task.objects.bulk_create(tasks)
 
         # Build Message Protocol v2.0 message
-        message = {
-            "version": cls.VERSION,
-            "operation_id": operation_id,
-            "batch_id": None,
-            "operation_type": operation_type,
-            "entity": "Infobase",
-            "target_databases": [cls._build_target_database_data(db) for db in databases],
-            "payload": {"data": config, "filters": {}, "options": {}},
-            "execution_config": {
+        message = cls._build_execution_envelope(
+            operation_id=operation_id,
+            operation_type=operation_type,
+            entity="Infobase",
+            target_databases=[cls._build_target_database_data(db) for db in databases],
+            payload_data=config,
+            execution_config={
                 "batch_size": 1,
                 "timeout_seconds": 60,
                 "retry_count": 3,
                 "priority": "normal",
                 "idempotency_key": operation_id,
             },
-            "metadata": {
+            metadata={
                 "created_by": user.username if user else "system",
-                "created_at": timezone.now().isoformat(),
                 "template_id": None,
                 "tags": ["ras", operation_type],
             },
-        }
+        )
 
         try:
             # Acquire enqueue lock (separate key from Worker's task lock)

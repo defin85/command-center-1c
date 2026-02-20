@@ -61,6 +61,7 @@ def test_execute_workflow_async_uses_background_runner_when_go_engine_disabled(
 ):
     settings.CELERY_ENABLED = False
     settings.ENABLE_GO_WORKFLOW_ENGINE = False
+    settings.WORKFLOW_EXECUTION_DEBUG_FALLBACK_ENABLED = True
 
     with (
         patch(
@@ -83,6 +84,35 @@ def test_execute_workflow_async_uses_background_runner_when_go_engine_disabled(
     assert execution.input_context["executed_by"] == "workflow_user"
 
     start_bg.assert_called_once()
+    enqueue.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_execute_workflow_async_without_debug_fallback_fails_closed_when_go_engine_disabled(
+    client,
+    settings,
+    workflow_template,
+):
+    settings.CELERY_ENABLED = False
+    settings.ENABLE_GO_WORKFLOW_ENGINE = False
+    settings.WORKFLOW_EXECUTION_DEBUG_FALLBACK_ENABLED = False
+
+    with (
+        patch("apps.api_v2.views.workflows._start_async_workflow_execution") as start_bg,
+        patch("apps.operations.services.OperationsService.enqueue_workflow_execution") as enqueue,
+    ):
+        resp = client.post(
+            "/api/v2/workflows/execute-workflow/",
+            {"workflow_id": str(workflow_template.id), "input_context": {}, "mode": "async"},
+            format="json",
+        )
+
+    assert resp.status_code == 503
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "WORKFLOW_ENQUEUE_FAILED"
+    assert payload["error"]["details"]["enqueue_error_code"] == "LOCAL_FALLBACK_DISABLED"
+    start_bg.assert_not_called()
     enqueue.assert_not_called()
 
 
@@ -155,7 +185,92 @@ def test_execute_workflow_async_go_engine_enqueues_to_workflows_stream(
 
     mock_redis_client.enqueue_operation_stream.assert_called_once()
     assert mock_redis_client.enqueue_operation_stream.call_args.kwargs == {
-        "stream_name": mock_redis_client.STREAM_WORKFLOWS,
+        "stream_name": str(mock_redis_client.STREAM_WORKFLOWS),
     }
     mock_event_publisher.publish.assert_called_once()
+    start_bg.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_execute_workflow_async_production_profile_is_queue_only(
+    client,
+    settings,
+    workflow_template,
+    monkeypatch,
+):
+    settings.CELERY_ENABLED = False
+    settings.ENABLE_GO_WORKFLOW_ENGINE = False
+    monkeypatch.setenv("APP_ENV", "production")
+
+    fake_result = EnqueueResult(success=True, operation_id="op-prod-1", status="queued")
+
+    with (
+        patch(
+            "apps.api_v2.views.workflows._start_async_workflow_execution",
+            return_value=True,
+        ) as start_bg,
+        patch(
+            "apps.operations.services.OperationsService.enqueue_workflow_execution",
+            return_value=fake_result,
+        ) as enqueue,
+    ):
+        resp = client.post(
+            "/api/v2/workflows/execute-workflow/",
+            {"workflow_id": str(workflow_template.id), "input_context": {}, "mode": "async"},
+            format="json",
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["mode"] == "async"
+    assert payload["status"] == "pending"
+    assert payload["operation_id"] == "op-prod-1"
+
+    enqueue.assert_called_once()
+    start_bg.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_execute_workflow_async_production_profile_fails_closed_on_enqueue_error(
+    client,
+    settings,
+    workflow_template,
+    monkeypatch,
+):
+    settings.CELERY_ENABLED = False
+    settings.ENABLE_GO_WORKFLOW_ENGINE = False
+    settings.WORKFLOW_EXECUTION_DEBUG_FALLBACK_ENABLED = True
+    monkeypatch.setenv("APP_ENV", "production")
+
+    fake_result = EnqueueResult(
+        success=False,
+        operation_id="",
+        status="error",
+        error="redis unavailable",
+        error_code="REDIS_UNAVAILABLE",
+    )
+
+    with (
+        patch(
+            "apps.api_v2.views.workflows._start_async_workflow_execution",
+            return_value=True,
+        ) as start_bg,
+        patch(
+            "apps.operations.services.OperationsService.enqueue_workflow_execution",
+            return_value=fake_result,
+        ) as enqueue,
+    ):
+        resp = client.post(
+            "/api/v2/workflows/execute-workflow/",
+            {"workflow_id": str(workflow_template.id), "input_context": {}, "mode": "async"},
+            format="json",
+        )
+
+    assert resp.status_code == 503
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "WORKFLOW_ENQUEUE_FAILED"
+    assert payload["error"]["details"]["enqueue_error_code"] == "REDIS_UNAVAILABLE"
+
+    enqueue.assert_called_once()
     start_bg.assert_not_called()

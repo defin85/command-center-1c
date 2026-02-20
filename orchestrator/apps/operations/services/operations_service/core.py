@@ -28,11 +28,18 @@ class OperationsServiceCore:
     @staticmethod
     def _get_workflow_metadata(operation: BatchOperation) -> dict[str, Any]:
         metadata = operation.metadata or {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        execution_consumer = str(metadata.get("execution_consumer") or "").strip() or "operations"
+        lane = str(metadata.get("lane") or "").strip() or execution_consumer
         result: dict[str, Any] = {}
         for key in ("workflow_execution_id", "node_id", "trace_id"):
             value = metadata.get(key)
             if value:
                 result[key] = value
+        result["root_operation_id"] = str(metadata.get("root_operation_id") or operation.id)
+        result["execution_consumer"] = execution_consumer
+        result["lane"] = lane
         return result
 
     @classmethod

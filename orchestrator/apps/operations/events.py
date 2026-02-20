@@ -59,6 +59,13 @@ class OperationEventPublisher:
         trace_id_value = trace_id or metadata.get("trace_id") or get_current_trace_id()
         workflow_execution_id = metadata.get("workflow_execution_id")
         node_id = metadata.get("node_id")
+        root_operation_id = metadata.get("root_operation_id") or operation_id
+        execution_consumer = str(metadata.get("execution_consumer") or "").strip() or "operations"
+        lane = str(metadata.get("lane") or "").strip() or execution_consumer
+        normalized_metadata = dict(metadata)
+        normalized_metadata["root_operation_id"] = root_operation_id
+        normalized_metadata["execution_consumer"] = execution_consumer
+        normalized_metadata["lane"] = lane
         event = {
             "version": "1.0",
             "operation_id": operation_id,
@@ -66,10 +73,13 @@ class OperationEventPublisher:
             "trace_id": trace_id_value,
             "workflow_execution_id": workflow_execution_id,
             "node_id": node_id,
+            "root_operation_id": root_operation_id,
+            "execution_consumer": execution_consumer,
+            "lane": lane,
             "state": state,
             "microservice": microservice,
             "message": message or self.STATES.get(state, ""),
-            "metadata": metadata
+            "metadata": normalized_metadata
         }
 
         stream_name = f"events:operation:{operation_id}"

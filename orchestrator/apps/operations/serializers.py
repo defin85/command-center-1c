@@ -100,6 +100,11 @@ class BatchOperationSerializer(serializers.ModelSerializer):
     
     tasks = TaskSerializer(many=True, read_only=True)
     database_names = serializers.SerializerMethodField()
+    workflow_execution_id = serializers.SerializerMethodField()
+    node_id = serializers.SerializerMethodField()
+    root_operation_id = serializers.SerializerMethodField()
+    execution_consumer = serializers.SerializerMethodField()
+    lane = serializers.SerializerMethodField()
     
     class Meta:
         model = BatchOperation
@@ -109,6 +114,7 @@ class BatchOperationSerializer(serializers.ModelSerializer):
             'payload', 'config', 'task_id',
             'started_at', 'completed_at', 'duration_seconds', 'success_rate',
             'created_by', 'metadata', 'created_at', 'updated_at',
+            'workflow_execution_id', 'node_id', 'root_operation_id', 'execution_consumer', 'lane',
             'database_names', 'tasks'
         ]
         read_only_fields = [
@@ -134,3 +140,32 @@ class BatchOperationSerializer(serializers.ModelSerializer):
     def get_database_names(self, obj: BatchOperation) -> List[str]:
         """Get list of database names for this operation."""
         return list(obj.target_databases.values_list('name', flat=True))
+
+    def _workflow_metadata(self, obj: BatchOperation) -> dict:
+        metadata = obj.metadata if isinstance(obj.metadata, dict) else {}
+        execution_consumer = str(metadata.get("execution_consumer") or "").strip() or "operations"
+        lane = str(metadata.get("lane") or "").strip() or execution_consumer
+        return {
+            "workflow_execution_id": metadata.get("workflow_execution_id"),
+            "node_id": metadata.get("node_id"),
+            "root_operation_id": str(metadata.get("root_operation_id") or obj.id),
+            "execution_consumer": execution_consumer,
+            "lane": lane,
+        }
+
+    def get_workflow_execution_id(self, obj: BatchOperation) -> str | None:
+        value = self._workflow_metadata(obj).get("workflow_execution_id")
+        return str(value) if value is not None else None
+
+    def get_node_id(self, obj: BatchOperation) -> str | None:
+        value = self._workflow_metadata(obj).get("node_id")
+        return str(value) if value is not None else None
+
+    def get_root_operation_id(self, obj: BatchOperation) -> str:
+        return str(self._workflow_metadata(obj).get("root_operation_id") or obj.id)
+
+    def get_execution_consumer(self, obj: BatchOperation) -> str:
+        return str(self._workflow_metadata(obj).get("execution_consumer") or "operations")
+
+    def get_lane(self, obj: BatchOperation) -> str:
+        return str(self._workflow_metadata(obj).get("lane") or "operations")

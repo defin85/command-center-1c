@@ -521,6 +521,13 @@ ENABLE_GO_SCHEDULER = env.bool('ENABLE_GO_SCHEDULER', default=False)
 ENABLE_GO_TEMPLATE_ENGINE = env.bool('ENABLE_GO_TEMPLATE_ENGINE', default=False)
 ENABLE_GO_WORKFLOW_ENGINE = env.bool('ENABLE_GO_WORKFLOW_ENGINE', default=False)
 
+# Explicit debug control for local in-process workflow fallback.
+# Only intended for local/non-production diagnostics.
+WORKFLOW_EXECUTION_DEBUG_FALLBACK_ENABLED = env.bool(
+    'WORKFLOW_EXECUTION_DEBUG_FALLBACK_ENABLED',
+    default=False,
+)
+
 # Celery removed - this flag kept for backward compatibility during transition
 # Always False now - all operations go through Go Worker via Redis queue
 CELERY_ENABLED = env.bool('CELERY_ENABLED', default=False)

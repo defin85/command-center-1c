@@ -20,6 +20,9 @@ OPERATION_FILTER_FIELDS = {
     "duration_seconds": {"field": "duration_seconds", "type": "number"},
     "workflow_execution_id": {"field": "metadata__workflow_execution_id", "type": "text"},
     "node_id": {"field": "metadata__node_id", "type": "text"},
+    "root_operation_id": {"field": "metadata__root_operation_id", "type": "text"},
+    "execution_consumer": {"field": "metadata__execution_consumer", "type": "text"},
+    "lane": {"field": "metadata__lane", "type": "text"},
 }
 
 OPERATION_SORT_FIELDS = {
@@ -182,5 +185,4 @@ def _apply_sort(qs, sort_payload: dict | None, config: dict) -> tuple:
         "code": "INVALID_SORT",
         "message": "sort order must be 'asc' or 'desc'",
     }
-
 

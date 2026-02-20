@@ -500,55 +500,57 @@ def _build_enqueue_workflow_message(*, execution_id: str, requested_by=None) -> 
         "execution_consumer": "pools",
         "priority": "normal",
     }
-    return {
-        "version": OperationsService.VERSION,
-        "operation_id": execution_id,
-        "batch_id": None,
-        "operation_type": "execute_workflow",
-        "entity": "Workflow",
-        "target_databases": [],
-        "payload": {"data": data, "filters": {}, "options": {}},
-        "execution_config": {
+    return OperationsService._build_execution_envelope(
+        operation_id=execution_id,
+        operation_type="execute_workflow",
+        entity="Workflow",
+        target_databases=[],
+        payload_data=data,
+        execution_config={
             "batch_size": 100,
             "timeout_seconds": 300,
             "retry_count": 1,
             "priority": "normal",
             "idempotency_key": execution_id,
         },
-        "metadata": {
+        metadata={
             "created_by": created_by,
-            "created_at": timezone.now().isoformat(),
             "template_id": None,
             "tags": ["workflow", "pools"],
+            "workflow_execution_id": execution_id,
+            "root_operation_id": execution_id,
+            "execution_consumer": "pools",
+            "lane": "workflows",
         },
-    }
+    )
 
 
 def _build_cancel_workflow_message(*, execution_id: str, requested_by=None) -> dict[str, Any]:
     created_by = _resolve_request_actor_username(requested_by=requested_by) or "workflow_engine"
     operation_id = f"{execution_id}:cancel"
-    return {
-        "version": OperationsService.VERSION,
-        "operation_id": operation_id,
-        "batch_id": None,
-        "operation_type": "cancel_workflow",
-        "entity": "Workflow",
-        "target_databases": [],
-        "payload": {"data": {"execution_id": execution_id}, "filters": {}, "options": {}},
-        "execution_config": {
+    return OperationsService._build_execution_envelope(
+        operation_id=operation_id,
+        operation_type="cancel_workflow",
+        entity="Workflow",
+        target_databases=[],
+        payload_data={"execution_id": execution_id},
+        execution_config={
             "batch_size": 1,
             "timeout_seconds": 60,
             "retry_count": 1,
             "priority": "normal",
             "idempotency_key": operation_id,
         },
-        "metadata": {
+        metadata={
             "created_by": created_by,
-            "created_at": timezone.now().isoformat(),
             "template_id": None,
             "tags": ["workflow", "pools", "cancel"],
+            "workflow_execution_id": execution_id,
+            "root_operation_id": execution_id,
+            "execution_consumer": "pools",
+            "lane": "workflows",
         },
-    }
+    )
 
 
 def _build_publication_auth_context(*, requested_by, source: str) -> dict[str, str]:

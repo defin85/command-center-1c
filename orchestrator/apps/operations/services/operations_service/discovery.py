@@ -3,8 +3,6 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from django.utils import timezone
-
 from ...events import event_publisher, flow_publisher
 from ...redis_client import redis_client
 from .types import EnqueueResult, classify_enqueue_error_code, logger
@@ -58,28 +56,25 @@ class OperationsServiceDiscoveryMixin:
             "cluster_pwd": cluster_pwd,
         }
 
-        message = {
-            "version": cls.VERSION,
-            "operation_id": op_id,
-            "batch_id": None,
-            "operation_type": "discover_clusters",
-            "entity": "Cluster",
-            "target_databases": [],  # Discovery finds clusters
-            "payload": {"data": discover_data, "filters": {}, "options": {}},
-            "execution_config": {
+        message = cls._build_execution_envelope(
+            operation_id=op_id,
+            operation_type="discover_clusters",
+            entity="Cluster",
+            target_databases=[],
+            payload_data=discover_data,
+            execution_config={
                 "batch_size": 1,
                 "timeout_seconds": 60,
                 "retry_count": 3,
                 "priority": "normal",
                 "idempotency_key": op_id,
             },
-            "metadata": {
+            metadata={
                 "created_by": created_by,
-                "created_at": timezone.now().isoformat(),
                 "template_id": None,
                 "tags": ["cluster", "discover"],
             },
-        }
+        )
 
         enqueue_success = False
         try:

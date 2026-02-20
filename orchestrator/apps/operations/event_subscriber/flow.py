@@ -47,11 +47,18 @@ def publish_completion_flow(
 
 def get_workflow_metadata(batch_op) -> Dict[str, Any]:
     metadata = batch_op.metadata or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    execution_consumer = str(metadata.get("execution_consumer") or "").strip() or "operations"
+    lane = str(metadata.get("lane") or "").strip() or execution_consumer
     result: Dict[str, Any] = {}
     for key in ("workflow_execution_id", "node_id", "trace_id"):
         value = metadata.get(key)
         if value:
             result[key] = value
+    result["root_operation_id"] = str(metadata.get("root_operation_id") or getattr(batch_op, "id", ""))
+    result["execution_consumer"] = execution_consumer
+    result["lane"] = lane
     return result
 
 

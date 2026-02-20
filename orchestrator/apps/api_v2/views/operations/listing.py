@@ -97,6 +97,24 @@ logger = logging.getLogger(__name__)
             description='Filter by workflow node ID'
         ),
         OpenApiParameter(
+            name='root_operation_id',
+            type=str,
+            required=False,
+            description='Filter by workflow root operation ID'
+        ),
+        OpenApiParameter(
+            name='execution_consumer',
+            type=str,
+            required=False,
+            description='Filter by execution consumer'
+        ),
+        OpenApiParameter(
+            name='lane',
+            type=str,
+            required=False,
+            description='Filter by QoS lane'
+        ),
+        OpenApiParameter(
             name='limit',
             type=int,
             required=False,
@@ -133,6 +151,9 @@ def list_operations(request):
         - sort: JSON object with sort configuration
         - workflow_execution_id: Filter by workflow execution ID
         - node_id: Filter by workflow node ID
+        - root_operation_id: Filter by workflow root operation ID
+        - execution_consumer: Filter by execution consumer
+        - lane: Filter by QoS lane
         - limit: Maximum results (default: 50)
         - offset: Pagination offset (default: 0)
 
@@ -149,6 +170,9 @@ def list_operations(request):
     operation_id = request.query_params.get('operation_id')
     workflow_execution_id = request.query_params.get('workflow_execution_id')
     node_id = request.query_params.get('node_id')
+    root_operation_id = request.query_params.get('root_operation_id')
+    execution_consumer = request.query_params.get('execution_consumer')
+    lane = request.query_params.get('lane')
     search = request.query_params.get('search')
     raw_filters = request.query_params.get('filters')
     raw_sort = request.query_params.get('sort')
@@ -182,6 +206,12 @@ def list_operations(request):
         qs = qs.filter(metadata__workflow_execution_id=workflow_execution_id)
     if node_id:
         qs = qs.filter(metadata__node_id=node_id)
+    if root_operation_id:
+        qs = qs.filter(metadata__root_operation_id=root_operation_id)
+    if execution_consumer:
+        qs = qs.filter(metadata__execution_consumer=execution_consumer)
+    if lane:
+        qs = qs.filter(metadata__lane=lane)
 
     if search:
         qs = qs.filter(
@@ -541,4 +571,3 @@ def cancel_operation(request):
         'cancelled': True,
         'message': 'Operation cancelled successfully',
     })
-

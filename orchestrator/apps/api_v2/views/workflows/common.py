@@ -344,10 +344,27 @@ class ExecuteWorkflowResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     mode = serializers.CharField()
     message = serializers.CharField()
+    operation_id = serializers.CharField(required=False)
     task_id = serializers.CharField(required=False)
     final_result = serializers.DictField(required=False, allow_null=True)
     duration = serializers.FloatField(required=False, allow_null=True)
     error_message = serializers.CharField(required=False)
+
+
+class WorkflowEnqueueFailClosedErrorDetailsSerializer(serializers.Serializer):
+    execution_id = serializers.UUIDField()
+    enqueue_error_code = serializers.CharField(required=False)
+
+
+class WorkflowEnqueueFailClosedErrorDetailSerializer(serializers.Serializer):
+    code = serializers.CharField(default="WORKFLOW_ENQUEUE_FAILED")
+    message = serializers.CharField()
+    details = WorkflowEnqueueFailClosedErrorDetailsSerializer()
+
+
+class WorkflowEnqueueFailClosedErrorResponseSerializer(serializers.Serializer):
+    success = serializers.BooleanField(default=False)
+    error = WorkflowEnqueueFailClosedErrorDetailSerializer()
 
 
 class ExecutionListResponseSerializer(serializers.Serializer):
@@ -421,6 +438,5 @@ class CloneWorkflowRequestSerializer(serializers.Serializer):
     """Request for clone_workflow endpoint."""
     workflow_id = serializers.UUIDField()
     new_name = serializers.CharField(max_length=200, required=False)
-
 
 

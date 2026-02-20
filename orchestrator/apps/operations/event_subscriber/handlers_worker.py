@@ -352,15 +352,36 @@ class WorkerEventHandlersMixin:
                 batch_op.failed_tasks = failed_tasks
 
             payload_status = str(payload.get("status") or "").lower()
+            next_status = BatchOperation.STATUS_COMPLETED
             if payload_status in {"failed", "timeout"}:
-                batch_op.status = BatchOperation.STATUS_FAILED
-            elif summary:
-                if failed_tasks > 0 and completed_tasks == 0:
-                    batch_op.status = BatchOperation.STATUS_FAILED
-                else:
-                    batch_op.status = BatchOperation.STATUS_COMPLETED
-            else:
-                batch_op.status = BatchOperation.STATUS_COMPLETED
+                next_status = BatchOperation.STATUS_FAILED
+            elif summary and failed_tasks > 0 and completed_tasks == 0:
+                next_status = BatchOperation.STATUS_FAILED
+
+            terminal_statuses = {
+                BatchOperation.STATUS_COMPLETED,
+                BatchOperation.STATUS_FAILED,
+                BatchOperation.STATUS_CANCELLED,
+            }
+            is_workflow_root = str(batch_op.operation_type or "").strip() == "execute_workflow"
+            if is_workflow_root and batch_op.status in terminal_statuses:
+                if batch_op.status == next_status:
+                    runtime.logger.info(
+                        "Skipping duplicate terminal worker:completed update for workflow root",
+                        extra={"operation_id": operation_id, "status": batch_op.status},
+                    )
+                    return
+                runtime.logger.warning(
+                    "Skipping conflicting terminal worker:completed update for workflow root",
+                    extra={
+                        "operation_id": operation_id,
+                        "current_status": batch_op.status,
+                        "requested_status": next_status,
+                    },
+                )
+                return
+
+            batch_op.status = next_status
             batch_op.progress = 100
             if not batch_op.completed_at:
                 batch_op.completed_at = now
@@ -707,11 +728,26 @@ class WorkerEventHandlersMixin:
             runtime.close_old_connections()
             batch_op = BatchOperation.objects.get(id=operation_id)
 
+            terminal_statuses = {
+                BatchOperation.STATUS_COMPLETED,
+                BatchOperation.STATUS_FAILED,
+                BatchOperation.STATUS_CANCELLED,
+            }
+            is_workflow_root = str(batch_op.operation_type or "").strip() == "execute_workflow"
+            if is_workflow_root and batch_op.status in terminal_statuses and batch_op.status != BatchOperation.STATUS_FAILED:
+                runtime.logger.warning(
+                    "Skipping worker:failed status regression for workflow root",
+                    extra={"operation_id": operation_id, "current_status": batch_op.status},
+                )
+                return
+
             batch_op.status = BatchOperation.STATUS_FAILED
             batch_op.progress = 100
             if not batch_op.completed_at:
                 batch_op.completed_at = timezone.now()
 
+            if not isinstance(batch_op.metadata, dict):
+                batch_op.metadata = {}
             batch_op.metadata["error"] = error_msg
             batch_op.save(
                 update_fields=["status", "progress", "completed_at", "metadata", "updated_at"]
