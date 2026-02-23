@@ -1188,6 +1188,94 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
             {"node_id": "reconciliation_report"},
         )
 
+    def test_legacy_workflow_executions_post_accepts_history_payload(self):
+        template = self._create_template()
+        execution = template.create_execution({}, execution_consumer="legacy")
+
+        response = self.client.post(
+            "/api/v2/internal/workflow-executions/",
+            {
+                "id": str(execution.id),
+                "workflow_id": str(template.id),
+                "dag_id": str(template.id),
+                "dag_version": 1,
+                "status": "running",
+                "input_data": {"source": "history-client"},
+                "started_at": "2026-02-23T12:00:00Z",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["success"])
+        self.assertTrue(response.data["persisted"])
+        self.assertEqual(response.data["status"], WorkflowExecution.STATUS_RUNNING)
+
+        saved = WorkflowExecution.objects.get(id=execution.id)
+        self.assertEqual(saved.status, WorkflowExecution.STATUS_RUNNING)
+        self.assertEqual(saved.input_context, {"source": "history-client"})
+        self.assertEqual(saved.started_at.isoformat(), "2026-02-23T12:00:00+00:00")
+
+    def test_legacy_workflow_execution_patch_completes_existing_execution(self):
+        template = self._create_template()
+        execution = template.create_execution({}, execution_consumer="legacy")
+
+        response = self.client.patch(
+            f"/api/v2/internal/workflow-executions/{execution.id}/",
+            {
+                "status": "completed",
+                "output_data": {"step": "done"},
+                "completed_at": "2026-02-23T12:05:00Z",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["success"])
+        self.assertTrue(response.data["persisted"])
+        self.assertEqual(response.data["status"], WorkflowExecution.STATUS_COMPLETED)
+
+        saved = WorkflowExecution.objects.get(id=execution.id)
+        self.assertEqual(saved.status, WorkflowExecution.STATUS_COMPLETED)
+        self.assertEqual(saved.final_result, {"step": "done"})
+        self.assertEqual(saved.completed_at.isoformat(), "2026-02-23T12:05:00+00:00")
+
+    def test_legacy_workflow_transition_endpoint_updates_status(self):
+        template = self._create_template()
+        execution = template.create_execution({}, execution_consumer="legacy")
+        execution.start()
+        execution.save()
+
+        response = self.client.post(
+            "/api/v2/internal/workflow-transitions/",
+            {
+                "execution_id": str(execution.id),
+                "timestamp": "2026-02-23T12:06:00Z",
+                "from_status": "running",
+                "to_status": "failed",
+                "message": "legacy transition failure",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["success"])
+        self.assertTrue(response.data["persisted"])
+        self.assertEqual(response.data["status"], WorkflowExecution.STATUS_FAILED)
+
+        saved = WorkflowExecution.objects.get(id=execution.id)
+        self.assertEqual(saved.status, WorkflowExecution.STATUS_FAILED)
+        self.assertEqual(saved.error_message, "legacy transition failure")
+
+    def test_legacy_workflow_executions_requires_internal_auth(self):
+        unauthenticated = self.get_unauthenticated_client()
+        response = unauthenticated.post(
+            "/api/v2/internal/workflow-executions/",
+            {"id": str(uuid4())},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
     def test_execute_pool_runtime_step_returns_completed_for_matching_context(self):
         tenant, run, execution, _ = self._create_pool_runtime_fixture()
         payload = self._build_bridge_request_payload(

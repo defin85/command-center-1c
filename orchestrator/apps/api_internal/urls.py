@@ -126,6 +126,22 @@ urlpatterns = [
         views.execute_pool_runtime_step_v2,
         name='execute-pool-runtime-step'
     ),
+    # Legacy compatibility endpoints for worker history client.
+    path(
+        'workflow-executions/',
+        views.legacy_workflow_executions_collection,
+        name='legacy-workflow-executions'
+    ),
+    path(
+        'workflow-executions/<uuid:execution_id>/',
+        views.legacy_workflow_execution_detail,
+        name='legacy-workflow-execution-detail'
+    ),
+    path(
+        'workflow-transitions/',
+        views.legacy_workflow_transitions_collection,
+        name='legacy-workflow-transitions'
+    ),
 
     # ========================================================================
     # Timeline (Operation Observability)

@@ -16,7 +16,14 @@ from .views_scheduler import complete_scheduler_run, start_scheduler_run
 from .views_tasks import complete_task, start_task
 from .views_templates import get_template, render_template
 from .views_timeline import get_operation_timeline
-from .views_workflows import execute_pool_runtime_step_v2, get_workflow_execution, update_workflow_execution_status
+from .views_workflows import (
+    execute_pool_runtime_step_v2,
+    get_workflow_execution,
+    legacy_workflow_execution_detail,
+    legacy_workflow_executions_collection,
+    legacy_workflow_transitions_collection,
+    update_workflow_execution_status,
+)
 
 __all__ = [
     "claim_artifact_purge_job",
@@ -29,6 +36,9 @@ __all__ = [
     "get_operation_timeline",
     "get_template",
     "get_workflow_execution",
+    "legacy_workflow_execution_detail",
+    "legacy_workflow_executions_collection",
+    "legacy_workflow_transitions_collection",
     "list_databases_for_health_check",
     "list_pending_failed_events",
     "list_runtime_settings",

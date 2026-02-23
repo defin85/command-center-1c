@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import F, Max
+from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -98,6 +99,209 @@ def _extract_error_code(error_message: str) -> str:
     if token and all(ch.isalnum() or ch == "_" for ch in token):
         return token
     return ""
+
+
+def _parse_non_negative_int(value: object, *, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value if value >= 0 else default
+    if isinstance(value, float) and value.is_integer():
+        cast_value = int(value)
+        return cast_value if cast_value >= 0 else default
+    if isinstance(value, str):
+        token = value.strip()
+        if token:
+            try:
+                cast_value = int(token)
+            except ValueError:
+                return default
+            return cast_value if cast_value >= 0 else default
+    return default
+
+
+def _parse_legacy_datetime(raw_value: object):
+    if not isinstance(raw_value, str):
+        return None
+    token = raw_value.strip()
+    if not token:
+        return None
+    parsed = parse_datetime(token)
+    if parsed is None:
+        return None
+    if timezone.is_naive(parsed):
+        return timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
+
+
+def _normalize_legacy_workflow_status(raw_status: object) -> str:
+    token = str(raw_status or "").strip().lower()
+    if token in {"", "none"}:
+        return ""
+    aliases = {
+        "queued": "pending",
+        "canceled": "cancelled",
+        "paused": "running",
+    }
+    normalized = aliases.get(token, token)
+    if normalized in {"pending", "running", "completed", "failed", "cancelled"}:
+        return normalized
+    return ""
+
+
+def _serialize_legacy_workflow_execution_record(*, execution) -> dict[str, object]:
+    template = execution.workflow_template
+    payload: dict[str, object] = {
+        "id": str(execution.id),
+        "workflow_id": str(template.id),
+        "dag_id": str(template.id),
+        "dag_version": int(getattr(template, "version_number", 1) or 1),
+        "status": str(execution.status),
+        "error_message": str(execution.error_message or ""),
+        "input_data": execution.input_context if isinstance(execution.input_context, dict) else {},
+        "output_data": execution.final_result if isinstance(execution.final_result, dict) else {},
+    }
+
+    if execution.started_at is not None:
+        payload["started_at"] = execution.started_at.isoformat()
+    if execution.completed_at is not None:
+        payload["completed_at"] = execution.completed_at.isoformat()
+
+    created_at = getattr(execution, "created_at", None)
+    if created_at is not None:
+        payload["created_at"] = created_at.isoformat()
+    updated_at = getattr(execution, "updated_at", None)
+    if updated_at is not None:
+        payload["updated_at"] = updated_at.isoformat()
+
+    return payload
+
+
+def _apply_legacy_status_transition(
+    *,
+    execution,
+    target_status: str,
+    error_message: str,
+    output_data: dict[str, object] | None,
+) -> tuple[bool, bool]:
+    from apps.templates.workflow.models import WorkflowExecution
+
+    if not target_status:
+        return False, False
+
+    changed = False
+    status_changed = False
+    normalized_output = dict(output_data or {})
+
+    if target_status == execution.status:
+        if target_status == WorkflowExecution.STATUS_FAILED and error_message and error_message != execution.error_message:
+            execution.error_message = error_message
+            changed = True
+        if target_status == WorkflowExecution.STATUS_COMPLETED and output_data is not None:
+            if execution.final_result != normalized_output:
+                execution.final_result = normalized_output
+                changed = True
+        return changed, status_changed
+
+    try:
+        if target_status == WorkflowExecution.STATUS_RUNNING:
+            if execution.status == WorkflowExecution.STATUS_PENDING:
+                execution.start()
+                changed = True
+                status_changed = True
+
+        elif target_status == WorkflowExecution.STATUS_COMPLETED:
+            if execution.status == WorkflowExecution.STATUS_PENDING:
+                execution.start()
+                changed = True
+                status_changed = True
+            if execution.status == WorkflowExecution.STATUS_RUNNING:
+                execution.complete(normalized_output)
+                changed = True
+                status_changed = True
+
+        elif target_status == WorkflowExecution.STATUS_FAILED:
+            if execution.status == WorkflowExecution.STATUS_PENDING:
+                execution.start()
+                changed = True
+                status_changed = True
+            if execution.status == WorkflowExecution.STATUS_RUNNING:
+                execution.fail(error_message or "Workflow failed")
+                changed = True
+                status_changed = True
+            elif error_message and error_message != execution.error_message:
+                execution.error_message = error_message
+                changed = True
+
+        elif target_status == WorkflowExecution.STATUS_CANCELLED:
+            if execution.status in {WorkflowExecution.STATUS_PENDING, WorkflowExecution.STATUS_RUNNING}:
+                execution.cancel()
+                changed = True
+                status_changed = True
+
+    except Exception:
+        logger.exception(
+            "Failed to apply legacy workflow transition",
+            extra={
+                "execution_id": str(getattr(execution, "id", "")),
+                "current_status": str(getattr(execution, "status", "")),
+                "target_status": target_status,
+            },
+        )
+        return changed, status_changed
+
+    return changed, status_changed
+
+
+def _apply_legacy_execution_payload(
+    *,
+    execution,
+    payload: Mapping[str, object],
+) -> tuple[bool, bool]:
+    changed = False
+    status_changed = False
+
+    input_data = payload.get("input_data")
+    if isinstance(input_data, Mapping):
+        normalized_input = dict(input_data)
+        if execution.input_context != normalized_input:
+            execution.input_context = normalized_input
+            changed = True
+
+    output_data_raw = payload.get("output_data")
+    output_data = dict(output_data_raw) if isinstance(output_data_raw, Mapping) else None
+    if output_data is not None and "status" not in payload:
+        if execution.final_result != output_data:
+            execution.final_result = output_data
+            changed = True
+
+    error_message = str(payload.get("error_message") or "").strip()
+    if error_message and error_message != execution.error_message:
+        execution.error_message = error_message
+        changed = True
+
+    target_status = _normalize_legacy_workflow_status(payload.get("status"))
+    transition_changed, transition_status_changed = _apply_legacy_status_transition(
+        execution=execution,
+        target_status=target_status,
+        error_message=error_message,
+        output_data=output_data,
+    )
+    changed = changed or transition_changed
+    status_changed = status_changed or transition_status_changed
+
+    # Apply explicit timestamps after FSM transitions so payload can override defaults.
+    started_at = _parse_legacy_datetime(payload.get("started_at"))
+    if started_at is not None and execution.started_at != started_at:
+        execution.started_at = started_at
+        changed = True
+
+    completed_at = _parse_legacy_datetime(payload.get("completed_at"))
+    if completed_at is not None and execution.completed_at != completed_at:
+        execution.completed_at = completed_at
+        changed = True
+
+    return changed, status_changed
 
 
 def _build_pool_runtime_request_fingerprint(
@@ -793,6 +997,190 @@ def _validate_pool_runtime_bridge_context(
             return operation_ref_mismatch
 
     return None
+
+
+@exclude_schema
+@api_view(["GET", "POST"])
+@permission_classes([IsInternalService])
+def legacy_workflow_executions_collection(request):
+    """
+    Legacy compatibility endpoint for worker history client.
+
+    Supports:
+      - POST /api/v2/internal/workflow-executions/
+      - GET /api/v2/internal/workflow-executions/
+    """
+    from apps.templates.workflow.models import WorkflowExecution
+
+    if request.method == "GET":
+        limit = _parse_non_negative_int(request.query_params.get("limit"), default=50)
+        if limit <= 0:
+            limit = 50
+        limit = min(limit, 200)
+        offset = _parse_non_negative_int(request.query_params.get("offset"), default=0)
+
+        queryset = WorkflowExecution.objects.select_related("workflow_template").order_by("-started_at", "-id")
+
+        raw_workflow_id = str(request.query_params.get("workflow_id") or "").strip()
+        if raw_workflow_id:
+            try:
+                workflow_uuid = uuid.UUID(raw_workflow_id)
+            except (TypeError, ValueError, AttributeError):
+                return Response({"executions": [], "total": 0, "limit": limit, "offset": offset})
+            queryset = queryset.filter(workflow_template_id=workflow_uuid)
+
+        status_filter = _normalize_legacy_workflow_status(request.query_params.get("status"))
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+
+        total = queryset.count()
+        executions = [
+            _serialize_legacy_workflow_execution_record(execution=execution)
+            for execution in queryset[offset:offset + limit]
+        ]
+        return Response(
+            {
+                "executions": executions,
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            }
+        )
+
+    payload = request.data if isinstance(request.data, Mapping) else {}
+    raw_execution_id = payload.get("id") or payload.get("execution_id")
+    try:
+        execution_uuid = uuid.UUID(str(raw_execution_id))
+    except (TypeError, ValueError, AttributeError):
+        return Response(
+            {"success": False, "error": "id must be a valid UUID"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    execution = WorkflowExecution.objects.select_related("workflow_template").filter(id=execution_uuid).first()
+    if execution is None:
+        return Response(
+            {
+                "success": True,
+                "id": str(execution_uuid),
+                "persisted": False,
+            }
+        )
+
+    changed, status_changed = _apply_legacy_execution_payload(execution=execution, payload=payload)
+    if changed:
+        execution.save()
+        if status_changed:
+            _sync_workflow_root_projection_from_execution(execution=execution)
+
+    return Response(
+        {
+            "success": True,
+            "id": str(execution.id),
+            "persisted": True,
+            "status": execution.status,
+        }
+    )
+
+
+@exclude_schema
+@api_view(["GET", "PATCH"])
+@permission_classes([IsInternalService])
+def legacy_workflow_execution_detail(request, execution_id):
+    """
+    Legacy compatibility endpoint for worker history client.
+
+    Supports:
+      - GET /api/v2/internal/workflow-executions/<execution_id>/
+      - PATCH /api/v2/internal/workflow-executions/<execution_id>/
+    """
+    from apps.templates.workflow.models import WorkflowExecution
+
+    execution = WorkflowExecution.objects.select_related("workflow_template").filter(id=execution_id).first()
+
+    if request.method == "GET":
+        if execution is None:
+            return Response({"success": False, "error": "Workflow execution not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(_serialize_legacy_workflow_execution_record(execution=execution))
+
+    if execution is None:
+        return Response(
+            {
+                "success": True,
+                "id": str(execution_id),
+                "persisted": False,
+            }
+        )
+
+    payload = request.data if isinstance(request.data, Mapping) else {}
+    changed, status_changed = _apply_legacy_execution_payload(execution=execution, payload=payload)
+    if changed:
+        execution.save()
+        if status_changed:
+            _sync_workflow_root_projection_from_execution(execution=execution)
+
+    return Response(
+        {
+            "success": True,
+            "id": str(execution.id),
+            "persisted": True,
+            "status": execution.status,
+        }
+    )
+
+
+@exclude_schema
+@api_view(["POST"])
+@permission_classes([IsInternalService])
+def legacy_workflow_transitions_collection(request):
+    """
+    Legacy compatibility endpoint for worker history client.
+
+    Supports:
+      - POST /api/v2/internal/workflow-transitions/
+    """
+    from apps.templates.workflow.models import WorkflowExecution
+
+    payload = request.data if isinstance(request.data, Mapping) else {}
+    raw_execution_id = payload.get("execution_id")
+    try:
+        execution_uuid = uuid.UUID(str(raw_execution_id))
+    except (TypeError, ValueError, AttributeError):
+        return Response(
+            {"success": False, "error": "execution_id must be a valid UUID"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    execution = WorkflowExecution.objects.select_related("workflow_template").filter(id=execution_uuid).first()
+    if execution is None:
+        return Response(
+            {
+                "success": True,
+                "execution_id": str(execution_uuid),
+                "persisted": False,
+            }
+        )
+
+    target_status = _normalize_legacy_workflow_status(payload.get("to_status") or payload.get("status"))
+    transition_changed, status_changed = _apply_legacy_status_transition(
+        execution=execution,
+        target_status=target_status,
+        error_message=str(payload.get("message") or "").strip(),
+        output_data=None,
+    )
+    if transition_changed:
+        execution.save()
+        if status_changed:
+            _sync_workflow_root_projection_from_execution(execution=execution)
+
+    return Response(
+        {
+            "success": True,
+            "execution_id": str(execution.id),
+            "persisted": True,
+            "status": execution.status,
+        }
+    )
 
 
 @exclude_schema
