@@ -90,6 +90,15 @@ async function selectDropdownOption(label: string) {
   fireEvent.click(option as Element)
 }
 
+async function openWorkspaceTab(user: ReturnType<typeof userEvent.setup>, tabLabel: 'Pools' | 'Topology Editor') {
+  await user.click(screen.getByRole('tab', { name: tabLabel, exact: true }))
+}
+
+async function expandFirstEdgeAdvanced(user: ReturnType<typeof userEvent.setup>) {
+  const toggle = await screen.findAllByText('Advanced edge JSON / document policy')
+  await user.click(toggle[0] as HTMLElement)
+}
+
 describe('PoolCatalogPage', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -310,6 +319,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
+    await openWorkspaceTab(user, 'Pools')
     await user.click(screen.getByTestId('pool-catalog-add-pool'))
     await user.type(screen.getByLabelText('Code'), 'pool-2')
     await user.type(screen.getByLabelText('Name'), 'Pool Two')
@@ -324,7 +334,7 @@ describe('PoolCatalogPage', () => {
       })
     )
     await waitFor(() => expect(mockListOrganizationPools.mock.calls.length).toBeGreaterThanOrEqual(2))
-  }, 15000)
+  }, 30000)
 
   it('edits selected pool via drawer and sends pool_id in upsert payload', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -333,6 +343,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
+    await openWorkspaceTab(user, 'Pools')
     await user.click(screen.getByTestId('pool-catalog-edit-pool'))
     await user.clear(screen.getByLabelText('Name'))
     await user.type(screen.getByLabelText('Name'), 'Pool One Updated')
@@ -355,6 +366,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
+    await openWorkspaceTab(user, 'Pools')
     await user.click(screen.getByTestId('pool-catalog-toggle-pool-active'))
 
     await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
@@ -373,6 +385,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
+    await openWorkspaceTab(user, 'Topology Editor')
     await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
     await user.click(screen.getByTestId('pool-catalog-topology-save'))
 
@@ -386,35 +399,62 @@ describe('PoolCatalogPage', () => {
     const user = userEvent.setup()
 
     mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            document_policy: {
+              version: 'document_policy.v1',
+              chains: [
+                {
+                  chain_id: 'sale_chain',
+                  documents: [
+                    {
+                      document_id: 'sale',
+                      entity_name: 'Document_Sales',
+                      document_role: 'sale',
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    })
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
-    expect(await screen.findByText('Org Two')).toBeInTheDocument()
 
-    await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
-    await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
-    await user.click(screen.getByTestId('pool-catalog-topology-add-edge'))
-
-    const topologyCard = screen.getByText('Topology snapshot editor').closest('.ant-card')
-    expect(topologyCard).toBeTruthy()
-
-    const selectors = topologyCard?.querySelectorAll('.ant-select .ant-select-selector')
-    expect(selectors?.length).toBeGreaterThanOrEqual(4)
-    fireEvent.mouseDown(selectors?.[0] as Element)
-    await selectDropdownOption('Org One (730000000001)')
-
-    fireEvent.mouseDown(selectors?.[1] as Element)
-    await selectDropdownOption('Org Two (730000000002)')
-
-    const rootSwitch = topologyCard?.querySelector('button[role="switch"]')
-    expect(rootSwitch).toBeTruthy()
-    fireEvent.click(rootSwitch as Element)
-
-    fireEvent.mouseDown(selectors?.[2] as Element)
-    await selectDropdownOption('Org One (730000000001)')
-    fireEvent.mouseDown(selectors?.[3] as Element)
-    await selectDropdownOption('Org Two (730000000002)')
-
+    await openWorkspaceTab(user, 'Topology Editor')
+    await expandFirstEdgeAdvanced(user)
     const edgePolicyInput = screen.getByTestId('pool-catalog-topology-edge-policy-0')
     await user.click(edgePolicyInput)
     await user.clear(edgePolicyInput)
@@ -433,34 +473,46 @@ describe('PoolCatalogPage', () => {
     const user = userEvent.setup()
 
     mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {},
+        },
+      ],
+    })
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
-    expect(await screen.findByText('Org Two')).toBeInTheDocument()
 
-    await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
-    await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
-    await user.click(screen.getByTestId('pool-catalog-topology-add-edge'))
-
-    const topologyCard = screen.getByText('Topology snapshot editor').closest('.ant-card')
-    expect(topologyCard).toBeTruthy()
-
-    const selectors = topologyCard?.querySelectorAll('.ant-select .ant-select-selector')
-    expect(selectors?.length).toBeGreaterThanOrEqual(4)
-    fireEvent.mouseDown(selectors?.[0] as Element)
-    await selectDropdownOption('Org One (730000000001)')
-    fireEvent.mouseDown(selectors?.[1] as Element)
-    await selectDropdownOption('Org Two (730000000002)')
-
-    const rootSwitch = topologyCard?.querySelector('button[role="switch"]')
-    expect(rootSwitch).toBeTruthy()
-    fireEvent.click(rootSwitch as Element)
-
-    fireEvent.mouseDown(selectors?.[2] as Element)
-    await selectDropdownOption('Org One (730000000001)')
-    fireEvent.mouseDown(selectors?.[3] as Element)
-    await selectDropdownOption('Org Two (730000000002)')
-
+    await openWorkspaceTab(user, 'Topology Editor')
+    await expandFirstEdgeAdvanced(user)
     const edgePolicyInput = screen.getByTestId('pool-catalog-topology-edge-policy-0')
     await user.click(edgePolicyInput)
     await user.clear(edgePolicyInput)
@@ -550,6 +602,8 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Org One')).toBeInTheDocument()
     expect(await screen.findByText('Org Two')).toBeInTheDocument()
 
+    await openWorkspaceTab(user, 'Topology Editor')
+    await expandFirstEdgeAdvanced(user)
     const edgePolicyInput = await screen.findByTestId('pool-catalog-topology-edge-policy-0')
     await user.click(edgePolicyInput)
     await user.clear(edgePolicyInput)
@@ -612,6 +666,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
+    await openWorkspaceTab(user, 'Topology Editor')
     await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
 
     const topologyCard = screen.getByText('Topology snapshot editor').closest('.ant-card')

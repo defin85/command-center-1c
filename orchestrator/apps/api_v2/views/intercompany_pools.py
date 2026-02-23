@@ -408,6 +408,7 @@ def _serialize_run(
         workflow_input_context,
         projection_timestamp,
         workflow_failure_context,
+        workflow_execution_consumer,
     ) = _resolve_workflow_projection_context(run)
     execution_backend = run.execution_backend or (
         "workflow_core" if run.workflow_execution_id else "legacy_pool_runtime"
@@ -445,10 +446,15 @@ def _serialize_run(
         projected_status=projected_status,
         workflow_failure_context=workflow_failure_context,
     )
+    observability_fields = _resolve_run_observability_fields(
+        run=run,
+        workflow_execution_consumer=workflow_execution_consumer,
+    )
     provenance = _build_run_provenance(
         run=run,
         workflow_status=workflow_status,
         execution_backend=execution_backend,
+        observability_fields=observability_fields,
     )
     return {
         "id": str(run.id),
@@ -466,6 +472,9 @@ def _serialize_run(
         "idempotency_key": run.idempotency_key,
         "workflow_execution_id": str(run.workflow_execution_id) if run.workflow_execution_id else None,
         "workflow_status": workflow_status,
+        "root_operation_id": observability_fields.get("root_operation_id"),
+        "execution_consumer": observability_fields.get("execution_consumer"),
+        "lane": observability_fields.get("lane"),
         "approval_state": approval_state,
         "publication_step_state": publication_step_state,
         "terminal_reason": terminal_reason,
@@ -596,15 +605,22 @@ def _build_publication_step_problem_details(
 
 def _resolve_workflow_projection_context(
     run: PoolRun,
-) -> tuple[str | None, dict[str, Any], datetime | None, dict[str, Any] | None]:
+) -> tuple[str | None, dict[str, Any], datetime | None, dict[str, Any] | None, str | None]:
     workflow_status = run.workflow_status or None
     workflow_input_context: dict[str, Any] = {}
     projection_timestamp: datetime | None = run.created_at
     workflow_failure_context: dict[str, Any] | None = None
+    workflow_execution_consumer: str | None = None
     execution = _resolve_workflow_execution_for_projection(run=run)
 
     if not execution:
-        return workflow_status, workflow_input_context, projection_timestamp, workflow_failure_context
+        return (
+            workflow_status,
+            workflow_input_context,
+            projection_timestamp,
+            workflow_failure_context,
+            workflow_execution_consumer,
+        )
 
     execution_id = execution.get("id")
     if execution_id:
@@ -637,7 +653,17 @@ def _resolve_workflow_projection_context(
             "error_details": execution.get("error_details"),
         }
 
-    return resolved_status, workflow_input_context, projection_timestamp, workflow_failure_context
+    execution_consumer = str(execution.get("execution_consumer") or "").strip()
+    if execution_consumer:
+        workflow_execution_consumer = execution_consumer
+
+    return (
+        resolved_status,
+        workflow_input_context,
+        projection_timestamp,
+        workflow_failure_context,
+        workflow_execution_consumer,
+    )
 
 
 def _parse_positive_int(raw_value: object) -> int | None:
@@ -677,12 +703,35 @@ def _workflow_execution_projection_fields() -> tuple[str, ...]:
         "error_message",
         "error_details",
         "tenant_id",
+        "execution_consumer",
         "workflow_template__name",
         "started_at",
     ]
     if "created_at" in {field.name for field in WorkflowExecution._meta.concrete_fields}:
         fields.append("created_at")
     return tuple(fields)
+
+
+def _resolve_run_observability_fields(
+    *,
+    run: PoolRun,
+    workflow_execution_consumer: str | None,
+) -> dict[str, str | None]:
+    workflow_execution_id = str(run.workflow_execution_id or "").strip()
+    if not workflow_execution_id:
+        return {
+            "root_operation_id": None,
+            "execution_consumer": None,
+            "lane": None,
+        }
+
+    execution_consumer = str(workflow_execution_consumer or "").strip() or "pools"
+    lane = "workflows" if execution_consumer == "pools" else execution_consumer
+    return {
+        "root_operation_id": workflow_execution_id,
+        "execution_consumer": execution_consumer,
+        "lane": lane,
+    }
 
 
 def _load_transition_workflow_candidates_for_run(run: PoolRun) -> list[dict[str, Any]]:
@@ -917,6 +966,7 @@ def _build_run_provenance(
     run: PoolRun,
     workflow_status: str | None,
     execution_backend: str,
+    observability_fields: Mapping[str, Any],
 ) -> dict[str, Any]:
     transition_candidates = _load_transition_workflow_candidates_for_run(run=run)
     scoped_candidates = _select_tenant_scoped_workflow_candidates(
@@ -937,6 +987,9 @@ def _build_run_provenance(
         "workflow_status": active_status or None,
         "execution_backend": execution_backend,
         "retry_chain": retry_chain,
+        "root_operation_id": observability_fields.get("root_operation_id"),
+        "execution_consumer": observability_fields.get("execution_consumer"),
+        "lane": observability_fields.get("lane"),
     }
 
 
@@ -1266,6 +1319,9 @@ class PoolRunProvenanceSerializer(serializers.Serializer):
     workflow_status = serializers.CharField(required=False, allow_null=True)
     execution_backend = serializers.CharField()
     retry_chain = PoolRunRetryChainAttemptSerializer(many=True)
+    root_operation_id = serializers.CharField(required=False, allow_null=True)
+    execution_consumer = serializers.CharField(required=False, allow_null=True)
+    lane = serializers.CharField(required=False, allow_null=True)
     legacy_reference = serializers.CharField(required=False, allow_null=True)
 
 
@@ -1288,6 +1344,9 @@ class PoolRunSerializer(serializers.Serializer):
     idempotency_key = serializers.CharField()
     workflow_execution_id = serializers.UUIDField(required=False, allow_null=True)
     workflow_status = serializers.CharField(required=False, allow_null=True)
+    root_operation_id = serializers.CharField(required=False, allow_null=True)
+    execution_consumer = serializers.CharField(required=False, allow_null=True)
+    lane = serializers.CharField(required=False, allow_null=True)
     approval_state = serializers.CharField(required=False, allow_null=True)
     publication_step_state = serializers.CharField(required=False, allow_null=True)
     terminal_reason = serializers.CharField(required=False, allow_null=True)

@@ -71,6 +71,9 @@ export type PoolRunProvenance = {
   workflow_run_id: string | null
   workflow_status: string | null
   execution_backend: 'workflow_core' | 'legacy_pool_runtime' | string
+  root_operation_id?: string | null
+  execution_consumer?: string | null
+  lane?: string | null
   retry_chain: PoolRunRetryChainAttempt[]
   legacy_reference?: string | null
 }
@@ -130,6 +133,9 @@ export type PoolRun = {
   idempotency_key: string
   workflow_execution_id: string | null
   workflow_status: string | null
+  root_operation_id?: string | null
+  execution_consumer?: string | null
+  lane?: string | null
   approval_state: PoolRunApprovalState
   publication_step_state: PoolRunPublicationStepState
   terminal_reason: string | null

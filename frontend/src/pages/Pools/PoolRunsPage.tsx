@@ -4,6 +4,7 @@ import {
   App as AntApp,
   Button,
   Card,
+  Collapse,
   Col,
   Descriptions,
   Form,
@@ -14,6 +15,7 @@ import {
   Select,
   Space,
   Table,
+  Tabs,
   Tag,
   Typography,
   Upload,
@@ -390,6 +392,7 @@ export function PoolRunsPage() {
   const [retrying, setRetrying] = useState(false)
   const [safeActionLoading, setSafeActionLoading] = useState<PoolRunSafeCommandType | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [activeStageTab, setActiveStageTab] = useState<'create' | 'inspect' | 'safe' | 'retry'>('create')
   const [createForm] = Form.useForm<CreateRunFormValues>()
   const [retryForm] = Form.useForm<RetryFormValues>()
 
@@ -846,7 +849,7 @@ export function PoolRunsPage() {
         width: 220,
         render: (_value, record) => (
           <Space direction="vertical" size={0}>
-            <Text>{record.publication_identity_strategy || record.identity_strategy || '-'}</Text>
+            <Text>{record.publication_identity_strategy || '-'}</Text>
             <Text type="secondary">{record.external_document_identity || '-'}</Text>
           </Space>
         ),
@@ -855,9 +858,9 @@ export function PoolRunsPage() {
         title: 'Error',
         key: 'error',
         render: (_value, record) => {
-          const code = record.domain_error_code || record.error_code || '-'
-          const messageText = record.domain_error_message || record.error_message || '-'
-          const httpStatusValue = record.http_error?.status ?? record.http_status
+          const code = record.domain_error_code || '-'
+          const messageText = record.domain_error_message || '-'
+          const httpStatusValue = record.http_error?.status
           const transportMessage = record.transport_error?.message ?? null
           return (
             <Space direction="vertical" size={0}>
@@ -876,9 +879,12 @@ export function PoolRunsPage() {
     []
   )
 
-  const workflowRunId = runDetails?.provenance?.workflow_run_id ?? runDetails?.workflow_execution_id ?? null
-  const workflowStatus = runDetails?.provenance?.workflow_status ?? runDetails?.workflow_status ?? null
+  const workflowRunId = runDetails?.provenance?.workflow_run_id ?? null
+  const workflowStatus = runDetails?.provenance?.workflow_status ?? null
   const executionBackend = runDetails?.provenance?.execution_backend ?? runDetails?.execution_backend ?? null
+  const rootOperationId = runDetails?.provenance?.root_operation_id ?? null
+  const executionConsumer = runDetails?.provenance?.execution_consumer ?? null
+  const lane = runDetails?.provenance?.lane ?? null
   const retryChain = runDetails?.provenance?.retry_chain ?? []
 
   const isSafeRun = runDetails?.mode === 'safe'
@@ -913,357 +919,407 @@ export function PoolRunsPage() {
 
       {error && <Alert type="error" message={error} />}
 
-      <Card title="Create / Refresh Run" loading={loadingPools}>
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Space wrap>
-            <Select
-              style={{ width: 320 }}
-              placeholder="Select pool"
-              value={selectedPoolId ?? undefined}
-              options={pools.map((pool) => ({
-                value: pool.id,
-                label: `${pool.code} - ${pool.name}`,
-              }))}
-              onChange={(value) => setSelectedPoolId(value)}
-            />
-            <Input
-              type="date"
-              value={graphDate}
-              onChange={(event) => setGraphDate(event.target.value)}
-              style={{ width: 180 }}
-            />
-            <Button onClick={() => { void loadGraph(); void loadRuns() }} loading={loadingGraph || loadingRuns}>
-              Refresh Data
-            </Button>
-          </Space>
-
-          <Form form={createForm} layout="vertical">
-            <Alert
-              type="info"
-              showIcon
-              message="Pool publication OData credentials source: /rbac"
-              description="`odata_url` берётся из Databases, а OData user/password для публикации — из /rbac → Infobase Users (actor/service mapping)."
-              style={{ marginBottom: 12 }}
-            />
-            <Row gutter={12}>
-              <Col span={5}>
-                <Form.Item name="period_start" label="Period start" rules={[{ required: true }]}>
-                  <Input type="date" />
-                </Form.Item>
-              </Col>
-              <Col span={5}>
-                <Form.Item name="period_end" label="Period end">
-                  <Input type="date" />
-                </Form.Item>
-              </Col>
-              <Col span={4}>
-                <Form.Item name="direction" label="Direction" rules={[{ required: true }]}>
-                  <Radio.Group data-testid="pool-runs-create-direction" optionType="button" buttonStyle="solid">
-                    <Radio.Button value="top_down">top_down</Radio.Button>
-                    <Radio.Button value="bottom_up">bottom_up</Radio.Button>
-                  </Radio.Group>
-                </Form.Item>
-              </Col>
-              <Col span={4}>
-                <Form.Item name="mode" label="Mode" rules={[{ required: true }]}>
-                  <Select
-                    options={[
-                      { value: 'safe', label: 'safe' },
-                      { value: 'unsafe', label: 'unsafe' },
-                    ]}
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={6}>
-                {createDirection === 'top_down' ? (
-                  <Form.Item
-                    name="starting_amount"
-                    label="Starting amount"
-                    rules={[
-                      { required: true, message: 'starting_amount required' },
-                      {
-                        validator: async (_rule, value) => {
-                          if (value == null || Number(value) <= 0) {
-                            throw new Error('starting_amount must be > 0')
-                          }
-                        },
-                      },
-                    ]}
-                  >
-                    <InputNumber data-testid="pool-runs-create-starting-amount" min={0.01} step={0.01} style={{ width: '100%' }} />
-                  </Form.Item>
-                ) : (
-                  <Form.Item name="schema_template_id" label="Schema template">
-                    <Select
-                      data-testid="pool-runs-create-schema-template"
-                      allowClear
-                      loading={loadingSchemaTemplates}
-                      placeholder="Optional template"
-                      options={schemaTemplates.map((item) => ({
-                        value: item.id,
-                        label: `${item.code} - ${item.name}`,
-                      }))}
-                    />
-                  </Form.Item>
-                )}
-              </Col>
-            </Row>
-
-            {createDirection === 'bottom_up' && (
-              <Row gutter={12}>
-                <Col span={16}>
-                  <Form.Item name="source_payload_json" label="Source payload JSON">
-                    <Input.TextArea data-testid="pool-runs-create-source-payload" rows={6} placeholder='[{"inn":"730000000001","amount":"100.00"}]' />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item name="source_artifact_id" label="Source artifact ID">
-                    <Input data-testid="pool-runs-create-source-artifact" placeholder="artifact://..." />
-                  </Form.Item>
-                  <Upload
-                    accept=".json,application/json,text/plain"
-                    maxCount={1}
-                    showUploadList={false}
-                    beforeUpload={async (file) => {
-                      try {
-                        const text = await file.text()
-                        createForm.setFieldValue('source_payload_json', text)
-                        message.success('Source payload loaded from file.')
-                      } catch {
-                        message.error('Не удалось прочитать выбранный файл.')
-                      }
-                      return false
-                    }}
-                  >
-                    <Button icon={<UploadOutlined />}>Load payload file</Button>
-                  </Upload>
-                </Col>
-              </Row>
-            )}
-
-            <Button type="primary" loading={creatingRun} onClick={() => void handleCreateRun()} data-testid="pool-runs-create-submit">
-              Create / Upsert Run
-            </Button>
-          </Form>
+      <Card title="Run Context" loading={loadingPools}>
+        <Space wrap>
+          <Select
+            style={{ width: 320 }}
+            placeholder="Select pool"
+            value={selectedPoolId ?? undefined}
+            options={pools.map((pool) => ({
+              value: pool.id,
+              label: `${pool.code} - ${pool.name}`,
+            }))}
+            onChange={(value) => setSelectedPoolId(value)}
+          />
+          <Input
+            type="date"
+            value={graphDate}
+            onChange={(event) => setGraphDate(event.target.value)}
+            style={{ width: 180 }}
+          />
+          <Button onClick={() => { void loadGraph(); void loadRuns() }} loading={loadingGraph || loadingRuns}>
+            Refresh Data
+          </Button>
         </Space>
       </Card>
 
-      <Row gutter={16}>
-        <Col span={12}>
-          <Card title="Pool Graph" loading={loadingGraph}>
-            <div style={{ height: 460 }}>
-              <ReactFlow nodes={flow.nodes} edges={flow.edges} fitView>
-                <MiniMap />
-                <Controls />
-                <Background />
-              </ReactFlow>
-            </div>
-          </Card>
-        </Col>
-        <Col span={12}>
-          <Card title="Runs" loading={loadingRuns}>
-            <Table
-              rowKey="id"
-              size="small"
-              columns={runColumns}
-              dataSource={runs}
-              pagination={{ pageSize: 8 }}
-              rowSelection={{
-                type: 'radio',
-                selectedRowKeys: selectedRunId ? [selectedRunId] : [],
-                onChange: (keys) => setSelectedRunId(keys[0] ? String(keys[0]) : null),
-              }}
-            />
-          </Card>
-        </Col>
-      </Row>
+      <Tabs
+        activeKey={activeStageTab}
+        onChange={(key) => setActiveStageTab(key as 'create' | 'inspect' | 'safe' | 'retry')}
+        data-testid="pool-runs-stage-tabs"
+        items={[
+          {
+            key: 'create',
+            label: 'Create',
+            children: (
+              <Card title="Create Run">
+                <Form form={createForm} layout="vertical">
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="Pool publication OData credentials source: /rbac"
+                    description="`odata_url` берётся из Databases, а OData user/password для публикации — из /rbac → Infobase Users (actor/service mapping)."
+                    style={{ marginBottom: 12 }}
+                  />
+                  <Row gutter={12}>
+                    <Col span={5}>
+                      <Form.Item name="period_start" label="Period start" rules={[{ required: true }]}>
+                        <Input type="date" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={5}>
+                      <Form.Item name="period_end" label="Period end">
+                        <Input type="date" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={4}>
+                      <Form.Item name="direction" label="Direction" rules={[{ required: true }]}>
+                        <Radio.Group data-testid="pool-runs-create-direction" optionType="button" buttonStyle="solid">
+                          <Radio.Button value="top_down">top_down</Radio.Button>
+                          <Radio.Button value="bottom_up">bottom_up</Radio.Button>
+                        </Radio.Group>
+                      </Form.Item>
+                    </Col>
+                    <Col span={4}>
+                      <Form.Item name="mode" label="Mode" rules={[{ required: true }]}>
+                        <Select
+                          options={[
+                            { value: 'safe', label: 'safe' },
+                            { value: 'unsafe', label: 'unsafe' },
+                          ]}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={6}>
+                      {createDirection === 'top_down' ? (
+                        <Form.Item
+                          name="starting_amount"
+                          label="Starting amount"
+                          rules={[
+                            { required: true, message: 'starting_amount required' },
+                            {
+                              validator: async (_rule, value) => {
+                                if (value == null || Number(value) <= 0) {
+                                  throw new Error('starting_amount must be > 0')
+                                }
+                              },
+                            },
+                          ]}
+                        >
+                          <InputNumber data-testid="pool-runs-create-starting-amount" min={0.01} step={0.01} style={{ width: '100%' }} />
+                        </Form.Item>
+                      ) : (
+                        <Form.Item name="schema_template_id" label="Schema template">
+                          <Select
+                            data-testid="pool-runs-create-schema-template"
+                            allowClear
+                            loading={loadingSchemaTemplates}
+                            placeholder="Optional template"
+                            options={schemaTemplates.map((item) => ({
+                              value: item.id,
+                              label: `${item.code} - ${item.name}`,
+                            }))}
+                          />
+                        </Form.Item>
+                      )}
+                    </Col>
+                  </Row>
 
-      <Card title="Execution Provenance / Report" loading={loadingReport}>
-        {!runDetails && (
-          <Text type="secondary">Select a run to inspect report.</Text>
-        )}
-        {runDetails && report && (
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Space size="small" wrap>
-              <Tag color="blue">run: {formatShortId(runDetails.id)}</Tag>
-              <Tag color={getStatusColor(runDetails.status)}>{runDetails.status}</Tag>
-              {runDetails.status_reason && <Tag color={getStatusReasonColor(runDetails.status_reason)}>{runDetails.status_reason}</Tag>}
-              <Tag>attempts: {report.publication_attempts.length}</Tag>
-              {Object.entries(report.attempts_by_status ?? {}).map(([status, count]) => (
-                <Tag key={status}>{status}: {count}</Tag>
-              ))}
-            </Space>
+                  {createDirection === 'bottom_up' && (
+                    <Row gutter={12}>
+                      <Col span={16}>
+                        <Form.Item name="source_payload_json" label="Source payload JSON">
+                          <Input.TextArea data-testid="pool-runs-create-source-payload" rows={6} placeholder='[{"inn":"730000000001","amount":"100.00"}]' />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item name="source_artifact_id" label="Source artifact ID">
+                          <Input data-testid="pool-runs-create-source-artifact" placeholder="artifact://..." />
+                        </Form.Item>
+                        <Upload
+                          accept=".json,application/json,text/plain"
+                          maxCount={1}
+                          showUploadList={false}
+                          beforeUpload={async (file) => {
+                            try {
+                              const text = await file.text()
+                              createForm.setFieldValue('source_payload_json', text)
+                              message.success('Source payload loaded from file.')
+                            } catch {
+                              message.error('Не удалось прочитать выбранный файл.')
+                            }
+                            return false
+                          }}
+                        >
+                          <Button icon={<UploadOutlined />}>Load payload file</Button>
+                        </Upload>
+                      </Col>
+                    </Row>
+                  )}
 
-            <Descriptions bordered size="small" column={2}>
-              <Descriptions.Item label="Workflow Run" span={1}>
-                <Text code data-testid="pool-runs-provenance-workflow-id">{workflowRunId ?? '-'}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Workflow Status" span={1}>
-                {workflowStatus ? <Tag color="processing">{workflowStatus}</Tag> : <Text type="secondary">legacy</Text>}
-              </Descriptions.Item>
-              <Descriptions.Item label="Execution Backend" span={1}>
-                <Text>{executionBackend ?? '-'}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Workflow Template" span={1}>
-                <Text>{runDetails.workflow_template_name ?? '-'}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Input Contract" span={1}>
-                <Tag color={getInputContractColor(resolveInputContractVersion(runDetails))}>
-                  {resolveInputContractVersion(runDetails)}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Run Input" span={1}>
-                <Text>{summarizeRunInput(runDetails)}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Approval State" span={1}>
-                {runDetails.approval_state ? (
-                  <Tag color={getApprovalStateColor(runDetails.approval_state)}>{runDetails.approval_state}</Tag>
-                ) : (
-                  <Text type="secondary">n/a</Text>
-                )}
-              </Descriptions.Item>
-              <Descriptions.Item label="Publication Step" span={1}>
-                {runDetails.publication_step_state ? (
-                  <Tag color={getPublicationStepColor(runDetails.publication_step_state)}>{runDetails.publication_step_state}</Tag>
-                ) : (
-                  <Text type="secondary">n/a</Text>
-                )}
-              </Descriptions.Item>
-              <Descriptions.Item label="Terminal Reason" span={2}>
-                <Text>{runDetails.terminal_reason ?? '-'}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Retry Chain" span={2}>
-                {retryChain.length > 0 ? (
-                  <Space direction="vertical" size={4}>
-                    {retryChain.map((item: PoolRunRetryChainAttempt) => (
-                      <Space key={item.workflow_run_id} size={4} wrap>
-                        <Tag color={getWorkflowAttemptKindColor(item.attempt_kind)}>
-                          #{item.attempt_number} {item.attempt_kind}
-                        </Tag>
-                        <Tag color={getWorkflowExecutionStatusColor(item.status)}>{item.status}</Tag>
-                        <Text code>{formatShortId(item.workflow_run_id)}</Text>
-                        {item.parent_workflow_run_id ? (
-                          <Text type="secondary">parent: {formatShortId(item.parent_workflow_run_id)}</Text>
-                        ) : (
-                          <Text type="secondary">root</Text>
-                        )}
+                  <Button type="primary" loading={creatingRun} onClick={() => void handleCreateRun()} data-testid="pool-runs-create-submit">
+                    Create / Upsert Run
+                  </Button>
+                </Form>
+              </Card>
+            ),
+          },
+          {
+            key: 'inspect',
+            label: 'Inspect',
+            children: (
+              <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Card title="Pool Graph" loading={loadingGraph}>
+                      <div style={{ height: 460 }}>
+                        <ReactFlow nodes={flow.nodes} edges={flow.edges} fitView>
+                          <MiniMap />
+                          <Controls />
+                          <Background />
+                        </ReactFlow>
+                      </div>
+                    </Card>
+                  </Col>
+                  <Col span={12}>
+                    <Card title="Runs" loading={loadingRuns}>
+                      <Table
+                        rowKey="id"
+                        size="small"
+                        columns={runColumns}
+                        dataSource={runs}
+                        pagination={{ pageSize: 8 }}
+                        rowSelection={{
+                          type: 'radio',
+                          selectedRowKeys: selectedRunId ? [selectedRunId] : [],
+                          onChange: (keys) => setSelectedRunId(keys[0] ? String(keys[0]) : null),
+                        }}
+                      />
+                    </Card>
+                  </Col>
+                </Row>
+
+                <Card title="Execution Provenance / Report" loading={loadingReport}>
+                  {!runDetails && (
+                    <Text type="secondary">Select a run to inspect report.</Text>
+                  )}
+                  {runDetails && report && (
+                    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                      <Space size="small" wrap>
+                        <Tag color="blue">run: {formatShortId(runDetails.id)}</Tag>
+                        <Tag color={getStatusColor(runDetails.status)}>{runDetails.status}</Tag>
+                        {runDetails.status_reason && <Tag color={getStatusReasonColor(runDetails.status_reason)}>{runDetails.status_reason}</Tag>}
+                        <Tag>attempts: {report.publication_attempts.length}</Tag>
+                        {Object.entries(report.attempts_by_status ?? {}).map(([status, count]) => (
+                          <Tag key={status}>{status}: {count}</Tag>
+                        ))}
                       </Space>
-                    ))}
-                  </Space>
-                ) : (
-                  <Text type="secondary">empty</Text>
+
+                      <Descriptions bordered size="small" column={2}>
+                        <Descriptions.Item label="Workflow Run" span={1}>
+                          <Text code data-testid="pool-runs-provenance-workflow-id">{workflowRunId ?? '-'}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Workflow Status" span={1}>
+                          {workflowStatus ? <Tag color="processing">{workflowStatus}</Tag> : <Text type="secondary">legacy</Text>}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Root Operation" span={1}>
+                          <Text code data-testid="pool-runs-provenance-root-operation-id">{rootOperationId ?? '-'}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Execution Consumer" span={1}>
+                          <Text data-testid="pool-runs-provenance-execution-consumer">{executionConsumer ?? '-'}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Lane" span={1}>
+                          <Text data-testid="pool-runs-provenance-lane">{lane ?? '-'}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Execution Backend" span={1}>
+                          <Text>{executionBackend ?? '-'}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Workflow Template" span={1}>
+                          <Text>{runDetails.workflow_template_name ?? '-'}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Input Contract" span={1}>
+                          <Tag color={getInputContractColor(resolveInputContractVersion(runDetails))}>
+                            {resolveInputContractVersion(runDetails)}
+                          </Tag>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Run Input" span={1}>
+                          <Text>{summarizeRunInput(runDetails)}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Approval State" span={1}>
+                          {runDetails.approval_state ? (
+                            <Tag color={getApprovalStateColor(runDetails.approval_state)}>{runDetails.approval_state}</Tag>
+                          ) : (
+                            <Text type="secondary">n/a</Text>
+                          )}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Publication Step" span={1}>
+                          {runDetails.publication_step_state ? (
+                            <Tag color={getPublicationStepColor(runDetails.publication_step_state)}>{runDetails.publication_step_state}</Tag>
+                          ) : (
+                            <Text type="secondary">n/a</Text>
+                          )}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Terminal Reason" span={2}>
+                          <Text>{runDetails.terminal_reason ?? '-'}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Retry Chain" span={2}>
+                          {retryChain.length > 0 ? (
+                            <Space direction="vertical" size={4}>
+                              {retryChain.map((item: PoolRunRetryChainAttempt) => (
+                                <Space key={item.workflow_run_id} size={4} wrap>
+                                  <Tag color={getWorkflowAttemptKindColor(item.attempt_kind)}>
+                                    #{item.attempt_number} {item.attempt_kind}
+                                  </Tag>
+                                  <Tag color={getWorkflowExecutionStatusColor(item.status)}>{item.status}</Tag>
+                                  <Text code>{formatShortId(item.workflow_run_id)}</Text>
+                                  {item.parent_workflow_run_id ? (
+                                    <Text type="secondary">parent: {formatShortId(item.parent_workflow_run_id)}</Text>
+                                  ) : (
+                                    <Text type="secondary">root</Text>
+                                  )}
+                                </Space>
+                              ))}
+                            </Space>
+                          ) : (
+                            <Text type="secondary">empty</Text>
+                          )}
+                        </Descriptions.Item>
+                      </Descriptions>
+
+                      <Text strong>Publication Attempts</Text>
+                      <Table
+                        rowKey="id"
+                        size="small"
+                        columns={publicationAttemptColumns}
+                        dataSource={report.publication_attempts}
+                        pagination={{ pageSize: 5 }}
+                      />
+
+                      <Collapse
+                        items={[
+                          {
+                            key: 'diagnostics-json',
+                            label: 'Diagnostics JSON (Run Input, Validation, Publication, Step Diagnostics)',
+                            children: (
+                              <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                                <Text strong>Run Input</Text>
+                                <TextArea
+                                  data-testid="pool-runs-run-input"
+                                  readOnly
+                                  rows={6}
+                                  value={JSON.stringify(runDetails.run_input ?? null, null, 2)}
+                                />
+                                <Text strong>Validation Summary</Text>
+                                <TextArea readOnly rows={4} value={JSON.stringify(report.validation_summary ?? {}, null, 2)} />
+                                <Text strong>Publication Summary</Text>
+                                <TextArea readOnly rows={4} value={JSON.stringify(report.publication_summary ?? {}, null, 2)} />
+                                <Text strong>Step Diagnostics</Text>
+                                <TextArea readOnly rows={6} value={JSON.stringify(report.diagnostics ?? [], null, 2)} />
+                              </Space>
+                            ),
+                          },
+                        ]}
+                      />
+                    </Space>
+                  )}
+                </Card>
+              </Space>
+            ),
+          },
+          {
+            key: 'safe',
+            label: 'Safe Actions',
+            children: (
+              <Card
+                title="Safe Mode Actions"
+                extra={<Text type="secondary">`Idempotency-Key` генерируется автоматически на каждый action.</Text>}
+              >
+                {!runDetails && <Text type="secondary">Выберите run для управления safe-публикацией.</Text>}
+                {runDetails && runDetails.mode !== 'safe' && (
+                  <Alert type="info" showIcon message="Этот run создан в unsafe режиме: confirm/abort недоступны." />
                 )}
-              </Descriptions.Item>
-            </Descriptions>
-
-            <Text strong>Run Input</Text>
-            <TextArea
-              data-testid="pool-runs-run-input"
-              readOnly
-              rows={6}
-              value={JSON.stringify(runDetails.run_input ?? null, null, 2)}
-            />
-
-            <Text strong>Publication Attempts</Text>
-            <Table
-              rowKey="id"
-              size="small"
-              columns={publicationAttemptColumns}
-              dataSource={report.publication_attempts}
-              pagination={{ pageSize: 5 }}
-            />
-
-            <Text strong>Validation Summary</Text>
-            <TextArea readOnly rows={4} value={JSON.stringify(report.validation_summary ?? {}, null, 2)} />
-            <Text strong>Publication Summary</Text>
-            <TextArea readOnly rows={4} value={JSON.stringify(report.publication_summary ?? {}, null, 2)} />
-            <Text strong>Step Diagnostics</Text>
-            <TextArea readOnly rows={6} value={JSON.stringify(report.diagnostics ?? [], null, 2)} />
-          </Space>
-        )}
-      </Card>
-
-      <Card
-        title="Safe Mode Actions"
-        extra={<Text type="secondary">`Idempotency-Key` генерируется автоматически на каждый action.</Text>}
-      >
-        {!runDetails && <Text type="secondary">Выберите run для управления safe-публикацией.</Text>}
-        {runDetails && runDetails.mode !== 'safe' && (
-          <Alert type="info" showIcon message="Этот run создан в unsafe режиме: confirm/abort недоступны." />
-        )}
-        {runDetails && runDetails.mode === 'safe' && (
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Space wrap>
-              <Tag color="geekblue">safe</Tag>
-              {runDetails.status_reason ? <Tag color={getStatusReasonColor(runDetails.status_reason)}>{runDetails.status_reason}</Tag> : null}
-              {runDetails.approval_state ? <Tag color={getApprovalStateColor(runDetails.approval_state)}>{runDetails.approval_state}</Tag> : null}
-              {runDetails.publication_step_state ? <Tag color={getPublicationStepColor(runDetails.publication_step_state)}>{runDetails.publication_step_state}</Tag> : null}
-            </Space>
-            {isSafePrePublishPreparing && (
-              <Alert
-                type="info"
-                showIcon
-                message="Pre-publish ещё выполняется"
-                description="Safe run находится на этапе предпросмотра. Дождитесь состояния awaiting_approval, затем станет доступен Confirm publication."
-              />
-            )}
-            <Text type="secondary">
-              `preparing` — выполняется pre-publish (prepare/distribution/reconciliation/approval_gate).
-              `awaiting_approval` — pre-publish завершён и run ждёт ручного подтверждения.
-              Результаты предпросмотра смотрите выше: Validation Summary / Publication Summary / Step Diagnostics.
-            </Text>
-            <Space>
-              <Button
-                type="primary"
-                data-testid="pool-runs-safe-confirm"
-                loading={safeActionLoading === 'confirm-publication'}
-                title={isSafePrePublishPreparing ? 'Доступно после завершения pre-publish (awaiting_approval)' : undefined}
-                disabled={!canConfirm}
-                onClick={() => void handleSafeCommand('confirm-publication')}
-              >
-                Confirm publication
-              </Button>
-              <Button
-                danger
-                data-testid="pool-runs-safe-abort"
-                loading={safeActionLoading === 'abort-publication'}
-                disabled={!canAbort}
-                onClick={() => void handleSafeCommand('abort-publication')}
-              >
-                Abort publication
-              </Button>
-            </Space>
-          </Space>
-        )}
-      </Card>
-
-      <Card title="Retry Failed Targets">
-        <Form form={retryForm} layout="vertical">
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item name="entity_name" label="Entity Name" rules={[{ required: true }]}>
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="max_attempts" label="Max Attempts" rules={[{ required: true }]}>
-                <InputNumber min={1} max={5} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="retry_interval_seconds" label="Retry Interval (sec)" rules={[{ required: true }]}>
-                <InputNumber min={0} max={120} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Form.Item name="documents_json" label="documents_by_database JSON" rules={[{ required: true }]}>
-            <TextArea rows={8} />
-          </Form.Item>
-          <Button type="primary" loading={retrying} onClick={() => void handleRetryFailed()} disabled={!selectedRunId}>
-            Retry Failed
-          </Button>
-        </Form>
-      </Card>
+                {runDetails && runDetails.mode === 'safe' && (
+                  <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                    <Space wrap>
+                      <Tag color="geekblue">safe</Tag>
+                      {runDetails.status_reason ? <Tag color={getStatusReasonColor(runDetails.status_reason)}>{runDetails.status_reason}</Tag> : null}
+                      {runDetails.approval_state ? <Tag color={getApprovalStateColor(runDetails.approval_state)}>{runDetails.approval_state}</Tag> : null}
+                      {runDetails.publication_step_state ? <Tag color={getPublicationStepColor(runDetails.publication_step_state)}>{runDetails.publication_step_state}</Tag> : null}
+                    </Space>
+                    {isSafePrePublishPreparing && (
+                      <Alert
+                        type="info"
+                        showIcon
+                        message="Pre-publish ещё выполняется"
+                        description="Safe run находится на этапе предпросмотра. Дождитесь состояния awaiting_approval, затем станет доступен Confirm publication."
+                      />
+                    )}
+                    <Text type="secondary">
+                      `preparing` — выполняется pre-publish (prepare/distribution/reconciliation/approval_gate).
+                      `awaiting_approval` — pre-publish завершён и run ждёт ручного подтверждения.
+                      Диагностика вынесена в Inspect stage (Diagnostics JSON).
+                    </Text>
+                    <Space>
+                      <Button
+                        type="primary"
+                        data-testid="pool-runs-safe-confirm"
+                        loading={safeActionLoading === 'confirm-publication'}
+                        title={isSafePrePublishPreparing ? 'Доступно после завершения pre-publish (awaiting_approval)' : undefined}
+                        disabled={!canConfirm}
+                        onClick={() => void handleSafeCommand('confirm-publication')}
+                      >
+                        Confirm publication
+                      </Button>
+                      <Button
+                        danger
+                        data-testid="pool-runs-safe-abort"
+                        loading={safeActionLoading === 'abort-publication'}
+                        disabled={!canAbort}
+                        onClick={() => void handleSafeCommand('abort-publication')}
+                      >
+                        Abort publication
+                      </Button>
+                    </Space>
+                  </Space>
+                )}
+              </Card>
+            ),
+          },
+          {
+            key: 'retry',
+            label: 'Retry Failed',
+            children: (
+              <Card title="Retry Failed Targets">
+                <Form form={retryForm} layout="vertical">
+                  <Row gutter={16}>
+                    <Col span={8}>
+                      <Form.Item name="entity_name" label="Entity Name" rules={[{ required: true }]}>
+                        <Input />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="max_attempts" label="Max Attempts" rules={[{ required: true }]}>
+                        <InputNumber min={1} max={5} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="retry_interval_seconds" label="Retry Interval (sec)" rules={[{ required: true }]}>
+                        <InputNumber min={0} max={120} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                  <Form.Item name="documents_json" label="documents_by_database JSON" rules={[{ required: true }]}>
+                    <TextArea rows={8} />
+                  </Form.Item>
+                  <Button type="primary" loading={retrying} onClick={() => void handleRetryFailed()} disabled={!selectedRunId}>
+                    Retry Failed
+                  </Button>
+                </Form>
+              </Card>
+            ),
+          },
+        ]}
+      />
     </Space>
   )
 }

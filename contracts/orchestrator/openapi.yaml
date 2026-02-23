@@ -14150,6 +14150,15 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PoolRunRetryChainAttempt'
+        root_operation_id:
+          type: string
+          nullable: true
+        execution_consumer:
+          type: string
+          nullable: true
+        lane:
+          type: string
+          nullable: true
         legacy_reference:
           type: string
           nullable: true
@@ -14208,6 +14217,15 @@ components:
           format: uuid
           nullable: true
         workflow_status:
+          type: string
+          nullable: true
+        root_operation_id:
+          type: string
+          nullable: true
+        execution_consumer:
+          type: string
+          nullable: true
+        lane:
           type: string
           nullable: true
         approval_state:

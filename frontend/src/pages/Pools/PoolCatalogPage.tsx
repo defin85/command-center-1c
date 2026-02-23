@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Col,
+  Collapse,
   Descriptions,
   Drawer,
   Form,
@@ -16,6 +17,7 @@ import {
   Space,
   Switch,
   Table,
+  Tabs,
   Tag,
   Typography,
 } from 'antd'
@@ -687,6 +689,7 @@ export function PoolCatalogPage() {
   const [syncErrors, setSyncErrors] = useState<string[]>([])
   const [syncResult, setSyncResult] = useState<{ stats: { created: number; updated: number; skipped: number }; total_rows: number } | null>(null)
   const [isSyncSubmitting, setIsSyncSubmitting] = useState(false)
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'organizations' | 'pools' | 'topology' | 'graph'>('organizations')
 
   const selectedOrganization = useMemo(
     () => organizations.find((item) => item.id === selectedOrganizationId) ?? null,
@@ -1280,430 +1283,520 @@ export function PoolCatalogPage() {
 
         {error && <Alert type="error" message={error} showIcon />}
 
-        <Card title="Organizations" loading={loadingOrganizations}>
-          {mutatingDisabled && (
-            <Alert
-              type="warning"
-              showIcon
-              style={{ marginBottom: 12 }}
-              message="Mutating actions are disabled"
-              description="Staff users must select a tenant (X-CC1C-Tenant-ID) to run mutating actions."
-            />
-          )}
+        <Tabs
+          activeKey={activeWorkspaceTab}
+          onChange={(key) => setActiveWorkspaceTab(key as 'organizations' | 'pools' | 'topology' | 'graph')}
+          data-testid="pool-catalog-workspace-tabs"
+          items={[
+            {
+              key: 'organizations',
+              label: 'Organizations',
+              children: (
+                <Card title="Organizations" loading={loadingOrganizations}>
+                  {mutatingDisabled && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                      message="Mutating actions are disabled"
+                      description="Staff users must select a tenant (X-CC1C-Tenant-ID) to run mutating actions."
+                    />
+                  )}
 
-          <Space size="small" wrap style={{ marginBottom: 12 }}>
-            <Input
-              value={query}
-              placeholder="Search by INN/name"
-              style={{ width: 280 }}
-              onChange={(event) => setQuery(event.target.value)}
-              onPressEnter={() => { void loadOrganizations() }}
-              allowClear
-            />
-            <Select
-              value={statusFilter}
-              style={{ width: 160 }}
-              options={[
-                { value: 'all', label: 'All statuses' },
-                { value: 'active', label: 'Active' },
-                { value: 'inactive', label: 'Inactive' },
-                { value: 'archived', label: 'Archived' },
-              ]}
-              onChange={setStatusFilter}
-            />
-            <Select
-              value={databaseLinkFilter}
-              style={{ width: 180 }}
-              options={[
-                { value: 'all', label: 'All databases' },
-                { value: 'linked', label: 'Linked only' },
-                { value: 'unlinked', label: 'Unlinked only' },
-              ]}
-              onChange={setDatabaseLinkFilter}
-            />
-            <Button onClick={() => { void loadOrganizations() }} loading={loadingOrganizations}>
-              Refresh
-            </Button>
-            <Button
-              type="primary"
-              onClick={openCreateOrganizationDrawer}
-              disabled={mutatingDisabled}
-              data-testid="pool-catalog-add-org"
-            >
-              Add organization
-            </Button>
-            <Button
-              onClick={() => openEditOrganizationDrawer(selectedOrganization)}
-              disabled={mutatingDisabled || !selectedOrganization}
-              data-testid="pool-catalog-edit-org"
-            >
-              Edit
-            </Button>
-            <Button
-              onClick={openSyncModal}
-              disabled={mutatingDisabled}
-              data-testid="pool-catalog-sync-orgs"
-            >
-              Sync catalog
-            </Button>
-          </Space>
+                  <Space size="small" wrap style={{ marginBottom: 12 }}>
+                    <Input
+                      value={query}
+                      placeholder="Search by INN/name"
+                      style={{ width: 280 }}
+                      onChange={(event) => setQuery(event.target.value)}
+                      onPressEnter={() => { void loadOrganizations() }}
+                      allowClear
+                    />
+                    <Select
+                      value={statusFilter}
+                      style={{ width: 160 }}
+                      options={[
+                        { value: 'all', label: 'All statuses' },
+                        { value: 'active', label: 'Active' },
+                        { value: 'inactive', label: 'Inactive' },
+                        { value: 'archived', label: 'Archived' },
+                      ]}
+                      onChange={setStatusFilter}
+                    />
+                    <Select
+                      value={databaseLinkFilter}
+                      style={{ width: 180 }}
+                      options={[
+                        { value: 'all', label: 'All databases' },
+                        { value: 'linked', label: 'Linked only' },
+                        { value: 'unlinked', label: 'Unlinked only' },
+                      ]}
+                      onChange={setDatabaseLinkFilter}
+                    />
+                    <Button onClick={() => { void loadOrganizations() }} loading={loadingOrganizations}>
+                      Refresh
+                    </Button>
+                    <Button
+                      type="primary"
+                      onClick={openCreateOrganizationDrawer}
+                      disabled={mutatingDisabled}
+                      data-testid="pool-catalog-add-org"
+                    >
+                      Add organization
+                    </Button>
+                    <Button
+                      onClick={() => openEditOrganizationDrawer(selectedOrganization)}
+                      disabled={mutatingDisabled || !selectedOrganization}
+                      data-testid="pool-catalog-edit-org"
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      onClick={openSyncModal}
+                      disabled={mutatingDisabled}
+                      data-testid="pool-catalog-sync-orgs"
+                    >
+                      Sync catalog
+                    </Button>
+                  </Space>
 
-          <Row gutter={16}>
-            <Col span={14}>
-              <Table
-                rowKey="id"
-                size="small"
-                columns={organizationColumns}
-                dataSource={organizations}
-                loading={loadingOrganizations}
-                pagination={{ pageSize: 10 }}
-                rowSelection={{
-                  type: 'radio',
-                  selectedRowKeys: selectedOrganizationId ? [selectedOrganizationId] : [],
-                  onChange: (keys) => setSelectedOrganizationId(keys[0] ? String(keys[0]) : null),
-                }}
-                onRow={(record) => ({
-                  onClick: () => setSelectedOrganizationId(record.id),
-                })}
-              />
-            </Col>
-            <Col span={10}>
-              <Card title="Organization details" loading={loadingOrganizationDetail}>
-                {!organizationDetail && (
-                  <Text type="secondary">Выберите организацию из каталога.</Text>
-                )}
-                {organizationDetail && (
+                  <Row gutter={16}>
+                    <Col span={14}>
+                      <Table
+                        rowKey="id"
+                        size="small"
+                        columns={organizationColumns}
+                        dataSource={organizations}
+                        loading={loadingOrganizations}
+                        pagination={{ pageSize: 10 }}
+                        rowSelection={{
+                          type: 'radio',
+                          selectedRowKeys: selectedOrganizationId ? [selectedOrganizationId] : [],
+                          onChange: (keys) => setSelectedOrganizationId(keys[0] ? String(keys[0]) : null),
+                        }}
+                        onRow={(record) => ({
+                          onClick: () => setSelectedOrganizationId(record.id),
+                        })}
+                      />
+                    </Col>
+                    <Col span={10}>
+                      <Card title="Organization details" loading={loadingOrganizationDetail}>
+                        {!organizationDetail && (
+                          <Text type="secondary">Выберите организацию из каталога.</Text>
+                        )}
+                        {organizationDetail && (
+                          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                            <Descriptions size="small" column={1}>
+                              <Descriptions.Item label="Name">{organizationDetail.organization.name}</Descriptions.Item>
+                              <Descriptions.Item label="INN">{organizationDetail.organization.inn}</Descriptions.Item>
+                              <Descriptions.Item label="KPP">{organizationDetail.organization.kpp || '-'}</Descriptions.Item>
+                              <Descriptions.Item label="Status">
+                                <Tag color={statusColor[organizationDetail.organization.status]}>
+                                  {organizationDetail.organization.status}
+                                </Tag>
+                              </Descriptions.Item>
+                              <Descriptions.Item label="Database ID">
+                                {organizationDetail.organization.database_id
+                                  ? <Text code>{organizationDetail.organization.database_id}</Text>
+                                  : <Text type="secondary">not linked</Text>}
+                              </Descriptions.Item>
+                            </Descriptions>
+                            <Text strong>Pool bindings</Text>
+                            <Table
+                              rowKey={(record) => `${record.pool_id}:${record.effective_from}`}
+                              size="small"
+                              columns={bindingColumns}
+                              dataSource={organizationDetail.pool_bindings}
+                              pagination={false}
+                              locale={{ emptyText: 'No bindings' }}
+                            />
+                          </Space>
+                        )}
+                      </Card>
+                    </Col>
+                  </Row>
+                </Card>
+              ),
+            },
+            {
+              key: 'pools',
+              label: 'Pools',
+              children: (
+                <Card title="Pools management" loading={loadingPools}>
                   <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                    <Descriptions size="small" column={1}>
-                      <Descriptions.Item label="Name">{organizationDetail.organization.name}</Descriptions.Item>
-                      <Descriptions.Item label="INN">{organizationDetail.organization.inn}</Descriptions.Item>
-                      <Descriptions.Item label="KPP">{organizationDetail.organization.kpp || '-'}</Descriptions.Item>
-                      <Descriptions.Item label="Status">
-                        <Tag color={statusColor[organizationDetail.organization.status]}>
-                          {organizationDetail.organization.status}
-                        </Tag>
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Database ID">
-                        {organizationDetail.organization.database_id
-                          ? <Text code>{organizationDetail.organization.database_id}</Text>
-                          : <Text type="secondary">not linked</Text>}
-                      </Descriptions.Item>
-                    </Descriptions>
-                    <Text strong>Pool bindings</Text>
+                    {mutatingDisabled && (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        message="Mutating actions are disabled"
+                        description="Staff users must select a tenant (X-CC1C-Tenant-ID) to run mutating actions."
+                      />
+                    )}
+                    {poolSubmitError && <Alert type="error" message={poolSubmitError} showIcon />}
+                    <Space size="small" wrap>
+                      <Select
+                        value={selectedPoolId ?? undefined}
+                        style={{ width: 320 }}
+                        placeholder="Select pool"
+                        options={pools.map((pool) => ({
+                          value: pool.id,
+                          label: `${pool.code} - ${pool.name}`,
+                        }))}
+                        onChange={(value) => setSelectedPoolId(value)}
+                      />
+                      <Button
+                        type="primary"
+                        onClick={openCreatePoolDrawer}
+                        disabled={mutatingDisabled}
+                        data-testid="pool-catalog-add-pool"
+                      >
+                        Add pool
+                      </Button>
+                      <Button
+                        onClick={openEditPoolDrawer}
+                        disabled={mutatingDisabled || !selectedPool}
+                        data-testid="pool-catalog-edit-pool"
+                      >
+                        Edit pool
+                      </Button>
+                      <Button
+                        onClick={() => { void toggleSelectedPoolActive() }}
+                        disabled={mutatingDisabled || !selectedPool}
+                        loading={isPoolSaving}
+                        data-testid="pool-catalog-toggle-pool-active"
+                      >
+                        {selectedPool?.is_active ? 'Deactivate' : 'Activate'}
+                      </Button>
+                    </Space>
+
                     <Table
-                      rowKey={(record) => `${record.pool_id}:${record.effective_from}`}
+                      rowKey="id"
                       size="small"
-                      columns={bindingColumns}
-                      dataSource={organizationDetail.pool_bindings}
-                      pagination={false}
-                      locale={{ emptyText: 'No bindings' }}
+                      columns={poolColumns}
+                      dataSource={pools}
+                      loading={loadingPools}
+                      pagination={{ pageSize: 8 }}
+                      rowSelection={{
+                        type: 'radio',
+                        selectedRowKeys: selectedPoolId ? [selectedPoolId] : [],
+                        onChange: (keys) => setSelectedPoolId(keys[0] ? String(keys[0]) : null),
+                      }}
+                      onRow={(record) => ({
+                        onClick: () => setSelectedPoolId(record.id),
+                      })}
                     />
                   </Space>
-                )}
-              </Card>
-            </Col>
-          </Row>
-        </Card>
-
-        <Card title="Pools management" loading={loadingPools}>
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            {poolSubmitError && <Alert type="error" message={poolSubmitError} showIcon />}
-            <Space size="small" wrap>
-              <Select
-                value={selectedPoolId ?? undefined}
-                style={{ width: 320 }}
-                placeholder="Select pool"
-                options={pools.map((pool) => ({
-                  value: pool.id,
-                  label: `${pool.code} - ${pool.name}`,
-                }))}
-                onChange={(value) => setSelectedPoolId(value)}
-              />
-              <Button
-                type="primary"
-                onClick={openCreatePoolDrawer}
-                disabled={mutatingDisabled}
-                data-testid="pool-catalog-add-pool"
-              >
-                Add pool
-              </Button>
-              <Button
-                onClick={openEditPoolDrawer}
-                disabled={mutatingDisabled || !selectedPool}
-                data-testid="pool-catalog-edit-pool"
-              >
-                Edit pool
-              </Button>
-              <Button
-                onClick={() => { void toggleSelectedPoolActive() }}
-                disabled={mutatingDisabled || !selectedPool}
-                loading={isPoolSaving}
-                data-testid="pool-catalog-toggle-pool-active"
-              >
-                {selectedPool?.is_active ? 'Deactivate' : 'Activate'}
-              </Button>
-            </Space>
-
-            <Table
-              rowKey="id"
-              size="small"
-              columns={poolColumns}
-              dataSource={pools}
-              loading={loadingPools}
-              pagination={{ pageSize: 8 }}
-              rowSelection={{
-                type: 'radio',
-                selectedRowKeys: selectedPoolId ? [selectedPoolId] : [],
-                onChange: (keys) => setSelectedPoolId(keys[0] ? String(keys[0]) : null),
-              }}
-              onRow={(record) => ({
-                onClick: () => setSelectedPoolId(record.id),
-              })}
-            />
-          </Space>
-        </Card>
-
-        <Card title="Topology snapshot editor">
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            {!selectedPool && (
-              <Text type="secondary">Выберите пул, чтобы редактировать topology snapshot.</Text>
-            )}
-            {selectedPool && (
-              <Form form={topologyForm} layout="vertical">
-                <Row gutter={12}>
-                  <Col span={8}>
-                    <Form.Item name="effective_from" label="effective_from" rules={[{ required: true }]}>
-                      <Input type="date" />
-                    </Form.Item>
-                  </Col>
-                  <Col span={8}>
-                    <Form.Item name="effective_to" label="effective_to">
-                      <Input type="date" />
-                    </Form.Item>
-                  </Col>
-                  <Col span={8}>
-                    <Form.Item label="Pool">
-                      <Input value={`${selectedPool.code} - ${selectedPool.name}`} disabled />
-                    </Form.Item>
-                  </Col>
-                </Row>
-
-                <Text strong>Nodes</Text>
-                <Form.List name="nodes">
-                  {(fields, { add, remove }) => (
-                    <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                      {fields.map((field) => (
-                        <Row key={field.key} gutter={12} align="middle">
-                          <Col span={16}>
-                            <Form.Item
-                              name={[field.name, 'organization_id']}
-                              label={field.name === 0 ? 'Organization' : ''}
-                              style={{ marginBottom: 0 }}
-                            >
-                              <Select
-                                showSearch
-                                optionFilterProp="label"
-                                placeholder="Select organization"
-                                options={organizationOptions}
-                              />
-                            </Form.Item>
-                          </Col>
-                          <Col span={4}>
-                            <Form.Item
-                              name={[field.name, 'is_root']}
-                              valuePropName="checked"
-                              label={field.name === 0 ? 'Root' : ''}
-                              style={{ marginBottom: 0 }}
-                            >
-                              <Switch />
-                            </Form.Item>
-                          </Col>
-                          <Col span={4}>
-                            <Button danger onClick={() => remove(field.name)}>
-                              Remove
-                            </Button>
-                          </Col>
-                          <Form.Item name={[field.name, 'metadata_json']} hidden>
-                            <Input />
-                          </Form.Item>
-                        </Row>
-                      ))}
-                      <Button
-                        onClick={() => add({ organization_id: undefined, is_root: false, metadata_json: '' })}
-                        data-testid="pool-catalog-topology-add-node"
-                      >
-                        Add node
-                      </Button>
-                    </Space>
-                  )}
-                </Form.List>
-
-                <Text strong style={{ marginTop: 12 }}>Edges</Text>
-                <Form.List name="edges">
-                  {(fields, { add, remove }) => (
-                    <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                      {fields.map((field) => (
-                        <Space
-                          key={field.key}
-                          direction="vertical"
-                          size={6}
-                          style={{ width: '100%' }}
-                        >
-                          <Row gutter={8} align="middle">
-                            <Col span={7}>
-                              <Form.Item
-                                name={[field.name, 'parent_organization_id']}
-                                label={field.name === 0 ? 'Parent' : ''}
-                                style={{ marginBottom: 0 }}
-                              >
-                                <Select options={organizationOptions} placeholder="Parent" />
-                              </Form.Item>
-                            </Col>
-                            <Col span={7}>
-                              <Form.Item
-                                name={[field.name, 'child_organization_id']}
-                                label={field.name === 0 ? 'Child' : ''}
-                                style={{ marginBottom: 0 }}
-                              >
-                                <Select options={organizationOptions} placeholder="Child" />
-                              </Form.Item>
-                            </Col>
-                            <Col span={3}>
-                              <Form.Item
-                                name={[field.name, 'weight']}
-                                label={field.name === 0 ? 'Weight' : ''}
-                                style={{ marginBottom: 0 }}
-                              >
-                                <InputNumber min={0.000001} step={0.1} style={{ width: '100%' }} />
-                              </Form.Item>
-                            </Col>
-                            <Col span={3}>
-                              <Form.Item
-                                name={[field.name, 'min_amount']}
-                                label={field.name === 0 ? 'Min' : ''}
-                                style={{ marginBottom: 0 }}
-                              >
-                                <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
-                              </Form.Item>
-                            </Col>
-                            <Col span={3}>
-                              <Form.Item
-                                name={[field.name, 'max_amount']}
-                                label={field.name === 0 ? 'Max' : ''}
-                                style={{ marginBottom: 0 }}
-                              >
-                                <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
-                              </Form.Item>
-                            </Col>
-                            <Col span={1}>
-                              <Button danger onClick={() => remove(field.name)}>x</Button>
-                            </Col>
-                          </Row>
-                          <Row gutter={8}>
-                            <Col span={23}>
-                              <Form.Item name={[field.name, 'metadata_json']} hidden>
-                                <Input />
-                              </Form.Item>
-                              <Form.Item
-                                name={[field.name, 'document_policy_json']}
-                                label={field.name === 0 ? 'Document policy (JSON)' : ''}
-                                style={{ marginBottom: 0 }}
-                              >
-                                <TextArea
-                                  autoSize={{ minRows: 2, maxRows: 8 }}
-                                  placeholder='{"version":"document_policy.v1","chains":[...]}'
-                                  data-testid={`pool-catalog-topology-edge-policy-${field.name}`}
-                                />
-                              </Form.Item>
-                            </Col>
-                          </Row>
-                        </Space>
-                      ))}
-                      <Button
-                        onClick={() => add({
-                          weight: 1,
-                          min_amount: null,
-                          max_amount: null,
-                          document_policy_json: '',
-                          metadata_json: '',
-                        })}
-                        data-testid="pool-catalog-topology-add-edge"
-                      >
-                        Add edge
-                      </Button>
-                    </Space>
-                  )}
-                </Form.List>
-
-                {topologyPreflightErrors.length > 0 && (
-                  <Alert
-                    type="error"
-                    showIcon
-                    message="Preflight validation failed"
-                    description={(
-                      <ul style={{ margin: 0, paddingInlineStart: 18 }}>
-                        {topologyPreflightErrors.map((item, index) => (
-                          <li key={`${index}-${item}`}>{item}</li>
-                        ))}
-                      </ul>
+                </Card>
+              ),
+            },
+            {
+              key: 'topology',
+              label: 'Topology Editor',
+              children: (
+                <Card title="Topology snapshot editor">
+                  <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                    {mutatingDisabled && (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        message="Mutating actions are disabled"
+                        description="Staff users must select a tenant (X-CC1C-Tenant-ID) to run mutating actions."
+                      />
                     )}
-                  />
-                )}
-                {topologySubmitError && <Alert type="error" message={topologySubmitError} showIcon />}
+                    {!selectedPool && (
+                      <Text type="secondary">Выберите пул, чтобы редактировать topology snapshot.</Text>
+                    )}
+                    {selectedPool && (
+                      <Form form={topologyForm} layout="vertical">
+                        <Row gutter={12}>
+                          <Col span={8}>
+                            <Form.Item name="effective_from" label="effective_from" rules={[{ required: true }]}>
+                              <Input type="date" />
+                            </Form.Item>
+                          </Col>
+                          <Col span={8}>
+                            <Form.Item name="effective_to" label="effective_to">
+                              <Input type="date" />
+                            </Form.Item>
+                          </Col>
+                          <Col span={8}>
+                            <Form.Item label="Pool">
+                              <Input value={`${selectedPool.code} - ${selectedPool.name}`} disabled />
+                            </Form.Item>
+                          </Col>
+                        </Row>
 
-                <Button
-                  type="primary"
-                  onClick={() => { void submitTopologySnapshot() }}
-                  loading={isTopologySaving}
-                  disabled={mutatingDisabled}
-                  data-testid="pool-catalog-topology-save"
-                >
-                  Save topology snapshot
-                </Button>
-              </Form>
-            )}
-          </Space>
-        </Card>
+                        <Alert
+                          type="info"
+                          showIcon
+                          style={{ marginBottom: 12 }}
+                          message="Advanced JSON fields are hidden by default"
+                          description="Раскройте нужный блок только для metadata/document_policy редактирования."
+                        />
 
-        <Card title="Pools graph (read-only)" loading={loadingPools || loadingGraph}>
-          <Space size="small" wrap style={{ marginBottom: 12 }}>
-            <Select
-              value={selectedPoolId ?? undefined}
-              style={{ width: 320 }}
-              placeholder="Select pool"
-              options={pools.map((pool) => ({
-                value: pool.id,
-                label: `${pool.code} - ${pool.name}`,
-              }))}
-              onChange={(value) => setSelectedPoolId(value)}
-            />
-            <Input
-              type="date"
-              value={graphDate}
-              style={{ width: 170 }}
-              onChange={(event) => setGraphDate(event.target.value)}
-            />
-            <Button onClick={() => { void loadGraph() }} loading={loadingGraph}>
-              Refresh graph
-            </Button>
-          </Space>
-          <div style={{ height: 520 }}>
-            <ReactFlow
-              nodes={flow.nodes}
-              edges={flow.edges}
-              fitView
-              nodesDraggable={false}
-              nodesConnectable={false}
-              elementsSelectable={false}
-              zoomOnDoubleClick={false}
-              proOptions={{ hideAttribution: true }}
-            >
-              <MiniMap />
-              <Controls />
-              <Background />
-            </ReactFlow>
-          </div>
-        </Card>
+                        <Text strong>Nodes</Text>
+                        <Form.List name="nodes">
+                          {(fields, { add, remove }) => (
+                            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                              {fields.map((field) => (
+                                <Space key={field.key} direction="vertical" size={8} style={{ width: '100%' }}>
+                                  <Row gutter={12} align="middle">
+                                    <Col span={16}>
+                                      <Form.Item
+                                        name={[field.name, 'organization_id']}
+                                        label={field.name === 0 ? 'Organization' : ''}
+                                        style={{ marginBottom: 0 }}
+                                      >
+                                        <Select
+                                          showSearch
+                                          optionFilterProp="label"
+                                          placeholder="Select organization"
+                                          options={organizationOptions}
+                                        />
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={4}>
+                                      <Form.Item
+                                        name={[field.name, 'is_root']}
+                                        valuePropName="checked"
+                                        label={field.name === 0 ? 'Root' : ''}
+                                        style={{ marginBottom: 0 }}
+                                      >
+                                        <Switch />
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={4}>
+                                      <Button danger onClick={() => remove(field.name)}>
+                                        Remove
+                                      </Button>
+                                    </Col>
+                                  </Row>
+                                  <Collapse
+                                    size="small"
+                                    items={[
+                                      {
+                                        key: `node-advanced-${field.key}`,
+                                        label: 'Advanced node JSON',
+                                        children: (
+                                          <Form.Item
+                                            name={[field.name, 'metadata_json']}
+                                            label="Node metadata (JSON)"
+                                            style={{ marginBottom: 0 }}
+                                          >
+                                            <TextArea
+                                              autoSize={{ minRows: 2, maxRows: 6 }}
+                                              placeholder='{"priority":1}'
+                                              data-testid={`pool-catalog-topology-node-metadata-${field.name}`}
+                                            />
+                                          </Form.Item>
+                                        ),
+                                      },
+                                    ]}
+                                  />
+                                </Space>
+                              ))}
+                              <Button
+                                onClick={() => add({ organization_id: undefined, is_root: false, metadata_json: '' })}
+                                data-testid="pool-catalog-topology-add-node"
+                              >
+                                Add node
+                              </Button>
+                            </Space>
+                          )}
+                        </Form.List>
+
+                        <Text strong style={{ marginTop: 12 }}>Edges</Text>
+                        <Form.List name="edges">
+                          {(fields, { add, remove }) => (
+                            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                              {fields.map((field) => (
+                                <Space
+                                  key={field.key}
+                                  direction="vertical"
+                                  size={6}
+                                  style={{ width: '100%' }}
+                                >
+                                  <Row gutter={8} align="middle">
+                                    <Col span={7}>
+                                      <Form.Item
+                                        name={[field.name, 'parent_organization_id']}
+                                        label={field.name === 0 ? 'Parent' : ''}
+                                        style={{ marginBottom: 0 }}
+                                      >
+                                        <Select options={organizationOptions} placeholder="Parent" />
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={7}>
+                                      <Form.Item
+                                        name={[field.name, 'child_organization_id']}
+                                        label={field.name === 0 ? 'Child' : ''}
+                                        style={{ marginBottom: 0 }}
+                                      >
+                                        <Select options={organizationOptions} placeholder="Child" />
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={3}>
+                                      <Form.Item
+                                        name={[field.name, 'weight']}
+                                        label={field.name === 0 ? 'Weight' : ''}
+                                        style={{ marginBottom: 0 }}
+                                      >
+                                        <InputNumber min={0.000001} step={0.1} style={{ width: '100%' }} />
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={3}>
+                                      <Form.Item
+                                        name={[field.name, 'min_amount']}
+                                        label={field.name === 0 ? 'Min' : ''}
+                                        style={{ marginBottom: 0 }}
+                                      >
+                                        <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={3}>
+                                      <Form.Item
+                                        name={[field.name, 'max_amount']}
+                                        label={field.name === 0 ? 'Max' : ''}
+                                        style={{ marginBottom: 0 }}
+                                      >
+                                        <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={1}>
+                                      <Button danger onClick={() => remove(field.name)}>x</Button>
+                                    </Col>
+                                  </Row>
+                                  <Collapse
+                                    size="small"
+                                    items={[
+                                      {
+                                        key: `edge-advanced-${field.key}`,
+                                        label: 'Advanced edge JSON / document policy',
+                                        children: (
+                                          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                            <Form.Item
+                                              name={[field.name, 'document_policy_json']}
+                                              label="Document policy (JSON)"
+                                              style={{ marginBottom: 0 }}
+                                            >
+                                              <TextArea
+                                                autoSize={{ minRows: 2, maxRows: 8 }}
+                                                placeholder='{"version":"document_policy.v1","chains":[...]}'
+                                                data-testid={`pool-catalog-topology-edge-policy-${field.name}`}
+                                              />
+                                            </Form.Item>
+                                            <Form.Item
+                                              name={[field.name, 'metadata_json']}
+                                              label="Edge metadata (JSON)"
+                                              style={{ marginBottom: 0 }}
+                                            >
+                                              <TextArea
+                                                autoSize={{ minRows: 2, maxRows: 6 }}
+                                                placeholder='{"custom_key":"value"}'
+                                                data-testid={`pool-catalog-topology-edge-metadata-${field.name}`}
+                                              />
+                                            </Form.Item>
+                                          </Space>
+                                        ),
+                                      },
+                                    ]}
+                                  />
+                                </Space>
+                              ))}
+                              <Button
+                                onClick={() => add({
+                                  weight: 1,
+                                  min_amount: null,
+                                  max_amount: null,
+                                  document_policy_json: '',
+                                  metadata_json: '',
+                                })}
+                                data-testid="pool-catalog-topology-add-edge"
+                              >
+                                Add edge
+                              </Button>
+                            </Space>
+                          )}
+                        </Form.List>
+
+                        {topologyPreflightErrors.length > 0 && (
+                          <Alert
+                            type="error"
+                            showIcon
+                            message="Preflight validation failed"
+                            description={(
+                              <ul style={{ margin: 0, paddingInlineStart: 18 }}>
+                                {topologyPreflightErrors.map((item, index) => (
+                                  <li key={`${index}-${item}`}>{item}</li>
+                                ))}
+                              </ul>
+                            )}
+                          />
+                        )}
+                        {topologySubmitError && <Alert type="error" message={topologySubmitError} showIcon />}
+
+                        <Button
+                          type="primary"
+                          onClick={() => { void submitTopologySnapshot() }}
+                          loading={isTopologySaving}
+                          disabled={mutatingDisabled}
+                          data-testid="pool-catalog-topology-save"
+                        >
+                          Save topology snapshot
+                        </Button>
+                      </Form>
+                    )}
+                  </Space>
+                </Card>
+              ),
+            },
+            {
+              key: 'graph',
+              label: 'Graph Preview',
+              children: (
+                <Card title="Pools graph (read-only)" loading={loadingPools || loadingGraph}>
+                  <Space size="small" wrap style={{ marginBottom: 12 }}>
+                    <Select
+                      value={selectedPoolId ?? undefined}
+                      style={{ width: 320 }}
+                      placeholder="Select pool"
+                      options={pools.map((pool) => ({
+                        value: pool.id,
+                        label: `${pool.code} - ${pool.name}`,
+                      }))}
+                      onChange={(value) => setSelectedPoolId(value)}
+                    />
+                    <Input
+                      type="date"
+                      value={graphDate}
+                      style={{ width: 170 }}
+                      onChange={(event) => setGraphDate(event.target.value)}
+                    />
+                    <Button onClick={() => { void loadGraph() }} loading={loadingGraph}>
+                      Refresh graph
+                    </Button>
+                  </Space>
+                  <div style={{ height: 520 }}>
+                    <ReactFlow
+                      nodes={flow.nodes}
+                      edges={flow.edges}
+                      fitView
+                      nodesDraggable={false}
+                      nodesConnectable={false}
+                      elementsSelectable={false}
+                      zoomOnDoubleClick={false}
+                      proOptions={{ hideAttribution: true }}
+                    >
+                      <MiniMap />
+                      <Controls />
+                      <Background />
+                    </ReactFlow>
+                  </div>
+                </Card>
+              ),
+            },
+          ]}
+        />
       </Space>
 
       <Drawer

@@ -1273,6 +1273,12 @@ def test_get_pool_run_returns_details(
     assert payload["run"]["provenance"]["workflow_run_id"] is None
     assert payload["run"]["provenance"]["workflow_status"] is None
     assert payload["run"]["provenance"]["execution_backend"] == "legacy_pool_runtime"
+    assert payload["run"]["root_operation_id"] is None
+    assert payload["run"]["execution_consumer"] is None
+    assert payload["run"]["lane"] is None
+    assert payload["run"]["provenance"]["root_operation_id"] is None
+    assert payload["run"]["provenance"]["execution_consumer"] is None
+    assert payload["run"]["provenance"]["lane"] is None
     assert payload["run"]["provenance"]["retry_chain"] == []
     assert len(payload["publication_attempts"]) == 1
     attempt_payload = payload["publication_attempts"][0]
@@ -1441,8 +1447,14 @@ def test_get_pool_run_resolves_transition_workflow_link_without_persisted_relati
     assert payload["run"]["workflow_execution_id"] == str(execution.id)
     assert payload["run"]["workflow_status"] == WorkflowExecution.STATUS_RUNNING
     assert payload["run"]["execution_backend"] == "workflow_core"
+    assert payload["run"]["root_operation_id"] == str(execution.id)
+    assert payload["run"]["execution_consumer"] == "pools"
+    assert payload["run"]["lane"] == "workflows"
     assert payload["run"]["provenance"]["workflow_run_id"] == str(execution.id)
     assert payload["run"]["provenance"]["workflow_status"] == WorkflowExecution.STATUS_RUNNING
+    assert payload["run"]["provenance"]["root_operation_id"] == str(execution.id)
+    assert payload["run"]["provenance"]["execution_consumer"] == "pools"
+    assert payload["run"]["provenance"]["lane"] == "workflows"
     assert payload["run"]["provenance"]["retry_chain"] == [
         {
             "workflow_run_id": str(execution.id),
@@ -1560,8 +1572,14 @@ def test_list_runs_resolves_transition_workflow_link_without_persisted_relation(
     assert run_payload["workflow_execution_id"] == str(execution.id)
     assert run_payload["workflow_status"] == WorkflowExecution.STATUS_PENDING
     assert run_payload["execution_backend"] == "workflow_core"
+    assert run_payload["root_operation_id"] == str(execution.id)
+    assert run_payload["execution_consumer"] == "pools"
+    assert run_payload["lane"] == "workflows"
     assert run_payload["provenance"]["workflow_run_id"] == str(execution.id)
     assert run_payload["provenance"]["workflow_status"] == WorkflowExecution.STATUS_PENDING
+    assert run_payload["provenance"]["root_operation_id"] == str(execution.id)
+    assert run_payload["provenance"]["execution_consumer"] == "pools"
+    assert run_payload["provenance"]["lane"] == "workflows"
     assert run_payload["provenance"]["retry_chain"] == [
         {
             "workflow_run_id": str(execution.id),

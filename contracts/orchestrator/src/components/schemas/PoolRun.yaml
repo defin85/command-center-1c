@@ -51,6 +51,15 @@ properties:
   workflow_status:
     type: string
     nullable: true
+  root_operation_id:
+    type: string
+    nullable: true
+  execution_consumer:
+    type: string
+    nullable: true
+  lane:
+    type: string
+    nullable: true
   approval_state:
     type: string
     nullable: true

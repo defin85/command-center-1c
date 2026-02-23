@@ -53,6 +53,9 @@ function buildRun(overrides: Partial<PoolRun> = {}): PoolRun {
     idempotency_key: 'idem-1',
     workflow_execution_id: '22222222-2222-2222-2222-222222222222',
     workflow_status: 'pending',
+    root_operation_id: '22222222-2222-2222-2222-222222222222',
+    execution_consumer: 'pools',
+    lane: 'workflows',
     approval_state: 'awaiting_approval',
     publication_step_state: 'not_enqueued',
     terminal_reason: null,
@@ -61,6 +64,9 @@ function buildRun(overrides: Partial<PoolRun> = {}): PoolRun {
       workflow_run_id: '22222222-2222-2222-2222-222222222222',
       workflow_status: 'pending',
       execution_backend: 'workflow_core',
+      root_operation_id: '22222222-2222-2222-2222-222222222222',
+      execution_consumer: 'pools',
+      lane: 'workflows',
       retry_chain: [
         {
           workflow_run_id: '22222222-2222-2222-2222-222222222222',
@@ -125,6 +131,15 @@ function renderPage() {
       <PoolRunsPage />
     </AntApp>
   )
+}
+
+async function openRunsStage(user: ReturnType<typeof userEvent.setup>, stage: 'Create' | 'Inspect' | 'Safe Actions' | 'Retry Failed') {
+  await user.click(screen.getByRole('tab', { name: stage, exact: true }))
+}
+
+async function openInspectDiagnostics(user: ReturnType<typeof userEvent.setup>) {
+  await openRunsStage(user, 'Inspect')
+  await user.click(screen.getByText('Diagnostics JSON (Run Input, Validation, Publication, Step Diagnostics)'))
 }
 
 describe('PoolRunsPage', () => {
@@ -204,11 +219,18 @@ describe('PoolRunsPage', () => {
   })
 
   it('renders unified provenance and safe status details', async () => {
+    const user = userEvent.setup()
     renderPage()
 
+    await openInspectDiagnostics(user)
     expect(await screen.findByTestId('pool-runs-provenance-workflow-id')).toHaveTextContent(
       '22222222-2222-2222-2222-222222222222'
     )
+    expect(screen.getByTestId('pool-runs-provenance-root-operation-id')).toHaveTextContent(
+      '22222222-2222-2222-2222-222222222222'
+    )
+    expect(screen.getByTestId('pool-runs-provenance-execution-consumer')).toHaveTextContent('pools')
+    expect(screen.getByTestId('pool-runs-provenance-lane')).toHaveTextContent('workflows')
     expect(screen.getAllByText('awaiting_approval').length).toBeGreaterThan(0)
     expect(screen.getAllByText('workflow_core').length).toBeGreaterThan(0)
     expect(screen.getAllByText('run_input_v1').length).toBeGreaterThan(0)
@@ -216,11 +238,13 @@ describe('PoolRunsPage', () => {
     expect((screen.getByTestId('pool-runs-run-input') as HTMLTextAreaElement).value).toContain(
       '"source_payload"'
     )
+    await openRunsStage(user, 'Safe Actions')
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled()
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
   }, 15000)
 
   it('disables confirm while safe run is in pre-publish preparing state', async () => {
+    const user = userEvent.setup()
     const preparingRun = buildRun({
       status_reason: 'preparing',
       approval_state: 'preparing',
@@ -232,6 +256,7 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
+    await openRunsStage(user, 'Safe Actions')
     expect(await screen.findByText('Pre-publish ещё выполняется')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeDisabled()
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
@@ -241,6 +266,7 @@ describe('PoolRunsPage', () => {
     const user = userEvent.setup()
     renderPage()
 
+    await openRunsStage(user, 'Safe Actions')
     const confirmButton = await screen.findByTestId('pool-runs-safe-confirm')
     await waitFor(() => expect(confirmButton).toBeEnabled())
     await user.click(confirmButton)
@@ -322,6 +348,7 @@ describe('PoolRunsPage', () => {
     const user = userEvent.setup()
     renderPage()
 
+    await openRunsStage(user, 'Safe Actions')
     const abortButton = await screen.findByTestId('pool-runs-safe-abort')
     await waitFor(() => expect(abortButton).toBeEnabled())
     await user.click(abortButton)
@@ -339,6 +366,7 @@ describe('PoolRunsPage', () => {
     const user = userEvent.setup()
     renderPage()
 
+    await openRunsStage(user, 'Retry Failed')
     const retryButton = await screen.findByRole('button', { name: 'Retry Failed' })
     await waitFor(() => expect(retryButton).toBeEnabled())
     await user.click(retryButton)
@@ -360,39 +388,50 @@ describe('PoolRunsPage', () => {
     expect(generatedKey.length).toBeGreaterThan(8)
   }, 15000)
 
-  it('renders legacy run with backward-compatible provenance and diagnostics aliases', async () => {
+  it('renders legacy run with canonical diagnostics payload fields', async () => {
+    const user = userEvent.setup()
     const legacyRun = buildRun({
       mode: 'unsafe',
       run_input: null,
       input_contract_version: 'legacy_pre_run_input',
       workflow_execution_id: null,
       workflow_status: null,
+      root_operation_id: null,
+      execution_consumer: null,
+      lane: null,
       execution_backend: 'legacy_pool_runtime',
       provenance: {
         workflow_run_id: null,
         workflow_status: null,
         execution_backend: 'legacy_pool_runtime',
+        root_operation_id: null,
+        execution_consumer: null,
+        lane: null,
         retry_chain: [],
       },
     })
     mockListPoolRuns.mockResolvedValue([legacyRun])
     mockGetPoolRunReport.mockResolvedValue(
       buildReport(legacyRun, {
-        domain_error_message: '',
-        error_message: 'legacy alias message',
+        domain_error_message: 'canonical legacy message',
       })
     )
 
     renderPage()
 
+    await openInspectDiagnostics(user)
     expect(await screen.findByTestId('pool-runs-provenance-workflow-id')).toHaveTextContent('-')
+    expect(screen.getByTestId('pool-runs-provenance-root-operation-id')).toHaveTextContent('-')
+    expect(screen.getByTestId('pool-runs-provenance-execution-consumer')).toHaveTextContent('-')
+    expect(screen.getByTestId('pool-runs-provenance-lane')).toHaveTextContent('-')
     expect(screen.getAllByText('legacy').length).toBeGreaterThan(0)
     expect(screen.getAllByText('legacy_pre_run_input').length).toBeGreaterThan(0)
     expect(screen.getByTestId('pool-runs-run-input')).toHaveValue('null')
-    expect(screen.getByText('legacy alias message')).toBeInTheDocument()
+    expect(screen.getByText('canonical legacy message')).toBeInTheDocument()
   })
 
   it('shows remediation hint for publication mapping errors in attempts table', async () => {
+    const user = userEvent.setup()
     const run = buildRun()
     mockListPoolRuns.mockResolvedValue([run])
     mockGetPoolRunReport.mockResolvedValue(
@@ -405,13 +444,16 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
+    await openRunsStage(user, 'Inspect')
     expect(await screen.findByText('ODATA_MAPPING_NOT_CONFIGURED')).toBeInTheDocument()
     expect(screen.getByText('Remediation: /rbac - Infobase Users')).toBeInTheDocument()
   })
 
   it('renders publication credentials source hint in create run form', async () => {
+    const user = userEvent.setup()
     renderPage()
 
+    await openRunsStage(user, 'Create')
     expect(await screen.findByText('Pool publication OData credentials source: /rbac')).toBeInTheDocument()
     expect(
       screen.getByText(
@@ -424,6 +466,7 @@ describe('PoolRunsPage', () => {
     const user = userEvent.setup()
     renderPage()
 
+    await openRunsStage(user, 'Create')
     const submitButton = await screen.findByTestId('pool-runs-create-submit')
     await user.click(submitButton)
 
@@ -438,6 +481,7 @@ describe('PoolRunsPage', () => {
     const user = userEvent.setup()
     renderPage()
 
+    await openRunsStage(user, 'Create')
     const bottomUpRadio = await screen.findByRole('radio', { name: 'bottom_up' })
     const bottomUpLabel = bottomUpRadio.closest('label')
     expect(bottomUpLabel).toBeTruthy()
