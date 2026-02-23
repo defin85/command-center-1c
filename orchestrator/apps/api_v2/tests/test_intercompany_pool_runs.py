@@ -1370,8 +1370,9 @@ def test_get_pool_run_serializes_http_error_in_canonical_diagnostics(
     assert attempt_payload["transport_error"] is None
     assert attempt_payload["domain_error_code"] == "ODataRequestError"
     assert attempt_payload["domain_error_message"] == "gateway timeout"
-    assert attempt_payload["error_code"] == "ODataRequestError"
-    assert attempt_payload["error_message"] == "gateway timeout"
+    assert "error_code" not in attempt_payload
+    assert "error_message" not in attempt_payload
+    assert "http_status" not in attempt_payload
 
 
 @pytest.mark.django_db

@@ -31,19 +31,10 @@ properties:
     type: string
   external_document_identity:
     type: string
-  identity_strategy:
-    type: string
   publication_identity_strategy:
     type: string
   posted:
     type: boolean
-  http_status:
-    type: integer
-    nullable: true
-  error_code:
-    type: string
-  error_message:
-    type: string
   request_summary: {}
   response_summary: {}
   started_at:

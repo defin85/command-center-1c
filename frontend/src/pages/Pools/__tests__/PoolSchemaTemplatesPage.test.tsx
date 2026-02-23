@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 
@@ -92,5 +92,26 @@ describe('PoolSchemaTemplatesPage', () => {
         })
       )
     })
+  })
+
+  it('blocks submit on invalid schema JSON and preserves input', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    const createButton = await screen.findByRole('button', { name: 'Create Template' })
+    await user.click(createButton)
+
+    const modal = await screen.findByRole('dialog', { name: 'Create Pool Schema Template' })
+    await user.type(within(modal).getByLabelText('Code'), 'json-invalid-v1')
+    await user.type(within(modal).getByLabelText('Name'), 'Invalid JSON Template')
+
+    const schemaInput = within(modal).getByLabelText('Schema JSON') as HTMLTextAreaElement
+    fireEvent.change(schemaInput, { target: { value: '{invalid-json' } })
+
+    await user.click(within(modal).getByRole('button', { name: 'Create' }))
+
+    expect(await within(modal).findByText('Schema: invalid JSON')).toBeInTheDocument()
+    expect(mockCreatePoolSchemaTemplate).not.toHaveBeenCalled()
+    expect(schemaInput.value).toBe('{invalid-json')
   })
 })

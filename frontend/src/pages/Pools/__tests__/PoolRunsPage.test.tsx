@@ -114,7 +114,6 @@ function buildReport(
         posted: false,
         domain_error_code: 'network',
         domain_error_message: 'temporary error',
-        error_message: 'temporary error',
         ...attemptOverrides,
       },
     ],
@@ -438,7 +437,6 @@ describe('PoolRunsPage', () => {
       buildReport(run, {
         domain_error_code: 'ODATA_MAPPING_NOT_CONFIGURED',
         domain_error_message: 'mapping missing',
-        error_message: 'mapping missing',
       })
     )
 

@@ -270,6 +270,29 @@ describe('PoolCatalogPage', () => {
   it('creates pool via drawer and reloads pools list', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
+    const initialPools = [
+      {
+        id: '44444444-4444-4444-4444-444444444444',
+        code: 'pool-1',
+        name: 'Pool One',
+        description: 'Main pool',
+        is_active: true,
+        metadata: {},
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ]
+    const updatedPools = [
+      ...initialPools,
+      {
+        id: '66666666-6666-6666-6666-666666666666',
+        code: 'pool-2',
+        name: 'Pool Two',
+        description: 'Second pool',
+        is_active: true,
+        metadata: {},
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ]
 
     mockUpsertOrganizationPool.mockResolvedValueOnce({
       pool: {
@@ -283,38 +306,8 @@ describe('PoolCatalogPage', () => {
       },
       created: true,
     })
-    mockListOrganizationPools
-      .mockResolvedValueOnce([
-        {
-          id: '44444444-4444-4444-4444-444444444444',
-          code: 'pool-1',
-          name: 'Pool One',
-          description: 'Main pool',
-          is_active: true,
-          metadata: {},
-          updated_at: '2026-01-01T00:00:00Z',
-        },
-      ])
-      .mockResolvedValueOnce([
-        {
-          id: '44444444-4444-4444-4444-444444444444',
-          code: 'pool-1',
-          name: 'Pool One',
-          description: 'Main pool',
-          is_active: true,
-          metadata: {},
-          updated_at: '2026-01-01T00:00:00Z',
-        },
-        {
-          id: '66666666-6666-6666-6666-666666666666',
-          code: 'pool-2',
-          name: 'Pool Two',
-          description: 'Second pool',
-          is_active: true,
-          metadata: {},
-          updated_at: '2026-01-01T00:00:00Z',
-        },
-      ])
+    mockListOrganizationPools.mockResolvedValue(updatedPools)
+    mockListOrganizationPools.mockResolvedValueOnce(initialPools)
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
@@ -333,8 +326,8 @@ describe('PoolCatalogPage', () => {
         name: 'Pool Two',
       })
     )
-    await waitFor(() => expect(mockListOrganizationPools.mock.calls.length).toBeGreaterThanOrEqual(2))
-  }, 30000)
+    expect(await screen.findByText('Pool Two')).toBeInTheDocument()
+  }, 15000)
 
   it('edits selected pool via drawer and sends pool_id in upsert payload', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')

@@ -1241,12 +1241,8 @@ def _serialize_attempt(attempt: PoolPublicationAttempt) -> dict[str, Any]:
         "domain_error_code": domain_error_code,
         "domain_error_message": domain_error_message,
         "external_document_identity": attempt.external_document_identity,
-        "identity_strategy": attempt.identity_strategy,
         "publication_identity_strategy": attempt.identity_strategy,
         "posted": attempt.posted,
-        "http_status": http_status_value,
-        "error_code": domain_error_code,
-        "error_message": domain_error_message,
         "request_summary": attempt.request_summary,
         "response_summary": attempt.response_summary,
         "started_at": attempt.started_at,
@@ -1381,12 +1377,8 @@ class PoolPublicationAttemptSerializer(serializers.Serializer):
     domain_error_code = serializers.CharField(required=False, allow_blank=True)
     domain_error_message = serializers.CharField(required=False, allow_blank=True)
     external_document_identity = serializers.CharField(required=False, allow_blank=True)
-    identity_strategy = serializers.CharField(required=False, allow_blank=True)
     publication_identity_strategy = serializers.CharField(required=False, allow_blank=True)
     posted = serializers.BooleanField()
-    http_status = serializers.IntegerField(required=False, allow_null=True)
-    error_code = serializers.CharField(required=False, allow_blank=True)
-    error_message = serializers.CharField(required=False, allow_blank=True)
     request_summary = serializers.JSONField(required=False)
     response_summary = serializers.JSONField(required=False)
     started_at = serializers.DateTimeField(required=False)

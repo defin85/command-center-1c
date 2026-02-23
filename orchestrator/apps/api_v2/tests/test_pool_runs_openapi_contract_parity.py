@@ -156,7 +156,7 @@ def test_safe_command_payload_schemas_cover_runtime_serializer_fields() -> None:
     assert runtime_conflict_fields.issubset(set(conflict_properties.keys()))
 
 
-def test_pool_publication_attempt_schema_contains_canonical_and_alias_diagnostics() -> None:
+def test_pool_publication_attempt_schema_contains_canonical_diagnostics() -> None:
     contract = _load_openapi_contract()
     schema = _schema(contract, "PoolPublicationAttempt")
     properties = schema.get("properties")
@@ -176,18 +176,14 @@ def test_pool_publication_attempt_schema_contains_canonical_and_alias_diagnostic
         "attempt_number",
         "attempt_timestamp",
     }
-    alias_fields = {
+    extended_fields = {
         "external_document_identity",
-        "identity_strategy",
         "publication_identity_strategy",
-        "http_status",
-        "error_code",
-        "error_message",
         "request_summary",
         "response_summary",
     }
     assert canonical_fields.issubset(contract_fields)
-    assert alias_fields.issubset(contract_fields)
+    assert extended_fields.issubset(contract_fields)
 
 
 def test_pool_run_provenance_schema_uses_structured_retry_chain_model() -> None:

@@ -103,13 +103,9 @@ export type PoolPublicationAttemptDiagnostics = {
   transport_error?: PoolPublicationAttemptTransportError
   domain_error_message?: string
   external_document_identity?: string
-  identity_strategy?: string
   publication_identity_strategy?: string
   posted: boolean
-  http_status?: number | null
-  error_code?: string
   domain_error_code?: string
-  error_message?: string
   request_summary?: Record<string, unknown>
   response_summary?: Record<string, unknown>
   started_at?: string
