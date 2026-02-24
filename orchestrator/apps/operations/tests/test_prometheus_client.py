@@ -457,6 +457,46 @@ class TestServiceMetrics:
             assert metrics.error_rate == 0.0
 
     @pytest.mark.asyncio
+    async def test_get_service_metrics_pool_outbox_dispatcher_healthy(self, client):
+        """Test pool outbox dispatcher service health calculation."""
+        with patch.object(client, '_execute_queries', new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = [
+                {'data': {'result': [{'value': ['1234567890', '1']}]}},    # up
+                {'data': {'result': [{'value': ['1234567890', '2']}]}},    # heartbeat age
+                {'data': {'result': [{'value': ['1234567890', '0']}]}},    # pending
+                {'data': {'result': [{'value': ['1234567890', '0']}]}},    # lag
+                {'data': {'result': [{'value': ['1234567890', '0']}]}},    # saturated
+                {'data': {'result': [{'value': ['1234567890', '3']}]}},    # dispatched
+                {'data': {'result': [{'value': ['1234567890', '0']}]}},    # failed
+            ]
+
+            metrics = await client.get_service_metrics('pool-outbox-dispatcher')
+
+            assert metrics.status == 'healthy'
+            assert metrics.ops_per_minute == 3.0
+            assert metrics.active_operations == 0
+            assert metrics.error_rate == 0.0
+
+    @pytest.mark.asyncio
+    async def test_get_service_metrics_pool_outbox_dispatcher_critical_when_down(self, client):
+        """Test pool outbox dispatcher is critical when heartbeat is down."""
+        with patch.object(client, '_execute_queries', new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = [
+                {'data': {'result': [{'value': ['1234567890', '0']}]}},    # up
+                {'data': {'result': [{'value': ['1234567890', '120']}]}},  # heartbeat age
+                {'data': {'result': [{'value': ['1234567890', '4']}]}},    # pending
+                {'data': {'result': [{'value': ['1234567890', '40']}]}},   # lag
+                {'data': {'result': [{'value': ['1234567890', '0']}]}},    # saturated
+                {'data': {'result': [{'value': ['1234567890', '0']}]}},    # dispatched
+                {'data': {'result': [{'value': ['1234567890', '0']}]}},    # failed
+            ]
+
+            metrics = await client.get_service_metrics('pool-outbox-dispatcher')
+
+            assert metrics.status == 'critical'
+            assert metrics.active_operations == 4
+
+    @pytest.mark.asyncio
     async def test_get_all_services_metrics(self, client):
         """Test retrieving metrics for all configured services."""
         with patch.object(client, 'get_service_metrics', new_callable=AsyncMock) as mock_get:
@@ -513,39 +553,15 @@ class TestServiceConnections:
         """Test retrieving service connections."""
         with patch.object(client, 'query', new_callable=AsyncMock) as mock_query:
             # SERVICE_TOPOLOGY connections, each needs 2 queries (rpm + latency)
-            mock_query.side_effect = [
-                # For each connection, provide rpm result and latency result
-                # frontend->api-gateway
-                {'data': {'result': [{'value': ['1234567890', '500']}]}},  # rpm
-                {'data': {'result': [{'value': ['1234567890', '100']}]}},  # latency
-                # api-gateway->orchestrator
-                {'data': {'result': [{'value': ['1234567890', '400']}]}},  # rpm
-                {'data': {'result': [{'value': ['1234567890', '150']}]}},  # latency
-                # orchestrator->postgresql
-                {'data': {'result': [{'value': ['1234567890', '1000']}]}}, # rpm
-                {'data': {'result': [{'value': ['1234567890', '10']}]}},   # latency
-                # orchestrator->redis
-                {'data': {'result': [{'value': ['1234567890', '2000']}]}}, # rpm
-                {'data': {'result': [{'value': ['1234567890', '5']}]}},    # latency
-                # orchestrator->minio
-                {'data': {'result': [{'value': ['1234567890', '300']}]}},  # rpm
-                {'data': {'result': [{'value': ['1234567890', '20']}]}},   # latency
-                # redis->worker
-                {'data': {'result': [{'value': ['1234567890', '800']}]}},  # rpm
-                {'data': {'result': [{'value': ['1234567890', '4']}]}},    # latency
-                # redis->event-subscriber
-                {'data': {'result': [{'value': ['1234567890', '120']}]}},  # rpm
-                {'data': {'result': [{'value': ['1234567890', '8']}]}},    # latency
-                # event-subscriber->postgresql
-                {'data': {'result': [{'value': ['1234567890', '140']}]}},  # rpm
-                {'data': {'result': [{'value': ['1234567890', '12']}]}},   # latency
-                # worker->ras-server
-                {'data': {'result': [{'value': ['1234567890', '60']}]}},   # rpm
-                {'data': {'result': [{'value': ['1234567890', '25']}]}},   # latency
-                # worker->minio
-                {'data': {'result': [{'value': ['1234567890', '40']}]}},   # rpm
-                {'data': {'result': [{'value': ['1234567890', '18']}]}},   # latency
-            ]
+            def _vector_result(value: float):
+                return {'data': {'result': [{'value': ['1234567890', str(value)]}]}}
+
+            responses = []
+            for idx, _connection in enumerate(SERVICE_TOPOLOGY):
+                rpm = 500.0 if idx == 0 else float(100 + idx)
+                latency = 100.0 if idx == 0 else float(10 + idx)
+                responses.extend([_vector_result(rpm), _vector_result(latency)])
+            mock_query.side_effect = responses
 
             connections = await client.get_service_connections()
 

@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -55,6 +57,8 @@ type EngineConfig struct {
 	CheckpointConfig *checkpoint.CheckpointConfig
 	// StateManagerConfig for state management.
 	StateManagerConfig *state.StateManagerConfig
+	// HistoryAuthToken is used by HistoryClient for internal API authentication.
+	HistoryAuthToken string
 }
 
 // DefaultEngineConfig returns sensible default configuration.
@@ -90,8 +94,13 @@ func NewEngine(
 	// Create history store (optional)
 	var historyStore state.HistoryStore
 	if orchestratorURL != "" {
+		historyAuthToken := strings.TrimSpace(config.HistoryAuthToken)
+		if historyAuthToken == "" {
+			historyAuthToken = strings.TrimSpace(os.Getenv("INTERNAL_API_TOKEN"))
+		}
 		historyStore = state.NewHistoryClient(&state.HistoryClientConfig{
-			BaseURL: orchestratorURL,
+			BaseURL:   orchestratorURL,
+			AuthToken: historyAuthToken,
 		})
 	} else {
 		historyStore = &state.NoOpHistoryStore{}
@@ -176,7 +185,10 @@ func (e *Engine) StartWorkflow(
 	}
 
 	// Generate execution ID
-	executionID := uuid.New().String()
+	executionID := resolveExecutionID(inputVars)
+	if executionID == "" {
+		executionID = uuid.New().String()
+	}
 
 	// Create executor
 	exec, err := executor.NewExecutorWithConfig(dag, e.zapLogger, e.config.ExecutorConfig)
@@ -255,7 +267,10 @@ func (e *Engine) ExecuteWorkflowSync(
 	}
 
 	// Generate execution ID
-	executionID := uuid.New().String()
+	executionID := resolveExecutionID(inputVars)
+	if executionID == "" {
+		executionID = uuid.New().String()
+	}
 
 	// Create executor
 	exec, err := executor.NewExecutorWithConfig(dag, e.zapLogger, e.config.ExecutorConfig)
@@ -323,6 +338,21 @@ func (e *Engine) ResumeWorkflow(ctx context.Context, executionID string, opts *c
 	// For now, return error
 	_ = workflowState
 	return fmt.Errorf("resume requires DAG to be stored - not implemented yet")
+}
+
+func resolveExecutionID(inputVars map[string]interface{}) string {
+	if inputVars == nil {
+		return ""
+	}
+	rawExecutionID, ok := inputVars["execution_id"]
+	if !ok {
+		return ""
+	}
+	executionID, ok := rawExecutionID.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(executionID)
 }
 
 // CancelWorkflow cancels a running workflow.

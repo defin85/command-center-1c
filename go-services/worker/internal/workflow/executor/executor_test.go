@@ -182,6 +182,44 @@ func TestExecutor_NodeFailure(t *testing.T) {
 	assert.Equal(t, []string{"A", "B"}, handler.ExecutionOrder)
 }
 
+func TestExecutor_NodeResultFailedStatus(t *testing.T) {
+	dag := models.NewDAG("dag-1", "Linear DAG")
+	_ = dag.AddNode(models.NewOperationNode("A", "Node A", "template-1"))
+	_ = dag.AddNode(models.NewOperationNode("B", "Node B", "template-2"))
+	_ = dag.AddNode(models.NewOperationNode("C", "Node C", "template-3"))
+	_ = dag.AddEdge("A", "B")
+	_ = dag.AddEdge("B", "C")
+
+	executor, err := NewExecutor(dag, createLogger())
+	require.NoError(t, err)
+
+	handler := &MockNodeHandler{
+		HandleFunc: func(ctx context.Context, node *models.Node, execCtx *wfcontext.ExecutionContext) (*NodeResult, error) {
+			if node.ID == "B" {
+				return &NodeResult{
+					NodeID: node.ID,
+					Status: NodeStatusFailed,
+					Error:  errors.New("node B failed status"),
+				}, nil
+			}
+			return &NodeResult{
+				NodeID: node.ID,
+				Status: NodeStatusCompleted,
+				Output: map[string]interface{}{"status": "ok"},
+			}, nil
+		},
+	}
+	executor.RegisterHandler(handler)
+
+	ctx := context.Background()
+	execCtx := wfcontext.NewExecutionContext("exec-1", "wf-1")
+
+	_, err = executor.Execute(ctx, execCtx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "node B failed status")
+	assert.Equal(t, []string{"A", "B"}, handler.ExecutionOrder)
+}
+
 func TestExecutor_StopOnErrorFalse(t *testing.T) {
 	// Create DAG: A -> B, A -> C (parallel branches from A)
 	// When B fails, C should still execute since it doesn't depend on B

@@ -111,15 +111,15 @@ func DefaultExecutorConfig() *ExecutorConfig {
 
 // Executor executes a workflow DAG in topological order.
 type Executor struct {
-	dag               *models.DAG
-	handlers          map[models.NodeType]NodeHandler
-	conditionEval     ConditionEvaluator
-	config            *ExecutorConfig
-	logger            *zap.Logger
-	callback          ExecutionCallback
-	topologicalOrder  []string
-	incomingEdges     map[string][]*models.Edge
-	outgoingEdges     map[string][]*models.Edge
+	dag              *models.DAG
+	handlers         map[models.NodeType]NodeHandler
+	conditionEval    ConditionEvaluator
+	config           *ExecutorConfig
+	logger           *zap.Logger
+	callback         ExecutionCallback
+	topologicalOrder []string
+	incomingEdges    map[string][]*models.Edge
+	outgoingEdges    map[string][]*models.Edge
 }
 
 // NewExecutor creates a new DAG executor.
@@ -294,6 +294,71 @@ func (e *Executor) Execute(ctx context.Context, execCtx *wfcontext.ExecutionCont
 			if e.config.StopOnError {
 				return nil, workflow.NewExecutionError(nodeID, "node execution failed", err)
 			}
+			continue
+		}
+		if result == nil {
+			nodeStatuses[nodeID] = NodeStatusFailed
+			nilResultErr := fmt.Errorf("node handler returned nil result")
+
+			e.emitEvent(ExecutionEvent{
+				Type:      EventNodeFailed,
+				NodeID:    nodeID,
+				Status:    NodeStatusFailed,
+				Error:     nilResultErr,
+				Timestamp: time.Now(),
+			})
+
+			e.logger.Error("Node execution returned nil result",
+				zap.String("node_id", nodeID),
+				zap.String("execution_id", execCtx.ExecutionID()))
+
+			if e.config.StopOnError {
+				return nil, workflow.NewExecutionError(nodeID, "node execution failed", nilResultErr)
+			}
+			continue
+		}
+		if result.Status == NodeStatusFailed {
+			nodeStatuses[nodeID] = NodeStatusFailed
+			nodeErr := result.Error
+			if nodeErr == nil {
+				nodeErr = fmt.Errorf("node returned failed status without error")
+			}
+
+			e.emitEvent(ExecutionEvent{
+				Type:      EventNodeFailed,
+				NodeID:    nodeID,
+				Status:    NodeStatusFailed,
+				Error:     nodeErr,
+				Timestamp: time.Now(),
+			})
+
+			e.logger.Error("Node execution reported failed status",
+				zap.String("node_id", nodeID),
+				zap.String("execution_id", execCtx.ExecutionID()),
+				zap.Error(nodeErr))
+
+			if e.config.StopOnError {
+				return nil, workflow.NewExecutionError(nodeID, "node execution failed", nodeErr)
+			}
+			continue
+		}
+		if result.Status == NodeStatusSkipped {
+			skippedNodes[nodeID] = true
+			nodeStatuses[nodeID] = NodeStatusSkipped
+			completedCount++
+
+			e.emitEvent(ExecutionEvent{
+				Type:      EventNodeSkipped,
+				NodeID:    nodeID,
+				Status:    NodeStatusSkipped,
+				Progress:  float64(completedCount) / float64(totalNodes),
+				Timestamp: time.Now(),
+			})
+
+			e.logger.Debug("Node reported skipped status",
+				zap.String("node_id", nodeID),
+				zap.String("execution_id", execCtx.ExecutionID()))
+
 			continue
 		}
 

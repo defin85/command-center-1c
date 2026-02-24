@@ -34,6 +34,7 @@ const SERVICE_ICONS: Record<string, React.ReactNode> = {
   'worker-workflows': <ThunderboltOutlined />,
   'ras-server': <CloudServerOutlined />,
   'event-subscriber': <NotificationOutlined />,
+  'pool-outbox-dispatcher': <NotificationOutlined />,
   postgresql: <DatabaseOutlined />,
   redis: <CloudServerOutlined />,
   minio: <CloudServerOutlined />,

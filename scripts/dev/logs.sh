@@ -27,8 +27,11 @@ if [ -z "$1" ]; then
     echo ""
     echo -e "${BLUE}Available services:${NC}"
     echo -e "  orchestrator      - Django Orchestrator"
+    echo -e "  event-subscriber  - Redis Streams Event Subscriber"
+    echo -e "  pool-outbox-dispatcher - Pool outbox dispatcher runtime"
     echo -e "  api-gateway       - Go API Gateway"
     echo -e "  worker            - Go Worker"
+    echo -e "  worker-workflows  - Go Worker Workflows"
     echo -e "  ras               - 1C RAS Server"
     echo -e "  frontend          - React Frontend"
     echo -e "  all               - Все сервисы вместе"
@@ -99,7 +102,7 @@ view_all_logs() {
     echo -e "${BLUE}========================================${NC}"
     echo ""
 
-    local services=("orchestrator" "api-gateway" "worker" "ras" "frontend")
+    local services=("orchestrator" "event-subscriber" "pool-outbox-dispatcher" "api-gateway" "worker" "worker-workflows" "ras" "frontend")
 
     for service in "${services[@]}"; do
         local log_file="$LOGS_DIR/${service}.log"
@@ -127,7 +130,7 @@ case "$SERVICE_NAME" in
         view_all_logs
         ;;
 
-    orchestrator|api-gateway|worker|ras|frontend)
+    orchestrator|event-subscriber|pool-outbox-dispatcher|api-gateway|worker|worker-workflows|ras|frontend)
         view_log "$SERVICE_NAME"
         ;;
 
@@ -148,8 +151,8 @@ case "$SERVICE_NAME" in
         echo -e "${RED}✗ Неизвестный сервис: ${SERVICE_NAME}${NC}"
         echo ""
         echo -e "${BLUE}Available services:${NC}"
-        echo -e "  orchestrator, api-gateway, worker, ras,"
-        echo -e "  frontend, all"
+        echo -e "  orchestrator, event-subscriber, pool-outbox-dispatcher,"
+        echo -e "  api-gateway, worker, worker-workflows, ras, frontend, all"
         echo -e "${BLUE}Docker services:${NC}"
         echo -e "  prometheus, grafana, jaeger"
         echo ""

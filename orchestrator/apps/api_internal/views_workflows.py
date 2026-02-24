@@ -25,6 +25,12 @@ PUBLICATION_STEP_STATE_NOT_ENQUEUED = "not_enqueued"
 PUBLICATION_STEP_STATE_QUEUED = "queued"
 PUBLICATION_STEP_STATE_STARTED = "started"
 PUBLICATION_STEP_STATE_COMPLETED = "completed"
+PUBLICATION_STEP_STATE_RANK = {
+    PUBLICATION_STEP_STATE_NOT_ENQUEUED: 0,
+    PUBLICATION_STEP_STATE_QUEUED: 1,
+    PUBLICATION_STEP_STATE_STARTED: 2,
+    PUBLICATION_STEP_STATE_COMPLETED: 3,
+}
 POOL_RUNTIME_CONTEXT_MISMATCH = "POOL_RUNTIME_CONTEXT_MISMATCH"
 IDEMPOTENCY_KEY_CONFLICT = "IDEMPOTENCY_KEY_CONFLICT"
 POOL_RUNTIME_PUBLICATION_PATH_DISABLED = "POOL_RUNTIME_PUBLICATION_PATH_DISABLED"
@@ -120,6 +126,24 @@ def _parse_non_negative_int(value: object, *, default: int) -> int:
     return default
 
 
+def _preserve_pool_publication_state_on_legacy_input_merge(
+    *,
+    existing_input_context: Mapping[str, object],
+    incoming_input_context: Mapping[str, object],
+) -> dict[str, object]:
+    normalized_input = dict(incoming_input_context)
+    existing_state = str(existing_input_context.get("publication_step_state") or "").strip().lower()
+    incoming_state = str(normalized_input.get("publication_step_state") or "").strip().lower()
+    existing_rank = PUBLICATION_STEP_STATE_RANK.get(existing_state)
+    incoming_rank = PUBLICATION_STEP_STATE_RANK.get(incoming_state)
+
+    if existing_rank is None:
+        return normalized_input
+    if incoming_rank is None or incoming_rank < existing_rank:
+        normalized_input["publication_step_state"] = existing_state
+    return normalized_input
+
+
 def _parse_legacy_datetime(raw_value: object):
     if not isinstance(raw_value, str):
         return None
@@ -147,6 +171,27 @@ def _normalize_legacy_workflow_status(raw_status: object) -> str:
     if normalized in {"pending", "running", "completed", "failed", "cancelled"}:
         return normalized
     return ""
+
+
+def _extract_node_results_container(payload: object) -> Mapping[str, object] | None:
+    if not isinstance(payload, Mapping):
+        return None
+    node_results = payload.get("node_results")
+    if isinstance(node_results, Mapping) and node_results:
+        return node_results
+    return None
+
+
+def _should_preserve_final_result_on_legacy_update(
+    *,
+    existing_final_result: object,
+    incoming_output_data: Mapping[str, object] | None,
+) -> bool:
+    existing_node_results = _extract_node_results_container(existing_final_result)
+    if existing_node_results is None:
+        return False
+    incoming_node_results = _extract_node_results_container(incoming_output_data)
+    return incoming_node_results is None
 
 
 def _serialize_legacy_workflow_execution_record(*, execution) -> dict[str, object]:
@@ -198,7 +243,13 @@ def _apply_legacy_status_transition(
             execution.error_message = error_message
             changed = True
         if target_status == WorkflowExecution.STATUS_COMPLETED and output_data is not None:
-            if execution.final_result != normalized_output:
+            if (
+                not _should_preserve_final_result_on_legacy_update(
+                    existing_final_result=execution.final_result,
+                    incoming_output_data=normalized_output,
+                )
+                and execution.final_result != normalized_output
+            ):
                 execution.final_result = normalized_output
                 changed = True
         return changed, status_changed
@@ -261,17 +312,29 @@ def _apply_legacy_execution_payload(
     changed = False
     status_changed = False
 
+    existing_input_context = execution.input_context if isinstance(execution.input_context, dict) else {}
     input_data = payload.get("input_data")
     if isinstance(input_data, Mapping):
         normalized_input = dict(input_data)
-        if execution.input_context != normalized_input:
+        if str(execution.execution_consumer or "") == "pools":
+            normalized_input = _preserve_pool_publication_state_on_legacy_input_merge(
+                existing_input_context=existing_input_context,
+                incoming_input_context=normalized_input,
+            )
+        if existing_input_context != normalized_input:
             execution.input_context = normalized_input
             changed = True
 
     output_data_raw = payload.get("output_data")
     output_data = dict(output_data_raw) if isinstance(output_data_raw, Mapping) else None
     if output_data is not None and "status" not in payload:
-        if execution.final_result != output_data:
+        if (
+            not _should_preserve_final_result_on_legacy_update(
+                existing_final_result=execution.final_result,
+                incoming_output_data=output_data,
+            )
+            and execution.final_result != output_data
+        ):
             execution.final_result = output_data
             changed = True
 
@@ -894,6 +957,54 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
         execution.input_context = updated_context
 
 
+def _reconcile_pool_publication_step_state_from_persisted_attempts(*, execution) -> bool:
+    from apps.intercompany_pools.models import PoolPublicationAttempt, PoolRun
+
+    if str(execution.execution_consumer or "") != "pools":
+        return False
+
+    execution_context = execution.input_context if isinstance(execution.input_context, dict) else {}
+    if not execution_context:
+        return False
+
+    current_publication_state = str(
+        execution_context.get("publication_step_state") or ""
+    ).strip().lower()
+    if current_publication_state == PUBLICATION_STEP_STATE_COMPLETED:
+        return False
+
+    approval_state = str(execution_context.get("approval_state") or "").strip().lower()
+    if approval_state not in {APPROVAL_STATE_APPROVED, APPROVAL_STATE_NOT_REQUIRED}:
+        return False
+
+    pool_run_id = str(execution_context.get("pool_run_id") or "").strip()
+    if not pool_run_id:
+        return False
+    try:
+        pool_run_uuid = uuid.UUID(pool_run_id)
+    except ValueError:
+        return False
+
+    run = PoolRun.objects.filter(id=pool_run_uuid).first()
+    if run is None:
+        return False
+
+    execution_tenant_id = str(getattr(execution, "tenant_id", "") or "").strip()
+    if execution_tenant_id and str(run.tenant_id) != execution_tenant_id:
+        return False
+
+    publication_summary = run.publication_summary if isinstance(run.publication_summary, dict) else {}
+    has_publication_summary = bool(publication_summary)
+    has_publication_attempts = PoolPublicationAttempt.objects.filter(run=run).exists()
+    if not has_publication_summary and not has_publication_attempts:
+        return False
+
+    updated_context = dict(execution_context)
+    updated_context["publication_step_state"] = PUBLICATION_STEP_STATE_COMPLETED
+    execution.input_context = updated_context
+    return True
+
+
 def _resolve_workflow_node(*, execution, node_id: str) -> dict[str, object] | None:
     dag_structure = _model_dump(execution.workflow_template.dag_structure)
     if not isinstance(dag_structure, dict):
@@ -1068,6 +1179,10 @@ def legacy_workflow_executions_collection(request):
         )
 
     changed, status_changed = _apply_legacy_execution_payload(execution=execution, payload=payload)
+    publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
+        execution=execution,
+    )
+    changed = changed or publication_state_reconciled
     if changed:
         execution.save()
         if status_changed:
@@ -1114,6 +1229,10 @@ def legacy_workflow_execution_detail(request, execution_id):
 
     payload = request.data if isinstance(request.data, Mapping) else {}
     changed, status_changed = _apply_legacy_execution_payload(execution=execution, payload=payload)
+    publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
+        execution=execution,
+    )
+    changed = changed or publication_state_reconciled
     if changed:
         execution.save()
         if status_changed:
@@ -1168,6 +1287,10 @@ def legacy_workflow_transitions_collection(request):
         error_message=str(payload.get("message") or "").strip(),
         output_data=None,
     )
+    publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
+        execution=execution,
+    )
+    transition_changed = transition_changed or publication_state_reconciled
     if transition_changed:
         execution.save()
         if status_changed:
@@ -1509,8 +1632,8 @@ def update_workflow_execution_status(request):
         return Response({"success": False, "error": "Workflow execution not found"}, status=status.HTTP_404_NOT_FOUND)
 
     if target_status == execution.status:
+        update_fields: list[str] = []
         if target_status == WorkflowExecution.STATUS_FAILED:
-            update_fields: list[str] = []
             if error_message and error_message != execution.error_message:
                 execution.error_message = error_message
                 update_fields.append("error_message")
@@ -1520,8 +1643,47 @@ def update_workflow_execution_status(request):
             if error_details_provided and error_details != execution.error_details:
                 execution.error_details = error_details
                 update_fields.append("error_details")
-            if update_fields:
-                execution.save(update_fields=update_fields)
+        elif target_status == WorkflowExecution.STATUS_COMPLETED:
+            previous_input_context = (
+                dict(execution.input_context)
+                if isinstance(execution.input_context, dict)
+                else {}
+            )
+            current_publication_step_state = str(
+                previous_input_context.get("publication_step_state") or ""
+            ).strip().lower()
+            should_project_publication = (
+                _extract_publication_result_payload(result_payload) is not None
+                and current_publication_step_state != PUBLICATION_STEP_STATE_COMPLETED
+            )
+            publication_state_reconciled = False
+
+            if result_payload and result_payload != (execution.final_result or {}):
+                execution.final_result = result_payload
+                update_fields.append("final_result")
+
+            if should_project_publication:
+                _project_pool_publication_attempts_from_result(
+                    execution=execution,
+                    result_payload=result_payload,
+                )
+                publication_state_reconciled = True
+            else:
+                publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
+                    execution=execution,
+                )
+
+            if publication_state_reconciled:
+                next_input_context = (
+                    dict(execution.input_context)
+                    if isinstance(execution.input_context, dict)
+                    else {}
+                )
+                if next_input_context != previous_input_context:
+                    update_fields.append("input_context")
+
+        if update_fields:
+            execution.save(update_fields=update_fields)
         _sync_workflow_root_projection_from_execution(execution=execution)
         return Response(_build_status_update_response(execution=execution))
 
@@ -1540,6 +1702,9 @@ def update_workflow_execution_status(request):
             _project_pool_publication_attempts_from_result(
                 execution=execution,
                 result_payload=result_payload,
+            )
+            _reconcile_pool_publication_step_state_from_persisted_attempts(
+                execution=execution,
             )
 
         elif target_status == WorkflowExecution.STATUS_FAILED:

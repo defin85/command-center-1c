@@ -67,6 +67,11 @@ func (c *OrchestratorBridgeClient) ExecutePoolRuntimeStep(
 	if idempotencyKey == "" {
 		idempotencyKey = buildStepIdempotencyKey(req.ExecutionID, req.NodeID, req.StepAttempt)
 	}
+	payload := req.Payload
+	if payload == nil {
+		// Internal bridge contract requires payload as JSON object (not null).
+		payload = map[string]interface{}{}
+	}
 
 	request := &orchestrator.PoolRuntimeStepExecutionRequest{
 		TenantID:            req.TenantID,
@@ -79,7 +84,7 @@ func (c *OrchestratorBridgeClient) ExecutePoolRuntimeStep(
 		StepAttempt:         normalizeStepAttempt(req.StepAttempt),
 		TransportAttempt:    1,
 		IdempotencyKey:      idempotencyKey,
-		Payload:             req.Payload,
+		Payload:             payload,
 	}
 
 	resp, err := c.api.ExecutePoolRuntimeStep(callCtx, request)

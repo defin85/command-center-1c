@@ -47,6 +47,7 @@ type WorkflowHandler struct {
 
 // WorkflowHandlerConfig controls runtime behavior of workflow handler wiring.
 type WorkflowHandlerConfig struct {
+	InternalAPIToken                        string
 	PoolRouteEnabled                        bool
 	PoolRouteEnabledProvider                func() bool
 	PublicationRouteEnabled                 bool
@@ -78,7 +79,9 @@ func NewWorkflowHandler(
 	}
 
 	// Create workflow engine
-	eng, err := engine.NewEngine(redisClient, orchestratorURL, slogger, logger, nil)
+	engineCfg := engine.DefaultEngineConfig()
+	engineCfg.HistoryAuthToken = cfg.InternalAPIToken
+	eng, err := engine.NewEngine(redisClient, orchestratorURL, slogger, logger, engineCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create workflow engine: %w", err)
 	}
@@ -271,6 +274,7 @@ func (h *WorkflowHandler) ExecuteWorkflow(ctx context.Context, msg *models.Opera
 
 	// Add operation metadata to input vars
 	inputVars["operation_id"] = msg.OperationID
+	inputVars["execution_id"] = executionID
 	if len(msg.TargetDatabases) > 0 {
 		// Pass TargetDatabases as objects ([]models.TargetDatabase)
 		inputVars["target_databases"] = msg.TargetDatabases

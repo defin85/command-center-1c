@@ -60,6 +60,7 @@ check_process() {
 
 check_process "orchestrator"
 check_process "event-subscriber"
+check_process "pool-outbox-dispatcher"
 check_process "api-gateway"
 check_process "worker"
 check_process "worker-workflows"
@@ -298,7 +299,7 @@ echo ""
 RUNNING=0
 
 # Week 4+: RAS Adapter is the only RAS service
-SERVICES=("orchestrator" "event-subscriber" "api-gateway" "worker" "worker-workflows" "ras" "frontend")
+SERVICES=("orchestrator" "event-subscriber" "pool-outbox-dispatcher" "api-gateway" "worker" "worker-workflows" "ras" "frontend")
 TOTAL=${#SERVICES[@]}
 
 for service in "${SERVICES[@]}"; do

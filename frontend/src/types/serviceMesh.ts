@@ -287,6 +287,7 @@ export const DEFAULT_SERVICE_POSITIONS: ServiceLayoutConfig = {
 
   // Level 2.5: Event Subscriber (next to orchestrator - both listen to Redis)
   'event-subscriber': { x: 600, y: 280 },
+  'pool-outbox-dispatcher': { x: 800, y: 280 },
 
   // Level 3: Infrastructure + Worker (horizontal)
   postgresql: { x: 200, y: 410 },
@@ -373,6 +374,12 @@ export const SERVICE_DISPLAY_CONFIG: Record<string, ServiceDisplayConfig> = {
     icon: 'notification',
     description: 'Redis Streams event processor',
   },
+  'pool-outbox-dispatcher': {
+    name: 'pool-outbox-dispatcher',
+    displayName: 'Pool Outbox Dispatcher',
+    icon: 'notification',
+    description: 'Safe-run outbox relay into workflow commands stream',
+  },
 }
 
 /**
@@ -453,6 +460,8 @@ export const CONNECTION_TYPES: Record<string, ConnectionType> = {
   'api-gateway->orchestrator': 'http',
   'orchestrator->postgresql': 'database',
   'orchestrator->redis': 'streams',
+  'orchestrator->pool-outbox-dispatcher': 'streams',
+  'pool-outbox-dispatcher->redis': 'streams',
   'redis->worker': 'streams',
   'redis->worker-workflows': 'streams',
   'redis->event-subscriber': 'streams',

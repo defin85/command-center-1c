@@ -600,9 +600,21 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 5: API Gateway (Go)
+# Шаг 5: Pool Outbox Dispatcher
 ##############################################################################
-echo -e "${BLUE}[5/9] Запуск API Gateway (port 8180)...${NC}"
+echo -e "${BLUE}[5/9] Запуск Pool Outbox Dispatcher...${NC}"
+
+if ! start_service "pool-outbox-dispatcher"; then
+    log_error "Не удалось запустить pool-outbox-dispatcher"
+    cat "$LOGS_DIR/pool-outbox-dispatcher.log"
+    exit 1
+fi
+echo ""
+
+##############################################################################
+# Шаг 6: API Gateway (Go)
+##############################################################################
+echo -e "${BLUE}[6/9] Запуск API Gateway (port 8180)...${NC}"
 
 if ! start_service "api-gateway"; then
     log_error "Не удалось запустить api-gateway"
@@ -612,9 +624,9 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 6: Go Workers (ops + workflows)
+# Шаг 7: Go Workers (ops + workflows)
 ##############################################################################
-echo -e "${BLUE}[6/9] Запуск Go Workers (ops + workflows)...${NC}"
+echo -e "${BLUE}[7/9] Запуск Go Workers (ops + workflows)...${NC}"
 
 if ! start_service "worker"; then
     log_error "Не удалось запустить worker"
@@ -629,9 +641,9 @@ if ! start_service "worker-workflows"; then
 fi
 echo ""
 
-# Шаг 7: RAS (1C Remote Administration Server)
+# Шаг 8: RAS (1C Remote Administration Server)
 ##############################################################################
-echo -e "${BLUE}[7/9] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1545})...${NC}"
+echo -e "${BLUE}[8/9] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1545})...${NC}"
 
 # Проверить флаг пропуска запуска RAS (если RAS работает как Windows служба)
 if [ "${RAS_SKIP_START:-false}" = "true" ]; then
@@ -714,9 +726,9 @@ fi
 echo ""
 
 ##############################################################################
-# Шаг 8: Frontend (React)
+# Шаг 9: Frontend (React)
 ##############################################################################
-echo -e "${BLUE}[8/8] Запуск Frontend (port ${FRONTEND_PORT:-15173})...${NC}"
+echo -e "${BLUE}[9/9] Запуск Frontend (port ${FRONTEND_PORT:-15173})...${NC}"
 
 cd "$PROJECT_ROOT/frontend"
 

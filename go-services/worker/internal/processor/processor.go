@@ -147,6 +147,7 @@ func NewTaskProcessorWithOptions(cfg *config.Config, credsClient credentials.Fet
 			zapLogger,
 			timeline,
 			workflowops.WorkflowHandlerConfig{
+				InternalAPIToken:                        cfg.InternalAPIToken,
 				PoolRouteEnabled:                        poolRouteEnabled,
 				PoolRouteEnabledProvider:                cfg.IsPoolOpsRouteEnabledForWorker,
 				PublicationRouteEnabled:                 cfg.IsPoolPublicationODataCoreEnabledForWorker(),

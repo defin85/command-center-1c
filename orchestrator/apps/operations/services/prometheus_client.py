@@ -132,6 +132,15 @@ SERVICE_CONFIG = {
         'job_patterns': ['event_subscriber', 'event-subscriber', 'eventsubscriber'],
         'namespace': 'orchestrator',  # Part of Django orchestrator
     },
+    'pool-outbox-dispatcher': {
+        'display_name': 'Pool Outbox Dispatcher',
+        'job_patterns': ['pool-outbox-dispatcher', 'pool_outbox_dispatcher'],
+        'namespace': 'orchestrator',
+        'thresholds': {
+            'critical_lag_seconds': 300,
+            'degraded_lag_seconds': 60,
+        },
+    },
     'ras-server': {
         'display_name': 'RAS Server',
         'job_patterns': [],
@@ -151,6 +160,10 @@ SERVICE_TOPOLOGY = [
     ('orchestrator', 'postgresql'),
     ('orchestrator', 'redis'),
     ('orchestrator', 'minio'),
+    ('orchestrator', 'pool-outbox-dispatcher'),
+
+    # Pool outbox dispatcher relays safe-run intents from DB into workflow stream.
+    ('pool-outbox-dispatcher', 'redis'),
 
     # Level 2 → 3: Workers get tasks from Redis
     ('redis', 'worker'),  # Worker pulls from Redis queue
@@ -351,6 +364,73 @@ class PrometheusClient:
         """
         config = SERVICE_CONFIG.get(service, {})
         display_name = config.get('display_name', service.title())
+
+        if service == "pool-outbox-dispatcher":
+            (
+                up_result,
+                heartbeat_age_result,
+                pending_result,
+                lag_result,
+                saturated_result,
+                dispatched_cycle_result,
+                failed_cycle_result,
+            ) = await self._execute_queries([
+                'max(cc1c_orchestrator_pool_run_command_outbox_dispatcher_up)',
+                'max(cc1c_orchestrator_pool_run_command_outbox_dispatcher_heartbeat_age_seconds)',
+                'max(cc1c_orchestrator_pool_run_command_outbox_dispatcher_pending_total)',
+                'max(cc1c_orchestrator_pool_run_command_outbox_dispatcher_lag_seconds)',
+                'max(cc1c_orchestrator_pool_run_command_outbox_dispatcher_retry_saturated_pending_total)',
+                'max(cc1c_orchestrator_pool_run_command_outbox_dispatcher_last_cycle_dispatched_total)',
+                'max(cc1c_orchestrator_pool_run_command_outbox_dispatcher_last_cycle_failed_total)',
+            ])
+
+            up_value = self._extract_value(up_result) if self._has_result(up_result) else 0.0
+            heartbeat_age_seconds = (
+                self._extract_value(heartbeat_age_result)
+                if self._has_result(heartbeat_age_result)
+                else 0.0
+            )
+            pending_total = int(self._extract_value(pending_result)) if self._has_result(pending_result) else 0
+            lag_seconds = self._extract_value(lag_result) if self._has_result(lag_result) else 0.0
+            saturated_total = (
+                int(self._extract_value(saturated_result))
+                if self._has_result(saturated_result)
+                else 0
+            )
+            dispatched_last_cycle = (
+                self._extract_value(dispatched_cycle_result)
+                if self._has_result(dispatched_cycle_result)
+                else 0.0
+            )
+            failed_last_cycle = (
+                self._extract_value(failed_cycle_result)
+                if self._has_result(failed_cycle_result)
+                else 0.0
+            )
+
+            thresholds = config.get('thresholds', {})
+            critical_lag_seconds = float(thresholds.get('critical_lag_seconds', 300))
+            degraded_lag_seconds = float(thresholds.get('degraded_lag_seconds', 60))
+
+            if up_value < 0.5:
+                status = "critical"
+            elif lag_seconds >= critical_lag_seconds:
+                status = "critical"
+            elif lag_seconds >= degraded_lag_seconds or saturated_total > 0 or failed_last_cycle > 0:
+                status = "degraded"
+            else:
+                status = "healthy"
+
+            return ServiceMetrics(
+                name=service,
+                display_name=display_name,
+                status=status,
+                ops_per_minute=max(float(dispatched_last_cycle), 0.0),
+                active_operations=max(int(pending_total), 0),
+                p95_latency_ms=max(float(heartbeat_age_seconds), 0.0) * 1000.0,
+                error_rate=1.0 if failed_last_cycle > 0 else 0.0,
+                last_updated=datetime.utcnow(),
+            )
 
         if service == "event-subscriber":
             up_result, consumers_result = await self._execute_queries([

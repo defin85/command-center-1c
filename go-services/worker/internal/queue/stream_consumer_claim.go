@@ -13,7 +13,9 @@ import (
 func (c *Consumer) ackMessage(ctx context.Context, messageID string) {
 	log := logger.GetLogger()
 
-	err := c.redis.XAck(ctx, c.streamName, c.consumerGroup, messageID).Err()
+	opCtx, cancel := context.WithTimeout(ctx, RedisOpTimeout)
+	defer cancel()
+	err := c.redis.XAck(opCtx, c.streamName, c.consumerGroup, messageID).Err()
 	if err != nil {
 		log.Errorf("failed to ACK message, message_id=%s, error=%v", messageID, err)
 	}
@@ -41,7 +43,9 @@ func (c *Consumer) checkAndClaimPending(ctx context.Context) {
 	log := logger.GetLogger()
 
 	// Get pending messages summary
-	pending, err := c.redis.XPending(ctx, c.streamName, c.consumerGroup).Result()
+	summaryCtx, summaryCancel := context.WithTimeout(ctx, RedisOpTimeout)
+	pending, err := c.redis.XPending(summaryCtx, c.streamName, c.consumerGroup).Result()
+	summaryCancel()
 	if err != nil {
 		log.Errorf("failed to get pending summary: %v", err)
 		return
@@ -54,13 +58,15 @@ func (c *Consumer) checkAndClaimPending(ctx context.Context) {
 	log.Debugf("checking pending messages, count=%d, stream=%s", pending.Count, c.streamName)
 
 	// Get detailed pending messages
-	pendingExt, err := c.redis.XPendingExt(ctx, &redis.XPendingExtArgs{
+	detailCtx, detailCancel := context.WithTimeout(ctx, RedisOpTimeout)
+	pendingExt, err := c.redis.XPendingExt(detailCtx, &redis.XPendingExtArgs{
 		Stream: c.streamName,
 		Group:  c.consumerGroup,
 		Start:  "-",
 		End:    "+",
 		Count:  MaxPendingToCheck,
 	}).Result()
+	detailCancel()
 	if err != nil {
 		log.Errorf("failed to get pending messages detail: %v", err)
 		return
@@ -82,13 +88,15 @@ func (c *Consumer) checkAndClaimPending(ctx context.Context) {
 			pendingMsg.ID, pendingMsg.Idle, pendingMsg.Consumer)
 
 		// Claim the message
-		messages, err := c.redis.XClaim(ctx, &redis.XClaimArgs{
+		claimCtx, claimCancel := context.WithTimeout(ctx, RedisOpTimeout)
+		messages, err := c.redis.XClaim(claimCtx, &redis.XClaimArgs{
 			Stream:   c.streamName,
 			Group:    c.consumerGroup,
 			Consumer: c.consumerName,
 			MinIdle:  ClaimIdleThreshold,
 			Messages: []string{pendingMsg.ID},
 		}).Result()
+		claimCancel()
 		if err != nil {
 			log.Errorf("failed to claim message %s: %v", pendingMsg.ID, err)
 			continue

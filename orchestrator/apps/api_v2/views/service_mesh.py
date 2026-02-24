@@ -124,6 +124,7 @@ TYPE_MAP = {
     "orchestrator": "backend",
     "worker": "backend",
     "worker-workflows": "backend",
+    "pool-outbox-dispatcher": "internal",
     "postgresql": "internal",
     "redis": "internal",
     "event-subscriber": "internal",

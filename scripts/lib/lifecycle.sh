@@ -55,6 +55,7 @@ CC1C_LIB_LIFECYCLE_LOADED=true
 declare -gA SERVICE_CATEGORIES=(
     ["orchestrator"]="python"
     ["event-subscriber"]="python"
+    ["pool-outbox-dispatcher"]="python"
     ["api-gateway"]="go"
     ["worker"]="go"
     ["worker-workflows"]="go"
@@ -66,6 +67,7 @@ declare -gA SERVICE_CATEGORIES=(
 declare -ga SERVICE_START_ORDER=(
     orchestrator
     event-subscriber
+    pool-outbox-dispatcher
     api-gateway
     worker
     worker-workflows
@@ -78,6 +80,7 @@ declare -ga SERVICE_STOP_ORDER=(
     worker-workflows
     worker
     api-gateway
+    pool-outbox-dispatcher
     event-subscriber
     orchestrator
 )
@@ -93,6 +96,7 @@ declare -gA SERVICE_PORTS=(
 declare -gA SERVICE_STOP_TIMEOUT=(
     ["orchestrator"]=15
     ["event-subscriber"]=10
+    ["pool-outbox-dispatcher"]=10
     ["api-gateway"]=10
     ["worker"]=15
     ["worker-workflows"]=15
@@ -275,6 +279,21 @@ _start_python_service() {
             ;;
         event-subscriber)
             nohup python manage.py run_event_subscriber > "$log_file" 2>&1 &
+            LAST_SERVICE_PID=$!
+            ;;
+        pool-outbox-dispatcher)
+            local interval_seconds="${POOL_OUTBOX_DISPATCHER_INTERVAL_SECONDS:-2}"
+            local heartbeat_ttl_seconds="${POOL_OUTBOX_DISPATCHER_HEARTBEAT_TTL_SECONDS:-30}"
+            local batch_size="${POOL_OUTBOX_DISPATCHER_BATCH_SIZE:-100}"
+            local retry_base_seconds="${POOL_OUTBOX_DISPATCHER_RETRY_BASE_SECONDS:-5}"
+            local retry_cap_seconds="${POOL_OUTBOX_DISPATCHER_RETRY_CAP_SECONDS:-120}"
+
+            nohup python manage.py run_pool_run_command_outbox_dispatcher \
+                --interval-seconds "$interval_seconds" \
+                --heartbeat-ttl-seconds "$heartbeat_ttl_seconds" \
+                --batch-size "$batch_size" \
+                --retry-base-seconds "$retry_base_seconds" \
+                --retry-cap-seconds "$retry_cap_seconds" > "$log_file" 2>&1 &
             LAST_SERVICE_PID=$!
             ;;
         *)

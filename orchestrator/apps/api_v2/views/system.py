@@ -174,6 +174,7 @@ class SystemHealthView(APIView):
             "orchestrator": "http://localhost:8200",
             "worker": worker_url,
             "worker-workflows": worker_workflows_url,
+            "pool-outbox-dispatcher": "http://localhost:8200/metrics",
             "minio": minio_url,
         }
 
@@ -183,6 +184,7 @@ class SystemHealthView(APIView):
             "orchestrator": "django",
             "worker": "go-service",
             "worker-workflows": "go-service",
+            "pool-outbox-dispatcher": "django",
             "postgresql": "database",
             "redis": "cache",
             "minio": "storage",

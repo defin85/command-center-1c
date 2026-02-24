@@ -108,6 +108,7 @@ func TestOrchestratorBridgeClient_ExecutePoolRuntimeStep_UsesProvidedIdempotency
 	require.NotNil(t, api.lastReq)
 	assert.Equal(t, "fixed-key", api.lastReq.IdempotencyKey)
 	assert.Equal(t, 1, api.lastReq.StepAttempt)
+	assert.Equal(t, map[string]interface{}{}, api.lastReq.Payload)
 }
 
 func TestOrchestratorBridgeClient_ExecutePoolRuntimeStep_PropagatesAPIError(t *testing.T) {

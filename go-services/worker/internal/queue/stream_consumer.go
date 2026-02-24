@@ -3,6 +3,7 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -40,6 +41,15 @@ const (
 
 	// MaxPendingToCheck is the maximum number of pending messages to check
 	MaxPendingToCheck = 100
+
+	// ReadBlockTimeout is the Redis STREAMS blocking read duration.
+	ReadBlockTimeout = 5 * time.Second
+
+	// ReadCallTimeout bounds the full read call to avoid rare stuck reads.
+	ReadCallTimeout = 8 * time.Second
+
+	// RedisOpTimeout bounds auxiliary Redis operations (ACK, heartbeat, pending checks).
+	RedisOpTimeout = 3 * time.Second
 
 	// ServiceName for event envelopes
 	ServiceName = "go-worker"
@@ -133,6 +143,8 @@ func (c *Consumer) Start(ctx context.Context) error {
 	// Start stalled message claimer goroutine
 	go c.claimStalledMessages(ctx)
 
+	consecutiveReadTimeouts := 0
+
 	// Main processing loop
 	for {
 		select {
@@ -141,25 +153,50 @@ func (c *Consumer) Start(ctx context.Context) error {
 			return ctx.Err()
 
 		default:
+			readCtx, cancel := context.WithTimeout(ctx, ReadCallTimeout)
+
 			// Read messages from stream with consumer group
 			// Using ">" means read only messages that were never delivered to any consumer
-			streams, err := c.redis.XReadGroup(ctx, &redis.XReadGroupArgs{
+			streams, err := c.redis.XReadGroup(readCtx, &redis.XReadGroupArgs{
 				Group:    c.consumerGroup,
 				Consumer: c.consumerName,
 				Streams:  []string{c.streamName, ">"},
 				Count:    1,
-				Block:    5 * time.Second,
+				Block:    ReadBlockTimeout,
 			}).Result()
+			cancel()
 
 			if err == redis.Nil {
 				// No messages available, continue
+				consecutiveReadTimeouts = 0
 				continue
 			}
 			if err != nil {
+				if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+					if ctx.Err() != nil {
+						return ctx.Err()
+					}
+					consecutiveReadTimeouts++
+					// Keep logs low-noise: once per minute with current defaults.
+					if consecutiveReadTimeouts%12 == 0 {
+						log.Warnf(
+							"stream read timeout watchdog triggered, worker_id=%s, stream=%s, group=%s, consumer=%s, consecutive_timeouts=%d",
+							c.workerID,
+							c.streamName,
+							c.consumerGroup,
+							c.consumerName,
+							consecutiveReadTimeouts,
+						)
+					}
+					continue
+				}
+
+				consecutiveReadTimeouts = 0
 				log.Errorf("failed to read from stream: %v", err)
 				time.Sleep(1 * time.Second) // Backoff on error
 				continue
 			}
+			consecutiveReadTimeouts = 0
 
 			// Process received messages
 			for _, stream := range streams {

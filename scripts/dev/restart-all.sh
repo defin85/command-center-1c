@@ -92,8 +92,8 @@ show_help() {
     echo "  $0 --verbose                 # Детальный вывод"
     echo ""
     echo "Available services:"
-    echo "  orchestrator, api-gateway, worker,"
-    echo "  frontend"
+    echo "  orchestrator, event-subscriber, pool-outbox-dispatcher,"
+    echo "  api-gateway, worker, worker-workflows, frontend"
     echo ""
 }
 

@@ -20,8 +20,10 @@ Usage:
     # Record Redis event
     record_redis_event_published('operation_completed', 'cc1c:events')
 """
+import json
 import logging
 import time
+from datetime import datetime
 
 import redis
 from django.conf import settings
@@ -394,6 +396,193 @@ _EVENT_SUBSCRIBER_COLLECTOR_REGISTERED = False
 if not _EVENT_SUBSCRIBER_COLLECTOR_REGISTERED:
     REGISTRY.register(EventSubscriberCollector())
     _EVENT_SUBSCRIBER_COLLECTOR_REGISTERED = True
+
+
+# =============================================================================
+# Pool Run Outbox Dispatcher Runtime Metrics
+# =============================================================================
+
+POOL_OUTBOX_DISPATCHER_HEARTBEAT_KEY = "cc1c:pool_run_command_outbox_dispatcher:heartbeat"
+POOL_OUTBOX_DISPATCHER_HEARTBEAT_STALE_SECONDS = 45
+POOL_OUTBOX_RETRY_SATURATION_THRESHOLD_ATTEMPTS = 5
+
+
+class PoolOutboxDispatcherCollector:
+    """Collect runtime liveness and backlog metrics for pool outbox dispatcher."""
+
+    def __init__(self):
+        self._cache_ttl = 5
+        self._cache_at = 0.0
+        self._cache = {
+            "up": 0.0,
+            "heartbeat_age_seconds": float(POOL_OUTBOX_DISPATCHER_HEARTBEAT_STALE_SECONDS),
+            "pending_total": 0.0,
+            "retry_saturated_pending_total": 0.0,
+            "lag_seconds": 0.0,
+            "last_cycle_claimed_total": 0.0,
+            "last_cycle_dispatched_total": 0.0,
+            "last_cycle_failed_total": 0.0,
+        }
+
+    def collect(self):
+        data = self._get_data()
+
+        up_metric = GaugeMetricFamily(
+            "cc1c_orchestrator_pool_run_command_outbox_dispatcher_up",
+            "Pool outbox dispatcher heartbeat health (1/0)",
+        )
+        heartbeat_age_metric = GaugeMetricFamily(
+            "cc1c_orchestrator_pool_run_command_outbox_dispatcher_heartbeat_age_seconds",
+            "Age of latest pool outbox dispatcher heartbeat in seconds",
+        )
+        pending_metric = GaugeMetricFamily(
+            "cc1c_orchestrator_pool_run_command_outbox_dispatcher_pending_total",
+            "Current pending pool_run outbox entries",
+        )
+        retry_saturated_metric = GaugeMetricFamily(
+            "cc1c_orchestrator_pool_run_command_outbox_dispatcher_retry_saturated_pending_total",
+            "Pending pool_run outbox entries with saturated retries",
+        )
+        lag_metric = GaugeMetricFamily(
+            "cc1c_orchestrator_pool_run_command_outbox_dispatcher_lag_seconds",
+            "Current lag (seconds) for oldest pending pool_run outbox entry",
+        )
+        claimed_metric = GaugeMetricFamily(
+            "cc1c_orchestrator_pool_run_command_outbox_dispatcher_last_cycle_claimed_total",
+            "Outbox entries claimed by dispatcher in latest cycle",
+        )
+        dispatched_metric = GaugeMetricFamily(
+            "cc1c_orchestrator_pool_run_command_outbox_dispatcher_last_cycle_dispatched_total",
+            "Outbox entries dispatched by dispatcher in latest cycle",
+        )
+        failed_metric = GaugeMetricFamily(
+            "cc1c_orchestrator_pool_run_command_outbox_dispatcher_last_cycle_failed_total",
+            "Outbox entries failed by dispatcher in latest cycle",
+        )
+
+        up_metric.add_metric([], float(data.get("up", 0.0)))
+        heartbeat_age_metric.add_metric([], float(data.get("heartbeat_age_seconds", 0.0)))
+        pending_metric.add_metric([], float(data.get("pending_total", 0.0)))
+        retry_saturated_metric.add_metric(
+            [],
+            float(data.get("retry_saturated_pending_total", 0.0)),
+        )
+        lag_metric.add_metric([], float(data.get("lag_seconds", 0.0)))
+        claimed_metric.add_metric([], float(data.get("last_cycle_claimed_total", 0.0)))
+        dispatched_metric.add_metric([], float(data.get("last_cycle_dispatched_total", 0.0)))
+        failed_metric.add_metric([], float(data.get("last_cycle_failed_total", 0.0)))
+
+        yield up_metric
+        yield heartbeat_age_metric
+        yield pending_metric
+        yield retry_saturated_metric
+        yield lag_metric
+        yield claimed_metric
+        yield dispatched_metric
+        yield failed_metric
+
+    def _get_data(self):
+        now = time.time()
+        if now - self._cache_at < self._cache_ttl:
+            return self._cache
+
+        data = dict(self._cache)
+        data.update(
+            {
+                "up": 0.0,
+                "heartbeat_age_seconds": float(POOL_OUTBOX_DISPATCHER_HEARTBEAT_STALE_SECONDS),
+                "last_cycle_claimed_total": 0.0,
+                "last_cycle_dispatched_total": 0.0,
+                "last_cycle_failed_total": 0.0,
+            }
+        )
+
+        redis_password = getattr(settings, "REDIS_PASSWORD", None)
+        client = redis.Redis(
+            host=settings.REDIS_HOST,
+            port=int(settings.REDIS_PORT),
+            password=redis_password if redis_password else None,
+            decode_responses=True,
+        )
+
+        try:
+            heartbeat_raw = client.get(POOL_OUTBOX_DISPATCHER_HEARTBEAT_KEY)
+            if heartbeat_raw:
+                try:
+                    payload = json.loads(heartbeat_raw)
+                except (TypeError, json.JSONDecodeError):
+                    payload = None
+
+                if isinstance(payload, dict):
+                    heartbeat_ts = _parse_iso_datetime(payload.get("timestamp"))
+                    heartbeat_age_seconds = float(
+                        POOL_OUTBOX_DISPATCHER_HEARTBEAT_STALE_SECONDS
+                    )
+                    if heartbeat_ts is not None:
+                        heartbeat_age_seconds = max(now - heartbeat_ts.timestamp(), 0.0)
+                    data["heartbeat_age_seconds"] = heartbeat_age_seconds
+                    data["up"] = 1.0 if heartbeat_age_seconds <= POOL_OUTBOX_DISPATCHER_HEARTBEAT_STALE_SECONDS else 0.0
+                    data["last_cycle_claimed_total"] = float(payload.get("claimed") or 0.0)
+                    data["last_cycle_dispatched_total"] = float(payload.get("dispatched") or 0.0)
+                    data["last_cycle_failed_total"] = float(payload.get("failed") or 0.0)
+
+            try:
+                from apps.intercompany_pools.models import (
+                    PoolRunCommandOutbox,
+                    PoolRunCommandOutboxStatus,
+                )
+
+                pending_entries = PoolRunCommandOutbox.objects.filter(
+                    status=PoolRunCommandOutboxStatus.PENDING
+                )
+                data["pending_total"] = float(pending_entries.count())
+                data["retry_saturated_pending_total"] = float(
+                    pending_entries.filter(
+                        dispatch_attempts__gte=POOL_OUTBOX_RETRY_SATURATION_THRESHOLD_ATTEMPTS
+                    ).count()
+                )
+
+                oldest_next_retry_at = (
+                    pending_entries.order_by("next_retry_at")
+                    .values_list("next_retry_at", flat=True)
+                    .first()
+                )
+                if oldest_next_retry_at is not None:
+                    data["lag_seconds"] = max(
+                        (now - oldest_next_retry_at.timestamp()),
+                        0.0,
+                    )
+                else:
+                    data["lag_seconds"] = 0.0
+            except Exception as exc:
+                logger.debug("Failed to collect pool outbox backlog metrics: %s", exc)
+        except Exception as exc:
+            logger.debug("Failed to collect pool outbox dispatcher metrics: %s", exc)
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+        self._cache = data
+        self._cache_at = now
+        return data
+
+
+def _parse_iso_datetime(value):
+    if not value:
+        return None
+    try:
+        normalized = str(value).replace("Z", "+00:00")
+        return datetime.fromisoformat(normalized)
+    except (TypeError, ValueError):
+        return None
+
+
+_POOL_OUTBOX_DISPATCHER_COLLECTOR_REGISTERED = False
+if not _POOL_OUTBOX_DISPATCHER_COLLECTOR_REGISTERED:
+    REGISTRY.register(PoolOutboxDispatcherCollector())
+    _POOL_OUTBOX_DISPATCHER_COLLECTOR_REGISTERED = True
 
 
 # =============================================================================

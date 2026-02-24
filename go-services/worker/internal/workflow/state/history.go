@@ -15,6 +15,12 @@ import (
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 )
 
+const (
+	headerContentType          = "Content-Type"
+	headerInternalToken        = "X-Internal-Token"
+	headerInternalServiceToken = "X-Internal-Service-Token"
+)
+
 // HistoryStore defines the interface for persisting workflow execution history.
 // This is for long-term storage in PostgreSQL via the Orchestrator's Internal API.
 type HistoryStore interface {
@@ -301,9 +307,11 @@ func (c *HistoryClient) request(ctx context.Context, method, path string, payloa
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(headerContentType, "application/json")
 	if c.authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.authToken)
+		// Internal API permissions accept both X-Internal-Token and X-Internal-Service-Token.
+		req.Header.Set(headerInternalToken, c.authToken)
+		req.Header.Set(headerInternalServiceToken, c.authToken)
 	}
 
 	start := time.Now()
