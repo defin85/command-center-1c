@@ -594,6 +594,78 @@ def test_upsert_pool_topology_snapshot_creates_graph_for_date(
 
 
 @pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_preserves_node_and_edge_order_in_graph_response(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    root_org = Organization.objects.create(tenant=default_tenant, name="Order Root", inn="741010000001")
+    child_z_org = Organization.objects.create(tenant=default_tenant, name="Z Child", inn="741010000002")
+    child_a_org = Organization.objects.create(tenant=default_tenant, name="A Child", inn="741010000003")
+
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    current_version = graph_before.json()["version"]
+
+    save_response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "effective_to": None,
+            "nodes": [
+                {"organization_id": str(root_org.id), "is_root": True},
+                {"organization_id": str(child_z_org.id), "is_root": False},
+                {"organization_id": str(child_a_org.id), "is_root": False},
+            ],
+            # Intentionally keep non-alphabetical order to ensure API response
+            # does not auto-sort by organization name.
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(child_z_org.id),
+                    "weight": "1.0",
+                },
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(child_a_org.id),
+                    "weight": "1.0",
+                },
+            ],
+        },
+        format="json",
+    )
+    assert save_response.status_code == 200
+
+    graph_response = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-15")
+    assert graph_response.status_code == 200
+    graph_payload = graph_response.json()
+
+    node_order = [node["organization_id"] for node in graph_payload["nodes"]]
+    assert node_order == [
+        str(root_org.id),
+        str(child_z_org.id),
+        str(child_a_org.id),
+    ]
+
+    node_org_by_node_version = {
+        node["node_version_id"]: node["organization_id"]
+        for node in graph_payload["nodes"]
+    }
+    edge_order = [
+        (
+            node_org_by_node_version[edge["parent_node_version_id"]],
+            node_org_by_node_version[edge["child_node_version_id"]],
+        )
+        for edge in graph_payload["edges"]
+    ]
+    assert edge_order == [
+        (str(root_org.id), str(child_z_org.id)),
+        (str(root_org.id), str(child_a_org.id)),
+    ]
+
+
+@pytest.mark.django_db
 def test_upsert_pool_topology_snapshot_accepts_valid_document_policy_metadata(
     authenticated_client: APIClient,
     default_tenant: Tenant,
@@ -897,6 +969,200 @@ def test_upsert_pool_topology_snapshot_rejects_stale_version_with_problem_detail
         code="TOPOLOGY_VERSION_CONFLICT",
     )
     assert "latest version token" in payload["detail"]
+
+
+@pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_rolls_over_previous_open_period(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    root_org = Organization.objects.create(tenant=default_tenant, name="Legacy Root", inn="742100000001")
+    middle_org = Organization.objects.create(tenant=default_tenant, name="Legacy Middle", inn="742100000002")
+    leaf_org = Organization.objects.create(tenant=default_tenant, name="Legacy Leaf", inn="742100000003")
+    head_org = Organization.objects.create(tenant=default_tenant, name="New Head", inn="742100000004")
+
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    version_jan = graph_before.json()["version"]
+
+    first_save = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": version_jan,
+            "effective_from": "2026-01-01",
+            "nodes": [
+                {"organization_id": str(root_org.id), "is_root": True},
+                {"organization_id": str(middle_org.id), "is_root": False},
+                {"organization_id": str(leaf_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(middle_org.id),
+                    "weight": "1.0",
+                },
+                {
+                    "parent_organization_id": str(middle_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "1.0",
+                },
+            ],
+        },
+        format="json",
+    )
+    assert first_save.status_code == 200
+
+    graph_feb_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-02-24")
+    assert graph_feb_before.status_code == 200
+    version_feb = graph_feb_before.json()["version"]
+
+    second_save = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": version_feb,
+            "effective_from": "2026-02-24",
+            "nodes": [
+                {"organization_id": str(head_org.id), "is_root": True},
+                {"organization_id": str(root_org.id), "is_root": False},
+                {"organization_id": str(middle_org.id), "is_root": False},
+                {"organization_id": str(leaf_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(head_org.id),
+                    "child_organization_id": str(root_org.id),
+                    "weight": "1.0",
+                },
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(middle_org.id),
+                    "weight": "1.0",
+                },
+                {
+                    "parent_organization_id": str(middle_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "1.0",
+                },
+            ],
+        },
+        format="json",
+    )
+    assert second_save.status_code == 200
+
+    jan_graph = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-15")
+    assert jan_graph.status_code == 200
+    jan_payload = jan_graph.json()
+    assert len(jan_payload["nodes"]) == 3
+    assert len(jan_payload["edges"]) == 2
+    assert str(head_org.id) not in {item["organization_id"] for item in jan_payload["nodes"]}
+
+    feb_graph = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-02-24")
+    assert feb_graph.status_code == 200
+    feb_payload = feb_graph.json()
+    assert len(feb_payload["nodes"]) == 4
+    assert len(feb_payload["edges"]) == 3
+    feb_nodes = {item["organization_id"]: item for item in feb_payload["nodes"]}
+    assert feb_nodes[str(head_org.id)]["is_root"] is True
+
+    historical_nodes = PoolNodeVersion.objects.filter(pool=pool, effective_from=date(2026, 1, 1)).order_by("organization_id")
+    assert historical_nodes.count() == 3
+    assert all(item.effective_to == date(2026, 2, 23) for item in historical_nodes)
+
+    historical_edges = PoolEdgeVersion.objects.filter(pool=pool, effective_from=date(2026, 1, 1))
+    assert historical_edges.count() == 2
+    assert all(item.effective_to == date(2026, 2, 23) for item in historical_edges)
+
+
+@pytest.mark.django_db
+def test_list_pool_topology_snapshots_returns_periods_with_counts(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    root_org = Organization.objects.create(tenant=default_tenant, name="List Root", inn="742200000001")
+    child_org = Organization.objects.create(tenant=default_tenant, name="List Child", inn="742200000002")
+    head_org = Organization.objects.create(tenant=default_tenant, name="List Head", inn="742200000003")
+
+    jan_root = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=root_org,
+        effective_from=date(2026, 1, 1),
+        effective_to=date(2026, 2, 23),
+        is_root=True,
+    )
+    jan_child = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=child_org,
+        effective_from=date(2026, 1, 1),
+        effective_to=date(2026, 2, 23),
+        is_root=False,
+    )
+    PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=jan_root,
+        child_node=jan_child,
+        effective_from=date(2026, 1, 1),
+        effective_to=date(2026, 2, 23),
+        weight=1,
+    )
+
+    feb_head = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=head_org,
+        effective_from=date(2026, 2, 24),
+        effective_to=None,
+        is_root=True,
+    )
+    feb_root = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=root_org,
+        effective_from=date(2026, 2, 24),
+        effective_to=None,
+        is_root=False,
+    )
+    feb_child = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=child_org,
+        effective_from=date(2026, 2, 24),
+        effective_to=None,
+        is_root=False,
+    )
+    PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=feb_head,
+        child_node=feb_root,
+        effective_from=date(2026, 2, 24),
+        effective_to=None,
+        weight=1,
+    )
+    PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=feb_root,
+        child_node=feb_child,
+        effective_from=date(2026, 2, 24),
+        effective_to=None,
+        weight=1,
+    )
+
+    response = authenticated_client.get(f"/api/v2/pools/{pool.id}/topology-snapshots/")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["pool_id"] == str(pool.id)
+    assert payload["count"] == 2
+    snapshots = payload["snapshots"]
+    assert len(snapshots) == 2
+
+    assert snapshots[0]["effective_from"] == "2026-02-24"
+    assert snapshots[0]["effective_to"] is None
+    assert snapshots[0]["nodes_count"] == 3
+    assert snapshots[0]["edges_count"] == 2
+
+    assert snapshots[1]["effective_from"] == "2026-01-01"
+    assert snapshots[1]["effective_to"] == "2026-02-23"
+    assert snapshots[1]["nodes_count"] == 2
+    assert snapshots[1]["edges_count"] == 1
 
 
 @pytest.mark.django_db

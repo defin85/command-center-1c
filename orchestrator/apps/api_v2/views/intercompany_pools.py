@@ -10,7 +10,7 @@ from uuid import UUID
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import serializers, status as http_status
@@ -373,7 +373,8 @@ def _load_pool_graph_state(
         PoolNodeVersion.objects.select_related("organization")
         .filter(pool=pool, effective_from__lte=target_date)
         .filter(Q(effective_to__isnull=True) | Q(effective_to__gte=target_date))
-        .order_by("-is_root", "organization__name")
+        # Keep snapshot insertion order for UI round-trips.
+        .order_by("created_at", "id")
     )
     active_node_ids = {str(node.id) for node in active_nodes}
     active_edges_qs = (
@@ -389,10 +390,8 @@ def _load_pool_graph_state(
     else:
         active_edges_qs = active_edges_qs.none()
     active_edges = list(
-        active_edges_qs.order_by(
-            "parent_node__organization__name",
-            "child_node__organization__name",
-        )
+        # Keep snapshot insertion order for UI round-trips.
+        active_edges_qs.order_by("created_at", "id")
     )
     return active_nodes, active_edges
 
@@ -1732,6 +1731,19 @@ class PoolTopologySnapshotUpsertResponseSerializer(serializers.Serializer):
     edges_count = serializers.IntegerField()
 
 
+class PoolTopologySnapshotListItemSerializer(serializers.Serializer):
+    effective_from = serializers.DateField()
+    effective_to = serializers.DateField(required=False, allow_null=True)
+    nodes_count = serializers.IntegerField()
+    edges_count = serializers.IntegerField()
+
+
+class PoolTopologySnapshotListResponseSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    count = serializers.IntegerField()
+    snapshots = PoolTopologySnapshotListItemSerializer(many=True)
+
+
 class PoolGraphNodeSerializer(serializers.Serializer):
     node_version_id = serializers.UUIDField()
     organization_id = serializers.UUIDField()
@@ -2477,15 +2489,19 @@ def upsert_pool_topology_snapshot(request, pool_id: UUID):
 
     period_node_qs = PoolNodeVersion.objects.filter(pool=pool, effective_from=effective_from)
     period_edge_qs = PoolEdgeVersion.objects.filter(pool=pool, effective_from=effective_from)
-    if effective_to is None:
-        period_node_qs = period_node_qs.filter(effective_to__isnull=True)
-        period_edge_qs = period_edge_qs.filter(effective_to__isnull=True)
-    else:
-        period_node_qs = period_node_qs.filter(effective_to=effective_to)
-        period_edge_qs = period_edge_qs.filter(effective_to=effective_to)
+    replacement_previous_end = effective_from - timedelta(days=1)
 
     try:
         with transaction.atomic():
+            # Close previously active topology versions so the new snapshot becomes the only
+            # active graph starting from effective_from.
+            PoolEdgeVersion.objects.filter(pool=pool, effective_from__lt=effective_from).filter(
+                Q(effective_to__isnull=True) | Q(effective_to__gte=effective_from)
+            ).update(effective_to=replacement_previous_end)
+            PoolNodeVersion.objects.filter(pool=pool, effective_from__lt=effective_from).filter(
+                Q(effective_to__isnull=True) | Q(effective_to__gte=effective_from)
+            ).update(effective_to=replacement_previous_end)
+
             period_edge_qs.delete()
             period_node_qs.delete()
 
@@ -2539,6 +2555,89 @@ def upsert_pool_topology_snapshot(request, pool_id: UUID):
         "edges_count": len(edges_payload),
     }
     return Response(payload, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_topology_snapshots_list",
+    summary="List topology snapshots for a pool",
+    responses={
+        200: PoolTopologySnapshotListResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        404: ErrorResponseSerializer,
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_pool_topology_snapshots(request, pool_id: UUID):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _error(
+            code="TENANT_CONTEXT_REQUIRED",
+            message="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    pool = OrganizationPool.objects.filter(id=pool_id, tenant_id=tenant_id).first()
+    if pool is None:
+        return _error(
+            code="POOL_NOT_FOUND",
+            message="Organization pool not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    node_rows = list(
+        PoolNodeVersion.objects.filter(pool=pool)
+        .values("effective_from", "effective_to")
+        .annotate(nodes_count=Count("id"))
+    )
+    edge_rows = list(
+        PoolEdgeVersion.objects.filter(pool=pool)
+        .values("effective_from", "effective_to")
+        .annotate(edges_count=Count("id"))
+    )
+
+    snapshots_by_period: dict[tuple[date, date | None], dict[str, Any]] = {}
+    for row in node_rows:
+        period = (row["effective_from"], row["effective_to"])
+        snapshots_by_period[period] = {
+            "effective_from": row["effective_from"],
+            "effective_to": row["effective_to"],
+            "nodes_count": int(row.get("nodes_count") or 0),
+            "edges_count": 0,
+        }
+
+    for row in edge_rows:
+        period = (row["effective_from"], row["effective_to"])
+        snapshot = snapshots_by_period.get(period)
+        if snapshot is None:
+            snapshot = {
+                "effective_from": row["effective_from"],
+                "effective_to": row["effective_to"],
+                "nodes_count": 0,
+                "edges_count": 0,
+            }
+            snapshots_by_period[period] = snapshot
+        snapshot["edges_count"] = int(row.get("edges_count") or 0)
+
+    snapshots = sorted(
+        snapshots_by_period.values(),
+        key=lambda item: (
+            item["effective_from"],
+            item["effective_to"] or date.max,
+        ),
+        reverse=True,
+    )
+
+    return Response(
+        {
+            "pool_id": str(pool.id),
+            "count": len(snapshots),
+            "snapshots": snapshots,
+        },
+        status=http_status.HTTP_200_OK,
+    )
 
 
 @extend_schema(

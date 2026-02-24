@@ -220,6 +220,19 @@ export type PoolGraph = {
   edges: PoolGraphEdge[]
 }
 
+export type PoolTopologySnapshotPeriod = {
+  effective_from: string
+  effective_to: string | null
+  nodes_count: number
+  edges_count: number
+}
+
+export type PoolTopologySnapshotList = {
+  pool_id: string
+  count: number
+  snapshots: PoolTopologySnapshotPeriod[]
+}
+
 export type ListPoolSchemaTemplatesParams = {
   format?: PoolSchemaTemplateFormat
   isPublic?: boolean
@@ -446,6 +459,14 @@ export async function getPoolGraph(poolId: string, targetDate?: string): Promise
     params: targetDate ? { date: targetDate } : undefined,
     skipGlobalError: true,
   })
+  return response.data
+}
+
+export async function listPoolTopologySnapshots(poolId: string): Promise<PoolTopologySnapshotList> {
+  const response = await apiClient.get<PoolTopologySnapshotList>(
+    `/api/v2/pools/${poolId}/topology-snapshots/`,
+    { skipGlobalError: true }
+  )
   return response.data
 }
 

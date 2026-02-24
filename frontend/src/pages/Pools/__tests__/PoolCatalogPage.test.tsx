@@ -14,6 +14,7 @@ const mockGetPoolGraph = vi.fn()
 const mockUpsertOrganization = vi.fn()
 const mockUpsertOrganizationPool = vi.fn()
 const mockUpsertPoolTopologySnapshot = vi.fn()
+const mockListPoolTopologySnapshots = vi.fn()
 const mockSyncOrganizationsCatalog = vi.fn()
 const mockUseMe = vi.fn()
 const mockUseDatabases = vi.fn()
@@ -46,6 +47,7 @@ vi.mock('../../../api/intercompanyPools', () => ({
   upsertOrganization: (...args: unknown[]) => mockUpsertOrganization(...args),
   upsertOrganizationPool: (...args: unknown[]) => mockUpsertOrganizationPool(...args),
   upsertPoolTopologySnapshot: (...args: unknown[]) => mockUpsertPoolTopologySnapshot(...args),
+  listPoolTopologySnapshots: (...args: unknown[]) => mockListPoolTopologySnapshots(...args),
   syncOrganizationsCatalog: (...args: unknown[]) => mockSyncOrganizationsCatalog(...args),
 }))
 
@@ -110,6 +112,7 @@ describe('PoolCatalogPage', () => {
     mockUpsertOrganization.mockReset()
     mockUpsertOrganizationPool.mockReset()
     mockUpsertPoolTopologySnapshot.mockReset()
+    mockListPoolTopologySnapshots.mockReset()
     mockSyncOrganizationsCatalog.mockReset()
     mockUseMe.mockReset()
     mockUseDatabases.mockReset()
@@ -175,6 +178,18 @@ describe('PoolCatalogPage', () => {
       effective_to: null,
       nodes_count: 0,
       edges_count: 0,
+    })
+    mockListPoolTopologySnapshots.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      count: 1,
+      snapshots: [
+        {
+          effective_from: '2026-01-01',
+          effective_to: null,
+          nodes_count: 0,
+          edges_count: 0,
+        },
+      ],
     })
     mockSyncOrganizationsCatalog.mockResolvedValue({
       stats: { created: 1, updated: 0, skipped: 0 },
@@ -385,6 +400,73 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Preflight validation failed')).toBeInTheDocument()
     expect(await screen.findByText('Добавьте хотя бы один topology node.')).toBeInTheDocument()
     expect(mockUpsertPoolTopologySnapshot).not.toHaveBeenCalled()
+  }, 15000)
+
+  it('renders move arrows for topology nodes and edges', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+
+    await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
+    expect(screen.getByTestId('pool-catalog-topology-node-move-up-0')).toBeDisabled()
+    expect(screen.getByTestId('pool-catalog-topology-node-move-down-0')).toBeDisabled()
+
+    await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
+    expect(screen.getByTestId('pool-catalog-topology-node-move-up-1')).toBeEnabled()
+    expect(screen.getByTestId('pool-catalog-topology-node-move-down-0')).toBeEnabled()
+
+    await user.click(screen.getByTestId('pool-catalog-topology-add-edge'))
+    expect(screen.getByTestId('pool-catalog-topology-edge-move-up-0')).toBeDisabled()
+    expect(screen.getByTestId('pool-catalog-topology-edge-move-down-0')).toBeDisabled()
+
+    await user.click(screen.getByTestId('pool-catalog-topology-add-edge'))
+    expect(screen.getByTestId('pool-catalog-topology-edge-move-up-1')).toBeEnabled()
+    expect(screen.getByTestId('pool-catalog-topology-edge-move-down-0')).toBeEnabled()
+  }, 15000)
+
+  it('loads topology snapshots list and switches graph date from snapshot row', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListPoolTopologySnapshots.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      count: 2,
+      snapshots: [
+        {
+          effective_from: '2026-02-24',
+          effective_to: null,
+          nodes_count: 4,
+          edges_count: 3,
+        },
+        {
+          effective_from: '2026-01-01',
+          effective_to: '2026-02-23',
+          nodes_count: 3,
+          edges_count: 2,
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Topology Editor')
+
+    expect(await screen.findByText('Topology snapshots by date')).toBeInTheDocument()
+    expect(await screen.findByText('2026-02-24')).toBeInTheDocument()
+    expect(await screen.findByText('2026-01-01')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('pool-catalog-topology-snapshot-open-2026-01-01'))
+
+    await waitFor(() => {
+      expect(mockGetPoolGraph).toHaveBeenCalledWith(
+        '44444444-4444-4444-4444-444444444444',
+        '2026-01-01'
+      )
+    })
   }, 15000)
 
   it('blocks topology save when edge document_policy JSON is invalid', async () => {
@@ -721,6 +803,51 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Выбранная база уже привязана к другой организации.')).toBeInTheDocument()
     expect(screen.getByLabelText('INN')).toHaveValue('730000000111')
     expect(screen.getByLabelText('Name')).toHaveValue('Mapped Error Org')
+  }, 15000)
+
+  it('shows problem detail for topology validation error without field-level payload', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+      ],
+      edges: [],
+    })
+    mockUpsertPoolTopologySnapshot.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Validation Error',
+          status: 400,
+          detail: 'Pool graph must have exactly one root node, got 2.',
+          code: 'VALIDATION_ERROR',
+        },
+      },
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+
+    await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
+    expect(
+      await screen.findByText('Pool graph must have exactly one root node, got 2.')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Проверьте корректность данных.')).not.toBeInTheDocument()
   }, 15000)
 
   it('applies field-level serializer errors to form fields on upsert', async () => {

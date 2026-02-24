@@ -102,6 +102,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "GET", Path: "/pools/", OperationID: "v2_pools_list"},
 	{Method: "GET", Path: "/pools/:pool_id/graph/", OperationID: "v2_pools_graph_get"},
 	{Method: "POST", Path: "/pools/:pool_id/topology-snapshot/upsert/", OperationID: "v2_pools_topology_snapshot_upsert"},
+	{Method: "GET", Path: "/pools/:pool_id/topology-snapshots/", OperationID: "v2_pools_topology_snapshots_list"},
 	{Method: "GET", Path: "/pools/organizations/", OperationID: "v2_pools_organizations_list"},
 	{Method: "GET", Path: "/pools/organizations/:organization_id/", OperationID: "v2_pools_organizations_get"},
 	{Method: "POST", Path: "/pools/organizations/sync/", OperationID: "v2_pools_organizations_sync"},

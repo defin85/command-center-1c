@@ -130,6 +130,11 @@ urlpatterns = [
         intercompany_pools.upsert_pool_topology_snapshot,
         name='pools-topology-snapshot-upsert',
     ),
+    path(
+        'pools/<uuid:pool_id>/topology-snapshots/',
+        intercompany_pools.list_pool_topology_snapshots,
+        name='pools-topology-snapshots-list',
+    ),
     path('pools/<uuid:pool_id>/graph/', intercompany_pools.get_pool_graph, name='pools-graph'),
     path('pools/runs/', intercompany_pools.create_pool_run, name='pools-run-create'),
     path('pools/runs/<uuid:run_id>/', intercompany_pools.get_pool_run, name='pools-run-get'),

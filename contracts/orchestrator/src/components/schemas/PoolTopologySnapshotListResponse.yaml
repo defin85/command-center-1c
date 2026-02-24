@@ -1,0 +1,15 @@
+type: object
+properties:
+  pool_id:
+    type: string
+    format: uuid
+  count:
+    type: integer
+  snapshots:
+    type: array
+    items:
+      $ref: ./PoolTopologySnapshotListItem.yaml
+required:
+  - pool_id
+  - count
+  - snapshots
