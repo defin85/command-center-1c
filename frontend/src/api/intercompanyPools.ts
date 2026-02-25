@@ -220,6 +220,35 @@ export type PoolGraph = {
   edges: PoolGraphEdge[]
 }
 
+export type PoolODataMetadataCatalogField = {
+  name: string
+  type: string
+  nullable: boolean
+}
+
+export type PoolODataMetadataCatalogTablePart = {
+  name: string
+  row_fields: PoolODataMetadataCatalogField[]
+}
+
+export type PoolODataMetadataCatalogDocument = {
+  entity_name: string
+  display_name: string
+  fields: PoolODataMetadataCatalogField[]
+  table_parts: PoolODataMetadataCatalogTablePart[]
+}
+
+export type PoolODataMetadataCatalogResponse = {
+  database_id: string
+  source: string
+  fetched_at: string
+  catalog_version: string
+  config_name: string
+  config_version: string
+  metadata_hash: string
+  documents: PoolODataMetadataCatalogDocument[]
+}
+
 export type PoolTopologySnapshotPeriod = {
   effective_from: string
   effective_to: string | null
@@ -491,6 +520,30 @@ export async function upsertPoolTopologySnapshot(
   }>(
     `/api/v2/pools/${poolId}/topology-snapshot/upsert/`,
     payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function getPoolODataMetadataCatalog(
+  databaseId: string
+): Promise<PoolODataMetadataCatalogResponse> {
+  const response = await apiClient.get<PoolODataMetadataCatalogResponse>(
+    '/api/v2/pools/odata-metadata/catalog/',
+    {
+      params: { database_id: databaseId },
+      skipGlobalError: true,
+    }
+  )
+  return response.data
+}
+
+export async function refreshPoolODataMetadataCatalog(
+  databaseId: string
+): Promise<PoolODataMetadataCatalogResponse> {
+  const response = await apiClient.post<PoolODataMetadataCatalogResponse>(
+    '/api/v2/pools/odata-metadata/catalog/refresh/',
+    { database_id: databaseId },
     { skipGlobalError: true }
   )
   return response.data

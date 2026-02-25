@@ -243,3 +243,68 @@ def test_pool_topology_and_graph_schemas_include_metadata_contract_fields() -> N
         runtime_fields = set(serializer_cls().fields.keys())
         contract_fields = set(properties.keys())
         assert runtime_fields.issubset(contract_fields)
+
+
+def test_pool_metadata_catalog_paths_and_schemas_are_in_contract() -> None:
+    contract = _load_openapi_contract()
+    paths = contract.get("paths")
+    assert isinstance(paths, dict)
+
+    get_path = "/api/v2/pools/odata-metadata/catalog/"
+    refresh_path = "/api/v2/pools/odata-metadata/catalog/refresh/"
+
+    get_item = paths.get(get_path)
+    assert isinstance(get_item, dict), f"path missing: {get_path}"
+    get_op = get_item.get("get")
+    assert isinstance(get_op, dict), f"get operation missing: {get_path}"
+    assert get_op.get("operationId") == "v2_pools_odata_metadata_catalog_get"
+
+    get_parameters = get_op.get("parameters")
+    assert isinstance(get_parameters, list)
+    database_id_param = next(
+        (
+            item
+            for item in get_parameters
+            if isinstance(item, dict)
+            and item.get("in") == "query"
+            and item.get("name") == "database_id"
+        ),
+        None,
+    )
+    assert isinstance(database_id_param, dict), "query parameter database_id is missing"
+    assert database_id_param.get("required") is True
+
+    get_responses = get_op.get("responses")
+    assert isinstance(get_responses, dict)
+    assert {"200", "400", "401", "404", "409"}.issubset(set(get_responses.keys()))
+    get_ok_ref = get_responses["200"]["content"]["application/json"]["schema"]["$ref"]
+    assert get_ok_ref == "#/components/schemas/PoolODataMetadataCatalogResponse"
+
+    refresh_item = paths.get(refresh_path)
+    assert isinstance(refresh_item, dict), f"path missing: {refresh_path}"
+    refresh_op = refresh_item.get("post")
+    assert isinstance(refresh_op, dict), f"post operation missing: {refresh_path}"
+    assert refresh_op.get("operationId") == "v2_pools_odata_metadata_catalog_refresh"
+
+    request_body = refresh_op.get("requestBody")
+    assert isinstance(request_body, dict)
+    refresh_request_ref = request_body["content"]["application/json"]["schema"]["$ref"]
+    assert refresh_request_ref == "#/components/schemas/PoolODataMetadataCatalogRefreshRequest"
+
+    refresh_responses = refresh_op.get("responses")
+    assert isinstance(refresh_responses, dict)
+    assert {"200", "400", "401", "404", "409"}.issubset(set(refresh_responses.keys()))
+    refresh_ok_ref = refresh_responses["200"]["content"]["application/json"]["schema"]["$ref"]
+    assert refresh_ok_ref == "#/components/schemas/PoolODataMetadataCatalogResponse"
+
+    response_schema = _schema(contract, "PoolODataMetadataCatalogResponse")
+    response_properties = response_schema.get("properties")
+    assert isinstance(response_properties, dict)
+    runtime_response_fields = set(pools_view.PoolODataMetadataCatalogResponseSerializer().fields.keys())
+    assert runtime_response_fields.issubset(set(response_properties.keys()))
+
+    request_schema = _schema(contract, "PoolODataMetadataCatalogRefreshRequest")
+    request_properties = request_schema.get("properties")
+    assert isinstance(request_properties, dict)
+    runtime_request_fields = set(pools_view.PoolODataMetadataCatalogRefreshRequestSerializer().fields.keys())
+    assert runtime_request_fields.issubset(set(request_properties.keys()))

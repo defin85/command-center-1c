@@ -24,6 +24,7 @@ from apps.intercompany_pools.models import (
     Organization,
     OrganizationStatus,
     OrganizationPool,
+    PoolODataMetadataCatalogSnapshot,
     PoolPublicationAttempt,
     PoolPublicationAttemptStatus,
     PoolEdgeVersion,
@@ -37,6 +38,15 @@ from apps.intercompany_pools.models import (
     PoolRunMode,
     PoolSchemaTemplate,
     PoolSchemaTemplateFormat,
+)
+from apps.intercompany_pools.metadata_catalog import (
+    ERROR_CODE_POOL_METADATA_REFERENCE_INVALID,
+    ERROR_CODE_POOL_METADATA_SNAPSHOT_UNAVAILABLE,
+    MetadataCatalogError,
+    get_current_snapshot_for_database_scope,
+    read_metadata_catalog_snapshot,
+    refresh_metadata_catalog_snapshot,
+    validate_document_policy_references,
 )
 from apps.intercompany_pools.command_log import (
     PoolRunCommandIdempotencyConflict,
@@ -394,6 +404,79 @@ def _load_pool_graph_state(
         active_edges_qs.order_by("created_at", "id")
     )
     return active_nodes, active_edges
+
+
+def _serialize_metadata_catalog_snapshot(
+    *,
+    snapshot: PoolODataMetadataCatalogSnapshot,
+    source: str,
+) -> dict[str, Any]:
+    payload = snapshot.payload if isinstance(snapshot.payload, dict) else {}
+    documents = payload.get("documents") if isinstance(payload.get("documents"), list) else []
+    return {
+        "database_id": str(snapshot.database_id),
+        "source": str(source or snapshot.source or ""),
+        "fetched_at": snapshot.fetched_at,
+        "catalog_version": snapshot.catalog_version,
+        "config_name": snapshot.config_name,
+        "config_version": snapshot.config_version,
+        "metadata_hash": snapshot.metadata_hash,
+        "documents": documents,
+    }
+
+
+def _resolve_topology_document_policy_referential_errors(
+    *,
+    tenant_id: str,
+    organizations: dict[str, Organization],
+    edges_payload: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
+    snapshot_cache: dict[str, PoolODataMetadataCatalogSnapshot | None] = {}
+    for edge_index, edge in enumerate(edges_payload):
+        metadata = edge.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        try:
+            policy = resolve_document_policy_from_edge_metadata(metadata=metadata)
+        except ValueError:
+            # Contract-level validation is handled by serializer pre-validation.
+            continue
+        if policy is None:
+            continue
+
+        child_org_id = str(edge.get("child_organization_id") or "").strip()
+        child_org = organizations.get(child_org_id)
+        if child_org is None:
+            continue
+        database_id = str(child_org.database_id or "").strip()
+        if not database_id:
+            errors.append(
+                {
+                    "code": ERROR_CODE_POOL_METADATA_SNAPSHOT_UNAVAILABLE,
+                    "path": f"edges[{edge_index}].metadata.document_policy",
+                    "detail": "Child organization must be linked to database for metadata validation.",
+                }
+            )
+            continue
+
+        snapshot = snapshot_cache.get(database_id)
+        if database_id not in snapshot_cache:
+            database = Database.objects.filter(id=database_id, tenant_id=tenant_id).first()
+            snapshot = (
+                get_current_snapshot_for_database_scope(tenant_id=tenant_id, database=database)
+                if database is not None
+                else None
+            )
+            snapshot_cache[database_id] = snapshot
+
+        policy_errors = validate_document_policy_references(
+            policy=policy,
+            snapshot=snapshot,
+            path_prefix=f"edges[{edge_index}].metadata.document_policy",
+        )
+        errors.extend(policy_errors)
+    return errors
 
 
 def _serialize_run(
@@ -1744,6 +1827,55 @@ class PoolTopologySnapshotListResponseSerializer(serializers.Serializer):
     snapshots = PoolTopologySnapshotListItemSerializer(many=True)
 
 
+class PoolODataMetadataCatalogReadQuerySerializer(serializers.Serializer):
+    database_id = serializers.CharField()
+
+    def validate_database_id(self, value):
+        token = str(value or "").strip()
+        if not token:
+            raise serializers.ValidationError("database_id is required.")
+        return token
+
+
+class PoolODataMetadataCatalogRefreshRequestSerializer(serializers.Serializer):
+    database_id = serializers.CharField()
+
+    def validate_database_id(self, value):
+        token = str(value or "").strip()
+        if not token:
+            raise serializers.ValidationError("database_id is required.")
+        return token
+
+
+class PoolODataMetadataCatalogFieldSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    type = serializers.CharField()
+    nullable = serializers.BooleanField()
+
+
+class PoolODataMetadataCatalogTablePartSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    row_fields = PoolODataMetadataCatalogFieldSerializer(many=True)
+
+
+class PoolODataMetadataCatalogDocumentSerializer(serializers.Serializer):
+    entity_name = serializers.CharField()
+    display_name = serializers.CharField()
+    fields = PoolODataMetadataCatalogFieldSerializer(many=True)
+    table_parts = PoolODataMetadataCatalogTablePartSerializer(many=True)
+
+
+class PoolODataMetadataCatalogResponseSerializer(serializers.Serializer):
+    database_id = serializers.CharField()
+    source = serializers.CharField()
+    fetched_at = serializers.DateTimeField()
+    catalog_version = serializers.CharField()
+    config_name = serializers.CharField()
+    config_version = serializers.CharField()
+    metadata_hash = serializers.CharField()
+    documents = PoolODataMetadataCatalogDocumentSerializer(many=True)
+
+
 class PoolGraphNodeSerializer(serializers.Serializer):
     node_version_id = serializers.UUIDField()
     organization_id = serializers.UUIDField()
@@ -2231,6 +2363,138 @@ def sync_organizations_catalog(request):
 
 @extend_schema(
     tags=["v2"],
+    operation_id="v2_pools_odata_metadata_catalog_get",
+    summary="Get normalized OData metadata catalog for selected database",
+    parameters=[PoolODataMetadataCatalogReadQuerySerializer],
+    responses={
+        200: PoolODataMetadataCatalogResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+        (409, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_pool_odata_metadata_catalog(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _problem(
+            code="TENANT_CONTEXT_REQUIRED",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = PoolODataMetadataCatalogReadQuerySerializer(data=request.query_params)
+    if not serializer.is_valid():
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    database_id = serializer.validated_data["database_id"]
+    database = Database.objects.filter(id=database_id, tenant_id=tenant_id).first()
+    if database is None:
+        return _problem(
+            code="DATABASE_NOT_FOUND",
+            title="Database Not Found",
+            detail="Database not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        snapshot, source = read_metadata_catalog_snapshot(
+            tenant_id=tenant_id,
+            database=database,
+            requested_by_username=str(getattr(request.user, "username", "") or "").strip(),
+            allow_cold_bootstrap=True,
+        )
+    except MetadataCatalogError as exc:
+        return _problem(
+            code=exc.code,
+            title=exc.title,
+            detail=exc.detail,
+            status_code=exc.status_code,
+            errors=exc.errors or None,
+        )
+
+    return Response(
+        _serialize_metadata_catalog_snapshot(snapshot=snapshot, source=source),
+        status=http_status.HTTP_200_OK,
+    )
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_odata_metadata_catalog_refresh",
+    summary="Refresh OData metadata catalog snapshot for selected database",
+    request=PoolODataMetadataCatalogRefreshRequestSerializer,
+    responses={
+        200: PoolODataMetadataCatalogResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+        (409, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def refresh_pool_odata_metadata_catalog(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _problem(
+            code="TENANT_CONTEXT_REQUIRED",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = PoolODataMetadataCatalogRefreshRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    database_id = serializer.validated_data["database_id"]
+    database = Database.objects.filter(id=database_id, tenant_id=tenant_id).first()
+    if database is None:
+        return _problem(
+            code="DATABASE_NOT_FOUND",
+            title="Database Not Found",
+            detail="Database not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        snapshot = refresh_metadata_catalog_snapshot(
+            tenant_id=tenant_id,
+            database=database,
+            requested_by_username=str(getattr(request.user, "username", "") or "").strip(),
+            source="live_refresh",
+        )
+    except MetadataCatalogError as exc:
+        return _problem(
+            code=exc.code,
+            title=exc.title,
+            detail=exc.detail,
+            status_code=exc.status_code,
+            errors=exc.errors or None,
+        )
+
+    return Response(
+        _serialize_metadata_catalog_snapshot(snapshot=snapshot, source="live_refresh"),
+        status=http_status.HTTP_200_OK,
+    )
+
+
+@extend_schema(
+    tags=["v2"],
     operation_id="v2_pools_list",
     summary="List organization pools",
     responses={
@@ -2462,6 +2726,29 @@ def upsert_pool_topology_snapshot(request, pool_id: UUID):
             title="Organization Not Found",
             detail=f"Organizations not found in tenant context: {', '.join(missing_org_ids)}",
             status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    referential_errors = _resolve_topology_document_policy_referential_errors(
+        tenant_id=tenant_id,
+        organizations=organizations,
+        edges_payload=edges_payload,
+    )
+    if referential_errors:
+        first_error = referential_errors[0]
+        error_code = str(first_error.get("code") or ERROR_CODE_POOL_METADATA_REFERENCE_INVALID)
+        error_path = str(first_error.get("path") or "document_policy")
+        error_detail = str(first_error.get("detail") or "Metadata referential validation failed.")
+        error_title = (
+            "Metadata Snapshot Unavailable"
+            if error_code == ERROR_CODE_POOL_METADATA_SNAPSHOT_UNAVAILABLE
+            else "Metadata Reference Validation Error"
+        )
+        return _problem(
+            code=error_code,
+            title=error_title,
+            detail=f"{error_detail} (path: {error_path})",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=referential_errors,
         )
 
     edge_pairs: list[tuple[str, str]] = []

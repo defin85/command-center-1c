@@ -16,6 +16,8 @@ const mockUpsertOrganizationPool = vi.fn()
 const mockUpsertPoolTopologySnapshot = vi.fn()
 const mockListPoolTopologySnapshots = vi.fn()
 const mockSyncOrganizationsCatalog = vi.fn()
+const mockGetPoolODataMetadataCatalog = vi.fn()
+const mockRefreshPoolODataMetadataCatalog = vi.fn()
 const mockUseMe = vi.fn()
 const mockUseDatabases = vi.fn()
 const mockUseMyTenants = vi.fn()
@@ -49,6 +51,8 @@ vi.mock('../../../api/intercompanyPools', () => ({
   upsertPoolTopologySnapshot: (...args: unknown[]) => mockUpsertPoolTopologySnapshot(...args),
   listPoolTopologySnapshots: (...args: unknown[]) => mockListPoolTopologySnapshots(...args),
   syncOrganizationsCatalog: (...args: unknown[]) => mockSyncOrganizationsCatalog(...args),
+  getPoolODataMetadataCatalog: (...args: unknown[]) => mockGetPoolODataMetadataCatalog(...args),
+  refreshPoolODataMetadataCatalog: (...args: unknown[]) => mockRefreshPoolODataMetadataCatalog(...args),
 }))
 
 const baseOrganization: Organization = {
@@ -83,8 +87,15 @@ function renderPage() {
   )
 }
 
-async function selectDropdownOption(label: string) {
-  const matches = await screen.findAllByText(label)
+function openSelectByTestId(testId: string) {
+  const select = screen.getByTestId(testId)
+  const trigger = select.querySelector('.ant-select-selector') as HTMLElement | null
+  fireEvent.mouseDown(trigger ?? select)
+}
+
+async function selectDropdownOption(label: string | RegExp) {
+  const matcher = typeof label === 'string' ? label : (content: string) => label.test(content)
+  const matches = await screen.findAllByText(matcher)
   const option = [...matches]
     .reverse()
     .find((node) => node.closest('.ant-select-item-option'))
@@ -114,6 +125,8 @@ describe('PoolCatalogPage', () => {
     mockUpsertPoolTopologySnapshot.mockReset()
     mockListPoolTopologySnapshots.mockReset()
     mockSyncOrganizationsCatalog.mockReset()
+    mockGetPoolODataMetadataCatalog.mockReset()
+    mockRefreshPoolODataMetadataCatalog.mockReset()
     mockUseMe.mockReset()
     mockUseDatabases.mockReset()
     mockUseMyTenants.mockReset()
@@ -194,6 +207,40 @@ describe('PoolCatalogPage', () => {
     mockSyncOrganizationsCatalog.mockResolvedValue({
       stats: { created: 1, updated: 0, skipped: 0 },
       total_rows: 1,
+    })
+    mockGetPoolODataMetadataCatalog.mockResolvedValue({
+      database_id: '88888888-8888-8888-8888-888888888888',
+      source: 'db',
+      fetched_at: '2026-01-01T00:00:00Z',
+      catalog_version: 'v1:test',
+      config_name: 'test',
+      config_version: '',
+      metadata_hash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      documents: [
+        {
+          entity_name: 'Document_Sales',
+          display_name: 'Sales',
+          fields: [{ name: 'Amount', type: 'Edm.Decimal', nullable: false }],
+          table_parts: [],
+        },
+      ],
+    })
+    mockRefreshPoolODataMetadataCatalog.mockResolvedValue({
+      database_id: '88888888-8888-8888-8888-888888888888',
+      source: 'live_refresh',
+      fetched_at: '2026-01-01T00:00:00Z',
+      catalog_version: 'v1:test',
+      config_name: 'test',
+      config_version: '',
+      metadata_hash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      documents: [
+        {
+          entity_name: 'Document_Sales',
+          display_name: 'Sales',
+          fields: [{ name: 'Amount', type: 'Edm.Decimal', nullable: false }],
+          table_parts: [],
+        },
+      ],
     })
   })
 
@@ -329,9 +376,9 @@ describe('PoolCatalogPage', () => {
 
     await openWorkspaceTab(user, 'Pools')
     await user.click(screen.getByTestId('pool-catalog-add-pool'))
-    await user.type(screen.getByLabelText('Code'), 'pool-2')
-    await user.type(screen.getByLabelText('Name'), 'Pool Two')
-    await user.type(screen.getByLabelText('Description'), 'Second pool')
+    fireEvent.change(screen.getByLabelText('Code'), { target: { value: 'pool-2' } })
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Pool Two' } })
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Second pool' } })
     await user.click(screen.getByTestId('pool-catalog-save-pool'))
 
     await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
@@ -614,6 +661,163 @@ describe('PoolCatalogPage', () => {
         ],
       })
     )
+  }, 15000)
+
+  it('builds document_policy in builder mode and preserves unknown edge metadata keys', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            custom_edge_key: 'preserve-this',
+            document_policy: {
+              version: 'document_policy.v1',
+              chains: [
+                {
+                  chain_id: 'sale_chain',
+                  documents: [
+                    {
+                      document_id: 'sale',
+                      entity_name: 'Document_Sales',
+                      document_role: 'sale',
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+    await expandFirstEdgeAdvanced(user)
+
+    openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
+    await selectDropdownOption(/builder/i)
+
+    expect(await screen.findByText('Add chain')).toBeInTheDocument()
+    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+
+    await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
+    expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledWith(
+      '44444444-4444-4444-4444-444444444444',
+      expect.objectContaining({
+        edges: [
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              custom_edge_key: 'preserve-this',
+              document_policy: expect.objectContaining({
+                version: 'document_policy.v1',
+                chains: [
+                  expect.objectContaining({
+                    chain_id: 'sale_chain',
+                    documents: [
+                      expect.objectContaining({
+                        document_id: 'sale',
+                        entity_name: 'Document_Sales',
+                        document_role: 'sale',
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+            }),
+          }),
+        ],
+      })
+    )
+  }, 15000)
+
+  it('loads and refreshes metadata catalog for edge builder mode', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {},
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Topology Editor')
+    await expandFirstEdgeAdvanced(user)
+
+    openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
+    await selectDropdownOption(/builder/i)
+
+    await waitFor(() => {
+      expect(mockGetPoolODataMetadataCatalog).toHaveBeenCalledWith('88888888-8888-8888-8888-888888888888')
+    })
+
+    await user.click(screen.getByTestId('pool-catalog-topology-edge-policy-refresh-metadata-0'))
+    await waitFor(() => {
+      expect(mockRefreshPoolODataMetadataCatalog).toHaveBeenCalledWith('88888888-8888-8888-8888-888888888888')
+    })
   }, 15000)
 
   it('preserves existing node and edge metadata when editing edge document_policy', async () => {

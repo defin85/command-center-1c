@@ -32,9 +32,11 @@ import { useMyTenants } from '../../api/queries/tenants'
 import {
   getOrganization,
   getPoolGraph,
+  getPoolODataMetadataCatalog,
   listPoolTopologySnapshots,
   listOrganizationPools,
   listOrganizations,
+  refreshPoolODataMetadataCatalog,
   syncOrganizationsCatalog,
   upsertOrganizationPool,
   upsertOrganization,
@@ -44,6 +46,8 @@ import {
   type OrganizationPoolBinding,
   type OrganizationStatus,
   type PoolGraph,
+  type PoolODataMetadataCatalogDocument,
+  type PoolODataMetadataCatalogResponse,
   type PoolTopologySnapshotPeriod,
   type PoolTopologySnapshotEdgeInput,
   type PoolTopologySnapshotNodeInput,
@@ -67,6 +71,11 @@ const API_ERROR_MESSAGE_MAP: Record<string, string> = {
   TENANT_CONTEXT_REQUIRED: 'Для изменения каталога выберите активный tenant.',
   TOPOLOGY_VERSION_CONFLICT: 'Топология уже была изменена другим оператором. Обновите граф и повторите сохранение.',
   VALIDATION_ERROR: 'Проверьте корректность данных.',
+  ODATA_MAPPING_NOT_CONFIGURED: 'Не настроен Infobase mapping для чтения metadata. Проверьте /rbac.',
+  ODATA_MAPPING_AMBIGUOUS: 'Найдено несколько mapping для metadata path. Проверьте /rbac.',
+  POOL_METADATA_REFERENCE_INVALID: 'Document policy содержит ссылки на отсутствующие metadata поля.',
+  POOL_METADATA_SNAPSHOT_UNAVAILABLE: 'Metadata snapshot недоступен для выбранной базы.',
+  POOL_METADATA_REFRESH_IN_PROGRESS: 'Metadata refresh уже выполняется для этой базы.',
 }
 
 type OrganizationFormValues = {
@@ -98,7 +107,9 @@ type TopologyEdgeFormValue = {
   weight?: number
   min_amount?: number | null
   max_amount?: number | null
+  document_policy_mode?: 'builder' | 'raw'
   document_policy_json?: string
+  document_policy_builder?: DocumentPolicyBuilderChainFormValue[]
   metadata_json?: string
 }
 
@@ -107,6 +118,36 @@ type TopologyFormValues = {
   effective_to?: string
   nodes: TopologyNodeFormValue[]
   edges: TopologyEdgeFormValue[]
+}
+
+type DocumentPolicyBuilderFieldMappingRow = {
+  target_field?: string
+  source?: string
+}
+
+type DocumentPolicyBuilderTablePartRowMapping = {
+  target_row_field?: string
+  source?: string
+}
+
+type DocumentPolicyBuilderTablePartFormValue = {
+  table_part?: string
+  row_mappings?: DocumentPolicyBuilderTablePartRowMapping[]
+}
+
+type DocumentPolicyBuilderDocumentFormValue = {
+  document_id?: string
+  entity_name?: string
+  document_role?: string
+  invoice_mode?: 'optional' | 'required'
+  link_to?: string
+  field_mappings?: DocumentPolicyBuilderFieldMappingRow[]
+  table_part_mappings?: DocumentPolicyBuilderTablePartFormValue[]
+}
+
+type DocumentPolicyBuilderChainFormValue = {
+  chain_id?: string
+  documents?: DocumentPolicyBuilderDocumentFormValue[]
 }
 
 const ORGANIZATION_FORM_FIELDS: Array<keyof OrganizationFormValues> = [
@@ -443,45 +484,22 @@ const stringifyMetadataForForm = (rawMetadata: unknown): string => {
   }
 }
 
-const parseDocumentPolicyMetadata = (
-  rawPolicyJson: string,
+const DOCUMENT_POLICY_VERSION = 'document_policy.v1'
+
+const validateDocumentPolicyObject = (
+  policy: Record<string, unknown>,
   rowNo: number
-): {
-  policy: Record<string, unknown> | null
-  errors: string[]
-} => {
+): string[] => {
   const errors: string[] = []
-  const source = rawPolicyJson.trim()
-  if (!source) {
-    return { policy: null, errors }
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(source)
-  } catch {
-    return {
-      policy: null,
-      errors: [`Edge #${rowNo}: document_policy должен быть валидным JSON.`],
-    }
-  }
-
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return {
-      policy: null,
-      errors: [`Edge #${rowNo}: document_policy должен быть JSON object.`],
-    }
-  }
-  const policy = parsed as Record<string, unknown>
   const version = String(policy.version ?? '').trim()
-  if (version !== 'document_policy.v1') {
-    errors.push(`Edge #${rowNo}: document_policy.version должен быть "document_policy.v1".`)
+  if (version !== DOCUMENT_POLICY_VERSION) {
+    errors.push(`Edge #${rowNo}: document_policy.version должен быть "${DOCUMENT_POLICY_VERSION}".`)
   }
 
   const chainsRaw = policy.chains
   if (!Array.isArray(chainsRaw) || chainsRaw.length === 0) {
     errors.push(`Edge #${rowNo}: document_policy.chains должен содержать хотя бы одну цепочку.`)
-    return { policy, errors }
+    return errors
   }
 
   chainsRaw.forEach((chain, chainIndex) => {
@@ -525,7 +543,256 @@ const parseDocumentPolicyMetadata = (
       }
     })
   })
+  return errors
+}
 
+const sortRecordByKeys = (value: Record<string, string>): Record<string, string> => (
+  Object.fromEntries(
+    Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
+  )
+)
+
+const documentPolicyToBuilderChains = (
+  policy: Record<string, unknown> | null
+): DocumentPolicyBuilderChainFormValue[] => {
+  if (!policy) return []
+  const chainsRaw = policy.chains
+  if (!Array.isArray(chainsRaw)) return []
+
+  return chainsRaw.map<DocumentPolicyBuilderChainFormValue>((chain) => {
+    const chainObject = chain && typeof chain === 'object' && !Array.isArray(chain)
+      ? chain as Record<string, unknown>
+      : {}
+    const documentsRaw = Array.isArray(chainObject.documents) ? chainObject.documents : []
+
+    return {
+      chain_id: String(chainObject.chain_id ?? '').trim(),
+      documents: documentsRaw.map<DocumentPolicyBuilderDocumentFormValue>((document) => {
+        const documentObject = document && typeof document === 'object' && !Array.isArray(document)
+          ? document as Record<string, unknown>
+          : {}
+
+        const fieldMappingRaw = (
+          documentObject.field_mapping
+          && typeof documentObject.field_mapping === 'object'
+          && !Array.isArray(documentObject.field_mapping)
+            ? documentObject.field_mapping as Record<string, unknown>
+            : {}
+        )
+        const tablePartsRaw = (
+          documentObject.table_parts_mapping
+          && typeof documentObject.table_parts_mapping === 'object'
+          && !Array.isArray(documentObject.table_parts_mapping)
+            ? documentObject.table_parts_mapping as Record<string, unknown>
+            : {}
+        )
+
+        return {
+          document_id: String(documentObject.document_id ?? '').trim(),
+          entity_name: String(documentObject.entity_name ?? '').trim(),
+          document_role: String(documentObject.document_role ?? '').trim(),
+          invoice_mode: (
+            String(documentObject.invoice_mode ?? 'optional').trim().toLowerCase() === 'required'
+              ? 'required'
+              : 'optional'
+          ),
+          link_to: String(documentObject.link_to ?? '').trim(),
+          field_mappings: Object.entries(fieldMappingRaw).map(([targetField, source]) => ({
+            target_field: String(targetField).trim(),
+            source: String(source ?? '').trim(),
+          })),
+          table_part_mappings: Object.entries(tablePartsRaw).map(([tablePartName, rowMapping]) => {
+            const rowObject = rowMapping && typeof rowMapping === 'object' && !Array.isArray(rowMapping)
+              ? rowMapping as Record<string, unknown>
+              : {}
+            return {
+              table_part: String(tablePartName).trim(),
+              row_mappings: Object.entries(rowObject).map(([targetRowField, source]) => ({
+                target_row_field: String(targetRowField).trim(),
+                source: String(source ?? '').trim(),
+              })),
+            }
+          }),
+        }
+      }),
+    }
+  })
+}
+
+const buildDocumentPolicyFromBuilder = (
+  chainsRaw: DocumentPolicyBuilderChainFormValue[] | undefined,
+  rowNo: number
+): {
+  policy: Record<string, unknown> | null
+  errors: string[]
+} => {
+  const chainsSource = Array.isArray(chainsRaw) ? chainsRaw : []
+  const errors: string[] = []
+  const normalizedChains: Array<Record<string, unknown>> = []
+
+  if (chainsSource.length === 0) {
+    errors.push(`Edge #${rowNo}: document_policy.chains должен содержать хотя бы одну цепочку.`)
+    return { policy: null, errors }
+  }
+
+  chainsSource.forEach((rawChain, chainIndex) => {
+    const chainNo = chainIndex + 1
+    const chainId = String(rawChain?.chain_id ?? '').trim()
+    if (!chainId) {
+      errors.push(`Edge #${rowNo}: chain #${chainNo} должен содержать chain_id.`)
+    }
+
+    const documentsRaw = Array.isArray(rawChain?.documents) ? rawChain.documents : []
+    if (documentsRaw.length === 0) {
+      errors.push(`Edge #${rowNo}: chain #${chainNo} должен содержать documents[].`)
+      return
+    }
+
+    const normalizedDocuments: Array<Record<string, unknown>> = []
+
+    documentsRaw.forEach((rawDocument, documentIndex) => {
+      const documentNo = documentIndex + 1
+      const documentId = String(rawDocument?.document_id ?? '').trim()
+      const entityName = String(rawDocument?.entity_name ?? '').trim()
+      const documentRole = String(rawDocument?.document_role ?? '').trim()
+      if (!documentId) {
+        errors.push(
+          `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} должен содержать document_id.`
+        )
+      }
+      if (!entityName) {
+        errors.push(
+          `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} должен содержать entity_name.`
+        )
+      }
+      if (!documentRole) {
+        errors.push(
+          `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} должен содержать document_role.`
+        )
+      }
+
+      const invoiceModeRaw = String(rawDocument?.invoice_mode ?? 'optional').trim().toLowerCase()
+      const invoiceMode = invoiceModeRaw || 'optional'
+      if (invoiceMode !== 'optional' && invoiceMode !== 'required') {
+        errors.push(
+          `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} содержит недопустимый invoice_mode.`
+        )
+      }
+
+      const fieldMappingsRaw = Array.isArray(rawDocument?.field_mappings) ? rawDocument.field_mappings : []
+      const fieldMapping: Record<string, string> = {}
+      fieldMappingsRaw.forEach((item) => {
+        const targetField = String(item?.target_field ?? '').trim()
+        const source = String(item?.source ?? '').trim()
+        if (!targetField && !source) return
+        if (!targetField || !source) {
+          errors.push(
+            `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} field_mapping должен содержать target и source.`
+          )
+          return
+        }
+        fieldMapping[targetField] = source
+      })
+
+      const tablePartMappingsRaw = Array.isArray(rawDocument?.table_part_mappings) ? rawDocument.table_part_mappings : []
+      const tablePartsMapping: Record<string, Record<string, string>> = {}
+      tablePartMappingsRaw.forEach((tablePart) => {
+        const tablePartName = String(tablePart?.table_part ?? '').trim()
+        const rowMappingsRaw = Array.isArray(tablePart?.row_mappings) ? tablePart.row_mappings : []
+        const rowMapping: Record<string, string> = {}
+        rowMappingsRaw.forEach((row) => {
+          const targetRowField = String(row?.target_row_field ?? '').trim()
+          const source = String(row?.source ?? '').trim()
+          if (!targetRowField && !source) return
+          if (!targetRowField || !source) {
+            errors.push(
+              `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} table_parts_mapping должен содержать target и source.`
+            )
+            return
+          }
+          rowMapping[targetRowField] = source
+        })
+        if (!tablePartName) {
+          if (Object.keys(rowMapping).length > 0) {
+            errors.push(
+              `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} table_parts_mapping должен содержать table_part.`
+            )
+          }
+          return
+        }
+        tablePartsMapping[tablePartName] = sortRecordByKeys(rowMapping)
+      })
+
+      const linkTo = String(rawDocument?.link_to ?? '').trim()
+      const normalizedDocument: Record<string, unknown> = {
+        document_id: documentId,
+        entity_name: entityName,
+        document_role: documentRole,
+        invoice_mode: invoiceMode,
+        field_mapping: sortRecordByKeys(fieldMapping),
+        table_parts_mapping: Object.fromEntries(
+          Object.entries(tablePartsMapping).sort(([left], [right]) => left.localeCompare(right))
+        ),
+        link_rules: {},
+      }
+      if (linkTo) {
+        normalizedDocument.link_to = linkTo
+      }
+      normalizedDocuments.push(normalizedDocument)
+    })
+
+    normalizedChains.push({
+      chain_id: chainId,
+      documents: normalizedDocuments,
+    })
+  })
+
+  if (errors.length > 0) {
+    return { policy: null, errors }
+  }
+
+  const policy: Record<string, unknown> = {
+    version: DOCUMENT_POLICY_VERSION,
+    chains: normalizedChains,
+  }
+  const semanticErrors = validateDocumentPolicyObject(policy, rowNo)
+  if (semanticErrors.length > 0) {
+    return { policy: null, errors: semanticErrors }
+  }
+  return { policy, errors: [] }
+}
+
+const parseDocumentPolicyMetadata = (
+  rawPolicyJson: string,
+  rowNo: number
+): {
+  policy: Record<string, unknown> | null
+  errors: string[]
+} => {
+  const errors: string[] = []
+  const source = rawPolicyJson.trim()
+  if (!source) {
+    return { policy: null, errors }
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(source)
+  } catch {
+    return {
+      policy: null,
+      errors: [`Edge #${rowNo}: document_policy должен быть валидным JSON.`],
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {
+      policy: null,
+      errors: [`Edge #${rowNo}: document_policy должен быть JSON object.`],
+    }
+  }
+  const policy = parsed as Record<string, unknown>
+  errors.push(...validateDocumentPolicyObject(policy, rowNo))
   return { policy, errors }
 }
 
@@ -607,12 +874,17 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
       errors.push(`Edge #${rowNo}: max_amount должен быть >= min_amount.`)
       return
     }
-    const policyParseResult = parseDocumentPolicyMetadata(
-      String(edge.document_policy_json ?? ''),
-      rowNo
-    )
-    errors.push(...policyParseResult.errors)
-    if (policyParseResult.errors.length > 0) {
+    const policyMode = String(edge.document_policy_mode ?? 'raw').trim().toLowerCase() === 'builder'
+      ? 'builder'
+      : 'raw'
+    const policyResult = policyMode === 'builder'
+      ? buildDocumentPolicyFromBuilder(edge.document_policy_builder, rowNo)
+      : parseDocumentPolicyMetadata(
+        String(edge.document_policy_json ?? ''),
+        rowNo
+      )
+    errors.push(...policyResult.errors)
+    if (policyResult.errors.length > 0) {
       return
     }
     const metadataParseResult = parseTopologyMetadata(edge.metadata_json, `Edge #${rowNo}`)
@@ -622,8 +894,8 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
     }
     const metadata: Record<string, unknown> = { ...metadataParseResult.metadata }
     delete metadata.document_policy
-    if (policyParseResult.policy) {
-      metadata.document_policy = policyParseResult.policy
+    if (policyResult.policy) {
+      metadata.document_policy = policyResult.policy
     }
     edges.push({
       parent_organization_id: parentId,
@@ -703,6 +975,10 @@ export function PoolCatalogPage() {
   const [syncResult, setSyncResult] = useState<{ stats: { created: number; updated: number; skipped: number }; total_rows: number } | null>(null)
   const [isSyncSubmitting, setIsSyncSubmitting] = useState(false)
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'organizations' | 'pools' | 'topology' | 'graph'>('organizations')
+  const [metadataCatalogByDatabase, setMetadataCatalogByDatabase] = useState<Record<string, PoolODataMetadataCatalogResponse>>({})
+  const [metadataCatalogLoadingByDatabase, setMetadataCatalogLoadingByDatabase] = useState<Record<string, boolean>>({})
+  const [metadataCatalogErrorByDatabase, setMetadataCatalogErrorByDatabase] = useState<Record<string, string>>({})
+  const watchedEdges = Form.useWatch('edges', topologyForm)
 
   const selectedOrganization = useMemo(
     () => organizations.find((item) => item.id === selectedOrganizationId) ?? null,
@@ -712,6 +988,9 @@ export function PoolCatalogPage() {
     () => pools.find((item) => item.id === selectedPoolId) ?? null,
     [pools, selectedPoolId]
   )
+  const organizationById = useMemo(() => (
+    Object.fromEntries(organizations.map((item) => [item.id, item]))
+  ), [organizations])
 
   const databaseOptions = useMemo(() => {
     const databases = databasesQuery.data?.databases ?? []
@@ -823,6 +1102,90 @@ export function PoolCatalogPage() {
     }
   }, [selectedPoolId])
 
+  const loadMetadataCatalog = useCallback(async (
+    databaseId: string,
+    forceRefresh: boolean
+  ) => {
+    const normalizedDatabaseId = String(databaseId || '').trim()
+    if (!normalizedDatabaseId) return
+    setMetadataCatalogLoadingByDatabase((previous) => ({
+      ...previous,
+      [normalizedDatabaseId]: true,
+    }))
+    try {
+      const payload = forceRefresh
+        ? await refreshPoolODataMetadataCatalog(normalizedDatabaseId)
+        : await getPoolODataMetadataCatalog(normalizedDatabaseId)
+      setMetadataCatalogByDatabase((previous) => ({
+        ...previous,
+        [normalizedDatabaseId]: payload,
+      }))
+      setMetadataCatalogErrorByDatabase((previous) => {
+        const next = { ...previous }
+        delete next[normalizedDatabaseId]
+        return next
+      })
+    } catch (err) {
+      const resolved = resolveApiError(err, 'Не удалось загрузить metadata catalog.')
+      setMetadataCatalogErrorByDatabase((previous) => ({
+        ...previous,
+        [normalizedDatabaseId]: resolved.message,
+      }))
+    } finally {
+      setMetadataCatalogLoadingByDatabase((previous) => ({
+        ...previous,
+        [normalizedDatabaseId]: false,
+      }))
+    }
+  }, [])
+
+  const switchEdgePolicyMode = useCallback((edgeIndex: number, nextMode: 'builder' | 'raw') => {
+    const currentMode = (
+      String(topologyForm.getFieldValue(['edges', edgeIndex, 'document_policy_mode']) || 'raw')
+        .trim()
+        .toLowerCase() === 'builder'
+        ? 'builder'
+        : 'raw'
+    )
+    if (nextMode === currentMode) return
+
+    if (nextMode === 'builder') {
+      const rawPolicy = String(
+        topologyForm.getFieldValue(['edges', edgeIndex, 'document_policy_json']) ?? ''
+      ).trim()
+      if (!rawPolicy) {
+        topologyForm.setFieldValue(['edges', edgeIndex, 'document_policy_builder'], [])
+        topologyForm.setFieldValue(['edges', edgeIndex, 'document_policy_mode'], 'builder')
+        return
+      }
+      const parsed = parseDocumentPolicyMetadata(rawPolicy, edgeIndex + 1)
+      if (parsed.errors.length > 0) {
+        message.error(parsed.errors[0] || `Edge #${edgeIndex + 1}: не удалось переключить режим на builder.`)
+        return
+      }
+      topologyForm.setFieldValue(
+        ['edges', edgeIndex, 'document_policy_builder'],
+        documentPolicyToBuilderChains(parsed.policy)
+      )
+      topologyForm.setFieldValue(['edges', edgeIndex, 'document_policy_mode'], 'builder')
+      return
+    }
+
+    const built = buildDocumentPolicyFromBuilder(
+      topologyForm.getFieldValue(['edges', edgeIndex, 'document_policy_builder']),
+      edgeIndex + 1
+    )
+    if (built.errors.length > 0) {
+      message.error(built.errors[0] || `Edge #${edgeIndex + 1}: исправьте policy в builder перед переключением.`)
+      return
+    }
+    topologyForm.setFieldValue(
+      ['edges', edgeIndex, 'document_policy_json'],
+      built.policy ? JSON.stringify(built.policy, null, 2) : ''
+    )
+    topologyForm.setFieldValue(['edges', edgeIndex, 'document_policy_mode'], 'raw')
+  }, [message, topologyForm])
+
   useEffect(() => {
     void loadOrganizations()
   }, [loadOrganizations])
@@ -842,6 +1205,34 @@ export function PoolCatalogPage() {
   useEffect(() => {
     void loadTopologySnapshots()
   }, [loadTopologySnapshots])
+
+  useEffect(() => {
+    if (activeWorkspaceTab !== 'topology') return
+    const edges = Array.isArray(watchedEdges) ? watchedEdges : []
+    edges.forEach((edge) => {
+      const mode = (
+        String(edge?.document_policy_mode || 'raw').trim().toLowerCase() === 'builder'
+          ? 'builder'
+          : 'raw'
+      )
+      if (mode !== 'builder') return
+      const childOrgId = String(edge?.child_organization_id || '').trim()
+      if (!childOrgId) return
+      const childOrganization = organizationById[childOrgId]
+      const databaseId = String(childOrganization?.database_id || '').trim()
+      if (!databaseId) return
+      if (metadataCatalogByDatabase[databaseId]) return
+      if (metadataCatalogLoadingByDatabase[databaseId]) return
+      void loadMetadataCatalog(databaseId, false)
+    })
+  }, [
+    activeWorkspaceTab,
+    loadMetadataCatalog,
+    metadataCatalogByDatabase,
+    metadataCatalogLoadingByDatabase,
+    organizationById,
+    watchedEdges,
+  ])
 
   useEffect(() => {
     setTopologyPreflightErrors([])
@@ -875,14 +1266,18 @@ export function PoolCatalogPage() {
       const weight = Number(edge.weight)
       const minAmount = edge.min_amount == null ? null : Number(edge.min_amount)
       const maxAmount = edge.max_amount == null ? null : Number(edge.max_amount)
+      const metadataWithoutPolicy = { ...metadata }
+      delete metadataWithoutPolicy.document_policy
       return {
         parent_organization_id: organizationByNodeVersion.get(edge.parent_node_version_id),
         child_organization_id: organizationByNodeVersion.get(edge.child_node_version_id),
         weight: Number.isFinite(weight) ? weight : undefined,
         min_amount: minAmount == null || Number.isNaN(minAmount) ? null : minAmount,
         max_amount: maxAmount == null || Number.isNaN(maxAmount) ? null : maxAmount,
+        document_policy_mode: 'raw',
         document_policy_json: policy ? JSON.stringify(policy, null, 2) : '',
-        metadata_json: stringifyMetadataForForm(metadata),
+        document_policy_builder: documentPolicyToBuilderChains(policy),
+        metadata_json: stringifyMetadataForForm(metadataWithoutPolicy),
       }
     })
     topologyForm.setFieldsValue({
@@ -1814,26 +2209,479 @@ export function PoolCatalogPage() {
                                         children: (
                                           <Space direction="vertical" size={8} style={{ width: '100%' }}>
                                             <Form.Item
-                                              name={[field.name, 'document_policy_json']}
-                                              label="Document policy (JSON)"
+                                              name={[field.name, 'document_policy_mode']}
+                                              label="Document policy mode"
                                               style={{ marginBottom: 0 }}
                                             >
-                                              <TextArea
-                                                autoSize={{ minRows: 2, maxRows: 8 }}
-                                                placeholder='{"version":"document_policy.v1","chains":[...]}'
-                                                data-testid={`pool-catalog-topology-edge-policy-${field.name}`}
+                                              <Select
+                                                options={[
+                                                  { value: 'builder', label: 'Builder' },
+                                                  { value: 'raw', label: 'Raw JSON' },
+                                                ]}
+                                                onChange={(value) => {
+                                                  switchEdgePolicyMode(
+                                                    field.name,
+                                                    value === 'builder' ? 'builder' : 'raw'
+                                                  )
+                                                }}
+                                                data-testid={`pool-catalog-topology-edge-policy-mode-${field.name}`}
                                               />
                                             </Form.Item>
-                                            <Form.Item
-                                              name={[field.name, 'metadata_json']}
-                                              label="Edge metadata (JSON)"
-                                              style={{ marginBottom: 0 }}
-                                            >
-                                              <TextArea
-                                                autoSize={{ minRows: 2, maxRows: 6 }}
-                                                placeholder='{"custom_key":"value"}'
-                                                data-testid={`pool-catalog-topology-edge-metadata-${field.name}`}
-                                              />
+                                            <Form.Item noStyle shouldUpdate>
+                                              {({ getFieldValue }) => {
+                                                const policyMode = (
+                                                  String(getFieldValue(['edges', field.name, 'document_policy_mode']) || 'raw')
+                                                    .trim()
+                                                    .toLowerCase() === 'builder'
+                                                    ? 'builder'
+                                                    : 'raw'
+                                                )
+                                                const childOrgId = String(
+                                                  getFieldValue(['edges', field.name, 'child_organization_id']) || ''
+                                                ).trim()
+                                                const childOrganization = organizationById[childOrgId]
+                                                const databaseId = String(childOrganization?.database_id || '').trim()
+                                                const metadataCatalog = (
+                                                  databaseId
+                                                    ? metadataCatalogByDatabase[databaseId]
+                                                    : undefined
+                                                )
+                                                const metadataDocuments = Array.isArray(metadataCatalog?.documents)
+                                                  ? metadataCatalog.documents
+                                                  : []
+                                                const metadataLoading = databaseId
+                                                  ? Boolean(metadataCatalogLoadingByDatabase[databaseId])
+                                                  : false
+                                                const metadataError = databaseId
+                                                  ? metadataCatalogErrorByDatabase[databaseId]
+                                                  : ''
+
+                                                return (
+                                                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                                    {policyMode === 'builder' ? (
+                                                      <>
+                                                        {!databaseId && (
+                                                          <Alert
+                                                            type="warning"
+                                                            showIcon
+                                                            message="Builder требует child organization с привязанной базой."
+                                                          />
+                                                        )}
+                                                        {databaseId && (
+                                                          <Space size="small" wrap>
+                                                            <Tag color={metadataCatalog ? 'blue' : 'default'}>
+                                                              {metadataCatalog
+                                                                ? `catalog ${metadataCatalog.catalog_version}`
+                                                                : 'catalog not loaded'}
+                                                            </Tag>
+                                                            <Button
+                                                              size="small"
+                                                              loading={metadataLoading}
+                                                              onClick={() => { void loadMetadataCatalog(databaseId, false) }}
+                                                              data-testid={`pool-catalog-topology-edge-policy-load-metadata-${field.name}`}
+                                                            >
+                                                              Load metadata
+                                                            </Button>
+                                                            <Button
+                                                              size="small"
+                                                              loading={metadataLoading}
+                                                              onClick={() => { void loadMetadataCatalog(databaseId, true) }}
+                                                              data-testid={`pool-catalog-topology-edge-policy-refresh-metadata-${field.name}`}
+                                                            >
+                                                              Refresh metadata
+                                                            </Button>
+                                                          </Space>
+                                                        )}
+                                                        {metadataError && (
+                                                          <Alert type="error" showIcon message={metadataError} />
+                                                        )}
+                                                        <Form.List name={[field.name, 'document_policy_builder']}>
+                                                          {(chainFields, { add: addChain, remove: removeChain, move: moveChain }) => (
+                                                            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                                              {chainFields.map((chainField) => (
+                                                                <Card
+                                                                  key={chainField.key}
+                                                                  size="small"
+                                                                  title={`Chain #${chainField.name + 1}`}
+                                                                  extra={(
+                                                                    <Space size={4}>
+                                                                      <Button
+                                                                        size="small"
+                                                                        icon={<ArrowUpOutlined />}
+                                                                        onClick={() => moveChain(chainField.name, chainField.name - 1)}
+                                                                        disabled={chainField.name === 0}
+                                                                      />
+                                                                      <Button
+                                                                        size="small"
+                                                                        icon={<ArrowDownOutlined />}
+                                                                        onClick={() => moveChain(chainField.name, chainField.name + 1)}
+                                                                        disabled={chainField.name === chainFields.length - 1}
+                                                                      />
+                                                                      <Button
+                                                                        size="small"
+                                                                        danger
+                                                                        onClick={() => removeChain(chainField.name)}
+                                                                      >
+                                                                        Remove
+                                                                      </Button>
+                                                                    </Space>
+                                                                  )}
+                                                                >
+                                                                  <Form.Item
+                                                                    name={[chainField.name, 'chain_id']}
+                                                                    label="chain_id"
+                                                                    style={{ marginBottom: 8 }}
+                                                                  >
+                                                                    <Input placeholder="sale_chain" />
+                                                                  </Form.Item>
+
+                                                                  <Form.List name={[chainField.name, 'documents']}>
+                                                                    {(documentFields, { add: addDocument, remove: removeDocument, move: moveDocument }) => (
+                                                                      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                                                        {documentFields.map((documentField) => {
+                                                                          const selectedEntityName = String(
+                                                                            getFieldValue([
+                                                                              'edges',
+                                                                              field.name,
+                                                                              'document_policy_builder',
+                                                                              chainField.name,
+                                                                              'documents',
+                                                                              documentField.name,
+                                                                              'entity_name',
+                                                                            ]) || ''
+                                                                          ).trim()
+                                                                          const selectedDocument = metadataDocuments.find(
+                                                                            (item) => item.entity_name === selectedEntityName
+                                                                          )
+                                                                          const fieldOptions = (
+                                                                            selectedDocument?.fields || []
+                                                                          ).map((item) => ({
+                                                                            value: item.name,
+                                                                            label: item.name,
+                                                                          }))
+                                                                          const tablePartOptions = (
+                                                                            selectedDocument?.table_parts || []
+                                                                          ).map((item) => ({
+                                                                            value: item.name,
+                                                                            label: item.name,
+                                                                          }))
+                                                                          const chainDocuments = (
+                                                                            getFieldValue([
+                                                                              'edges',
+                                                                              field.name,
+                                                                              'document_policy_builder',
+                                                                              chainField.name,
+                                                                              'documents',
+                                                                            ]) || []
+                                                                          ) as DocumentPolicyBuilderDocumentFormValue[]
+                                                                          const linkToOptions = chainDocuments
+                                                                            .map((item) => String(item?.document_id || '').trim())
+                                                                            .filter((item) => item)
+                                                                            .map((item) => ({ value: item, label: item }))
+
+                                                                          return (
+                                                                            <Card
+                                                                              key={documentField.key}
+                                                                              size="small"
+                                                                              title={`Document #${documentField.name + 1}`}
+                                                                              extra={(
+                                                                                <Space size={4}>
+                                                                                  <Button
+                                                                                    size="small"
+                                                                                    icon={<ArrowUpOutlined />}
+                                                                                    onClick={() => moveDocument(documentField.name, documentField.name - 1)}
+                                                                                    disabled={documentField.name === 0}
+                                                                                  />
+                                                                                  <Button
+                                                                                    size="small"
+                                                                                    icon={<ArrowDownOutlined />}
+                                                                                    onClick={() => moveDocument(documentField.name, documentField.name + 1)}
+                                                                                    disabled={documentField.name === documentFields.length - 1}
+                                                                                  />
+                                                                                  <Button
+                                                                                    size="small"
+                                                                                    danger
+                                                                                    onClick={() => removeDocument(documentField.name)}
+                                                                                  >
+                                                                                    Remove
+                                                                                  </Button>
+                                                                                </Space>
+                                                                              )}
+                                                                            >
+                                                                              <Row gutter={8}>
+                                                                                <Col span={8}>
+                                                                                  <Form.Item
+                                                                                    name={[documentField.name, 'document_id']}
+                                                                                    label="document_id"
+                                                                                    style={{ marginBottom: 8 }}
+                                                                                  >
+                                                                                    <Input placeholder="sale" />
+                                                                                  </Form.Item>
+                                                                                </Col>
+                                                                                <Col span={8}>
+                                                                                  <Form.Item
+                                                                                    name={[documentField.name, 'entity_name']}
+                                                                                    label="entity_name"
+                                                                                    style={{ marginBottom: 8 }}
+                                                                                  >
+                                                                                    <Select
+                                                                                      showSearch
+                                                                                      optionFilterProp="label"
+                                                                                      options={metadataDocuments.map((item: PoolODataMetadataCatalogDocument) => ({
+                                                                                        value: item.entity_name,
+                                                                                        label: `${item.entity_name} (${item.display_name})`,
+                                                                                      }))}
+                                                                                    />
+                                                                                  </Form.Item>
+                                                                                </Col>
+                                                                                <Col span={8}>
+                                                                                  <Form.Item
+                                                                                    name={[documentField.name, 'document_role']}
+                                                                                    label="document_role"
+                                                                                    style={{ marginBottom: 8 }}
+                                                                                  >
+                                                                                    <Input placeholder="sale|invoice" />
+                                                                                  </Form.Item>
+                                                                                </Col>
+                                                                              </Row>
+                                                                              <Row gutter={8}>
+                                                                                <Col span={8}>
+                                                                                  <Form.Item
+                                                                                    name={[documentField.name, 'invoice_mode']}
+                                                                                    label="invoice_mode"
+                                                                                    style={{ marginBottom: 8 }}
+                                                                                  >
+                                                                                    <Select
+                                                                                      options={[
+                                                                                        { value: 'optional', label: 'optional' },
+                                                                                        { value: 'required', label: 'required' },
+                                                                                      ]}
+                                                                                    />
+                                                                                  </Form.Item>
+                                                                                </Col>
+                                                                                <Col span={16}>
+                                                                                  <Form.Item
+                                                                                    name={[documentField.name, 'link_to']}
+                                                                                    label="link_to"
+                                                                                    style={{ marginBottom: 8 }}
+                                                                                  >
+                                                                                    <Select allowClear options={linkToOptions} />
+                                                                                  </Form.Item>
+                                                                                </Col>
+                                                                              </Row>
+
+                                                                              <Form.List name={[documentField.name, 'field_mappings']}>
+                                                                                {(fieldMappingFields, { add: addFieldMapping, remove: removeFieldMapping }) => (
+                                                                                  <Space direction="vertical" size={4} style={{ width: '100%', marginBottom: 8 }}>
+                                                                                    <Text type="secondary">field_mapping</Text>
+                                                                                    {fieldMappingFields.map((mappingField) => (
+                                                                                      <Row key={mappingField.key} gutter={8} align="middle">
+                                                                                        <Col span={9}>
+                                                                                          <Form.Item
+                                                                                            name={[mappingField.name, 'target_field']}
+                                                                                            style={{ marginBottom: 0 }}
+                                                                                          >
+                                                                                            <Select
+                                                                                              showSearch
+                                                                                              optionFilterProp="label"
+                                                                                              options={fieldOptions}
+                                                                                              placeholder="target field"
+                                                                                            />
+                                                                                          </Form.Item>
+                                                                                        </Col>
+                                                                                        <Col span={12}>
+                                                                                          <Form.Item
+                                                                                            name={[mappingField.name, 'source']}
+                                                                                            style={{ marginBottom: 0 }}
+                                                                                          >
+                                                                                            <Input placeholder="allocation.amount" />
+                                                                                          </Form.Item>
+                                                                                        </Col>
+                                                                                        <Col span={3}>
+                                                                                          <Button danger onClick={() => removeFieldMapping(mappingField.name)}>
+                                                                                            x
+                                                                                          </Button>
+                                                                                        </Col>
+                                                                                      </Row>
+                                                                                    ))}
+                                                                                    <Button
+                                                                                      size="small"
+                                                                                      onClick={() => addFieldMapping({ target_field: '', source: '' })}
+                                                                                    >
+                                                                                      Add field mapping
+                                                                                    </Button>
+                                                                                  </Space>
+                                                                                )}
+                                                                              </Form.List>
+
+                                                                              <Form.List name={[documentField.name, 'table_part_mappings']}>
+                                                                                {(tablePartFields, { add: addTablePart, remove: removeTablePart }) => (
+                                                                                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                                                                                    <Text type="secondary">table_parts_mapping</Text>
+                                                                                    {tablePartFields.map((tablePartField) => {
+                                                                                      const selectedTablePart = String(
+                                                                                        getFieldValue([
+                                                                                          'edges',
+                                                                                          field.name,
+                                                                                          'document_policy_builder',
+                                                                                          chainField.name,
+                                                                                          'documents',
+                                                                                          documentField.name,
+                                                                                          'table_part_mappings',
+                                                                                          tablePartField.name,
+                                                                                          'table_part',
+                                                                                        ]) || ''
+                                                                                      ).trim()
+                                                                                      const tablePart = (selectedDocument?.table_parts || []).find(
+                                                                                        (item) => item.name === selectedTablePart
+                                                                                      )
+                                                                                      const rowFieldOptions = (
+                                                                                        tablePart?.row_fields || []
+                                                                                      ).map((item) => ({
+                                                                                        value: item.name,
+                                                                                        label: item.name,
+                                                                                      }))
+                                                                                      return (
+                                                                                        <Card
+                                                                                          key={tablePartField.key}
+                                                                                          size="small"
+                                                                                          title={`Table part #${tablePartField.name + 1}`}
+                                                                                          extra={(
+                                                                                            <Button
+                                                                                              size="small"
+                                                                                              danger
+                                                                                              onClick={() => removeTablePart(tablePartField.name)}
+                                                                                            >
+                                                                                              Remove
+                                                                                            </Button>
+                                                                                          )}
+                                                                                        >
+                                                                                          <Form.Item
+                                                                                            name={[tablePartField.name, 'table_part']}
+                                                                                            label="table_part"
+                                                                                            style={{ marginBottom: 8 }}
+                                                                                          >
+                                                                                            <Select
+                                                                                              showSearch
+                                                                                              optionFilterProp="label"
+                                                                                              options={tablePartOptions}
+                                                                                            />
+                                                                                          </Form.Item>
+                                                                                          <Form.List name={[tablePartField.name, 'row_mappings']}>
+                                                                                            {(rowMappingFields, { add: addRowMapping, remove: removeRowMapping }) => (
+                                                                                              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                                                                                                {rowMappingFields.map((rowMappingField) => (
+                                                                                                  <Row key={rowMappingField.key} gutter={8} align="middle">
+                                                                                                    <Col span={9}>
+                                                                                                      <Form.Item
+                                                                                                        name={[rowMappingField.name, 'target_row_field']}
+                                                                                                        style={{ marginBottom: 0 }}
+                                                                                                      >
+                                                                                                        <Select
+                                                                                                          showSearch
+                                                                                                          optionFilterProp="label"
+                                                                                                          options={rowFieldOptions}
+                                                                                                          placeholder="target row field"
+                                                                                                        />
+                                                                                                      </Form.Item>
+                                                                                                    </Col>
+                                                                                                    <Col span={12}>
+                                                                                                      <Form.Item
+                                                                                                        name={[rowMappingField.name, 'source']}
+                                                                                                        style={{ marginBottom: 0 }}
+                                                                                                      >
+                                                                                                        <Input placeholder="allocation.lines.amount" />
+                                                                                                      </Form.Item>
+                                                                                                    </Col>
+                                                                                                    <Col span={3}>
+                                                                                                      <Button danger onClick={() => removeRowMapping(rowMappingField.name)}>
+                                                                                                        x
+                                                                                                      </Button>
+                                                                                                    </Col>
+                                                                                                  </Row>
+                                                                                                ))}
+                                                                                                <Button
+                                                                                                  size="small"
+                                                                                                  onClick={() => addRowMapping({ target_row_field: '', source: '' })}
+                                                                                                >
+                                                                                                  Add row mapping
+                                                                                                </Button>
+                                                                                              </Space>
+                                                                                            )}
+                                                                                          </Form.List>
+                                                                                        </Card>
+                                                                                      )
+                                                                                    })}
+                                                                                    <Button
+                                                                                      size="small"
+                                                                                      onClick={() => addTablePart({ table_part: '', row_mappings: [] })}
+                                                                                    >
+                                                                                      Add table part mapping
+                                                                                    </Button>
+                                                                                  </Space>
+                                                                                )}
+                                                                              </Form.List>
+                                                                            </Card>
+                                                                          )
+                                                                        })}
+                                                                        <Button
+                                                                          size="small"
+                                                                          onClick={() => addDocument({
+                                                                            document_id: '',
+                                                                            entity_name: '',
+                                                                            document_role: '',
+                                                                            invoice_mode: 'optional',
+                                                                            link_to: '',
+                                                                            field_mappings: [],
+                                                                            table_part_mappings: [],
+                                                                          })}
+                                                                        >
+                                                                          Add document
+                                                                        </Button>
+                                                                      </Space>
+                                                                    )}
+                                                                  </Form.List>
+                                                                </Card>
+                                                              ))}
+                                                              <Button
+                                                                size="small"
+                                                                onClick={() => addChain({ chain_id: '', documents: [] })}
+                                                                data-testid={`pool-catalog-topology-edge-policy-add-chain-${field.name}`}
+                                                              >
+                                                                Add chain
+                                                              </Button>
+                                                            </Space>
+                                                          )}
+                                                        </Form.List>
+                                                      </>
+                                                    ) : (
+                                                      <Form.Item
+                                                        name={[field.name, 'document_policy_json']}
+                                                        label="Document policy (JSON)"
+                                                        style={{ marginBottom: 0 }}
+                                                      >
+                                                        <TextArea
+                                                          autoSize={{ minRows: 2, maxRows: 8 }}
+                                                          placeholder='{"version":"document_policy.v1","chains":[...]}'
+                                                          data-testid={`pool-catalog-topology-edge-policy-${field.name}`}
+                                                        />
+                                                      </Form.Item>
+                                                    )}
+
+                                                    <Form.Item
+                                                      name={[field.name, 'metadata_json']}
+                                                      label="Edge metadata (JSON)"
+                                                      style={{ marginBottom: 0 }}
+                                                    >
+                                                      <TextArea
+                                                        autoSize={{ minRows: 2, maxRows: 6 }}
+                                                        placeholder='{"custom_key":"value"}'
+                                                        data-testid={`pool-catalog-topology-edge-metadata-${field.name}`}
+                                                      />
+                                                    </Form.Item>
+                                                  </Space>
+                                                )
+                                              }}
                                             </Form.Item>
                                           </Space>
                                         ),
@@ -1847,7 +2695,9 @@ export function PoolCatalogPage() {
                                   weight: 1,
                                   min_amount: null,
                                   max_amount: null,
+                                  document_policy_mode: 'raw',
                                   document_policy_json: '',
+                                  document_policy_builder: [],
                                   metadata_json: '',
                                 })}
                                 data-testid="pool-catalog-topology-add-edge"

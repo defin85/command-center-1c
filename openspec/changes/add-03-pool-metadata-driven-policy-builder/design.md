@@ -138,3 +138,15 @@ Topology save endpoint сохраняет текущий контракт, но 
 5. Добавить interactive builders для document policy и edge metadata.
 6. Включить строгую backend validation ссылок на current metadata snapshot.
 7. Обновить операторскую/операционную документацию и провести rollout на staging.
+
+### Operator/Operations rollout notes
+- `/pools/catalog`:
+  - `Document policy mode = Builder` используется для канонического `document_policy.v1`.
+  - `Document policy mode = Raw JSON` используется как escape hatch; unknown keys `edge.metadata` сохраняются без потерь.
+  - при переключении `raw -> builder` невалидный JSON блокирует переключение до исправления.
+- Metadata refresh:
+  - оператор запускает `refresh` при изменении метаданных 1С или после обновления конфигурации;
+  - конкурентный refresh возвращает `POOL_METADATA_REFRESH_IN_PROGRESS`, повторить после освобождения lock.
+- Snapshot versioning / observability:
+  - в ответах metadata API контролировать `source`, `catalog_version`, `config_name`, `config_version`, `metadata_hash`, `fetched_at`.
+  - при `source=db` это допустимая деградация при недоступности Redis; корректность данных сохраняется.

@@ -108,6 +108,96 @@ class OrganizationPool(models.Model):
         validate_pool_graph_for_date(self, target_date or timezone.localdate())
 
 
+class PoolODataMetadataCatalogSnapshotSource(models.TextChoices):
+    LIVE_REFRESH = "live_refresh", "Live Refresh"
+    COLD_BOOTSTRAP = "cold_bootstrap", "Cold Bootstrap"
+
+
+class PoolODataMetadataCatalogSnapshot(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_odata_metadata_catalog_snapshots",
+    )
+    database = models.ForeignKey(
+        "databases.Database",
+        on_delete=models.CASCADE,
+        related_name="pool_odata_metadata_catalog_snapshots",
+    )
+    config_name = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    config_version = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    extensions_fingerprint = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    metadata_hash = models.CharField(max_length=64)
+    catalog_version = models.CharField(max_length=128, db_index=True)
+    payload = models.JSONField(default=dict, blank=True)
+    source = models.CharField(
+        max_length=32,
+        choices=PoolODataMetadataCatalogSnapshotSource.choices,
+        default=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+        db_index=True,
+    )
+    fetched_at = models.DateTimeField(default=timezone.now, db_index=True)
+    is_current = models.BooleanField(default=False, db_index=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_odata_metadata_catalog_snapshots"
+        indexes = [
+            models.Index(fields=["tenant", "database", "is_current"]),
+            models.Index(
+                fields=[
+                    "tenant",
+                    "database",
+                    "config_name",
+                    "config_version",
+                    "extensions_fingerprint",
+                    "is_current",
+                ]
+            ),
+            models.Index(fields=["database", "-fetched_at"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(metadata_hash=""),
+                name="chk_pool_meta_catalog_snapshot_metadata_hash_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(catalog_version=""),
+                name="chk_pool_meta_catalog_snapshot_catalog_version_nonempty",
+            ),
+            models.UniqueConstraint(
+                fields=[
+                    "tenant",
+                    "database",
+                    "config_name",
+                    "config_version",
+                    "extensions_fingerprint",
+                    "catalog_version",
+                ],
+                name="uniq_pool_meta_catalog_snapshot_scope_version",
+            ),
+            models.UniqueConstraint(
+                fields=[
+                    "tenant",
+                    "database",
+                    "config_name",
+                    "config_version",
+                    "extensions_fingerprint",
+                ],
+                condition=Q(is_current=True),
+                name="uniq_pool_meta_catalog_snapshot_scope_current",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.tenant_id}:{self.database_id}:{self.config_name}:{self.config_version}:"
+            f"{self.catalog_version} ({'current' if self.is_current else 'historical'})"
+        )
+
+
 class PoolSchemaTemplateFormat(models.TextChoices):
     XLSX = "xlsx", "XLSX"
     JSON = "json", "JSON"

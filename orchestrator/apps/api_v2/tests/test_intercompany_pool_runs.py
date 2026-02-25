@@ -16,6 +16,8 @@ from apps.intercompany_pools.models import (
     OrganizationPool,
     PoolEdgeVersion,
     PoolNodeVersion,
+    PoolODataMetadataCatalogSnapshot,
+    PoolODataMetadataCatalogSnapshotSource,
     PoolPublicationAttempt,
     PoolPublicationAttemptStatus,
     PoolRun,
@@ -245,6 +247,63 @@ def _build_document_policy_payload() -> dict[str, object]:
     }
 
 
+def _build_metadata_catalog_payload() -> dict[str, object]:
+    return {
+        "documents": [
+            {
+                "entity_name": "Document_Sales",
+                "display_name": "Sales",
+                "fields": [
+                    {"name": "Amount", "type": "Edm.Decimal", "nullable": False},
+                ],
+                "table_parts": [
+                    {
+                        "name": "Items",
+                        "row_fields": [
+                            {"name": "LineAmount", "type": "Edm.Decimal", "nullable": False},
+                        ],
+                    }
+                ],
+            },
+            {
+                "entity_name": "Document_Invoice",
+                "display_name": "Invoice",
+                "fields": [
+                    {"name": "BaseDocument", "type": "Edm.String", "nullable": False},
+                ],
+                "table_parts": [],
+            },
+        ]
+    }
+
+
+def _create_current_metadata_catalog_snapshot(
+    *,
+    tenant: Tenant,
+    database: Database,
+    payload: dict[str, object] | None = None,
+) -> PoolODataMetadataCatalogSnapshot:
+    config_name = str(
+        database.base_name
+        or database.infobase_name
+        or database.name
+        or database.id
+        or ""
+    ).strip()
+    return PoolODataMetadataCatalogSnapshot.objects.create(
+        tenant=tenant,
+        database=database,
+        config_name=config_name,
+        config_version=str(database.version or "").strip(),
+        extensions_fingerprint="",
+        metadata_hash="a" * 64,
+        catalog_version=f"v1:{uuid4().hex[:16]}",
+        payload=payload or _build_metadata_catalog_payload(),
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+        is_current=True,
+    )
+
+
 @pytest.fixture
 def default_tenant() -> Tenant:
     tenant, _ = Tenant.objects.get_or_create(slug="default", defaults={"name": "Default"})
@@ -467,6 +526,91 @@ def test_sync_organizations_catalog_endpoint_returns_stats(
 
 
 @pytest.mark.django_db
+def test_get_pool_odata_metadata_catalog_returns_current_snapshot(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"metadata-get-db-{uuid4().hex[:8]}")
+    snapshot = _create_current_metadata_catalog_snapshot(
+        tenant=default_tenant,
+        database=database,
+    )
+
+    response = authenticated_client.get(f"/api/v2/pools/odata-metadata/catalog/?database_id={database.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["database_id"] == str(database.id)
+    assert payload["catalog_version"] == snapshot.catalog_version
+    assert payload["config_name"] == snapshot.config_name
+    assert payload["metadata_hash"] == snapshot.metadata_hash
+    assert payload["source"] in {"db", "redis"}
+    assert isinstance(payload["documents"], list)
+    assert payload["documents"][0]["entity_name"] == "Document_Sales"
+
+
+@pytest.mark.django_db
+def test_refresh_pool_odata_metadata_catalog_rejects_missing_mapping_without_legacy_fallback(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"metadata-refresh-db-{uuid4().hex[:8]}")
+
+    with patch("apps.intercompany_pools.metadata_catalog.requests.get") as requests_get:
+        response = authenticated_client.post(
+            "/api/v2/pools/odata-metadata/catalog/refresh/",
+            {"database_id": str(database.id)},
+            format="json",
+        )
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="ODATA_MAPPING_NOT_CONFIGURED",
+    )
+    assert problem["title"] == "Metadata Catalog Auth Configuration Error"
+    assert "/rbac" in problem["detail"]
+    requests_get.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_refresh_pool_odata_metadata_catalog_returns_serialized_snapshot(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"metadata-refresh-ok-db-{uuid4().hex[:8]}")
+    snapshot = _create_current_metadata_catalog_snapshot(
+        tenant=default_tenant,
+        database=database,
+    )
+
+    with patch(
+        "apps.api_v2.views.intercompany_pools.refresh_metadata_catalog_snapshot",
+        return_value=snapshot,
+    ) as refresh_snapshot:
+        response = authenticated_client.post(
+            "/api/v2/pools/odata-metadata/catalog/refresh/",
+            {"database_id": str(database.id)},
+            format="json",
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["database_id"] == str(database.id)
+    assert payload["source"] == "live_refresh"
+    assert payload["catalog_version"] == snapshot.catalog_version
+    assert payload["config_name"] == snapshot.config_name
+    assert payload["metadata_hash"] == snapshot.metadata_hash
+
+    refresh_snapshot.assert_called_once()
+    kwargs = refresh_snapshot.call_args.kwargs
+    assert kwargs["tenant_id"] == str(default_tenant.id)
+    assert kwargs["database"].id == database.id
+    assert kwargs["requested_by_username"] == "pool-api-user"
+    assert kwargs["source"] == "live_refresh"
+
+
+@pytest.mark.django_db
 def test_upsert_pool_metadata_creates_updates_and_enforces_tenant_boundary(
     authenticated_client: APIClient,
     default_tenant: Tenant,
@@ -671,8 +815,18 @@ def test_upsert_pool_topology_snapshot_accepts_valid_document_policy_metadata(
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
+    leaf_db = _create_database(tenant=default_tenant, name=f"policy-leaf-db-{uuid4().hex[:8]}")
+    _create_current_metadata_catalog_snapshot(
+        tenant=default_tenant,
+        database=leaf_db,
+    )
     root_org = Organization.objects.create(tenant=default_tenant, name="Policy Root", inn="741100000001")
-    leaf_org = Organization.objects.create(tenant=default_tenant, name="Policy Leaf", inn="741100000002")
+    leaf_org = Organization.objects.create(
+        tenant=default_tenant,
+        database=leaf_db,
+        name="Policy Leaf",
+        inn="741100000002",
+    )
     graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
     assert graph_before.status_code == 200
     current_version = graph_before.json()["version"]
@@ -810,13 +964,140 @@ def test_upsert_pool_topology_snapshot_rejects_missing_required_invoice_in_polic
 
 
 @pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_returns_unified_referential_error_for_unknown_metadata_field(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    leaf_db = _create_database(tenant=default_tenant, name=f"policy-ref-db-{uuid4().hex[:8]}")
+    _create_current_metadata_catalog_snapshot(
+        tenant=default_tenant,
+        database=leaf_db,
+    )
+    root_org = Organization.objects.create(tenant=default_tenant, name="Policy Ref Root", inn="741100000041")
+    leaf_org = Organization.objects.create(
+        tenant=default_tenant,
+        database=leaf_db,
+        name="Policy Ref Leaf",
+        inn="741100000042",
+    )
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    current_version = graph_before.json()["version"]
+
+    invalid_policy = _build_document_policy_payload()
+    invalid_policy["chains"][0]["documents"][0]["field_mapping"] = {
+        "UnknownField": "allocation.amount",
+    }
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "nodes": [
+                {"organization_id": str(root_org.id), "is_root": True},
+                {"organization_id": str(leaf_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "1.0",
+                    "metadata": {
+                        "document_policy": invalid_policy,
+                    },
+                },
+            ],
+        },
+        format="json",
+    )
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_METADATA_REFERENCE_INVALID",
+    )
+    errors = payload.get("errors")
+    assert isinstance(errors, list) and errors
+    first_error = errors[0]
+    assert isinstance(first_error, dict)
+    assert {"code", "path", "detail"}.issubset(set(first_error.keys()))
+    assert first_error["code"] == "POOL_METADATA_REFERENCE_INVALID"
+    assert "field_mapping.UnknownField" in str(first_error["path"])
+
+
+@pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_returns_snapshot_unavailable_with_unified_error_shape(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    leaf_db = _create_database(tenant=default_tenant, name=f"policy-nosnapshot-db-{uuid4().hex[:8]}")
+    root_org = Organization.objects.create(tenant=default_tenant, name="Policy NoSnapshot Root", inn="741100000051")
+    leaf_org = Organization.objects.create(
+        tenant=default_tenant,
+        database=leaf_db,
+        name="Policy NoSnapshot Leaf",
+        inn="741100000052",
+    )
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    current_version = graph_before.json()["version"]
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "nodes": [
+                {"organization_id": str(root_org.id), "is_root": True},
+                {"organization_id": str(leaf_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "1.0",
+                    "metadata": {
+                        "document_policy": _build_document_policy_payload(),
+                    },
+                },
+            ],
+        },
+        format="json",
+    )
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_METADATA_SNAPSHOT_UNAVAILABLE",
+    )
+    errors = payload.get("errors")
+    assert isinstance(errors, list) and errors
+    first_error = errors[0]
+    assert isinstance(first_error, dict)
+    assert {"code", "path", "detail"}.issubset(set(first_error.keys()))
+    assert first_error["code"] == "POOL_METADATA_SNAPSHOT_UNAVAILABLE"
+    assert "document_policy" in str(first_error["path"])
+
+
+@pytest.mark.django_db
 def test_get_pool_graph_returns_node_and_edge_metadata_including_document_policy(
     authenticated_client: APIClient,
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
+    leaf_db = _create_database(tenant=default_tenant, name=f"graph-leaf-db-{uuid4().hex[:8]}")
+    _create_current_metadata_catalog_snapshot(
+        tenant=default_tenant,
+        database=leaf_db,
+    )
     root_org = Organization.objects.create(tenant=default_tenant, name="Graph Metadata Root", inn="741100000031")
-    leaf_org = Organization.objects.create(tenant=default_tenant, name="Graph Metadata Leaf", inn="741100000032")
+    leaf_org = Organization.objects.create(
+        tenant=default_tenant,
+        database=leaf_db,
+        name="Graph Metadata Leaf",
+        inn="741100000032",
+    )
     graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
     assert graph_before.status_code == 200
     current_version = graph_before.json()["version"]

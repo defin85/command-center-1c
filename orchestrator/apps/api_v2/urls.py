@@ -126,6 +126,16 @@ urlpatterns = [
     path('pools/organizations/sync/', intercompany_pools.sync_organizations_catalog, name='pools-organizations-sync'),
     path('pools/organizations/<uuid:organization_id>/', intercompany_pools.get_organization, name='pools-organizations-get'),
     path(
+        'pools/odata-metadata/catalog/',
+        intercompany_pools.get_pool_odata_metadata_catalog,
+        name='pools-odata-metadata-catalog-get',
+    ),
+    path(
+        'pools/odata-metadata/catalog/refresh/',
+        intercompany_pools.refresh_pool_odata_metadata_catalog,
+        name='pools-odata-metadata-catalog-refresh',
+    ),
+    path(
         'pools/<uuid:pool_id>/topology-snapshot/upsert/',
         intercompany_pools.upsert_pool_topology_snapshot,
         name='pools-topology-snapshot-upsert',
