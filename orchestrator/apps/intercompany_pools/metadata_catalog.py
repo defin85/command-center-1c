@@ -525,6 +525,20 @@ def _fetch_live_catalog_payload(*, database: Database, requested_by_username: st
         )
 
     try:
+        username.encode("latin-1")
+        password.encode("latin-1")
+    except UnicodeEncodeError as exc:
+        raise MetadataCatalogError(
+            code=ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
+            title="Metadata Catalog Auth Configuration Error",
+            detail=(
+                "Infobase mapping credentials contain characters unsupported by HTTP Basic auth "
+                "(latin-1). Configure mapping in /rbac."
+            ),
+            status_code=400,
+        ) from exc
+
+    try:
         response = requests.get(
             metadata_url,
             headers={"Accept": "application/xml"},

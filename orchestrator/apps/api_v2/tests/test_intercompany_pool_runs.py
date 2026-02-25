@@ -574,6 +574,32 @@ def test_refresh_pool_odata_metadata_catalog_rejects_missing_mapping_without_leg
 
 
 @pytest.mark.django_db
+def test_get_pool_odata_metadata_catalog_rejects_non_latin1_mapping_credentials(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"metadata-nonlatin-db-{uuid4().hex[:8]}")
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=None,
+        ib_username="ГлавБух",
+        ib_password="пароль",
+        is_service=True,
+    )
+
+    with patch("apps.intercompany_pools.metadata_catalog.requests.get") as requests_get:
+        response = authenticated_client.get(f"/api/v2/pools/odata-metadata/catalog/?database_id={database.id}")
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="ODATA_MAPPING_NOT_CONFIGURED",
+    )
+    assert "latin-1" in problem["detail"].lower()
+    requests_get.assert_not_called()
+
+
+@pytest.mark.django_db
 def test_refresh_pool_odata_metadata_catalog_returns_serialized_snapshot(
     authenticated_client: APIClient,
     default_tenant: Tenant,

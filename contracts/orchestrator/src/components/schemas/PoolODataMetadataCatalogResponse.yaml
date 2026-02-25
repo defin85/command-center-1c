@@ -1,0 +1,30 @@
+type: object
+properties:
+  database_id:
+    type: string
+  source:
+    type: string
+  fetched_at:
+    type: string
+    format: date-time
+  catalog_version:
+    type: string
+  config_name:
+    type: string
+  config_version:
+    type: string
+  metadata_hash:
+    type: string
+  documents:
+    type: array
+    items:
+      $ref: ./PoolODataMetadataCatalogDocument.yaml
+required:
+  - catalog_version
+  - config_name
+  - config_version
+  - database_id
+  - documents
+  - fetched_at
+  - metadata_hash
+  - source

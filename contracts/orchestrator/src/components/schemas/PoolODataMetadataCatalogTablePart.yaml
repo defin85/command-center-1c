@@ -1,0 +1,11 @@
+type: object
+properties:
+  name:
+    type: string
+  row_fields:
+    type: array
+    items:
+      $ref: ./PoolODataMetadataCatalogField.yaml
+required:
+  - name
+  - row_fields

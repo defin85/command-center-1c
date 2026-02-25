@@ -1223,12 +1223,14 @@ export function PoolCatalogPage() {
       if (!databaseId) return
       if (metadataCatalogByDatabase[databaseId]) return
       if (metadataCatalogLoadingByDatabase[databaseId]) return
+      if (metadataCatalogErrorByDatabase[databaseId]) return
       void loadMetadataCatalog(databaseId, false)
     })
   }, [
     activeWorkspaceTab,
     loadMetadataCatalog,
     metadataCatalogByDatabase,
+    metadataCatalogErrorByDatabase,
     metadataCatalogLoadingByDatabase,
     organizationById,
     watchedEdges,

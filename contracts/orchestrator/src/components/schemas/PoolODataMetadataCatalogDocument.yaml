@@ -1,0 +1,19 @@
+type: object
+properties:
+  entity_name:
+    type: string
+  display_name:
+    type: string
+  fields:
+    type: array
+    items:
+      $ref: ./PoolODataMetadataCatalogField.yaml
+  table_parts:
+    type: array
+    items:
+      $ref: ./PoolODataMetadataCatalogTablePart.yaml
+required:
+  - display_name
+  - entity_name
+  - fields
+  - table_parts
