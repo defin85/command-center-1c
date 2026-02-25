@@ -10,7 +10,13 @@
   - документы;
   - реквизиты шапки;
   - табличные части и реквизиты строк.
-- Добавить кэширование каталога метаданных с TTL и явным refresh-path, чтобы снизить нагрузку на OData endpoint.
+- Добавить persisted snapshot storage каталога метаданных в БД как source-of-truth:
+  - version markers: `config_name`, `config_version`, `metadata_hash`;
+  - payload и служебные поля (`fetched_at`, `source`, `status/current`).
+- Использовать Redis только как read-through cache accelerator:
+  - отдача из Redis при hit;
+  - fallback к актуальному snapshot в БД при miss/ошибке Redis;
+  - явный refresh-path, который обновляет snapshot в БД и прогревает Redis.
 - Добавить в `/pools/catalog` интерактивные builder-режимы:
   - `Document policy builder` (chain/documents/mappings/link rules);
   - `Edge metadata builder` (структурированное редактирование metadata с сохранением неизвестных ключей).
@@ -22,6 +28,8 @@
 - Affected specs:
   - `organization-pool-catalog`
 - Affected code (expected):
+  - `orchestrator/apps/intercompany_pools/models.py` (новая snapshot-модель)
+  - `orchestrator/apps/intercompany_pools/migrations/*` (схема snapshot storage)
   - `orchestrator/apps/api_v2/views/intercompany_pools.py`
   - `orchestrator/apps/api_v2/serializers/intercompany_pools.py`
   - `orchestrator/apps/intercompany_pools/document_policy_contract.py`
@@ -32,6 +40,7 @@
 ## Dependencies
 - Требуется совместимость с контрактом `document_policy.v1`, введённым в change `add-02-pool-document-policy`.
 - Для получения OData credentials используется существующий контур mapping-based auth (`InfobaseUserMapping`) без fallback на legacy `Database.username/password`.
+- Требуется рабочий Redis для ускорения чтения, но корректность системы не должна зависеть от его доступности (fallback в БД snapshot).
 
 ## Non-Goals
 - Не реализуется универсальный low-code редактор всех бизнес-объектов 1С вне `Document policy` и `Edge metadata`.

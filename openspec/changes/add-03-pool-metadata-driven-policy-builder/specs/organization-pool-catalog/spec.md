@@ -16,27 +16,36 @@
 - **THEN** backend возвращает документы, реквизиты и табличные части в нормализованной структуре
 - **AND** UI может построить интерактивные селекторы без ручного ввода имён полей
 
-### Requirement: Metadata catalog retrieval MUST использовать cache-first стратегию с явным refresh
-Система ДОЛЖНА (SHALL) кэшировать результат metadata catalog по выбранной ИБ для снижения нагрузки на OData endpoint.
+### Requirement: Metadata catalog retrieval MUST использовать persisted snapshot в БД и Redis только как ускоритель
+Система ДОЛЖНА (SHALL) хранить нормализованный metadata catalog в persisted snapshot в БД как source-of-truth для выбранной ИБ.
 
 Система ДОЛЖНА (SHALL) поддерживать:
-- cache TTL;
+- version markers для snapshot: `config_name`, `config_version`, `metadata_hash` (или эквивалент);
+- явный признак текущей версии snapshot (`is_current` или эквивалент);
+- Redis read-through cache как ускоритель чтения (не источник истины);
+- cache TTL для Redis-слоя;
 - явный операторский refresh;
-- прозрачный индикатор источника (`cache` или `live`) в ответе API.
+- прозрачный индикатор источника (`redis`, `db`, `live_refresh`) в ответе API.
 
-Система НЕ ДОЛЖНА (SHALL NOT) скрывать состояние устаревшего каталога: ответ ДОЛЖЕН (SHALL) включать `fetched_at` и `catalog_version` или эквивалентный version marker.
+Система НЕ ДОЛЖНА (SHALL NOT) скрывать состояние каталога: ответ ДОЛЖЕН (SHALL) включать `fetched_at`, `catalog_version`, `config_name`, `config_version` и `metadata_hash` (или эквивалентные маркеры версии).
 
-#### Scenario: Повторный запрос каталога обслуживается из кэша
+#### Scenario: Повторный запрос каталога обслуживается из Redis-ускорителя
 - **GIVEN** каталог метаданных ИБ уже загружен и TTL ещё не истёк
 - **WHEN** UI повторно запрашивает metadata catalog
-- **THEN** backend возвращает кэшированную версию
-- **AND** response явно указывает, что источник данных — cache
+- **THEN** backend возвращает версию current snapshot через Redis-слой
+- **AND** response явно указывает, что источник данных — `redis`
+
+#### Scenario: При недоступности Redis чтение продолжается из БД snapshot
+- **GIVEN** Redis временно недоступен или cache key отсутствует
+- **WHEN** UI запрашивает metadata catalog
+- **THEN** backend читает current snapshot из БД
+- **AND** response явно указывает, что источник данных — `db`
 
 #### Scenario: Оператор принудительно обновляет каталог после изменений в 1С
 - **GIVEN** структура метаданных в 1С изменилась
 - **WHEN** оператор инициирует refresh metadata catalog
-- **THEN** backend повторно читает `$metadata` из OData endpoint
-- **AND** в ответе возвращается обновлённый `catalog_version`
+- **THEN** backend повторно читает `$metadata` из OData endpoint и сохраняет/обновляет snapshot в БД
+- **AND** в ответе возвращается обновлённый `catalog_version` и актуальные version markers
 
 ### Requirement: Topology editor UI MUST поддерживать интерактивное создание Document policy и Edge metadata
 Система ДОЛЖНА (SHALL) предоставлять в `/pools/catalog` builder-режим, в котором оператор выбирает документы, реквизиты и табличные части из metadata catalog и формирует:
@@ -71,12 +80,13 @@
 - **AND** итоговый snapshot содержит исходные пользовательские поля
 
 ### Requirement: Topology mutating validation MUST проверять соответствие policy актуальному metadata catalog
-Система ДОЛЖНА (SHALL) при сохранении topology snapshot валидировать, что ссылки в `document_policy` указывают на существующие элементы metadata catalog выбранной ИБ:
+Система ДОЛЖНА (SHALL) при сохранении topology snapshot валидировать, что ссылки в `document_policy` указывают на существующие элементы current metadata snapshot выбранной ИБ/конфигурации:
 - `entity_name`;
 - `field_mapping` ключи;
 - `table_parts_mapping` и `row_fields`.
 
 Система НЕ ДОЛЖНА (SHALL NOT) сохранять snapshot, если policy ссылается на отсутствующие документы/поля/табличные части.
+Система НЕ ДОЛЖНА (SHALL NOT) сохранять snapshot, если для выбранной ИБ/конфигурации отсутствует current metadata snapshot.
 
 Ответ об ошибке ДОЛЖЕН (SHALL) содержать machine-readable код и путь до проблемного узла policy для быстрого исправления в UI.
 
@@ -86,3 +96,9 @@
 - **THEN** backend отклоняет запрос валидационной ошибкой
 - **AND** snapshot в БД не изменяется
 - **AND** UI получает machine-readable информацию для подсветки проблемного поля
+
+#### Scenario: Сохранение topology блокируется при отсутствии current metadata snapshot
+- **GIVEN** для выбранной ИБ/конфигурации нет актуального metadata snapshot
+- **WHEN** выполняется topology snapshot save
+- **THEN** backend отклоняет запрос fail-closed ошибкой
+- **AND** UI получает machine-readable код причины и путь до проблемного policy context
