@@ -22,6 +22,9 @@
 Система ДОЛЖНА (SHALL) поддерживать:
 - version markers для snapshot: `config_name`, `config_version`, `metadata_hash` (или эквивалент);
 - явный признак текущей версии snapshot (`is_current` или эквивалент);
+- инвариант «ровно один current snapshot per scope (tenant + database + config markers)»;
+- атомарное переключение `is_current` в refresh-path;
+- сериализацию конкурентного refresh через lock (single-writer per scope);
 - Redis read-through cache как ускоритель чтения (не источник истины);
 - cache TTL для Redis-слоя;
 - явный операторский refresh;
@@ -47,6 +50,25 @@
 - **THEN** backend повторно читает `$metadata` из OData endpoint и сохраняет/обновляет snapshot в БД
 - **AND** в ответе возвращается обновлённый `catalog_version` и актуальные version markers
 
+#### Scenario: Конкурентные refresh-запросы сериализуются через lock
+- **GIVEN** один refresh metadata catalog уже выполняется для выбранной ИБ/scope
+- **WHEN** второй refresh приходит до освобождения lock
+- **THEN** backend не выполняет второй параллельный refresh
+- **AND** возвращает детерминированный fail-closed код занятости lock
+
+### Requirement: Metadata catalog auth MUST использовать mapping-only credentials path
+Система ДОЛЖНА (SHALL) резолвить credentials для metadata catalog read/refresh только через `InfobaseUserMapping`.
+
+Система НЕ ДОЛЖНА (SHALL NOT) использовать `Database.username/password` как runtime fallback для metadata path.
+
+Ошибки auth/configuration ДОЛЖНЫ (SHALL) возвращаться fail-closed с machine-readable кодом и без раскрытия секретов.
+
+#### Scenario: Metadata catalog запрос отклоняется при отсутствии mapping
+- **GIVEN** для выбранной ИБ отсутствует валидный `InfobaseUserMapping`
+- **WHEN** UI запрашивает metadata catalog или refresh
+- **THEN** backend отклоняет запрос fail-closed
+- **AND** response содержит machine-readable код auth/configuration ошибки
+
 ### Requirement: Topology editor UI MUST поддерживать интерактивное создание Document policy и Edge metadata
 Система ДОЛЖНА (SHALL) предоставлять в `/pools/catalog` builder-режим, в котором оператор выбирает документы, реквизиты и табличные части из metadata catalog и формирует:
 - `edge.metadata.document_policy`;
@@ -67,6 +89,8 @@
 ### Requirement: UI MUST сохранять raw JSON fallback и round-trip совместимость metadata
 Система ДОЛЖНА (SHALL) поддерживать переключение между builder-режимом и raw JSON редактированием для `Document policy` и `Edge metadata`.
 
+Система ДОЛЖНА (SHALL) формировать канонический JSON в builder-режиме и использовать его как source для сохранения topology payload.
+
 Система ДОЛЖНА (SHALL) сохранять round-trip совместимость:
 - пользовательские/неизвестные ключи metadata не теряются;
 - переключение режимов не разрушает корректный JSON.
@@ -79,6 +103,12 @@
 - **THEN** кастомный ключ сохраняется без потери
 - **AND** итоговый snapshot содержит исходные пользовательские поля
 
+#### Scenario: Builder сохраняет канонический JSON без потери unknown keys
+- **GIVEN** оператор редактирует `document_policy` в builder-режиме и ранее добавил unknown ключи через raw JSON
+- **WHEN** выполняется сохранение topology snapshot
+- **THEN** backend получает канонизированный `document_policy.v1` от builder
+- **AND** unknown ключи `edge.metadata` сохраняются в итоговом payload без потерь
+
 ### Requirement: Topology mutating validation MUST проверять соответствие policy актуальному metadata catalog
 Система ДОЛЖНА (SHALL) при сохранении topology snapshot валидировать, что ссылки в `document_policy` указывают на существующие элементы current metadata snapshot выбранной ИБ/конфигурации:
 - `entity_name`;
@@ -88,17 +118,20 @@
 Система НЕ ДОЛЖНА (SHALL NOT) сохранять snapshot, если policy ссылается на отсутствующие документы/поля/табличные части.
 Система НЕ ДОЛЖНА (SHALL NOT) сохранять snapshot, если для выбранной ИБ/конфигурации отсутствует current metadata snapshot.
 
-Ответ об ошибке ДОЛЖЕН (SHALL) содержать machine-readable код и путь до проблемного узла policy для быстрого исправления в UI.
+Ответ об ошибке ДОЛЖЕН (SHALL) использовать единый формат `code + path + detail` для referential validation.
+
+Для нарушений ссылок policy на metadata система ДОЛЖНА (SHALL) возвращать `code=POOL_METADATA_REFERENCE_INVALID`.
+При отсутствии current metadata snapshot система ДОЛЖНА (SHALL) возвращать `code=POOL_METADATA_SNAPSHOT_UNAVAILABLE`.
 
 #### Scenario: Policy с несуществующим реквизитом отклоняется до persistence
 - **GIVEN** оператор сформировал policy с `field_mapping`, где указан несуществующий реквизит документа
 - **WHEN** выполняется topology snapshot save
 - **THEN** backend отклоняет запрос валидационной ошибкой
 - **AND** snapshot в БД не изменяется
-- **AND** UI получает machine-readable информацию для подсветки проблемного поля
+- **AND** UI получает `code`, `path`, `detail` для подсветки проблемного поля
 
 #### Scenario: Сохранение topology блокируется при отсутствии current metadata snapshot
 - **GIVEN** для выбранной ИБ/конфигурации нет актуального metadata snapshot
 - **WHEN** выполняется topology snapshot save
 - **THEN** backend отклоняет запрос fail-closed ошибкой
-- **AND** UI получает machine-readable код причины и путь до проблемного policy context
+- **AND** UI получает `code=POOL_METADATA_SNAPSHOT_UNAVAILABLE` и `path` проблемного policy context

@@ -24,6 +24,22 @@
 - Добавить fail-closed валидацию на сохранении topology snapshot:
   - ссылки policy на недоступные документы/реквизиты/табличные части должны отклоняться с machine-readable ошибкой.
 
+## Mandatory clarifications before implementation
+- Строгий snapshot lifecycle:
+  - в рамках `(tenant_id, database_id, config_name, config_version, extensions_fingerprint)` ДОЛЖЕН существовать ровно один current snapshot;
+  - переключение `is_current` ДОЛЖНО выполняться атомарно в одной транзакции;
+  - конкурентный refresh ДОЛЖЕН сериализоваться через lock (single-writer per scope) с детерминированной ошибкой при занятости lock.
+- Единый формат referential validation ошибки:
+  - для ошибок ссылок policy на metadata используется единый machine-readable code и обязательные поля `code`, `path`, `detail`;
+  - для отсутствия current snapshot используется отдельный fail-closed code, но тот же формат `code`, `path`, `detail`.
+- Mapping-only credentials для metadata path:
+  - metadata read/refresh использует только `InfobaseUserMapping`;
+  - fallback на `Database.username/password` запрещён.
+- UI dual-mode:
+  - builder формирует канонический JSON (`document_policy.v1`) в детерминированном формате;
+  - raw-режим сохраняет неизвестные/пользовательские ключи metadata без потерь;
+  - переключение между режимами не должно разрушать валидный JSON.
+
 ## Impact
 - Affected specs:
   - `organization-pool-catalog`
