@@ -2,7 +2,6 @@
 
 ## Purpose
 Фиксирует публичный контракт маршрутизации Redis Streams для Go Worker: через какие переменные окружения настраивается входной stream и consumer group, чтобы можно было разделить исполнение операций и workflow-оркестрации по разным deployment'ам.
-
 ## Requirements
 ### Requirement: Worker поддерживает выбор Redis Stream и consumer group через env
 Система ДОЛЖНА (SHALL) позволять конфигурировать, какой Redis Stream читает Go Worker, и какую consumer group он использует, через переменные окружения (например `WORKER_STREAM_NAME`, `WORKER_CONSUMER_GROUP`).
@@ -45,3 +44,16 @@ services:
       REDIS_PORT: "6379"
       REDIS_DB: "0"
 ```
+
+### Requirement: Worker stream routing MUST сохранять unified runtime parity между lanes
+Система ДОЛЖНА (SHALL) при маршрутизации по разным stream names сохранять единый execution envelope и единые semantics событий (`queued`, `processing`, `completed`, `failed`) для всех lane-ов.
+
+Система ДОЛЖНА (SHALL) обеспечивать, что lane (`operations`/`workflows`) отражается в telemetry/metadata, но не меняет lifecycle contract исполнения.
+
+#### Scenario: Workflow lane и operations lane публикуют совместимые события
+- **GIVEN** один worker deployment читает `commands:worker:operations`
+- **AND** другой worker deployment читает `commands:worker:workflows`
+- **WHEN** оба deployment публикуют status events
+- **THEN** event payload и lifecycle semantics совместимы с единым runtime-контрактом
+- **AND** observability слой может агрегировать события без lane-specific ветвления бизнес-логики
+
