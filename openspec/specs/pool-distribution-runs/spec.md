@@ -127,6 +127,10 @@ TBD - created by archiving change add-intercompany-pool-distribution-module. Upd
 ### Requirement: Pool runs UI MUST поддерживать полный операторский lifecycle run
 Система ДОЛЖНА (SHALL) предоставлять в `/pools/runs` полный операторский контроль run lifecycle: создание, мониторинг статуса/provenance, safe-команды (`confirm-publication`, `abort-publication`) и retry failed-целей.
 
+Система ДОЛЖНА (SHALL) структурировать интерфейс `/pools/runs` как stage-based workflow (create, inspect, safe actions, retry), чтобы каждый этап имел отдельный фокус и не перегружал пользователя нерелевантными controls.
+
+Система ДОЛЖНА (SHALL) сохранять единый контекст выбранного `run` при переходе между этапами, без повторного ручного выбора на каждом шаге.
+
 #### Scenario: Safe run проходит pre-publish и подтверждается из UI
 - **GIVEN** run запущен в режиме `safe`
 - **WHEN** run достигает состояния ожидания подтверждения
@@ -144,6 +148,12 @@ TBD - created by archiving change add-intercompany-pool-distribution-module. Upd
 - **WHEN** ответ возвращён как `application/problem+json`
 - **THEN** UI показывает `detail` оператору
 - **AND** использует machine-readable `code` для привязки к конкретному полю/действию
+
+#### Scenario: Оператор последовательно проходит этапы без перегруженного единого полотна
+- **GIVEN** оператор создал run на этапе `create`
+- **WHEN** оператор переходит к этапам `inspect` и `safe/retry`
+- **THEN** интерфейс показывает только controls текущего этапа
+- **AND** выбранный run context сохраняется между этапами
 
 ### Requirement: Pool run distribution MUST гарантировать полное покрытие активной цепочки организаций
 Система ДОЛЖНА (SHALL) рассчитывать распределение для create-run path на основе активной версии DAG topology (`effective_from/effective_to`) за период run.
@@ -185,4 +195,21 @@ TBD - created by archiving change add-intercompany-pool-distribution-module. Upd
 - **WHEN** run сохраняется и публикуется
 - **THEN** raw payload сохраняется только в provenance/diagnostics контексте
 - **AND** финальный publication payload формируется исключительно из `distribution_artifact.v1`
+
+### Requirement: Pool runs diagnostics UI MUST использовать progressive disclosure
+Система ДОЛЖНА (SHALL) показывать тяжёлые диагностические блоки (`Run Input`, `Validation Summary`, `Publication Summary`, `Step Diagnostics`) по запросу оператора, а не в полном виде по умолчанию.
+
+Система ДОЛЖНА (SHALL) сохранять полноту диагностической информации и доступ к ней в один шаг из контекста выбранного run.
+
+#### Scenario: Диагностика раскрывается по требованию оператора
+- **GIVEN** оператор анализирует run в разделе inspect
+- **WHEN** оператор включает отображение diagnostics
+- **THEN** UI раскрывает детальные JSON-блоки
+- **AND** без включения diagnostics базовый экран остаётся компактным и читаемым
+
+#### Scenario: Retry-form остаётся доступной без визуальной конкуренции с diagnostics
+- **GIVEN** оператор находится на этапе retry failed targets
+- **WHEN** diagnostics блоки не требуются для текущего действия
+- **THEN** retry form отображается как основной фокус экрана
+- **AND** diagnostic секции не отвлекают от завершения retry операции
 
