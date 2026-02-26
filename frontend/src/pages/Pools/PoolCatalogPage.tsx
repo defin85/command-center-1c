@@ -2529,6 +2529,7 @@ export function PoolCatalogPage() {
                                                                           const linkToOptions = chainDocuments
                                                                             .map((item) => String(item?.document_id || '').trim())
                                                                             .filter((item) => item)
+                                                                          const uniqueLinkToOptions = Array.from(new Set(linkToOptions))
                                                                             .map((item) => ({ value: item, label: item }))
 
                                                                           return (
@@ -2617,10 +2618,41 @@ export function PoolCatalogPage() {
                                                                                     label="link_to"
                                                                                     style={{ marginBottom: 8 }}
                                                                                   >
-                                                                                    <Select allowClear options={linkToOptions} />
+                                                                                    <Select
+                                                                                      allowClear
+                                                                                      showSearch
+                                                                                      optionFilterProp="label"
+                                                                                      options={uniqueLinkToOptions}
+                                                                                      placeholder="document_id from this chain"
+                                                                                      notFoundContent="Сначала задайте document_id для документов в этой цепочке."
+                                                                                    />
                                                                                   </Form.Item>
                                                                                 </Col>
                                                                               </Row>
+                                                                              {selectedEntityName && !selectedDocument && (
+                                                                                <Alert
+                                                                                  type="warning"
+                                                                                  showIcon
+                                                                                  style={{ marginBottom: 8 }}
+                                                                                  message={(
+                                                                                    `Entity "${selectedEntityName}" не найден в загруженном metadata catalog.`
+                                                                                  )}
+                                                                                  description="Нажмите Refresh metadata или выберите другой entity_name."
+                                                                                />
+                                                                              )}
+                                                                              {selectedDocument && fieldOptions.length === 0 && (
+                                                                                <Alert
+                                                                                  type="warning"
+                                                                                  showIcon
+                                                                                  style={{ marginBottom: 8 }}
+                                                                                  message={(
+                                                                                    `Для "${selectedEntityName}" в metadata catalog нет fields.`
+                                                                                  )}
+                                                                                  description={(
+                                                                                    'Проверьте OData metadata (включая BaseType-наследование) и обновите snapshot.'
+                                                                                  )}
+                                                                                />
+                                                                              )}
 
                                                                               <Form.List name={[documentField.name, 'link_rule_mappings']}>
                                                                                 {(linkRuleFields, { add: addLinkRule, remove: removeLinkRule }) => (
@@ -2677,6 +2709,11 @@ export function PoolCatalogPage() {
                                                                                               optionFilterProp="label"
                                                                                               options={fieldOptions}
                                                                                               placeholder="target field"
+                                                                                              notFoundContent={(
+                                                                                                selectedEntityName
+                                                                                                  ? 'Для выбранного entity_name нет fields в metadata catalog.'
+                                                                                                  : 'Сначала выберите entity_name.'
+                                                                                              )}
                                                                                             />
                                                                                           </Form.Item>
                                                                                         </Col>
@@ -2756,6 +2793,11 @@ export function PoolCatalogPage() {
                                                                                               showSearch
                                                                                               optionFilterProp="label"
                                                                                               options={tablePartOptions}
+                                                                                              notFoundContent={(
+                                                                                                selectedEntityName
+                                                                                                  ? 'Для выбранного entity_name нет table_parts в metadata catalog.'
+                                                                                                  : 'Сначала выберите entity_name.'
+                                                                                              )}
                                                                                             />
                                                                                           </Form.Item>
                                                                                           <Form.List name={[tablePartField.name, 'row_mappings']}>
@@ -2773,6 +2815,11 @@ export function PoolCatalogPage() {
                                                                                                           optionFilterProp="label"
                                                                                                           options={rowFieldOptions}
                                                                                                           placeholder="target row field"
+                                                                                                          notFoundContent={(
+                                                                                                            selectedTablePart
+                                                                                                              ? 'Для выбранной табличной части нет row_fields.'
+                                                                                                              : 'Сначала выберите table_part.'
+                                                                                                          )}
                                                                                                         />
                                                                                                       </Form.Item>
                                                                                                     </Col>

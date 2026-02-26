@@ -616,40 +616,64 @@ def _parse_csdl_metadata(xml_payload: str) -> dict[str, Any]:
     entity_models: dict[str, dict[str, Any]] = {}
     row_types: dict[str, list[dict[str, Any]]] = {}
     document_table_parts: dict[str, dict[str, str]] = {}
+    entity_definitions: dict[str, dict[str, Any]] = {}
 
     for entity_type in root.findall(".//edm:EntityType", _XML_NAMESPACES):
         entity_name = str(entity_type.get("Name") or "").strip()
         if not entity_name:
             continue
 
-        fields = []
-        table_parts: dict[str, str] = {}
+        declared_members: list[dict[str, Any]] = []
         for tag_name in ("Property", "NavigationProperty"):
             for prop in entity_type.findall(f"edm:{tag_name}", _XML_NAMESPACES):
                 prop_name = str(prop.get("Name") or "").strip()
                 if not prop_name:
                     continue
-                prop_type = str(prop.get("Type") or "").strip()
-                nullable = str(prop.get("Nullable", "true")).strip().lower() != "false"
-
-                if prop_type.startswith("Collection("):
-                    row_entity_name = _extract_entity_name_from_type(prop_type)
-                    if row_entity_name and row_entity_name.endswith("_RowType"):
-                        table_part_name = _derive_table_part_name(
-                            document_entity_name=entity_name,
-                            row_entity_name=row_entity_name,
-                            fallback=prop_name,
-                        )
-                        table_parts[table_part_name] = row_entity_name
-                    continue
-
-                fields.append(
+                declared_members.append(
                     {
                         "name": prop_name,
-                        "type": prop_type,
-                        "nullable": bool(nullable),
+                        "type": str(prop.get("Type") or "").strip(),
+                        "nullable": str(prop.get("Nullable", "true")).strip().lower() != "false",
                     }
                 )
+
+        entity_definitions[entity_name] = {
+            "base_type": _extract_entity_name_from_type(str(entity_type.get("BaseType") or "").strip()),
+            "members": declared_members,
+        }
+
+    for entity_name in entity_definitions.keys():
+        resolved_members = _resolve_entity_members(
+            entity_name=entity_name,
+            entity_definitions=entity_definitions,
+        )
+        fields: list[dict[str, Any]] = []
+        table_parts: dict[str, str] = {}
+        for member in resolved_members:
+            prop_name = str(member.get("name") or "").strip()
+            if not prop_name:
+                continue
+            prop_type = str(member.get("type") or "").strip()
+            nullable = bool(member.get("nullable", True))
+
+            if prop_type.startswith("Collection("):
+                row_entity_name = _extract_entity_name_from_type(prop_type)
+                if row_entity_name and row_entity_name.endswith("_RowType"):
+                    table_part_name = _derive_table_part_name(
+                        document_entity_name=entity_name,
+                        row_entity_name=row_entity_name,
+                        fallback=prop_name,
+                    )
+                    table_parts[table_part_name] = row_entity_name
+                continue
+
+            fields.append(
+                {
+                    "name": prop_name,
+                    "type": prop_type,
+                    "nullable": nullable,
+                }
+            )
 
         normalized_fields = _normalize_field_items(fields)
         entity_models[entity_name] = {
@@ -708,6 +732,45 @@ def _parse_csdl_metadata(xml_payload: str) -> dict[str, Any]:
 
     documents.sort(key=lambda item: str(item.get("entity_name") or ""))
     return {"documents": documents}
+
+
+def _resolve_entity_members(
+    *,
+    entity_name: str,
+    entity_definitions: Mapping[str, Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    lineage: list[Mapping[str, Any]] = []
+    visited: set[str] = set()
+    current_name = entity_name
+
+    while current_name and current_name not in visited:
+        visited.add(current_name)
+        definition = entity_definitions.get(current_name)
+        if not isinstance(definition, Mapping):
+            break
+        lineage.append(definition)
+        base_type = _extract_entity_name_from_type(str(definition.get("base_type") or "").strip())
+        if not base_type or base_type == current_name:
+            break
+        current_name = base_type
+
+    merged_by_name: dict[str, dict[str, Any]] = {}
+    for definition in reversed(lineage):
+        members = definition.get("members")
+        if not isinstance(members, list):
+            continue
+        for member in members:
+            if not isinstance(member, Mapping):
+                continue
+            name = str(member.get("name") or "").strip()
+            if not name:
+                continue
+            merged_by_name[name] = {
+                "name": name,
+                "type": str(member.get("type") or "").strip(),
+                "nullable": bool(member.get("nullable", True)),
+            }
+    return list(merged_by_name.values())
 
 
 def _extract_entity_name_from_type(type_token: str) -> str:
