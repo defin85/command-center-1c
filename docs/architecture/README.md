@@ -16,6 +16,7 @@
 | **[RAS_ADAPTER_STATE_MACHINE_COMPATIBILITY.md](RAS_ADAPTER_STATE_MACHINE_COMPATIBILITY.md)** | Compatibility: RAS Adapter ↔ Event-Driven State Machine | 2025-11-19 | 📋 ANALYSIS |
 | **[REAL_TIME_OPERATION_TRACKING.md](REAL_TIME_OPERATION_TRACKING.md)** | Distributed Tracing & Real-Time Monitoring | 2025-11-19 | 📋 DESIGN |
 | **[OBSERVABILITY_QUICKSTART.md](OBSERVABILITY_QUICKSTART.md)** | Quick Start - выбор стратегии (MVP/Hybrid/Full) | 2025-11-19 | ⭐ START HERE |
+| **[ODATA_TRANSPORT_BOUNDARIES.md](ODATA_TRANSPORT_BOUNDARIES.md)** | OData transport owner boundaries и guardrails | 2026-02-26 | ✅ APPROVED |
 | **[RAS_ADAPTER_MANUAL_TESTING_CHECKLIST.md](RAS_ADAPTER_MANUAL_TESTING_CHECKLIST.md)** | Comprehensive endpoint testing (Week 4.5) | 2025-11-19 | 📋 CHECKLIST |
 
 ### Визуализации

@@ -172,7 +172,7 @@ def test_fetch_live_catalog_payload_includes_upstream_odata_error_details(
         headers = {"Content-Type": "application/json; charset=utf-8"}
 
     monkeypatch.setattr(
-        "apps.intercompany_pools.metadata_catalog.requests.get",
+        "apps.intercompany_pools.metadata_catalog.ODataMetadataAdapter.fetch_metadata",
         lambda *_args, **_kwargs: _Response(),
     )
 

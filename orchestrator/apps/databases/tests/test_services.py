@@ -200,6 +200,13 @@ class TestODataOperationService:
             assert result['error'] is None
 
             # Verify mock was called correctly
+            mock_get_client.assert_called_once_with(
+                base_id=str(db.id),
+                base_url=db.odata_url,
+                username=db.username,
+                password=db.password,
+                timeout=db.connection_timeout,
+            )
             mock_client.create_entity.assert_called_once_with(
                 'Catalog_Пользователи',
                 {'Description': 'Test User', 'Code': '000001'}
@@ -233,6 +240,13 @@ class TestODataOperationService:
             assert result['success'] is False
             assert result['data'] is None
             assert 'error' in result
+            mock_get_client.assert_called_once_with(
+                base_id=str(db.id),
+                base_url=db.odata_url,
+                username=db.username,
+                password=db.password,
+                timeout=db.connection_timeout,
+            )
 
     def test_get_entities_success(self):
         """Test успешного получения списка сущностей."""
@@ -249,12 +263,10 @@ class TestODataOperationService:
         # Mock ODataClient.get_entities
         with patch('apps.databases.services.session_manager.get_client') as mock_get_client:
             mock_client = MagicMock()
-            mock_client.get_entities.return_value = {
-                'value': [
-                    {'Ref_Key': '1', 'Description': 'User 1'},
-                    {'Ref_Key': '2', 'Description': 'User 2'}
-                ]
-            }
+            mock_client.get_entities.return_value = [
+                {'Ref_Key': '1', 'Description': 'User 1'},
+                {'Ref_Key': '2', 'Description': 'User 2'}
+            ]
             mock_get_client.return_value = mock_client
 
             # Execute
@@ -271,9 +283,16 @@ class TestODataOperationService:
             assert len(result['data']) == 2
 
             # Verify filter was passed
+            mock_get_client.assert_called_once_with(
+                base_id=str(db.id),
+                base_url=db.odata_url,
+                username=db.username,
+                password=db.password,
+                timeout=db.connection_timeout,
+            )
             mock_client.get_entities.assert_called_once_with(
                 'Catalog_Пользователи',
-                params={'$filter': "Description eq 'Test'"}
+                filter_query="Description eq 'Test'"
             )
 
     def test_get_entities_without_filter(self):
@@ -290,9 +309,7 @@ class TestODataOperationService:
 
         with patch('apps.databases.services.session_manager.get_client') as mock_get_client:
             mock_client = MagicMock()
-            mock_client.get_entities.return_value = {
-                'value': []
-            }
+            mock_client.get_entities.return_value = []
             mock_get_client.return_value = mock_client
 
             # Execute
@@ -307,7 +324,14 @@ class TestODataOperationService:
             assert result['count'] == 0
 
             # Verify no filter was passed
+            mock_get_client.assert_called_once_with(
+                base_id=str(db.id),
+                base_url=db.odata_url,
+                username=db.username,
+                password=db.password,
+                timeout=db.connection_timeout,
+            )
             mock_client.get_entities.assert_called_once_with(
                 'Catalog_Пользователи',
-                params={}
+                filter_query=None
             )

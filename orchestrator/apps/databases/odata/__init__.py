@@ -8,6 +8,7 @@ OData Client для работы с 1С:Предприятие 8.3 OData API.
 """
 
 from .client import ODataClient
+from .metadata_adapter import ODataMetadataAdapter, ODataMetadataTransportError
 from .session_manager import ODataSessionManager, session_manager
 from .exceptions import (
     ODataError,
@@ -20,6 +21,8 @@ from .exceptions import (
 
 __all__ = [
     'ODataClient',
+    'ODataMetadataAdapter',
+    'ODataMetadataTransportError',
     'ODataSessionManager',
     'session_manager',
     'ODataError',

@@ -46,7 +46,13 @@ class ODataOperationService:
 
         try:
             # Получаем OData client
-            client = session_manager.get_client(database)
+            client = session_manager.get_client(
+                base_id=str(database.id),
+                base_url=database.odata_url,
+                username=database.username,
+                password=database.password,
+                timeout=database.connection_timeout,
+            )
 
             # Формируем entity set name (например: 'Catalog_Пользователи')
             entity_set = f"{entity_type}_{entity_name}"
@@ -117,23 +123,25 @@ class ODataOperationService:
 
         try:
             # Получаем OData client
-            client = session_manager.get_client(database)
+            client = session_manager.get_client(
+                base_id=str(database.id),
+                base_url=database.odata_url,
+                username=database.username,
+                password=database.password,
+                timeout=database.connection_timeout,
+            )
 
             # Формируем entity set name
             entity_set = f"{entity_type}_{entity_name}"
 
             # Получаем сущности
-            params = {}
-            if filter_query:
-                params["$filter"] = filter_query
-
-            entities = client.get_entities(entity_set, params=params)
+            entities = client.get_entities(entity_set, filter_query=filter_query)
 
             result.update(
                 {
                     "success": True,
-                    "data": entities.get("value", []),
-                    "count": len(entities.get("value", [])),
+                    "data": entities,
+                    "count": len(entities),
                 }
             )
 
@@ -156,4 +164,3 @@ class ODataOperationService:
             )
 
         return result
-

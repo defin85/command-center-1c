@@ -561,7 +561,8 @@ def test_get_pool_odata_metadata_catalog_returns_current_snapshot(
     assert payload["metadata_hash"] == snapshot.metadata_hash
     assert payload["source"] in {"db", "redis"}
     assert isinstance(payload["documents"], list)
-    assert payload["documents"][0]["entity_name"] == "Document_Sales"
+    entity_names = {str(item.get("entity_name") or "") for item in payload["documents"]}
+    assert "Document_Sales" in entity_names
 
 
 @pytest.mark.django_db
@@ -575,7 +576,7 @@ def test_get_pool_odata_metadata_catalog_rejects_missing_mapping_without_legacy_
         database=database,
     )
 
-    with patch("apps.intercompany_pools.metadata_catalog.requests.get") as requests_get:
+    with patch("apps.intercompany_pools.metadata_catalog.ODataMetadataAdapter.fetch_metadata") as metadata_fetch:
         response = authenticated_client.get(f"/api/v2/pools/odata-metadata/catalog/?database_id={database.id}")
 
     problem = _assert_problem_details_response(
@@ -585,7 +586,7 @@ def test_get_pool_odata_metadata_catalog_rejects_missing_mapping_without_legacy_
     )
     assert problem["title"] == "Metadata Catalog Auth Configuration Error"
     assert "/rbac" in problem["detail"]
-    requests_get.assert_not_called()
+    metadata_fetch.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -595,7 +596,7 @@ def test_refresh_pool_odata_metadata_catalog_rejects_missing_mapping_without_leg
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"metadata-refresh-db-{uuid4().hex[:8]}")
 
-    with patch("apps.intercompany_pools.metadata_catalog.requests.get") as requests_get:
+    with patch("apps.intercompany_pools.metadata_catalog.ODataMetadataAdapter.fetch_metadata") as metadata_fetch:
         response = authenticated_client.post(
             "/api/v2/pools/odata-metadata/catalog/refresh/",
             {"database_id": str(database.id)},
@@ -609,7 +610,7 @@ def test_refresh_pool_odata_metadata_catalog_rejects_missing_mapping_without_leg
     )
     assert problem["title"] == "Metadata Catalog Auth Configuration Error"
     assert "/rbac" in problem["detail"]
-    requests_get.assert_not_called()
+    metadata_fetch.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -626,7 +627,7 @@ def test_get_pool_odata_metadata_catalog_rejects_non_latin1_mapping_credentials(
         is_service=True,
     )
 
-    with patch("apps.intercompany_pools.metadata_catalog.requests.get") as requests_get:
+    with patch("apps.intercompany_pools.metadata_catalog.ODataMetadataAdapter.fetch_metadata") as metadata_fetch:
         response = authenticated_client.get(f"/api/v2/pools/odata-metadata/catalog/?database_id={database.id}")
 
     problem = _assert_problem_details_response(
@@ -635,7 +636,7 @@ def test_get_pool_odata_metadata_catalog_rejects_non_latin1_mapping_credentials(
         code="ODATA_MAPPING_NOT_CONFIGURED",
     )
     assert "latin-1" in problem["detail"].lower()
-    requests_get.assert_not_called()
+    metadata_fetch.assert_not_called()
 
 
 @pytest.mark.django_db

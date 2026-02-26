@@ -10,12 +10,12 @@ from typing import Any
 from uuid import UUID
 
 import redis
-import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import DatabaseError, transaction
 from django.utils import timezone
 
+from apps.databases.odata import ODataMetadataAdapter, ODataMetadataTransportError
 from apps.databases.models import Database, DatabaseExtensionsSnapshot, InfobaseUserMapping
 
 from .models import (
@@ -584,18 +584,26 @@ def _fetch_live_catalog_payload(*, database: Database, requested_by_username: st
         ) from exc
 
     try:
-        response = requests.get(
-            metadata_url,
-            headers={"Accept": "application/xml"},
-            auth=(username, password),
-            timeout=(5, 30),
-        )
-    except requests.RequestException as exc:
+        with ODataMetadataAdapter(
+            base_url=str(database.odata_url or ""),
+            username=username,
+            password=password,
+            timeout=database.connection_timeout,
+        ) as metadata_adapter:
+            response = metadata_adapter.fetch_metadata()
+    except ODataMetadataTransportError as exc:
         raise MetadataCatalogError(
             code=ERROR_CODE_POOL_METADATA_FETCH_FAILED,
             title="Metadata Catalog Fetch Failed",
             detail=f"Unable to fetch OData $metadata: {exc}",
             status_code=502,
+            errors=[
+                {
+                    "code": ERROR_CODE_POOL_METADATA_FETCH_FAILED,
+                    "path": "$metadata",
+                    "detail": str(exc),
+                }
+            ],
         ) from exc
 
     if response.status_code in {401, 403}:
@@ -604,6 +612,13 @@ def _fetch_live_catalog_payload(*, database: Database, requested_by_username: st
             title="Metadata Catalog Auth Configuration Error",
             detail="Infobase mapping credentials were rejected by OData endpoint.",
             status_code=400,
+            errors=[
+                {
+                    "code": ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
+                    "path": "$metadata",
+                    "detail": "Infobase mapping credentials were rejected by OData endpoint.",
+                }
+            ],
         )
     if response.status_code >= 400:
         upstream_detail = _extract_odata_error_detail(
@@ -611,22 +626,22 @@ def _fetch_live_catalog_payload(*, database: Database, requested_by_username: st
             content_type=str(response.headers.get("Content-Type") or ""),
         )
         detail = f"OData endpoint returned HTTP {response.status_code} for $metadata."
-        errors: list[dict[str, Any]] = []
+        error_detail = f"HTTP {response.status_code}"
         if upstream_detail:
             detail = f"{detail} Upstream error: {upstream_detail}"
-            errors.append(
-                {
-                    "code": ERROR_CODE_POOL_METADATA_FETCH_FAILED,
-                    "path": "$metadata",
-                    "detail": upstream_detail,
-                }
-            )
+            error_detail = upstream_detail
         raise MetadataCatalogError(
             code=ERROR_CODE_POOL_METADATA_FETCH_FAILED,
             title="Metadata Catalog Fetch Failed",
             detail=detail,
             status_code=502,
-            errors=errors,
+            errors=[
+                {
+                    "code": ERROR_CODE_POOL_METADATA_FETCH_FAILED,
+                    "path": "$metadata",
+                    "detail": error_detail,
+                }
+            ],
         )
 
     try:
@@ -639,6 +654,13 @@ def _fetch_live_catalog_payload(*, database: Database, requested_by_username: st
             title="Metadata Catalog Parse Failed",
             detail=f"Unable to parse OData $metadata payload: {exc}",
             status_code=502,
+            errors=[
+                {
+                    "code": ERROR_CODE_POOL_METADATA_PARSE_FAILED,
+                    "path": "$metadata",
+                    "detail": str(exc),
+                }
+            ],
         ) from exc
     return normalize_catalog_payload(payload=raw_payload)
 
