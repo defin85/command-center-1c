@@ -2834,8 +2834,22 @@ export function PoolCatalogPage() {
                                                                                       const tablePart = (selectedDocument?.table_parts || []).find(
                                                                                         (item) => item.name === selectedTablePart
                                                                                       )
+                                                                                      const tablePartEntity = (
+                                                                                        selectedTablePart
+                                                                                          ? metadataDocuments.find(
+                                                                                            (item) => (
+                                                                                              item.entity_name
+                                                                                                === `${selectedEntityName}_${selectedTablePart}`
+                                                                                            )
+                                                                                          )
+                                                                                          : undefined
+                                                                                      )
                                                                                       const rowFieldOptions = (
-                                                                                        tablePart?.row_fields || []
+                                                                                        (
+                                                                                          (tablePart?.row_fields || []).length > 0
+                                                                                            ? tablePart?.row_fields
+                                                                                            : (tablePartEntity?.fields || [])
+                                                                                        ) || []
                                                                                       ).map((item) => ({
                                                                                         value: item.name,
                                                                                         label: item.name,

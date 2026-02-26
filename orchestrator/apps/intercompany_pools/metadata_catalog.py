@@ -245,7 +245,9 @@ def validate_document_policy_references(
             }
         ]
 
-    payload = snapshot.payload if isinstance(snapshot.payload, dict) else {}
+    payload = normalize_catalog_payload(
+        payload=snapshot.payload if isinstance(snapshot.payload, dict) else {}
+    )
     documents_raw = payload.get("documents")
     if not isinstance(documents_raw, list):
         return [
@@ -422,6 +424,33 @@ def normalize_catalog_payload(*, payload: dict[str, Any]) -> dict[str, Any]:
             "table_parts": _normalize_table_parts(raw_document.get("table_parts")),
         }
         normalized_documents.append(normalized_document)
+
+    documents_by_entity_name = {
+        str(item.get("entity_name") or ""): item for item in normalized_documents
+    }
+    for document in normalized_documents:
+        document_entity_name = str(document.get("entity_name") or "").strip()
+        table_parts = document.get("table_parts")
+        if not document_entity_name or not isinstance(table_parts, list):
+            continue
+        for table_part in table_parts:
+            if not isinstance(table_part, Mapping):
+                continue
+            row_fields = table_part.get("row_fields")
+            if isinstance(row_fields, list) and len(row_fields) > 0:
+                continue
+
+            table_part_name = str(table_part.get("name") or "").strip()
+            if not table_part_name:
+                continue
+            companion_entity_name = f"{document_entity_name}_{table_part_name}"
+            companion_document = documents_by_entity_name.get(companion_entity_name)
+            if not isinstance(companion_document, Mapping):
+                continue
+
+            companion_fields = _normalize_field_items(companion_document.get("fields"))
+            if companion_fields:
+                table_part["row_fields"] = companion_fields
 
     normalized_documents.sort(key=lambda item: str(item.get("entity_name") or ""))
     return {"documents": normalized_documents}

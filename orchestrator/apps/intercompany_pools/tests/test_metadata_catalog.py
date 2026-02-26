@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -16,6 +17,7 @@ from apps.intercompany_pools.metadata_catalog import (
     _resolve_metadata_mapping_credentials,
     read_metadata_catalog_snapshot,
     refresh_metadata_catalog_snapshot,
+    validate_document_policy_references,
 )
 from apps.intercompany_pools.models import (
     PoolODataMetadataCatalogSnapshot,
@@ -346,6 +348,61 @@ def test_read_snapshot_falls_back_to_db_when_redis_read_fails(
     assert source == "db"
     assert resolved.id == snapshot.id
     assert write_calls["count"] == 1
+
+
+def test_validate_document_policy_references_accepts_row_mapping_from_companion_entity_fields() -> None:
+    snapshot = SimpleNamespace(
+        payload={
+            "documents": [
+                {
+                    "entity_name": "Document_Sales",
+                    "display_name": "Sales",
+                    "fields": [
+                        {"name": "Amount", "type": "Edm.Decimal", "nullable": False},
+                    ],
+                    "table_parts": [
+                        {"name": "Items", "row_fields": []},
+                    ],
+                },
+                {
+                    "entity_name": "Document_Sales_Items",
+                    "display_name": "Sales Items",
+                    "fields": [
+                        {"name": "LineNumber", "type": "Edm.Int32", "nullable": False},
+                        {"name": "Qty", "type": "Edm.Decimal", "nullable": False},
+                    ],
+                    "table_parts": [],
+                },
+            ]
+        }
+    )
+    policy = {
+        "version": "document_policy.v1",
+        "chains": [
+            {
+                "chain_id": "sale_chain",
+                "documents": [
+                    {
+                        "document_id": "sale",
+                        "entity_name": "Document_Sales",
+                        "document_role": "sale",
+                        "field_mapping": {"Amount": "allocation.amount"},
+                        "table_parts_mapping": {
+                            "Items": {"Qty": "allocation.lines.qty"}
+                        },
+                        "link_rules": {},
+                    }
+                ],
+            }
+        ],
+    }
+
+    errors = validate_document_policy_references(
+        policy=policy,
+        snapshot=snapshot,  # type: ignore[arg-type]
+    )
+
+    assert errors == []
 
 
 @pytest.mark.django_db

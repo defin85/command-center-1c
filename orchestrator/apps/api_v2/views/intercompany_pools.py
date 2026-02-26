@@ -44,6 +44,7 @@ from apps.intercompany_pools.metadata_catalog import (
     ERROR_CODE_POOL_METADATA_SNAPSHOT_UNAVAILABLE,
     MetadataCatalogError,
     get_current_snapshot_for_database_scope,
+    normalize_catalog_payload,
     read_metadata_catalog_snapshot,
     refresh_metadata_catalog_snapshot,
     validate_document_policy_references,
@@ -411,7 +412,9 @@ def _serialize_metadata_catalog_snapshot(
     snapshot: PoolODataMetadataCatalogSnapshot,
     source: str,
 ) -> dict[str, Any]:
-    payload = snapshot.payload if isinstance(snapshot.payload, dict) else {}
+    payload = normalize_catalog_payload(
+        payload=snapshot.payload if isinstance(snapshot.payload, dict) else {}
+    )
     documents = payload.get("documents") if isinstance(payload.get("documents"), list) else []
     return {
         "database_id": str(snapshot.database_id),
