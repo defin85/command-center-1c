@@ -281,15 +281,65 @@ const normalizeFieldErrors = (value: unknown): Record<string, string[]> => {
   return result
 }
 
+const normalizeProblemErrorItems = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  const items: string[] = []
+  value.forEach((rawItem) => {
+    if (!rawItem || typeof rawItem !== 'object' || Array.isArray(rawItem)) {
+      const text = String(rawItem ?? '').trim()
+      if (text) {
+        items.push(text)
+      }
+      return
+    }
+    const item = rawItem as Record<string, unknown>
+    const code = String(item.code ?? '').trim()
+    const path = String(item.path ?? '').trim()
+    const detail = String(item.detail ?? '').trim()
+    if (path && detail) {
+      items.push(`${path}: ${detail}`)
+      return
+    }
+    if (detail) {
+      items.push(detail)
+      return
+    }
+    if (path && code) {
+      items.push(`${path}: ${code}`)
+      return
+    }
+    if (code) {
+      items.push(code)
+    }
+  })
+  return Array.from(new Set(items)).slice(0, 5)
+}
+
 const buildFieldErrorLines = (fieldErrors: Record<string, string[]>): string[] => (
   Object.entries(fieldErrors).flatMap(([field, messages]) => (
     messages.map((message) => `${field}: ${message}`)
   ))
 )
 
+const mergeMessageParts = (parts: string[]): string => {
+  const normalized = parts
+    .map((item) => String(item || '').trim())
+    .filter((item) => item.length > 0)
+  if (normalized.length === 0) {
+    return ''
+  }
+  return Array.from(new Set(normalized)).join(' | ')
+}
+
 const resolveApiError = (
   error: unknown,
-  fallbackMessage: string
+  fallbackMessage: string,
+  options?: {
+    includeProblemDetail?: boolean
+    includeProblemItems?: boolean
+  }
 ): { message: string; fieldErrors: Record<string, string[]> } => {
   const err = error as {
     message?: string
@@ -309,9 +359,12 @@ const resolveApiError = (
       title?: unknown
       errors?: unknown
     }
+    const includeProblemDetail = Boolean(options?.includeProblemDetail)
+    const includeProblemItems = Boolean(options?.includeProblemItems)
     const problemCode = typeof maybeProblem.code === 'string' ? maybeProblem.code : ''
     const problemDetail = typeof maybeProblem.detail === 'string' ? maybeProblem.detail.trim() : ''
     const problemFieldErrors = normalizeFieldErrors(maybeProblem.errors)
+    const problemItems = normalizeProblemErrorItems(maybeProblem.errors)
     if (problemCode || problemDetail || Object.keys(problemFieldErrors).length > 0) {
       const hasProblemFieldErrors = Object.keys(problemFieldErrors).length > 0
       const mappedMessage = (
@@ -319,10 +372,15 @@ const resolveApiError = (
           ? problemDetail
           : (API_ERROR_MESSAGE_MAP[problemCode] ?? problemDetail)
       )
+      const baseMessage = mappedMessage || (hasProblemFieldErrors
+        ? 'Проверьте корректность заполнения полей.'
+        : fallbackMessage)
       return {
-        message: mappedMessage || (hasProblemFieldErrors
-          ? 'Проверьте корректность заполнения полей.'
-          : fallbackMessage),
+        message: mergeMessageParts([
+          baseMessage,
+          includeProblemDetail && problemDetail !== baseMessage ? problemDetail : '',
+          ...(includeProblemItems ? problemItems : []),
+        ]) || baseMessage,
         fieldErrors: problemFieldErrors,
       }
     }
@@ -1225,7 +1283,11 @@ export function PoolCatalogPage() {
         return next
       })
     } catch (err) {
-      const resolved = resolveApiError(err, 'Не удалось загрузить metadata catalog.')
+      const resolved = resolveApiError(
+        err,
+        'Не удалось загрузить metadata catalog.',
+        { includeProblemDetail: true, includeProblemItems: true }
+      )
       setMetadataCatalogErrorByDatabase((previous) => ({
         ...previous,
         [normalizedDatabaseId]: resolved.message,

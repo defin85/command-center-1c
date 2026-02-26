@@ -820,6 +820,82 @@ describe('PoolCatalogPage', () => {
     })
   }, 15000)
 
+  it('shows detailed problem+json error for metadata refresh failure', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {},
+        },
+      ],
+    })
+    mockRefreshPoolODataMetadataCatalog.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Metadata Catalog Fetch Failed',
+          status: 502,
+          detail: 'OData endpoint returned HTTP 500 for $metadata.',
+          code: 'POOL_METADATA_FETCH_FAILED',
+          errors: [
+            {
+              code: 'POOL_METADATA_FETCH_FAILED',
+              path: '$metadata',
+              detail: 'На сервере 1С:Предприятия не найдена лицензия.',
+            },
+          ],
+        },
+      },
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Topology Editor')
+    await expandFirstEdgeAdvanced(user)
+
+    openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
+    await selectDropdownOption(/builder/i)
+
+    await waitFor(() => {
+      expect(mockGetPoolODataMetadataCatalog).toHaveBeenCalledWith('88888888-8888-8888-8888-888888888888')
+    })
+
+    await user.click(screen.getByTestId('pool-catalog-topology-edge-policy-refresh-metadata-0'))
+
+    expect(await screen.findByText(/OData endpoint returned HTTP 500 for \$metadata\./i)).toBeInTheDocument()
+    expect(await screen.findByText(/\$metadata: На сервере 1С:Предприятия не найдена лицензия\./i)).toBeInTheDocument()
+  }, 15000)
+
   it('shows warning when selected entity has no metadata fields in builder mode', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()

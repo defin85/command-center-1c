@@ -40,12 +40,8 @@ SOURCE_LIVE_REFRESH = "live_refresh"
 
 DEFAULT_CACHE_KEY_PREFIX = "cc1c:pools:odata-metadata:catalog"
 DEFAULT_CACHE_TTL_SECONDS = 300
-
-_XML_NAMESPACES = {
-    "edmx": "http://docs.oasis-open.org/odata/ns/edmx",
-    "edm": "http://docs.oasis-open.org/odata/ns/edm",
-}
-
+MAX_UPSTREAM_ERROR_DETAIL_LENGTH = 500
+MAX_UPSTREAM_ERROR_MESSAGES = 3
 
 @dataclass(frozen=True)
 class MetadataCatalogScope:
@@ -581,11 +577,27 @@ def _fetch_live_catalog_payload(*, database: Database, requested_by_username: st
             status_code=400,
         )
     if response.status_code >= 400:
+        upstream_detail = _extract_odata_error_detail(
+            response_text=response.text,
+            content_type=str(response.headers.get("Content-Type") or ""),
+        )
+        detail = f"OData endpoint returned HTTP {response.status_code} for $metadata."
+        errors: list[dict[str, Any]] = []
+        if upstream_detail:
+            detail = f"{detail} Upstream error: {upstream_detail}"
+            errors.append(
+                {
+                    "code": ERROR_CODE_POOL_METADATA_FETCH_FAILED,
+                    "path": "$metadata",
+                    "detail": upstream_detail,
+                }
+            )
         raise MetadataCatalogError(
             code=ERROR_CODE_POOL_METADATA_FETCH_FAILED,
             title="Metadata Catalog Fetch Failed",
-            detail=f"OData endpoint returned HTTP {response.status_code} for $metadata.",
+            detail=detail,
             status_code=502,
+            errors=errors,
         )
 
     try:
@@ -600,6 +612,75 @@ def _fetch_live_catalog_payload(*, database: Database, requested_by_username: st
             status_code=502,
         ) from exc
     return normalize_catalog_payload(payload=raw_payload)
+
+
+def _extract_odata_error_detail(*, response_text: str, content_type: str) -> str:
+    raw_text = str(response_text or "").lstrip("\ufeff").strip()
+    if not raw_text:
+        return ""
+
+    candidates: list[str] = []
+    lower_content_type = str(content_type or "").lower()
+    if "json" in lower_content_type or raw_text.startswith("{") or raw_text.startswith("["):
+        try:
+            parsed = json.loads(raw_text)
+        except (TypeError, ValueError):
+            parsed = None
+        if parsed is not None:
+            candidates.extend(_collect_upstream_error_messages(parsed))
+
+    if not candidates:
+        fallback = _normalize_error_text(raw_text)
+        if fallback:
+            candidates.append(fallback)
+
+    normalized: list[str] = []
+    for item in candidates:
+        text = _normalize_error_text(item)
+        if not text:
+            continue
+        if text not in normalized:
+            normalized.append(text)
+        if len(normalized) >= MAX_UPSTREAM_ERROR_MESSAGES:
+            break
+
+    if not normalized:
+        return ""
+
+    merged = " | ".join(normalized)
+    if len(merged) > MAX_UPSTREAM_ERROR_DETAIL_LENGTH:
+        return f"{merged[:MAX_UPSTREAM_ERROR_DETAIL_LENGTH - 3]}..."
+    return merged
+
+
+def _collect_upstream_error_messages(node: Any, *, depth: int = 0) -> list[str]:
+    if depth > 5:
+        return []
+
+    messages: list[str] = []
+    if isinstance(node, Mapping):
+        for raw_key, value in node.items():
+            key = str(raw_key or "").strip().lower().lstrip("#")
+            if not key:
+                continue
+            if key in {"data", "debug", "trace", "stack", "stacktrace"}:
+                continue
+            if key in {"message", "detail", "descr", "description", "title"} and isinstance(
+                value, (str, int, float, bool)
+            ):
+                text = str(value).strip()
+                if text:
+                    messages.append(text)
+            if isinstance(value, Mapping | list):
+                messages.extend(_collect_upstream_error_messages(value, depth=depth + 1))
+    elif isinstance(node, list):
+        for item in node[:20]:
+            messages.extend(_collect_upstream_error_messages(item, depth=depth + 1))
+    return messages
+
+
+def _normalize_error_text(text: str) -> str:
+    return " ".join(str(text or "").split())
 
 
 def _parse_csdl_metadata(xml_payload: str) -> dict[str, Any]:
@@ -618,14 +699,15 @@ def _parse_csdl_metadata(xml_payload: str) -> dict[str, Any]:
     document_table_parts: dict[str, dict[str, str]] = {}
     entity_definitions: dict[str, dict[str, Any]] = {}
 
-    for entity_type in root.findall(".//edm:EntityType", _XML_NAMESPACES):
+    # Accept both OData v4 and legacy v3 CSDL namespaces.
+    for entity_type in root.findall(".//{*}EntityType"):
         entity_name = str(entity_type.get("Name") or "").strip()
         if not entity_name:
             continue
 
         declared_members: list[dict[str, Any]] = []
         for tag_name in ("Property", "NavigationProperty"):
-            for prop in entity_type.findall(f"edm:{tag_name}", _XML_NAMESPACES):
+            for prop in entity_type.findall(f"{{*}}{tag_name}"):
                 prop_name = str(prop.get("Name") or "").strip()
                 if not prop_name:
                     continue

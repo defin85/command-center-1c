@@ -8,9 +8,11 @@ from django.db import DatabaseError
 
 from apps.databases.models import Database, InfobaseUserMapping
 from apps.intercompany_pools.metadata_catalog import (
+    ERROR_CODE_POOL_METADATA_FETCH_FAILED,
     ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS,
     ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
     MetadataCatalogError,
+    _fetch_live_catalog_payload,
     _resolve_metadata_mapping_credentials,
     read_metadata_catalog_snapshot,
     refresh_metadata_catalog_snapshot,
@@ -149,6 +151,43 @@ def test_refresh_snapshot_returns_lock_conflict_without_fetching_metadata(
 
     assert exc_info.value.code == ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS
     assert fetch_calls["count"] == 0
+
+
+@pytest.mark.django_db
+def test_fetch_live_catalog_payload_includes_upstream_odata_error_details(
+    default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"meta-fetch-error-db-{uuid4().hex[:8]}")
+    _create_service_infobase_mapping(database=database)
+
+    class _Response:
+        status_code = 500
+        text = (
+            '{"exception":{"descr":"Ошибка при выполнении запроса GET к ресурсу /odata/standard.odata/$metadata:",'
+            '"inner":{"descr":"На сервере 1С:Предприятия не найдена лицензия."}}}'
+        )
+        headers = {"Content-Type": "application/json; charset=utf-8"}
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.metadata_catalog.requests.get",
+        lambda *_args, **_kwargs: _Response(),
+    )
+
+    with pytest.raises(MetadataCatalogError) as exc_info:
+        _fetch_live_catalog_payload(
+            database=database,
+            requested_by_username="meta-user",
+        )
+
+    assert exc_info.value.code == ERROR_CODE_POOL_METADATA_FETCH_FAILED
+    assert exc_info.value.status_code == 502
+    assert "HTTP 500" in exc_info.value.detail
+    assert "не найдена лицензия" in exc_info.value.detail.lower()
+    assert exc_info.value.errors
+    first_error = exc_info.value.errors[0]
+    assert first_error["path"] == "$metadata"
+    assert "не найдена лицензия" in str(first_error["detail"]).lower()
 
 
 @pytest.mark.django_db
