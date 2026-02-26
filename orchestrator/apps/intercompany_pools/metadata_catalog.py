@@ -494,38 +494,14 @@ def _resolve_metadata_mapping_credentials(
     database: Database,
     requested_by_username: str,
 ) -> tuple[str, str]:
-    user_model = get_user_model()
-    requested_by = user_model.objects.filter(username=str(requested_by_username or "").strip()).only("id").first()
-
-    actor_queryset = InfobaseUserMapping.objects.filter(database=database, user=requested_by) if requested_by else None
-    if actor_queryset is not None:
-        actor_mappings = list(actor_queryset.only("ib_username", "ib_password", "id"))
-        if len(actor_mappings) > 1:
-            raise MetadataCatalogError(
-                code=ERROR_CODE_ODATA_MAPPING_AMBIGUOUS,
-                title="Metadata Catalog Auth Configuration Error",
-                detail="Ambiguous infobase mapping for actor credentials. Configure mapping in /rbac.",
-                status_code=400,
-            )
-        if len(actor_mappings) == 1:
-            mapping = actor_mappings[0]
-            username = str(mapping.ib_username or "").strip()
-            password = str(mapping.ib_password or "").strip()
-            if username and password:
-                return username, password
-            raise MetadataCatalogError(
-                code=ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
-                title="Metadata Catalog Auth Configuration Error",
-                detail="Infobase mapping credentials are incomplete. Configure mapping in /rbac.",
-                status_code=400,
-            )
-
+    # Metadata catalog is a shared builder resource, so service mapping must be
+    # used when configured. Actor mapping is fallback only.
     service_mappings = list(
         InfobaseUserMapping.objects.filter(
             database=database,
             is_service=True,
             user__isnull=True,
-        ).only("ib_username", "ib_password", "id")
+        ).only("ib_username", "ib_password", "id")[:2]
     )
     if len(service_mappings) > 1:
         raise MetadataCatalogError(
@@ -546,6 +522,31 @@ def _resolve_metadata_mapping_credentials(
             detail="Service infobase mapping credentials are incomplete. Configure mapping in /rbac.",
             status_code=400,
         )
+
+    user_model = get_user_model()
+    requested_by = user_model.objects.filter(username=str(requested_by_username or "").strip()).only("id").first()
+    actor_queryset = InfobaseUserMapping.objects.filter(database=database, user=requested_by) if requested_by else None
+    if actor_queryset is not None:
+        actor_mappings = list(actor_queryset.only("ib_username", "ib_password", "id")[:2])
+        if len(actor_mappings) > 1:
+            raise MetadataCatalogError(
+                code=ERROR_CODE_ODATA_MAPPING_AMBIGUOUS,
+                title="Metadata Catalog Auth Configuration Error",
+                detail="Ambiguous infobase mapping for actor credentials. Configure mapping in /rbac.",
+                status_code=400,
+            )
+        if len(actor_mappings) == 1:
+            mapping = actor_mappings[0]
+            username = str(mapping.ib_username or "").strip()
+            password = str(mapping.ib_password or "").strip()
+            if username and password:
+                return username, password
+            raise MetadataCatalogError(
+                code=ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
+                title="Metadata Catalog Auth Configuration Error",
+                detail="Infobase mapping credentials are incomplete. Configure mapping in /rbac.",
+                status_code=400,
+            )
 
     raise MetadataCatalogError(
         code=ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
@@ -606,17 +607,24 @@ def _fetch_live_catalog_payload(*, database: Database, requested_by_username: st
             ],
         ) from exc
 
-    if response.status_code in {401, 403}:
+    if response.status_code == 401:
+        upstream_detail = _extract_odata_error_detail(
+            response_text=response.text,
+            content_type=str(response.headers.get("Content-Type") or ""),
+        )
+        detail = "Infobase mapping credentials were rejected by OData endpoint."
+        if upstream_detail:
+            detail = f"{detail} Upstream error: {upstream_detail}"
         raise MetadataCatalogError(
             code=ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
             title="Metadata Catalog Auth Configuration Error",
-            detail="Infobase mapping credentials were rejected by OData endpoint.",
+            detail=detail,
             status_code=400,
             errors=[
                 {
                     "code": ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
                     "path": "$metadata",
-                    "detail": "Infobase mapping credentials were rejected by OData endpoint.",
+                    "detail": upstream_detail or "Infobase mapping credentials were rejected by OData endpoint.",
                 }
             ],
         )

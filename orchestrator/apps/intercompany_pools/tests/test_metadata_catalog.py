@@ -193,6 +193,41 @@ def test_fetch_live_catalog_payload_includes_upstream_odata_error_details(
 
 
 @pytest.mark.django_db
+def test_fetch_live_catalog_payload_forbidden_is_reported_as_upstream_fetch_failure(
+    default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"meta-fetch-forbidden-db-{uuid4().hex[:8]}")
+    _create_service_infobase_mapping(database=database)
+
+    class _Response:
+        status_code = 403
+        text = (
+            '{"exception":{"descr":"HTTP: Forbidden",'
+            '"inner":{"descr":"База данных заблокирована: приложение Конфигуратор"}}}'
+        )
+        headers = {"Content-Type": "application/json; charset=utf-8"}
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.metadata_catalog.ODataMetadataAdapter.fetch_metadata",
+        lambda *_args, **_kwargs: _Response(),
+    )
+
+    with pytest.raises(MetadataCatalogError) as exc_info:
+        _fetch_live_catalog_payload(
+            database=database,
+            requested_by_username="meta-user",
+        )
+
+    assert exc_info.value.code == ERROR_CODE_POOL_METADATA_FETCH_FAILED
+    assert exc_info.value.status_code == 502
+    assert "HTTP 403" in exc_info.value.detail
+    assert "база данных заблокирована" in exc_info.value.detail.lower()
+    assert exc_info.value.errors
+    assert "база данных заблокирована" in str(exc_info.value.errors[0]["detail"]).lower()
+
+
+@pytest.mark.django_db
 def test_read_snapshot_falls_back_to_db_when_cache_miss(default_tenant: Tenant, monkeypatch: pytest.MonkeyPatch) -> None:
     database = _create_database(tenant=default_tenant, name=f"meta-read-db-{uuid4().hex[:8]}")
     _create_service_infobase_mapping(database=database)
@@ -423,3 +458,30 @@ def test_metadata_credentials_resolution_is_mapping_only_without_legacy_fallback
     # Guardrail: legacy Database.username/password must not be used for metadata path.
     assert database.username == "legacy-user"
     assert str(database.password) != ""
+
+
+@pytest.mark.django_db
+def test_metadata_credentials_resolution_prefers_service_mapping_over_actor_mapping(
+    default_tenant: Tenant,
+    user: User,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"meta-auth-priority-db-{uuid4().hex[:8]}")
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=user,
+        ib_username="actor-user",
+        ib_password="actor-pass",
+    )
+    _create_service_infobase_mapping(
+        database=database,
+        username="svc-user",
+        password="svc-pass",
+    )
+
+    username, password = _resolve_metadata_mapping_credentials(
+        database=database,
+        requested_by_username=user.username,
+    )
+
+    assert username == "svc-user"
+    assert password == "svc-pass"

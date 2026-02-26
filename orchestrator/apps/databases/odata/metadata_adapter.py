@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import requests
 
 from .client import ODataClient
@@ -20,28 +18,28 @@ class ODataMetadataAdapter:
         base_url: str,
         username: str,
         password: str,
-        timeout: Optional[int] = None,
+        timeout: int | None = None,
     ) -> None:
-        self._client = ODataClient(
-            base_url=base_url,
-            username=username,
-            password=password,
-            timeout=timeout,
-        )
+        self._base_url = str(base_url or "").rstrip("/")
+        self._username = username
+        self._password = password
+        read_timeout = timeout if isinstance(timeout, int) and timeout > 0 else ODataClient.READ_TIMEOUT
+        self._timeout: tuple[int, int] = (ODataClient.CONNECT_TIMEOUT, read_timeout)
 
     def fetch_metadata(self) -> requests.Response:
-        metadata_url = f"{self._client.base_url}/$metadata"
+        metadata_url = f"{self._base_url}/$metadata"
         try:
-            return self._client.session.get(
+            return requests.get(
                 metadata_url,
                 headers={"Accept": "application/xml"},
-                timeout=self._client.timeout,
+                auth=(self._username, self._password),
+                timeout=self._timeout,
             )
         except requests.RequestException as exc:
             raise ODataMetadataTransportError(str(exc)) from exc
 
     def close(self) -> None:
-        self._client.close()
+        return None
 
     def __enter__(self) -> "ODataMetadataAdapter":
         return self
