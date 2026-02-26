@@ -46,7 +46,10 @@ post:
         application/problem+json:
           schema:
             $ref: ../components/schemas/ProblemDetailsError.yaml
-      description: ''
+      description: >-
+        Validation error. Referential metadata validation uses
+        `POOL_METADATA_REFERENCE_INVALID` and `POOL_METADATA_SNAPSHOT_UNAVAILABLE`;
+        `errors` may contain an array of `{code, path, detail}` entries.
     '401':
       description: Unauthorized
     '404':

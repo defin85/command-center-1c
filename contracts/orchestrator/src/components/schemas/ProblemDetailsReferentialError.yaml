@@ -1,0 +1,13 @@
+type: object
+description: Metadata referential validation error item.
+properties:
+  code:
+    type: string
+  path:
+    type: string
+  detail:
+    type: string
+required:
+  - code
+  - detail
+  - path

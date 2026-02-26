@@ -110,6 +110,8 @@ type TopologyEdgeFormValue = {
   document_policy_mode?: 'builder' | 'raw'
   document_policy_json?: string
   document_policy_builder?: DocumentPolicyBuilderChainFormValue[]
+  edge_metadata_mode?: 'builder' | 'raw'
+  edge_metadata_builder?: EdgeMetadataBuilderFieldFormValue[]
   metadata_json?: string
 }
 
@@ -121,6 +123,11 @@ type TopologyFormValues = {
 }
 
 type DocumentPolicyBuilderFieldMappingRow = {
+  target_field?: string
+  source?: string
+}
+
+type DocumentPolicyBuilderLinkRuleRow = {
   target_field?: string
   source?: string
 }
@@ -141,6 +148,7 @@ type DocumentPolicyBuilderDocumentFormValue = {
   document_role?: string
   invoice_mode?: 'optional' | 'required'
   link_to?: string
+  link_rule_mappings?: DocumentPolicyBuilderLinkRuleRow[]
   field_mappings?: DocumentPolicyBuilderFieldMappingRow[]
   table_part_mappings?: DocumentPolicyBuilderTablePartFormValue[]
 }
@@ -148,6 +156,11 @@ type DocumentPolicyBuilderDocumentFormValue = {
 type DocumentPolicyBuilderChainFormValue = {
   chain_id?: string
   documents?: DocumentPolicyBuilderDocumentFormValue[]
+}
+
+type EdgeMetadataBuilderFieldFormValue = {
+  key?: string
+  value_json?: string
 }
 
 const ORGANIZATION_FORM_FIELDS: Array<keyof OrganizationFormValues> = [
@@ -552,6 +565,17 @@ const sortRecordByKeys = (value: Record<string, string>): Record<string, string>
   )
 )
 
+const metadataObjectToBuilderRows = (
+  metadata: Record<string, unknown>
+): EdgeMetadataBuilderFieldFormValue[] => (
+  Object.entries(metadata)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => ({
+      key,
+      value_json: JSON.stringify(value, null, 2),
+    }))
+)
+
 const documentPolicyToBuilderChains = (
   policy: Record<string, unknown> | null
 ): DocumentPolicyBuilderChainFormValue[] => {
@@ -586,6 +610,13 @@ const documentPolicyToBuilderChains = (
             ? documentObject.table_parts_mapping as Record<string, unknown>
             : {}
         )
+        const linkRulesRaw = (
+          documentObject.link_rules
+          && typeof documentObject.link_rules === 'object'
+          && !Array.isArray(documentObject.link_rules)
+            ? documentObject.link_rules as Record<string, unknown>
+            : {}
+        )
 
         return {
           document_id: String(documentObject.document_id ?? '').trim(),
@@ -597,6 +628,10 @@ const documentPolicyToBuilderChains = (
               : 'optional'
           ),
           link_to: String(documentObject.link_to ?? '').trim(),
+          link_rule_mappings: Object.entries(linkRulesRaw).map(([targetField, source]) => ({
+            target_field: String(targetField).trim(),
+            source: String(source ?? '').trim(),
+          })),
           field_mappings: Object.entries(fieldMappingRaw).map(([targetField, source]) => ({
             target_field: String(targetField).trim(),
             source: String(source ?? '').trim(),
@@ -724,6 +759,21 @@ const buildDocumentPolicyFromBuilder = (
       })
 
       const linkTo = String(rawDocument?.link_to ?? '').trim()
+      const linkRulesRaw = Array.isArray(rawDocument?.link_rule_mappings) ? rawDocument.link_rule_mappings : []
+      const linkRules: Record<string, string> = {}
+      linkRulesRaw.forEach((item) => {
+        const targetField = String(item?.target_field ?? '').trim()
+        const source = String(item?.source ?? '').trim()
+        if (!targetField && !source) return
+        if (!targetField || !source) {
+          errors.push(
+            `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} link_rules должен содержать target и source.`
+          )
+          return
+        }
+        linkRules[targetField] = source
+      })
+
       const normalizedDocument: Record<string, unknown> = {
         document_id: documentId,
         entity_name: entityName,
@@ -733,7 +783,7 @@ const buildDocumentPolicyFromBuilder = (
         table_parts_mapping: Object.fromEntries(
           Object.entries(tablePartsMapping).sort(([left], [right]) => left.localeCompare(right))
         ),
-        link_rules: {},
+        link_rules: sortRecordByKeys(linkRules),
       }
       if (linkTo) {
         normalizedDocument.link_to = linkTo
@@ -794,6 +844,50 @@ const parseDocumentPolicyMetadata = (
   const policy = parsed as Record<string, unknown>
   errors.push(...validateDocumentPolicyObject(policy, rowNo))
   return { policy, errors }
+}
+
+const buildEdgeMetadataFromBuilder = (
+  fieldsRaw: EdgeMetadataBuilderFieldFormValue[] | undefined,
+  rowNo: number
+): {
+  metadata: Record<string, unknown>
+  errors: string[]
+} => {
+  const fields = Array.isArray(fieldsRaw) ? fieldsRaw : []
+  const errors: string[] = []
+  const metadata: Record<string, unknown> = {}
+
+  fields.forEach((item, fieldIndex) => {
+    const fieldNo = fieldIndex + 1
+    const key = String(item?.key ?? '').trim()
+    const valueJson = String(item?.value_json ?? '').trim()
+
+    if (!key && !valueJson) return
+    if (!key) {
+      errors.push(`Edge #${rowNo}: metadata field #${fieldNo} должен содержать key.`)
+      return
+    }
+    if (!valueJson) {
+      errors.push(`Edge #${rowNo}: metadata field "${key}" должен содержать JSON value.`)
+      return
+    }
+    if (Object.prototype.hasOwnProperty.call(metadata, key)) {
+      errors.push(`Edge #${rowNo}: metadata field "${key}" дублируется.`)
+      return
+    }
+    try {
+      metadata[key] = JSON.parse(valueJson)
+    } catch {
+      errors.push(`Edge #${rowNo}: metadata field "${key}" содержит невалидный JSON value.`)
+    }
+  })
+
+  return {
+    metadata: Object.fromEntries(
+      Object.entries(metadata).sort(([left], [right]) => left.localeCompare(right))
+    ),
+    errors,
+  }
 }
 
 const buildTopologyPreflight = (values: TopologyFormValues): {
@@ -887,7 +981,12 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
     if (policyResult.errors.length > 0) {
       return
     }
-    const metadataParseResult = parseTopologyMetadata(edge.metadata_json, `Edge #${rowNo}`)
+    const edgeMetadataMode = String(edge.edge_metadata_mode ?? 'raw').trim().toLowerCase() === 'builder'
+      ? 'builder'
+      : 'raw'
+    const metadataParseResult = edgeMetadataMode === 'builder'
+      ? buildEdgeMetadataFromBuilder(edge.edge_metadata_builder, rowNo)
+      : parseTopologyMetadata(edge.metadata_json, `Edge #${rowNo}`)
     errors.push(...metadataParseResult.errors)
     if (metadataParseResult.errors.length > 0) {
       return
@@ -1186,6 +1285,48 @@ export function PoolCatalogPage() {
     topologyForm.setFieldValue(['edges', edgeIndex, 'document_policy_mode'], 'raw')
   }, [message, topologyForm])
 
+  const switchEdgeMetadataMode = useCallback((edgeIndex: number, nextMode: 'builder' | 'raw') => {
+    const currentMode = (
+      String(topologyForm.getFieldValue(['edges', edgeIndex, 'edge_metadata_mode']) || 'raw')
+        .trim()
+        .toLowerCase() === 'builder'
+        ? 'builder'
+        : 'raw'
+    )
+    if (nextMode === currentMode) return
+
+    if (nextMode === 'builder') {
+      const parsed = parseTopologyMetadata(
+        topologyForm.getFieldValue(['edges', edgeIndex, 'metadata_json']),
+        `Edge #${edgeIndex + 1}`
+      )
+      if (parsed.errors.length > 0) {
+        message.error(parsed.errors[0] || `Edge #${edgeIndex + 1}: не удалось переключить metadata в builder.`)
+        return
+      }
+      topologyForm.setFieldValue(
+        ['edges', edgeIndex, 'edge_metadata_builder'],
+        metadataObjectToBuilderRows(parsed.metadata)
+      )
+      topologyForm.setFieldValue(['edges', edgeIndex, 'edge_metadata_mode'], 'builder')
+      return
+    }
+
+    const built = buildEdgeMetadataFromBuilder(
+      topologyForm.getFieldValue(['edges', edgeIndex, 'edge_metadata_builder']),
+      edgeIndex + 1
+    )
+    if (built.errors.length > 0) {
+      message.error(built.errors[0] || `Edge #${edgeIndex + 1}: исправьте metadata builder перед переключением.`)
+      return
+    }
+    topologyForm.setFieldValue(
+      ['edges', edgeIndex, 'metadata_json'],
+      Object.keys(built.metadata).length > 0 ? JSON.stringify(built.metadata, null, 2) : ''
+    )
+    topologyForm.setFieldValue(['edges', edgeIndex, 'edge_metadata_mode'], 'raw')
+  }, [message, topologyForm])
+
   useEffect(() => {
     void loadOrganizations()
   }, [loadOrganizations])
@@ -1279,6 +1420,8 @@ export function PoolCatalogPage() {
         document_policy_mode: 'raw',
         document_policy_json: policy ? JSON.stringify(policy, null, 2) : '',
         document_policy_builder: documentPolicyToBuilderChains(policy),
+        edge_metadata_mode: 'raw',
+        edge_metadata_builder: metadataObjectToBuilderRows(metadataWithoutPolicy),
         metadata_json: stringifyMetadataForForm(metadataWithoutPolicy),
       }
     })
@@ -2238,6 +2381,13 @@ export function PoolCatalogPage() {
                                                     ? 'builder'
                                                     : 'raw'
                                                 )
+                                                const edgeMetadataMode = (
+                                                  String(getFieldValue(['edges', field.name, 'edge_metadata_mode']) || 'raw')
+                                                    .trim()
+                                                    .toLowerCase() === 'builder'
+                                                    ? 'builder'
+                                                    : 'raw'
+                                                )
                                                 const childOrgId = String(
                                                   getFieldValue(['edges', field.name, 'child_organization_id']) || ''
                                                 ).trim()
@@ -2472,6 +2622,45 @@ export function PoolCatalogPage() {
                                                                                 </Col>
                                                                               </Row>
 
+                                                                              <Form.List name={[documentField.name, 'link_rule_mappings']}>
+                                                                                {(linkRuleFields, { add: addLinkRule, remove: removeLinkRule }) => (
+                                                                                  <Space direction="vertical" size={4} style={{ width: '100%', marginBottom: 8 }}>
+                                                                                    <Text type="secondary">link_rules</Text>
+                                                                                    {linkRuleFields.map((linkRuleField) => (
+                                                                                      <Row key={linkRuleField.key} gutter={8} align="middle">
+                                                                                        <Col span={9}>
+                                                                                          <Form.Item
+                                                                                            name={[linkRuleField.name, 'target_field']}
+                                                                                            style={{ marginBottom: 0 }}
+                                                                                          >
+                                                                                            <Input placeholder="rule key" />
+                                                                                          </Form.Item>
+                                                                                        </Col>
+                                                                                        <Col span={12}>
+                                                                                          <Form.Item
+                                                                                            name={[linkRuleField.name, 'source']}
+                                                                                            style={{ marginBottom: 0 }}
+                                                                                          >
+                                                                                            <Input placeholder="sale.document_id" />
+                                                                                          </Form.Item>
+                                                                                        </Col>
+                                                                                        <Col span={3}>
+                                                                                          <Button danger onClick={() => removeLinkRule(linkRuleField.name)}>
+                                                                                            x
+                                                                                          </Button>
+                                                                                        </Col>
+                                                                                      </Row>
+                                                                                    ))}
+                                                                                    <Button
+                                                                                      size="small"
+                                                                                      onClick={() => addLinkRule({ target_field: '', source: '' })}
+                                                                                    >
+                                                                                      Add link rule
+                                                                                    </Button>
+                                                                                  </Space>
+                                                                                )}
+                                                                              </Form.List>
+
                                                                               <Form.List name={[documentField.name, 'field_mappings']}>
                                                                                 {(fieldMappingFields, { add: addFieldMapping, remove: removeFieldMapping }) => (
                                                                                   <Space direction="vertical" size={4} style={{ width: '100%', marginBottom: 8 }}>
@@ -2634,6 +2823,7 @@ export function PoolCatalogPage() {
                                                                             document_role: '',
                                                                             invoice_mode: 'optional',
                                                                             link_to: '',
+                                                                            link_rule_mappings: [],
                                                                             field_mappings: [],
                                                                             table_part_mappings: [],
                                                                           })}
@@ -2671,16 +2861,79 @@ export function PoolCatalogPage() {
                                                     )}
 
                                                     <Form.Item
-                                                      name={[field.name, 'metadata_json']}
-                                                      label="Edge metadata (JSON)"
+                                                      name={[field.name, 'edge_metadata_mode']}
+                                                      label="Edge metadata mode"
                                                       style={{ marginBottom: 0 }}
                                                     >
-                                                      <TextArea
-                                                        autoSize={{ minRows: 2, maxRows: 6 }}
-                                                        placeholder='{"custom_key":"value"}'
-                                                        data-testid={`pool-catalog-topology-edge-metadata-${field.name}`}
+                                                      <Select
+                                                        options={[
+                                                          { value: 'builder', label: 'Builder' },
+                                                          { value: 'raw', label: 'Raw JSON' },
+                                                        ]}
+                                                        onChange={(value) => {
+                                                          switchEdgeMetadataMode(
+                                                            field.name,
+                                                            value === 'builder' ? 'builder' : 'raw'
+                                                          )
+                                                        }}
+                                                        data-testid={`pool-catalog-topology-edge-metadata-mode-${field.name}`}
                                                       />
                                                     </Form.Item>
+                                                    {edgeMetadataMode === 'builder' ? (
+                                                      <Form.List name={[field.name, 'edge_metadata_builder']}>
+                                                        {(metadataFields, { add: addMetadataField, remove: removeMetadataField }) => (
+                                                          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                                                            {metadataFields.map((metadataField) => (
+                                                              <Row key={metadataField.key} gutter={8} align="middle">
+                                                                <Col span={8}>
+                                                                  <Form.Item
+                                                                    name={[metadataField.name, 'key']}
+                                                                    style={{ marginBottom: 0 }}
+                                                                  >
+                                                                    <Input placeholder="metadata key" />
+                                                                  </Form.Item>
+                                                                </Col>
+                                                                <Col span={13}>
+                                                                  <Form.Item
+                                                                    name={[metadataField.name, 'value_json']}
+                                                                    style={{ marginBottom: 0 }}
+                                                                  >
+                                                                    <TextArea
+                                                                      autoSize={{ minRows: 1, maxRows: 4 }}
+                                                                      placeholder='"value" или {"nested":true}'
+                                                                    />
+                                                                  </Form.Item>
+                                                                </Col>
+                                                                <Col span={3}>
+                                                                  <Button danger onClick={() => removeMetadataField(metadataField.name)}>
+                                                                    x
+                                                                  </Button>
+                                                                </Col>
+                                                              </Row>
+                                                            ))}
+                                                            <Button
+                                                              size="small"
+                                                              onClick={() => addMetadataField({ key: '', value_json: '' })}
+                                                              data-testid={`pool-catalog-topology-edge-metadata-add-field-${field.name}`}
+                                                            >
+                                                              Add metadata field
+                                                            </Button>
+                                                          </Space>
+                                                        )}
+                                                      </Form.List>
+                                                    ) : (
+                                                      <Form.Item
+                                                        name={[field.name, 'metadata_json']}
+                                                        label="Edge metadata (JSON)"
+                                                        style={{ marginBottom: 0 }}
+                                                      >
+                                                        <TextArea
+                                                          autoSize={{ minRows: 2, maxRows: 6 }}
+                                                          placeholder='{"custom_key":"value"}'
+                                                          data-testid={`pool-catalog-topology-edge-metadata-${field.name}`}
+                                                        />
+                                                      </Form.Item>
+                                                    )}
                                                   </Space>
                                                 )
                                               }}
@@ -2700,6 +2953,8 @@ export function PoolCatalogPage() {
                                   document_policy_mode: 'raw',
                                   document_policy_json: '',
                                   document_policy_builder: [],
+                                  edge_metadata_mode: 'raw',
+                                  edge_metadata_builder: [],
                                   metadata_json: '',
                                 })}
                                 data-testid="pool-catalog-topology-add-edge"

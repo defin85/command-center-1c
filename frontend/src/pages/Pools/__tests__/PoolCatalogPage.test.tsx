@@ -820,6 +820,183 @@ describe('PoolCatalogPage', () => {
     })
   }, 15000)
 
+  it('preserves link_rules when saving document_policy from builder mode', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            document_policy: {
+              version: 'document_policy.v1',
+              chains: [
+                {
+                  chain_id: 'sale_chain',
+                  documents: [
+                    {
+                      document_id: 'sale',
+                      entity_name: 'Document_Sales',
+                      document_role: 'sale',
+                      field_mapping: { Amount: 'allocation.amount' },
+                      table_parts_mapping: {},
+                      invoice_mode: 'required',
+                      link_rules: {},
+                    },
+                    {
+                      document_id: 'invoice',
+                      entity_name: 'Document_Invoice',
+                      document_role: 'invoice',
+                      field_mapping: { BaseDocument: 'sale.ref' },
+                      table_parts_mapping: {},
+                      link_to: 'sale',
+                      link_rules: { depends_on: 'sale' },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Topology Editor')
+    await expandFirstEdgeAdvanced(user)
+
+    openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
+    await selectDropdownOption(/builder/i)
+
+    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+
+    await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
+    expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledWith(
+      '44444444-4444-4444-4444-444444444444',
+      expect.objectContaining({
+        edges: [
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              document_policy: expect.objectContaining({
+                chains: [
+                  expect.objectContaining({
+                    documents: expect.arrayContaining([
+                      expect.objectContaining({
+                        document_id: 'invoice',
+                        link_rules: expect.objectContaining({
+                          depends_on: 'sale',
+                        }),
+                      }),
+                    ]),
+                  }),
+                ],
+              }),
+            }),
+          }),
+        ],
+      })
+    )
+  }, 15000)
+
+  it('supports edge metadata builder mode and preserves custom metadata keys', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            custom_edge_key: 'preserve-this',
+            custom_nested: { level: 2 },
+          },
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Topology Editor')
+    await expandFirstEdgeAdvanced(user)
+
+    openSelectByTestId('pool-catalog-topology-edge-metadata-mode-0')
+    await selectDropdownOption(/builder/i)
+
+    expect(await screen.findByTestId('pool-catalog-topology-edge-metadata-add-field-0')).toBeInTheDocument()
+    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+
+    await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
+    expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledWith(
+      '44444444-4444-4444-4444-444444444444',
+      expect.objectContaining({
+        edges: [
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              custom_edge_key: 'preserve-this',
+              custom_nested: expect.objectContaining({ level: 2 }),
+            }),
+          }),
+        ],
+      })
+    )
+  }, 15000)
+
   it('does not auto-retry metadata catalog load after initial failure', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()

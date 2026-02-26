@@ -1,0 +1,10 @@
+type: object
+description: Field-level validation errors map.
+additionalProperties:
+  oneOf:
+    - type: string
+    - type: array
+      items:
+        type: string
+    - type: object
+      additionalProperties: {}

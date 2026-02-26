@@ -30,6 +30,14 @@ def _schema(contract: dict[str, Any], name: str) -> dict[str, Any]:
     return item
 
 
+def _resolve_schema_reference(contract: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    ref = candidate.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+        schema_name = ref.split("/")[-1]
+        return _schema(contract, schema_name)
+    return candidate
+
+
 def test_pool_run_safe_commands_paths_are_in_contract_with_expected_responses() -> None:
     contract = _load_openapi_contract()
     paths = contract.get("paths")
@@ -308,3 +316,38 @@ def test_pool_metadata_catalog_paths_and_schemas_are_in_contract() -> None:
     assert isinstance(request_properties, dict)
     runtime_request_fields = set(pools_view.PoolODataMetadataCatalogRefreshRequestSerializer().fields.keys())
     assert runtime_request_fields.issubset(set(request_properties.keys()))
+
+
+def test_problem_details_error_schema_supports_field_and_referential_error_shapes() -> None:
+    contract = _load_openapi_contract()
+    problem_schema = _schema(contract, "ProblemDetailsError")
+    properties = problem_schema.get("properties")
+    assert isinstance(properties, dict)
+
+    errors_schema = properties.get("errors")
+    assert isinstance(errors_schema, dict)
+    one_of = errors_schema.get("oneOf")
+    assert isinstance(one_of, list) and one_of
+
+    field_errors_variant: dict[str, Any] | None = None
+    referential_variant: dict[str, Any] | None = None
+    for variant_raw in one_of:
+        assert isinstance(variant_raw, dict)
+        variant = _resolve_schema_reference(contract, variant_raw)
+        if variant.get("type") == "object":
+            field_errors_variant = variant
+        if variant.get("type") == "array":
+            referential_variant = variant
+
+    assert isinstance(field_errors_variant, dict), "field-errors variant missing in ProblemDetailsError.errors"
+    additional = field_errors_variant.get("additionalProperties")
+    assert isinstance(additional, dict)
+    assert isinstance(additional.get("oneOf"), list) and additional["oneOf"]
+
+    assert isinstance(referential_variant, dict), "referential array variant missing in ProblemDetailsError.errors"
+    items_raw = referential_variant.get("items")
+    assert isinstance(items_raw, dict)
+    referential_item_schema = _resolve_schema_reference(contract, items_raw)
+    required = referential_item_schema.get("required")
+    assert isinstance(required, list)
+    assert {"code", "path", "detail"}.issubset(set(required))

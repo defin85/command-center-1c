@@ -1,11 +1,12 @@
 from __future__ import annotations
+import json
 from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import User
 from django.db import DatabaseError
 
-from apps.databases.models import Database
+from apps.databases.models import Database, InfobaseUserMapping
 from apps.intercompany_pools.metadata_catalog import (
     ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS,
     ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
@@ -45,6 +46,16 @@ def _catalog_payload(*, suffix: str) -> dict[str, object]:
             }
         ]
     }
+
+
+def _create_service_infobase_mapping(*, database: Database, username: str = "svc-user", password: str = "svc-pass") -> None:
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=None,
+        ib_username=username,
+        ib_password=password,
+        is_service=True,
+    )
 
 
 @pytest.fixture
@@ -143,6 +154,7 @@ def test_refresh_snapshot_returns_lock_conflict_without_fetching_metadata(
 @pytest.mark.django_db
 def test_read_snapshot_falls_back_to_db_when_cache_miss(default_tenant: Tenant, monkeypatch: pytest.MonkeyPatch) -> None:
     database = _create_database(tenant=default_tenant, name=f"meta-read-db-{uuid4().hex[:8]}")
+    _create_service_infobase_mapping(database=database)
     snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
         tenant=default_tenant,
         database=database,
@@ -158,6 +170,128 @@ def test_read_snapshot_falls_back_to_db_when_cache_miss(default_tenant: Tenant, 
 
     write_calls = {"count": 0}
     monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._read_snapshot_from_cache", lambda **_: None)
+    monkeypatch.setattr(
+        "apps.intercompany_pools.metadata_catalog._write_snapshot_to_cache",
+        lambda **_: write_calls.__setitem__("count", write_calls["count"] + 1),
+    )
+
+    resolved, source = read_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=database,
+        requested_by_username="meta-user",
+        allow_cold_bootstrap=False,
+    )
+
+    assert source == "db"
+    assert resolved.id == snapshot.id
+    assert write_calls["count"] == 1
+
+
+@pytest.mark.django_db
+def test_read_snapshot_returns_redis_hit_without_db_lookup(
+    default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"meta-redis-hit-db-{uuid4().hex[:8]}")
+    _create_service_infobase_mapping(database=database)
+    snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
+        tenant=default_tenant,
+        database=database,
+        config_name=database.name,
+        config_version="",
+        extensions_fingerprint="",
+        metadata_hash="b" * 64,
+        catalog_version="v1:redis-hit",
+        payload=_catalog_payload(suffix="redis"),
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+        is_current=True,
+    )
+
+    class _RedisClient:
+        def __init__(self) -> None:
+            self._value = json.dumps(
+                {
+                    "scope": {
+                        "tenant_id": str(default_tenant.id),
+                        "database_id": str(database.id),
+                        "config_name": database.name,
+                        "config_version": "",
+                        "extensions_fingerprint": "",
+                    },
+                    "snapshot": {
+                        "id": str(snapshot.id),
+                        "tenant_id": str(default_tenant.id),
+                        "database_id": str(database.id),
+                        "config_name": database.name,
+                        "config_version": "",
+                        "extensions_fingerprint": "",
+                        "metadata_hash": snapshot.metadata_hash,
+                        "catalog_version": snapshot.catalog_version,
+                        "payload": snapshot.payload,
+                        "source": snapshot.source,
+                        "fetched_at": snapshot.fetched_at.isoformat(),
+                        "is_current": True,
+                    },
+                },
+                ensure_ascii=False,
+            )
+
+        def get(self, _key: str) -> str:
+            return self._value
+
+        def close(self) -> None:
+            return None
+
+    db_lookup_calls = {"count": 0}
+
+    def _unexpected_db_lookup(**_kwargs: object) -> PoolODataMetadataCatalogSnapshot | None:
+        db_lookup_calls["count"] += 1
+        return None
+
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._get_redis_client", lambda: _RedisClient())
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._get_current_snapshot", _unexpected_db_lookup)
+
+    resolved, source = read_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=database,
+        requested_by_username="meta-user",
+        allow_cold_bootstrap=False,
+    )
+
+    assert source == "redis"
+    assert resolved.id == snapshot.id
+    assert db_lookup_calls["count"] == 0
+
+
+@pytest.mark.django_db
+def test_read_snapshot_falls_back_to_db_when_redis_read_fails(
+    default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"meta-redis-fail-db-{uuid4().hex[:8]}")
+    _create_service_infobase_mapping(database=database)
+    snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
+        tenant=default_tenant,
+        database=database,
+        config_name=database.name,
+        config_version="",
+        extensions_fingerprint="",
+        metadata_hash="c" * 64,
+        catalog_version="v1:redis-fallback",
+        payload=_catalog_payload(suffix="db-fallback"),
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+        is_current=True,
+    )
+
+    class _BrokenRedisClient:
+        def get(self, _key: str) -> str | None:
+            raise RuntimeError("redis unavailable")
+
+        def close(self) -> None:
+            return None
+
+    write_calls = {"count": 0}
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._get_redis_client", lambda: _BrokenRedisClient())
     monkeypatch.setattr(
         "apps.intercompany_pools.metadata_catalog._write_snapshot_to_cache",
         lambda **_: write_calls.__setitem__("count", write_calls["count"] + 1),

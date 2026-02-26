@@ -10,6 +10,10 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.databases.models import Database, InfobaseUserMapping
+from apps.intercompany_pools.metadata_catalog import (
+    ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS,
+    MetadataCatalogError,
+)
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationStatus,
@@ -121,6 +125,16 @@ def _create_database(*, tenant: Tenant, name: str) -> Database:
         odata_url="http://localhost/odata/standard.odata",
         username="admin",
         password="secret",
+    )
+
+
+def _create_service_infobase_mapping(*, database: Database, username: str = "svc-user", password: str = "svc-pass") -> None:
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=None,
+        ib_username=username,
+        ib_password=password,
+        is_service=True,
     )
 
 
@@ -531,6 +545,7 @@ def test_get_pool_odata_metadata_catalog_returns_current_snapshot(
     default_tenant: Tenant,
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"metadata-get-db-{uuid4().hex[:8]}")
+    _create_service_infobase_mapping(database=database)
     snapshot = _create_current_metadata_catalog_snapshot(
         tenant=default_tenant,
         database=database,
@@ -547,6 +562,30 @@ def test_get_pool_odata_metadata_catalog_returns_current_snapshot(
     assert payload["source"] in {"db", "redis"}
     assert isinstance(payload["documents"], list)
     assert payload["documents"][0]["entity_name"] == "Document_Sales"
+
+
+@pytest.mark.django_db
+def test_get_pool_odata_metadata_catalog_rejects_missing_mapping_without_legacy_fallback_even_with_snapshot(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"metadata-get-nomapping-db-{uuid4().hex[:8]}")
+    _create_current_metadata_catalog_snapshot(
+        tenant=default_tenant,
+        database=database,
+    )
+
+    with patch("apps.intercompany_pools.metadata_catalog.requests.get") as requests_get:
+        response = authenticated_client.get(f"/api/v2/pools/odata-metadata/catalog/?database_id={database.id}")
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="ODATA_MAPPING_NOT_CONFIGURED",
+    )
+    assert problem["title"] == "Metadata Catalog Auth Configuration Error"
+    assert "/rbac" in problem["detail"]
+    requests_get.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -634,6 +673,37 @@ def test_refresh_pool_odata_metadata_catalog_returns_serialized_snapshot(
     assert kwargs["database"].id == database.id
     assert kwargs["requested_by_username"] == "pool-api-user"
     assert kwargs["source"] == "live_refresh"
+
+
+@pytest.mark.django_db
+def test_refresh_pool_odata_metadata_catalog_returns_conflict_when_lock_is_busy(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"metadata-refresh-lock-db-{uuid4().hex[:8]}")
+
+    with patch(
+        "apps.api_v2.views.intercompany_pools.refresh_metadata_catalog_snapshot",
+        side_effect=MetadataCatalogError(
+            code=ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS,
+            title="Metadata Refresh In Progress",
+            detail="Metadata refresh already in progress for selected database.",
+            status_code=409,
+        ),
+    ):
+        response = authenticated_client.post(
+            "/api/v2/pools/odata-metadata/catalog/refresh/",
+            {"database_id": str(database.id)},
+            format="json",
+        )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=409,
+        code=ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS,
+    )
+    assert payload["title"] == "Metadata Refresh In Progress"
+    assert "already in progress" in payload["detail"].lower()
 
 
 @pytest.mark.django_db
@@ -1050,6 +1120,256 @@ def test_upsert_pool_topology_snapshot_returns_unified_referential_error_for_unk
     assert {"code", "path", "detail"}.issubset(set(first_error.keys()))
     assert first_error["code"] == "POOL_METADATA_REFERENCE_INVALID"
     assert "field_mapping.UnknownField" in str(first_error["path"])
+
+
+@pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_returns_unified_referential_error_for_unknown_table_part(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    leaf_db = _create_database(tenant=default_tenant, name=f"policy-tablepart-db-{uuid4().hex[:8]}")
+    _create_current_metadata_catalog_snapshot(
+        tenant=default_tenant,
+        database=leaf_db,
+    )
+    root_org = Organization.objects.create(tenant=default_tenant, name="Policy TP Root", inn="741100000043")
+    leaf_org = Organization.objects.create(
+        tenant=default_tenant,
+        database=leaf_db,
+        name="Policy TP Leaf",
+        inn="741100000044",
+    )
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    current_version = graph_before.json()["version"]
+
+    invalid_policy = _build_document_policy_payload()
+    invalid_policy["chains"][0]["documents"][0]["table_parts_mapping"] = {
+        "UnknownItems": {"LineAmount": "allocation.amount"},
+    }
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "nodes": [
+                {"organization_id": str(root_org.id), "is_root": True},
+                {"organization_id": str(leaf_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "1.0",
+                    "metadata": {
+                        "document_policy": invalid_policy,
+                    },
+                },
+            ],
+        },
+        format="json",
+    )
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_METADATA_REFERENCE_INVALID",
+    )
+    errors = payload.get("errors")
+    assert isinstance(errors, list) and errors
+    first_error = errors[0]
+    assert isinstance(first_error, dict)
+    assert {"code", "path", "detail"}.issubset(set(first_error.keys()))
+    assert first_error["code"] == "POOL_METADATA_REFERENCE_INVALID"
+    assert "table_parts_mapping.UnknownItems" in str(first_error["path"])
+
+
+@pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_returns_unified_referential_error_for_unknown_row_field(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    leaf_db = _create_database(tenant=default_tenant, name=f"policy-rowfield-db-{uuid4().hex[:8]}")
+    _create_current_metadata_catalog_snapshot(
+        tenant=default_tenant,
+        database=leaf_db,
+    )
+    root_org = Organization.objects.create(tenant=default_tenant, name="Policy Row Root", inn="741100000045")
+    leaf_org = Organization.objects.create(
+        tenant=default_tenant,
+        database=leaf_db,
+        name="Policy Row Leaf",
+        inn="741100000046",
+    )
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    current_version = graph_before.json()["version"]
+
+    invalid_policy = _build_document_policy_payload()
+    invalid_policy["chains"][0]["documents"][0]["table_parts_mapping"] = {
+        "Items": {"UnknownRowField": "allocation.amount"},
+    }
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "nodes": [
+                {"organization_id": str(root_org.id), "is_root": True},
+                {"organization_id": str(leaf_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "1.0",
+                    "metadata": {
+                        "document_policy": invalid_policy,
+                    },
+                },
+            ],
+        },
+        format="json",
+    )
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_METADATA_REFERENCE_INVALID",
+    )
+    errors = payload.get("errors")
+    assert isinstance(errors, list) and errors
+    first_error = errors[0]
+    assert isinstance(first_error, dict)
+    assert {"code", "path", "detail"}.issubset(set(first_error.keys()))
+    assert first_error["code"] == "POOL_METADATA_REFERENCE_INVALID"
+    assert "table_parts_mapping.Items.UnknownRowField" in str(first_error["path"])
+
+
+@pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_returns_unified_referential_error_for_invalid_link_to(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    leaf_db = _create_database(tenant=default_tenant, name=f"policy-linkto-db-{uuid4().hex[:8]}")
+    _create_current_metadata_catalog_snapshot(
+        tenant=default_tenant,
+        database=leaf_db,
+    )
+    root_org = Organization.objects.create(tenant=default_tenant, name="Policy Link Root", inn="741100000047")
+    leaf_org = Organization.objects.create(
+        tenant=default_tenant,
+        database=leaf_db,
+        name="Policy Link Leaf",
+        inn="741100000048",
+    )
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    current_version = graph_before.json()["version"]
+
+    invalid_policy = _build_document_policy_payload()
+    invalid_policy["chains"][0]["documents"][1]["link_to"] = "missing-sale-document"
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "nodes": [
+                {"organization_id": str(root_org.id), "is_root": True},
+                {"organization_id": str(leaf_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "1.0",
+                    "metadata": {
+                        "document_policy": invalid_policy,
+                    },
+                },
+            ],
+        },
+        format="json",
+    )
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_METADATA_REFERENCE_INVALID",
+    )
+    errors = payload.get("errors")
+    assert isinstance(errors, list) and errors
+    first_error = errors[0]
+    assert isinstance(first_error, dict)
+    assert {"code", "path", "detail"}.issubset(set(first_error.keys()))
+    assert first_error["code"] == "POOL_METADATA_REFERENCE_INVALID"
+    assert str(first_error["path"]).endswith(".link_to")
+
+
+@pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_returns_unified_referential_error_for_invalid_link_rules_depends_on(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    leaf_db = _create_database(tenant=default_tenant, name=f"policy-linkrules-db-{uuid4().hex[:8]}")
+    _create_current_metadata_catalog_snapshot(
+        tenant=default_tenant,
+        database=leaf_db,
+    )
+    root_org = Organization.objects.create(tenant=default_tenant, name="Policy Rules Root", inn="741100000049")
+    leaf_org = Organization.objects.create(
+        tenant=default_tenant,
+        database=leaf_db,
+        name="Policy Rules Leaf",
+        inn="741100000050",
+    )
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    current_version = graph_before.json()["version"]
+
+    invalid_policy = _build_document_policy_payload()
+    invalid_policy["chains"][0]["documents"][1]["link_rules"] = {
+        "depends_on": "missing-sale-document",
+    }
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "nodes": [
+                {"organization_id": str(root_org.id), "is_root": True},
+                {"organization_id": str(leaf_org.id), "is_root": False},
+            ],
+            "edges": [
+                {
+                    "parent_organization_id": str(root_org.id),
+                    "child_organization_id": str(leaf_org.id),
+                    "weight": "1.0",
+                    "metadata": {
+                        "document_policy": invalid_policy,
+                    },
+                },
+            ],
+        },
+        format="json",
+    )
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_METADATA_REFERENCE_INVALID",
+    )
+    errors = payload.get("errors")
+    assert isinstance(errors, list) and errors
+    first_error = errors[0]
+    assert isinstance(first_error, dict)
+    assert {"code", "path", "detail"}.issubset(set(first_error.keys()))
+    assert first_error["code"] == "POOL_METADATA_REFERENCE_INVALID"
+    assert str(first_error["path"]).endswith(".link_rules.depends_on")
 
 
 @pytest.mark.django_db

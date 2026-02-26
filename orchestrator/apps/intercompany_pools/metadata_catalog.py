@@ -105,6 +105,12 @@ def read_metadata_catalog_snapshot(
     requested_by_username: str,
     allow_cold_bootstrap: bool = True,
 ) -> tuple[PoolODataMetadataCatalogSnapshot, str]:
+    # Metadata catalog path is mapping-only for both read and refresh requests.
+    # Validate auth configuration before serving cached/snapshotted data.
+    _resolve_metadata_mapping_credentials(
+        database=database,
+        requested_by_username=requested_by_username,
+    )
     scope = resolve_metadata_catalog_scope(tenant_id=tenant_id, database=database)
     cached_snapshot = _read_snapshot_from_cache(scope=scope)
     if cached_snapshot is not None:
@@ -384,6 +390,20 @@ def validate_document_policy_references(
                         "detail": f"link_to='{link_to}' does not reference an existing document_id in chain.",
                     }
                 )
+            link_rules = raw_document.get("link_rules")
+            if isinstance(link_rules, Mapping):
+                depends_on = str(link_rules.get("depends_on") or "").strip()
+                if depends_on and depends_on not in document_ids:
+                    errors.append(
+                        {
+                            "code": ERROR_CODE_POOL_METADATA_REFERENCE_INVALID,
+                            "path": f"{document_path}.link_rules.depends_on",
+                            "detail": (
+                                f"link_rules.depends_on='{depends_on}' does not reference an existing "
+                                "document_id in chain."
+                            ),
+                        }
+                    )
     return errors
 
 

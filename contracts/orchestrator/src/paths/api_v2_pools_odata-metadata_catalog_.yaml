@@ -33,7 +33,11 @@ get:
         application/problem+json:
           schema:
             $ref: ../components/schemas/ProblemDetailsError.yaml
-      description: ''
+      description: >-
+        Validation/auth/configuration error. Possible `code` values include
+        `VALIDATION_ERROR`, `ODATA_MAPPING_NOT_CONFIGURED`,
+        `ODATA_MAPPING_AMBIGUOUS`, `POOL_METADATA_FETCH_FAILED`,
+        `POOL_METADATA_PARSE_FAILED`, `POOL_METADATA_SNAPSHOT_UNAVAILABLE`.
     '401':
       description: Unauthorized
     '404':
@@ -47,4 +51,4 @@ get:
         application/problem+json:
           schema:
             $ref: ../components/schemas/ProblemDetailsError.yaml
-      description: ''
+      description: Metadata refresh lock conflict (`POOL_METADATA_REFRESH_IN_PROGRESS`).

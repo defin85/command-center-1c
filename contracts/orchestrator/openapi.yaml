@@ -4609,7 +4609,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetailsError'
-          description: ''
+          description: Validation error. Referential metadata validation uses `POOL_METADATA_REFERENCE_INVALID` and `POOL_METADATA_SNAPSHOT_UNAVAILABLE`; `errors` may contain an array of `{code, path, detail}` entries.
         '401':
           description: Unauthorized
         '404':
@@ -4700,7 +4700,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetailsError'
-          description: ''
+          description: Validation/auth/configuration error. Possible `code` values include `VALIDATION_ERROR`, `ODATA_MAPPING_NOT_CONFIGURED`, `ODATA_MAPPING_AMBIGUOUS`, `POOL_METADATA_FETCH_FAILED`, `POOL_METADATA_PARSE_FAILED`, `POOL_METADATA_SNAPSHOT_UNAVAILABLE`.
         '401':
           description: Unauthorized
         '404':
@@ -4714,7 +4714,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetailsError'
-          description: ''
+          description: Metadata refresh lock conflict (`POOL_METADATA_REFRESH_IN_PROGRESS`).
   /api/v2/pools/odata-metadata/catalog/refresh/:
     post:
       operationId: v2_pools_odata_metadata_catalog_refresh
@@ -4747,7 +4747,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetailsError'
-          description: ''
+          description: Validation/auth/configuration error. Possible `code` values include `VALIDATION_ERROR`, `ODATA_MAPPING_NOT_CONFIGURED`, `ODATA_MAPPING_AMBIGUOUS`, `POOL_METADATA_FETCH_FAILED`, `POOL_METADATA_PARSE_FAILED`.
         '401':
           description: Unauthorized
         '404':
@@ -4761,7 +4761,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetailsError'
-          description: ''
+          description: Metadata refresh lock conflict (`POOL_METADATA_REFRESH_IN_PROGRESS`).
   /api/v2/pools/organizations/:
     get:
       operationId: v2_pools_organizations_list
@@ -14095,6 +14095,31 @@ components:
         - nodes_count
         - pool_id
         - version
+    ProblemDetailsFieldErrors:
+      type: object
+      description: Field-level validation errors map.
+      additionalProperties:
+        oneOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+          - type: object
+            additionalProperties: {}
+    ProblemDetailsReferentialError:
+      type: object
+      description: Metadata referential validation error item.
+      properties:
+        code:
+          type: string
+        path:
+          type: string
+        detail:
+          type: string
+      required:
+        - code
+        - detail
+        - path
     ProblemDetailsError:
       type: object
       properties:
@@ -14109,7 +14134,13 @@ components:
           type: string
         code:
           type: string
-        errors: {}
+        errors:
+          description: Optional structured error details. For validation failures this is a field-errors map; for metadata referential validation this is an array of items with code/path/detail.
+          oneOf:
+            - $ref: '#/components/schemas/ProblemDetailsFieldErrors'
+            - type: array
+              items:
+                $ref: '#/components/schemas/ProblemDetailsReferentialError'
       required:
         - code
         - detail

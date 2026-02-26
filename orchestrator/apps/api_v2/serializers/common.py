@@ -29,6 +29,7 @@ class ProblemDetailsErrorSerializer(serializers.Serializer):
     status = serializers.IntegerField()
     detail = serializers.CharField()
     code = serializers.CharField()
+    errors = serializers.JSONField(required=False)
 
 
 class ExecutionBindingSerializer(serializers.Serializer):

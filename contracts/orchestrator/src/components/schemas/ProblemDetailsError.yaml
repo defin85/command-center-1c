@@ -11,7 +11,16 @@ properties:
     type: string
   code:
     type: string
-  errors: {}
+  errors:
+    description: >-
+      Optional structured error details. For validation failures this is a
+      field-errors map; for metadata referential validation this is an array of
+      items with code/path/detail.
+    oneOf:
+      - $ref: ./ProblemDetailsFieldErrors.yaml
+      - type: array
+        items:
+          $ref: ./ProblemDetailsReferentialError.yaml
 required:
   - code
   - detail
