@@ -2485,7 +2485,7 @@ export function PoolCatalogPage() {
                                                           <Space size="small" wrap>
                                                             <Tag color={metadataCatalog ? 'blue' : 'default'}>
                                                               {metadataCatalog
-                                                                ? `catalog ${metadataCatalog.catalog_version}`
+                                                                ? `catalog ${metadataCatalog.catalog_version} • docs ${metadataDocuments.length}`
                                                                 : 'catalog not loaded'}
                                                             </Tag>
                                                             <Button
@@ -2691,6 +2691,11 @@ export function PoolCatalogPage() {
                                                                                   </Form.Item>
                                                                                 </Col>
                                                                               </Row>
+                                                                              {uniqueLinkToOptions.length === 0 && (
+                                                                                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+                                                                                  link_to доступен после добавления в цепочку второго документа с `document_id`.
+                                                                                </Text>
+                                                                              )}
                                                                               {selectedEntityName && !selectedDocument && (
                                                                                 <Alert
                                                                                   type="warning"
