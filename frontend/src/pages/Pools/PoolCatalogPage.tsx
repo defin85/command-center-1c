@@ -1744,7 +1744,11 @@ export function PoolCatalogPage() {
       ) {
         return
       }
-      const resolved = resolveApiError(err, 'Не удалось сохранить topology snapshot.')
+      const resolved = resolveApiError(
+        err,
+        'Не удалось сохранить topology snapshot.',
+        { includeProblemItems: true }
+      )
       setTopologySubmitError(resolved.message)
     } finally {
       setIsTopologySaving(false)

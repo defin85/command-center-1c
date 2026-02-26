@@ -1464,6 +1464,72 @@ describe('PoolCatalogPage', () => {
     expect(screen.queryByText('Проверьте корректность данных.')).not.toBeInTheDocument()
   }, 15000)
 
+  it('shows problem items for topology metadata reference errors', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+      ],
+      edges: [],
+    })
+    mockUpsertPoolTopologySnapshot.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Metadata Reference Validation Error',
+          status: 400,
+          detail: 'Field mapping validation failed.',
+          code: 'POOL_METADATA_REFERENCE_INVALID',
+          errors: [
+            {
+              code: 'POOL_METADATA_REFERENCE_INVALID',
+              path: 'edges[0].metadata.document_policy.chains[0].documents[0].field_mapping.Amount',
+              detail: "Field 'Amount' is not available for entity 'Document_РеализацияТоваровУслуг'.",
+            },
+            {
+              code: 'POOL_METADATA_REFERENCE_INVALID',
+              path: 'edges[1].metadata.document_policy.chains[0].documents[1].field_mapping.BaseDocument',
+              detail: "Field 'BaseDocument' is not available for entity 'Document_ПоступлениеТоваровУслуг'.",
+            },
+          ],
+        },
+      },
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+
+    await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
+    expect(
+      await screen.findByText(/Document policy содержит ссылки на отсутствующие metadata поля\./)
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByText(
+        /edges\[0\]\.metadata\.document_policy\.chains\[0\]\.documents\[0\]\.field_mapping\.Amount: Field 'Amount' is not available for entity 'Document_РеализацияТоваровУслуг'/
+      )
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByText(
+        /edges\[1\]\.metadata\.document_policy\.chains\[0\]\.documents\[1\]\.field_mapping\.BaseDocument: Field 'BaseDocument' is not available for entity 'Document_ПоступлениеТоваровУслуг'/
+      )
+    ).toBeInTheDocument()
+  }, 15000)
+
   it('applies field-level serializer errors to form fields on upsert', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
