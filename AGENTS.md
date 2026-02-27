@@ -69,7 +69,15 @@ Work loop:
 - `bd close <task-id>`: Complete task
 - `bd sync`: Sync state
 
-**Rule**: Only work on tasks listed in `bd ready`.
+**Rule**: For code changes, only work on tasks listed in `bd ready`.
+
+If the user requests a code change that is not tracked in Beads yet:
+
+- Create an ad-hoc issue with `bd create ...`
+- Make sure it becomes actionable
+- Continue implementation from `bd ready`
+
+For non-code requests (analysis, explanations, review without code edits, research), Beads tracking is recommended but not mandatory.
 
 ## 4. Fixation
 
@@ -95,7 +103,7 @@ When all tasks are complete, execute the agent commands:
 
 ## Landing the Plane (Session Completion)
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+**When ending a work session with commits in this repository**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
 
 **MANDATORY WORKFLOW:**
 
@@ -113,10 +121,11 @@ When all tasks are complete, execute the agent commands:
 
 **CRITICAL RULES:**
 
-- Work is NOT complete until `git push` succeeds
+- Work is NOT complete until `git push` succeeds (for sessions with commits in this repository)
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
+- If push is blocked by an external constraint (no access/permissions, remote outage, or explicit user restriction), report the blocker explicitly and stop
 
 ## Issue Tracking
 
