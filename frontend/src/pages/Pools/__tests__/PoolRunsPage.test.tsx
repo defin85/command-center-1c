@@ -133,7 +133,7 @@ function renderPage() {
 }
 
 async function openRunsStage(user: ReturnType<typeof userEvent.setup>, stage: 'Create' | 'Inspect' | 'Safe Actions' | 'Retry Failed') {
-  await user.click(screen.getByRole('tab', { name: stage, exact: true }))
+  await user.click(screen.getByRole('tab', { name: stage }))
 }
 
 async function openInspectDiagnostics(user: ReturnType<typeof userEvent.setup>) {

@@ -104,7 +104,7 @@ async function selectDropdownOption(label: string | RegExp) {
 }
 
 async function openWorkspaceTab(user: ReturnType<typeof userEvent.setup>, tabLabel: 'Pools' | 'Topology Editor') {
-  await user.click(screen.getByRole('tab', { name: tabLabel, exact: true }))
+  await user.click(screen.getByRole('tab', { name: tabLabel }))
 }
 
 async function expandFirstEdgeAdvanced(user: ReturnType<typeof userEvent.setup>) {
