@@ -22,11 +22,25 @@ Workspace ДОЛЖЕН (SHALL) быть доступен из основного
 
 Problem payload ДОЛЖЕН (SHALL) включать поля `type`, `title`, `status`, `detail`, `code`.
 
+Система ДОЛЖНА (SHALL) публиковать endpoint-ы master-data workspace в namespace `/api/v2/pools/master-data/` для групп:
+- `parties`,
+- `items`,
+- `contracts`,
+- `tax-profiles`,
+- `bindings`,
+с операциями list/get/upsert для каждой группы.
+
 #### Scenario: Конфликт binding scope возвращается как Problem Details
 - **GIVEN** оператор сохраняет `Binding`, который нарушает уникальность scope
 - **WHEN** backend отклоняет mutating запрос
 - **THEN** response content-type равен `application/problem+json`
 - **AND** payload содержит machine-readable `code`
+
+#### Scenario: Workspace использует канонический namespace master-data endpoint-ов
+- **GIVEN** оператор открывает tab `Party` в `/pools/master-data`
+- **WHEN** UI запрашивает список canonical `Party`
+- **THEN** запрос выполняется в namespace `/api/v2/pools/master-data/parties/`
+- **AND** для create/edit используется `.../parties/upsert/`
 
 ### Requirement: Workspace MUST enforce доменные инварианты canonical сущностей
 Система ДОЛЖНА (SHALL) при create/edit через UI соблюдать инварианты:
@@ -77,8 +91,6 @@ Token picker ДОЛЖЕН (SHALL) генерировать токены совм
 - `master_data.item.<canonical_id>.ref`;
 - `master_data.contract.<canonical_id>.<owner_counterparty_canonical_id>.ref`;
 - `master_data.tax_profile.<canonical_id>.ref`.
-
-Система МОЖЕТ (MAY) оставлять raw-json режим для advanced сценариев.
 
 #### Scenario: Оператор выбирает номенклатуру через token picker
 - **GIVEN** оператор редактирует `table_parts_mapping` документа в policy builder

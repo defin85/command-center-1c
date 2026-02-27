@@ -39,7 +39,7 @@
   - `contracts/orchestrator/src/**` (API contracts)
 
 ## Non-Goals
-- Не включать full MDM для всех доменов платформы вне pools.
+- Не расширять scope change за пределы pools runtime/UI контура.
 - Не объединять физически модели `Organization` и `Party` в одну таблицу/сущность в рамках этого change.
 - Не реализовывать сложный merge/сопоставление с внешними источниками (fuzzy match, conflict resolution wizard).
 - Не менять экономическую логику распределения (`top_down`/`bottom_up`) и не менять доменный контракт `document_policy.v1`.

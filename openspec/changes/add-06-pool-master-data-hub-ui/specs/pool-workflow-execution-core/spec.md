@@ -2,9 +2,11 @@
 ### Requirement: Pools facade MUST возвращать стабильный `master_data_gate` read-model для run inspection
 Система ДОЛЖНА (SHALL) возвращать в `GET /api/v2/pools/runs/{run_id}` и `GET /api/v2/pools/runs/{run_id}/report` стабилизированный блок `master_data_gate`, достаточный для operator-facing диагностики.
 
+Блок `master_data_gate` ДОЛЖЕН (SHALL) находиться внутри `run` payload (`run.master_data_gate`) в обоих endpoint-ах.
+
 Минимальный состав блока:
-- `status`;
-- `mode`;
+- `status` (`completed|failed|skipped`);
+- `mode` (`resolve_upsert`);
 - `targets_count`;
 - `bindings_count`;
 - `error_code` (optional);
@@ -24,3 +26,9 @@
 - **WHEN** клиент запрашивает run details/report через facade
 - **THEN** ответ содержит `master_data_gate.status=failed` и machine-readable `error_code`
 - **AND** поле `diagnostic` содержит structured контекст для remediation
+
+#### Scenario: Неконсистентный gate feature flag блокирует публикацию fail-closed
+- **GIVEN** effective runtime value `pools.master_data.gate_enabled` неконсистентен и не приводится к bool
+- **WHEN** workflow выполняет `pool.master_data_gate`
+- **THEN** шаг завершается fail-closed с machine-readable `error_code=MASTER_DATA_GATE_CONFIG_INVALID`
+- **AND** side effects публикации в OData не выполняются
