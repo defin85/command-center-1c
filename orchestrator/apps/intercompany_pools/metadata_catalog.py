@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 import redis
@@ -561,28 +563,30 @@ def _fetch_live_catalog_payload(*, database: Database, requested_by_username: st
         database=database,
         requested_by_username=requested_by_username,
     )
-    metadata_url = f"{str(database.odata_url or '').rstrip('/')}/$metadata"
-    if not metadata_url.startswith("http"):
+    odata_base_url = str(database.odata_url or "").strip()
+    metadata_url = f"{odata_base_url.rstrip('/')}/$metadata"
+    parsed_url = urlparse(odata_base_url)
+    if parsed_url.scheme not in {"http", "https"} or not str(parsed_url.netloc or "").strip():
         raise MetadataCatalogError(
             code=ERROR_CODE_POOL_METADATA_FETCH_FAILED,
             title="Metadata Catalog Fetch Failed",
             detail="Database OData URL is not configured.",
             status_code=400,
         )
-
-    try:
-        username.encode("latin-1")
-        password.encode("latin-1")
-    except UnicodeEncodeError as exc:
+    if parsed_url.scheme == "http" and not _is_loopback_odata_host(parsed_url.hostname):
         raise MetadataCatalogError(
-            code=ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
-            title="Metadata Catalog Auth Configuration Error",
-            detail=(
-                "Infobase mapping credentials contain characters unsupported by HTTP Basic auth "
-                "(latin-1). Configure mapping in /rbac."
-            ),
+            code=ERROR_CODE_POOL_METADATA_FETCH_FAILED,
+            title="Metadata Catalog Fetch Failed",
+            detail="Database OData URL must use HTTPS for non-local endpoints.",
             status_code=400,
-        ) from exc
+            errors=[
+                {
+                    "code": ERROR_CODE_POOL_METADATA_FETCH_FAILED,
+                    "path": "database.odata_url",
+                    "detail": "Plain HTTP is allowed only for localhost/loopback endpoints.",
+                }
+            ],
+        )
 
     try:
         with ODataMetadataAdapter(
@@ -607,7 +611,7 @@ def _fetch_live_catalog_payload(*, database: Database, requested_by_username: st
             ],
         ) from exc
 
-    if response.status_code == 401:
+    if response.status_code in {401, 403}:
         upstream_detail = _extract_odata_error_detail(
             response_text=response.text,
             content_type=str(response.headers.get("Content-Type") or ""),
@@ -740,6 +744,18 @@ def _collect_upstream_error_messages(node: Any, *, depth: int = 0) -> list[str]:
 
 def _normalize_error_text(text: str) -> str:
     return " ".join(str(text or "").split())
+
+
+def _is_loopback_odata_host(hostname: str | None) -> bool:
+    normalized = str(hostname or "").strip().lower()
+    if not normalized:
+        return False
+    if normalized == "localhost" or normalized.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
 
 
 def _parse_csdl_metadata(xml_payload: str) -> dict[str, Any]:

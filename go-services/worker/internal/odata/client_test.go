@@ -3,6 +3,7 @@ package odata
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -82,6 +83,50 @@ func TestClient_Create(t *testing.T) {
 		t.Fatalf("Create failed: %v", err)
 	}
 
+	if result["Ref_Key"] != "guid'12345678-1234-1234-1234-123456789012'" {
+		t.Errorf("Unexpected Ref_Key: %v", result["Ref_Key"])
+	}
+}
+
+func TestClient_Create_UnicodeBasicAuthHeader(t *testing.T) {
+	username := "ГлавБух"
+	password := "пароль"
+	expectedAuthorization := "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("Expected POST, got %s", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != expectedAuthorization {
+			t.Errorf("Unexpected Authorization header. got=%q want=%q", got, expectedAuthorization)
+		}
+
+		response := map[string]interface{}{
+			"Ref_Key": "guid'12345678-1234-1234-1234-123456789012'",
+			"Name":    "Unicode Auth Test",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{
+		BaseURL: server.URL,
+		Auth: Auth{
+			Username: username,
+			Password: password,
+		},
+	})
+
+	ctx := context.Background()
+	result, err := client.Create(ctx, "Catalog_Test", map[string]interface{}{
+		"Name": "Unicode Auth Test",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
 	if result["Ref_Key"] != "guid'12345678-1234-1234-1234-123456789012'" {
 		t.Errorf("Unexpected Ref_Key: %v", result["Ref_Key"])
 	}

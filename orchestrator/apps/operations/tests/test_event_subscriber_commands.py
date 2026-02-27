@@ -176,6 +176,53 @@ class EventSubscriberClusterInfoTest(EventSubscriberBaseTestCase):
         self.assertEqual(credentials_payload["ib_password"], "odata_actor_pwd")
 
     @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_get_database_credentials_publication_actor_mapping_success_with_unicode_credentials(
+        self,
+        mock_redis_class,
+    ):
+        operator = User.objects.create_user(
+            username=f"event-unicode-operator-{uuid.uuid4().hex[:8]}",
+            email=f"event-unicode-operator-{uuid.uuid4().hex[:8]}@example.test",
+        )
+        InfobaseUserMapping.objects.create(
+            database=self.database,
+            user=operator,
+            ib_username="ГлавБух",
+            ib_password="пароль",
+            is_service=False,
+        )
+
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+        subscriber = EventSubscriber()
+
+        data = {
+            "correlation_id": "test-pub-actor-unicode-1",
+            "database_id": self.database.id,
+            "created_by": operator.username,
+            "ib_auth_strategy": "actor",
+            "credentials_purpose": "pool_publication_odata",
+            "timestamp": "2026-02-18T10:30:00Z",
+        }
+        subscriber.handle_get_database_credentials(data, "test-pub-actor-unicode-1")
+
+        response = mock_redis.xadd.call_args[0][1]
+        self.assertEqual(response["success"], "true")
+        self.assertEqual(response["resolution_outcome"], "actor_success")
+
+        encrypted_payload = {
+            "encrypted_data": response["encrypted_data"],
+            "nonce": response["nonce"],
+            "expires_at": response["expires_at"],
+            "encryption_version": response["encryption_version"],
+        }
+        credentials_payload = decrypt_credentials_from_transport(encrypted_payload)
+        self.assertEqual(credentials_payload["username"], "ГлавБух")
+        self.assertEqual(credentials_payload["password"], "пароль")
+        self.assertEqual(credentials_payload["ib_username"], "ГлавБух")
+        self.assertEqual(credentials_payload["ib_password"], "пароль")
+
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
     def test_handle_get_database_credentials_publication_missing_mapping_fail_closed(self, mock_redis_class):
         mock_redis = MagicMock()
         mock_redis_class.return_value = mock_redis

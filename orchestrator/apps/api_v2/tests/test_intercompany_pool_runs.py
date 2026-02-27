@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import date, datetime, timezone as dt_timezone
 from unittest.mock import patch
 from uuid import UUID, uuid4
@@ -614,7 +615,7 @@ def test_refresh_pool_odata_metadata_catalog_rejects_missing_mapping_without_leg
 
 
 @pytest.mark.django_db
-def test_get_pool_odata_metadata_catalog_rejects_non_latin1_mapping_credentials(
+def test_get_pool_odata_metadata_catalog_sends_utf8_basic_for_cyrillic_mapping_credentials(
     authenticated_client: APIClient,
     default_tenant: Tenant,
 ) -> None:
@@ -627,7 +628,12 @@ def test_get_pool_odata_metadata_catalog_rejects_non_latin1_mapping_credentials(
         is_service=True,
     )
 
-    with patch("apps.intercompany_pools.metadata_catalog.ODataMetadataAdapter.fetch_metadata") as metadata_fetch:
+    class _Response:
+        status_code = 401
+        text = '{"error":{"message":{"value":"Unauthorized"}}}'
+        headers = {"Content-Type": "application/json; charset=utf-8"}
+
+    with patch("apps.databases.odata.metadata_adapter.requests.get", return_value=_Response()) as requests_get:
         response = authenticated_client.get(f"/api/v2/pools/odata-metadata/catalog/?database_id={database.id}")
 
     problem = _assert_problem_details_response(
@@ -635,8 +641,92 @@ def test_get_pool_odata_metadata_catalog_rejects_non_latin1_mapping_credentials(
         status_code=400,
         code="ODATA_MAPPING_NOT_CONFIGURED",
     )
-    assert "latin-1" in problem["detail"].lower()
-    metadata_fetch.assert_not_called()
+    assert "latin-1" not in problem["detail"].lower()
+    assert "rejected" in problem["detail"].lower()
+
+    requests_get.assert_called_once()
+    kwargs = requests_get.call_args.kwargs
+    assert "auth" not in kwargs
+    assert kwargs["headers"]["Accept"] == "application/xml"
+    expected_auth = "Basic " + base64.b64encode("ГлавБух:пароль".encode("utf-8")).decode("ascii")
+    assert kwargs["headers"]["Authorization"] == expected_auth
+
+
+@pytest.mark.django_db
+def test_refresh_pool_odata_metadata_catalog_sends_utf8_basic_for_cyrillic_mapping_credentials(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"metadata-refresh-nonlatin-db-{uuid4().hex[:8]}")
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=None,
+        ib_username="ГлавБух",
+        ib_password="пароль",
+        is_service=True,
+    )
+
+    class _Response:
+        status_code = 401
+        text = '{"error":{"message":{"value":"Unauthorized"}}}'
+        headers = {"Content-Type": "application/json; charset=utf-8"}
+
+    with patch("apps.databases.odata.metadata_adapter.requests.get", return_value=_Response()) as requests_get:
+        response = authenticated_client.post(
+            "/api/v2/pools/odata-metadata/catalog/refresh/",
+            {"database_id": str(database.id)},
+            format="json",
+        )
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="ODATA_MAPPING_NOT_CONFIGURED",
+    )
+    assert "latin-1" not in problem["detail"].lower()
+    assert "rejected" in problem["detail"].lower()
+
+    requests_get.assert_called_once()
+    kwargs = requests_get.call_args.kwargs
+    assert "auth" not in kwargs
+    assert kwargs["headers"]["Accept"] == "application/xml"
+    expected_auth = "Basic " + base64.b64encode("ГлавБух:пароль".encode("utf-8")).decode("ascii")
+    assert kwargs["headers"]["Authorization"] == expected_auth
+
+
+@pytest.mark.django_db
+def test_get_pool_odata_metadata_catalog_keeps_ascii_basic_auth_compatibility(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"metadata-ascii-db-{uuid4().hex[:8]}")
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=None,
+        ib_username="svc-user",
+        ib_password="svc-pass",
+        is_service=True,
+    )
+
+    class _Response:
+        status_code = 401
+        text = '{"error":{"message":{"value":"Unauthorized"}}}'
+        headers = {"Content-Type": "application/json; charset=utf-8"}
+
+    with patch("apps.databases.odata.metadata_adapter.requests.get", return_value=_Response()) as requests_get:
+        response = authenticated_client.get(f"/api/v2/pools/odata-metadata/catalog/?database_id={database.id}")
+
+    _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="ODATA_MAPPING_NOT_CONFIGURED",
+    )
+
+    requests_get.assert_called_once()
+    kwargs = requests_get.call_args.kwargs
+    assert "auth" not in kwargs
+    expected_auth = "Basic " + base64.b64encode("svc-user:svc-pass".encode("utf-8")).decode("ascii")
+    assert kwargs["headers"]["Authorization"] == expected_auth
 
 
 @pytest.mark.django_db

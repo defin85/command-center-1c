@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+
 import requests
 
 from .client import ODataClient
@@ -28,11 +30,15 @@ class ODataMetadataAdapter:
 
     def fetch_metadata(self) -> requests.Response:
         metadata_url = f"{self._base_url}/$metadata"
+        raw_credentials = f"{self._username}:{self._password}".encode("utf-8")
+        basic_credentials = base64.b64encode(raw_credentials).decode("ascii")
         try:
             return requests.get(
                 metadata_url,
-                headers={"Accept": "application/xml"},
-                auth=(self._username, self._password),
+                headers={
+                    "Accept": "application/xml",
+                    "Authorization": f"Basic {basic_credentials}",
+                },
                 timeout=self._timeout,
             )
         except requests.RequestException as exc:

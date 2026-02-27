@@ -193,7 +193,7 @@ def test_fetch_live_catalog_payload_includes_upstream_odata_error_details(
 
 
 @pytest.mark.django_db
-def test_fetch_live_catalog_payload_forbidden_is_reported_as_upstream_fetch_failure(
+def test_fetch_live_catalog_payload_forbidden_is_reported_as_auth_configuration_error(
     default_tenant: Tenant,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -219,12 +219,46 @@ def test_fetch_live_catalog_payload_forbidden_is_reported_as_upstream_fetch_fail
             requested_by_username="meta-user",
         )
 
-    assert exc_info.value.code == ERROR_CODE_POOL_METADATA_FETCH_FAILED
-    assert exc_info.value.status_code == 502
-    assert "HTTP 403" in exc_info.value.detail
+    assert exc_info.value.code == ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED
+    assert exc_info.value.status_code == 400
+    assert "rejected by odata endpoint" in exc_info.value.detail.lower()
     assert "база данных заблокирована" in exc_info.value.detail.lower()
     assert exc_info.value.errors
+    assert exc_info.value.errors[0]["code"] == ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED
     assert "база данных заблокирована" in str(exc_info.value.errors[0]["detail"]).lower()
+
+
+@pytest.mark.django_db
+def test_fetch_live_catalog_payload_rejects_non_local_plain_http_before_network_call(
+    default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"meta-fetch-http-db-{uuid4().hex[:8]}")
+    database.odata_url = "http://odata.example.test/odata/standard.odata"
+    database.save(update_fields=["odata_url"])
+    _create_service_infobase_mapping(database=database)
+
+    fetch_calls = {"count": 0}
+
+    def _unexpected_fetch(*_args: object, **_kwargs: object) -> object:
+        fetch_calls["count"] += 1
+        return SimpleNamespace(status_code=200, text="<ok/>", headers={"Content-Type": "application/xml"})
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.metadata_catalog.ODataMetadataAdapter.fetch_metadata",
+        _unexpected_fetch,
+    )
+
+    with pytest.raises(MetadataCatalogError) as exc_info:
+        _fetch_live_catalog_payload(
+            database=database,
+            requested_by_username="meta-user",
+        )
+
+    assert exc_info.value.code == ERROR_CODE_POOL_METADATA_FETCH_FAILED
+    assert exc_info.value.status_code == 400
+    assert "https" in exc_info.value.detail.lower()
+    assert fetch_calls["count"] == 0
 
 
 @pytest.mark.django_db

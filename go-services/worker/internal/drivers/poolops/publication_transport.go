@@ -489,6 +489,7 @@ func (t *ODataPublicationTransport) publishTargetWithRetries(
 			return result, nil
 		}
 		normalized := workerodata.NormalizeError(lastErr)
+		operationErrorCode, normalized := mapPublicationTransportError(normalized)
 		responseSummary := map[string]interface{}{}
 		if len(publishResult.SuccessfulDocumentKeys) > 0 {
 			responseSummary["successful_document_idempotency_keys"] = append(
@@ -532,7 +533,7 @@ func (t *ODataPublicationTransport) publishTargetWithRetries(
 		result.Attempts = append(result.Attempts, failedAttempt)
 		if !isRetryablePublicationErr(lastErr) || attempt == maxAttempts {
 			operationErr := handlers.NewOperationExecutionError(
-				ErrorCodePoolRuntimePublicationTransportFailed,
+				operationErrorCode,
 				lastErr.Error(),
 			)
 			return result, newPublicationTransportFailure(operationErr, normalized)
@@ -558,8 +559,9 @@ func (t *ODataPublicationTransport) publishTargetWithRetries(
 	if lastErr == nil {
 		return result, nil
 	}
+	operationErrorCode, _ := mapPublicationTransportError(workerodata.NormalizeError(lastErr))
 	return result, handlers.NewOperationExecutionError(
-		ErrorCodePoolRuntimePublicationTransportFailed,
+		operationErrorCode,
 		lastErr.Error(),
 	)
 }
@@ -739,6 +741,22 @@ func mapPublicationCredentialsErrorCode(err error) string {
 	default:
 		return ErrorCodePoolRuntimePublicationCredentialsError
 	}
+}
+
+func mapPublicationTransportError(
+	normalized workerodata.NormalizedError,
+) (string, workerodata.NormalizedError) {
+	if normalized.StatusCode == 401 || normalized.StatusCode == 403 || normalized.Class == workerodata.ErrorClassAuth {
+		mapped := workerodata.NormalizeErrorCode(ErrorCodeODataMappingNotConfigured)
+		mapped.StatusCode = normalized.StatusCode
+		mapped.Retryable = false
+		mapped.Message = strings.TrimSpace(normalized.Message)
+		if mapped.Message == "" {
+			mapped.Message = "odata mapping credentials were rejected by endpoint"
+		}
+		return ErrorCodeODataMappingNotConfigured, mapped
+	}
+	return ErrorCodePoolRuntimePublicationTransportFailed, normalized
 }
 
 func mapPublicationResolutionOutcome(

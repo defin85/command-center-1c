@@ -2,6 +2,7 @@ package poolops
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -588,6 +589,118 @@ func TestODataPublicationTransport_ExecutePublicationOData_ServiceStrategySetsCr
 	assert.Equal(t, publicationCredentialsPurpose, fetcher.lastCredentialsPurpose)
 }
 
+func TestODataPublicationTransport_ExecutePublicationOData_ActorStrategySupportsUnicodeCredentials(t *testing.T) {
+	username := "ГлавБух"
+	password := "пароль"
+	expectedAuthorization := "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, expectedAuthorization, r.Header.Get("Authorization"))
+		switch r.Method {
+		case http.MethodPost:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"Ref_Key": "550e8400-e29b-41d4-a716-446655440000",
+			})
+		case http.MethodPatch:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer server.Close()
+
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   server.URL,
+			Username:   username,
+			Password:   password,
+		},
+	}
+	service := odata.NewService(odata.NewClientPool())
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationID:     "op-unicode-actor",
+		OperationType:   "pool.publication_odata",
+		ExecutionID:     "exec-unicode-actor",
+		NodeID:          "publication_odata",
+		PoolRunID:       "run-unicode-actor",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthActorForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"documents_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{"Amount": "100.00"},
+					},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.Equal(t, "published", out["status"])
+}
+
+func TestODataPublicationTransport_ExecutePublicationOData_ServiceStrategySupportsUnicodeCredentials(t *testing.T) {
+	username := "СервисПользователь"
+	password := "секретПароль"
+	expectedAuthorization := "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, expectedAuthorization, r.Header.Get("Authorization"))
+		switch r.Method {
+		case http.MethodPost:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"Ref_Key": "550e8400-e29b-41d4-a716-446655440001",
+			})
+		case http.MethodPatch:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer server.Close()
+
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   server.URL,
+			Username:   username,
+			Password:   password,
+		},
+	}
+	service := odata.NewService(odata.NewClientPool())
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationID:     "op-unicode-service",
+		OperationType:   "pool.publication_odata",
+		ExecutionID:     "exec-unicode-service",
+		NodeID:          "publication_odata",
+		PoolRunID:       "run-unicode-service",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthServiceForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"documents_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{"Amount": "100.00"},
+					},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.Equal(t, "published", out["status"])
+}
+
 func TestODataPublicationTransport_ExecutePublicationOData_InvalidPayload(t *testing.T) {
 	fetcher := &mockPublicationCredentialsFetcher{}
 	service := &mockPublicationODataService{}
@@ -879,6 +992,57 @@ func TestODataPublicationTransport_ExecutePublicationOData_NormalizesFailedDatab
 	assert.Equal(t, "4xx", diagnostics["status_class"])
 	assert.Equal(t, false, diagnostics["retryable"])
 	assert.Equal(t, 1, diagnostics["attempts"])
+}
+
+func TestODataPublicationTransport_ExecutePublicationOData_ClassifiesAuthRejectionAsMappingNotConfigured(t *testing.T) {
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockPublicationODataService{
+		createErr: &odata.ODataError{
+			Code:        odata.ErrorCategoryAuth,
+			Message:     "Unauthorized",
+			StatusCode:  401,
+			IsTransient: false,
+		},
+	}
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationType:   "pool.publication_odata",
+		PublicationAuth: publicationAuthServiceForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"documents_by_database": map[string]interface{}{
+					"db-1": []interface{}{map[string]interface{}{"Amount": "100.00"}},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.Equal(t, "failed", out["status"])
+
+	diagnosticsRaw, ok := out["failed_databases_diagnostics"].(map[string]map[string]interface{})
+	require.True(t, ok)
+	diagnostics, ok := diagnosticsRaw["db-1"]
+	require.True(t, ok)
+	assert.Equal(t, ErrorCodeODataMappingNotConfigured, diagnostics["error_code"])
+	assert.Equal(t, "validation", diagnostics["error_class"])
+	assert.Equal(t, "4xx", diagnostics["status_class"])
+	assert.Equal(t, false, diagnostics["retryable"])
+	assert.Equal(t, 1, diagnostics["attempts"])
+
+	attempts, ok := out["attempts"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, attempts, 1)
+	assert.Equal(t, ErrorCodeODataMappingNotConfigured, attempts[0]["error_code"])
 }
 
 func TestODataPublicationTransport_ExecutePublicationOData_FailsClosedOnCompatibilityMismatch(t *testing.T) {
