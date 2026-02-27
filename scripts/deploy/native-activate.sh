@@ -52,6 +52,7 @@ else
   exit 1
 fi
 
+install -d -o cc1c -g cc1c -m 755 "$BASE_DIR" "$RELEASES_DIR"
 install -d -o cc1c -g cc1c -m 750 "$RELEASE_DIR"
 runuser -u cc1c -- tar -xzf "$ARCHIVE_PATH" -C "$RELEASE_DIR"
 
@@ -71,6 +72,11 @@ runuser -u cc1c -- "$RELEASE_DIR/orchestrator/venv/bin/pip" install -r "$RELEASE
 
 runuser -u cc1c -- /bin/bash -lc "set -a; source '$ENV_FILE'; set +a; cd '$RELEASE_DIR/orchestrator'; '$RELEASE_DIR/orchestrator/venv/bin/python' manage.py migrate --noinput"
 runuser -u cc1c -- /bin/bash -lc "set -a; source '$ENV_FILE'; set +a; cd '$RELEASE_DIR/orchestrator'; '$RELEASE_DIR/orchestrator/venv/bin/python' manage.py collectstatic --noinput"
+
+# Nginx must be able to traverse /opt/command-center-1c and read frontend assets.
+chmod o+rx "$RELEASE_DIR" "$RELEASE_DIR/frontend" "$RELEASE_DIR/frontend/dist"
+find "$RELEASE_DIR/frontend/dist" -type d -exec chmod o+rx {} +
+find "$RELEASE_DIR/frontend/dist" -type f -exec chmod o+r {} +
 
 ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
 chown -h cc1c:cc1c "$CURRENT_LINK"
