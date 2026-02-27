@@ -261,7 +261,7 @@ make clean
 ### Техническая документация
 - [Architecture Overview](docs/architecture/README.md)
 - [API Documentation](docs/api/README.md)
-- [Deployment Guide](docs/deployment/README.md)
+- [Deployment Guide](docs/deployment/README.md) - Нативный деплой через GitHub Actions (без Docker)
 - [Development Guide](docs/development/README.md)
 - [CLAUDE.md](CLAUDE.md) - Инструкции для AI агентов
 - [Contributing](CONTRIBUTING.md)

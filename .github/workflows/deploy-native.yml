@@ -1,0 +1,88 @@
+name: Deploy Native
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: deploy-native
+      cancel-in-progress: true
+
+    env:
+      RELEASE_ID: ${{ github.sha }}
+      RELEASE_ARCHIVE: /tmp/cc1c-release-${{ github.sha }}.tar.gz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.0"
+
+      - name: Build frontend
+        run: |
+          set -euo pipefail
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Build backend binaries
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          cd go-services/api-gateway
+          go build -o ../../bin/cc1c-api-gateway ./cmd/main.go
+          cd ../worker
+          go build -o ../../bin/cc1c-worker ./cmd/main.go
+
+      - name: Package release
+        run: |
+          set -euo pipefail
+          rm -rf release
+          mkdir -p release/bin release/frontend/dist
+          cp bin/cc1c-api-gateway release/bin/
+          cp bin/cc1c-worker release/bin/
+          rsync -a --delete \
+            --exclude '.venv' \
+            --exclude '__pycache__' \
+            --exclude '.pytest_cache' \
+            orchestrator/ release/orchestrator/
+          rsync -a --delete frontend/dist/ release/frontend/dist/
+          tar -C release -czf release.tar.gz .
+
+      - name: Setup SSH key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "${{ secrets.DEPLOY_PORT }}" -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Upload release to server
+        run: |
+          set -euo pipefail
+          scp -P "${{ secrets.DEPLOY_PORT }}" release.tar.gz \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${RELEASE_ARCHIVE}"
+
+      - name: Activate release on server
+        run: |
+          set -euo pipefail
+          ssh -p "${{ secrets.DEPLOY_PORT }}" "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "sudo /usr/local/bin/cc1c-deploy '${RELEASE_ARCHIVE}' '${RELEASE_ID}' && rm -f '${RELEASE_ARCHIVE}'"
