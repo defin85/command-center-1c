@@ -14,6 +14,7 @@ RELEASES_DIR="$BASE_DIR/releases"
 CURRENT_LINK="$BASE_DIR/current"
 ENV_FILE="/etc/command-center-1c/env.production"
 RELEASE_DIR="$RELEASES_DIR/$RELEASE_ID"
+PYTHON_BIN="${CC1C_PYTHON_BIN:-/usr/bin/python3.12}"
 
 REQUIRED_FILES=(
   "bin/cc1c-api-gateway"
@@ -38,6 +39,12 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "Python interpreter not found or not executable: $PYTHON_BIN"
+  echo "Install Python 3.12+ or set CC1C_PYTHON_BIN to a valid interpreter path."
+  exit 1
+fi
+
 if id cc1c >/dev/null 2>&1; then
   true
 else
@@ -58,7 +65,7 @@ done
 chmod 750 "$RELEASE_DIR/bin/cc1c-api-gateway" "$RELEASE_DIR/bin/cc1c-worker"
 chown -R cc1c:cc1c "$RELEASE_DIR"
 
-runuser -u cc1c -- /usr/bin/python3.11 -m venv "$RELEASE_DIR/orchestrator/venv"
+runuser -u cc1c -- "$PYTHON_BIN" -m venv "$RELEASE_DIR/orchestrator/venv"
 runuser -u cc1c -- "$RELEASE_DIR/orchestrator/venv/bin/pip" install --upgrade pip
 runuser -u cc1c -- "$RELEASE_DIR/orchestrator/venv/bin/pip" install -r "$RELEASE_DIR/orchestrator/requirements.txt"
 
