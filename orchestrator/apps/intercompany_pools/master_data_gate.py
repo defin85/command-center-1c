@@ -455,15 +455,9 @@ def _read_ib_ref_key_from_metadata(
         return ""
 
     if entity_type == PoolMasterDataEntityType.CONTRACT:
-        if isinstance(database_entry, Mapping):
-            return str(
-                database_entry.get(owner_counterparty_canonical_id)
-                or database_entry.get("default")
-                or ""
-            ).strip()
-        if isinstance(database_entry, str):
-            return database_entry.strip()
-        return ""
+        if not isinstance(database_entry, Mapping):
+            return ""
+        return str(database_entry.get(owner_counterparty_canonical_id) or "").strip()
 
     if isinstance(database_entry, str):
         return database_entry.strip()

@@ -1,0 +1,27 @@
+## 1. Contracts and backend API
+- [ ] 1.1 Спроектировать и зафиксировать public API contract для master-data hub (`Party`, `Item`, `Contract`, `TaxProfile`, `Bindings`) в tenant scope, включая pagination/filtering и machine-readable ошибки.
+- [ ] 1.2 Зафиксировать и реализовать явный `Organization <-> Party` binding контракт (MVP `1:1`) с ownership policy полей и миграционным backfill существующих данных.
+- [ ] 1.3 Реализовать v2 endpoints и сериализаторы для list/upsert/get по canonical сущностям и bindings, сохранив инварианты:
+  - `Party` имеет минимум одну роль,
+  - `Contract` строго owner-scoped к `counterparty`,
+  - `TaxProfile` ограничен `vat_rate/vat_included/vat_code`.
+- [ ] 1.4 Добавить в run/report read-model стабильный блок `master_data_gate` summary/diagnostics для operator-facing UI.
+- [ ] 1.5 Для новых master-data endpoint-ов закрепить единый `application/problem+json` error contract и machine-readable коды.
+
+## 2. Runtime settings and feature control
+- [ ] 2.1 Добавить ключ `pools.master_data.gate_enabled` в registry поддерживаемых runtime settings override.
+- [ ] 2.2 Реализовать единый precedence resolver для gate flag: `tenant override -> global runtime setting -> env default`.
+- [ ] 2.3 Реализовать использование effective runtime setting в проверке feature flag master-data gate с fail-closed поведением при неконсистентной конфигурации.
+
+## 3. Frontend workspace and guided authoring
+- [ ] 3.1 Добавить маршрут `/pools/master-data` и пункт меню в Pools navigation.
+- [ ] 3.2 Реализовать страницу workspace с табами `Party`, `Item`, `Contract`, `TaxProfile`, `Bindings`, включая поиск, фильтры и create/edit формы.
+- [ ] 3.3 Встроить в `/pools/catalog` token picker для `document_policy` mapping (`field_mapping`/`table_parts_mapping`) с валидацией формата master-data токенов.
+- [ ] 3.4 Добавить в `/pools/runs` карточку `Master Data Gate` с отображением summary, кодов ошибок, контекста сущности/ИБ и action-oriented remediation hint.
+
+## 4. Verification and rollout
+- [ ] 4.1 Добавить backend тесты API/доменных инвариантов и контракта `master_data_gate` в run/report.
+- [ ] 4.2 Добавить frontend unit/integration тесты для workspace, token picker и run diagnostics panel.
+- [ ] 4.3 Обновить e2e browser-flow для pools (минимум: authoring token -> failed gate diagnostics -> remediation-ready view).
+- [ ] 4.4 Добавить проверку миграционного сценария backfill `Organization <-> Party` и fail-closed диагностики при отсутствующем binding.
+- [ ] 4.5 Прогнать `openspec validate add-06-pool-master-data-hub-ui --strict --no-interactive`.

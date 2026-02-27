@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+import json
 from uuid import uuid4
 from unittest.mock import patch
 
@@ -25,6 +26,7 @@ from apps.intercompany_pools.models import (
     Organization,
     OrganizationPool,
     PoolEdgeVersion,
+    PoolMasterContract,
     PoolNodeVersion,
     PoolMasterParty,
     PoolRun,
@@ -1275,6 +1277,80 @@ def test_master_data_gate_resolves_party_token_and_persists_binding_artifact() -
 
 
 @pytest.mark.django_db
+def test_master_data_gate_resolves_role_specific_party_bindings_for_single_party() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    database = _create_database(tenant=run.tenant, suffix="gate-role-specific-party")
+    PoolMasterParty.objects.create(
+        tenant=run.tenant,
+        canonical_id="party-001",
+        name="Universal Party 001",
+        is_our_organization=True,
+        is_counterparty=True,
+        metadata={
+            "ib_ref_keys": {
+                str(database.id): {
+                    "organization": "ref-organization-001",
+                    "counterparty": "ref-counterparty-001",
+                }
+            }
+        },
+    )
+
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "master_data_snapshot_ref": "master_data_snapshot.v1:test",
+            "master_data_binding_artifact_ref": "master_data_binding_artifact.v1:test",
+            "pool_runtime_publication_payload": {
+                "pool_runtime": {
+                    "document_chains_by_database": {
+                        str(database.id): [
+                            {
+                                "chain_id": "sale-chain",
+                                "documents": [
+                                    {
+                                        "document_id": "sale",
+                                        "field_mapping": {
+                                            "Организация": "master_data.party.party-001.organization.ref",
+                                            "Контрагент": "master_data.party.party-001.counterparty.ref",
+                                        },
+                                        "table_parts_mapping": {},
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.pool_domain_steps.is_pool_master_data_gate_enabled",
+        return_value=True,
+    ):
+        output = execute_pool_runtime_step(
+            operation_type="pool.master_data_gate",
+            rendered_data={"pool_runtime": {"step_id": "master_data_gate"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
+
+    assert output["summary"]["status"] == "completed"
+    assert output["summary"]["bindings_count"] == 2
+    execution.refresh_from_db(fields=["input_context"])
+    publication_payload = execution.input_context["pool_runtime_publication_payload"]["pool_runtime"]
+    resolved_master_data_refs = publication_payload["document_chains_by_database"][str(database.id)][0]["documents"][0][
+        "resolved_master_data_refs"
+    ]
+    assert resolved_master_data_refs == {
+        "master_data.party.party-001.organization.ref": "ref-organization-001",
+        "master_data.party.party-001.counterparty.ref": "ref-counterparty-001",
+    }
+
+
+@pytest.mark.django_db
 def test_master_data_gate_fails_closed_when_canonical_entity_is_missing() -> None:
     run = _create_pool_run(mode=PoolRunMode.UNSAFE)
     database = _create_database(tenant=run.tenant, suffix="gate-missing-entity")
@@ -1311,13 +1387,176 @@ def test_master_data_gate_fails_closed_when_canonical_entity_is_missing() -> Non
         "apps.intercompany_pools.pool_domain_steps.is_pool_master_data_gate_enabled",
         return_value=True,
     ):
-        with pytest.raises(ValueError, match="MASTER_DATA_ENTITY_NOT_FOUND"):
+        with pytest.raises(ValueError, match="MASTER_DATA_ENTITY_NOT_FOUND") as exc_info:
             execute_pool_runtime_step(
                 operation_type="pool.master_data_gate",
                 rendered_data={"pool_runtime": {"step_id": "master_data_gate"}},
                 context={"pool_run_id": str(run.id)},
                 execution=execution,
             )
+
+    diagnostic = json.loads(str(exc_info.value).split("diagnostic=", 1)[1])
+    assert diagnostic["error_code"] == "MASTER_DATA_ENTITY_NOT_FOUND"
+    assert diagnostic["entity_type"] == "party"
+    assert diagnostic["canonical_id"] == "missing-party"
+    assert diagnostic["target_database_id"] == str(database.id)
+
+    execution.refresh_from_db(fields=["input_context"])
+    gate_summary = execution.input_context.get("pool_runtime_master_data_gate")
+    assert isinstance(gate_summary, dict)
+    assert gate_summary.get("status") == "failed"
+    assert gate_summary.get("error_code") == "MASTER_DATA_ENTITY_NOT_FOUND"
+    assert isinstance(gate_summary.get("diagnostic"), dict)
+
+
+@pytest.mark.django_db
+def test_master_data_gate_fails_closed_when_contract_owner_ref_key_is_not_owner_scoped() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    database = _create_database(tenant=run.tenant, suffix="gate-contract-default")
+    owner = PoolMasterParty.objects.create(
+        tenant=run.tenant,
+        canonical_id="party-a",
+        name="Counterparty A",
+        is_counterparty=True,
+    )
+    PoolMasterContract.objects.create(
+        tenant=run.tenant,
+        canonical_id="contract-001",
+        name="Contract 001",
+        owner_counterparty=owner,
+        metadata={
+            "ib_ref_keys": {
+                str(database.id): {
+                    "default": "ref-contract-default",
+                }
+            }
+        },
+    )
+
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "master_data_snapshot_ref": "master_data_snapshot.v1:test",
+            "master_data_binding_artifact_ref": "master_data_binding_artifact.v1:test",
+            "pool_runtime_publication_payload": {
+                "pool_runtime": {
+                    "document_chains_by_database": {
+                        str(database.id): [
+                            {
+                                "chain_id": "sale-chain",
+                                "documents": [
+                                    {
+                                        "document_id": "sale",
+                                        "field_mapping": {
+                                            "Договор": "master_data.contract.contract-001.party-a.ref"
+                                        },
+                                        "table_parts_mapping": {},
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.pool_domain_steps.is_pool_master_data_gate_enabled",
+        return_value=True,
+    ):
+        with pytest.raises(ValueError, match="MASTER_DATA_BINDING_CONFLICT") as exc_info:
+            execute_pool_runtime_step(
+                operation_type="pool.master_data_gate",
+                rendered_data={"pool_runtime": {"step_id": "master_data_gate"}},
+                context={"pool_run_id": str(run.id)},
+                execution=execution,
+            )
+
+    diagnostic = json.loads(str(exc_info.value).split("diagnostic=", 1)[1])
+    assert diagnostic["error_code"] == "MASTER_DATA_BINDING_CONFLICT"
+    assert diagnostic["entity_type"] == "contract"
+    assert diagnostic["canonical_id"] == "contract-001"
+    assert diagnostic["target_database_id"] == str(database.id)
+
+
+@pytest.mark.django_db
+def test_master_data_gate_fails_closed_when_contract_owner_does_not_match_token() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    database = _create_database(tenant=run.tenant, suffix="gate-contract-owner-mismatch")
+    owner_a = PoolMasterParty.objects.create(
+        tenant=run.tenant,
+        canonical_id="party-a",
+        name="Counterparty A",
+        is_counterparty=True,
+    )
+    PoolMasterParty.objects.create(
+        tenant=run.tenant,
+        canonical_id="party-b",
+        name="Counterparty B",
+        is_counterparty=True,
+    )
+    PoolMasterContract.objects.create(
+        tenant=run.tenant,
+        canonical_id="contract-001",
+        name="Contract 001",
+        owner_counterparty=owner_a,
+        metadata={
+            "ib_ref_keys": {
+                str(database.id): {
+                    "party-a": "ref-contract-a",
+                }
+            }
+        },
+    )
+
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "master_data_snapshot_ref": "master_data_snapshot.v1:test",
+            "master_data_binding_artifact_ref": "master_data_binding_artifact.v1:test",
+            "pool_runtime_publication_payload": {
+                "pool_runtime": {
+                    "document_chains_by_database": {
+                        str(database.id): [
+                            {
+                                "chain_id": "sale-chain",
+                                "documents": [
+                                    {
+                                        "document_id": "sale",
+                                        "field_mapping": {
+                                            "Договор": "master_data.contract.contract-001.party-b.ref"
+                                        },
+                                        "table_parts_mapping": {},
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.pool_domain_steps.is_pool_master_data_gate_enabled",
+        return_value=True,
+    ):
+        with pytest.raises(ValueError, match="MASTER_DATA_ENTITY_NOT_FOUND") as exc_info:
+            execute_pool_runtime_step(
+                operation_type="pool.master_data_gate",
+                rendered_data={"pool_runtime": {"step_id": "master_data_gate"}},
+                context={"pool_run_id": str(run.id)},
+                execution=execution,
+            )
+
+    diagnostic = json.loads(str(exc_info.value).split("diagnostic=", 1)[1])
+    assert diagnostic["error_code"] == "MASTER_DATA_ENTITY_NOT_FOUND"
+    assert diagnostic["entity_type"] == "contract"
+    assert diagnostic["canonical_id"] == "contract-001"
+    assert diagnostic["target_database_id"] == str(database.id)
 
 
 @pytest.mark.django_db

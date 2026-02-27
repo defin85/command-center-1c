@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
@@ -426,7 +427,25 @@ def _execute_master_data_gate(
             execution_context=execution_context,
         )
     except MasterDataResolveError as exc:
-        raise ValueError(f"{exc.code}: {exc.detail}") from exc
+        diagnostic = exc.to_diagnostic()
+        summary = {
+            "status": "failed",
+            "mode": MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
+            "error_code": exc.code,
+            "detail": exc.detail,
+            "diagnostic": diagnostic,
+        }
+        _update_execution_context(
+            execution=execution,
+            updates={"pool_runtime_master_data_gate": summary},
+        )
+        diagnostic_json = json.dumps(
+            diagnostic,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        raise ValueError(f"{exc.code}: diagnostic={diagnostic_json}") from exc
 
     publication_payload = gate_result.get("publication_payload")
     binding_artifact = gate_result.get("binding_artifact")
