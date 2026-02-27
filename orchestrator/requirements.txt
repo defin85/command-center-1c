@@ -1,5 +1,6 @@
 # Django и DRF
 Django==6.0
+gunicorn==23.0.0  # WSGI server for systemd production unit
 djangorestframework==3.16.1
 django-filter==25.2
 drf-spectacular==0.29.0  # OpenAPI/Swagger documentation

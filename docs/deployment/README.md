@@ -94,6 +94,7 @@ sudo systemctl reload nginx
 2. Обновить `/etc/command-center-1c/env.production`:
    - `DJANGO_SETTINGS_MODULE=config.settings.production`
    - `ALLOWED_HOSTS=<your-domain>`
+   - `CREDENTIALS_TRANSPORT_KEY=<64+ hex chars>` (генерируется один раз, не менять после запуска системы)
 3. Выпустить сертификат:
 
 ```bash
