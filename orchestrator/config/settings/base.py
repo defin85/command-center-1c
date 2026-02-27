@@ -521,6 +521,13 @@ ENABLE_GO_SCHEDULER = env.bool('ENABLE_GO_SCHEDULER', default=False)
 ENABLE_GO_TEMPLATE_ENGINE = env.bool('ENABLE_GO_TEMPLATE_ENGINE', default=False)
 ENABLE_GO_WORKFLOW_ENGINE = env.bool('ENABLE_GO_WORKFLOW_ENGINE', default=False)
 
+# Pool runtime master-data gate (pre-publication resolve+upsert).
+# Enabled by default to enforce fail-closed master-data behavior.
+POOL_RUNTIME_MASTER_DATA_GATE_ENABLED = env.bool(
+    'POOL_RUNTIME_MASTER_DATA_GATE_ENABLED',
+    default=True,
+)
+
 # Explicit debug control for local in-process workflow fallback.
 # Only intended for local/non-production diagnostics.
 WORKFLOW_EXECUTION_DEBUG_FALLBACK_ENABLED = env.bool(

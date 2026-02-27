@@ -601,6 +601,104 @@ func TestODataPublicationTransport_ExecutePublicationOData_UsesResolvedLinkRefsF
 	assert.Equal(t, "sale-ref-1", service.createPayloads[0]["BaseDocument"])
 }
 
+func TestODataPublicationTransport_ExecutePublicationOData_UsesResolvedMasterDataRefs(t *testing.T) {
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockPublicationODataService{}
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationType:   "pool.publication_odata",
+		PoolRunID:       "run-master-data-ref",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthActorForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"document_chains_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{
+							"chain_id": "sale_chain",
+							"documents": []interface{}{
+								map[string]interface{}{
+									"document_id": "sale",
+									"entity_name": "Document_Sales",
+									"field_mapping": map[string]interface{}{
+										"Counterparty": "master_data.party.party-001.counterparty.ref",
+									},
+									"resolved_master_data_refs": map[string]interface{}{
+										"master_data.party.party-001.counterparty.ref": "ref-counterparty-001",
+									},
+									"payload": map[string]interface{}{},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.Equal(t, "published", out["status"])
+	require.Len(t, service.createPayloads, 1)
+	assert.Equal(t, "ref-counterparty-001", service.createPayloads[0]["Counterparty"])
+}
+
+func TestODataPublicationTransport_ExecutePublicationOData_FailsWhenMasterDataTokenIsUnresolved(t *testing.T) {
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockPublicationODataService{}
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	_, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationType:   "pool.publication_odata",
+		PoolRunID:       "run-master-data-missing",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthActorForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"document_chains_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{
+							"chain_id": "sale_chain",
+							"documents": []interface{}{
+								map[string]interface{}{
+									"document_id": "sale",
+									"entity_name": "Document_Sales",
+									"field_mapping": map[string]interface{}{
+										"Counterparty": "master_data.party.party-001.counterparty.ref",
+									},
+									"payload": map[string]interface{}{},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	require.Error(t, err)
+	var opErr *handlers.OperationExecutionError
+	require.True(t, errors.As(err, &opErr))
+	assert.Equal(t, ErrorCodePoolRuntimePublicationPayloadInvalid, opErr.Code)
+	assert.Contains(t, opErr.Message, MASTER_DATA_BINDING_CONFLICT)
+	assert.Contains(t, opErr.Message, "master_data.party.party-001.counterparty.ref")
+}
+
 func TestODataPublicationTransport_ExecutePublicationOData_ChainFailureIncludesDocumentRetryDiagnostics(t *testing.T) {
 	fetcher := &mockPublicationCredentialsFetcher{
 		cred: &credentials.DatabaseCredentials{

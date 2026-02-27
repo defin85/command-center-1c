@@ -8,6 +8,11 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from apps.databases.models import Database, InfobaseUserMapping
+from apps.intercompany_pools.master_data_artifact_contract import (
+    MASTER_DATA_BINDING_ARTIFACT_VERSION,
+    MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
+    POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY,
+)
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationPool,
@@ -319,6 +324,29 @@ def test_start_pool_run_workflow_execution_sets_publication_auth_context() -> No
         "actor_username": actor.username,
         "source": "run_create",
     }
+
+
+@pytest.mark.django_db
+def test_start_pool_run_workflow_execution_sets_master_data_refs_in_input_context() -> None:
+    run = _create_pool_run(mode=PoolRunMode.SAFE)
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-master-data-refs",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        result = start_pool_run_workflow_execution(run=run)
+
+    execution = WorkflowExecution.objects.get(id=result.execution_id)
+    snapshot_ref = str(execution.input_context.get("master_data_snapshot_ref") or "").strip()
+    binding_ref = str(execution.input_context.get("master_data_binding_artifact_ref") or "").strip()
+    assert snapshot_ref.startswith("master_data_snapshot.v1:")
+    assert binding_ref.startswith("master_data_binding_artifact.v1:")
 
 
 @pytest.mark.django_db
@@ -643,6 +671,69 @@ def test_retry_workflow_execution_keeps_operation_binding_snapshot() -> None:
         "actor_username": retry_actor.username,
         "source": "retry_publication",
     }
+
+
+@pytest.mark.django_db
+def test_retry_workflow_execution_reuses_master_data_refs_and_binding_artifact() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-initial-master-data",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        first = start_pool_run_workflow_execution(run=run)
+
+    first_execution = WorkflowExecution.objects.get(id=first.execution_id)
+    first_execution.input_context = {
+        **(first_execution.input_context or {}),
+        "master_data_snapshot_ref": "master_data_snapshot.v1:lineage-fixed",
+        "master_data_binding_artifact_ref": "master_data_binding_artifact.v1:lineage-fixed",
+        POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY: {
+            "version": MASTER_DATA_BINDING_ARTIFACT_VERSION,
+            "run_id": str(run.id),
+            "mode": MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
+            "snapshot_ref": "master_data_snapshot.v1:lineage-fixed",
+            "binding_artifact_ref": "master_data_binding_artifact.v1:lineage-fixed",
+            "targets": [],
+            "bindings": [],
+            "diagnostics": [],
+            "generated_at": "2026-01-01T00:00:00+00:00",
+        },
+    }
+    first_execution.save(update_fields=["input_context"])
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-retry-master-data",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        retry = start_pool_run_retry_workflow_execution(
+            run=run,
+            retry_request={"documents_by_database": {}, "use_retry_subset_payload": False},
+        )
+
+    retry_execution = WorkflowExecution.objects.get(id=retry.execution_id)
+    assert retry_execution.input_context.get("master_data_snapshot_ref") == "master_data_snapshot.v1:lineage-fixed"
+    assert (
+        retry_execution.input_context.get("master_data_binding_artifact_ref")
+        == "master_data_binding_artifact.v1:lineage-fixed"
+    )
+    persisted_artifact = retry_execution.input_context.get(
+        POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY
+    )
+    assert isinstance(persisted_artifact, dict)
+    assert persisted_artifact.get("binding_artifact_ref") == "master_data_binding_artifact.v1:lineage-fixed"
 
 
 @pytest.mark.django_db

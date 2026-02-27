@@ -1,0 +1,472 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Mapping
+
+from django.utils import timezone
+
+from .master_data_artifact_contract import (
+    MASTER_DATA_BINDING_ARTIFACT_VERSION,
+    MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
+    POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_REF_CONTEXT_KEY,
+    POOL_RUNTIME_MASTER_DATA_SNAPSHOT_REF_CONTEXT_KEY,
+    validate_master_data_binding_artifact_v1,
+)
+from .master_data_bindings import upsert_pool_master_data_binding
+from .master_data_errors import (
+    MASTER_DATA_BINDING_AMBIGUOUS,
+    MASTER_DATA_BINDING_CONFLICT,
+    MASTER_DATA_ENTITY_NOT_FOUND,
+    MasterDataResolveError,
+)
+from .models import (
+    PoolMasterBindingCatalogKind,
+    PoolMasterBindingSyncStatus,
+    PoolMasterContract,
+    PoolMasterDataBinding,
+    PoolMasterDataEntityType,
+    PoolMasterItem,
+    PoolMasterParty,
+    PoolMasterTaxProfile,
+    PoolRun,
+)
+
+
+MASTER_DATA_TOKEN_PREFIX = "master_data."
+MASTER_DATA_TOKEN_SUFFIX = ".ref"
+
+
+@dataclass(frozen=True)
+class MasterDataTokenRequirement:
+    token: str
+    entity_type: str
+    canonical_id: str
+    database_id: str
+    ib_catalog_kind: str = ""
+    owner_counterparty_canonical_id: str = ""
+
+
+def execute_master_data_resolve_upsert_gate(
+    *,
+    run: PoolRun,
+    execution_context: Mapping[str, Any],
+) -> dict[str, Any]:
+    publication_payload = _resolve_publication_payload(execution_context=execution_context)
+    snapshot_ref = str(
+        execution_context.get(POOL_RUNTIME_MASTER_DATA_SNAPSHOT_REF_CONTEXT_KEY) or ""
+    ).strip()
+    binding_artifact_ref = str(
+        execution_context.get(POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_REF_CONTEXT_KEY) or ""
+    ).strip()
+    if not snapshot_ref or not binding_artifact_ref:
+        raise MasterDataResolveError(
+            code=MASTER_DATA_BINDING_CONFLICT,
+            detail="Missing immutable master-data snapshot/binding references in execution context.",
+            entity_type="",
+            canonical_id="",
+            target_database_id="",
+        )
+
+    pool_runtime_payload = dict(publication_payload.get("pool_runtime") or {})
+    chains_by_database_raw = pool_runtime_payload.get("document_chains_by_database")
+    if not isinstance(chains_by_database_raw, Mapping):
+        raise MasterDataResolveError(
+            code=MASTER_DATA_BINDING_CONFLICT,
+            detail="Publication payload must contain pool_runtime.document_chains_by_database object.",
+            entity_type="",
+            canonical_id="",
+            target_database_id="",
+        )
+
+    chains_by_database = {
+        str(database_id): list(chains)
+        for database_id, chains in chains_by_database_raw.items()
+        if str(database_id).strip() and isinstance(chains, list)
+    }
+    bindings_rows: list[dict[str, Any]] = []
+    bindings_count_by_database: dict[str, int] = {}
+
+    for database_id, chains in chains_by_database.items():
+        for chain_raw in chains:
+            if not isinstance(chain_raw, dict):
+                continue
+            documents_raw = chain_raw.get("documents")
+            if not isinstance(documents_raw, list):
+                continue
+            for document_raw in documents_raw:
+                if not isinstance(document_raw, dict):
+                    continue
+                resolved_master_data_refs = (
+                    dict(document_raw.get("resolved_master_data_refs"))
+                    if isinstance(document_raw.get("resolved_master_data_refs"), dict)
+                    else {}
+                )
+                requirements = _extract_requirements_from_document(
+                    document=document_raw,
+                    database_id=database_id,
+                )
+                for requirement in requirements:
+                    ib_ref_key = _resolve_requirement_ib_ref_key(
+                        run=run,
+                        requirement=requirement,
+                    )
+                    resolved_master_data_refs[requirement.token] = ib_ref_key
+                    bindings_rows.append(
+                        {
+                            "database_id": database_id,
+                            "token": requirement.token,
+                            "entity_type": requirement.entity_type,
+                            "canonical_id": requirement.canonical_id,
+                            "ib_catalog_kind": requirement.ib_catalog_kind,
+                            "owner_counterparty_canonical_id": requirement.owner_counterparty_canonical_id,
+                            "ib_ref_key": ib_ref_key,
+                        }
+                    )
+                if resolved_master_data_refs:
+                    document_raw["resolved_master_data_refs"] = resolved_master_data_refs
+
+        bindings_count_by_database[database_id] = sum(
+            1
+            for row in bindings_rows
+            if str(row.get("database_id") or "").strip() == database_id
+        )
+
+    targets = [
+        {
+            "database_id": database_id,
+            "bindings_count": int(bindings_count_by_database.get(database_id) or 0),
+        }
+        for database_id in sorted(chains_by_database.keys())
+    ]
+    bindings_rows = sorted(
+        bindings_rows,
+        key=lambda item: (
+            str(item.get("database_id") or ""),
+            str(item.get("token") or ""),
+        ),
+    )
+
+    pool_runtime_payload["document_chains_by_database"] = chains_by_database
+    pool_runtime_payload["master_data_gate_mode"] = MASTER_DATA_GATE_MODE_RESOLVE_UPSERT
+    pool_runtime_payload["master_data_snapshot_ref"] = snapshot_ref
+    pool_runtime_payload["master_data_binding_artifact_ref"] = binding_artifact_ref
+
+    artifact = validate_master_data_binding_artifact_v1(
+        artifact={
+            "version": MASTER_DATA_BINDING_ARTIFACT_VERSION,
+            "run_id": str(run.id),
+            "mode": MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
+            "snapshot_ref": snapshot_ref,
+            "binding_artifact_ref": binding_artifact_ref,
+            "targets": targets,
+            "bindings": bindings_rows,
+            "diagnostics": [],
+            "generated_at": timezone.now().isoformat(),
+        }
+    )
+    return {
+        "publication_payload": {"pool_runtime": pool_runtime_payload},
+        "binding_artifact": artifact,
+        "summary": {
+            "mode": MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
+            "bindings_count": len(bindings_rows),
+            "targets_count": len(targets),
+        },
+    }
+
+
+def _resolve_publication_payload(*, execution_context: Mapping[str, Any]) -> dict[str, Any]:
+    payload = execution_context.get("pool_runtime_publication_payload")
+    if not isinstance(payload, Mapping):
+        raise MasterDataResolveError(
+            code=MASTER_DATA_BINDING_CONFLICT,
+            detail="Missing pool_runtime_publication_payload in execution context.",
+            entity_type="",
+            canonical_id="",
+            target_database_id="",
+        )
+    pool_runtime_payload = payload.get("pool_runtime")
+    if not isinstance(pool_runtime_payload, Mapping):
+        raise MasterDataResolveError(
+            code=MASTER_DATA_BINDING_CONFLICT,
+            detail="pool_runtime_publication_payload.pool_runtime must be an object.",
+            entity_type="",
+            canonical_id="",
+            target_database_id="",
+        )
+    return {"pool_runtime": dict(pool_runtime_payload)}
+
+
+def _extract_requirements_from_document(
+    *,
+    document: Mapping[str, Any],
+    database_id: str,
+) -> list[MasterDataTokenRequirement]:
+    requirements: list[MasterDataTokenRequirement] = []
+    seen_tokens: set[str] = set()
+
+    def _collect(value: Any) -> None:
+        if isinstance(value, str):
+            token = value.strip()
+            if (
+                token
+                and token.startswith(MASTER_DATA_TOKEN_PREFIX)
+                and token.endswith(MASTER_DATA_TOKEN_SUFFIX)
+                and token not in seen_tokens
+            ):
+                requirements.append(
+                    _parse_master_data_token(token=token, database_id=database_id)
+                )
+                seen_tokens.add(token)
+            return
+        if isinstance(value, Mapping):
+            for nested in value.values():
+                _collect(nested)
+            return
+        if isinstance(value, list):
+            for nested in value:
+                _collect(nested)
+
+    _collect(document.get("field_mapping"))
+    _collect(document.get("table_parts_mapping"))
+    return requirements
+
+
+def _parse_master_data_token(*, token: str, database_id: str) -> MasterDataTokenRequirement:
+    body = token.removeprefix(MASTER_DATA_TOKEN_PREFIX).removesuffix(MASTER_DATA_TOKEN_SUFFIX)
+    segments = [segment.strip() for segment in body.split(".") if segment.strip()]
+    if len(segments) < 2:
+        raise MasterDataResolveError(
+            code=MASTER_DATA_BINDING_CONFLICT,
+            detail=f"Invalid master-data token '{token}': expected master_data.<entity>.<canonical>.<...>.ref",
+            entity_type="",
+            canonical_id="",
+            target_database_id=database_id,
+        )
+
+    entity_type = segments[0]
+    canonical_id = segments[1]
+    qualifier = segments[2] if len(segments) > 2 else ""
+
+    if entity_type == PoolMasterDataEntityType.PARTY:
+        if qualifier not in {
+            PoolMasterBindingCatalogKind.ORGANIZATION,
+            PoolMasterBindingCatalogKind.COUNTERPARTY,
+        }:
+            raise MasterDataResolveError(
+                code=MASTER_DATA_BINDING_CONFLICT,
+                detail=f"Party token '{token}' must include role qualifier organization|counterparty.",
+                entity_type=entity_type,
+                canonical_id=canonical_id,
+                target_database_id=database_id,
+            )
+        return MasterDataTokenRequirement(
+            token=token,
+            entity_type=entity_type,
+            canonical_id=canonical_id,
+            database_id=database_id,
+            ib_catalog_kind=qualifier,
+        )
+
+    if entity_type == PoolMasterDataEntityType.CONTRACT:
+        if not qualifier:
+            raise MasterDataResolveError(
+                code=MASTER_DATA_BINDING_CONFLICT,
+                detail=f"Contract token '{token}' must include owner counterparty canonical id.",
+                entity_type=entity_type,
+                canonical_id=canonical_id,
+                target_database_id=database_id,
+            )
+        return MasterDataTokenRequirement(
+            token=token,
+            entity_type=entity_type,
+            canonical_id=canonical_id,
+            database_id=database_id,
+            owner_counterparty_canonical_id=qualifier,
+        )
+
+    if entity_type not in {
+        PoolMasterDataEntityType.ITEM,
+        PoolMasterDataEntityType.TAX_PROFILE,
+    }:
+        raise MasterDataResolveError(
+            code=MASTER_DATA_ENTITY_NOT_FOUND,
+            detail=f"Unsupported master-data token entity_type '{entity_type}' in token '{token}'.",
+            entity_type=entity_type,
+            canonical_id=canonical_id,
+            target_database_id=database_id,
+        )
+    if qualifier:
+        raise MasterDataResolveError(
+            code=MASTER_DATA_BINDING_CONFLICT,
+            detail=f"Token '{token}' has unexpected qualifier for entity_type '{entity_type}'.",
+            entity_type=entity_type,
+            canonical_id=canonical_id,
+            target_database_id=database_id,
+        )
+    return MasterDataTokenRequirement(
+        token=token,
+        entity_type=entity_type,
+        canonical_id=canonical_id,
+        database_id=database_id,
+    )
+
+
+def _resolve_requirement_ib_ref_key(
+    *,
+    run: PoolRun,
+    requirement: MasterDataTokenRequirement,
+) -> str:
+    database = run.tenant.databases.filter(id=requirement.database_id).first()
+    if database is None:
+        raise MasterDataResolveError(
+            code=MASTER_DATA_BINDING_CONFLICT,
+            detail=f"Target database '{requirement.database_id}' is not available for pool run tenant.",
+            entity_type=requirement.entity_type,
+            canonical_id=requirement.canonical_id,
+            target_database_id=requirement.database_id,
+        )
+
+    existing_qs = PoolMasterDataBinding.objects.filter(
+        tenant=run.tenant,
+        entity_type=requirement.entity_type,
+        canonical_id=requirement.canonical_id,
+        database=database,
+        ib_catalog_kind=requirement.ib_catalog_kind,
+        owner_counterparty_canonical_id=requirement.owner_counterparty_canonical_id,
+    ).order_by("created_at", "id")
+    existing = list(existing_qs[:2])
+    if len(existing) > 1:
+        raise MasterDataResolveError(
+            code=MASTER_DATA_BINDING_AMBIGUOUS,
+            detail="Ambiguous binding scope: multiple bindings match token requirement.",
+            entity_type=requirement.entity_type,
+            canonical_id=requirement.canonical_id,
+            target_database_id=requirement.database_id,
+            errors=[{"binding_id": str(item.id)} for item in existing],
+        )
+    if existing:
+        return str(existing[0].ib_ref_key)
+
+    ib_ref_key = _resolve_ib_ref_key_from_canonical_entity(
+        run=run,
+        requirement=requirement,
+        database_id=requirement.database_id,
+    )
+    upsert_result = upsert_pool_master_data_binding(
+        tenant=run.tenant,
+        entity_type=requirement.entity_type,
+        canonical_id=requirement.canonical_id,
+        database=database,
+        ib_ref_key=ib_ref_key,
+        ib_catalog_kind=requirement.ib_catalog_kind,
+        owner_counterparty_canonical_id=requirement.owner_counterparty_canonical_id,
+        sync_status=PoolMasterBindingSyncStatus.UPSERTED,
+    )
+    return str(upsert_result.binding.ib_ref_key)
+
+
+def _resolve_ib_ref_key_from_canonical_entity(
+    *,
+    run: PoolRun,
+    requirement: MasterDataTokenRequirement,
+    database_id: str,
+) -> str:
+    entity = _load_canonical_entity(run=run, requirement=requirement)
+    metadata = entity.metadata if isinstance(getattr(entity, "metadata", None), Mapping) else {}
+    ib_ref_key = _read_ib_ref_key_from_metadata(
+        metadata=metadata,
+        entity_type=requirement.entity_type,
+        database_id=database_id,
+        party_catalog_kind=requirement.ib_catalog_kind,
+        owner_counterparty_canonical_id=requirement.owner_counterparty_canonical_id,
+    )
+    if not ib_ref_key:
+        raise MasterDataResolveError(
+            code=MASTER_DATA_BINDING_CONFLICT,
+            detail=(
+                "Cannot resolve ib_ref_key from canonical metadata. "
+                "Expected metadata.ib_ref_keys[database_id] for entity scope."
+            ),
+            entity_type=requirement.entity_type,
+            canonical_id=requirement.canonical_id,
+            target_database_id=database_id,
+        )
+    return ib_ref_key
+
+
+def _load_canonical_entity(
+    *,
+    run: PoolRun,
+    requirement: MasterDataTokenRequirement,
+) -> Any:
+    entity = None
+    if requirement.entity_type == PoolMasterDataEntityType.PARTY:
+        entity = PoolMasterParty.objects.filter(
+            tenant=run.tenant,
+            canonical_id=requirement.canonical_id,
+        ).first()
+    elif requirement.entity_type == PoolMasterDataEntityType.ITEM:
+        entity = PoolMasterItem.objects.filter(
+            tenant=run.tenant,
+            canonical_id=requirement.canonical_id,
+        ).first()
+    elif requirement.entity_type == PoolMasterDataEntityType.TAX_PROFILE:
+        entity = PoolMasterTaxProfile.objects.filter(
+            tenant=run.tenant,
+            canonical_id=requirement.canonical_id,
+        ).first()
+    elif requirement.entity_type == PoolMasterDataEntityType.CONTRACT:
+        entity = PoolMasterContract.objects.filter(
+            tenant=run.tenant,
+            canonical_id=requirement.canonical_id,
+            owner_counterparty__canonical_id=requirement.owner_counterparty_canonical_id,
+        ).select_related("owner_counterparty").first()
+
+    if entity is None:
+        raise MasterDataResolveError(
+            code=MASTER_DATA_ENTITY_NOT_FOUND,
+            detail="Canonical master-data entity is not found for gate requirement.",
+            entity_type=requirement.entity_type,
+            canonical_id=requirement.canonical_id,
+            target_database_id=requirement.database_id,
+        )
+    return entity
+
+
+def _read_ib_ref_key_from_metadata(
+    *,
+    metadata: Mapping[str, Any],
+    entity_type: str,
+    database_id: str,
+    party_catalog_kind: str,
+    owner_counterparty_canonical_id: str,
+) -> str:
+    ib_ref_keys = metadata.get("ib_ref_keys")
+    if not isinstance(ib_ref_keys, Mapping):
+        return ""
+    database_entry = ib_ref_keys.get(database_id)
+    if database_entry is None:
+        return ""
+
+    if entity_type == PoolMasterDataEntityType.PARTY:
+        if isinstance(database_entry, Mapping):
+            return str(database_entry.get(party_catalog_kind) or "").strip()
+        return ""
+
+    if entity_type == PoolMasterDataEntityType.CONTRACT:
+        if isinstance(database_entry, Mapping):
+            return str(
+                database_entry.get(owner_counterparty_canonical_id)
+                or database_entry.get("default")
+                or ""
+            ).strip()
+        if isinstance(database_entry, str):
+            return database_entry.strip()
+        return ""
+
+    if isinstance(database_entry, str):
+        return database_entry.strip()
+    if isinstance(database_entry, Mapping):
+        return str(database_entry.get("ref") or database_entry.get("value") or "").strip()
+    return ""

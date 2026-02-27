@@ -18,6 +18,12 @@ from .document_plan_artifact_contract import (
     validate_document_plan_artifact_v1,
 )
 from .distribution_artifact_contract import validate_distribution_artifact_v1
+from .master_data_artifact_contract import (
+    POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY,
+    build_master_data_binding_artifact_ref,
+    build_master_data_snapshot_ref,
+    validate_master_data_binding_artifact_v1,
+)
 from .models import PoolRun, PoolRunMode, PoolSchemaTemplate, PoolSchemaTemplateFormat
 from .models import PoolPublicationAttempt, PoolPublicationAttemptStatus
 from .publication_auth_mapping import (
@@ -109,6 +115,15 @@ def start_pool_run_workflow_execution(
             run=locked_run,
             run_input=sanitized_run_input,
         )
+        master_data_snapshot_ref = build_master_data_snapshot_ref(
+            run=locked_run,
+            run_input=sanitized_run_input,
+        )
+        master_data_binding_artifact_ref = build_master_data_binding_artifact_ref(
+            run=locked_run,
+            snapshot_ref=master_data_snapshot_ref,
+            document_plan_artifact=document_plan_artifact,
+        )
         plan = compile_pool_execution_plan(
             schema_template=schema_template,
             run_context=PoolWorkflowRunContext(
@@ -153,6 +168,8 @@ def start_pool_run_workflow_execution(
                 run=locked_run,
                 requested_by=requested_by,
                 publication_auth_source=PUBLICATION_AUTH_SOURCE_RUN_CREATE,
+                master_data_snapshot_ref=master_data_snapshot_ref,
+                master_data_binding_artifact_ref=master_data_binding_artifact_ref,
             ),
             tenant=locked_run.tenant,
             execution_consumer="pools",
@@ -299,6 +316,17 @@ def start_pool_run_retry_workflow_execution(
                 run=locked_run,
                 run_input=sanitized_run_input,
             )
+        master_data_snapshot_ref = _resolve_retry_master_data_snapshot_ref(
+            run=locked_run,
+            run_input=sanitized_run_input,
+            parent_input_context=parent_input_context,
+        )
+        master_data_binding_artifact_ref = _resolve_retry_master_data_binding_artifact_ref(
+            run=locked_run,
+            parent_input_context=parent_input_context,
+            master_data_snapshot_ref=master_data_snapshot_ref,
+            document_plan_artifact=document_plan_artifact,
+        )
         plan = compile_pool_execution_plan(
             schema_template=schema_template,
             run_context=PoolWorkflowRunContext(
@@ -318,7 +346,21 @@ def start_pool_run_retry_workflow_execution(
             requested_by=requested_by,
             publication_auth_source=PUBLICATION_AUTH_SOURCE_RETRY_PUBLICATION,
             fallback_publication_auth=parent_input_context.get("publication_auth"),
+            master_data_snapshot_ref=master_data_snapshot_ref,
+            master_data_binding_artifact_ref=master_data_binding_artifact_ref,
         )
+        persisted_binding_artifact = parent_input_context.get(
+            POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY
+        )
+        if isinstance(persisted_binding_artifact, dict):
+            try:
+                retry_input_context[
+                    POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY
+                ] = validate_master_data_binding_artifact_v1(
+                    artifact=persisted_binding_artifact
+                )
+            except ValueError:
+                pass
         retry_input_context["retry_request"] = _summarize_retry_request(retry_request)
         retry_input_context["pool_runtime_publication_payload"] = retry_publication_payload
         retry_input_context["pool_runtime_retry_settings"] = {
@@ -430,6 +472,8 @@ def _build_input_context(
     requested_by: User | None = None,
     publication_auth_source: str = PUBLICATION_AUTH_SOURCE_RUN_CREATE,
     fallback_publication_auth: object | None = None,
+    master_data_snapshot_ref: str = "",
+    master_data_binding_artifact_ref: str = "",
 ) -> dict[str, Any]:
     run_input = sanitize_run_input_for_runtime_contract(run_input=run.run_input)
     return {
@@ -451,6 +495,8 @@ def _build_input_context(
             source=publication_auth_source,
             fallback=fallback_publication_auth,
         ),
+        "master_data_snapshot_ref": str(master_data_snapshot_ref or "").strip(),
+        "master_data_binding_artifact_ref": str(master_data_binding_artifact_ref or "").strip(),
     }
 
 
@@ -1155,6 +1201,16 @@ def _build_execution_plan_snapshot(
         if isinstance(execution_context, dict)
         else None
     )
+    master_data_snapshot_ref = (
+        str((execution_context or {}).get("master_data_snapshot_ref") or "")
+        if isinstance(execution_context, dict)
+        else ""
+    )
+    master_data_binding_artifact_ref = (
+        str((execution_context or {}).get("master_data_binding_artifact_ref") or "")
+        if isinstance(execution_context, dict)
+        else ""
+    )
     return {
         "kind": "workflow",
         "plan_version": plan.plan_version,
@@ -1176,6 +1232,8 @@ def _build_execution_plan_snapshot(
             "period_end": run.period_end.isoformat() if run.period_end else None,
             "run_input": run_input,
             "publication_auth": publication_auth,
+            "master_data_snapshot_ref": master_data_snapshot_ref,
+            "master_data_binding_artifact_ref": master_data_binding_artifact_ref,
         },
         "execution_snapshot": {
             "pool_run_id": str(run.id),
@@ -1184,6 +1242,8 @@ def _build_execution_plan_snapshot(
             "period_end": run.period_end.isoformat() if run.period_end else None,
             "run_input": run_input,
             "publication_auth": publication_auth,
+            "master_data_snapshot_ref": master_data_snapshot_ref,
+            "master_data_binding_artifact_ref": master_data_binding_artifact_ref,
             "lineage": execution_lineage,
         },
         "targets": {
@@ -1255,6 +1315,35 @@ def _build_execution_bindings(*, plan) -> list[dict[str, Any]]:
             binding["provenance"] = dict(provenance)
         bindings.append(binding)
     return bindings
+
+
+def _resolve_retry_master_data_snapshot_ref(
+    *,
+    run: PoolRun,
+    run_input: dict[str, Any],
+    parent_input_context: dict[str, Any],
+) -> str:
+    persisted_ref = str(parent_input_context.get("master_data_snapshot_ref") or "").strip()
+    if persisted_ref:
+        return persisted_ref
+    return build_master_data_snapshot_ref(run=run, run_input=run_input)
+
+
+def _resolve_retry_master_data_binding_artifact_ref(
+    *,
+    run: PoolRun,
+    parent_input_context: dict[str, Any],
+    master_data_snapshot_ref: str,
+    document_plan_artifact: dict[str, Any] | None,
+) -> str:
+    persisted_ref = str(parent_input_context.get("master_data_binding_artifact_ref") or "").strip()
+    if persisted_ref:
+        return persisted_ref
+    return build_master_data_binding_artifact_ref(
+        run=run,
+        snapshot_ref=master_data_snapshot_ref,
+        document_plan_artifact=document_plan_artifact,
+    )
 
 
 def _build_operation_binding_snapshot(*, plan) -> list[dict[str, Any]]:

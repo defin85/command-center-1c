@@ -11,6 +11,7 @@ from apps.templates.models import OperationExposure
 from apps.templates.workflow.models import WorkflowCategory, WorkflowTemplate, WorkflowType
 
 from .document_plan_artifact_contract import validate_document_plan_artifact_v1
+from .master_data_feature_flags import is_pool_master_data_gate_enabled
 from .models import PoolRunDirection, PoolRunMode, PoolSchemaTemplate
 
 
@@ -21,6 +22,7 @@ _OP_DISTRIBUTION_TOP_DOWN = "pool.distribution_calculation.top_down"
 _OP_DISTRIBUTION_BOTTOM_UP = "pool.distribution_calculation.bottom_up"
 _OP_RECONCILIATION = "pool.reconciliation_report"
 _OP_APPROVAL_GATE = "pool.approval_gate"
+_OP_MASTER_DATA_GATE = "pool.master_data_gate"
 _OP_PUBLICATION = "pool.publication_odata"
 POOL_RUNTIME_REQUIRED_INVOICE_STEP_MISSING = "POOL_RUNTIME_REQUIRED_INVOICE_STEP_MISSING"
 
@@ -184,6 +186,17 @@ class PoolWorkflowCompiler:
                     name="Approval Gate",
                     operation_alias=_OP_APPROVAL_GATE,
                     timeout_seconds=3600,
+                    max_retries=0,
+                )
+            )
+
+        if is_pool_master_data_gate_enabled():
+            steps.append(
+                self._make_step(
+                    node_id="master_data_gate",
+                    name="Master Data Gate",
+                    operation_alias=_OP_MASTER_DATA_GATE,
+                    timeout_seconds=900,
                     max_retries=0,
                 )
             )
@@ -464,7 +477,6 @@ class PoolWorkflowCompiler:
                 if (
                     run_context.mode == PoolRunMode.SAFE
                     and steps[idx - 1].node_id == "approval_gate"
-                    and step.operation_alias == _OP_PUBLICATION
                 ):
                     edge["condition"] = "{{approved_at}}"
                 edges.append(edge)

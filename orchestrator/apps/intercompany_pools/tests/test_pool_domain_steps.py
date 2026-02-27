@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from uuid import uuid4
+from unittest.mock import patch
 
 import pytest
 
@@ -10,6 +11,9 @@ from apps.databases.models import Database
 from apps.intercompany_pools.document_plan_artifact_contract import (
     DOCUMENT_PLAN_ARTIFACT_VERSION,
     POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
+)
+from apps.intercompany_pools.master_data_artifact_contract import (
+    POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY,
 )
 from apps.intercompany_pools.document_policy_contract import (
     DOCUMENT_POLICY_METADATA_KEY,
@@ -22,6 +26,7 @@ from apps.intercompany_pools.models import (
     OrganizationPool,
     PoolEdgeVersion,
     PoolNodeVersion,
+    PoolMasterParty,
     PoolRun,
     PoolRunDirection,
     PoolRunMode,
@@ -1137,6 +1142,182 @@ def test_reconciliation_fails_closed_on_invalid_distribution_artifact() -> None:
             context={"pool_run_id": str(run.id)},
             execution=execution,
         )
+
+
+@pytest.mark.django_db
+def test_master_data_gate_is_skipped_when_feature_is_disabled() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    database = _create_database(tenant=run.tenant, suffix="gate-skip")
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "master_data_snapshot_ref": "master_data_snapshot.v1:test",
+            "master_data_binding_artifact_ref": "master_data_binding_artifact.v1:test",
+            "pool_runtime_publication_payload": {
+                "pool_runtime": {
+                    "document_chains_by_database": {
+                        str(database.id): [
+                            {
+                                "chain_id": "sale-chain",
+                                "documents": [
+                                    {
+                                        "document_id": "sale",
+                                        "field_mapping": {},
+                                        "table_parts_mapping": {},
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.pool_domain_steps.is_pool_master_data_gate_enabled",
+        return_value=False,
+    ):
+        output = execute_pool_runtime_step(
+            operation_type="pool.master_data_gate",
+            rendered_data={"pool_runtime": {"step_id": "master_data_gate"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
+
+    assert output["step"] == "master_data_gate"
+    assert output["summary"]["status"] == "skipped"
+
+    execution.refresh_from_db(fields=["input_context"])
+    gate_summary = execution.input_context.get("pool_runtime_master_data_gate")
+    assert isinstance(gate_summary, dict)
+    assert gate_summary.get("status") == "skipped"
+
+
+@pytest.mark.django_db
+def test_master_data_gate_resolves_party_token_and_persists_binding_artifact() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    database = _create_database(tenant=run.tenant, suffix="gate-resolve")
+    PoolMasterParty.objects.create(
+        tenant=run.tenant,
+        canonical_id="party-001",
+        name="Counterparty 001",
+        is_counterparty=True,
+        metadata={
+            "ib_ref_keys": {
+                str(database.id): {
+                    "counterparty": "ref-counterparty-001",
+                }
+            }
+        },
+    )
+
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "master_data_snapshot_ref": "master_data_snapshot.v1:test",
+            "master_data_binding_artifact_ref": "master_data_binding_artifact.v1:test",
+            "pool_runtime_publication_payload": {
+                "pool_runtime": {
+                    "document_chains_by_database": {
+                        str(database.id): [
+                            {
+                                "chain_id": "sale-chain",
+                                "documents": [
+                                    {
+                                        "document_id": "sale",
+                                        "field_mapping": {
+                                            "Контрагент": "master_data.party.party-001.counterparty.ref"
+                                        },
+                                        "table_parts_mapping": {},
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.pool_domain_steps.is_pool_master_data_gate_enabled",
+        return_value=True,
+    ):
+        output = execute_pool_runtime_step(
+            operation_type="pool.master_data_gate",
+            rendered_data={"pool_runtime": {"step_id": "master_data_gate"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
+
+    assert output["step"] == "master_data_gate"
+    assert output["summary"]["status"] == "completed"
+    assert output["summary"]["bindings_count"] == 1
+
+    execution.refresh_from_db(fields=["input_context"])
+    publication_payload = execution.input_context.get("pool_runtime_publication_payload")
+    assert isinstance(publication_payload, dict)
+    pool_runtime_payload = publication_payload.get("pool_runtime")
+    assert isinstance(pool_runtime_payload, dict)
+    chains = pool_runtime_payload["document_chains_by_database"][str(database.id)]
+    resolved_master_data_refs = chains[0]["documents"][0].get("resolved_master_data_refs")
+    assert resolved_master_data_refs == {
+        "master_data.party.party-001.counterparty.ref": "ref-counterparty-001"
+    }
+
+    binding_artifact = execution.input_context.get(POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY)
+    assert isinstance(binding_artifact, dict)
+    assert binding_artifact.get("binding_artifact_ref") == "master_data_binding_artifact.v1:test"
+    assert binding_artifact.get("mode") == "resolve+upsert"
+
+
+@pytest.mark.django_db
+def test_master_data_gate_fails_closed_when_canonical_entity_is_missing() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    database = _create_database(tenant=run.tenant, suffix="gate-missing-entity")
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "master_data_snapshot_ref": "master_data_snapshot.v1:test",
+            "master_data_binding_artifact_ref": "master_data_binding_artifact.v1:test",
+            "pool_runtime_publication_payload": {
+                "pool_runtime": {
+                    "document_chains_by_database": {
+                        str(database.id): [
+                            {
+                                "chain_id": "sale-chain",
+                                "documents": [
+                                    {
+                                        "document_id": "sale",
+                                        "field_mapping": {
+                                            "Контрагент": "master_data.party.missing-party.counterparty.ref"
+                                        },
+                                        "table_parts_mapping": {},
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.pool_domain_steps.is_pool_master_data_gate_enabled",
+        return_value=True,
+    ):
+        with pytest.raises(ValueError, match="MASTER_DATA_ENTITY_NOT_FOUND"):
+            execute_pool_runtime_step(
+                operation_type="pool.master_data_gate",
+                rendered_data={"pool_runtime": {"step_id": "master_data_gate"}},
+                context={"pool_run_id": str(run.id)},
+                execution=execution,
+            )
 
 
 @pytest.mark.django_db

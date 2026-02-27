@@ -12,6 +12,11 @@ FORBIDDEN_RUNTIME_OVERRIDE_RUN_INPUT_KEYS = frozenset(
         "document_plan_artifact_v1",
         "pool_runtime_document_plan_artifact",
         "pool_runtime_publication_payload",
+        "master_data_snapshot_ref",
+        "master_data_binding_artifact_ref",
+        "master_data_binding_artifact",
+        "master_data_binding_artifact_v1",
+        "pool_runtime_master_data_binding_artifact",
     }
 )
 

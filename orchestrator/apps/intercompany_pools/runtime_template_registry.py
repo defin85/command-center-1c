@@ -83,6 +83,13 @@ _POOL_RUNTIME_TEMPLATE_SPECS: tuple[PoolRuntimeTemplateSpec, ...] = (
         display_order=50,
     ),
     PoolRuntimeTemplateSpec(
+        alias="pool.master_data_gate",
+        label="Pool Master Data Gate",
+        step_id="master_data_gate",
+        description="System-managed pool runtime step: pre-publication master-data resolve+upsert gate.",
+        display_order=55,
+    ),
+    PoolRuntimeTemplateSpec(
         alias="pool.publication_odata",
         label="Pool Publication OData",
         step_id="publication_odata",

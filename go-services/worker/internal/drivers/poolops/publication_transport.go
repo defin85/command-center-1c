@@ -43,6 +43,7 @@ const (
 	ErrorCodeODataMappingNotConfigured                  = "ODATA_MAPPING_NOT_CONFIGURED"
 	ErrorCodeODataMappingAmbiguous                      = "ODATA_MAPPING_AMBIGUOUS"
 	ErrorCodeODataPublicationAuthContextInvalid         = "ODATA_PUBLICATION_AUTH_CONTEXT_INVALID"
+	MASTER_DATA_BINDING_CONFLICT                        = "MASTER_DATA_BINDING_CONFLICT"
 )
 
 const (
@@ -116,22 +117,23 @@ type publicationTargetResult struct {
 }
 
 type publicationDocument struct {
-	ChainID           string
-	ParentNodeID      string
-	ChildNodeID       string
-	DocumentID        string
-	DocumentIndex     int
-	DocumentRole      string
-	InvoiceMode       string
-	LinkTo            string
-	EntityName        string
-	IdempotencyKey    string
-	Payload           map[string]interface{}
-	Allocation        map[string]interface{}
-	FieldMapping      map[string]interface{}
-	TablePartsMapping map[string]interface{}
-	LinkRules         map[string]interface{}
-	ResolvedLinkRefs  map[string]string
+	ChainID                string
+	ParentNodeID           string
+	ChildNodeID            string
+	DocumentID             string
+	DocumentIndex          int
+	DocumentRole           string
+	InvoiceMode            string
+	LinkTo                 string
+	EntityName             string
+	IdempotencyKey         string
+	Payload                map[string]interface{}
+	Allocation             map[string]interface{}
+	FieldMapping           map[string]interface{}
+	TablePartsMapping      map[string]interface{}
+	LinkRules              map[string]interface{}
+	ResolvedLinkRefs       map[string]string
+	ResolvedMasterDataRefs map[string]string
 }
 
 type publicationDocumentsExecutionResult struct {
@@ -1025,23 +1027,34 @@ func normalizeDocumentChainsByDatabase(value interface{}) (map[string][]publicat
 						databaseID,
 					)
 				}
+				fieldMapping := readOptionalObject(document["field_mapping"])
+				tablePartsMapping := readOptionalObject(document["table_parts_mapping"])
+				resolvedLinkRefs := readOptionalStringMap(document["resolved_link_refs"])
+				resolvedMasterDataRefs := readOptionalStringMap(document["resolved_master_data_refs"])
+				if err := validateMasterDataMappingResolution(fieldMapping, resolvedMasterDataRefs); err != nil {
+					return nil, fmt.Errorf("document_chains_by_database[%s] %w", databaseID, err)
+				}
+				if err := validateMasterDataMappingResolution(tablePartsMapping, resolvedMasterDataRefs); err != nil {
+					return nil, fmt.Errorf("document_chains_by_database[%s] %w", databaseID, err)
+				}
 				chainDocuments = append(chainDocuments, publicationDocument{
-					ChainID:           chainID,
-					ParentNodeID:      parentNodeID,
-					ChildNodeID:       childNodeID,
-					DocumentID:        documentID,
-					DocumentIndex:     documentIndex,
-					DocumentRole:      documentRole,
-					InvoiceMode:       invoiceMode,
-					LinkTo:            readOptionalString(document["link_to"]),
-					EntityName:        entityName,
-					IdempotencyKey:    readOptionalString(document["idempotency_key"]),
-					Payload:           cloneMap(payload),
-					Allocation:        allocation,
-					FieldMapping:      readOptionalObject(document["field_mapping"]),
-					TablePartsMapping: readOptionalObject(document["table_parts_mapping"]),
-					LinkRules:         readOptionalObject(document["link_rules"]),
-					ResolvedLinkRefs:  readOptionalStringMap(document["resolved_link_refs"]),
+					ChainID:                chainID,
+					ParentNodeID:           parentNodeID,
+					ChildNodeID:            childNodeID,
+					DocumentID:             documentID,
+					DocumentIndex:          documentIndex,
+					DocumentRole:           documentRole,
+					InvoiceMode:            invoiceMode,
+					LinkTo:                 readOptionalString(document["link_to"]),
+					EntityName:             entityName,
+					IdempotencyKey:         readOptionalString(document["idempotency_key"]),
+					Payload:                cloneMap(payload),
+					Allocation:             allocation,
+					FieldMapping:           fieldMapping,
+					TablePartsMapping:      tablePartsMapping,
+					LinkRules:              readOptionalObject(document["link_rules"]),
+					ResolvedLinkRefs:       resolvedLinkRefs,
+					ResolvedMasterDataRefs: resolvedMasterDataRefs,
 				})
 			}
 			if requiresInvoice && !hasInvoiceDocument {
@@ -1233,6 +1246,18 @@ func resolveDocumentPayloadForPublication(
 	document publicationDocument,
 	createdDocumentRefs map[string]string,
 ) (map[string]interface{}, error) {
+	if err := validateMasterDataMappingResolution(
+		document.FieldMapping,
+		document.ResolvedMasterDataRefs,
+	); err != nil {
+		return nil, err
+	}
+	if err := validateMasterDataMappingResolution(
+		document.TablePartsMapping,
+		document.ResolvedMasterDataRefs,
+	); err != nil {
+		return nil, err
+	}
 	resolvedPayload := cloneMap(payload)
 	applyFieldMappings(
 		resolvedPayload,
@@ -1240,6 +1265,7 @@ func resolveDocumentPayloadForPublication(
 		document.Allocation,
 		createdDocumentRefs,
 		document.ResolvedLinkRefs,
+		document.ResolvedMasterDataRefs,
 	)
 	applyTablePartsMappings(
 		resolvedPayload,
@@ -1247,6 +1273,7 @@ func resolveDocumentPayloadForPublication(
 		document.Allocation,
 		createdDocumentRefs,
 		document.ResolvedLinkRefs,
+		document.ResolvedMasterDataRefs,
 	)
 	if err := validateDocumentLinkage(
 		document,
@@ -1264,6 +1291,7 @@ func applyFieldMappings(
 	allocation map[string]interface{},
 	createdDocumentRefs map[string]string,
 	resolvedLinkRefs map[string]string,
+	resolvedMasterDataRefs map[string]string,
 ) {
 	for rawFieldName, mappingValue := range fieldMapping {
 		fieldName := strings.TrimSpace(rawFieldName)
@@ -1275,6 +1303,7 @@ func applyFieldMappings(
 			allocation,
 			createdDocumentRefs,
 			resolvedLinkRefs,
+			resolvedMasterDataRefs,
 		)
 		if !ok {
 			continue
@@ -1289,6 +1318,7 @@ func applyTablePartsMappings(
 	allocation map[string]interface{},
 	createdDocumentRefs map[string]string,
 	resolvedLinkRefs map[string]string,
+	resolvedMasterDataRefs map[string]string,
 ) {
 	for rawTableName, rawRows := range tablePartsMapping {
 		tableName := strings.TrimSpace(rawTableName)
@@ -1316,6 +1346,7 @@ func applyTablePartsMappings(
 					allocation,
 					createdDocumentRefs,
 					resolvedLinkRefs,
+					resolvedMasterDataRefs,
 				)
 				if resolved {
 					compiledRow[columnName] = resolvedValue
@@ -1336,6 +1367,7 @@ func resolveMappingValue(
 	allocation map[string]interface{},
 	createdDocumentRefs map[string]string,
 	resolvedLinkRefs map[string]string,
+	resolvedMasterDataRefs map[string]string,
 ) (interface{}, bool) {
 	switch value := mappingValue.(type) {
 	case string:
@@ -1351,6 +1383,12 @@ func resolveMappingValue(
 			return resolveDottedPath(allocation, path)
 		}
 		if strings.HasSuffix(token, ".ref") {
+			if strings.HasPrefix(token, "master_data.") {
+				if ref := strings.TrimSpace(resolvedMasterDataRefs[token]); ref != "" {
+					return ref, true
+				}
+				return nil, false
+			}
 			documentID := strings.TrimSpace(strings.TrimSuffix(token, ".ref"))
 			if documentID == "" {
 				return nil, false
@@ -1376,6 +1414,7 @@ func resolveMappingValue(
 				allocation,
 				createdDocumentRefs,
 				resolvedLinkRefs,
+				resolvedMasterDataRefs,
 			)
 			if ok {
 				resolvedMap[key] = resolvedValue
@@ -1390,6 +1429,7 @@ func resolveMappingValue(
 				allocation,
 				createdDocumentRefs,
 				resolvedLinkRefs,
+				resolvedMasterDataRefs,
 			)
 			if ok {
 				items = append(items, resolvedValue)
@@ -1400,6 +1440,42 @@ func resolveMappingValue(
 		return nil, false
 	default:
 		return value, true
+	}
+}
+
+func validateMasterDataMappingResolution(
+	mappingValue interface{},
+	resolvedMasterDataRefs map[string]string,
+) error {
+	switch value := mappingValue.(type) {
+	case string:
+		token := strings.TrimSpace(value)
+		if strings.HasPrefix(token, "master_data.") && strings.HasSuffix(token, ".ref") {
+			if ref := strings.TrimSpace(resolvedMasterDataRefs[token]); ref == "" {
+				return fmt.Errorf(
+					"%s: unresolved master-data mapping token %s",
+					MASTER_DATA_BINDING_CONFLICT,
+					token,
+				)
+			}
+		}
+		return nil
+	case map[string]interface{}:
+		for _, nested := range value {
+			if err := validateMasterDataMappingResolution(nested, resolvedMasterDataRefs); err != nil {
+				return err
+			}
+		}
+		return nil
+	case []interface{}:
+		for _, nested := range value {
+			if err := validateMasterDataMappingResolution(nested, resolvedMasterDataRefs); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return nil
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 const (
 	poolPublicationOperationType     = "pool.publication_odata"
 	poolPublicationPayloadContextKey = "pool_runtime_publication_payload"
+	poolMasterDataGateNodeID         = "master_data_gate"
 	poolDistributionNodeID           = "distribution_calculation"
 	poolReconciliationNodeID         = "reconciliation_report"
 )
@@ -305,6 +306,9 @@ func resolveOperationPayloadFromContext(
 ) map[string]interface{} {
 	if execCtx == nil || operationType != poolPublicationOperationType {
 		return nil
+	}
+	if payload := resolvePoolPublicationPayloadFromNodeResult(execCtx, poolMasterDataGateNodeID); payload != nil {
+		return payload
 	}
 	if payload := resolvePoolPublicationPayloadFromNodeResult(execCtx, poolReconciliationNodeID); payload != nil {
 		return payload

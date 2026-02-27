@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from uuid import uuid4
+from unittest.mock import patch
 
 import pytest
 
@@ -217,6 +218,38 @@ def test_compile_pool_execution_plan_unsafe_mode_skips_approval_gate() -> None:
         "publication_odata",
     ]
     assert all("condition" not in edge for edge in plan.dag_structure["edges"])
+
+
+@pytest.mark.django_db
+def test_compile_pool_execution_plan_includes_master_data_gate_when_feature_enabled() -> None:
+    tenant = Tenant.objects.create(slug=f"pool-master-gate-{uuid4().hex[:8]}", name="Pool Master Gate")
+    schema_template = _create_schema_template(tenant=tenant, code="master-gate-template")
+    _sync_runtime_templates()
+
+    with patch(
+        "apps.intercompany_pools.workflow_compiler.is_pool_master_data_gate_enabled",
+        return_value=True,
+    ):
+        plan = compile_pool_execution_plan(
+            schema_template=schema_template,
+            run_context=_create_context(mode=PoolRunMode.SAFE),
+        )
+
+    node_ids = [node["id"] for node in plan.dag_structure["nodes"]]
+    assert node_ids == [
+        "prepare_input",
+        "distribution_calculation",
+        "reconciliation_report",
+        "approval_gate",
+        "master_data_gate",
+        "publication_odata",
+    ]
+    approval_edge = next(
+        edge
+        for edge in plan.dag_structure["edges"]
+        if edge["from"] == "approval_gate" and edge["to"] == "master_data_gate"
+    )
+    assert approval_edge["condition"] == "{{approved_at}}"
 
 
 @pytest.mark.django_db

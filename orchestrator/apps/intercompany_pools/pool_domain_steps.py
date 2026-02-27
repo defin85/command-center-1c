@@ -16,6 +16,13 @@ from .distribution_artifact_contract import (
     resolve_distribution_artifact_for_downstream_compile,
     validate_distribution_artifact_v1,
 )
+from .master_data_artifact_contract import (
+    MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
+    POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY,
+)
+from .master_data_errors import MasterDataResolveError
+from .master_data_feature_flags import is_pool_master_data_gate_enabled
+from .master_data_gate import execute_master_data_resolve_upsert_gate
 from .models import PoolRun, PoolRunDirection, PoolRunMode
 from .runtime_distribution import (
     build_publication_payload_from_artifact,
@@ -40,6 +47,7 @@ _OP_DISTRIBUTION_TOP_DOWN = "pool.distribution_calculation.top_down"
 _OP_DISTRIBUTION_BOTTOM_UP = "pool.distribution_calculation.bottom_up"
 _OP_RECONCILIATION = "pool.reconciliation_report"
 _OP_APPROVAL_GATE = "pool.approval_gate"
+_OP_MASTER_DATA_GATE = "pool.master_data_gate"
 _OP_PUBLICATION = "pool.publication_odata"
 POOL_RUNTIME_PUBLICATION_PATH_DISABLED = "POOL_RUNTIME_PUBLICATION_PATH_DISABLED"
 POOL_RUNTIME_RETRY_PAYLOAD_INVALID = "POOL_RUNTIME_RETRY_PAYLOAD_INVALID"
@@ -71,6 +79,13 @@ def execute_pool_runtime_step(
 
     if operation_type == _OP_APPROVAL_GATE:
         return _execute_approval_gate(run=run, execution=execution, execution_context=execution_context)
+
+    if operation_type == _OP_MASTER_DATA_GATE:
+        return _execute_master_data_gate(
+            run=run,
+            execution=execution,
+            execution_context=execution_context,
+        )
 
     if operation_type == _OP_PUBLICATION:
         return _execute_publication(
@@ -379,6 +394,63 @@ def _execute_publication(
         f"{POOL_RUNTIME_PUBLICATION_PATH_DISABLED}: "
         "publication OData side effects are disabled in orchestrator pool-domain runtime"
     )
+
+
+def _execute_master_data_gate(
+    *,
+    run: PoolRun,
+    execution: Any,
+    execution_context: dict[str, Any],
+) -> dict[str, Any]:
+    if not is_pool_master_data_gate_enabled():
+        summary = {
+            "status": "skipped",
+            "reason": "feature_disabled",
+            "mode": MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
+            "targets_count": 0,
+            "bindings_count": 0,
+        }
+        _update_execution_context(
+            execution=execution,
+            updates={"pool_runtime_master_data_gate": summary},
+        )
+        return {
+            "step": "master_data_gate",
+            "pool_run_id": str(run.id),
+            "summary": summary,
+        }
+
+    try:
+        gate_result = execute_master_data_resolve_upsert_gate(
+            run=run,
+            execution_context=execution_context,
+        )
+    except MasterDataResolveError as exc:
+        raise ValueError(f"{exc.code}: {exc.detail}") from exc
+
+    publication_payload = gate_result.get("publication_payload")
+    binding_artifact = gate_result.get("binding_artifact")
+    summary = (
+        dict(gate_result.get("summary"))
+        if isinstance(gate_result.get("summary"), Mapping)
+        else {}
+    )
+    summary.setdefault("status", "completed")
+    summary.setdefault("mode", MASTER_DATA_GATE_MODE_RESOLVE_UPSERT)
+
+    updates = {
+        "pool_runtime_publication_payload": publication_payload,
+        POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY: binding_artifact,
+        "pool_runtime_master_data_gate": summary,
+    }
+    _update_execution_context(execution=execution, updates=updates)
+    return {
+        "step": "master_data_gate",
+        "pool_run_id": str(run.id),
+        "summary": summary,
+        "publication_payload": publication_payload,
+        "master_data_binding_artifact": binding_artifact,
+    }
 
 
 def _resolve_locked_retry_publication_payload(

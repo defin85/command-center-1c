@@ -303,6 +303,55 @@ func TestOperationHandler(t *testing.T) {
 		assert.Equal(t, reconciliationPayload, captured.Payload)
 	})
 
+	t.Run("publication node payload prioritizes master_data_gate node result", func(t *testing.T) {
+		var captured *OperationRequest
+		mockExec := &mockOperationExecutor{
+			executeFunc: func(ctx context.Context, req *OperationRequest) (map[string]interface{}, error) {
+				captured = req
+				return map[string]interface{}{"status": "success"}, nil
+			},
+		}
+
+		deps := NewHandlerDependencies(zap.NewNop()).
+			WithOperationExecutor(mockExec)
+		handler := NewOperationHandler(deps)
+
+		node := models.NewOperationNode("op1", "Pool Publication", "pool.publication_odata")
+		execCtx := wfcontext.NewExecutionContext("exec-1", "workflow-1")
+
+		masterDataGatePayload := map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"documents_by_database": map[string]interface{}{
+					"db-master-data": []interface{}{
+						map[string]interface{}{"Amount": "40.00"},
+					},
+				},
+			},
+		}
+		reconciliationPayload := map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"documents_by_database": map[string]interface{}{
+					"db-reconciliation": []interface{}{
+						map[string]interface{}{"Amount": "30.00"},
+					},
+				},
+			},
+		}
+
+		execCtx = execCtx.SetNodeResult("master_data_gate", map[string]interface{}{
+			"publication_payload": masterDataGatePayload,
+		})
+		execCtx = execCtx.SetNodeResult("reconciliation_report", map[string]interface{}{
+			"publication_payload": reconciliationPayload,
+		})
+
+		result, err := handler.HandleNode(context.Background(), node, execCtx)
+		require.NoError(t, err)
+		assert.Equal(t, executor.NodeStatusCompleted, result.Status)
+		require.NotNil(t, captured)
+		assert.Equal(t, masterDataGatePayload, captured.Payload)
+	})
+
 	t.Run("publication node payload falls back to distribution node result before context", func(t *testing.T) {
 		var captured *OperationRequest
 		mockExec := &mockOperationExecutor{

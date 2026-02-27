@@ -7,6 +7,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.db.models import F, Q
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django_fsm import FSMField, transition
 
@@ -76,6 +77,283 @@ class Organization(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.inn})"
+
+
+class PoolMasterParty(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_parties",
+    )
+    canonical_id = models.CharField(max_length=128)
+    name = models.CharField(max_length=255)
+    full_name = models.CharField(max_length=512, blank=True, default="")
+    inn = models.CharField(max_length=12, blank=True, default="")
+    kpp = models.CharField(max_length=9, blank=True, default="")
+    is_our_organization = models.BooleanField(default=False)
+    is_counterparty = models.BooleanField(default=False)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_parties"
+        indexes = [
+            models.Index(fields=["tenant", "canonical_id"]),
+            models.Index(fields=["tenant", "is_counterparty"]),
+            models.Index(fields=["tenant", "is_our_organization"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "canonical_id"],
+                name="uniq_pool_master_party_tenant_canonical",
+            ),
+            models.CheckConstraint(
+                condition=Q(is_our_organization=True) | Q(is_counterparty=True),
+                name="chk_pool_master_party_has_role",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if not self.is_our_organization and not self.is_counterparty:
+            raise ValidationError(
+                {"is_counterparty": "Party must have at least one role: organization or counterparty."}
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterItem(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_items",
+    )
+    canonical_id = models.CharField(max_length=128)
+    name = models.CharField(max_length=255)
+    sku = models.CharField(max_length=128, blank=True, default="")
+    unit = models.CharField(max_length=64, blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_items"
+        indexes = [
+            models.Index(fields=["tenant", "canonical_id"]),
+            models.Index(fields=["tenant", "sku"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "canonical_id"],
+                name="uniq_pool_master_item_tenant_canonical",
+            ),
+        ]
+
+
+class PoolMasterTaxProfile(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_tax_profiles",
+    )
+    canonical_id = models.CharField(max_length=128)
+    vat_rate = models.DecimalField(max_digits=5, decimal_places=2)
+    vat_included = models.BooleanField(default=True)
+    vat_code = models.CharField(max_length=64)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_tax_profiles"
+        indexes = [
+            models.Index(fields=["tenant", "canonical_id"]),
+            models.Index(fields=["tenant", "vat_code"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "canonical_id"],
+                name="uniq_pool_master_tax_tenant_canonical",
+            ),
+            models.CheckConstraint(
+                condition=Q(vat_rate__gte=0) & Q(vat_rate__lte=100),
+                name="chk_pool_master_tax_vat_rate_range",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.vat_rate is None:
+            raise ValidationError({"vat_rate": "VAT rate is required."})
+        if self.vat_rate < 0 or self.vat_rate > 100:
+            raise ValidationError({"vat_rate": "VAT rate must be in range 0..100."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterContract(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_contracts",
+    )
+    canonical_id = models.CharField(max_length=128)
+    name = models.CharField(max_length=255)
+    owner_counterparty = models.ForeignKey(
+        PoolMasterParty,
+        on_delete=models.PROTECT,
+        related_name="owned_pool_master_contracts",
+    )
+    number = models.CharField(max_length=128, blank=True, default="")
+    date = models.DateField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_contracts"
+        indexes = [
+            models.Index(fields=["tenant", "canonical_id"]),
+            models.Index(fields=["tenant", "owner_counterparty"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "canonical_id", "owner_counterparty"],
+                name="uniq_pool_master_contract_tenant_canonical_owner",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.owner_counterparty_id is None:
+            raise ValidationError({"owner_counterparty": "Contract owner counterparty is required."})
+        owner = self.owner_counterparty
+        if owner.tenant_id != self.tenant_id:
+            raise ValidationError({"owner_counterparty": "Contract owner must belong to the same tenant."})
+        if not owner.is_counterparty:
+            raise ValidationError({"owner_counterparty": "Contract owner must have counterparty role."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataEntityType(models.TextChoices):
+    PARTY = "party", "Party"
+    ITEM = "item", "Item"
+    CONTRACT = "contract", "Contract"
+    TAX_PROFILE = "tax_profile", "Tax Profile"
+
+
+class PoolMasterBindingCatalogKind(models.TextChoices):
+    ORGANIZATION = "organization", "Organization"
+    COUNTERPARTY = "counterparty", "Counterparty"
+
+
+class PoolMasterBindingSyncStatus(models.TextChoices):
+    RESOLVED = "resolved", "Resolved"
+    UPSERTED = "upserted", "Upserted"
+    CONFLICT = "conflict", "Conflict"
+
+
+class PoolMasterDataBinding(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_bindings",
+    )
+    entity_type = models.CharField(max_length=32, choices=PoolMasterDataEntityType.choices, db_index=True)
+    canonical_id = models.CharField(max_length=128)
+    database = models.ForeignKey(
+        "databases.Database",
+        on_delete=models.PROTECT,
+        related_name="pool_master_data_bindings",
+    )
+    ib_ref_key = models.CharField(max_length=128)
+    ib_catalog_kind = models.CharField(max_length=32, blank=True, default="")
+    owner_counterparty_canonical_id = models.CharField(max_length=128, blank=True, default="")
+    sync_status = models.CharField(
+        max_length=16,
+        choices=PoolMasterBindingSyncStatus.choices,
+        default=PoolMasterBindingSyncStatus.RESOLVED,
+        db_index=True,
+    )
+    fingerprint = models.CharField(max_length=64, blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    last_synced_at = models.DateTimeField(default=timezone.now, db_index=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_bindings"
+        indexes = [
+            models.Index(fields=["tenant", "entity_type", "database"]),
+            models.Index(fields=["tenant", "canonical_id"]),
+            models.Index(fields=["tenant", "sync_status", "-updated_at"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(ib_ref_key=""),
+                name="chk_pool_master_binding_ref_nonempty",
+            ),
+            models.UniqueConstraint(
+                fields=[
+                    "tenant",
+                    "entity_type",
+                    "canonical_id",
+                    "database",
+                    "ib_catalog_kind",
+                    "owner_counterparty_canonical_id",
+                ],
+                name="uniq_pool_master_binding_scope",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.database_id and self.tenant_id and self.database.tenant_id != self.tenant_id:
+            raise ValidationError({"database": "Binding database must belong to the same tenant."})
+
+        if self.entity_type == PoolMasterDataEntityType.PARTY:
+            if self.ib_catalog_kind not in {
+                PoolMasterBindingCatalogKind.ORGANIZATION,
+                PoolMasterBindingCatalogKind.COUNTERPARTY,
+            }:
+                raise ValidationError(
+                    {"ib_catalog_kind": "Party binding requires catalog kind organization or counterparty."}
+                )
+            if self.owner_counterparty_canonical_id:
+                raise ValidationError(
+                    {"owner_counterparty_canonical_id": "Party binding must not define owner counterparty."}
+                )
+            return
+
+        if self.entity_type == PoolMasterDataEntityType.CONTRACT:
+            if not self.owner_counterparty_canonical_id:
+                raise ValidationError(
+                    {"owner_counterparty_canonical_id": "Contract binding requires owner counterparty canonical ID."}
+                )
+            if self.ib_catalog_kind:
+                raise ValidationError({"ib_catalog_kind": "Contract binding must not define catalog kind."})
+            return
+
+        if self.ib_catalog_kind:
+            raise ValidationError({"ib_catalog_kind": "Only Party binding may define catalog kind."})
+        if self.owner_counterparty_canonical_id:
+            raise ValidationError(
+                {"owner_counterparty_canonical_id": "Only Contract binding may define owner counterparty."}
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
 
 class OrganizationPool(models.Model):
