@@ -1251,7 +1251,19 @@ export function PoolCatalogPage() {
     setLoadingTopologySnapshots(true)
     try {
       const payload = await listPoolTopologySnapshots(selectedPoolId)
-      setTopologySnapshots(Array.isArray(payload.snapshots) ? payload.snapshots : [])
+      const snapshots = Array.isArray(payload.snapshots) ? payload.snapshots : []
+      setTopologySnapshots(snapshots)
+
+      const activeSnapshot = snapshots.find((item) => !String(item.effective_to || '').trim())
+      const defaultSnapshot = activeSnapshot ?? snapshots[0]
+      if (defaultSnapshot) {
+        setGraphDate((previous) => {
+          if (previous && snapshots.some((item) => item.effective_from === previous)) {
+            return previous
+          }
+          return defaultSnapshot.effective_from
+        })
+      }
     } catch {
       setTopologySnapshots([])
     } finally {

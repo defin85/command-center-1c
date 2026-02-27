@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -27,7 +29,11 @@ const (
 	defaultPublicationRetryIntervalCap = 120
 	invoiceModeOptional                = "optional"
 	invoiceModeRequired                = "required"
+	atomicPublicationNodeIDPrefix      = "publication_odata__"
+	atomicPublicationActionToken       = "publish_odata"
 )
+
+var atomicPublicationNodeTokenRe = regexp.MustCompile(`[^a-zA-Z0-9]+`)
 
 const (
 	ErrorCodePoolRuntimePublicationPayloadInvalid       = "POOL_RUNTIME_PUBLICATION_PAYLOAD_INVALID"
@@ -111,7 +117,10 @@ type publicationTargetResult struct {
 
 type publicationDocument struct {
 	ChainID           string
+	ParentNodeID      string
+	ChildNodeID       string
 	DocumentID        string
+	DocumentIndex     int
 	DocumentRole      string
 	InvoiceMode       string
 	LinkTo            string
@@ -241,6 +250,16 @@ func (t *ODataPublicationTransport) ExecutePublicationOData(
 	documentsByDatabase := chainedDocumentsByDatabase
 	if len(documentsByDatabase) == 0 {
 		documentsByDatabase = toPublicationDocumentsByDatabase(entityName, legacyDocumentsByDatabase)
+	}
+	documentsByDatabase, err = scopePublicationDocumentsByNodeID(
+		req.NodeID,
+		documentsByDatabase,
+	)
+	if err != nil {
+		return nil, handlers.NewOperationExecutionError(
+			ErrorCodePoolRuntimePublicationPayloadInvalid,
+			err.Error(),
+		)
 	}
 
 	externalKeyField := readOptionalString(publicationPayload["external_key_field"])
@@ -809,6 +828,116 @@ func toPublicationDocumentsByDatabase(
 	return result
 }
 
+func scopePublicationDocumentsByNodeID(
+	nodeID string,
+	documentsByDatabase map[string][]publicationDocument,
+) (map[string][]publicationDocument, error) {
+	normalizedNodeID := strings.TrimSpace(nodeID)
+	if normalizedNodeID == "" || !strings.HasPrefix(normalizedNodeID, atomicPublicationNodeIDPrefix) {
+		return documentsByDatabase, nil
+	}
+	if len(documentsByDatabase) == 0 {
+		return documentsByDatabase, nil
+	}
+
+	scoped := make(map[string][]publicationDocument)
+	for databaseID, documents := range documentsByDatabase {
+		matchedDocuments := make([]publicationDocument, 0, 1)
+		for _, document := range documents {
+			candidateNodeID := buildAtomicPublicationNodeID(
+				databaseID,
+				document.ParentNodeID,
+				document.ChildNodeID,
+				document.ChainID,
+				document.DocumentID,
+				document.DocumentRole,
+				document.DocumentIndex,
+			)
+			if candidateNodeID != normalizedNodeID {
+				continue
+			}
+			matchedDocuments = append(matchedDocuments, document)
+		}
+		if len(matchedDocuments) > 0 {
+			scoped[databaseID] = matchedDocuments
+		}
+	}
+
+	if len(scoped) == 0 {
+		return nil, fmt.Errorf(
+			"atomic publication node scope mismatch: node_id=%s has no matching document in payload",
+			normalizedNodeID,
+		)
+	}
+
+	return scoped, nil
+}
+
+type atomicPublicationNodeIDPayload struct {
+	ChainID       string `json:"chain_id"`
+	ChildNodeID   string `json:"child_node_id"`
+	DatabaseID    string `json:"database_id"`
+	DocumentID    string `json:"document_id"`
+	DocumentIndex int    `json:"document_index"`
+	DocumentRole  string `json:"document_role"`
+	ParentNodeID  string `json:"parent_node_id"`
+}
+
+func buildAtomicPublicationNodeID(
+	databaseID string,
+	parentNodeID string,
+	childNodeID string,
+	chainID string,
+	documentID string,
+	documentRole string,
+	documentIndex int,
+) string {
+	payload := atomicPublicationNodeIDPayload{
+		ChainID:       strings.TrimSpace(chainID),
+		ChildNodeID:   strings.TrimSpace(childNodeID),
+		DatabaseID:    strings.TrimSpace(databaseID),
+		DocumentID:    strings.TrimSpace(documentID),
+		DocumentIndex: documentIndex,
+		DocumentRole:  strings.TrimSpace(documentRole),
+		ParentNodeID:  strings.TrimSpace(parentNodeID),
+	}
+	canonicalPayload, _ := json.Marshal(payload)
+	digestBytes := sha256.Sum256(canonicalPayload)
+	digest := hex.EncodeToString(digestBytes[:])[:16]
+
+	parentToken := normalizeAtomicPublicationNodeToken(payload.ParentNodeID)
+	childToken := normalizeAtomicPublicationNodeToken(payload.ChildNodeID)
+	roleToken := normalizeAtomicPublicationNodeToken(payload.DocumentRole)
+	prefix := fmt.Sprintf(
+		"publication_odata__edge_%s_%s__doc_%s__%s",
+		parentToken,
+		childToken,
+		roleToken,
+		atomicPublicationActionToken,
+	)
+	maxPrefixLength := 100 - len(digest) - 2
+	if maxPrefixLength < 1 {
+		maxPrefixLength = 1
+	}
+	if len(prefix) > maxPrefixLength {
+		prefix = prefix[:maxPrefixLength]
+	}
+	prefix = strings.TrimRight(prefix, "_")
+	return fmt.Sprintf("%s__%s", prefix, digest)
+}
+
+func normalizeAtomicPublicationNodeToken(value string) string {
+	token := atomicPublicationNodeTokenRe.ReplaceAllString(strings.ToLower(strings.TrimSpace(value)), "_")
+	token = strings.Trim(token, "_")
+	if len(token) > 24 {
+		token = token[:24]
+	}
+	if token == "" {
+		return "na"
+	}
+	return token
+}
+
 func normalizeDocumentChainsByDatabase(value interface{}) (map[string][]publicationDocument, error) {
 	if value == nil {
 		return map[string][]publicationDocument{}, nil
@@ -845,6 +974,9 @@ func normalizeDocumentChainsByDatabase(value interface{}) (map[string][]publicat
 			if chainID == "" {
 				chainID = fmt.Sprintf("__chain_%d", chainIdx)
 			}
+			edgeRef := readOptionalObject(chain["edge_ref"])
+			parentNodeID := readOptionalString(edgeRef["parent_node_id"])
+			childNodeID := readOptionalString(edgeRef["child_node_id"])
 			allocation := readOptionalObject(chain["allocation"])
 			rawDocuments, ok := chain["documents"].([]interface{})
 			if !ok {
@@ -854,7 +986,7 @@ func normalizeDocumentChainsByDatabase(value interface{}) (map[string][]publicat
 			chainDocuments := make([]publicationDocument, 0, len(rawDocuments))
 			hasInvoiceDocument := false
 			requiresInvoice := false
-			for _, rawDocument := range rawDocuments {
+			for documentIndex, rawDocument := range rawDocuments {
 				document, ok := rawDocument.(map[string]interface{})
 				if !ok {
 					return nil, fmt.Errorf("document_chains_by_database[%s] contains non-object document", databaseID)
@@ -895,7 +1027,10 @@ func normalizeDocumentChainsByDatabase(value interface{}) (map[string][]publicat
 				}
 				chainDocuments = append(chainDocuments, publicationDocument{
 					ChainID:           chainID,
+					ParentNodeID:      parentNodeID,
+					ChildNodeID:       childNodeID,
 					DocumentID:        documentID,
+					DocumentIndex:     documentIndex,
 					DocumentRole:      documentRole,
 					InvoiceMode:       invoiceMode,
 					LinkTo:            readOptionalString(document["link_to"]),

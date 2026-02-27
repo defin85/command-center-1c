@@ -505,6 +505,15 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Topology snapshots by date')).toBeInTheDocument()
     expect(await screen.findByText('2026-02-24')).toBeInTheDocument()
     expect(await screen.findByText('2026-01-01')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(
+        mockGetPoolGraph.mock.calls.some(
+          (call) =>
+            call[0] === '44444444-4444-4444-4444-444444444444'
+            && call[1] === '2026-02-24'
+        )
+      ).toBe(true)
+    })
 
     await user.click(screen.getByTestId('pool-catalog-topology-snapshot-open-2026-01-01'))
 

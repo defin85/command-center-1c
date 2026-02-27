@@ -295,6 +295,133 @@ func TestODataPublicationTransport_ExecutePublicationOData_UsesDocumentChainsPay
 	assert.Equal(t, "100.00", service.createPayloads[1]["Amount"])
 }
 
+func TestODataPublicationTransport_ExecutePublicationOData_AtomicNodeScopesPayloadToSingleDocument(t *testing.T) {
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockPublicationODataService{}
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	atomicNodeID := buildAtomicPublicationNodeID(
+		"db-1",
+		"node-parent",
+		"node-child",
+		"sale_chain",
+		"sale",
+		"base",
+		0,
+	)
+	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationType:   "pool.publication_odata",
+		NodeID:          atomicNodeID,
+		PoolRunID:       "run-atomic-scope",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthActorForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"document_chains_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{
+							"chain_id": "sale_chain",
+							"edge_ref": map[string]interface{}{
+								"parent_node_id": "node-parent",
+								"child_node_id":  "node-child",
+							},
+							"documents": []interface{}{
+								map[string]interface{}{
+									"document_id":   "sale",
+									"document_role": "base",
+									"entity_name":   "Document_Sales",
+									"payload": map[string]interface{}{
+										"Amount": "100.00",
+									},
+								},
+								map[string]interface{}{
+									"document_id":   "invoice",
+									"document_role": "invoice",
+									"entity_name":   "Document_Invoice",
+									"payload": map[string]interface{}{
+										"Amount": "100.00",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.Equal(t, "published", out["status"])
+	assert.Equal(t, 1, out["documents_targets"])
+	assert.Equal(t, []string{"db-1"}, out["target_databases"])
+	documentsCountByDatabase, ok := out["documents_count_by_database"].(map[string]int)
+	require.True(t, ok)
+	assert.Equal(t, 1, documentsCountByDatabase["db-1"])
+	require.Len(t, service.createEntities, 1)
+	assert.Equal(t, []string{"Document_Sales"}, service.createEntities)
+}
+
+func TestODataPublicationTransport_ExecutePublicationOData_FailsClosedWhenAtomicNodeScopeDoesNotMatchPayload(t *testing.T) {
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockPublicationODataService{}
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	_, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationType:   "pool.publication_odata",
+		NodeID:          "publication_odata__edge_na_na__doc_na__publish_odata__deadbeefdeadbeef",
+		PoolRunID:       "run-atomic-mismatch",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthActorForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"document_chains_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{
+							"chain_id": "sale_chain",
+							"edge_ref": map[string]interface{}{
+								"parent_node_id": "node-parent",
+								"child_node_id":  "node-child",
+							},
+							"documents": []interface{}{
+								map[string]interface{}{
+									"document_id":   "sale",
+									"document_role": "base",
+									"entity_name":   "Document_Sales",
+									"payload": map[string]interface{}{
+										"Amount": "100.00",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	require.Error(t, err)
+	var opErr *handlers.OperationExecutionError
+	require.True(t, errors.As(err, &opErr))
+	assert.Equal(t, ErrorCodePoolRuntimePublicationPayloadInvalid, opErr.Code)
+	assert.Contains(t, opErr.Message, "atomic publication node scope mismatch")
+	assert.Equal(t, 0, service.createCalls)
+}
+
 func TestODataPublicationTransport_ExecutePublicationOData_AppliesChainMappingAndRequiredInvoiceLinkage(t *testing.T) {
 	fetcher := &mockPublicationCredentialsFetcher{
 		cred: &credentials.DatabaseCredentials{
