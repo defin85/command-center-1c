@@ -8,10 +8,12 @@
 ## What Changes
 - Ввести capability `pool-master-data-hub`: канонический master-data слой в CC для публикационных run-ов.
 - Зафиксировать минимальный доменный набор MVP: `Party` (role-based), `Item`, `Contract`, `TaxProfile`.
-- Добавить per-infobase binding модель (`canonical_id -> ib_ref`) и идемпотентный sync/resolve контракт.
+- Добавить per-infobase binding модель (`canonical_id -> ib_ref`) с role-specific binding для `Party` (`organization|counterparty`) и идемпотентный `resolve+upsert` контракт.
+- Зафиксировать `Contract` в MVP как строго owner-scoped к конкретному `counterparty` (без shared contract profiles).
 - Добавить pre-publication gate в runtime: перед `pool.publication_odata` выполняется resolve/sync master-data для всех target ИБ.
 - Зафиксировать immutable `master_data_snapshot_ref` в контексте run-а и обязательное переиспользование этого snapshot в retry.
 - Зафиксировать fail-closed поведение для конфликтов/неоднозначных соответствий до OData side effects.
+- Ограничить `TaxProfile` в MVP НДС-полями (`vat_rate`, `vat_included`, `vat_code`).
 
 ## Impact
 - Affected specs:

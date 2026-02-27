@@ -43,13 +43,24 @@ CC хранит канонические сущности (`Party`, `Item`, `Con
 
 ### Decision 2: Per-infobase binding как обязательный слой
 Для каждой канонической записи хранится binding на конкретную ИБ:
-- `canonical_id`, `entity_type`, `database_id`;
+- для `Party`: `canonical_id`, `entity_type`, `database_id`, `ib_catalog_kind` (`organization|counterparty`);
+- для остальных сущностей: `canonical_id`, `entity_type`, `database_id`;
 - `ib_ref_key` (или эквивалент внешнего ключа в ИБ);
 - `sync_status`, `fingerprint`, `last_synced_at`.
 
 Это позволяет:
 - идемпотентно повторять sync;
 - использовать готовые ссылки в публикации без lookup по свободному тексту.
+
+### Decision 2.1: Единый Party в CC + role-specific bindings в ИБ
+На стороне CC сохраняется единая каноническая сущность `Party`.
+В момент run роль (`our_organization`/`counterparty`) определяется контекстом документа и выбирает соответствующий binding в целевом каталоге ИБ.
+Один и тот же `Party` может иметь два binding в одной и той же ИБ для разных ролей.
+
+### Decision 2.2: Contract в MVP строго owner-scoped
+Сущность `Contract` в MVP ДОЛЖНА быть строго привязана к конкретному `counterparty`.
+Shared contract profile на группу контрагентов в MVP НЕ допускается.
+При попытке использовать договор вне owner-counterparty runtime должен завершаться fail-closed с machine-readable конфликтом.
 
 ### Decision 3: Ownership policy полей
 Поля делятся на:
@@ -65,6 +76,12 @@ CC хранит канонические сущности (`Party`, `Item`, `Con
 3. при успехе сохранить `master_data_binding_artifact`;
 4. при конфликте/неоднозначности завершить run fail-closed до публикации документов.
 
+### Decision 4.1: Режим MVP — resolve+upsert
+В MVP используется режим `resolve+upsert` (а не `validate-only`):
+- gate может создавать отсутствующие bindings и связанные записи в ИБ;
+- поведение остаётся идемпотентным по ключу binding;
+- rollout выполняется под feature-flag с возможностью переключения на `validate-only` для строгих контуров.
+
 ### Decision 5: Immutable snapshot для run/retry consistency
 На старте run фиксируется `master_data_snapshot_ref`.
 Любой retry использует тот же snapshot и тот же binding artifact (или детерминированно пересобирает binding только из этого snapshot), чтобы исключить drift в середине процесса.
@@ -73,6 +90,8 @@ CC хранит канонические сущности (`Party`, `Item`, `Con
 - Publication payload должен использовать resolved reference поля (`*_Key` / `Ref_Key`) из binding artifact, а не свободный текст.
 - Ошибки resolve/sync должны быть machine-readable и пригодными для operator remediation (`code`, `path`, `detail`).
 - Все master-data side effects должны быть идемпотентны относительно пары `(canonical_id, database_id, entity_type)`.
+- Для `Contract` ключ резолва обязан учитывать owner `counterparty`; переиспользование binding между разными контрагентами не допускается.
+- Для `TaxProfile` MVP-область ограничена НДС-полями: `vat_rate`, `vat_included`, `vat_code`.
 
 ## Risks / Trade-offs
 - Риск: рост сложности модели из-за role-based `Party`.
@@ -90,6 +109,4 @@ CC хранит канонические сущности (`Party`, `Item`, `Con
 5. Добавить мониторинг/диагностику и staged rollout (feature flag/canary).
 
 ## Open Questions
-- Нужен ли в MVP режим `validate-only` (без auto-create в ИБ) помимо режима `resolve+upsert`?
-- Должны ли договоры быть строго owner-scoped к `Counterparty`, или допускается shared contract profile на группу контрагентов?
-- Какая глубина обязательной синхронизации для `TaxProfile` в MVP: только ставка/вид НДС или расширенный налоговый контекст?
+- Нет блокирующих открытых вопросов.

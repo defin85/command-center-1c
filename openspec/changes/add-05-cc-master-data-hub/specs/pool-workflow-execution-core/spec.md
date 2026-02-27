@@ -2,7 +2,7 @@
 ### Requirement: Runtime MUST выполнять master-data gate до `pool.publication_odata`
 Система ДОЛЖНА (SHALL) перед запуском шага `pool.publication_odata` выполнять обязательный pre-publication gate:
 1. извлечь ссылки на master-data из `document_plan_artifact`;
-2. выполнить resolve/sync этих сущностей в каждой target ИБ через canonical hub;
+2. выполнить `resolve+upsert` этих сущностей в каждой target ИБ через canonical hub;
 3. сохранить результат как `master_data_binding_artifact`;
 4. только после успешного gate разрешить переход к `pool.publication_odata`.
 
