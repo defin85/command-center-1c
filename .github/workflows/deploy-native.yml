@@ -23,10 +23,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate deploy secrets
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${{ secrets.DEPLOY_HOST }}"
+          DEPLOY_USER="${{ secrets.DEPLOY_USER }}"
+          DEPLOY_PORT="${{ secrets.DEPLOY_PORT }}"
+          DEPLOY_KEY="${{ secrets.DEPLOY_SSH_KEY }}"
+
+          if [[ -z "$DEPLOY_HOST" || -z "$DEPLOY_USER" || -z "$DEPLOY_KEY" ]]; then
+            echo "Missing required secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY" >&2
+            exit 1
+          fi
+
+          if [[ -z "$DEPLOY_PORT" ]]; then
+            DEPLOY_PORT="22"
+          fi
+
+          if ! [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]]; then
+            echo "DEPLOY_PORT must be numeric, got '$DEPLOY_PORT'" >&2
+            exit 1
+          fi
+
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+          echo "DEPLOY_USER=$DEPLOY_USER" >> "$GITHUB_ENV"
+          echo "DEPLOY_PORT=$DEPLOY_PORT" >> "$GITHUB_ENV"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
@@ -71,18 +97,18 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -p "${{ secrets.DEPLOY_PORT }}" -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "${DEPLOY_PORT}" -H "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
 
       - name: Upload release to server
         run: |
           set -euo pipefail
-          scp -P "${{ secrets.DEPLOY_PORT }}" release.tar.gz \
-            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${RELEASE_ARCHIVE}"
+          scp -P "${DEPLOY_PORT}" release.tar.gz \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:${RELEASE_ARCHIVE}"
 
       - name: Activate release on server
         run: |
           set -euo pipefail
-          ssh -p "${{ secrets.DEPLOY_PORT }}" "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+          ssh -p "${DEPLOY_PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "sudo /usr/local/bin/cc1c-deploy '${RELEASE_ARCHIVE}' '${RELEASE_ID}' && rm -f '${RELEASE_ARCHIVE}'"
