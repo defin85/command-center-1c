@@ -155,12 +155,13 @@ For full workflow details: `bd prime`
 - Откатить (если нужно снова видеть изменения):
   - `git update-index --no-skip-worktree .beads/issues.jsonl .beads/interactions.jsonl .beads/config.yaml .beads/metadata.json`
 
-## Семантический поиск (claude-context)
+## Семантический поиск (claude-context / ast-index)
 
 При поиске по коду использовать следующий порядок:
 
 1. `mcp__claude-context__search_code` (семантический поиск, основной путь)
-2. `rg` (точечная верификация по найденным путям)
+2. `ast-index search "<query>"` (второй вариант: локальный AST-поиск, если `claude-context` недоступен или даёт шум)
+3. `rg` (точечная верификация по найденным путям)
 
 Чек-лист для эффективного поиска:
 
@@ -169,11 +170,12 @@ For full workflow details: `bd prime`
 3. Сразу задавать `extensionFilter` под задачу:
    - backend: `.py`
    - frontend: `.ts`, `.tsx`
-4. Если в топе много шума, переформулировать запрос через конкретные сущности (`ActionCatalogEditorModal`, `get_action_catalog_editor_hints`, `executor.fixed`).
-5. После семантического поиска подтверждать факт в коде через `rg`/чтение файлов.
-6. Проверять минимум 2-3 источника: код + тест + контракт/spec.
-7. Не считать checklist/status доказательством реализации без проверки исходников.
-8. Для API-контрактов в `contracts/**/*.yaml` сначала пробовать семпоиск, но при пустой/шумной выдаче сразу переходить к `rg` по endpoint/schema.
+4. Для `ast-index` перед первым поиском в репозитории выполнять `ast-index rebuild` из корня репо.
+5. Если в топе много шума, переформулировать запрос через конкретные сущности (`ActionCatalogEditorModal`, `get_action_catalog_editor_hints`, `executor.fixed`).
+6. После семантического поиска подтверждать факт в коде через `rg`/чтение файлов.
+7. Проверять минимум 2-3 источника: код + тест + контракт/spec.
+8. Не считать checklist/status доказательством реализации без проверки исходников.
+9. Для API-контрактов в `contracts/**/*.yaml` сначала пробовать семпоиск, но при пустой/шумной выдаче сразу переходить к `rg` по endpoint/schema.
 
 ## Индексация (уменьшение шума)
 

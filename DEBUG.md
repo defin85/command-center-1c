@@ -13,6 +13,13 @@
 ./debug/runtime-inventory.sh
 ```
 
+Для Beads/Dolt server mode:
+
+```bash
+./debug/start-dolt.sh
+systemctl --user status beads-dolt.service --no-pager
+```
+
 ## Инвентарь команд
 
 1. `./debug/runtime-inventory.sh`
@@ -56,8 +63,21 @@
 9. `./debug/receiver.py --port 3333`
 Локальный HTTP receiver для sandbox-интеграций (эндпоинты: `GET /health`, `POST /log`).
 
+10. `./debug/start-dolt.sh`
+Переводит текущий Beads-репозиторий в shared Dolt server storage, запускает `systemd --user` сервис `beads-dolt.service` и валидирует доступ через `bd doctor --server`.
+
+Сервис общий для всех Beads-репозиториев и использует каталог:
+`~/.local/share/beads/dolt-server`
+
+Инварианты:
+- база проекта живёт как реальный каталог `~/.local/share/beads/dolt-server/<database>`;
+- `metadata.json` должен содержать `dolt_mode: "server"`;
+- при первой миграции legacy `.beads/dolt` архивируется в `~/.local/share/beads/dolt-backups/`;
+- пароль не хранится в репозитории, используется `BEADS_DOLT_PASSWORD`.
+
 ## Важные замечания
 
 1. Для `eval-django.sh` обязателен `orchestrator/venv` с установленным Django.
 2. Для `eval-frontend.sh` нужен Python-пакет `websockets` (используется `scripts/dev/chrome-debug.py`).
 3. `chrome-debug.py` и интерактивный MCP chrome-devtools не стоит использовать одновременно на одной вкладке/CDP-сессии.
+4. Для Beads/Dolt server mode ожидается доступный `systemd --user`; состояние сервиса проверяется через `systemctl --user status beads-dolt.service`.
