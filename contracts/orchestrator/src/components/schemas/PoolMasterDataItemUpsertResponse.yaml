@@ -1,0 +1,10 @@
+type: object
+properties:
+  item:
+    $ref: ./PoolMasterDataItem.yaml
+  created:
+    type: boolean
+required:
+  - item
+  - created
+

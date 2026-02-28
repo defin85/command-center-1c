@@ -19,6 +19,7 @@ from apps.intercompany_pools.models import (
     Organization,
     OrganizationStatus,
     OrganizationPool,
+    PoolMasterParty,
     PoolEdgeVersion,
     PoolNodeVersion,
     PoolODataMetadataCatalogSnapshot,
@@ -375,9 +376,17 @@ def test_list_organizations_endpoint_filters_by_status_and_query(
     default_tenant: Tenant,
 ) -> None:
     db = _create_database(tenant=default_tenant, name="pool-org-list-db")
+    party = PoolMasterParty.objects.create(
+        tenant=default_tenant,
+        canonical_id="party-org-list",
+        name="Party Org List",
+        inn="710000000001",
+        is_our_organization=True,
+    )
     Organization.objects.create(
         tenant=default_tenant,
         database=db,
+        master_party=party,
         name="Alpha Org",
         full_name="Alpha Organization",
         inn="710000000001",
@@ -397,6 +406,7 @@ def test_list_organizations_endpoint_filters_by_status_and_query(
     assert payload["count"] == 1
     assert payload["organizations"][0]["inn"] == "710000000001"
     assert payload["organizations"][0]["database_id"] == str(db.id)
+    assert payload["organizations"][0]["master_party_id"] == str(party.id)
 
 
 @pytest.mark.django_db
@@ -405,10 +415,18 @@ def test_get_organization_returns_pool_bindings(
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
+    party = PoolMasterParty.objects.create(
+        tenant=default_tenant,
+        canonical_id="party-binding-org",
+        name="Party Binding Org",
+        inn="720000000001",
+        is_our_organization=True,
+    )
     organization = Organization.objects.create(
         tenant=default_tenant,
         name="Binding Org",
         inn="720000000001",
+        master_party=party,
     )
     PoolNodeVersion.objects.create(
         pool=pool,
@@ -422,6 +440,7 @@ def test_get_organization_returns_pool_bindings(
     payload = response.json()
     assert payload["organization"]["id"] == str(organization.id)
     assert payload["organization"]["inn"] == "720000000001"
+    assert payload["organization"]["master_party_id"] == str(party.id)
     assert len(payload["pool_bindings"]) == 1
     assert payload["pool_bindings"][0]["pool_id"] == str(pool.id)
     assert payload["pool_bindings"][0]["pool_code"] == pool.code
@@ -487,6 +506,100 @@ def test_upsert_organization_creates_updates_and_enforces_database_uniqueness(
         conflict_response,
         status_code=400,
         code="DATABASE_ALREADY_LINKED",
+    )
+
+
+@pytest.mark.django_db
+def test_upsert_organization_validates_master_party_binding_invariants(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    valid_party = PoolMasterParty.objects.create(
+        tenant=default_tenant,
+        canonical_id="party-org-valid",
+        name="Party Org Valid",
+        inn="730100000001",
+        is_our_organization=True,
+    )
+    counterparty_only = PoolMasterParty.objects.create(
+        tenant=default_tenant,
+        canonical_id="party-counterparty-only",
+        name="Counterparty Only",
+        inn="730100000002",
+        is_our_organization=False,
+        is_counterparty=True,
+    )
+    foreign_tenant = Tenant.objects.create(
+        slug=f"pool-org-foreign-{uuid4().hex[:8]}",
+        name="Pool Org Foreign",
+    )
+    foreign_party = PoolMasterParty.objects.create(
+        tenant=foreign_tenant,
+        canonical_id="party-foreign-org",
+        name="Party Foreign Org",
+        inn="730100000003",
+        is_our_organization=True,
+    )
+
+    create_response = authenticated_client.post(
+        "/api/v2/pools/organizations/upsert/",
+        {
+            "inn": "730100000010",
+            "name": "Master Party Bound Org",
+            "status": "active",
+            "master_party_id": str(valid_party.id),
+        },
+        format="json",
+    )
+    assert create_response.status_code == 201
+    assert create_response.json()["organization"]["master_party_id"] == str(valid_party.id)
+
+    conflict_response = authenticated_client.post(
+        "/api/v2/pools/organizations/upsert/",
+        {
+            "inn": "730100000011",
+            "name": "Master Party Conflict Org",
+            "status": "active",
+            "master_party_id": str(valid_party.id),
+        },
+        format="json",
+    )
+    _assert_problem_details_response(
+        conflict_response,
+        status_code=400,
+        code="MASTER_PARTY_ALREADY_LINKED",
+    )
+
+    invalid_role_response = authenticated_client.post(
+        "/api/v2/pools/organizations/upsert/",
+        {
+            "inn": "730100000012",
+            "name": "Invalid Role Org",
+            "status": "active",
+            "master_party_id": str(counterparty_only.id),
+        },
+        format="json",
+    )
+    _assert_problem_details_response(
+        invalid_role_response,
+        status_code=400,
+        code="MASTER_PARTY_ROLE_INVALID",
+    )
+
+    foreign_party_response = authenticated_client.post(
+        "/api/v2/pools/organizations/upsert/",
+        {
+            "inn": "730100000013",
+            "name": "Foreign Party Org",
+            "status": "active",
+            "master_party_id": str(foreign_party.id),
+        },
+        format="json",
+    )
+    _assert_problem_details_response(
+        foreign_party_response,
+        status_code=404,
+        code="MASTER_PARTY_NOT_FOUND",
     )
 
 
@@ -2254,6 +2367,7 @@ def test_get_pool_run_returns_details(
     assert payload["run"]["id"] == str(run.id)
     assert payload["run"]["status"] == PoolRun.STATUS_VALIDATED
     assert payload["run"]["terminal_reason"] is None
+    assert payload["run"]["master_data_gate"] is None
     assert payload["run"]["provenance"]["workflow_run_id"] is None
     assert payload["run"]["provenance"]["workflow_status"] is None
     assert payload["run"]["provenance"]["execution_backend"] == "legacy_pool_runtime"
@@ -2304,6 +2418,7 @@ def test_historical_run_read_contract_returns_nullable_run_input_and_legacy_cont
     historical_row = next(item for item in list_payload["runs"] if item["id"] == str(historical_run.id))
     assert historical_row["run_input"] is None
     assert historical_row["input_contract_version"] == "legacy_pre_run_input"
+    assert historical_row["master_data_gate"] is None
     assert "source_hash" not in historical_row
 
     details_response = authenticated_client.get(f"/api/v2/pools/runs/{historical_run.id}/")
@@ -2311,7 +2426,77 @@ def test_historical_run_read_contract_returns_nullable_run_input_and_legacy_cont
     details_payload = details_response.json()
     assert details_payload["run"]["run_input"] is None
     assert details_payload["run"]["input_contract_version"] == "legacy_pre_run_input"
+    assert details_payload["run"]["master_data_gate"] is None
     assert "source_hash" not in details_payload["run"]
+
+    report_response = authenticated_client.get(f"/api/v2/pools/runs/{historical_run.id}/report/")
+    assert report_response.status_code == 200
+    report_payload = report_response.json()
+    assert report_payload["run"]["master_data_gate"] is None
+
+
+@pytest.mark.django_db
+def test_get_pool_run_and_report_include_stable_master_data_gate_read_model(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    missing_org_id = str(uuid4())
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": False,
+            "approval_state": "not_required",
+            "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
+            "publication_step_state": "completed",
+            "pool_runtime_master_data_gate": {
+                "status": "failed",
+                "mode": "resolve_upsert",
+                "targets_count": "3",
+                "bindings_count": 1,
+                "error_code": "MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING",
+                "detail": "Missing Organization->Party binding for publication target organizations.",
+                "diagnostic": {
+                    "missing_count": 1,
+                    "missing_organization_bindings": [{"organization_id": missing_org_id}],
+                },
+            },
+        },
+    )
+
+    details_response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert details_response.status_code == 200
+    details_payload = details_response.json()
+    details_gate = details_payload["run"]["master_data_gate"]
+    assert details_gate == {
+        "status": "failed",
+        "mode": "resolve_upsert",
+        "targets_count": 3,
+        "bindings_count": 1,
+        "error_code": "MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING",
+        "detail": "Missing Organization->Party binding for publication target organizations.",
+        "diagnostic": {
+            "missing_count": 1,
+            "missing_organization_bindings": [{"organization_id": missing_org_id}],
+        },
+    }
+    assert set(details_gate.keys()) == {
+        "status",
+        "mode",
+        "targets_count",
+        "bindings_count",
+        "error_code",
+        "detail",
+        "diagnostic",
+    }
+
+    report_response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/report/")
+    assert report_response.status_code == 200
+    report_payload = report_response.json()
+    assert report_payload["run"]["master_data_gate"] == details_gate
 
 
 @pytest.mark.django_db

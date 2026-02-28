@@ -1,0 +1,18 @@
+type: object
+properties:
+  bindings:
+    type: array
+    items:
+      $ref: ./PoolMasterDataBinding.yaml
+  count:
+    type: integer
+  limit:
+    type: integer
+  offset:
+    type: integer
+required:
+  - bindings
+  - count
+  - limit
+  - offset
+

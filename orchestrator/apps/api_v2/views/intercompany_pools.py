@@ -24,6 +24,7 @@ from apps.intercompany_pools.models import (
     Organization,
     OrganizationStatus,
     OrganizationPool,
+    PoolMasterParty,
     PoolODataMetadataCatalogSnapshot,
     PoolPublicationAttempt,
     PoolPublicationAttemptStatus,
@@ -131,6 +132,15 @@ _POOL_RUNTIME_START_FAIL_CLOSED_CODES = {
 }
 POOL_PROJECTION_HARDENING_CUTOFF_KEY = "pools.projection.publication_hardening_cutoff_utc"
 POOL_PUBLICATION_STEP_INCOMPLETE_CODE = "POOL_PUBLICATION_STEP_INCOMPLETE"
+MASTER_DATA_GATE_STATUS_COMPLETED = "completed"
+MASTER_DATA_GATE_STATUS_FAILED = "failed"
+MASTER_DATA_GATE_STATUS_SKIPPED = "skipped"
+MASTER_DATA_GATE_READ_MODEL_MODE = "resolve_upsert"
+_VALID_MASTER_DATA_GATE_STATUSES = {
+    MASTER_DATA_GATE_STATUS_COMPLETED,
+    MASTER_DATA_GATE_STATUS_FAILED,
+    MASTER_DATA_GATE_STATUS_SKIPPED,
+}
 
 
 def _error(*, code: str, message: str, status_code: int) -> Response:
@@ -510,6 +520,9 @@ def _serialize_run(
         approval_state=approval_state,
         execution_backend=execution_backend,
     )
+    master_data_gate = _resolve_master_data_gate_read_model(
+        workflow_input_context=workflow_input_context
+    )
     terminal_reason = _resolve_terminal_reason(
         run=run,
         workflow_input_context=workflow_input_context,
@@ -562,6 +575,7 @@ def _serialize_run(
         "lane": observability_fields.get("lane"),
         "approval_state": approval_state,
         "publication_step_state": publication_step_state,
+        "master_data_gate": master_data_gate,
         "terminal_reason": terminal_reason,
         "execution_backend": execution_backend,
         "provenance": provenance,
@@ -759,6 +773,62 @@ def _parse_positive_int(raw_value: object) -> int | None:
     if value < 1:
         return None
     return value
+
+
+def _parse_non_negative_int(raw_value: object) -> int:
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return 0
+    if value < 0:
+        return 0
+    return value
+
+
+def _normalize_optional_text(raw_value: object) -> str | None:
+    value = str(raw_value or "").strip()
+    return value or None
+
+
+def _normalize_master_data_gate_status(*, raw_status: object, error_code: str | None) -> str:
+    status_token = str(raw_status or "").strip().lower()
+    if status_token in _VALID_MASTER_DATA_GATE_STATUSES:
+        return status_token
+    if error_code:
+        return MASTER_DATA_GATE_STATUS_FAILED
+    return MASTER_DATA_GATE_STATUS_COMPLETED
+
+
+def _resolve_master_data_gate_read_model(
+    *,
+    workflow_input_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    raw_gate_summary = workflow_input_context.get("pool_runtime_master_data_gate")
+    if raw_gate_summary is None:
+        return None
+    if not isinstance(raw_gate_summary, Mapping):
+        return None
+
+    gate_summary = dict(raw_gate_summary)
+    error_code = _normalize_optional_text(gate_summary.get("error_code"))
+    detail = _normalize_optional_text(gate_summary.get("detail")) or _normalize_optional_text(
+        gate_summary.get("reason")
+    )
+    diagnostic_raw = gate_summary.get("diagnostic")
+    diagnostic = dict(diagnostic_raw) if isinstance(diagnostic_raw, Mapping) else None
+
+    return {
+        "status": _normalize_master_data_gate_status(
+            raw_status=gate_summary.get("status"),
+            error_code=error_code,
+        ),
+        "mode": MASTER_DATA_GATE_READ_MODEL_MODE,
+        "targets_count": _parse_non_negative_int(gate_summary.get("targets_count")),
+        "bindings_count": _parse_non_negative_int(gate_summary.get("bindings_count")),
+        "error_code": error_code,
+        "detail": detail,
+        "diagnostic": diagnostic,
+    }
 
 
 def _normalize_attempt_kind(raw_attempt_kind: object) -> str | None:
@@ -1375,6 +1445,7 @@ def _serialize_organization(organization: Organization) -> dict[str, Any]:
         "id": str(organization.id),
         "tenant_id": str(organization.tenant_id),
         "database_id": str(organization.database_id) if organization.database_id else None,
+        "master_party_id": str(organization.master_party_id) if organization.master_party_id else None,
         "name": organization.name,
         "full_name": organization.full_name,
         "inn": organization.inn,
@@ -1406,6 +1477,22 @@ class PoolRunProvenanceSerializer(serializers.Serializer):
     legacy_reference = serializers.CharField(required=False, allow_null=True)
 
 
+class PoolRunMasterDataGateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(
+        choices=[
+            MASTER_DATA_GATE_STATUS_COMPLETED,
+            MASTER_DATA_GATE_STATUS_FAILED,
+            MASTER_DATA_GATE_STATUS_SKIPPED,
+        ]
+    )
+    mode = serializers.ChoiceField(choices=[MASTER_DATA_GATE_READ_MODEL_MODE])
+    targets_count = serializers.IntegerField(min_value=0)
+    bindings_count = serializers.IntegerField(min_value=0)
+    error_code = serializers.CharField(required=False, allow_null=True)
+    detail = serializers.CharField(required=False, allow_null=True)
+    diagnostic = serializers.JSONField(required=False, allow_null=True)
+
+
 class PoolRunSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     tenant_id = serializers.UUIDField()
@@ -1430,6 +1517,7 @@ class PoolRunSerializer(serializers.Serializer):
     lane = serializers.CharField(required=False, allow_null=True)
     approval_state = serializers.CharField(required=False, allow_null=True)
     publication_step_state = serializers.CharField(required=False, allow_null=True)
+    master_data_gate = PoolRunMasterDataGateSerializer(required=False, allow_null=True)
     terminal_reason = serializers.CharField(required=False, allow_null=True)
     execution_backend = serializers.CharField(required=False, allow_null=True)
     provenance = PoolRunProvenanceSerializer(required=False)
@@ -1666,6 +1754,7 @@ class OrganizationSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     tenant_id = serializers.UUIDField()
     database_id = serializers.UUIDField(required=False, allow_null=True)
+    master_party_id = serializers.UUIDField(required=False, allow_null=True)
     name = serializers.CharField()
     full_name = serializers.CharField(required=False, allow_blank=True)
     inn = serializers.CharField()
@@ -1695,6 +1784,7 @@ class OrganizationUpsertRequestSerializer(serializers.Serializer):
     kpp = serializers.CharField(required=False, allow_blank=True, default="")
     status = serializers.ChoiceField(choices=OrganizationStatus.values, required=False)
     database_id = serializers.UUIDField(required=False, allow_null=True)
+    master_party_id = serializers.UUIDField(required=False, allow_null=True)
     external_ref = serializers.CharField(required=False, allow_blank=True, default="")
     metadata = serializers.JSONField(required=False, default=dict)
 
@@ -2080,7 +2170,7 @@ def list_organizations(request):
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    queryset = Organization.objects.filter(tenant_id=tenant_id).select_related("database")
+    queryset = Organization.objects.filter(tenant_id=tenant_id).select_related("database", "master_party")
     status_value = str(request.query_params.get("status", "")).strip().lower()
     if status_value:
         if status_value not in OrganizationStatus.values:
@@ -2139,7 +2229,11 @@ def get_organization(request, organization_id: UUID):
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    organization = Organization.objects.filter(id=organization_id, tenant_id=tenant_id).select_related("database").first()
+    organization = (
+        Organization.objects.filter(id=organization_id, tenant_id=tenant_id)
+        .select_related("database", "master_party")
+        .first()
+    )
     if organization is None:
         return _error(
             code="ORGANIZATION_NOT_FOUND",
@@ -2251,6 +2345,36 @@ def upsert_organization(request):
                     status_code=http_status.HTTP_400_BAD_REQUEST,
                 )
 
+    master_party = None
+    if "master_party_id" in data:
+        master_party_id = data.get("master_party_id")
+        if master_party_id is not None:
+            master_party = PoolMasterParty.objects.filter(id=master_party_id, tenant_id=tenant_id).first()
+            if master_party is None:
+                return _problem(
+                    code="MASTER_PARTY_NOT_FOUND",
+                    title="Master Party Not Found",
+                    detail="Master party not found in current tenant context.",
+                    status_code=http_status.HTTP_404_NOT_FOUND,
+                )
+            if not master_party.is_our_organization:
+                return _problem(
+                    code="MASTER_PARTY_ROLE_INVALID",
+                    title="Master Party Role Invalid",
+                    detail="Master party must have organization role (is_our_organization=true).",
+                    status_code=http_status.HTTP_400_BAD_REQUEST,
+                )
+            conflict_qs = Organization.objects.filter(master_party=master_party)
+            if organization is not None:
+                conflict_qs = conflict_qs.exclude(id=organization.id)
+            if conflict_qs.exists():
+                return _problem(
+                    code="MASTER_PARTY_ALREADY_LINKED",
+                    title="Master Party Already Linked",
+                    detail="Master party is already linked to another organization.",
+                    status_code=http_status.HTTP_400_BAD_REQUEST,
+                )
+
     created = organization is None
     status_value = data.get("status", organization.status if organization else OrganizationStatus.ACTIVE)
     metadata_value = data.get("metadata", organization.metadata if organization else {})
@@ -2258,12 +2382,14 @@ def upsert_organization(request):
     kpp = data.get("kpp", organization.kpp if organization else "")
     external_ref = data.get("external_ref", organization.external_ref if organization else "")
     database_value = database if "database_id" in data else (organization.database if organization else None)
+    master_party_value = master_party if "master_party_id" in data else (organization.master_party if organization else None)
 
     try:
         if created:
-            organization = Organization.objects.create(
+            organization = Organization(
                 tenant_id=tenant_id,
                 database=database_value,
+                master_party=master_party_value,
                 name=data["name"],
                 full_name=full_name,
                 inn=data["inn"],
@@ -2272,10 +2398,13 @@ def upsert_organization(request):
                 external_ref=external_ref,
                 metadata=metadata_value,
             )
+            organization.full_clean()
+            organization.save()
         else:
             changed_fields: list[str] = []
             updates = {
                 "database": database_value,
+                "master_party": master_party_value,
                 "name": data["name"],
                 "full_name": full_name,
                 "inn": data["inn"],
@@ -2289,8 +2418,24 @@ def upsert_organization(request):
                     setattr(organization, field_name, value)
                     changed_fields.append(field_name)
             if changed_fields:
+                organization.full_clean()
                 organization.save(update_fields=[*changed_fields, "updated_at"])
+    except DjangoValidationError as exc:
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail="Organization payload validation failed.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=exc.message_dict if hasattr(exc, "message_dict") else str(exc),
+        )
     except IntegrityError:
+        if "master_party_id" in data and data.get("master_party_id") is not None:
+            return _problem(
+                code="MASTER_PARTY_ALREADY_LINKED",
+                title="Master Party Already Linked",
+                detail="Master party is already linked to another organization.",
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+            )
         return _problem(
             code="DUPLICATE_ORGANIZATION_INN",
             title="Duplicate Organization INN",

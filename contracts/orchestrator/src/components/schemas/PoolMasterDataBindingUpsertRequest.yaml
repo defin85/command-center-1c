@@ -1,0 +1,47 @@
+type: object
+properties:
+  binding_id:
+    type: string
+    format: uuid
+  entity_type:
+    type: string
+    enum:
+      - party
+      - item
+      - contract
+      - tax_profile
+  canonical_id:
+    type: string
+    maxLength: 128
+  database_id:
+    type: string
+    format: uuid
+  ib_ref_key:
+    type: string
+    maxLength: 128
+  ib_catalog_kind:
+    type: string
+    description: Relevant only for party bindings (organization|counterparty).
+  owner_counterparty_canonical_id:
+    type: string
+    default: ''
+  sync_status:
+    type: string
+    enum:
+      - resolved
+      - upserted
+      - conflict
+    default: resolved
+  fingerprint:
+    type: string
+    default: ''
+  metadata:
+    type: object
+    default: {}
+    additionalProperties: true
+required:
+  - entity_type
+  - canonical_id
+  - database_id
+  - ib_ref_key
+

@@ -4520,6 +4520,832 @@ paths:
             type: string
             format: uuid
           description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+  /api/v2/pools/master-data/bindings/:
+    get:
+      operationId: v2_pools_master_data_bindings_list
+      summary: List master-data bindings
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: entity_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - party
+              - item
+              - contract
+              - tax_profile
+        - name: canonical_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: database_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: ib_catalog_kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - organization
+              - counterparty
+        - name: owner_counterparty_canonical_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: sync_status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - resolved
+              - upserted
+              - conflict
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataBindingListResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/pools/master-data/bindings/{id}/:
+    get:
+      operationId: v2_pools_master_data_bindings_get
+      summary: Get master-data binding by id
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataBindingDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/bindings/upsert/:
+    post:
+      operationId: v2_pools_master_data_bindings_upsert
+      summary: Create or update master-data binding
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataBindingUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataBindingUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataBindingUpsertRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataBindingUpsertResponse'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataBindingUpsertResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/contracts/:
+    get:
+      operationId: v2_pools_master_data_contracts_list
+      summary: List master-data contracts
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: canonical_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: owner_counterparty_canonical_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataContractListResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/pools/master-data/contracts/{id}/:
+    get:
+      operationId: v2_pools_master_data_contracts_get
+      summary: Get master-data contract by id
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataContractDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/contracts/upsert/:
+    post:
+      operationId: v2_pools_master_data_contracts_upsert
+      summary: Create or update master-data contract
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataContractUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataContractUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataContractUpsertRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataContractUpsertResponse'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataContractUpsertResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/items/:
+    get:
+      operationId: v2_pools_master_data_items_list
+      summary: List master-data items
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: canonical_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: sku
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataItemListResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/pools/master-data/items/{id}/:
+    get:
+      operationId: v2_pools_master_data_items_get
+      summary: Get master-data item by id
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataItemDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/items/upsert/:
+    post:
+      operationId: v2_pools_master_data_items_upsert
+      summary: Create or update master-data item
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataItemUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataItemUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataItemUpsertRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataItemUpsertResponse'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataItemUpsertResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/parties/:
+    get:
+      operationId: v2_pools_master_data_parties_list
+      summary: List master-data parties
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: canonical_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: role
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - organization
+              - counterparty
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataPartyListResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/pools/master-data/parties/{id}/:
+    get:
+      operationId: v2_pools_master_data_parties_get
+      summary: Get master-data party by id
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataPartyDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/parties/upsert/:
+    post:
+      operationId: v2_pools_master_data_parties_upsert
+      summary: Create or update master-data party
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataPartyUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataPartyUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataPartyUpsertRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataPartyUpsertResponse'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataPartyUpsertResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/tax-profiles/:
+    get:
+      operationId: v2_pools_master_data_tax_profiles_list
+      summary: List master-data tax profiles
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: canonical_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: vat_code
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataTaxProfileListResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/pools/master-data/tax-profiles/{id}/:
+    get:
+      operationId: v2_pools_master_data_tax_profiles_get
+      summary: Get master-data tax profile by id
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataTaxProfileDetailResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/tax-profiles/upsert/:
+    post:
+      operationId: v2_pools_master_data_tax_profiles_upsert
+      summary: Create or update master-data tax profile
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataTaxProfileUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataTaxProfileUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataTaxProfileUpsertRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataTaxProfileUpsertResponse'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataTaxProfileUpsertResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
   /api/v2/pools/{pool_id}/graph/:
     get:
       operationId: v2_pools_graph_get
@@ -13927,6 +14753,616 @@ components:
       required:
         - count
         - pools
+    PoolMasterDataBinding:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        entity_type:
+          type: string
+          enum:
+            - party
+            - item
+            - contract
+            - tax_profile
+        canonical_id:
+          type: string
+          maxLength: 128
+        database_id:
+          type: string
+          format: uuid
+        ib_ref_key:
+          type: string
+          maxLength: 128
+        ib_catalog_kind:
+          type: string
+          description: Relevant only for party bindings (organization|counterparty).
+        owner_counterparty_canonical_id:
+          type: string
+          maxLength: 128
+        sync_status:
+          type: string
+          enum:
+            - resolved
+            - upserted
+            - conflict
+        fingerprint:
+          type: string
+          maxLength: 64
+        metadata:
+          type: object
+          additionalProperties: true
+        last_synced_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenant_id
+        - entity_type
+        - canonical_id
+        - database_id
+        - ib_ref_key
+        - sync_status
+        - last_synced_at
+    PoolMasterDataBindingListResponse:
+      type: object
+      properties:
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataBinding'
+        count:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+      required:
+        - bindings
+        - count
+        - limit
+        - offset
+    ProblemDetailsFieldErrors:
+      type: object
+      description: Field-level validation errors map.
+      additionalProperties:
+        oneOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+          - type: object
+            additionalProperties: {}
+    ProblemDetailsReferentialError:
+      type: object
+      description: Metadata referential validation error item.
+      properties:
+        code:
+          type: string
+        path:
+          type: string
+        detail:
+          type: string
+      required:
+        - code
+        - detail
+        - path
+    ProblemDetailsError:
+      type: object
+      properties:
+        type:
+          type: string
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        code:
+          type: string
+        errors:
+          description: Optional structured error details. For validation failures this is a field-errors map; for metadata referential validation this is an array of items with code/path/detail.
+          oneOf:
+            - $ref: '#/components/schemas/ProblemDetailsFieldErrors'
+            - type: array
+              items:
+                $ref: '#/components/schemas/ProblemDetailsReferentialError'
+      required:
+        - code
+        - detail
+        - status
+        - title
+        - type
+    PoolMasterDataBindingDetailResponse:
+      type: object
+      properties:
+        binding:
+          $ref: '#/components/schemas/PoolMasterDataBinding'
+      required:
+        - binding
+    PoolMasterDataBindingUpsertRequest:
+      type: object
+      properties:
+        binding_id:
+          type: string
+          format: uuid
+        entity_type:
+          type: string
+          enum:
+            - party
+            - item
+            - contract
+            - tax_profile
+        canonical_id:
+          type: string
+          maxLength: 128
+        database_id:
+          type: string
+          format: uuid
+        ib_ref_key:
+          type: string
+          maxLength: 128
+        ib_catalog_kind:
+          type: string
+          description: Relevant only for party bindings (organization|counterparty).
+        owner_counterparty_canonical_id:
+          type: string
+          default: ''
+        sync_status:
+          type: string
+          enum:
+            - resolved
+            - upserted
+            - conflict
+          default: resolved
+        fingerprint:
+          type: string
+          default: ''
+        metadata:
+          type: object
+          default: {}
+          additionalProperties: true
+      required:
+        - entity_type
+        - canonical_id
+        - database_id
+        - ib_ref_key
+    PoolMasterDataBindingUpsertResponse:
+      type: object
+      properties:
+        binding:
+          $ref: '#/components/schemas/PoolMasterDataBinding'
+        created:
+          type: boolean
+      required:
+        - binding
+        - created
+    PoolMasterDataContract:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        canonical_id:
+          type: string
+          maxLength: 128
+        name:
+          type: string
+          maxLength: 255
+        owner_counterparty_id:
+          type: string
+          format: uuid
+        owner_counterparty_canonical_id:
+          type: string
+          maxLength: 128
+        number:
+          type: string
+          maxLength: 128
+        date:
+          type: string
+          format: date
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenant_id
+        - canonical_id
+        - name
+        - owner_counterparty_id
+    PoolMasterDataContractListResponse:
+      type: object
+      properties:
+        contracts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataContract'
+        count:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+      required:
+        - contracts
+        - count
+        - limit
+        - offset
+    PoolMasterDataContractDetailResponse:
+      type: object
+      properties:
+        contract:
+          $ref: '#/components/schemas/PoolMasterDataContract'
+      required:
+        - contract
+    PoolMasterDataContractUpsertRequest:
+      type: object
+      properties:
+        contract_id:
+          type: string
+          format: uuid
+        canonical_id:
+          type: string
+          maxLength: 128
+        name:
+          type: string
+          maxLength: 255
+        owner_counterparty_id:
+          type: string
+          format: uuid
+        number:
+          type: string
+          default: ''
+        date:
+          type: string
+          format: date
+          nullable: true
+        metadata:
+          type: object
+          default: {}
+          additionalProperties: true
+      required:
+        - canonical_id
+        - name
+        - owner_counterparty_id
+    PoolMasterDataContractUpsertResponse:
+      type: object
+      properties:
+        contract:
+          $ref: '#/components/schemas/PoolMasterDataContract'
+        created:
+          type: boolean
+      required:
+        - contract
+        - created
+    PoolMasterDataItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        canonical_id:
+          type: string
+          maxLength: 128
+        name:
+          type: string
+          maxLength: 255
+        sku:
+          type: string
+          maxLength: 128
+        unit:
+          type: string
+          maxLength: 64
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenant_id
+        - canonical_id
+        - name
+    PoolMasterDataItemListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataItem'
+        count:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+      required:
+        - items
+        - count
+        - limit
+        - offset
+    PoolMasterDataItemDetailResponse:
+      type: object
+      properties:
+        item:
+          $ref: '#/components/schemas/PoolMasterDataItem'
+      required:
+        - item
+    PoolMasterDataItemUpsertRequest:
+      type: object
+      properties:
+        item_id:
+          type: string
+          format: uuid
+        canonical_id:
+          type: string
+          maxLength: 128
+        name:
+          type: string
+          maxLength: 255
+        sku:
+          type: string
+          default: ''
+        unit:
+          type: string
+          default: ''
+        metadata:
+          type: object
+          default: {}
+          additionalProperties: true
+      required:
+        - canonical_id
+        - name
+    PoolMasterDataItemUpsertResponse:
+      type: object
+      properties:
+        item:
+          $ref: '#/components/schemas/PoolMasterDataItem'
+        created:
+          type: boolean
+      required:
+        - item
+        - created
+    PoolMasterDataParty:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        canonical_id:
+          type: string
+          maxLength: 128
+        name:
+          type: string
+          maxLength: 255
+        full_name:
+          type: string
+          maxLength: 512
+        inn:
+          type: string
+          maxLength: 12
+        kpp:
+          type: string
+          maxLength: 9
+        is_our_organization:
+          type: boolean
+        is_counterparty:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenant_id
+        - canonical_id
+        - name
+        - is_our_organization
+        - is_counterparty
+    PoolMasterDataPartyListResponse:
+      type: object
+      properties:
+        parties:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataParty'
+        count:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+      required:
+        - parties
+        - count
+        - limit
+        - offset
+    PoolMasterDataPartyDetailResponse:
+      type: object
+      properties:
+        party:
+          $ref: '#/components/schemas/PoolMasterDataParty'
+      required:
+        - party
+    PoolMasterDataPartyUpsertRequest:
+      type: object
+      properties:
+        party_id:
+          type: string
+          format: uuid
+        canonical_id:
+          type: string
+          maxLength: 128
+        name:
+          type: string
+          maxLength: 255
+        full_name:
+          type: string
+          default: ''
+        inn:
+          type: string
+          default: ''
+        kpp:
+          type: string
+          default: ''
+        is_our_organization:
+          type: boolean
+          default: false
+        is_counterparty:
+          type: boolean
+          default: true
+        metadata:
+          type: object
+          default: {}
+          additionalProperties: true
+      required:
+        - canonical_id
+        - name
+    PoolMasterDataPartyUpsertResponse:
+      type: object
+      properties:
+        party:
+          $ref: '#/components/schemas/PoolMasterDataParty'
+        created:
+          type: boolean
+      required:
+        - party
+        - created
+    PoolMasterDataTaxProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        canonical_id:
+          type: string
+          maxLength: 128
+        vat_rate:
+          type: number
+          minimum: 0
+          maximum: 100
+        vat_included:
+          type: boolean
+        vat_code:
+          type: string
+          maxLength: 64
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenant_id
+        - canonical_id
+        - vat_rate
+        - vat_included
+        - vat_code
+    PoolMasterDataTaxProfileListResponse:
+      type: object
+      properties:
+        tax_profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataTaxProfile'
+        count:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+      required:
+        - tax_profiles
+        - count
+        - limit
+        - offset
+    PoolMasterDataTaxProfileDetailResponse:
+      type: object
+      properties:
+        tax_profile:
+          $ref: '#/components/schemas/PoolMasterDataTaxProfile'
+      required:
+        - tax_profile
+    PoolMasterDataTaxProfileUpsertRequest:
+      type: object
+      properties:
+        tax_profile_id:
+          type: string
+          format: uuid
+        canonical_id:
+          type: string
+          maxLength: 128
+        vat_rate:
+          type: number
+          minimum: 0
+          maximum: 100
+        vat_included:
+          type: boolean
+        vat_code:
+          type: string
+          maxLength: 64
+        metadata:
+          type: object
+          default: {}
+          additionalProperties: true
+      required:
+        - canonical_id
+        - vat_rate
+        - vat_included
+        - vat_code
+    PoolMasterDataTaxProfileUpsertResponse:
+      type: object
+      properties:
+        tax_profile:
+          $ref: '#/components/schemas/PoolMasterDataTaxProfile'
+        created:
+          type: boolean
+      required:
+        - tax_profile
+        - created
     PoolGraphNode:
       type: object
       properties:
@@ -14095,58 +15531,6 @@ components:
         - nodes_count
         - pool_id
         - version
-    ProblemDetailsFieldErrors:
-      type: object
-      description: Field-level validation errors map.
-      additionalProperties:
-        oneOf:
-          - type: string
-          - type: array
-            items:
-              type: string
-          - type: object
-            additionalProperties: {}
-    ProblemDetailsReferentialError:
-      type: object
-      description: Metadata referential validation error item.
-      properties:
-        code:
-          type: string
-        path:
-          type: string
-        detail:
-          type: string
-      required:
-        - code
-        - detail
-        - path
-    ProblemDetailsError:
-      type: object
-      properties:
-        type:
-          type: string
-          default: about:blank
-        title:
-          type: string
-        status:
-          type: integer
-        detail:
-          type: string
-        code:
-          type: string
-        errors:
-          description: Optional structured error details. For validation failures this is a field-errors map; for metadata referential validation this is an array of items with code/path/detail.
-          oneOf:
-            - $ref: '#/components/schemas/ProblemDetailsFieldErrors'
-            - type: array
-              items:
-                $ref: '#/components/schemas/ProblemDetailsReferentialError'
-      required:
-        - code
-        - detail
-        - status
-        - title
-        - type
     PoolTopologySnapshotListItem:
       type: object
       properties:
@@ -14278,6 +15662,10 @@ components:
           type: string
           format: uuid
           nullable: true
+        master_party_id:
+          type: string
+          format: uuid
+          nullable: true
         name:
           type: string
         full_name:
@@ -14372,6 +15760,10 @@ components:
             * `archived` - archived
           x-spec-enum-id: a20c200db15932ca
         database_id:
+          type: string
+          format: uuid
+          nullable: true
+        master_party_id:
           type: string
           format: uuid
           nullable: true

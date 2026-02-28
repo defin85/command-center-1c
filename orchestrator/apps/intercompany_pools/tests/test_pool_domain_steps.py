@@ -22,6 +22,7 @@ from apps.intercompany_pools.document_policy_contract import (
     DOCUMENT_POLICY_RESOLUTION_SOURCE_POOL_DEFAULT,
     POOL_DOCUMENT_POLICY_CHAIN_INVALID,
 )
+from apps.intercompany_pools.master_data_feature_flags import MasterDataGateConfigInvalidError
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationPool,
@@ -1195,6 +1196,99 @@ def test_master_data_gate_is_skipped_when_feature_is_disabled() -> None:
     gate_summary = execution.input_context.get("pool_runtime_master_data_gate")
     assert isinstance(gate_summary, dict)
     assert gate_summary.get("status") == "skipped"
+
+
+@pytest.mark.django_db
+def test_master_data_gate_fails_closed_when_feature_flag_config_is_invalid() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    publication_payload = {
+        "pool_runtime": {
+            "document_chains_by_database": {},
+        }
+    }
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "pool_runtime_publication_payload": publication_payload,
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.pool_domain_steps.is_pool_master_data_gate_enabled",
+        side_effect=MasterDataGateConfigInvalidError(
+            source="global",
+            raw_value="definitely-not-bool",
+        ),
+    ):
+        with pytest.raises(ValueError, match="MASTER_DATA_GATE_CONFIG_INVALID") as exc_info:
+            execute_pool_runtime_step(
+                operation_type="pool.master_data_gate",
+                rendered_data={"pool_runtime": {"step_id": "master_data_gate"}},
+                context={"pool_run_id": str(run.id)},
+                execution=execution,
+            )
+
+    diagnostic = json.loads(str(exc_info.value).split("diagnostic=", 1)[1])
+    assert diagnostic["error_code"] == "MASTER_DATA_GATE_CONFIG_INVALID"
+    assert diagnostic["runtime_key"] == "pools.master_data.gate_enabled"
+    assert diagnostic["source"] == "global"
+
+    execution.refresh_from_db(fields=["input_context"])
+    gate_summary = execution.input_context.get("pool_runtime_master_data_gate")
+    assert isinstance(gate_summary, dict)
+    assert gate_summary.get("status") == "failed"
+    assert gate_summary.get("error_code") == "MASTER_DATA_GATE_CONFIG_INVALID"
+    assert execution.input_context.get("pool_runtime_publication_payload") == publication_payload
+
+
+@pytest.mark.django_db
+def test_master_data_gate_fails_closed_when_target_organization_binding_is_missing() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    topology = _attach_active_topology(run=run)
+
+    left_org = Organization.objects.get(tenant=run.tenant, inn=topology["left_inn"])
+    right_org = Organization.objects.get(tenant=run.tenant, inn=topology["right_inn"])
+
+    left_party = PoolMasterParty.objects.create(
+        tenant=run.tenant,
+        canonical_id="party-left-org",
+        name="Party Left Org",
+        inn=left_org.inn,
+        is_our_organization=True,
+    )
+    left_org.master_party = left_party
+    left_org.save(update_fields=["master_party", "updated_at"])
+
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.pool_domain_steps.is_pool_master_data_gate_enabled",
+        return_value=True,
+    ):
+        with pytest.raises(ValueError, match="MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING") as exc_info:
+            execute_pool_runtime_step(
+                operation_type="pool.master_data_gate",
+                rendered_data={"pool_runtime": {"step_id": "master_data_gate"}},
+                context={"pool_run_id": str(run.id)},
+                execution=execution,
+            )
+
+    diagnostic = json.loads(str(exc_info.value).split("diagnostic=", 1)[1])
+    assert diagnostic["error_code"] == "MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING"
+    assert diagnostic["missing_count"] == 1
+    assert diagnostic["missing_organization_bindings"][0]["organization_id"] == str(right_org.id)
+
+    execution.refresh_from_db(fields=["input_context"])
+    gate_summary = execution.input_context.get("pool_runtime_master_data_gate")
+    assert isinstance(gate_summary, dict)
+    assert gate_summary.get("status") == "failed"
+    assert gate_summary.get("error_code") == "MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING"
 
 
 @pytest.mark.django_db

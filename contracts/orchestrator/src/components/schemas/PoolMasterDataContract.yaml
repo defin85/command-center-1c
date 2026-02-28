@@ -1,0 +1,43 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  canonical_id:
+    type: string
+    maxLength: 128
+  name:
+    type: string
+    maxLength: 255
+  owner_counterparty_id:
+    type: string
+    format: uuid
+  owner_counterparty_canonical_id:
+    type: string
+    maxLength: 128
+  number:
+    type: string
+    maxLength: 128
+  date:
+    type: string
+    format: date
+    nullable: true
+  metadata:
+    type: object
+    additionalProperties: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - tenant_id
+  - canonical_id
+  - name
+  - owner_counterparty_id
+

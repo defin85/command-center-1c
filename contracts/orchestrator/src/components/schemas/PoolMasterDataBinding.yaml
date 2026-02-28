@@ -1,0 +1,61 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  entity_type:
+    type: string
+    enum:
+      - party
+      - item
+      - contract
+      - tax_profile
+  canonical_id:
+    type: string
+    maxLength: 128
+  database_id:
+    type: string
+    format: uuid
+  ib_ref_key:
+    type: string
+    maxLength: 128
+  ib_catalog_kind:
+    type: string
+    description: Relevant only for party bindings (organization|counterparty).
+  owner_counterparty_canonical_id:
+    type: string
+    maxLength: 128
+  sync_status:
+    type: string
+    enum:
+      - resolved
+      - upserted
+      - conflict
+  fingerprint:
+    type: string
+    maxLength: 64
+  metadata:
+    type: object
+    additionalProperties: true
+  last_synced_at:
+    type: string
+    format: date-time
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - tenant_id
+  - entity_type
+  - canonical_id
+  - database_id
+  - ib_ref_key
+  - sync_status
+  - last_synced_at
+

@@ -140,6 +140,11 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       label: 'Pool Catalog',
     },
     {
+      key: '/pools/master-data',
+      icon: <FileTextOutlined />,
+      label: 'Pool Master Data',
+    },
+    {
       key: '/pools/runs',
       icon: <FileTextOutlined />,
       label: 'Pool Runs',

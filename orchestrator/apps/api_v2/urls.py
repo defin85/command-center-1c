@@ -35,6 +35,7 @@ from .views import (
     driver_catalogs,
     operation_catalog,
     intercompany_pools,
+    intercompany_pools_master_data,
 )
 
 app_name = 'api_v2'
@@ -125,6 +126,81 @@ urlpatterns = [
     path('pools/organizations/upsert/', intercompany_pools.upsert_organization, name='pools-organizations-upsert'),
     path('pools/organizations/sync/', intercompany_pools.sync_organizations_catalog, name='pools-organizations-sync'),
     path('pools/organizations/<uuid:organization_id>/', intercompany_pools.get_organization, name='pools-organizations-get'),
+    path(
+        'pools/master-data/parties/',
+        intercompany_pools_master_data.list_master_data_parties,
+        name='pools-master-data-parties-list',
+    ),
+    path(
+        'pools/master-data/parties/<uuid:id>/',
+        intercompany_pools_master_data.get_master_data_party,
+        name='pools-master-data-parties-get',
+    ),
+    path(
+        'pools/master-data/parties/upsert/',
+        intercompany_pools_master_data.upsert_master_data_party,
+        name='pools-master-data-parties-upsert',
+    ),
+    path(
+        'pools/master-data/items/',
+        intercompany_pools_master_data.list_master_data_items,
+        name='pools-master-data-items-list',
+    ),
+    path(
+        'pools/master-data/items/<uuid:id>/',
+        intercompany_pools_master_data.get_master_data_item,
+        name='pools-master-data-items-get',
+    ),
+    path(
+        'pools/master-data/items/upsert/',
+        intercompany_pools_master_data.upsert_master_data_item,
+        name='pools-master-data-items-upsert',
+    ),
+    path(
+        'pools/master-data/contracts/',
+        intercompany_pools_master_data.list_master_data_contracts,
+        name='pools-master-data-contracts-list',
+    ),
+    path(
+        'pools/master-data/contracts/<uuid:id>/',
+        intercompany_pools_master_data.get_master_data_contract,
+        name='pools-master-data-contracts-get',
+    ),
+    path(
+        'pools/master-data/contracts/upsert/',
+        intercompany_pools_master_data.upsert_master_data_contract,
+        name='pools-master-data-contracts-upsert',
+    ),
+    path(
+        'pools/master-data/tax-profiles/',
+        intercompany_pools_master_data.list_master_data_tax_profiles,
+        name='pools-master-data-tax-profiles-list',
+    ),
+    path(
+        'pools/master-data/tax-profiles/<uuid:id>/',
+        intercompany_pools_master_data.get_master_data_tax_profile,
+        name='pools-master-data-tax-profiles-get',
+    ),
+    path(
+        'pools/master-data/tax-profiles/upsert/',
+        intercompany_pools_master_data.upsert_master_data_tax_profile,
+        name='pools-master-data-tax-profiles-upsert',
+    ),
+    path(
+        'pools/master-data/bindings/',
+        intercompany_pools_master_data.list_master_data_bindings,
+        name='pools-master-data-bindings-list',
+    ),
+    path(
+        'pools/master-data/bindings/<uuid:id>/',
+        intercompany_pools_master_data.get_master_data_binding,
+        name='pools-master-data-bindings-get',
+    ),
+    path(
+        'pools/master-data/bindings/upsert/',
+        intercompany_pools_master_data.upsert_master_data_binding,
+        name='pools-master-data-bindings-upsert',
+    ),
     path(
         'pools/odata-metadata/catalog/',
         intercompany_pools.get_pool_odata_metadata_catalog,

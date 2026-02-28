@@ -22,9 +22,12 @@ from .master_data_artifact_contract import (
     POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY,
 )
 from .master_data_errors import MasterDataResolveError
-from .master_data_feature_flags import is_pool_master_data_gate_enabled
+from .master_data_feature_flags import (
+    MasterDataGateConfigInvalidError,
+    is_pool_master_data_gate_enabled,
+)
 from .master_data_gate import execute_master_data_resolve_upsert_gate
-from .models import PoolRun, PoolRunDirection, PoolRunMode
+from .models import Organization, PoolRun, PoolRunDirection, PoolRunMode
 from .runtime_distribution import (
     build_publication_payload_from_artifact,
     compute_distribution_runtime_state,
@@ -54,6 +57,7 @@ POOL_RUNTIME_PUBLICATION_PATH_DISABLED = "POOL_RUNTIME_PUBLICATION_PATH_DISABLED
 POOL_RUNTIME_RETRY_PAYLOAD_INVALID = "POOL_RUNTIME_RETRY_PAYLOAD_INVALID"
 POOL_DISTRIBUTION_BALANCE_MISMATCH = "POOL_DISTRIBUTION_BALANCE_MISMATCH"
 POOL_DISTRIBUTION_COVERAGE_GAP = "POOL_DISTRIBUTION_COVERAGE_GAP"
+MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING = "MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING"
 
 
 def execute_pool_runtime_step(
@@ -403,7 +407,33 @@ def _execute_master_data_gate(
     execution: Any,
     execution_context: dict[str, Any],
 ) -> dict[str, Any]:
-    if not is_pool_master_data_gate_enabled():
+    try:
+        gate_enabled = is_pool_master_data_gate_enabled(
+            tenant_id=str(run.tenant_id),
+            fail_closed_on_invalid=True,
+        )
+    except MasterDataGateConfigInvalidError as exc:
+        diagnostic = exc.to_diagnostic()
+        summary = {
+            "status": "failed",
+            "mode": MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
+            "error_code": exc.code,
+            "detail": exc.detail,
+            "diagnostic": diagnostic,
+        }
+        _update_execution_context(
+            execution=execution,
+            updates={"pool_runtime_master_data_gate": summary},
+        )
+        diagnostic_json = json.dumps(
+            diagnostic,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        raise ValueError(f"{exc.code}: diagnostic={diagnostic_json}") from exc
+
+    if not gate_enabled:
         summary = {
             "status": "skipped",
             "reason": "feature_disabled",
@@ -420,6 +450,32 @@ def _execute_master_data_gate(
             "pool_run_id": str(run.id),
             "summary": summary,
         }
+
+    missing_bindings = _collect_missing_master_party_bindings(run=run)
+    if missing_bindings:
+        diagnostic = {
+            "error_code": MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING,
+            "missing_count": len(missing_bindings),
+            "missing_organization_bindings": missing_bindings,
+        }
+        summary = {
+            "status": "failed",
+            "mode": MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
+            "error_code": MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING,
+            "detail": "Missing Organization->Party binding for publication target organizations.",
+            "diagnostic": diagnostic,
+        }
+        _update_execution_context(
+            execution=execution,
+            updates={"pool_runtime_master_data_gate": summary},
+        )
+        diagnostic_json = json.dumps(
+            diagnostic,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        raise ValueError(f"{MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING}: diagnostic={diagnostic_json}")
 
     try:
         gate_result = execute_master_data_resolve_upsert_gate(
@@ -470,6 +526,66 @@ def _execute_master_data_gate(
         "publication_payload": publication_payload,
         "master_data_binding_artifact": binding_artifact,
     }
+
+
+def _collect_missing_master_party_bindings(*, run: PoolRun) -> list[dict[str, str]]:
+    try:
+        topology = load_runtime_topology_for_period(run=run)
+    except ValueError as exc:
+        message = str(exc)
+        if message.startswith("POOL_DISTRIBUTION_INPUT_INVALID") or message.startswith("POOL_DISTRIBUTION_GRAPH_INVALID"):
+            return []
+        raise
+    raw_node_models = topology.get("node_models")
+    if not isinstance(raw_node_models, Mapping):
+        return []
+    node_models = dict(raw_node_models)
+
+    raw_target_node_ids = topology.get("publish_target_node_ids")
+    if not isinstance(raw_target_node_ids, list):
+        return []
+
+    organization_ids: set[str] = set()
+    for raw_node_id in raw_target_node_ids:
+        node_id = str(raw_node_id or "").strip()
+        if not node_id:
+            continue
+        node = node_models.get(node_id)
+        if node is None:
+            continue
+        organization_id = str(getattr(node, "organization_id", "") or "").strip()
+        if organization_id:
+            organization_ids.add(organization_id)
+
+    if not organization_ids:
+        return []
+
+    organizations = Organization.objects.filter(
+        tenant_id=run.tenant_id,
+        id__in=organization_ids,
+    ).only("id", "name", "inn", "database_id", "master_party_id")
+
+    missing: list[dict[str, str]] = []
+    for organization in organizations:
+        if organization.master_party_id is not None:
+            continue
+        missing.append(
+            {
+                "organization_id": str(organization.id),
+                "name": str(organization.name or ""),
+                "inn": str(organization.inn or ""),
+                "database_id": str(organization.database_id) if organization.database_id else "",
+            }
+        )
+
+    missing.sort(
+        key=lambda item: (
+            item.get("name", ""),
+            item.get("inn", ""),
+            item.get("organization_id", ""),
+        )
+    )
+    return missing
 
 
 def _resolve_locked_retry_publication_payload(

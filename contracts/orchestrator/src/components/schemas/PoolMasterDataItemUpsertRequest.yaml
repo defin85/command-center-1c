@@ -1,0 +1,25 @@
+type: object
+properties:
+  item_id:
+    type: string
+    format: uuid
+  canonical_id:
+    type: string
+    maxLength: 128
+  name:
+    type: string
+    maxLength: 255
+  sku:
+    type: string
+    default: ''
+  unit:
+    type: string
+    default: ''
+  metadata:
+    type: object
+    default: {}
+    additionalProperties: true
+required:
+  - canonical_id
+  - name
+

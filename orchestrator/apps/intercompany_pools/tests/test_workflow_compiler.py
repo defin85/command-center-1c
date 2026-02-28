@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from apps.intercompany_pools.master_data_feature_flags import PoolMasterDataGateResolution
 from apps.intercompany_pools.models import (
     PoolRunDirection,
     PoolRunMode,
@@ -227,8 +228,12 @@ def test_compile_pool_execution_plan_includes_master_data_gate_when_feature_enab
     _sync_runtime_templates()
 
     with patch(
-        "apps.intercompany_pools.workflow_compiler.is_pool_master_data_gate_enabled",
-        return_value=True,
+        "apps.intercompany_pools.workflow_compiler.resolve_pool_master_data_gate_flag",
+        return_value=PoolMasterDataGateResolution(
+            source="tenant_override",
+            raw_value=True,
+            value=True,
+        ),
     ):
         plan = compile_pool_execution_plan(
             schema_template=schema_template,
@@ -250,6 +255,36 @@ def test_compile_pool_execution_plan_includes_master_data_gate_when_feature_enab
         if edge["from"] == "approval_gate" and edge["to"] == "master_data_gate"
     )
     assert approval_edge["condition"] == "{{approved_at}}"
+
+
+@pytest.mark.django_db
+def test_compile_pool_execution_plan_includes_master_data_gate_when_feature_flag_is_invalid() -> None:
+    tenant = Tenant.objects.create(slug=f"pool-master-gate-invalid-{uuid4().hex[:8]}", name="Pool Master Gate Invalid")
+    schema_template = _create_schema_template(tenant=tenant, code="master-gate-invalid-template")
+    _sync_runtime_templates()
+
+    with patch(
+        "apps.intercompany_pools.workflow_compiler.resolve_pool_master_data_gate_flag",
+        return_value=PoolMasterDataGateResolution(
+            source="global",
+            raw_value="definitely-not-bool",
+            value=None,
+        ),
+    ):
+        plan = compile_pool_execution_plan(
+            schema_template=schema_template,
+            run_context=_create_context(mode=PoolRunMode.SAFE),
+        )
+
+    node_ids = [node["id"] for node in plan.dag_structure["nodes"]]
+    assert node_ids == [
+        "prepare_input",
+        "distribution_calculation",
+        "reconciliation_report",
+        "approval_gate",
+        "master_data_gate",
+        "publication_odata",
+    ]
 
 
 @pytest.mark.django_db

@@ -4,6 +4,7 @@ import pytest
 from django.core.exceptions import ValidationError
 
 from apps.intercompany_pools.models import (
+    Organization,
     PoolMasterContract,
     PoolMasterParty,
     PoolMasterTaxProfile,
@@ -127,3 +128,45 @@ def test_pool_master_tax_profile_validates_vat_rate_range() -> None:
             vat_included=False,
             vat_code="VAT120",
         )
+
+
+@pytest.mark.django_db
+def test_organization_master_party_binding_requires_same_tenant() -> None:
+    tenant_a = Tenant.objects.create(slug="mdm-org-binding-a", name="MDM Org Binding A")
+    tenant_b = Tenant.objects.create(slug="mdm-org-binding-b", name="MDM Org Binding B")
+    foreign_party = PoolMasterParty.objects.create(
+        tenant=tenant_b,
+        canonical_id="party-foreign-org",
+        name="Foreign Org Party",
+        is_our_organization=True,
+    )
+    organization = Organization(
+        tenant=tenant_a,
+        name="Org A",
+        inn="781000000001",
+        master_party=foreign_party,
+    )
+
+    with pytest.raises(ValidationError):
+        organization.full_clean()
+
+
+@pytest.mark.django_db
+def test_organization_master_party_binding_requires_organization_role() -> None:
+    tenant = Tenant.objects.create(slug="mdm-org-binding-role", name="MDM Org Binding Role")
+    counterparty_only = PoolMasterParty.objects.create(
+        tenant=tenant,
+        canonical_id="party-counterparty-only",
+        name="Counterparty Only",
+        is_our_organization=False,
+        is_counterparty=True,
+    )
+    organization = Organization(
+        tenant=tenant,
+        name="Org Role Check",
+        inn="781000000002",
+        master_party=counterparty_only,
+    )
+
+    with pytest.raises(ValidationError):
+        organization.full_clean()

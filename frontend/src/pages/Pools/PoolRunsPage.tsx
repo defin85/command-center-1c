@@ -39,6 +39,7 @@ import {
   type PoolGraph,
   type PoolPublicationAttemptDiagnostics,
   type PoolRun,
+  type PoolRunMasterDataGate,
   type PoolRunReport,
   type PoolRunRetryChainAttempt,
   type PoolRunSafeCommandConflict,
@@ -130,6 +131,30 @@ const PUBLICATION_MAPPING_ERROR_CODES = new Set([
   'ODATA_MAPPING_AMBIGUOUS',
   'ODATA_PUBLICATION_AUTH_CONTEXT_INVALID',
 ])
+
+const MASTER_DATA_GATE_STATUS_COLORS: Record<string, string> = {
+  completed: 'success',
+  failed: 'error',
+  skipped: 'default',
+}
+
+const MASTER_DATA_GATE_REMEDIATION_HINTS: Record<string, string> = {
+  MASTER_DATA_GATE_CONFIG_INVALID: (
+    'Проверьте runtime setting pools.master_data.gate_enabled: значение должно приводиться к bool.'
+  ),
+  MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING: (
+    'Выполните backfill Organization->Party и закройте remediation-list перед повторным запуском run.'
+  ),
+  MASTER_DATA_ENTITY_NOT_FOUND: (
+    'Создайте/исправьте canonical сущность в /pools/master-data и повторите run.'
+  ),
+  MASTER_DATA_BINDING_AMBIGUOUS: (
+    'Уберите дубли scope в Bindings (entity+canonical+database+qualifier) и повторите run.'
+  ),
+  MASTER_DATA_BINDING_CONFLICT: (
+    'Проверьте token scope, owner qualifier и ib_ref_key для target database.'
+  ),
+}
 
 const formatDate = (value: string | null | undefined) => {
   if (!value) return '-'
@@ -276,6 +301,61 @@ const summarizeRunInput = (run: PoolRun): string => {
   }
   const preview = keys.slice(0, 2).join(', ')
   return keys.length > 2 ? `${preview}, +${keys.length - 2}` : preview
+}
+
+const resolveMasterDataGateHint = (errorCode: string | null): string | null => {
+  if (!errorCode) {
+    return null
+  }
+  return MASTER_DATA_GATE_REMEDIATION_HINTS[errorCode] ?? null
+}
+
+const buildMasterDataGateContextLines = (
+  masterDataGate: Exclude<PoolRunMasterDataGate, null | undefined>
+): string[] => {
+  if (!masterDataGate.diagnostic || typeof masterDataGate.diagnostic !== 'object' || Array.isArray(masterDataGate.diagnostic)) {
+    return []
+  }
+  const diagnostic = masterDataGate.diagnostic as Record<string, unknown>
+  const lines: string[] = []
+
+  const entityType = typeof diagnostic.entity_type === 'string' ? diagnostic.entity_type : ''
+  const canonicalId = typeof diagnostic.canonical_id === 'string' ? diagnostic.canonical_id : ''
+  const targetDatabaseId = typeof diagnostic.target_database_id === 'string' ? diagnostic.target_database_id : ''
+  if (entityType || canonicalId || targetDatabaseId) {
+    lines.push(
+      `entity_type=${entityType || '-'} canonical_id=${canonicalId || '-'} target_database_id=${targetDatabaseId || '-'}`
+    )
+  }
+
+  const runtimeKey = typeof diagnostic.runtime_key === 'string' ? diagnostic.runtime_key : ''
+  const source = typeof diagnostic.source === 'string' ? diagnostic.source : ''
+  const rawValue = typeof diagnostic.raw_value === 'string' ? diagnostic.raw_value : ''
+  if (runtimeKey || source || rawValue) {
+    lines.push(`runtime_key=${runtimeKey || '-'} source=${source || '-'} raw_value=${rawValue || '-'}`)
+  }
+
+  const missingBindings = Array.isArray(diagnostic.missing_organization_bindings)
+    ? diagnostic.missing_organization_bindings
+    : []
+  if (missingBindings.length > 0) {
+    lines.push(`missing_organization_bindings=${missingBindings.length}`)
+    missingBindings.slice(0, 3).forEach((item, index) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return
+      }
+      const row = item as Record<string, unknown>
+      const organizationId = typeof row.organization_id === 'string' ? row.organization_id : '-'
+      const name = typeof row.name === 'string' ? row.name : '-'
+      const databaseId = typeof row.database_id === 'string' ? row.database_id : '-'
+      lines.push(`#${index + 1}: org=${organizationId} name=${name} database_id=${databaseId}`)
+    })
+    if (missingBindings.length > 3) {
+      lines.push(`... +${missingBindings.length - 3} more`)
+    }
+  }
+
+  return lines
 }
 
 const buildFlowLayout = (graph: PoolGraph | null): { nodes: Node[]; edges: Edge[] } => {
@@ -886,6 +966,13 @@ export function PoolRunsPage() {
   const executionConsumer = runDetails?.provenance?.execution_consumer ?? null
   const lane = runDetails?.provenance?.lane ?? null
   const retryChain = runDetails?.provenance?.retry_chain ?? []
+  const masterDataGate = runDetails?.master_data_gate ?? null
+  const masterDataGateHint = masterDataGate?.error_code
+    ? resolveMasterDataGateHint(masterDataGate.error_code)
+    : null
+  const masterDataGateContextLines = masterDataGate
+    ? buildMasterDataGateContextLines(masterDataGate)
+    : []
 
   const isSafeRun = runDetails?.mode === 'safe'
   const isPublishedOrPartial = runDetails?.status === 'published' || runDetails?.status === 'partial_success'
@@ -1185,6 +1272,52 @@ export function PoolRunsPage() {
                           )}
                         </Descriptions.Item>
                       </Descriptions>
+
+                      <Card size="small" title="Master Data Gate">
+                        {!masterDataGate && (
+                          <Text type="secondary">
+                            Historical run or gate step was not captured in this execution context.
+                          </Text>
+                        )}
+                        {masterDataGate && (
+                          <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                            <Space size="small" wrap>
+                              <Tag color={MASTER_DATA_GATE_STATUS_COLORS[masterDataGate.status] ?? 'default'}>
+                                status: {masterDataGate.status}
+                              </Tag>
+                              <Tag>mode: {masterDataGate.mode}</Tag>
+                              <Tag>targets: {masterDataGate.targets_count}</Tag>
+                              <Tag>bindings: {masterDataGate.bindings_count}</Tag>
+                            </Space>
+                            {masterDataGate.error_code && (
+                              <Alert
+                                type="error"
+                                showIcon
+                                message={masterDataGate.error_code}
+                                description={masterDataGate.detail || 'Master data gate failed.'}
+                              />
+                            )}
+                            {masterDataGateHint && (
+                              <Alert
+                                type="info"
+                                showIcon
+                                message="Remediation Hint"
+                                description={masterDataGateHint}
+                              />
+                            )}
+                            {masterDataGateContextLines.length > 0 && (
+                              <Space direction="vertical" size={0}>
+                                <Text strong>Diagnostic Context</Text>
+                                {masterDataGateContextLines.map((line) => (
+                                  <Text key={line} code>
+                                    {line}
+                                  </Text>
+                                ))}
+                              </Space>
+                            )}
+                          </Space>
+                        )}
+                      </Card>
 
                       <Text strong>Publication Attempts</Text>
                       <Table

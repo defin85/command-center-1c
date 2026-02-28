@@ -1,0 +1,7 @@
+type: object
+properties:
+  tax_profile:
+    $ref: ./PoolMasterDataTaxProfile.yaml
+required:
+  - tax_profile
+

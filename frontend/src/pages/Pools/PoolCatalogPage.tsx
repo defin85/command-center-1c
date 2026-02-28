@@ -33,6 +33,10 @@ import {
   getOrganization,
   getPoolGraph,
   getPoolODataMetadataCatalog,
+  listMasterDataContracts,
+  listMasterDataItems,
+  listMasterDataParties,
+  listMasterDataTaxProfiles,
   listPoolTopologySnapshots,
   listOrganizationPools,
   listOrganizations,
@@ -46,6 +50,10 @@ import {
   type OrganizationPoolBinding,
   type OrganizationStatus,
   type PoolGraph,
+  type PoolMasterContract,
+  type PoolMasterItem,
+  type PoolMasterParty,
+  type PoolMasterTaxProfile,
   type PoolODataMetadataCatalogDocument,
   type PoolODataMetadataCatalogResponse,
   type PoolTopologySnapshotPeriod,
@@ -122,9 +130,22 @@ type TopologyFormValues = {
   edges: TopologyEdgeFormValue[]
 }
 
-type DocumentPolicyBuilderFieldMappingRow = {
-  target_field?: string
+type DocumentPolicySourceType = 'expression' | 'master_data_token'
+type MasterDataTokenEntityType = 'party' | 'item' | 'contract' | 'tax_profile'
+type MasterDataTokenPartyRole = 'organization' | 'counterparty'
+
+type DocumentPolicyBuilderSourceValue = {
+  source_type?: DocumentPolicySourceType
   source?: string
+  expression_source?: string
+  token_entity_type?: MasterDataTokenEntityType
+  token_canonical_id?: string
+  token_party_role?: MasterDataTokenPartyRole
+  token_owner_counterparty_canonical_id?: string
+}
+
+type DocumentPolicyBuilderFieldMappingRow = DocumentPolicyBuilderSourceValue & {
+  target_field?: string
 }
 
 type DocumentPolicyBuilderLinkRuleRow = {
@@ -132,9 +153,8 @@ type DocumentPolicyBuilderLinkRuleRow = {
   source?: string
 }
 
-type DocumentPolicyBuilderTablePartRowMapping = {
+type DocumentPolicyBuilderTablePartRowMapping = DocumentPolicyBuilderSourceValue & {
   target_row_field?: string
-  source?: string
 }
 
 type DocumentPolicyBuilderTablePartFormValue = {
@@ -556,6 +576,216 @@ const stringifyMetadataForForm = (rawMetadata: unknown): string => {
 }
 
 const DOCUMENT_POLICY_VERSION = 'document_policy.v1'
+const MASTER_DATA_TOKEN_PREFIX = 'master_data.'
+const TOKEN_SOURCE_TYPE_OPTIONS: Array<{ value: DocumentPolicySourceType; label: string }> = [
+  { value: 'expression', label: 'expression' },
+  { value: 'master_data_token', label: 'master_data_token' },
+]
+const TOKEN_ENTITY_TYPE_OPTIONS: Array<{ value: MasterDataTokenEntityType; label: string }> = [
+  { value: 'party', label: 'party' },
+  { value: 'item', label: 'item' },
+  { value: 'contract', label: 'contract' },
+  { value: 'tax_profile', label: 'tax_profile' },
+]
+const TOKEN_PARTY_ROLE_OPTIONS: Array<{ value: MasterDataTokenPartyRole; label: string }> = [
+  { value: 'organization', label: 'organization' },
+  { value: 'counterparty', label: 'counterparty' },
+]
+
+type ParsedMasterDataToken = {
+  entity_type: MasterDataTokenEntityType
+  canonical_id: string
+  party_role?: MasterDataTokenPartyRole
+  owner_counterparty_canonical_id?: string
+}
+
+const parseMasterDataToken = (value: string): ParsedMasterDataToken | null => {
+  const source = value.trim()
+  if (!source.startsWith(MASTER_DATA_TOKEN_PREFIX)) {
+    return null
+  }
+  const parts = source.split('.')
+  if (parts[0] !== 'master_data' || parts[parts.length - 1] !== 'ref') {
+    return null
+  }
+  if (parts[1] === 'party' && parts.length === 5) {
+    const canonicalId = String(parts[2] || '').trim()
+    const partyRole = String(parts[3] || '').trim()
+    if (!canonicalId) return null
+    if (partyRole !== 'organization' && partyRole !== 'counterparty') {
+      return null
+    }
+    return {
+      entity_type: 'party',
+      canonical_id: canonicalId,
+      party_role: partyRole as MasterDataTokenPartyRole,
+    }
+  }
+  if (parts[1] === 'item' && parts.length === 4) {
+    const canonicalId = String(parts[2] || '').trim()
+    if (!canonicalId) return null
+    return {
+      entity_type: 'item',
+      canonical_id: canonicalId,
+    }
+  }
+  if (parts[1] === 'contract' && parts.length === 5) {
+    const canonicalId = String(parts[2] || '').trim()
+    const ownerCounterpartyCanonicalId = String(parts[3] || '').trim()
+    if (!canonicalId || !ownerCounterpartyCanonicalId) return null
+    return {
+      entity_type: 'contract',
+      canonical_id: canonicalId,
+      owner_counterparty_canonical_id: ownerCounterpartyCanonicalId,
+    }
+  }
+  if (parts[1] === 'tax_profile' && parts.length === 4) {
+    const canonicalId = String(parts[2] || '').trim()
+    if (!canonicalId) return null
+    return {
+      entity_type: 'tax_profile',
+      canonical_id: canonicalId,
+    }
+  }
+  return null
+}
+
+const isMasterDataTokenLike = (value: string): boolean => (
+  value.trim().startsWith(MASTER_DATA_TOKEN_PREFIX)
+)
+
+const decodeDocumentPolicySourceValue = (rawSource: unknown): DocumentPolicyBuilderSourceValue => {
+  const source = String(rawSource ?? '').trim()
+  const parsedToken = parseMasterDataToken(source)
+  if (!parsedToken) {
+    return {
+      source_type: 'expression',
+      source,
+      expression_source: source,
+    }
+  }
+  return {
+    source_type: 'master_data_token',
+    source,
+    expression_source: '',
+    token_entity_type: parsedToken.entity_type,
+    token_canonical_id: parsedToken.canonical_id,
+    token_party_role: parsedToken.party_role,
+    token_owner_counterparty_canonical_id: parsedToken.owner_counterparty_canonical_id,
+  }
+}
+
+const buildMasterDataToken = (
+  sourceValue: DocumentPolicyBuilderSourceValue
+): string | null => {
+  const entityType = String(sourceValue.token_entity_type ?? '').trim()
+  const canonicalId = String(sourceValue.token_canonical_id ?? '').trim()
+  if (!entityType || !canonicalId) {
+    return null
+  }
+  if (entityType === 'party') {
+    const partyRole = String(sourceValue.token_party_role ?? '').trim()
+    if (partyRole !== 'organization' && partyRole !== 'counterparty') {
+      return null
+    }
+    return `master_data.party.${canonicalId}.${partyRole}.ref`
+  }
+  if (entityType === 'item') {
+    return `master_data.item.${canonicalId}.ref`
+  }
+  if (entityType === 'contract') {
+    const ownerCounterpartyCanonicalId = String(
+      sourceValue.token_owner_counterparty_canonical_id ?? ''
+    ).trim()
+    if (!ownerCounterpartyCanonicalId) {
+      return null
+    }
+    return `master_data.contract.${canonicalId}.${ownerCounterpartyCanonicalId}.ref`
+  }
+  if (entityType === 'tax_profile') {
+    return `master_data.tax_profile.${canonicalId}.ref`
+  }
+  return null
+}
+
+const hasDocumentPolicySourceInput = (sourceValue: DocumentPolicyBuilderSourceValue): boolean => (
+  Boolean(
+    String(sourceValue.source_type ?? '').trim()
+    || String(sourceValue.source ?? '').trim()
+    || String(sourceValue.expression_source ?? '').trim()
+    || String(sourceValue.token_entity_type ?? '').trim()
+    || String(sourceValue.token_canonical_id ?? '').trim()
+    || String(sourceValue.token_party_role ?? '').trim()
+    || String(sourceValue.token_owner_counterparty_canonical_id ?? '').trim()
+  )
+)
+
+const resolveDocumentPolicySourceValue = (
+  sourceValue: DocumentPolicyBuilderSourceValue,
+  rowLabel: string
+): { source: string | null; error: string | null } => {
+  const sourceType = String(sourceValue.source_type ?? '').trim().toLowerCase() === 'master_data_token'
+    ? 'master_data_token'
+    : 'expression'
+
+  if (sourceType === 'expression') {
+    const expressionSource = String(sourceValue.expression_source ?? sourceValue.source ?? '').trim()
+    if (!expressionSource) {
+      return { source: null, error: null }
+    }
+    if (isMasterDataTokenLike(expressionSource)) {
+      return {
+        source: null,
+        error: `${rowLabel}: canonical master_data token недопустим для source_type=expression.`,
+      }
+    }
+    return { source: expressionSource, error: null }
+  }
+
+  const entityType = String(sourceValue.token_entity_type ?? '').trim()
+  if (!entityType) {
+    return {
+      source: null,
+      error: `${rowLabel}: source_type=master_data_token требует entity_type.`,
+    }
+  }
+  const canonicalId = String(sourceValue.token_canonical_id ?? '').trim()
+  if (!canonicalId) {
+    return {
+      source: null,
+      error: `${rowLabel}: source_type=master_data_token требует canonical_id.`,
+    }
+  }
+  if (entityType === 'party') {
+    const partyRole = String(sourceValue.token_party_role ?? '').trim()
+    if (partyRole !== 'organization' && partyRole !== 'counterparty') {
+      return {
+        source: null,
+        error: `${rowLabel}: для entity_type=party требуется role organization|counterparty.`,
+      }
+    }
+  }
+  if (entityType === 'contract') {
+    const ownerCounterpartyCanonicalId = String(
+      sourceValue.token_owner_counterparty_canonical_id ?? ''
+    ).trim()
+    if (!ownerCounterpartyCanonicalId) {
+      return {
+        source: null,
+        error: `${rowLabel}: для entity_type=contract требуется owner_counterparty_canonical_id.`,
+      }
+    }
+  }
+
+  const token = buildMasterDataToken(sourceValue)
+  if (!token || !parseMasterDataToken(token)) {
+    return {
+      source: null,
+      error: `${rowLabel}: token должен соответствовать canonical master_data.*.ref формату.`,
+    }
+  }
+  return { source: token, error: null }
+}
 
 const validateDocumentPolicyObject = (
   policy: Record<string, unknown>,
@@ -690,20 +920,26 @@ const documentPolicyToBuilderChains = (
             target_field: String(targetField).trim(),
             source: String(source ?? '').trim(),
           })),
-          field_mappings: Object.entries(fieldMappingRaw).map(([targetField, source]) => ({
-            target_field: String(targetField).trim(),
-            source: String(source ?? '').trim(),
-          })),
+          field_mappings: Object.entries(fieldMappingRaw).map(([targetField, source]) => {
+            const decoded = decodeDocumentPolicySourceValue(source)
+            return {
+              target_field: String(targetField).trim(),
+              ...decoded,
+            }
+          }),
           table_part_mappings: Object.entries(tablePartsRaw).map(([tablePartName, rowMapping]) => {
             const rowObject = rowMapping && typeof rowMapping === 'object' && !Array.isArray(rowMapping)
               ? rowMapping as Record<string, unknown>
               : {}
             return {
               table_part: String(tablePartName).trim(),
-              row_mappings: Object.entries(rowObject).map(([targetRowField, source]) => ({
-                target_row_field: String(targetRowField).trim(),
-                source: String(source ?? '').trim(),
-              })),
+              row_mappings: Object.entries(rowObject).map(([targetRowField, source]) => {
+                const decoded = decodeDocumentPolicySourceValue(source)
+                return {
+                  target_row_field: String(targetRowField).trim(),
+                  ...decoded,
+                }
+              }),
             }
           }),
         }
@@ -776,15 +1012,35 @@ const buildDocumentPolicyFromBuilder = (
       const fieldMapping: Record<string, string> = {}
       fieldMappingsRaw.forEach((item) => {
         const targetField = String(item?.target_field ?? '').trim()
-        const source = String(item?.source ?? '').trim()
-        if (!targetField && !source) return
-        if (!targetField || !source) {
+        const sourceValue: DocumentPolicyBuilderSourceValue = {
+          source_type: item?.source_type,
+          source: item?.source,
+          expression_source: item?.expression_source,
+          token_entity_type: item?.token_entity_type,
+          token_canonical_id: item?.token_canonical_id,
+          token_party_role: item?.token_party_role,
+          token_owner_counterparty_canonical_id: item?.token_owner_counterparty_canonical_id,
+        }
+        const hasSourceInput = hasDocumentPolicySourceInput(sourceValue)
+        if (!targetField && !hasSourceInput) return
+        if (!targetField) {
           errors.push(
             `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} field_mapping должен содержать target и source.`
           )
           return
         }
-        fieldMapping[targetField] = source
+        const resolvedSource = resolveDocumentPolicySourceValue(
+          sourceValue,
+          `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} field_mapping.${targetField}`
+        )
+        if (!resolvedSource.source) {
+          errors.push(
+            resolvedSource.error
+            || `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} field_mapping должен содержать target и source.`
+          )
+          return
+        }
+        fieldMapping[targetField] = resolvedSource.source
       })
 
       const tablePartMappingsRaw = Array.isArray(rawDocument?.table_part_mappings) ? rawDocument.table_part_mappings : []
@@ -795,15 +1051,35 @@ const buildDocumentPolicyFromBuilder = (
         const rowMapping: Record<string, string> = {}
         rowMappingsRaw.forEach((row) => {
           const targetRowField = String(row?.target_row_field ?? '').trim()
-          const source = String(row?.source ?? '').trim()
-          if (!targetRowField && !source) return
-          if (!targetRowField || !source) {
+          const sourceValue: DocumentPolicyBuilderSourceValue = {
+            source_type: row?.source_type,
+            source: row?.source,
+            expression_source: row?.expression_source,
+            token_entity_type: row?.token_entity_type,
+            token_canonical_id: row?.token_canonical_id,
+            token_party_role: row?.token_party_role,
+            token_owner_counterparty_canonical_id: row?.token_owner_counterparty_canonical_id,
+          }
+          const hasSourceInput = hasDocumentPolicySourceInput(sourceValue)
+          if (!targetRowField && !hasSourceInput) return
+          if (!targetRowField) {
             errors.push(
               `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} table_parts_mapping должен содержать target и source.`
             )
             return
           }
-          rowMapping[targetRowField] = source
+          const resolvedSource = resolveDocumentPolicySourceValue(
+            sourceValue,
+            `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} table_parts_mapping.${tablePartName || '<table_part>'}.${targetRowField}`
+          )
+          if (!resolvedSource.source) {
+            errors.push(
+              resolvedSource.error
+              || `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} table_parts_mapping должен содержать target и source.`
+            )
+            return
+          }
+          rowMapping[targetRowField] = resolvedSource.source
         })
         if (!tablePartName) {
           if (Object.keys(rowMapping).length > 0) {
@@ -1135,6 +1411,12 @@ export function PoolCatalogPage() {
   const [metadataCatalogByDatabase, setMetadataCatalogByDatabase] = useState<Record<string, PoolODataMetadataCatalogResponse>>({})
   const [metadataCatalogLoadingByDatabase, setMetadataCatalogLoadingByDatabase] = useState<Record<string, boolean>>({})
   const [metadataCatalogErrorByDatabase, setMetadataCatalogErrorByDatabase] = useState<Record<string, string>>({})
+  const [masterDataParties, setMasterDataParties] = useState<PoolMasterParty[]>([])
+  const [masterDataItems, setMasterDataItems] = useState<PoolMasterItem[]>([])
+  const [masterDataContracts, setMasterDataContracts] = useState<PoolMasterContract[]>([])
+  const [masterDataTaxProfiles, setMasterDataTaxProfiles] = useState<PoolMasterTaxProfile[]>([])
+  const [loadingMasterDataTokenCatalog, setLoadingMasterDataTokenCatalog] = useState(false)
+  const [masterDataTokenCatalogError, setMasterDataTokenCatalogError] = useState<string | null>(null)
   const watchedEdges = Form.useWatch('edges', topologyForm)
 
   const selectedOrganization = useMemo(
@@ -1165,6 +1447,56 @@ export function PoolCatalogPage() {
       }))
       .sort((left, right) => left.label.localeCompare(right.label)),
     [organizations]
+  )
+
+  const masterDataPartyOptions = useMemo(
+    () => masterDataParties
+      .map((item) => ({
+        value: item.canonical_id,
+        label: `${item.canonical_id} - ${item.name}`,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label)),
+    [masterDataParties]
+  )
+  const masterDataCounterpartyOptions = useMemo(
+    () => masterDataParties
+      .filter((item) => item.is_counterparty)
+      .map((item) => ({
+        value: item.canonical_id,
+        label: `${item.canonical_id} - ${item.name}`,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label)),
+    [masterDataParties]
+  )
+  const masterDataItemOptions = useMemo(
+    () => masterDataItems
+      .map((item) => ({
+        value: item.canonical_id,
+        label: `${item.canonical_id} - ${item.name}`,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label)),
+    [masterDataItems]
+  )
+  const masterDataContractOptions = useMemo(
+    () => masterDataContracts
+      .map((item) => ({
+        value: item.canonical_id,
+        label: `${item.canonical_id} - ${item.name}`,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label)),
+    [masterDataContracts]
+  )
+  const masterDataContractByCanonicalId = useMemo(() => (
+    Object.fromEntries(masterDataContracts.map((item) => [item.canonical_id, item]))
+  ), [masterDataContracts])
+  const masterDataTaxProfileOptions = useMemo(
+    () => masterDataTaxProfiles
+      .map((item) => ({
+        value: item.canonical_id,
+        label: item.canonical_id,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label)),
+    [masterDataTaxProfiles]
   )
 
   const flow = useMemo(() => buildFlowLayout(graph), [graph])
@@ -1312,6 +1644,41 @@ export function PoolCatalogPage() {
     }
   }, [])
 
+  const loadMasterDataTokenCatalog = useCallback(async () => {
+    if (!hasTenantContext) {
+      setMasterDataParties([])
+      setMasterDataItems([])
+      setMasterDataContracts([])
+      setMasterDataTaxProfiles([])
+      return
+    }
+    setLoadingMasterDataTokenCatalog(true)
+    setMasterDataTokenCatalogError(null)
+    try {
+      const [
+        partiesPayload,
+        itemsPayload,
+        contractsPayload,
+        taxProfilesPayload,
+      ] = await Promise.all([
+        listMasterDataParties({ limit: 500, offset: 0 }),
+        listMasterDataItems({ limit: 500, offset: 0 }),
+        listMasterDataContracts({ limit: 500, offset: 0 }),
+        listMasterDataTaxProfiles({ limit: 500, offset: 0 }),
+      ])
+      setMasterDataParties(Array.isArray(partiesPayload.parties) ? partiesPayload.parties : [])
+      setMasterDataItems(Array.isArray(itemsPayload.items) ? itemsPayload.items : [])
+      setMasterDataContracts(Array.isArray(contractsPayload.contracts) ? contractsPayload.contracts : [])
+      setMasterDataTaxProfiles(
+        Array.isArray(taxProfilesPayload.tax_profiles) ? taxProfilesPayload.tax_profiles : []
+      )
+    } catch {
+      setMasterDataTokenCatalogError('Не удалось загрузить master-data каталог для token picker.')
+    } finally {
+      setLoadingMasterDataTokenCatalog(false)
+    }
+  }, [hasTenantContext])
+
   const switchEdgePolicyMode = useCallback((edgeIndex: number, nextMode: 'builder' | 'raw') => {
     const currentMode = (
       String(topologyForm.getFieldValue(['edges', edgeIndex, 'document_policy_mode']) || 'raw')
@@ -1449,6 +1816,28 @@ export function PoolCatalogPage() {
     metadataCatalogLoadingByDatabase,
     organizationById,
     watchedEdges,
+  ])
+
+  useEffect(() => {
+    if (activeWorkspaceTab !== 'topology') return
+    if (!hasTenantContext) return
+    if (
+      masterDataParties.length > 0
+      || masterDataItems.length > 0
+      || masterDataContracts.length > 0
+      || masterDataTaxProfiles.length > 0
+    ) {
+      return
+    }
+    void loadMasterDataTokenCatalog()
+  }, [
+    activeWorkspaceTab,
+    hasTenantContext,
+    loadMasterDataTokenCatalog,
+    masterDataContracts.length,
+    masterDataItems.length,
+    masterDataParties.length,
+    masterDataTaxProfiles.length,
   ])
 
   useEffect(() => {
@@ -2525,6 +2914,22 @@ export function PoolCatalogPage() {
                                                         {metadataError && (
                                                           <Alert type="error" showIcon message={metadataError} />
                                                         )}
+                                                        {masterDataTokenCatalogError && (
+                                                          <Alert
+                                                            type="warning"
+                                                            showIcon
+                                                            message={masterDataTokenCatalogError}
+                                                            action={(
+                                                              <Button
+                                                                size="small"
+                                                                onClick={() => { void loadMasterDataTokenCatalog() }}
+                                                                loading={loadingMasterDataTokenCatalog}
+                                                              >
+                                                                Retry token catalog
+                                                              </Button>
+                                                            )}
+                                                          />
+                                                        )}
                                                         <Form.List name={[field.name, 'document_policy_builder']}>
                                                           {(chainFields, { add: addChain, remove: removeChain, move: moveChain }) => (
                                                             <Space direction="vertical" size={8} style={{ width: '100%' }}>
@@ -2780,44 +3185,260 @@ export function PoolCatalogPage() {
                                                                                 {(fieldMappingFields, { add: addFieldMapping, remove: removeFieldMapping }) => (
                                                                                   <Space direction="vertical" size={4} style={{ width: '100%', marginBottom: 8 }}>
                                                                                     <Text type="secondary">field_mapping</Text>
-                                                                                    {fieldMappingFields.map((mappingField) => (
-                                                                                      <Row key={mappingField.key} gutter={8} align="middle">
-                                                                                        <Col span={9}>
-                                                                                          <Form.Item
-                                                                                            name={[mappingField.name, 'target_field']}
-                                                                                            style={{ marginBottom: 0 }}
-                                                                                          >
-                                                                                            <Select
-                                                                                              showSearch
-                                                                                              optionFilterProp="label"
-                                                                                              options={fieldOptions}
-                                                                                              placeholder="target field"
-                                                                                              notFoundContent={(
-                                                                                                selectedEntityName
-                                                                                                  ? 'Для выбранного entity_name нет fields в metadata catalog.'
-                                                                                                  : 'Сначала выберите entity_name.'
-                                                                                              )}
-                                                                                            />
-                                                                                          </Form.Item>
-                                                                                        </Col>
-                                                                                        <Col span={12}>
-                                                                                          <Form.Item
-                                                                                            name={[mappingField.name, 'source']}
-                                                                                            style={{ marginBottom: 0 }}
-                                                                                          >
-                                                                                            <Input placeholder="allocation.amount" />
-                                                                                          </Form.Item>
-                                                                                        </Col>
-                                                                                        <Col span={3}>
-                                                                                          <Button danger onClick={() => removeFieldMapping(mappingField.name)}>
-                                                                                            x
-                                                                                          </Button>
-                                                                                        </Col>
-                                                                                      </Row>
-                                                                                    ))}
+                                                                                    {fieldMappingFields.map((mappingField) => {
+                                                                                      const sourceType = (
+                                                                                        String(
+                                                                                          getFieldValue([
+                                                                                            'edges',
+                                                                                            field.name,
+                                                                                            'document_policy_builder',
+                                                                                            chainField.name,
+                                                                                            'documents',
+                                                                                            documentField.name,
+                                                                                            'field_mappings',
+                                                                                            mappingField.name,
+                                                                                            'source_type',
+                                                                                          ]) || 'expression'
+                                                                                        )
+                                                                                          .trim()
+                                                                                          .toLowerCase() === 'master_data_token'
+                                                                                          ? 'master_data_token'
+                                                                                          : 'expression'
+                                                                                      )
+                                                                                      const tokenEntityType = String(
+                                                                                        getFieldValue([
+                                                                                          'edges',
+                                                                                          field.name,
+                                                                                          'document_policy_builder',
+                                                                                          chainField.name,
+                                                                                          'documents',
+                                                                                          documentField.name,
+                                                                                          'field_mappings',
+                                                                                          mappingField.name,
+                                                                                          'token_entity_type',
+                                                                                        ]) || ''
+                                                                                      ).trim()
+                                                                                      const tokenCanonicalId = String(
+                                                                                        getFieldValue([
+                                                                                          'edges',
+                                                                                          field.name,
+                                                                                          'document_policy_builder',
+                                                                                          chainField.name,
+                                                                                          'documents',
+                                                                                          documentField.name,
+                                                                                          'field_mappings',
+                                                                                          mappingField.name,
+                                                                                          'token_canonical_id',
+                                                                                        ]) || ''
+                                                                                      ).trim()
+                                                                                      const tokenPartyRole = String(
+                                                                                        getFieldValue([
+                                                                                          'edges',
+                                                                                          field.name,
+                                                                                          'document_policy_builder',
+                                                                                          chainField.name,
+                                                                                          'documents',
+                                                                                          documentField.name,
+                                                                                          'field_mappings',
+                                                                                          mappingField.name,
+                                                                                          'token_party_role',
+                                                                                        ]) || ''
+                                                                                      ).trim()
+                                                                                      const tokenOwnerCounterpartyCanonicalId = String(
+                                                                                        getFieldValue([
+                                                                                          'edges',
+                                                                                          field.name,
+                                                                                          'document_policy_builder',
+                                                                                          chainField.name,
+                                                                                          'documents',
+                                                                                          documentField.name,
+                                                                                          'field_mappings',
+                                                                                          mappingField.name,
+                                                                                          'token_owner_counterparty_canonical_id',
+                                                                                        ]) || ''
+                                                                                      ).trim()
+                                                                                      const contractOwnerDefault = (
+                                                                                        tokenEntityType === 'contract' && tokenCanonicalId
+                                                                                          ? String(
+                                                                                            masterDataContractByCanonicalId[tokenCanonicalId]?.owner_counterparty_canonical_id
+                                                                                            || ''
+                                                                                          ).trim()
+                                                                                          : ''
+                                                                                      )
+                                                                                      const tokenCanonicalOptions = (
+                                                                                        tokenEntityType === 'party'
+                                                                                          ? masterDataPartyOptions
+                                                                                          : tokenEntityType === 'item'
+                                                                                            ? masterDataItemOptions
+                                                                                            : tokenEntityType === 'contract'
+                                                                                              ? masterDataContractOptions
+                                                                                              : tokenEntityType === 'tax_profile'
+                                                                                                ? masterDataTaxProfileOptions
+                                                                                                : []
+                                                                                      )
+                                                                                      const ownerCounterpartyOptions = (
+                                                                                        contractOwnerDefault
+                                                                                        && !masterDataCounterpartyOptions.some(
+                                                                                          (item) => item.value === contractOwnerDefault
+                                                                                        )
+                                                                                          ? [
+                                                                                            ...masterDataCounterpartyOptions,
+                                                                                            {
+                                                                                              value: contractOwnerDefault,
+                                                                                              label: contractOwnerDefault,
+                                                                                            },
+                                                                                          ]
+                                                                                          : masterDataCounterpartyOptions
+                                                                                      )
+                                                                                      const tokenPreview = sourceType === 'master_data_token'
+                                                                                        ? buildMasterDataToken({
+                                                                                          token_entity_type: tokenEntityType as MasterDataTokenEntityType,
+                                                                                          token_canonical_id: tokenCanonicalId,
+                                                                                          token_party_role: tokenPartyRole as MasterDataTokenPartyRole,
+                                                                                          token_owner_counterparty_canonical_id: (
+                                                                                            tokenOwnerCounterpartyCanonicalId || contractOwnerDefault
+                                                                                          ),
+                                                                                        })
+                                                                                        : null
+
+                                                                                      return (
+                                                                                        <Row key={mappingField.key} gutter={8} align="top">
+                                                                                          <Col span={6}>
+                                                                                            <Form.Item
+                                                                                              name={[mappingField.name, 'target_field']}
+                                                                                              style={{ marginBottom: 0 }}
+                                                                                            >
+                                                                                              <Select
+                                                                                                showSearch
+                                                                                                optionFilterProp="label"
+                                                                                                options={fieldOptions}
+                                                                                                placeholder="target field"
+                                                                                                notFoundContent={(
+                                                                                                  selectedEntityName
+                                                                                                    ? 'Для выбранного entity_name нет fields в metadata catalog.'
+                                                                                                    : 'Сначала выберите entity_name.'
+                                                                                                )}
+                                                                                              />
+                                                                                            </Form.Item>
+                                                                                          </Col>
+                                                                                          <Col span={6}>
+                                                                                            <Form.Item
+                                                                                              name={[mappingField.name, 'source_type']}
+                                                                                              style={{ marginBottom: 0 }}
+                                                                                              initialValue="expression"
+                                                                                            >
+                                                                                              <Select
+                                                                                                options={TOKEN_SOURCE_TYPE_OPTIONS}
+                                                                                                data-testid={(
+                                                                                                  `pool-catalog-topology-field-mapping-source-type-${field.name}-${chainField.name}-${documentField.name}-${mappingField.name}`
+                                                                                                )}
+                                                                                              />
+                                                                                            </Form.Item>
+                                                                                          </Col>
+                                                                                          <Col span={9}>
+                                                                                            {sourceType === 'master_data_token' ? (
+                                                                                              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                                                                                                <Row gutter={8}>
+                                                                                                  <Col span={8}>
+                                                                                                    <Form.Item
+                                                                                                      name={[mappingField.name, 'token_entity_type']}
+                                                                                                      style={{ marginBottom: 0 }}
+                                                                                                    >
+                                                                                                      <Select
+                                                                                                        placeholder="entity"
+                                                                                                        options={TOKEN_ENTITY_TYPE_OPTIONS}
+                                                                                                        loading={loadingMasterDataTokenCatalog}
+                                                                                                        data-testid={(
+                                                                                                          `pool-catalog-topology-field-mapping-token-entity-${field.name}-${chainField.name}-${documentField.name}-${mappingField.name}`
+                                                                                                        )}
+                                                                                                      />
+                                                                                                    </Form.Item>
+                                                                                                  </Col>
+                                                                                                  <Col span={16}>
+                                                                                                    <Form.Item
+                                                                                                      name={[mappingField.name, 'token_canonical_id']}
+                                                                                                      style={{ marginBottom: 0 }}
+                                                                                                    >
+                                                                                                      <Select
+                                                                                                        showSearch
+                                                                                                        optionFilterProp="label"
+                                                                                                        allowClear
+                                                                                                        placeholder="canonical_id"
+                                                                                                        options={tokenCanonicalOptions}
+                                                                                                        loading={loadingMasterDataTokenCatalog}
+                                                                                                        data-testid={(
+                                                                                                          `pool-catalog-topology-field-mapping-token-canonical-${field.name}-${chainField.name}-${documentField.name}-${mappingField.name}`
+                                                                                                        )}
+                                                                                                      />
+                                                                                                    </Form.Item>
+                                                                                                  </Col>
+                                                                                                </Row>
+                                                                                                {tokenEntityType === 'party' && (
+                                                                                                  <Form.Item
+                                                                                                    name={[mappingField.name, 'token_party_role']}
+                                                                                                    style={{ marginBottom: 0 }}
+                                                                                                  >
+                                                                                                    <Select
+                                                                                                      allowClear
+                                                                                                      placeholder="party role"
+                                                                                                      options={TOKEN_PARTY_ROLE_OPTIONS}
+                                                                                                      data-testid={(
+                                                                                                        `pool-catalog-topology-field-mapping-token-party-role-${field.name}-${chainField.name}-${documentField.name}-${mappingField.name}`
+                                                                                                      )}
+                                                                                                    />
+                                                                                                  </Form.Item>
+                                                                                                )}
+                                                                                                {tokenEntityType === 'contract' && (
+                                                                                                  <Form.Item
+                                                                                                    name={[mappingField.name, 'token_owner_counterparty_canonical_id']}
+                                                                                                    style={{ marginBottom: 0 }}
+                                                                                                    initialValue={contractOwnerDefault || undefined}
+                                                                                                  >
+                                                                                                    <Select
+                                                                                                      showSearch
+                                                                                                      optionFilterProp="label"
+                                                                                                      allowClear
+                                                                                                      placeholder="owner_counterparty_canonical_id"
+                                                                                                      options={ownerCounterpartyOptions}
+                                                                                                      loading={loadingMasterDataTokenCatalog}
+                                                                                                      data-testid={(
+                                                                                                        `pool-catalog-topology-field-mapping-token-owner-${field.name}-${chainField.name}-${documentField.name}-${mappingField.name}`
+                                                                                                      )}
+                                                                                                    />
+                                                                                                  </Form.Item>
+                                                                                                )}
+                                                                                                {tokenPreview ? (
+                                                                                                  <Text code>{tokenPreview}</Text>
+                                                                                                ) : (
+                                                                                                  <Text type="secondary">
+                                                                                                    Configure token fields.
+                                                                                                  </Text>
+                                                                                                )}
+                                                                                              </Space>
+                                                                                            ) : (
+                                                                                              <Form.Item
+                                                                                                name={[mappingField.name, 'expression_source']}
+                                                                                                style={{ marginBottom: 0 }}
+                                                                                              >
+                                                                                                <Input placeholder="allocation.amount" />
+                                                                                              </Form.Item>
+                                                                                            )}
+                                                                                          </Col>
+                                                                                          <Col span={3}>
+                                                                                            <Button danger onClick={() => removeFieldMapping(mappingField.name)}>
+                                                                                              x
+                                                                                            </Button>
+                                                                                          </Col>
+                                                                                        </Row>
+                                                                                      )
+                                                                                    })}
                                                                                     <Button
                                                                                       size="small"
-                                                                                      onClick={() => addFieldMapping({ target_field: '', source: '' })}
+                                                                                      onClick={() => addFieldMapping({
+                                                                                        target_field: '',
+                                                                                        source_type: 'expression',
+                                                                                        expression_source: '',
+                                                                                      })}
                                                                                     >
                                                                                       Add field mapping
                                                                                     </Button>
@@ -2900,44 +3521,253 @@ export function PoolCatalogPage() {
                                                                                           <Form.List name={[tablePartField.name, 'row_mappings']}>
                                                                                             {(rowMappingFields, { add: addRowMapping, remove: removeRowMapping }) => (
                                                                                               <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                                                                                                {rowMappingFields.map((rowMappingField) => (
-                                                                                                  <Row key={rowMappingField.key} gutter={8} align="middle">
-                                                                                                    <Col span={9}>
-                                                                                                      <Form.Item
-                                                                                                        name={[rowMappingField.name, 'target_row_field']}
-                                                                                                        style={{ marginBottom: 0 }}
-                                                                                                      >
-                                                                                                        <Select
-                                                                                                          showSearch
-                                                                                                          optionFilterProp="label"
-                                                                                                          options={rowFieldOptions}
-                                                                                                          placeholder="target row field"
-                                                                                                          notFoundContent={(
-                                                                                                            selectedTablePart
-                                                                                                              ? 'Для выбранной табличной части нет row_fields.'
-                                                                                                              : 'Сначала выберите table_part.'
-                                                                                                          )}
-                                                                                                        />
-                                                                                                      </Form.Item>
-                                                                                                    </Col>
-                                                                                                    <Col span={12}>
-                                                                                                      <Form.Item
-                                                                                                        name={[rowMappingField.name, 'source']}
-                                                                                                        style={{ marginBottom: 0 }}
-                                                                                                      >
-                                                                                                        <Input placeholder="allocation.lines.amount" />
-                                                                                                      </Form.Item>
-                                                                                                    </Col>
-                                                                                                    <Col span={3}>
-                                                                                                      <Button danger onClick={() => removeRowMapping(rowMappingField.name)}>
-                                                                                                        x
-                                                                                                      </Button>
-                                                                                                    </Col>
-                                                                                                  </Row>
-                                                                                                ))}
+                                                                                                {rowMappingFields.map((rowMappingField) => {
+                                                                                                  const sourceType = (
+                                                                                                    String(
+                                                                                                      getFieldValue([
+                                                                                                        'edges',
+                                                                                                        field.name,
+                                                                                                        'document_policy_builder',
+                                                                                                        chainField.name,
+                                                                                                        'documents',
+                                                                                                        documentField.name,
+                                                                                                        'table_part_mappings',
+                                                                                                        tablePartField.name,
+                                                                                                        'row_mappings',
+                                                                                                        rowMappingField.name,
+                                                                                                        'source_type',
+                                                                                                      ]) || 'expression'
+                                                                                                    )
+                                                                                                      .trim()
+                                                                                                      .toLowerCase() === 'master_data_token'
+                                                                                                      ? 'master_data_token'
+                                                                                                      : 'expression'
+                                                                                                  )
+                                                                                                  const tokenEntityType = String(
+                                                                                                    getFieldValue([
+                                                                                                      'edges',
+                                                                                                      field.name,
+                                                                                                      'document_policy_builder',
+                                                                                                      chainField.name,
+                                                                                                      'documents',
+                                                                                                      documentField.name,
+                                                                                                      'table_part_mappings',
+                                                                                                      tablePartField.name,
+                                                                                                      'row_mappings',
+                                                                                                      rowMappingField.name,
+                                                                                                      'token_entity_type',
+                                                                                                    ]) || ''
+                                                                                                  ).trim()
+                                                                                                  const tokenCanonicalId = String(
+                                                                                                    getFieldValue([
+                                                                                                      'edges',
+                                                                                                      field.name,
+                                                                                                      'document_policy_builder',
+                                                                                                      chainField.name,
+                                                                                                      'documents',
+                                                                                                      documentField.name,
+                                                                                                      'table_part_mappings',
+                                                                                                      tablePartField.name,
+                                                                                                      'row_mappings',
+                                                                                                      rowMappingField.name,
+                                                                                                      'token_canonical_id',
+                                                                                                    ]) || ''
+                                                                                                  ).trim()
+                                                                                                  const tokenPartyRole = String(
+                                                                                                    getFieldValue([
+                                                                                                      'edges',
+                                                                                                      field.name,
+                                                                                                      'document_policy_builder',
+                                                                                                      chainField.name,
+                                                                                                      'documents',
+                                                                                                      documentField.name,
+                                                                                                      'table_part_mappings',
+                                                                                                      tablePartField.name,
+                                                                                                      'row_mappings',
+                                                                                                      rowMappingField.name,
+                                                                                                      'token_party_role',
+                                                                                                    ]) || ''
+                                                                                                  ).trim()
+                                                                                                  const tokenOwnerCounterpartyCanonicalId = String(
+                                                                                                    getFieldValue([
+                                                                                                      'edges',
+                                                                                                      field.name,
+                                                                                                      'document_policy_builder',
+                                                                                                      chainField.name,
+                                                                                                      'documents',
+                                                                                                      documentField.name,
+                                                                                                      'table_part_mappings',
+                                                                                                      tablePartField.name,
+                                                                                                      'row_mappings',
+                                                                                                      rowMappingField.name,
+                                                                                                      'token_owner_counterparty_canonical_id',
+                                                                                                    ]) || ''
+                                                                                                  ).trim()
+                                                                                                  const contractOwnerDefault = (
+                                                                                                    tokenEntityType === 'contract' && tokenCanonicalId
+                                                                                                      ? String(
+                                                                                                        masterDataContractByCanonicalId[tokenCanonicalId]?.owner_counterparty_canonical_id
+                                                                                                        || ''
+                                                                                                      ).trim()
+                                                                                                      : ''
+                                                                                                  )
+                                                                                                  const tokenCanonicalOptions = (
+                                                                                                    tokenEntityType === 'party'
+                                                                                                      ? masterDataPartyOptions
+                                                                                                      : tokenEntityType === 'item'
+                                                                                                        ? masterDataItemOptions
+                                                                                                        : tokenEntityType === 'contract'
+                                                                                                          ? masterDataContractOptions
+                                                                                                          : tokenEntityType === 'tax_profile'
+                                                                                                            ? masterDataTaxProfileOptions
+                                                                                                            : []
+                                                                                                  )
+                                                                                                  const ownerCounterpartyOptions = (
+                                                                                                    contractOwnerDefault
+                                                                                                    && !masterDataCounterpartyOptions.some(
+                                                                                                      (item) => item.value === contractOwnerDefault
+                                                                                                    )
+                                                                                                      ? [
+                                                                                                        ...masterDataCounterpartyOptions,
+                                                                                                        {
+                                                                                                          value: contractOwnerDefault,
+                                                                                                          label: contractOwnerDefault,
+                                                                                                        },
+                                                                                                      ]
+                                                                                                      : masterDataCounterpartyOptions
+                                                                                                  )
+                                                                                                  const tokenPreview = sourceType === 'master_data_token'
+                                                                                                    ? buildMasterDataToken({
+                                                                                                      token_entity_type: tokenEntityType as MasterDataTokenEntityType,
+                                                                                                      token_canonical_id: tokenCanonicalId,
+                                                                                                      token_party_role: tokenPartyRole as MasterDataTokenPartyRole,
+                                                                                                      token_owner_counterparty_canonical_id: (
+                                                                                                        tokenOwnerCounterpartyCanonicalId || contractOwnerDefault
+                                                                                                      ),
+                                                                                                    })
+                                                                                                    : null
+
+                                                                                                  return (
+                                                                                                    <Row key={rowMappingField.key} gutter={8} align="top">
+                                                                                                      <Col span={6}>
+                                                                                                        <Form.Item
+                                                                                                          name={[rowMappingField.name, 'target_row_field']}
+                                                                                                          style={{ marginBottom: 0 }}
+                                                                                                        >
+                                                                                                          <Select
+                                                                                                            showSearch
+                                                                                                            optionFilterProp="label"
+                                                                                                            options={rowFieldOptions}
+                                                                                                            placeholder="target row field"
+                                                                                                            notFoundContent={(
+                                                                                                              selectedTablePart
+                                                                                                                ? 'Для выбранной табличной части нет row_fields.'
+                                                                                                                : 'Сначала выберите table_part.'
+                                                                                                            )}
+                                                                                                          />
+                                                                                                        </Form.Item>
+                                                                                                      </Col>
+                                                                                                      <Col span={6}>
+                                                                                                        <Form.Item
+                                                                                                          name={[rowMappingField.name, 'source_type']}
+                                                                                                          style={{ marginBottom: 0 }}
+                                                                                                          initialValue="expression"
+                                                                                                        >
+                                                                                                          <Select options={TOKEN_SOURCE_TYPE_OPTIONS} />
+                                                                                                        </Form.Item>
+                                                                                                      </Col>
+                                                                                                      <Col span={9}>
+                                                                                                        {sourceType === 'master_data_token' ? (
+                                                                                                          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                                                                                                            <Row gutter={8}>
+                                                                                                              <Col span={8}>
+                                                                                                                <Form.Item
+                                                                                                                  name={[rowMappingField.name, 'token_entity_type']}
+                                                                                                                  style={{ marginBottom: 0 }}
+                                                                                                                >
+                                                                                                                  <Select
+                                                                                                                    placeholder="entity"
+                                                                                                                    options={TOKEN_ENTITY_TYPE_OPTIONS}
+                                                                                                                    loading={loadingMasterDataTokenCatalog}
+                                                                                                                  />
+                                                                                                                </Form.Item>
+                                                                                                              </Col>
+                                                                                                              <Col span={16}>
+                                                                                                                <Form.Item
+                                                                                                                  name={[rowMappingField.name, 'token_canonical_id']}
+                                                                                                                  style={{ marginBottom: 0 }}
+                                                                                                                >
+                                                                                                                  <Select
+                                                                                                                    showSearch
+                                                                                                                    optionFilterProp="label"
+                                                                                                                    allowClear
+                                                                                                                    placeholder="canonical_id"
+                                                                                                                    options={tokenCanonicalOptions}
+                                                                                                                    loading={loadingMasterDataTokenCatalog}
+                                                                                                                  />
+                                                                                                                </Form.Item>
+                                                                                                              </Col>
+                                                                                                            </Row>
+                                                                                                            {tokenEntityType === 'party' && (
+                                                                                                              <Form.Item
+                                                                                                                name={[rowMappingField.name, 'token_party_role']}
+                                                                                                                style={{ marginBottom: 0 }}
+                                                                                                              >
+                                                                                                                <Select
+                                                                                                                  allowClear
+                                                                                                                  placeholder="party role"
+                                                                                                                  options={TOKEN_PARTY_ROLE_OPTIONS}
+                                                                                                                />
+                                                                                                              </Form.Item>
+                                                                                                            )}
+                                                                                                            {tokenEntityType === 'contract' && (
+                                                                                                              <Form.Item
+                                                                                                                name={[rowMappingField.name, 'token_owner_counterparty_canonical_id']}
+                                                                                                                style={{ marginBottom: 0 }}
+                                                                                                                initialValue={contractOwnerDefault || undefined}
+                                                                                                              >
+                                                                                                                <Select
+                                                                                                                  showSearch
+                                                                                                                  optionFilterProp="label"
+                                                                                                                  allowClear
+                                                                                                                  placeholder="owner_counterparty_canonical_id"
+                                                                                                                  options={ownerCounterpartyOptions}
+                                                                                                                  loading={loadingMasterDataTokenCatalog}
+                                                                                                                />
+                                                                                                              </Form.Item>
+                                                                                                            )}
+                                                                                                            {tokenPreview ? (
+                                                                                                              <Text code>{tokenPreview}</Text>
+                                                                                                            ) : (
+                                                                                                              <Text type="secondary">
+                                                                                                                Configure token fields.
+                                                                                                              </Text>
+                                                                                                            )}
+                                                                                                          </Space>
+                                                                                                        ) : (
+                                                                                                          <Form.Item
+                                                                                                            name={[rowMappingField.name, 'expression_source']}
+                                                                                                            style={{ marginBottom: 0 }}
+                                                                                                          >
+                                                                                                            <Input placeholder="allocation.lines.amount" />
+                                                                                                          </Form.Item>
+                                                                                                        )}
+                                                                                                      </Col>
+                                                                                                      <Col span={3}>
+                                                                                                        <Button danger onClick={() => removeRowMapping(rowMappingField.name)}>
+                                                                                                          x
+                                                                                                        </Button>
+                                                                                                      </Col>
+                                                                                                    </Row>
+                                                                                                  )
+                                                                                                })}
                                                                                                 <Button
                                                                                                   size="small"
-                                                                                                  onClick={() => addRowMapping({ target_row_field: '', source: '' })}
+                                                                                                  onClick={() => addRowMapping({
+                                                                                                    target_row_field: '',
+                                                                                                    source_type: 'expression',
+                                                                                                    expression_source: '',
+                                                                                                  })}
                                                                                                 >
                                                                                                   Add row mapping
                                                                                                 </Button>

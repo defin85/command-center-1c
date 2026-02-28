@@ -1,0 +1,9 @@
+type: object
+properties:
+  binding:
+    $ref: ./PoolMasterDataBinding.yaml
+  created:
+    type: boolean
+required:
+  - binding
+  - created

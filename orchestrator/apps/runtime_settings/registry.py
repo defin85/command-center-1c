@@ -83,4 +83,13 @@ RUNTIME_SETTINGS = {
             "workflow_core runs with missing publication_step_state before cutoff keep legacy terminal projection."
         ),
     ),
+    "pools.master_data.gate_enabled": RuntimeSettingDefinition(
+        key="pools.master_data.gate_enabled",
+        value_type="bool",
+        default=False,
+        description=(
+            "Enable pool master-data gate in workflow runtime. "
+            "When disabled, pool.master_data_gate step is skipped."
+        ),
+    ),
 }

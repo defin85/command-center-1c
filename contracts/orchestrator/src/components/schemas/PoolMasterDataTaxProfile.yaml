@@ -1,0 +1,37 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  canonical_id:
+    type: string
+    maxLength: 128
+  vat_rate:
+    type: number
+    minimum: 0
+    maximum: 100
+  vat_included:
+    type: boolean
+  vat_code:
+    type: string
+    maxLength: 64
+  metadata:
+    type: object
+    additionalProperties: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - tenant_id
+  - canonical_id
+  - vat_rate
+  - vat_included
+  - vat_code
+

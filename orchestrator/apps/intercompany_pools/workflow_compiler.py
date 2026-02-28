@@ -11,7 +11,7 @@ from apps.templates.models import OperationExposure
 from apps.templates.workflow.models import WorkflowCategory, WorkflowTemplate, WorkflowType
 
 from .document_plan_artifact_contract import validate_document_plan_artifact_v1
-from .master_data_feature_flags import is_pool_master_data_gate_enabled
+from .master_data_feature_flags import resolve_pool_master_data_gate_flag
 from .models import PoolRunDirection, PoolRunMode, PoolSchemaTemplate
 
 
@@ -92,7 +92,10 @@ class PoolWorkflowCompiler:
         self._validate_context(run_context)
 
         template_version = self._build_template_version(schema_template)
-        steps = self._build_steps(run_context)
+        steps = self._build_steps(
+            run_context,
+            tenant_id=str(schema_template.tenant_id),
+        )
         dag_structure = self._build_dag_structure(steps, run_context=run_context)
         workflow_binding_hint = self._resolve_workflow_binding_hint(schema_template)
 
@@ -148,7 +151,12 @@ class PoolWorkflowCompiler:
             "dag_structure": dag_structure,
         }
 
-    def _build_steps(self, run_context: PoolWorkflowRunContext) -> list[PoolExecutionPlanStep]:
+    def _build_steps(
+        self,
+        run_context: PoolWorkflowRunContext,
+        *,
+        tenant_id: str | None,
+    ) -> list[PoolExecutionPlanStep]:
         distribution_alias = (
             _OP_DISTRIBUTION_TOP_DOWN
             if run_context.direction == PoolRunDirection.TOP_DOWN
@@ -190,7 +198,9 @@ class PoolWorkflowCompiler:
                 )
             )
 
-        if is_pool_master_data_gate_enabled():
+        gate_flag_resolution = resolve_pool_master_data_gate_flag(tenant_id=tenant_id)
+        # Invalid gate config must still execute gate-step path and fail-closed at runtime.
+        if gate_flag_resolution.value is not False:
             steps.append(
                 self._make_step(
                     node_id="master_data_gate",

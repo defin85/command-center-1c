@@ -2,6 +2,9 @@
 
 Цель: быстро локализовать и устранить fail-closed ошибки master-data gate перед `pool.publication_odata`.
 
+Смежный документ:
+- staged rollout/rollback: `docs/observability/POOL_MASTER_DATA_HUB_ROLLOUT_RUNBOOK.md`.
+
 ### Когда применять
 
 - В execution timeline есть шаг `pool.master_data_gate` со статусом `failed`.

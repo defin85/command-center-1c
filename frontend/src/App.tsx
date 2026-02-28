@@ -42,6 +42,7 @@ const RuntimeSettingsPage = lazy(loadRuntimeSettingsPage)
 const loadTimelineSettingsPage = () => import('./pages/Settings/TimelineSettingsPage').then((m) => ({ default: m.TimelineSettingsPage }))
 const TimelineSettingsPage = lazy(loadTimelineSettingsPage)
 const PoolCatalogPage = lazy(() => import('./pages/Pools/PoolCatalogPage').then((m) => ({ default: m.PoolCatalogPage })))
+const PoolMasterDataPage = lazy(() => import('./pages/Pools/PoolMasterDataPage').then((m) => ({ default: m.PoolMasterDataPage })))
 const PoolSchemaTemplatesPage = lazy(() => import('./pages/Pools/PoolSchemaTemplatesPage').then((m) => ({ default: m.PoolSchemaTemplatesPage })))
 const PoolRunsPage = lazy(() => import('./pages/Pools/PoolRunsPage').then((m) => ({ default: m.PoolRunsPage })))
 
@@ -316,6 +317,13 @@ function App() {
                     <ProtectedRoute authToken={authToken}>
                       <MainLayout>
                         <LazyBoundary><PoolCatalogPage /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/pools/master-data" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><PoolMasterDataPage /></LazyBoundary>
                       </MainLayout>
                     </ProtectedRoute>
                   } />

@@ -190,6 +190,36 @@ paths:
     $ref: paths/api_v2_operations_stream-unsubscribe_.yaml
   /api/v2/pools/:
     $ref: paths/api_v2_pools_.yaml
+  /api/v2/pools/master-data/bindings/:
+    $ref: paths/api_v2_pools_master-data_bindings_.yaml
+  /api/v2/pools/master-data/bindings/{id}/:
+    $ref: paths/api_v2_pools_master-data_bindings_{id}_.yaml
+  /api/v2/pools/master-data/bindings/upsert/:
+    $ref: paths/api_v2_pools_master-data_bindings_upsert_.yaml
+  /api/v2/pools/master-data/contracts/:
+    $ref: paths/api_v2_pools_master-data_contracts_.yaml
+  /api/v2/pools/master-data/contracts/{id}/:
+    $ref: paths/api_v2_pools_master-data_contracts_{id}_.yaml
+  /api/v2/pools/master-data/contracts/upsert/:
+    $ref: paths/api_v2_pools_master-data_contracts_upsert_.yaml
+  /api/v2/pools/master-data/items/:
+    $ref: paths/api_v2_pools_master-data_items_.yaml
+  /api/v2/pools/master-data/items/{id}/:
+    $ref: paths/api_v2_pools_master-data_items_{id}_.yaml
+  /api/v2/pools/master-data/items/upsert/:
+    $ref: paths/api_v2_pools_master-data_items_upsert_.yaml
+  /api/v2/pools/master-data/parties/:
+    $ref: paths/api_v2_pools_master-data_parties_.yaml
+  /api/v2/pools/master-data/parties/{id}/:
+    $ref: paths/api_v2_pools_master-data_parties_{id}_.yaml
+  /api/v2/pools/master-data/parties/upsert/:
+    $ref: paths/api_v2_pools_master-data_parties_upsert_.yaml
+  /api/v2/pools/master-data/tax-profiles/:
+    $ref: paths/api_v2_pools_master-data_tax-profiles_.yaml
+  /api/v2/pools/master-data/tax-profiles/{id}/:
+    $ref: paths/api_v2_pools_master-data_tax-profiles_{id}_.yaml
+  /api/v2/pools/master-data/tax-profiles/upsert/:
+    $ref: paths/api_v2_pools_master-data_tax-profiles_upsert_.yaml
   /api/v2/pools/{pool_id}/graph/:
     $ref: paths/api_v2_pools_{pool_id}_graph_.yaml
   /api/v2/pools/{pool_id}/topology-snapshot/upsert/:

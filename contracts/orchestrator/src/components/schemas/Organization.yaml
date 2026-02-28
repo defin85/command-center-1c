@@ -10,6 +10,10 @@ properties:
     type: string
     format: uuid
     nullable: true
+  master_party_id:
+    type: string
+    format: uuid
+    nullable: true
   name:
     type: string
   full_name:

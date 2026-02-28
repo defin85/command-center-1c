@@ -1,0 +1,7 @@
+type: object
+properties:
+  party:
+    $ref: ./PoolMasterDataParty.yaml
+required:
+  - party
+

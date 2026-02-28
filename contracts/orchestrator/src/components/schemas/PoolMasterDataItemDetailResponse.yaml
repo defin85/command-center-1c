@@ -1,0 +1,7 @@
+type: object
+properties:
+  item:
+    $ref: ./PoolMasterDataItem.yaml
+required:
+  - item
+

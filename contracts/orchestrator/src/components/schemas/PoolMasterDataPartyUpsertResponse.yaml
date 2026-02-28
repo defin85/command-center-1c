@@ -1,0 +1,10 @@
+type: object
+properties:
+  party:
+    $ref: ./PoolMasterDataParty.yaml
+  created:
+    type: boolean
+required:
+  - party
+  - created
+

@@ -1,0 +1,10 @@
+type: object
+properties:
+  contract:
+    $ref: ./PoolMasterDataContract.yaml
+  created:
+    type: boolean
+required:
+  - contract
+  - created
+

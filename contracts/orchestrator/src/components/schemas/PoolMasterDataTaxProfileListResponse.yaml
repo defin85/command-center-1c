@@ -1,0 +1,18 @@
+type: object
+properties:
+  tax_profiles:
+    type: array
+    items:
+      $ref: ./PoolMasterDataTaxProfile.yaml
+  count:
+    type: integer
+  limit:
+    type: integer
+  offset:
+    type: integer
+required:
+  - tax_profiles
+  - count
+  - limit
+  - offset
+

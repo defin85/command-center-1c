@@ -59,6 +59,16 @@ export type PoolRunStatusReason = 'preparing' | 'awaiting_approval' | 'queued' |
 export type PoolRunApprovalState = 'not_required' | 'preparing' | 'awaiting_approval' | 'approved' | null
 export type PoolRunPublicationStepState = 'not_enqueued' | 'queued' | 'started' | 'completed' | null
 
+export type PoolRunMasterDataGate = {
+  status: 'completed' | 'failed' | 'skipped'
+  mode: 'resolve_upsert'
+  targets_count: number
+  bindings_count: number
+  error_code: string | null
+  detail: string | null
+  diagnostic: Record<string, unknown> | null
+} | null
+
 export type PoolRunRetryChainAttempt = {
   workflow_run_id: string
   parent_workflow_run_id: string | null
@@ -134,6 +144,7 @@ export type PoolRun = {
   lane?: string | null
   approval_state: PoolRunApprovalState
   publication_step_state: PoolRunPublicationStepState
+  master_data_gate?: PoolRunMasterDataGate
   terminal_reason: string | null
   execution_backend: string | null
   provenance: PoolRunProvenance
@@ -631,4 +642,358 @@ export async function abortPoolRunPublication(
   idempotencyKey: string
 ): Promise<PoolRunSafeCommandResponse> {
   return executePoolRunSafeCommand(runId, 'abort-publication', idempotencyKey)
+}
+
+export type PoolMasterDataEntityType = 'party' | 'item' | 'contract' | 'tax_profile'
+export type PoolMasterBindingCatalogKind = 'organization' | 'counterparty' | ''
+export type PoolMasterBindingSyncStatus = 'resolved' | 'upserted' | 'conflict'
+
+export type PoolMasterParty = {
+  id: string
+  tenant_id: string
+  canonical_id: string
+  name: string
+  full_name: string
+  inn: string
+  kpp: string
+  is_our_organization: boolean
+  is_counterparty: boolean
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type PoolMasterItem = {
+  id: string
+  tenant_id: string
+  canonical_id: string
+  name: string
+  sku: string
+  unit: string
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type PoolMasterContract = {
+  id: string
+  tenant_id: string
+  canonical_id: string
+  name: string
+  owner_counterparty_id: string
+  owner_counterparty_canonical_id: string
+  number: string
+  date: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type PoolMasterTaxProfile = {
+  id: string
+  tenant_id: string
+  canonical_id: string
+  vat_rate: number
+  vat_included: boolean
+  vat_code: string
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type PoolMasterDataBinding = {
+  id: string
+  tenant_id: string
+  entity_type: PoolMasterDataEntityType
+  canonical_id: string
+  database_id: string
+  ib_ref_key: string
+  ib_catalog_kind: PoolMasterBindingCatalogKind
+  owner_counterparty_canonical_id: string
+  sync_status: PoolMasterBindingSyncStatus
+  fingerprint: string
+  metadata: Record<string, unknown>
+  last_synced_at: string
+  created_at: string
+  updated_at: string
+}
+
+export type ListMasterDataPartiesParams = {
+  query?: string
+  canonical_id?: string
+  role?: Exclude<PoolMasterBindingCatalogKind, ''>
+  limit?: number
+  offset?: number
+}
+
+export type UpsertMasterDataPartyPayload = {
+  party_id?: string
+  canonical_id: string
+  name: string
+  full_name?: string
+  inn?: string
+  kpp?: string
+  is_our_organization?: boolean
+  is_counterparty?: boolean
+  metadata?: Record<string, unknown>
+}
+
+export type ListMasterDataItemsParams = {
+  query?: string
+  canonical_id?: string
+  sku?: string
+  limit?: number
+  offset?: number
+}
+
+export type UpsertMasterDataItemPayload = {
+  item_id?: string
+  canonical_id: string
+  name: string
+  sku?: string
+  unit?: string
+  metadata?: Record<string, unknown>
+}
+
+export type ListMasterDataContractsParams = {
+  query?: string
+  canonical_id?: string
+  owner_counterparty_canonical_id?: string
+  limit?: number
+  offset?: number
+}
+
+export type UpsertMasterDataContractPayload = {
+  contract_id?: string
+  canonical_id: string
+  name: string
+  owner_counterparty_id: string
+  number?: string
+  date?: string | null
+  metadata?: Record<string, unknown>
+}
+
+export type ListMasterDataTaxProfilesParams = {
+  query?: string
+  canonical_id?: string
+  vat_code?: string
+  limit?: number
+  offset?: number
+}
+
+export type UpsertMasterDataTaxProfilePayload = {
+  tax_profile_id?: string
+  canonical_id: string
+  vat_rate: number | string
+  vat_included: boolean
+  vat_code: string
+  metadata?: Record<string, unknown>
+}
+
+export type ListMasterDataBindingsParams = {
+  entity_type?: PoolMasterDataEntityType
+  canonical_id?: string
+  database_id?: string
+  ib_catalog_kind?: Exclude<PoolMasterBindingCatalogKind, ''>
+  owner_counterparty_canonical_id?: string
+  sync_status?: PoolMasterBindingSyncStatus
+  limit?: number
+  offset?: number
+}
+
+export type UpsertMasterDataBindingPayload = {
+  binding_id?: string
+  entity_type: PoolMasterDataEntityType
+  canonical_id: string
+  database_id: string
+  ib_ref_key: string
+  ib_catalog_kind?: PoolMasterBindingCatalogKind
+  owner_counterparty_canonical_id?: string
+  sync_status?: PoolMasterBindingSyncStatus
+  fingerprint?: string
+  metadata?: Record<string, unknown>
+}
+
+export type MasterDataListMeta = {
+  count: number
+  limit: number
+  offset: number
+}
+
+export type SimpleDatabaseRef = {
+  id: string
+  name: string
+}
+
+export async function listMasterDataParties(
+  params: ListMasterDataPartiesParams = {}
+): Promise<{ parties: PoolMasterParty[]; meta: MasterDataListMeta }> {
+  const response = await apiClient.get<{
+    parties: PoolMasterParty[]
+    count: number
+    limit: number
+    offset: number
+  }>('/api/v2/pools/master-data/parties/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    parties: response.data.parties ?? [],
+    meta: {
+      count: response.data.count ?? 0,
+      limit: response.data.limit ?? (params.limit ?? 50),
+      offset: response.data.offset ?? (params.offset ?? 0),
+    },
+  }
+}
+
+export async function upsertMasterDataParty(
+  payload: UpsertMasterDataPartyPayload
+): Promise<{ party: PoolMasterParty; created: boolean }> {
+  const response = await apiClient.post<{ party: PoolMasterParty; created: boolean }>(
+    '/api/v2/pools/master-data/parties/upsert/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function listMasterDataItems(
+  params: ListMasterDataItemsParams = {}
+): Promise<{ items: PoolMasterItem[]; meta: MasterDataListMeta }> {
+  const response = await apiClient.get<{
+    items: PoolMasterItem[]
+    count: number
+    limit: number
+    offset: number
+  }>('/api/v2/pools/master-data/items/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    items: response.data.items ?? [],
+    meta: {
+      count: response.data.count ?? 0,
+      limit: response.data.limit ?? (params.limit ?? 50),
+      offset: response.data.offset ?? (params.offset ?? 0),
+    },
+  }
+}
+
+export async function upsertMasterDataItem(
+  payload: UpsertMasterDataItemPayload
+): Promise<{ item: PoolMasterItem; created: boolean }> {
+  const response = await apiClient.post<{ item: PoolMasterItem; created: boolean }>(
+    '/api/v2/pools/master-data/items/upsert/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function listMasterDataContracts(
+  params: ListMasterDataContractsParams = {}
+): Promise<{ contracts: PoolMasterContract[]; meta: MasterDataListMeta }> {
+  const response = await apiClient.get<{
+    contracts: PoolMasterContract[]
+    count: number
+    limit: number
+    offset: number
+  }>('/api/v2/pools/master-data/contracts/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    contracts: response.data.contracts ?? [],
+    meta: {
+      count: response.data.count ?? 0,
+      limit: response.data.limit ?? (params.limit ?? 50),
+      offset: response.data.offset ?? (params.offset ?? 0),
+    },
+  }
+}
+
+export async function upsertMasterDataContract(
+  payload: UpsertMasterDataContractPayload
+): Promise<{ contract: PoolMasterContract; created: boolean }> {
+  const response = await apiClient.post<{ contract: PoolMasterContract; created: boolean }>(
+    '/api/v2/pools/master-data/contracts/upsert/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function listMasterDataTaxProfiles(
+  params: ListMasterDataTaxProfilesParams = {}
+): Promise<{ tax_profiles: PoolMasterTaxProfile[]; meta: MasterDataListMeta }> {
+  const response = await apiClient.get<{
+    tax_profiles: PoolMasterTaxProfile[]
+    count: number
+    limit: number
+    offset: number
+  }>('/api/v2/pools/master-data/tax-profiles/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    tax_profiles: response.data.tax_profiles ?? [],
+    meta: {
+      count: response.data.count ?? 0,
+      limit: response.data.limit ?? (params.limit ?? 50),
+      offset: response.data.offset ?? (params.offset ?? 0),
+    },
+  }
+}
+
+export async function upsertMasterDataTaxProfile(
+  payload: UpsertMasterDataTaxProfilePayload
+): Promise<{ tax_profile: PoolMasterTaxProfile; created: boolean }> {
+  const response = await apiClient.post<{ tax_profile: PoolMasterTaxProfile; created: boolean }>(
+    '/api/v2/pools/master-data/tax-profiles/upsert/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function listMasterDataBindings(
+  params: ListMasterDataBindingsParams = {}
+): Promise<{ bindings: PoolMasterDataBinding[]; meta: MasterDataListMeta }> {
+  const response = await apiClient.get<{
+    bindings: PoolMasterDataBinding[]
+    count: number
+    limit: number
+    offset: number
+  }>('/api/v2/pools/master-data/bindings/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    bindings: response.data.bindings ?? [],
+    meta: {
+      count: response.data.count ?? 0,
+      limit: response.data.limit ?? (params.limit ?? 50),
+      offset: response.data.offset ?? (params.offset ?? 0),
+    },
+  }
+}
+
+export async function upsertMasterDataBinding(
+  payload: UpsertMasterDataBindingPayload
+): Promise<{ binding: PoolMasterDataBinding; created: boolean }> {
+  const response = await apiClient.post<{ binding: PoolMasterDataBinding; created: boolean }>(
+    '/api/v2/pools/master-data/bindings/upsert/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function listPoolTargetDatabases(): Promise<SimpleDatabaseRef[]> {
+  const response = await apiClient.get<{ databases: SimpleDatabaseRef[] }>(
+    '/api/v2/databases/list-databases/',
+    { skipGlobalError: true }
+  )
+  return response.data.databases ?? []
 }

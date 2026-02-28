@@ -1,0 +1,30 @@
+type: object
+properties:
+  contract_id:
+    type: string
+    format: uuid
+  canonical_id:
+    type: string
+    maxLength: 128
+  name:
+    type: string
+    maxLength: 255
+  owner_counterparty_id:
+    type: string
+    format: uuid
+  number:
+    type: string
+    default: ''
+  date:
+    type: string
+    format: date
+    nullable: true
+  metadata:
+    type: object
+    default: {}
+    additionalProperties: true
+required:
+  - canonical_id
+  - name
+  - owner_counterparty_id
+

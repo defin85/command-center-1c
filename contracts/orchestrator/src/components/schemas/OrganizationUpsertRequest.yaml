@@ -30,6 +30,10 @@ properties:
     type: string
     format: uuid
     nullable: true
+  master_party_id:
+    type: string
+    format: uuid
+    nullable: true
   external_ref:
     type: string
     default: ''

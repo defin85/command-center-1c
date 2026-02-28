@@ -11,6 +11,26 @@ declare global {
 const TENANT_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const NOW = '2026-01-01T00:00:00Z'
 
+type PoolsUiMockState = {
+  pools: AnyRecord[]
+  graphByPoolId: Record<string, AnyRecord>
+  runs: AnyRecord[]
+  createRunCalls: number
+  confirmCalls: number
+  topologyUpsertCalls: number
+  retryCalls: number
+  lastRetryPayload: AnyRecord | null
+  retryResponse?: AnyRecord
+  lastTopologyPayload?: AnyRecord | null
+  masterData?: {
+    parties: AnyRecord[]
+    items: AnyRecord[]
+    contracts: AnyRecord[]
+    taxProfiles: AnyRecord[]
+    bindings: AnyRecord[]
+  }
+}
+
 async function fulfillJson(route: Route, data: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -32,17 +52,7 @@ async function setupAuth(page: Page) {
   }, TENANT_ID)
 }
 
-async function setupApiMocks(page: Page, state: {
-  pools: AnyRecord[]
-  graphByPoolId: Record<string, AnyRecord>
-  runs: AnyRecord[]
-  createRunCalls: number
-  confirmCalls: number
-  topologyUpsertCalls: number
-  retryCalls: number
-  lastRetryPayload: AnyRecord | null
-  retryResponse?: AnyRecord
-}) {
+async function setupApiMocks(page: Page, state: PoolsUiMockState) {
   const organizations: AnyRecord[] = [
     {
       id: '11111111-1111-1111-1111-111111111111',
@@ -91,6 +101,13 @@ async function setupApiMocks(page: Page, state: {
   let poolSequence = 1
   let runSequence = 1
   let topologyVersionSequence = 1
+  const masterData = state.masterData || {
+    parties: [] as AnyRecord[],
+    items: [] as AnyRecord[],
+    contracts: [] as AnyRecord[],
+    taxProfiles: [] as AnyRecord[],
+    bindings: [] as AnyRecord[],
+  }
 
   const buildPoolId = () => `90000000-0000-4000-8000-${String(poolSequence++).padStart(12, '0')}`
   const buildRunId = () => `91000000-0000-4000-8000-${String(runSequence++).padStart(12, '0')}`
@@ -192,6 +209,7 @@ async function setupApiMocks(page: Page, state: {
     if (method === 'POST' && path.startsWith('/api/v2/pools/') && path.endsWith('/topology-snapshot/upsert/')) {
       const poolId = path.split('/')[4] || ''
       const payload = request.postDataJSON() as AnyRecord
+      state.lastTopologyPayload = payload
       const graph = state.graphByPoolId[poolId] || {
         pool_id: poolId,
         date: '2026-01-01',
@@ -258,6 +276,96 @@ async function setupApiMocks(page: Page, state: {
     }
     if (method === 'GET' && path === '/api/v2/pools/schema-templates/') {
       return fulfillJson(route, { templates: [], count: 0 })
+    }
+    if (method === 'GET' && path === '/api/v2/pools/master-data/parties/') {
+      const role = String(url.searchParams.get('role') || '').trim()
+      const query = String(url.searchParams.get('query') || '').trim().toLowerCase()
+      const parties = masterData.parties.filter((item) => {
+        if (role === 'organization' && !item.is_our_organization) {
+          return false
+        }
+        if (role === 'counterparty' && !item.is_counterparty) {
+          return false
+        }
+        if (!query) return true
+        const haystack = [
+          String(item.canonical_id || ''),
+          String(item.name || ''),
+          String(item.inn || ''),
+        ].join(' ').toLowerCase()
+        return haystack.includes(query)
+      })
+      return fulfillJson(route, {
+        parties,
+        meta: { limit: 100, offset: 0, total: parties.length },
+      })
+    }
+    if (method === 'GET' && path === '/api/v2/pools/master-data/items/') {
+      const query = String(url.searchParams.get('query') || '').trim().toLowerCase()
+      const sku = String(url.searchParams.get('sku') || '').trim().toLowerCase()
+      const items = masterData.items.filter((item) => {
+        const matchesQuery = !query || [
+          String(item.canonical_id || ''),
+          String(item.name || ''),
+          String(item.sku || ''),
+        ].join(' ').toLowerCase().includes(query)
+        const matchesSku = !sku || String(item.sku || '').toLowerCase().includes(sku)
+        return matchesQuery && matchesSku
+      })
+      return fulfillJson(route, {
+        items,
+        meta: { limit: 100, offset: 0, total: items.length },
+      })
+    }
+    if (method === 'GET' && path === '/api/v2/pools/master-data/contracts/') {
+      const query = String(url.searchParams.get('query') || '').trim().toLowerCase()
+      const ownerCanonicalId = String(url.searchParams.get('owner_counterparty_canonical_id') || '').trim()
+      const contracts = masterData.contracts.filter((item) => {
+        const matchesOwner = !ownerCanonicalId || String(item.owner_counterparty_canonical_id || '') === ownerCanonicalId
+        if (!matchesOwner) return false
+        if (!query) return true
+        const haystack = [
+          String(item.canonical_id || ''),
+          String(item.name || ''),
+          String(item.number || ''),
+        ].join(' ').toLowerCase()
+        return haystack.includes(query)
+      })
+      return fulfillJson(route, {
+        contracts,
+        meta: { limit: 100, offset: 0, total: contracts.length },
+      })
+    }
+    if (method === 'GET' && path === '/api/v2/pools/master-data/tax-profiles/') {
+      const query = String(url.searchParams.get('query') || '').trim().toLowerCase()
+      const vatCode = String(url.searchParams.get('vat_code') || '').trim().toLowerCase()
+      const taxProfiles = masterData.taxProfiles.filter((item) => {
+        const matchesVatCode = !vatCode || String(item.vat_code || '').toLowerCase().includes(vatCode)
+        if (!matchesVatCode) return false
+        if (!query) return true
+        const haystack = [
+          String(item.canonical_id || ''),
+          String(item.vat_code || ''),
+        ].join(' ').toLowerCase()
+        return haystack.includes(query)
+      })
+      return fulfillJson(route, {
+        tax_profiles: taxProfiles,
+        meta: { limit: 100, offset: 0, total: taxProfiles.length },
+      })
+    }
+    if (method === 'GET' && path === '/api/v2/pools/master-data/bindings/') {
+      const canonicalId = String(url.searchParams.get('canonical_id') || '').trim().toLowerCase()
+      const entityType = String(url.searchParams.get('entity_type') || '').trim()
+      const bindings = masterData.bindings.filter((item) => {
+        const matchesCanonical = !canonicalId || String(item.canonical_id || '').toLowerCase().includes(canonicalId)
+        const matchesEntity = !entityType || String(item.entity_type || '') === entityType
+        return matchesCanonical && matchesEntity
+      })
+      return fulfillJson(route, {
+        bindings,
+        meta: { limit: 200, offset: 0, total: bindings.length },
+      })
     }
     if (method === 'GET' && path === '/api/v2/pools/runs/') {
       const poolId = String(url.searchParams.get('pool_id') || '')
@@ -411,6 +519,7 @@ test('Pools full flow smoke: 3 org -> minimal pool -> top_down run -> confirm pu
   await expect(page.locator('.ant-table-tbody tr', { hasText: 'Org Two' }).first()).toBeVisible()
   await expect(page.locator('.ant-table-tbody tr', { hasText: 'Org Three' }).first()).toBeVisible()
 
+  await page.getByRole('tab', { name: 'Pools' }).click()
   await page.getByTestId('pool-catalog-add-pool').click()
   await page.getByLabel('Code').fill('pool-smoke')
   await page.getByLabel('Name').fill('Smoke Pool')
@@ -419,6 +528,7 @@ test('Pools full flow smoke: 3 org -> minimal pool -> top_down run -> confirm pu
 
   await expect.poll(() => state.pools.length).toBe(1)
 
+  await page.getByRole('tab', { name: 'Topology Editor' }).click()
   await page.getByTestId('pool-catalog-topology-add-node').click()
   const topologyCard = page.locator('.ant-card').filter({ hasText: 'Topology snapshot editor' })
   await topologyCard.locator('.ant-select').first().click()
@@ -433,6 +543,7 @@ test('Pools full flow smoke: 3 org -> minimal pool -> top_down run -> confirm pu
   await page.getByTestId('pool-runs-create-submit').click()
 
   await expect.poll(() => state.createRunCalls).toBe(1)
+  await page.getByRole('tab', { name: 'Safe Actions' }).click()
   await expect(page.getByTestId('pool-runs-safe-confirm')).toBeEnabled()
   await page.getByTestId('pool-runs-safe-confirm').click()
 
@@ -535,6 +646,7 @@ test('Pools retry smoke: invoice_mode=required chain keeps linkage and skips alr
 
   await page.goto('/pools/runs', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Pool Runs', exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: 'Retry Failed' }).click()
 
   const retryDocumentsPayload = JSON.stringify(
     {
@@ -574,4 +686,234 @@ test('Pools retry smoke: invoice_mode=required chain keeps linkage and skips alr
   ).toEqual([{ link_kind: 'follows', source_document_id: 'sale-001' }])
 
   await expect(page.getByText('Retry accepted: 1/2 failed targets enqueued')).toBeVisible()
+})
+
+test('Pools browser-flow: token authoring -> failed gate diagnostics -> remediation-ready workspace', async ({ page }) => {
+  const poolId = '90000000-0000-4000-8000-000000000333'
+  const run = {
+    id: '91000000-0000-4000-8000-000000000333',
+    tenant_id: TENANT_ID,
+    pool_id: poolId,
+    schema_template_id: null,
+    mode: 'safe',
+    direction: 'top_down',
+    status: 'failed',
+    status_reason: null,
+    period_start: '2026-01-01',
+    period_end: null,
+    run_input: { starting_amount: '100.00' },
+    input_contract_version: 'run_input_v1',
+    idempotency_key: 'idem-master-data-flow',
+    workflow_execution_id: '94000000-0000-4000-8000-000000000333',
+    workflow_status: 'failed',
+    approval_state: 'approved',
+    publication_step_state: 'completed',
+    terminal_reason: null,
+    execution_backend: 'workflow_core',
+    provenance: {
+      workflow_run_id: '94000000-0000-4000-8000-000000000333',
+      workflow_status: 'failed',
+      execution_backend: 'workflow_core',
+      retry_chain: [
+        {
+          workflow_run_id: '94000000-0000-4000-8000-000000000333',
+          parent_workflow_run_id: null,
+          attempt_number: 1,
+          attempt_kind: 'initial',
+          status: 'failed',
+        },
+      ],
+    },
+    workflow_template_name: 'pool-template-v1',
+    seed: null,
+    validation_summary: { rows: 2 },
+    publication_summary: { total_targets: 1 },
+    diagnostics: [],
+    master_data_gate: {
+      status: 'failed',
+      mode: 'resolve_upsert',
+      targets_count: 1,
+      bindings_count: 0,
+      error_code: 'MASTER_DATA_ENTITY_NOT_FOUND',
+      detail: 'Canonical entity not found for token.',
+      diagnostic: {
+        entity_type: 'item',
+        canonical_id: 'item-missing',
+        target_database_id: '20202020-2020-2020-2020-202020202020',
+      },
+    },
+    last_error: 'master data gate failed',
+    created_at: NOW,
+    updated_at: NOW,
+    validated_at: NOW,
+    publication_confirmed_at: NOW,
+    publishing_started_at: NOW,
+    completed_at: NOW,
+  }
+
+  const state: PoolsUiMockState = {
+    pools: [
+      {
+        id: poolId,
+        code: 'pool-md',
+        name: 'Pool Master Data Flow',
+        description: 'Pool for master-data browser flow',
+        is_active: true,
+        metadata: {},
+        updated_at: NOW,
+      },
+    ],
+    graphByPoolId: {
+      [poolId]: {
+        pool_id: poolId,
+        date: '2026-01-01',
+        version: 'v1:pool-topology-master-data',
+        nodes: [
+          {
+            node_version_id: 'node-v1',
+            organization_id: '11111111-1111-1111-1111-111111111111',
+            inn: '730000000001',
+            name: 'Org One',
+            is_root: true,
+            metadata: {},
+          },
+          {
+            node_version_id: 'node-v2',
+            organization_id: '22222222-2222-2222-2222-222222222222',
+            inn: '730000000002',
+            name: 'Org Two',
+            is_root: false,
+            metadata: {},
+          },
+        ],
+        edges: [
+          {
+            edge_version_id: 'edge-v1',
+            parent_node_version_id: 'node-v1',
+            child_node_version_id: 'node-v2',
+            weight: '1',
+            min_amount: null,
+            max_amount: null,
+            metadata: {
+              document_policy: {
+                version: 'document_policy.v1',
+                chains: [
+                  {
+                    chain_id: 'sale_chain',
+                    documents: [
+                      {
+                        document_id: 'sale',
+                        entity_name: 'Document_Sales',
+                        document_role: 'sale',
+                        field_mapping: { Amount: 'allocation.amount' },
+                        table_parts_mapping: {},
+                        link_rules: {},
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    },
+    runs: [run],
+    createRunCalls: 0,
+    confirmCalls: 0,
+    topologyUpsertCalls: 0,
+    retryCalls: 0,
+    lastRetryPayload: null,
+    lastTopologyPayload: null,
+    masterData: {
+      parties: [
+        {
+          id: 'party-001-id',
+          tenant_id: TENANT_ID,
+          canonical_id: 'party-001',
+          name: 'Party One',
+          full_name: 'Party One LLC',
+          inn: '730000000001',
+          kpp: '',
+          is_our_organization: true,
+          is_counterparty: true,
+          metadata: {},
+          created_at: NOW,
+          updated_at: NOW,
+        },
+      ],
+      items: [
+        {
+          id: 'item-001-id',
+          tenant_id: TENANT_ID,
+          canonical_id: 'item-001',
+          name: 'Item One',
+          sku: 'SKU-001',
+          unit: 'pcs',
+          metadata: {},
+          created_at: NOW,
+          updated_at: NOW,
+        },
+      ],
+      contracts: [],
+      taxProfiles: [],
+      bindings: [],
+    },
+  }
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/pools/catalog', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Pool Catalog', exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: 'Topology Editor' }).click()
+  await page.getByText('Advanced edge JSON / document policy').first().click()
+  await expect(page.getByTestId('pool-catalog-topology-edge-policy-mode-0')).toBeVisible()
+
+  await page.getByTestId('pool-catalog-topology-edge-policy-mode-0').click()
+  await page.locator('.ant-select-dropdown .ant-select-item-option-content', { hasText: 'Builder' }).first().click()
+  await page.getByTestId('pool-catalog-topology-field-mapping-source-type-0-0-0-0').click()
+  await page.locator('.ant-select-dropdown .ant-select-item-option-content', { hasText: 'master_data_token' }).first().click()
+  await page.getByTestId('pool-catalog-topology-field-mapping-token-entity-0-0-0-0').click()
+  await page.locator('.ant-select-dropdown .ant-select-item-option-content', { hasText: 'item' }).first().click()
+  await page.getByTestId('pool-catalog-topology-field-mapping-token-canonical-0-0-0-0').click()
+  await page.locator('.ant-select-dropdown .ant-select-item-option-content', { hasText: 'item-001 - Item One' }).first().click()
+  await page.getByTestId('pool-catalog-topology-save').click()
+
+  await expect.poll(() => state.topologyUpsertCalls).toBe(1)
+  await expect.poll(() => {
+    const payload = state.lastTopologyPayload
+    const edges = Array.isArray(payload?.edges) ? payload.edges as AnyRecord[] : []
+    const edge = edges[0] || {}
+    const metadata = edge.metadata && typeof edge.metadata === 'object' ? edge.metadata as AnyRecord : {}
+    const policy = metadata.document_policy && typeof metadata.document_policy === 'object'
+      ? metadata.document_policy as AnyRecord
+      : {}
+    const chains = Array.isArray(policy.chains) ? policy.chains as AnyRecord[] : []
+    const documents = Array.isArray(chains[0]?.documents) ? chains[0].documents as AnyRecord[] : []
+    const fieldMapping = documents[0]?.field_mapping && typeof documents[0].field_mapping === 'object'
+      ? documents[0].field_mapping as AnyRecord
+      : {}
+    return String(fieldMapping.Amount || '')
+  }).toBe('master_data.item.item-001.ref')
+
+  await page.goto('/pools/runs', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Pool Runs', exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: 'Inspect' }).click()
+  await expect(page.getByText('Master Data Gate')).toBeVisible()
+  await expect(page.getByText('MASTER_DATA_ENTITY_NOT_FOUND')).toBeVisible()
+  await expect(
+    page.getByText('Создайте/исправьте canonical сущность в /pools/master-data и повторите run.')
+  ).toBeVisible()
+  await expect(
+    page.getByText(
+      /entity_type=item canonical_id=item-missing target_database_id=20202020-2020-2020-2020-202020202020/
+    )
+  ).toBeVisible()
+
+  await page.goto('/pools/master-data', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Pool Master Data', exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: 'Item' }).click()
+  await expect(page.getByRole('button', { name: 'Add Item' })).toBeVisible()
+  await expect(page.getByText('Item One')).toBeVisible()
 })

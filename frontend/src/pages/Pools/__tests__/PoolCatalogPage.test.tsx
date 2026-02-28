@@ -18,6 +18,10 @@ const mockListPoolTopologySnapshots = vi.fn()
 const mockSyncOrganizationsCatalog = vi.fn()
 const mockGetPoolODataMetadataCatalog = vi.fn()
 const mockRefreshPoolODataMetadataCatalog = vi.fn()
+const mockListMasterDataParties = vi.fn()
+const mockListMasterDataItems = vi.fn()
+const mockListMasterDataContracts = vi.fn()
+const mockListMasterDataTaxProfiles = vi.fn()
 const mockUseMe = vi.fn()
 const mockUseDatabases = vi.fn()
 const mockUseMyTenants = vi.fn()
@@ -53,6 +57,10 @@ vi.mock('../../../api/intercompanyPools', () => ({
   syncOrganizationsCatalog: (...args: unknown[]) => mockSyncOrganizationsCatalog(...args),
   getPoolODataMetadataCatalog: (...args: unknown[]) => mockGetPoolODataMetadataCatalog(...args),
   refreshPoolODataMetadataCatalog: (...args: unknown[]) => mockRefreshPoolODataMetadataCatalog(...args),
+  listMasterDataParties: (...args: unknown[]) => mockListMasterDataParties(...args),
+  listMasterDataItems: (...args: unknown[]) => mockListMasterDataItems(...args),
+  listMasterDataContracts: (...args: unknown[]) => mockListMasterDataContracts(...args),
+  listMasterDataTaxProfiles: (...args: unknown[]) => mockListMasterDataTaxProfiles(...args),
 }))
 
 const baseOrganization: Organization = {
@@ -127,6 +135,10 @@ describe('PoolCatalogPage', () => {
     mockSyncOrganizationsCatalog.mockReset()
     mockGetPoolODataMetadataCatalog.mockReset()
     mockRefreshPoolODataMetadataCatalog.mockReset()
+    mockListMasterDataParties.mockReset()
+    mockListMasterDataItems.mockReset()
+    mockListMasterDataContracts.mockReset()
+    mockListMasterDataTaxProfiles.mockReset()
     mockUseMe.mockReset()
     mockUseDatabases.mockReset()
     mockUseMyTenants.mockReset()
@@ -241,6 +253,75 @@ describe('PoolCatalogPage', () => {
           table_parts: [],
         },
       ],
+    })
+    mockListMasterDataParties.mockResolvedValue({
+      parties: [
+        {
+          id: 'party-1',
+          tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          canonical_id: 'party-001',
+          name: 'Party One',
+          full_name: 'Party One LLC',
+          inn: '730000000001',
+          kpp: '',
+          is_our_organization: true,
+          is_counterparty: true,
+          metadata: {},
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      meta: { limit: 500, offset: 0, total: 1 },
+    })
+    mockListMasterDataItems.mockResolvedValue({
+      items: [
+        {
+          id: 'item-1',
+          tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          canonical_id: 'item-001',
+          name: 'Item One',
+          sku: 'SKU-1',
+          unit: 'pcs',
+          metadata: {},
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      meta: { limit: 500, offset: 0, total: 1 },
+    })
+    mockListMasterDataContracts.mockResolvedValue({
+      contracts: [
+        {
+          id: 'contract-1',
+          tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          canonical_id: 'contract-001',
+          name: 'Contract One',
+          owner_counterparty_id: 'party-1',
+          owner_counterparty_canonical_id: 'party-001',
+          number: 'C-1',
+          date: '2026-01-01',
+          metadata: {},
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      meta: { limit: 500, offset: 0, total: 1 },
+    })
+    mockListMasterDataTaxProfiles.mockResolvedValue({
+      tax_profiles: [
+        {
+          id: 'tax-1',
+          tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          canonical_id: 'vat-20',
+          vat_rate: 20,
+          vat_included: true,
+          vat_code: 'VAT20',
+          metadata: {},
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      meta: { limit: 500, offset: 0, total: 1 },
     })
   })
 
@@ -1100,6 +1181,180 @@ describe('PoolCatalogPage', () => {
       })
     )
   }, 15000)
+
+  it('preserves canonical master_data token in field_mapping from builder mode', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            document_policy: {
+              version: 'document_policy.v1',
+              chains: [
+                {
+                  chain_id: 'sale_chain',
+                  documents: [
+                    {
+                      document_id: 'sale',
+                      entity_name: 'Document_Sales',
+                      document_role: 'sale',
+                      field_mapping: { Amount: 'master_data.item.item-001.ref' },
+                      table_parts_mapping: {},
+                      link_rules: {},
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Topology Editor')
+    await expandFirstEdgeAdvanced(user)
+
+    openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
+    await selectDropdownOption(/builder/i)
+
+    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+
+    await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
+    expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledWith(
+      '44444444-4444-4444-4444-444444444444',
+      expect.objectContaining({
+        edges: [
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              document_policy: expect.objectContaining({
+                chains: [
+                  expect.objectContaining({
+                    documents: expect.arrayContaining([
+                      expect.objectContaining({
+                        document_id: 'sale',
+                        field_mapping: expect.objectContaining({
+                          Amount: 'master_data.item.item-001.ref',
+                        }),
+                      }),
+                    ]),
+                  }),
+                ],
+              }),
+            }),
+          }),
+        ],
+      })
+    )
+  }, 15000)
+
+  it('shows preflight validation error when expression source contains canonical master_data token', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            document_policy: {
+              version: 'document_policy.v1',
+              chains: [
+                {
+                  chain_id: 'sale_chain',
+                  documents: [
+                    {
+                      document_id: 'sale',
+                      entity_name: 'Document_Sales',
+                      document_role: 'sale',
+                      field_mapping: { Amount: 'allocation.amount' },
+                      table_parts_mapping: {},
+                      link_rules: {},
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Topology Editor')
+    await expandFirstEdgeAdvanced(user)
+
+    openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
+    await selectDropdownOption(/builder/i)
+
+    const expressionInput = await screen.findByPlaceholderText('allocation.amount')
+    await user.click(expressionInput)
+    await user.clear(expressionInput)
+    await user.paste('master_data.item.item-001.ref')
+    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+
+    expect(await screen.findByText(/source_type=expression/)).toBeInTheDocument()
+    expect(mockUpsertPoolTopologySnapshot).not.toHaveBeenCalled()
+  }, 30000)
 
   it('supports edge metadata builder mode and preserves custom metadata keys', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')

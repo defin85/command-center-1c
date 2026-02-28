@@ -49,6 +49,14 @@ class Organization(models.Model):
         related_name="organization",
         help_text="Linked infobase (1:1 mapping).",
     )
+    master_party = models.OneToOneField(
+        "intercompany_pools.PoolMasterParty",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="organization_binding",
+        help_text="Canonical party binding for organization-level publication data (MVP 1:1).",
+    )
     name = models.CharField(max_length=255)
     full_name = models.CharField(max_length=512, blank=True)
     inn = models.CharField(max_length=12, help_text="Taxpayer identification number")
@@ -77,6 +85,18 @@ class Organization(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.inn})"
+
+    def clean(self) -> None:
+        if self.master_party_id is None:
+            return
+        if self.master_party.tenant_id != self.tenant_id:
+            raise ValidationError(
+                {"master_party": "Master party must belong to the same tenant as organization."}
+            )
+        if not self.master_party.is_our_organization:
+            raise ValidationError(
+                {"master_party": "Master party must have organization role (is_our_organization=true)."}
+            )
 
 
 class PoolMasterParty(models.Model):
