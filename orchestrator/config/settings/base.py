@@ -492,6 +492,14 @@ FILE_UPLOAD_MAX_EXPIRY_HOURS = int(env('FILE_UPLOAD_MAX_EXPIRY_HOURS', default='
 # Ports outside Windows reserved range (8013-8112)
 API_GATEWAY_URL = env('API_GATEWAY_URL', default='http://localhost:8180')
 FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:15173')
+SYSTEM_HEALTH_CACHE_TTL = int(env('SYSTEM_HEALTH_CACHE_TTL', default='10'))
+SYSTEM_HEALTH_PROM_TIMEOUT = float(env('SYSTEM_HEALTH_PROM_TIMEOUT', default='5'))
+SYSTEM_HEALTH_DIRECT_TIMEOUT = float(env('SYSTEM_HEALTH_DIRECT_TIMEOUT', default='2'))
+SYSTEM_HEALTH_DISABLED_SERVICES = tuple(
+    service.strip().lower()
+    for service in env.list('SYSTEM_HEALTH_DISABLED_SERVICES', default=[])
+    if service.strip()
+)
 
 MONITORED_SERVICES = [
     {
