@@ -253,11 +253,9 @@ class ServiceMeshManager {
 
       ws.onopen = () => {
         this.isConnecting = false
-        this.reconnectAttempts = 0
         this.setState({
           isConnected: true,
           connectionError: null,
-          reconnectAttempts: 0,
         })
         this.startPing()
       }
@@ -357,6 +355,10 @@ class ServiceMeshManager {
         }
         if (!message.error) {
           partial.connectionError = null
+          if (this.reconnectAttempts !== 0) {
+            this.reconnectAttempts = 0
+            partial.reconnectAttempts = 0
+          }
         }
         if (Object.keys(partial).length > 0) {
           this.setState(partial)
