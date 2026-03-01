@@ -91,4 +91,12 @@ systemctl enable cc1c-orchestrator.service cc1c-api-gateway.service cc1c-worker-
 systemctl restart cc1c-orchestrator.service cc1c-api-gateway.service cc1c-worker-ops.service cc1c-worker-workflows.service
 systemctl is-active cc1c-orchestrator.service cc1c-api-gateway.service cc1c-worker-ops.service cc1c-worker-workflows.service >/dev/null
 
+# Best-effort monitoring sync for native mode, so Prometheus/blackbox targets
+# follow the same env as active release.
+if [[ -x "$RELEASE_DIR/scripts/dev/sync-native-monitoring.sh" ]]; then
+  if ! CC1C_ENV_FILE="$ENV_FILE" "$RELEASE_DIR/scripts/dev/sync-native-monitoring.sh" --env-file "$ENV_FILE" --strict; then
+    echo "Warning: native monitoring sync failed (deployment continues)."
+  fi
+fi
+
 echo "Release activated: $RELEASE_ID"

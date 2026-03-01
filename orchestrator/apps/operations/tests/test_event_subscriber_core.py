@@ -89,6 +89,47 @@ class EventSubscriberTest(EventSubscriberBaseTestCase):
             self.fail(f"setup_consumer_groups raised exception: {e}")
 
     @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_ensure_consumer_registered_bootstraps_consumer(self, mock_redis_class):
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+        mock_redis.xadd.return_value = "1700000000000-0"
+        mock_redis.xreadgroup.return_value = [
+            (
+                "commands:orchestrator:get-cluster-info",
+                [("1700000000000-0", {"__cc1c_bootstrap__": "1"})],
+            )
+        ]
+
+        subscriber = EventSubscriber()
+        subscriber.ensure_consumer_registered()
+
+        mock_redis.xadd.assert_called_once()
+        mock_redis.xreadgroup.assert_called_once_with(
+            "orchestrator-group",
+            subscriber.consumer_name,
+            {"commands:orchestrator:get-cluster-info": ">"},
+            count=1,
+            block=100,
+            noack=True,
+        )
+        mock_redis.xdel.assert_called_once_with(
+            "commands:orchestrator:get-cluster-info",
+            "1700000000000-0",
+        )
+
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_ensure_consumer_registered_handles_redis_errors(self, mock_redis_class):
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+        mock_redis.xadd.side_effect = RuntimeError("redis down")
+
+        subscriber = EventSubscriber()
+        try:
+            subscriber.ensure_consumer_registered()
+        except Exception as e:
+            self.fail(f"ensure_consumer_registered raised exception: {e}")
+
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
     def test_process_message_routes_to_handler(self, mock_redis_class):
         subscriber = EventSubscriber()
 
@@ -215,6 +256,7 @@ class EventSubscriberTest(EventSubscriberBaseTestCase):
         mock_redis.xreadgroup.side_effect = xreadgroup_side_effect
 
         subscriber = EventSubscriber()
+        subscriber.ensure_consumer_registered = Mock()
 
         def stop_after_sleep(*args, **kwargs):
             subscriber.running = False

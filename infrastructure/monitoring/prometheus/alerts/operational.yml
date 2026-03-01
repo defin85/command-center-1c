@@ -38,6 +38,17 @@ groups:
           summary: "Orchestrator is down"
           description: "Orchestrator has been unreachable for more than 1 minute."
 
+      # Event Subscriber running without active consumers
+      - alert: EventSubscriberNoConsumers
+        expr: max(cc1c_orchestrator_event_subscriber_up{group="orchestrator-group"}) == 1 and max(cc1c_orchestrator_event_subscriber_consumers{group="orchestrator-group"}) < 1
+        for: 2m
+        labels:
+          severity: warning
+          component: event-subscriber
+        annotations:
+          summary: "Event Subscriber has no active consumers"
+          description: "Consumer group exists, but no active consumers were reported for more than 2 minutes."
+
   - name: performance_alerts
     interval: 1m
     rules:
@@ -98,6 +109,28 @@ groups:
         annotations:
           summary: "Redis is down"
           description: "Redis exporter is unreachable. Redis may be down."
+
+      # RAS external probe failed
+      - alert: RASProbeFailed
+        expr: max(probe_success{cc1c_service="ras-server"}) < 1
+        for: 1m
+        labels:
+          severity: critical
+          component: ras-server
+        annotations:
+          summary: "RAS probe failed"
+          description: "Blackbox TCP probe for RAS has been failing for more than 1 minute."
+
+      # MinIO liveness probe failed
+      - alert: MinIOProbeFailed
+        expr: max(probe_success{cc1c_service="minio"}) < 1
+        for: 1m
+        labels:
+          severity: critical
+          component: minio
+        annotations:
+          summary: "MinIO probe failed"
+          description: "Blackbox TCP probe for MinIO has been failing for more than 1 minute."
 
       # High memory usage (requires node exporter)
       # Threshold 0.95 for WSL environments (higher baseline usage)

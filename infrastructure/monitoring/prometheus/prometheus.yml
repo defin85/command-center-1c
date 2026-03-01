@@ -18,6 +18,10 @@ scrape_configs:
     static_configs:
       - targets: ['host.docker.internal:8180']
     metrics_path: '/metrics'
+    metric_relabel_configs:
+      - source_labels: [path]
+        regex: '/ws/service-mesh/.*'
+        action: drop
 
   # Worker (Go, ops) - порт 9191 (metrics endpoint)
   - job_name: 'worker'
@@ -62,9 +66,25 @@ scrape_configs:
         target_label: instance
         replacement: 'redis'
 
-  # MinIO (S3) - metrics endpoint
-  # Requires: MINIO_PROMETHEUS_AUTH_TYPE=public
+  # MinIO (S3) blackbox TCP probe (availability/liveness)
   - job_name: 'minio'
+    static_configs:
+      - targets: ['host.docker.internal:9000']
+        labels:
+          cc1c_service: 'minio'
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # Optional MinIO internals (works only when MINIO_PROMETHEUS_AUTH_TYPE=public)
+  - job_name: 'minio-metrics'
     static_configs:
       - targets: ['host.docker.internal:9000']
     metrics_path: '/minio/v2/metrics/cluster'

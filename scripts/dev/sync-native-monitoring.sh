@@ -21,14 +21,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$PROJECT_ROOT/scripts/lib/init.sh"
 
 cd "$PROJECT_ROOT"
-load_env_file
-
-if is_docker_mode; then
-  log_info "Docker mode: native monitoring sync skipped"
-  exit 0
-fi
-
 STRICT=false
+ENV_FILE="${CC1C_ENV_FILE:-$PROJECT_ROOT/.env.local}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,12 +30,27 @@ while [[ $# -gt 0 ]]; do
       STRICT=true
       shift
       ;;
+    --env-file)
+      if [[ $# -lt 2 ]]; then
+        log_warning "Missing value for --env-file"
+        $STRICT && exit 1 || exit 0
+      fi
+      ENV_FILE="$2"
+      shift 2
+      ;;
     *)
       log_warning "Unknown arg: $1"
       shift
       ;;
   esac
 done
+
+load_env_file "$ENV_FILE"
+
+if is_docker_mode; then
+  log_info "Docker mode: native monitoring sync skipped"
+  exit 0
+fi
 
 if ! command -v prometheus &>/dev/null; then
   log_warning "Prometheus not installed; native monitoring sync skipped"

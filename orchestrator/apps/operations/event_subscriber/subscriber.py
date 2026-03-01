@@ -121,6 +121,53 @@ class EventSubscriber(
                     )
                     raise
 
+    def ensure_consumer_registered(self) -> None:
+        """
+        Ensure Redis reports at least one consumer for orchestrator-group.
+
+        On Redis 6.x, XINFO GROUPS keeps `consumers=0` until a consumer actually
+        receives at least one message. This causes false degraded health on cold
+        start when streams are idle. We push one synthetic message to a command
+        stream, read it with NOACK under current consumer, then delete it.
+        """
+        probe_stream = "commands:orchestrator:get-cluster-info"
+        probe_payload = {
+            "__cc1c_bootstrap__": "1",
+            "consumer": self.consumer_name,
+            "ts": str(int(time.time())),
+        }
+
+        message_id = ""
+        try:
+            message_id = str(self.redis_client.xadd(probe_stream, probe_payload))
+            self.redis_client.xreadgroup(
+                self.consumer_group,
+                self.consumer_name,
+                {probe_stream: ">"},
+                count=1,
+                block=100,
+                noack=True,
+            )
+            runtime.logger.debug(
+                "Consumer bootstrap probe consumed: stream=%s, consumer=%s, message_id=%s",
+                probe_stream,
+                self.consumer_name,
+                message_id,
+            )
+        except Exception as exc:
+            runtime.logger.debug(
+                "Consumer bootstrap probe failed: stream=%s, consumer=%s, error=%s",
+                probe_stream,
+                self.consumer_name,
+                exc,
+            )
+        finally:
+            if message_id:
+                try:
+                    self.redis_client.xdel(probe_stream, message_id)
+                except Exception:
+                    pass
+
     def backfill_worker_results(self, *, max_messages: int = 200) -> int:
         """
         Best-effort healing for local/dev: process worker completed/failed events that were
@@ -191,6 +238,7 @@ class EventSubscriber(
         runtime.logger.info("Subscribed to %s streams", len(self.streams))
 
         self.setup_consumer_groups()
+        self.ensure_consumer_registered()
         try:
             healed = self.backfill_worker_results()
             if healed:

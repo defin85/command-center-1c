@@ -8,7 +8,7 @@ TCP_TARGET_FILE="$TARGETS_DIR/blackbox_tcp.yml"
 HTTP_TARGET_FILE="$TARGETS_DIR/blackbox_http.yml"
 
 # Load env (prefer already exported vars from caller, fallback to .env.local)
-if [[ -z "${RAS_SERVER_ADDR:-}" ]] && [[ -f "$PROJECT_ROOT/.env.local" ]]; then
+if [[ -z "${RAS_SERVER_ADDR:-}" && -z "${RAS_SERVER:-}" ]] && [[ -f "$PROJECT_ROOT/.env.local" ]]; then
   # shellcheck disable=SC1091
   set -a
   source "$PROJECT_ROOT/.env.local"
