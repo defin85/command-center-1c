@@ -47,6 +47,37 @@
 - Legacy endpoint `GET /api/v2/ui/action-catalog/` сохраняется только как decommission-контракт (`404`, `NOT_FOUND`).
 - Подробности: [ACTION_CATALOG_GUIDE.md](./ACTION_CATALOG_GUIDE.md) и [MANUAL_OPERATIONS_GUIDE.md](./MANUAL_OPERATIONS_GUIDE.md).
 
+### Pool Master Data (`/pools/master-data`)
+- Назначение: canonical-справочник для публикации в target infobase (Party, Item, Contract, TaxProfile) и их `ib_ref_key`-привязки в `Bindings`.
+
+#### Быстрый порядок настройки
+1. Открой `/pools/master-data` и проверь, что выбран нужный tenant.
+2. Заполни canonical сущности:
+   - `Party`: создай организации и контрагентов, обязательно хотя бы одна роль (`organization` или `counterparty`).
+   - `Item`: создай номенклатуру с `canonical_id`.
+   - `Contract`: создай договор и выбери owner counterparty.
+   - `TaxProfile`: задай VAT-профиль (`vat_code`, `vat_rate`, `vat_included`).
+3. Перейди во вкладку `Bindings` и создай связь canonical -> target DB:
+   - `entity_type`, `canonical_id`, `database`, `ib_ref_key` обязательны всегда;
+   - для `party` обязательно `ib_catalog_kind` (`organization` или `counterparty`);
+   - для `contract` обязательно `owner_counterparty_canonical_id`.
+4. Нажми `Refresh` и убедись, что binding отображается в таблице без дублей scope.
+5. Запусти/повтори `Pool Run` и проверь блок `Master Data Gate` на `/pools/runs`.
+
+#### Как это использовать в Topology/Policy
+- В `Pool Catalog` при настройке `document_policy` используй master-data token:
+  - `master_data.party.<canonical_id>.<organization|counterparty>.ref`
+  - `master_data.item.<canonical_id>.ref`
+  - `master_data.contract.<canonical_id>.<owner_counterparty_canonical_id>.ref`
+  - `master_data.tax_profile.<canonical_id>.ref`
+- На исполнении gate резолвит token в конкретный `ib_ref_key` по target database.
+
+#### Частые ошибки
+- `MASTER_DATA_ENTITY_NOT_FOUND`: нет canonical записи в `/pools/master-data` для token.
+- `MASTER_DATA_BINDING_AMBIGUOUS`: есть дубли в `Bindings` для одного scope.
+- `MASTER_DATA_BINDING_CONFLICT`: невалидный scope token/binding или отсутствует корректный `ib_ref_key`.
+- Подробный runbook: [observability/POOL_MASTER_DATA_GATE_RUNBOOK.md](./observability/POOL_MASTER_DATA_GATE_RUNBOOK.md).
+
 ### Command Schemas (`/settings/command-schemas`)
 - Редактирование схем команд для `cli`/`ibcmd` (driver catalogs v2) через UI (save/validate/preview/diff/rollback).
 - Доступ: `is_staff=true` + право `operations.manage_driver_catalogs` (иначе будет 403/скрытый пункт меню).
