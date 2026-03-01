@@ -134,6 +134,85 @@ class EventSubscriberReliabilityTest(EventSubscriberBaseTestCase):
         assert args[1] == pending_message_id
 
     @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_reclaim_pending_redis6_fallback_without_idle_kwarg(self, mock_redis_class):
+        import redis as redis_module
+
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+
+        subscriber = EventSubscriber()
+        subscriber.claim_check_interval_seconds = 0
+        subscriber.max_pending_to_check = 10
+        subscriber.claim_idle_threshold_seconds = 300
+        subscriber._handle_message = Mock()
+
+        stream_with_pending = "events:worker:completed"
+        stale_message_id = "1702389123461-0"
+        fresh_message_id = "1702389123462-0"
+
+        def xpending_range_side_effect(stream, group, min, max, count, idle=None):  # noqa: A002
+            if stream != stream_with_pending:
+                return []
+            if idle is not None:
+                raise redis_module.ResponseError("syntax error")
+            return [
+                {
+                    "message_id": stale_message_id,
+                    "time_since_delivered": 301000,
+                },
+                {
+                    "message_id": fresh_message_id,
+                    "time_since_delivered": 1000,
+                },
+            ]
+
+        mock_redis.xpending_range.side_effect = xpending_range_side_effect
+        mock_redis.xclaim.return_value = [
+            (stale_message_id, {"event_type": "worker.completed", "correlation_id": "corr-2", "payload": "{}"})
+        ]
+
+        subscriber._maybe_reclaim_pending()
+
+        mock_redis.xclaim.assert_called_once()
+        xclaim_args = mock_redis.xclaim.call_args.args
+        assert xclaim_args[0] == stream_with_pending
+        assert xclaim_args[4] == [stale_message_id]
+        subscriber._handle_message.assert_called_once()
+        args = subscriber._handle_message.call_args.args
+        assert args[0] == stream_with_pending
+        assert args[1] == stale_message_id
+
+    @patch("apps.operations.event_subscriber.subscriber.runtime.logger.debug")
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_query_pending_entries_logs_fallback_once_per_stream_and_reason(
+        self,
+        mock_redis_class,
+        mock_logger_debug,
+    ):
+        import redis as redis_module
+
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+
+        subscriber = EventSubscriber()
+
+        def xpending_range_side_effect(stream, group, min, max, count, idle=None):  # noqa: A002
+            if idle is not None:
+                raise redis_module.ResponseError("syntax error")
+            return []
+
+        mock_redis.xpending_range.side_effect = xpending_range_side_effect
+
+        subscriber._query_pending_entries("events:worker:completed", min_idle_time_ms=300000)
+        subscriber._query_pending_entries("events:worker:completed", min_idle_time_ms=300000)
+
+        mock_logger_debug.assert_called_once_with(
+            "XPENDING IDLE unsupported, fallback scan enabled: stream=%s, group=%s",
+            "events:worker:completed",
+            subscriber.consumer_group,
+        )
+
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
     def test_poison_invalid_json_is_acked_and_recorded(self, mock_redis_class):
         mock_redis = MagicMock()
         mock_redis_class.return_value = mock_redis

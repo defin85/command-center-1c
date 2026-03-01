@@ -10,7 +10,7 @@ import os
 import signal
 import sys
 import time
-from typing import Dict
+from typing import Any, Dict
 
 import redis
 from django.conf import settings
@@ -77,6 +77,7 @@ class EventSubscriber(
             getattr(settings, "EVENT_SUBSCRIBER_MAX_PENDING_TO_CHECK", 100)
         )
         self._last_claim_check_at = 0.0
+        self._xpending_fallback_logged: set[tuple[str, str]] = set()
 
         self.streams = {
             "events:worker:cluster-synced": ">",
@@ -283,14 +284,7 @@ class EventSubscriber(
 
         for stream in self.streams.keys():
             try:
-                pending_entries = self.redis_client.xpending_range(
-                    stream,
-                    self.consumer_group,
-                    min="-",
-                    max="+",
-                    count=self.max_pending_to_check,
-                    idle=min_idle_time_ms,
-                )
+                pending_entries = self._query_pending_entries(stream, min_idle_time_ms)
             except Exception as e:
                 runtime.logger.debug(
                     "Failed to query pending entries: stream=%s, group=%s, error=%s",
@@ -339,6 +333,69 @@ class EventSubscriber(
                 )
                 record_claimed_metric(stream, self.consumer_group, 1)
                 self._handle_message(stream, claimed_message_id, claimed_data)
+
+    @staticmethod
+    def _pending_entry_idle_ms(entry: dict[str, Any]) -> int:
+        # redis-py field names differ by version.
+        for key in ("time_since_delivered", "idle", "idle_ms"):
+            try:
+                value = entry.get(key)
+                if value is not None:
+                    return int(value)
+            except Exception:
+                continue
+        return 0
+
+    def _query_pending_entries(self, stream: str, min_idle_time_ms: int) -> list[dict[str, Any]]:
+        """
+        Query pending entries with Redis 6-compatible fallback.
+
+        Redis 6.0 does not support XPENDING ... IDLE filtering used by redis-py
+        `xpending_range(..., idle=...)`, which raises `syntax error`.
+        """
+        try:
+            return self.redis_client.xpending_range(
+                stream,
+                self.consumer_group,
+                min="-",
+                max="+",
+                count=self.max_pending_to_check,
+                idle=min_idle_time_ms,
+            )
+        except redis.ResponseError as exc:
+            if "syntax error" not in str(exc).lower():
+                raise
+            self._log_xpending_fallback_once(
+                stream,
+                "redis_syntax",
+                "XPENDING IDLE unsupported, fallback scan enabled: stream=%s, group=%s",
+            )
+        except TypeError:
+            self._log_xpending_fallback_once(
+                stream,
+                "client_kwarg",
+                "XPENDING idle kwarg unsupported by client, fallback scan enabled: stream=%s, group=%s",
+            )
+
+        # Fallback for old Redis/client combinations: scan and filter by idle locally.
+        entries = self.redis_client.xpending_range(
+            stream,
+            self.consumer_group,
+            min="-",
+            max="+",
+            count=self.max_pending_to_check,
+        )
+        return [
+            entry for entry in entries
+            if self._pending_entry_idle_ms(entry) >= min_idle_time_ms
+        ]
+
+    def _log_xpending_fallback_once(self, stream: str, reason: str, message: str) -> None:
+        log_key = (stream, reason)
+        if log_key in self._xpending_fallback_logged:
+            return
+        self._xpending_fallback_logged.add(log_key)
+        runtime.logger.debug(message, stream, self.consumer_group)
 
     def _handle_message(self, stream: str, message_id: str, data: Dict[str, str]) -> None:
         runtime.close_old_connections()
