@@ -10,6 +10,7 @@ class RuntimeSettingDefinition:
     description: str
     min_value: Optional[int] = None
     max_value: Optional[int] = None
+    env_default_setting: Optional[str] = None
 
 
 RUNTIME_SETTINGS = {
@@ -91,5 +92,6 @@ RUNTIME_SETTINGS = {
             "Enable pool master-data gate in workflow runtime. "
             "When disabled, pool.master_data_gate step is skipped."
         ),
+        env_default_setting="POOL_RUNTIME_MASTER_DATA_GATE_ENABLED",
     ),
 }

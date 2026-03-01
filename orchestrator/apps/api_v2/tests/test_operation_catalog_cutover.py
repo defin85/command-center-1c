@@ -3,11 +3,12 @@ from __future__ import annotations
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
+from django.test import override_settings
 from rest_framework.test import APIClient
 
 from apps.databases.models import PermissionLevel
 from apps.intercompany_pools.runtime_template_registry import sync_pool_runtime_template_registry
-from apps.runtime_settings.models import TenantRuntimeSettingOverride
+from apps.runtime_settings.models import RuntimeSetting, TenantRuntimeSettingOverride
 from apps.tenancy.models import Tenant
 from apps.templates.models import (
     OperationExposure,
@@ -139,6 +140,43 @@ def test_runtime_settings_list_includes_pool_master_data_gate_enabled(staff_clie
     )
     assert row["value_type"] == "bool"
     assert row["default"] is False
+    assert row["value"] is False
+
+
+@pytest.mark.django_db
+@override_settings(POOL_RUNTIME_MASTER_DATA_GATE_ENABLED="true")
+def test_runtime_effective_uses_env_default_for_pool_master_data_gate_enabled(staff_client):
+    RuntimeSetting.objects.filter(key="pools.master_data.gate_enabled").delete()
+
+    resp = staff_client.get("/api/v2/settings/runtime-effective/")
+    assert resp.status_code == 200
+    payload = resp.json()
+    row = next(
+        item
+        for item in payload["settings"]
+        if item["key"] == "pools.master_data.gate_enabled"
+    )
+    assert row["source"] == "env_default"
+    assert row["value"] is True
+
+
+@pytest.mark.django_db
+@override_settings(POOL_RUNTIME_MASTER_DATA_GATE_ENABLED="true")
+def test_runtime_effective_prefers_global_pool_master_data_gate_enabled_over_env_default(staff_client):
+    RuntimeSetting.objects.update_or_create(
+        key="pools.master_data.gate_enabled",
+        defaults={"value": False},
+    )
+
+    resp = staff_client.get("/api/v2/settings/runtime-effective/")
+    assert resp.status_code == 200
+    payload = resp.json()
+    row = next(
+        item
+        for item in payload["settings"]
+        if item["key"] == "pools.master_data.gate_enabled"
+    )
+    assert row["source"] == "global"
     assert row["value"] is False
 
 

@@ -66,6 +66,9 @@ properties:
   publication_step_state:
     type: string
     nullable: true
+  master_data_gate:
+    $ref: ./PoolRunMasterDataGate.yaml
+    nullable: true
   terminal_reason:
     type: string
     nullable: true

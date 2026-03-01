@@ -447,6 +447,70 @@ describe('PoolRunsPage', () => {
     expect(screen.getByText('Remediation: /rbac - Infobase Users')).toBeInTheDocument()
   })
 
+  it('renders master data gate remediation hint and diagnostic context', async () => {
+    const user = userEvent.setup()
+    const run = buildRun({
+      master_data_gate: {
+        status: 'failed',
+        mode: 'resolve_upsert',
+        targets_count: 2,
+        bindings_count: 1,
+        error_code: 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING',
+        detail: 'Bindings are missing for some organizations.',
+        diagnostic: {
+          entity_type: 'organization',
+          canonical_id: 'party-1',
+          target_database_id: 'db-1',
+          missing_organization_bindings: [
+            {
+              organization_id: 'org-1',
+              name: 'Org One',
+              database_id: 'db-1',
+            },
+          ],
+        },
+      },
+    })
+    mockListPoolRuns.mockResolvedValue([run])
+    mockGetPoolRunReport.mockResolvedValue(buildReport(run))
+
+    renderPage()
+
+    await openRunsStage(user, 'Inspect')
+    expect(await screen.findByText('status: failed')).toBeInTheDocument()
+    expect(screen.getByText('mode: resolve_upsert')).toBeInTheDocument()
+    expect(screen.getByText('targets: 2')).toBeInTheDocument()
+    expect(screen.getByText('bindings: 1')).toBeInTheDocument()
+    expect(screen.getByText('MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING')).toBeInTheDocument()
+    expect(screen.getByText('Bindings are missing for some organizations.')).toBeInTheDocument()
+    expect(screen.getByText('Remediation Hint')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Выполните backfill Organization->Party и закройте remediation-list перед повторным запуском run.'
+      )
+    ).toBeInTheDocument()
+    expect(screen.getByText('Diagnostic Context')).toBeInTheDocument()
+    expect(
+      screen.getByText('entity_type=organization canonical_id=party-1 target_database_id=db-1')
+    ).toBeInTheDocument()
+    expect(screen.getByText('missing_organization_bindings=1')).toBeInTheDocument()
+    expect(screen.getByText('#1: org=org-1 name=Org One database_id=db-1')).toBeInTheDocument()
+  })
+
+  it('renders historical master data gate placeholder when gate payload is missing', async () => {
+    const user = userEvent.setup()
+    const run = buildRun({ master_data_gate: null })
+    mockListPoolRuns.mockResolvedValue([run])
+    mockGetPoolRunReport.mockResolvedValue(buildReport(run))
+
+    renderPage()
+
+    await openRunsStage(user, 'Inspect')
+    expect(
+      await screen.findByText('Historical run or gate step was not captured in this execution context.')
+    ).toBeInTheDocument()
+  })
+
   it('renders publication credentials source hint in create run form', async () => {
     const user = userEvent.setup()
     renderPage()

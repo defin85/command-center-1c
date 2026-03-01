@@ -1,0 +1,38 @@
+type: object
+properties:
+  status:
+    enum:
+      - completed
+      - failed
+      - skipped
+    type: string
+    description: |-
+      * `completed` - completed
+      * `failed` - failed
+      * `skipped` - skipped
+    x-spec-enum-id: 5bf813f86b11ee2d
+  mode:
+    enum:
+      - resolve_upsert
+    type: string
+    description: |-
+      * `resolve_upsert` - resolve_upsert
+    x-spec-enum-id: 295db8f1963ef1d0
+  targets_count:
+    type: integer
+    minimum: 0
+  bindings_count:
+    type: integer
+    minimum: 0
+  error_code:
+    type: string
+    nullable: true
+  detail:
+    type: string
+    nullable: true
+  diagnostic: {}
+required:
+  - bindings_count
+  - mode
+  - status
+  - targets_count

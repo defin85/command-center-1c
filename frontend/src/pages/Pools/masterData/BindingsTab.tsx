@@ -242,7 +242,7 @@ export function BindingsTab() {
         onCancel={() => setIsModalOpen(false)}
         onOk={() => void handleSubmit()}
         okButtonProps={{ loading: isSaving }}
-        destroyOnClose
+        forceRender
       >
         <Form form={form} layout="vertical">
           <Form.Item name="entity_type" label="Entity Type" rules={[{ required: true }]}>

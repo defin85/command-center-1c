@@ -40,6 +40,10 @@ class RuntimeSettingUpdateSerializer(serializers.Serializer):
 
 def _ensure_defaults():
     for definition in RUNTIME_SETTINGS.values():
+        if definition.env_default_setting:
+            # Env-backed defaults are resolved dynamically in effective settings;
+            # avoid materializing a global DB row that would mask env fallback.
+            continue
         RuntimeSetting.objects.get_or_create(
             key=definition.key,
             defaults={"value": definition.default},

@@ -161,12 +161,12 @@ export function ContractsTab() {
     <>
       <Card>
         <Space wrap style={{ marginBottom: 16 }}>
-          <Input.Search
+          <Input
             allowClear
             placeholder="Search canonical_id / name / number"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            onSearch={() => void loadRows()}
+            onPressEnter={() => void loadRows()}
             style={{ width: 320 }}
           />
           <Select
@@ -200,7 +200,7 @@ export function ContractsTab() {
         onCancel={() => setIsModalOpen(false)}
         onOk={() => void handleSubmit()}
         okButtonProps={{ loading: isSaving }}
-        destroyOnClose
+        forceRender
       >
         <Form form={form} layout="vertical">
           <Form.Item name="canonical_id" label="Canonical ID" rules={[{ required: true }]}>
