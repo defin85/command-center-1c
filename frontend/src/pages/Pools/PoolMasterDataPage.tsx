@@ -4,6 +4,7 @@ import { BindingsTab } from './masterData/BindingsTab'
 import { ContractsTab } from './masterData/ContractsTab'
 import { ItemsTab } from './masterData/ItemsTab'
 import { PartiesTab } from './masterData/PartiesTab'
+import { SyncStatusTab } from './masterData/SyncStatusTab'
 import { TaxProfilesTab } from './masterData/TaxProfilesTab'
 
 const { Title, Text } = Typography
@@ -27,6 +28,7 @@ export function PoolMasterDataPage() {
           { key: 'contract', label: 'Contract', children: <ContractsTab /> },
           { key: 'tax-profile', label: 'TaxProfile', children: <TaxProfilesTab /> },
           { key: 'bindings', label: 'Bindings', children: <BindingsTab /> },
+          { key: 'sync', label: 'Sync', children: <SyncStatusTab /> },
         ]}
       />
     </Space>

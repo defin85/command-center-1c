@@ -36,6 +36,7 @@ from .views import (
     operation_catalog,
     intercompany_pools,
     intercompany_pools_master_data,
+    intercompany_pools_master_data_sync,
 )
 
 app_name = 'api_v2'
@@ -200,6 +201,31 @@ urlpatterns = [
         'pools/master-data/bindings/upsert/',
         intercompany_pools_master_data.upsert_master_data_binding,
         name='pools-master-data-bindings-upsert',
+    ),
+    path(
+        'pools/master-data/sync-status/',
+        intercompany_pools_master_data_sync.list_master_data_sync_status,
+        name='pools-master-data-sync-status-list',
+    ),
+    path(
+        'pools/master-data/sync-conflicts/',
+        intercompany_pools_master_data_sync.list_master_data_sync_conflicts,
+        name='pools-master-data-sync-conflicts-list',
+    ),
+    path(
+        'pools/master-data/sync-conflicts/<uuid:id>/retry/',
+        intercompany_pools_master_data_sync.retry_master_data_sync_conflict_endpoint,
+        name='pools-master-data-sync-conflicts-retry',
+    ),
+    path(
+        'pools/master-data/sync-conflicts/<uuid:id>/reconcile/',
+        intercompany_pools_master_data_sync.reconcile_master_data_sync_conflict_endpoint,
+        name='pools-master-data-sync-conflicts-reconcile',
+    ),
+    path(
+        'pools/master-data/sync-conflicts/<uuid:id>/resolve/',
+        intercompany_pools_master_data_sync.resolve_master_data_sync_conflict_endpoint,
+        name='pools-master-data-sync-conflicts-resolve',
     ),
     path(
         'pools/odata-metadata/catalog/',

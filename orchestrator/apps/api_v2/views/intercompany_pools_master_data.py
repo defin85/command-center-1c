@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import serializers, status as http_status
@@ -25,6 +25,12 @@ from apps.intercompany_pools.models import (
     PoolMasterParty,
     PoolMasterTaxProfile,
 )
+from apps.intercompany_pools.master_data_sync_origin import (
+    MASTER_DATA_SYNC_ORIGIN_IB,
+    normalize_master_data_sync_origin,
+    should_skip_outbound_sync_for_origin,
+)
+from apps.intercompany_pools.master_data_sync_outbox import enqueue_master_data_sync_outbox_intent
 
 from .intercompany_pools import _parse_limit, _problem, _resolve_tenant_id
 
@@ -129,6 +135,52 @@ def _serialize_binding(binding: PoolMasterDataBinding) -> dict[str, Any]:
         "created_at": binding.created_at,
         "updated_at": binding.updated_at,
     }
+
+
+def _assign_changed_fields(instance: object, payload: dict[str, Any]) -> bool:
+    changed = False
+    for field_name, value in payload.items():
+        if getattr(instance, field_name) != value:
+            setattr(instance, field_name, value)
+            changed = True
+    return changed
+
+
+def _enqueue_canonical_mutation_outbox_intents(
+    *,
+    tenant_id: str | UUID,
+    entity_type: str,
+    canonical_id: str,
+    mutation_kind: str,
+    payload: dict[str, Any],
+    origin_event_id: str,
+    origin_system: str = "cc",
+) -> None:
+    origin = normalize_master_data_sync_origin(
+        origin_system=origin_system,
+        origin_event_id=origin_event_id,
+    )
+    if should_skip_outbound_sync_for_origin(
+        origin_system=origin.origin_system,
+        origin_event_id=origin.origin_event_id,
+        target_system=MASTER_DATA_SYNC_ORIGIN_IB,
+    ):
+        return
+
+    database_ids = list(
+        Database.objects.filter(tenant_id=tenant_id).values_list("id", flat=True)
+    )
+    for database_id in database_ids:
+        enqueue_master_data_sync_outbox_intent(
+            tenant_id=str(tenant_id),
+            database_id=str(database_id),
+            entity_type=entity_type,
+            canonical_id=canonical_id,
+            mutation_kind=mutation_kind,
+            payload=payload,
+            origin_system=origin.origin_system,
+            origin_event_id=origin.origin_event_id,
+        )
 
 
 class _MasterDataListBaseQuerySerializer(serializers.Serializer):
@@ -551,12 +603,34 @@ def upsert_master_data_party(request):
         "metadata": data.get("metadata", {}),
     }
     try:
-        if created:
-            party = PoolMasterParty.objects.create(**payload)
-        else:
-            for field_name, value in payload.items():
-                setattr(party, field_name, value)
-            party.save()
+        with transaction.atomic():
+            changed = True
+            if created:
+                party = PoolMasterParty.objects.create(**payload)
+            else:
+                changed = _assign_changed_fields(party, payload)
+                if changed:
+                    party.save()
+
+            if changed:
+                origin_event_id = f"party:{party.id}:{int(party.updated_at.timestamp())}"
+                _enqueue_canonical_mutation_outbox_intents(
+                    tenant_id=tenant_id,
+                    entity_type=PoolMasterDataEntityType.PARTY,
+                    canonical_id=str(party.canonical_id),
+                    mutation_kind="party_upsert",
+                    payload={
+                        "canonical_id": str(party.canonical_id),
+                        "name": str(party.name or ""),
+                        "full_name": str(party.full_name or ""),
+                        "inn": str(party.inn or ""),
+                        "kpp": str(party.kpp or ""),
+                        "is_our_organization": bool(party.is_our_organization),
+                        "is_counterparty": bool(party.is_counterparty),
+                        "metadata": dict(party.metadata or {}),
+                    },
+                    origin_event_id=origin_event_id,
+                )
     except DjangoValidationError as exc:
         return _validation_problem(
             detail="Party payload validation failed.",
@@ -705,12 +779,31 @@ def upsert_master_data_item(request):
         "metadata": data.get("metadata", {}),
     }
     try:
-        if created:
-            item = PoolMasterItem.objects.create(**payload)
-        else:
-            for field_name, value in payload.items():
-                setattr(item, field_name, value)
-            item.save()
+        with transaction.atomic():
+            changed = True
+            if created:
+                item = PoolMasterItem.objects.create(**payload)
+            else:
+                changed = _assign_changed_fields(item, payload)
+                if changed:
+                    item.save()
+
+            if changed:
+                origin_event_id = f"item:{item.id}:{int(item.updated_at.timestamp())}"
+                _enqueue_canonical_mutation_outbox_intents(
+                    tenant_id=tenant_id,
+                    entity_type=PoolMasterDataEntityType.ITEM,
+                    canonical_id=str(item.canonical_id),
+                    mutation_kind="item_upsert",
+                    payload={
+                        "canonical_id": str(item.canonical_id),
+                        "name": str(item.name or ""),
+                        "sku": str(item.sku or ""),
+                        "unit": str(item.unit or ""),
+                        "metadata": dict(item.metadata or {}),
+                    },
+                    origin_event_id=origin_event_id,
+                )
     except DjangoValidationError as exc:
         return _validation_problem(
             detail="Item payload validation failed.",
@@ -884,12 +977,33 @@ def upsert_master_data_contract(request):
         "metadata": data.get("metadata", {}),
     }
     try:
-        if created:
-            contract = PoolMasterContract.objects.create(**payload)
-        else:
-            for field_name, value in payload.items():
-                setattr(contract, field_name, value)
-            contract.save()
+        with transaction.atomic():
+            changed = True
+            if created:
+                contract = PoolMasterContract.objects.create(**payload)
+            else:
+                changed = _assign_changed_fields(contract, payload)
+                if changed:
+                    contract.save()
+
+            if changed:
+                origin_event_id = f"contract:{contract.id}:{int(contract.updated_at.timestamp())}"
+                _enqueue_canonical_mutation_outbox_intents(
+                    tenant_id=tenant_id,
+                    entity_type=PoolMasterDataEntityType.CONTRACT,
+                    canonical_id=str(contract.canonical_id),
+                    mutation_kind="contract_upsert",
+                    payload={
+                        "canonical_id": str(contract.canonical_id),
+                        "name": str(contract.name or ""),
+                        "owner_counterparty_id": str(contract.owner_counterparty_id),
+                        "owner_counterparty_canonical_id": str(contract.owner_counterparty.canonical_id),
+                        "number": str(contract.number or ""),
+                        "date": contract.date.isoformat() if contract.date else "",
+                        "metadata": dict(contract.metadata or {}),
+                    },
+                    origin_event_id=origin_event_id,
+                )
     except DjangoValidationError as exc:
         return _validation_problem(
             detail="Contract payload validation failed.",
@@ -1038,12 +1152,31 @@ def upsert_master_data_tax_profile(request):
         "metadata": data.get("metadata", {}),
     }
     try:
-        if created:
-            tax_profile = PoolMasterTaxProfile.objects.create(**payload)
-        else:
-            for field_name, value in payload.items():
-                setattr(tax_profile, field_name, value)
-            tax_profile.save()
+        with transaction.atomic():
+            changed = True
+            if created:
+                tax_profile = PoolMasterTaxProfile.objects.create(**payload)
+            else:
+                changed = _assign_changed_fields(tax_profile, payload)
+                if changed:
+                    tax_profile.save()
+
+            if changed:
+                origin_event_id = f"tax_profile:{tax_profile.id}:{int(tax_profile.updated_at.timestamp())}"
+                _enqueue_canonical_mutation_outbox_intents(
+                    tenant_id=tenant_id,
+                    entity_type=PoolMasterDataEntityType.TAX_PROFILE,
+                    canonical_id=str(tax_profile.canonical_id),
+                    mutation_kind="tax_profile_upsert",
+                    payload={
+                        "canonical_id": str(tax_profile.canonical_id),
+                        "vat_rate": str(tax_profile.vat_rate),
+                        "vat_included": bool(tax_profile.vat_included),
+                        "vat_code": str(tax_profile.vat_code or ""),
+                        "metadata": dict(tax_profile.metadata or {}),
+                    },
+                    origin_event_id=origin_event_id,
+                )
     except DjangoValidationError as exc:
         return _validation_problem(
             detail="Tax profile payload validation failed.",
@@ -1217,12 +1350,38 @@ def upsert_master_data_binding(request):
         "metadata": data.get("metadata", {}),
     }
     try:
-        if created:
-            binding = PoolMasterDataBinding.objects.create(**payload)
-        else:
-            for field_name, value in payload.items():
-                setattr(binding, field_name, value)
-            binding.save()
+        with transaction.atomic():
+            changed = True
+            if created:
+                binding = PoolMasterDataBinding.objects.create(**payload)
+            else:
+                changed = _assign_changed_fields(binding, payload)
+                if changed:
+                    binding.save()
+
+            if changed:
+                origin_event_id = f"binding:{binding.id}:{int(binding.updated_at.timestamp())}"
+                enqueue_master_data_sync_outbox_intent(
+                    tenant_id=str(binding.tenant_id),
+                    database_id=str(binding.database_id),
+                    entity_type=str(binding.entity_type),
+                    canonical_id=str(binding.canonical_id),
+                    mutation_kind="binding_upsert",
+                    payload={
+                        "entity_type": str(binding.entity_type),
+                        "canonical_id": str(binding.canonical_id),
+                        "ib_ref_key": str(binding.ib_ref_key or ""),
+                        "ib_catalog_kind": str(binding.ib_catalog_kind or ""),
+                        "owner_counterparty_canonical_id": str(
+                            binding.owner_counterparty_canonical_id or ""
+                        ),
+                        "sync_status": str(binding.sync_status or ""),
+                        "fingerprint": str(binding.fingerprint or ""),
+                        "metadata": dict(binding.metadata or {}),
+                    },
+                    origin_system="cc",
+                    origin_event_id=origin_event_id,
+                )
     except DjangoValidationError as exc:
         return _validation_problem(
             detail="Binding payload validation failed.",

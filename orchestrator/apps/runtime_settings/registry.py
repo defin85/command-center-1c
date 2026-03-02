@@ -94,4 +94,40 @@ RUNTIME_SETTINGS = {
         ),
         env_default_setting="POOL_RUNTIME_MASTER_DATA_GATE_ENABLED",
     ),
+    "pools.master_data.sync.enabled": RuntimeSettingDefinition(
+        key="pools.master_data.sync.enabled",
+        value_type="bool",
+        default=False,
+        description=(
+            "Enable pool master-data bidirectional sync runtime for inbound/outbound pipelines."
+        ),
+        env_default_setting="POOL_RUNTIME_MASTER_DATA_SYNC_ENABLED",
+    ),
+    "pools.master_data.sync.poll_interval_seconds": RuntimeSettingDefinition(
+        key="pools.master_data.sync.poll_interval_seconds",
+        value_type="int",
+        default=30,
+        min_value=1,
+        max_value=3600,
+        description="Inbound exchange-plan poll interval in seconds.",
+        env_default_setting="POOL_RUNTIME_MASTER_DATA_SYNC_POLL_INTERVAL_SECONDS",
+    ),
+    "pools.master_data.sync.dispatch_batch_size": RuntimeSettingDefinition(
+        key="pools.master_data.sync.dispatch_batch_size",
+        value_type="int",
+        default=100,
+        min_value=1,
+        max_value=1000,
+        description="Outbound dispatcher batch size for master-data sync intents.",
+        env_default_setting="POOL_RUNTIME_MASTER_DATA_SYNC_DISPATCH_BATCH_SIZE",
+    ),
+    "pools.master_data.sync.max_retry_backoff_seconds": RuntimeSettingDefinition(
+        key="pools.master_data.sync.max_retry_backoff_seconds",
+        value_type="int",
+        default=900,
+        min_value=1,
+        max_value=7200,
+        description="Maximum retry backoff for master-data sync outbox dispatcher.",
+        env_default_setting="POOL_RUNTIME_MASTER_DATA_SYNC_MAX_RETRY_BACKOFF_SECONDS",
+    ),
 }

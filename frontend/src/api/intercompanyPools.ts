@@ -718,6 +718,41 @@ export type PoolMasterDataBinding = {
   updated_at: string
 }
 
+export type PoolMasterDataSyncStatus = {
+  tenant_id: string
+  database_id: string
+  entity_type: PoolMasterDataEntityType
+  checkpoint_token: string
+  pending_checkpoint_token: string
+  checkpoint_status: string
+  pending_count: number
+  retry_count: number
+  conflict_pending_count: number
+  conflict_retrying_count: number
+  lag_seconds: number
+  last_success_at: string | null
+  last_applied_at: string | null
+  last_error_code: string
+}
+
+export type PoolMasterDataSyncConflict = {
+  id: string
+  tenant_id: string
+  database_id: string
+  entity_type: PoolMasterDataEntityType
+  status: 'pending' | 'retrying' | 'resolved'
+  conflict_code: string
+  canonical_id: string
+  origin_system: string
+  origin_event_id: string
+  diagnostics: Record<string, unknown>
+  metadata: Record<string, unknown>
+  resolved_at: string | null
+  resolved_by_id: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type ListMasterDataPartiesParams = {
   query?: string
   canonical_id?: string
@@ -811,6 +846,34 @@ export type UpsertMasterDataBindingPayload = {
   owner_counterparty_canonical_id?: string
   sync_status?: PoolMasterBindingSyncStatus
   fingerprint?: string
+  metadata?: Record<string, unknown>
+}
+
+export type ListMasterDataSyncStatusParams = {
+  database_id?: string
+  entity_type?: PoolMasterDataEntityType
+}
+
+export type ListMasterDataSyncConflictsParams = {
+  database_id?: string
+  entity_type?: PoolMasterDataEntityType
+  status?: 'pending' | 'retrying' | 'resolved'
+  limit?: number
+}
+
+export type RetryMasterDataSyncConflictPayload = {
+  note?: string
+  metadata?: Record<string, unknown>
+}
+
+export type ReconcileMasterDataSyncConflictPayload = {
+  note?: string
+  reconcile_payload?: Record<string, unknown>
+}
+
+export type ResolveMasterDataSyncConflictPayload = {
+  resolution_code: string
+  note?: string
   metadata?: Record<string, unknown>
 }
 
@@ -996,4 +1059,72 @@ export async function listPoolTargetDatabases(): Promise<SimpleDatabaseRef[]> {
     { skipGlobalError: true }
   )
   return response.data.databases ?? []
+}
+
+export async function listMasterDataSyncStatus(
+  params: ListMasterDataSyncStatusParams = {}
+): Promise<{ statuses: PoolMasterDataSyncStatus[]; count: number }> {
+  const response = await apiClient.get<{
+    statuses: PoolMasterDataSyncStatus[]
+    count: number
+  }>('/api/v2/pools/master-data/sync-status/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    statuses: response.data.statuses ?? [],
+    count: response.data.count ?? 0,
+  }
+}
+
+export async function listMasterDataSyncConflicts(
+  params: ListMasterDataSyncConflictsParams = {}
+): Promise<{ conflicts: PoolMasterDataSyncConflict[]; count: number }> {
+  const response = await apiClient.get<{
+    conflicts: PoolMasterDataSyncConflict[]
+    count: number
+  }>('/api/v2/pools/master-data/sync-conflicts/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    conflicts: response.data.conflicts ?? [],
+    count: response.data.count ?? 0,
+  }
+}
+
+export async function retryMasterDataSyncConflict(
+  conflictId: string,
+  payload: RetryMasterDataSyncConflictPayload = {}
+): Promise<{ conflict: PoolMasterDataSyncConflict }> {
+  const response = await apiClient.post<{ conflict: PoolMasterDataSyncConflict }>(
+    `/api/v2/pools/master-data/sync-conflicts/${conflictId}/retry/`,
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function reconcileMasterDataSyncConflict(
+  conflictId: string,
+  payload: ReconcileMasterDataSyncConflictPayload
+): Promise<{ conflict: PoolMasterDataSyncConflict }> {
+  const response = await apiClient.post<{ conflict: PoolMasterDataSyncConflict }>(
+    `/api/v2/pools/master-data/sync-conflicts/${conflictId}/reconcile/`,
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function resolveMasterDataSyncConflict(
+  conflictId: string,
+  payload: ResolveMasterDataSyncConflictPayload
+): Promise<{ conflict: PoolMasterDataSyncConflict }> {
+  const response = await apiClient.post<{ conflict: PoolMasterDataSyncConflict }>(
+    `/api/v2/pools/master-data/sync-conflicts/${conflictId}/resolve/`,
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
 }

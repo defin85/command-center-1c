@@ -17,6 +17,11 @@ const mockUpsertMasterDataTaxProfile = vi.fn()
 const mockListMasterDataBindings = vi.fn()
 const mockUpsertMasterDataBinding = vi.fn()
 const mockListPoolTargetDatabases = vi.fn()
+const mockListMasterDataSyncStatus = vi.fn()
+const mockListMasterDataSyncConflicts = vi.fn()
+const mockRetryMasterDataSyncConflict = vi.fn()
+const mockReconcileMasterDataSyncConflict = vi.fn()
+const mockResolveMasterDataSyncConflict = vi.fn()
 
 vi.mock('reactflow', () => ({
   default: ({ children }: { children?: ReactNode }) => <div data-testid="mock-reactflow">{children}</div>,
@@ -37,6 +42,11 @@ vi.mock('../../../api/intercompanyPools', () => ({
   listMasterDataBindings: (...args: unknown[]) => mockListMasterDataBindings(...args),
   upsertMasterDataBinding: (...args: unknown[]) => mockUpsertMasterDataBinding(...args),
   listPoolTargetDatabases: (...args: unknown[]) => mockListPoolTargetDatabases(...args),
+  listMasterDataSyncStatus: (...args: unknown[]) => mockListMasterDataSyncStatus(...args),
+  listMasterDataSyncConflicts: (...args: unknown[]) => mockListMasterDataSyncConflicts(...args),
+  retryMasterDataSyncConflict: (...args: unknown[]) => mockRetryMasterDataSyncConflict(...args),
+  reconcileMasterDataSyncConflict: (...args: unknown[]) => mockReconcileMasterDataSyncConflict(...args),
+  resolveMasterDataSyncConflict: (...args: unknown[]) => mockResolveMasterDataSyncConflict(...args),
 }))
 
 function renderPage() {
@@ -60,6 +70,11 @@ describe('PoolMasterDataPage', () => {
     mockListMasterDataBindings.mockReset()
     mockUpsertMasterDataBinding.mockReset()
     mockListPoolTargetDatabases.mockReset()
+    mockListMasterDataSyncStatus.mockReset()
+    mockListMasterDataSyncConflicts.mockReset()
+    mockRetryMasterDataSyncConflict.mockReset()
+    mockReconcileMasterDataSyncConflict.mockReset()
+    mockResolveMasterDataSyncConflict.mockReset()
 
     mockListMasterDataParties.mockResolvedValue({
       parties: [
@@ -99,6 +114,17 @@ describe('PoolMasterDataPage', () => {
     mockListPoolTargetDatabases.mockResolvedValue([
       { id: 'db-1', name: 'Main DB' },
     ])
+    mockListMasterDataSyncStatus.mockResolvedValue({
+      statuses: [],
+      count: 0,
+    })
+    mockListMasterDataSyncConflicts.mockResolvedValue({
+      conflicts: [],
+      count: 0,
+    })
+    mockRetryMasterDataSyncConflict.mockResolvedValue({ conflict: {} })
+    mockReconcileMasterDataSyncConflict.mockResolvedValue({ conflict: {} })
+    mockResolveMasterDataSyncConflict.mockResolvedValue({ conflict: {} })
   })
 
   it('renders workspace tabs and loads default Party tab list', async () => {
@@ -116,6 +142,10 @@ describe('PoolMasterDataPage', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Item' }))
     await waitFor(() => expect(mockListMasterDataItems).toHaveBeenCalled())
+
+    await user.click(screen.getByRole('tab', { name: 'Sync' }))
+    await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
+    await waitFor(() => expect(mockListMasterDataSyncConflicts).toHaveBeenCalled())
   })
 
   it('blocks Party save when no role is selected', async () => {
@@ -134,4 +164,82 @@ describe('PoolMasterDataPage', () => {
     ).toBeInTheDocument()
     expect(mockUpsertMasterDataParty).not.toHaveBeenCalled()
   }, 15000)
+
+  it('renders Sync tab and runs conflict actions', async () => {
+    const user = userEvent.setup()
+    mockListMasterDataSyncStatus.mockResolvedValue({
+      statuses: [
+        {
+          tenant_id: 'tenant-1',
+          database_id: 'db-1',
+          entity_type: 'item',
+          checkpoint_token: 'cp-001',
+          pending_checkpoint_token: 'cp-002',
+          checkpoint_status: 'active',
+          pending_count: 1,
+          retry_count: 0,
+          conflict_pending_count: 1,
+          conflict_retrying_count: 0,
+          lag_seconds: 120,
+          last_success_at: '2026-01-01T00:00:00Z',
+          last_applied_at: '2026-01-01T00:00:00Z',
+          last_error_code: '',
+        },
+      ],
+      count: 1,
+    })
+    mockListMasterDataSyncConflicts.mockResolvedValue({
+      conflicts: [
+        {
+          id: 'conflict-1',
+          tenant_id: 'tenant-1',
+          database_id: 'db-1',
+          entity_type: 'item',
+          status: 'pending',
+          conflict_code: 'POLICY_VIOLATION',
+          canonical_id: 'item-001',
+          origin_system: 'ib',
+          origin_event_id: 'evt-001',
+          diagnostics: {},
+          metadata: {},
+          resolved_at: null,
+          resolved_by_id: null,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      count: 1,
+    })
+
+    renderPage()
+    await user.click(await screen.findByRole('tab', { name: 'Sync' }))
+
+    expect(await screen.findByText('Sync Status')).toBeInTheDocument()
+    expect(await screen.findByText('Conflict Queue')).toBeInTheDocument()
+    expect(await screen.findByText('POLICY_VIOLATION')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() =>
+      expect(mockRetryMasterDataSyncConflict).toHaveBeenCalledWith('conflict-1', {
+        note: 'Manual retry from Pool Master Data Sync UI',
+      })
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Reconcile' }))
+    await waitFor(() =>
+      expect(mockReconcileMasterDataSyncConflict).toHaveBeenCalledWith('conflict-1', {
+        note: 'Manual reconcile from Pool Master Data Sync UI',
+        reconcile_payload: { strategy: 'manual_reconcile' },
+      })
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Resolve' }))
+    await waitFor(() =>
+      expect(mockResolveMasterDataSyncConflict).toHaveBeenCalledWith('conflict-1', {
+        resolution_code: 'MANUAL_RECONCILE',
+        note: 'Manual resolve from Pool Master Data Sync UI',
+        metadata: { source: 'ui' },
+      })
+    )
+  }, 20000)
 })

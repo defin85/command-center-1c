@@ -283,6 +283,320 @@ class PoolMasterBindingSyncStatus(models.TextChoices):
     CONFLICT = "conflict", "Conflict"
 
 
+class PoolMasterDataSyncPolicy(models.TextChoices):
+    CC_MASTER = "cc_master", "CC Master"
+    IB_MASTER = "ib_master", "IB Master"
+    BIDIRECTIONAL = "bidirectional", "Bidirectional"
+
+
+class PoolMasterDataSyncScope(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_sync_scopes",
+    )
+    entity_type = models.CharField(max_length=32, choices=PoolMasterDataEntityType.choices, db_index=True)
+    database = models.ForeignKey(
+        "databases.Database",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="pool_master_data_sync_scopes",
+    )
+    policy = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataSyncPolicy.choices,
+        default=PoolMasterDataSyncPolicy.CC_MASTER,
+        db_index=True,
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_sync_scopes"
+        indexes = [
+            models.Index(fields=["tenant", "entity_type", "database"]),
+            models.Index(fields=["tenant", "policy"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "entity_type", "database"],
+                condition=Q(database__isnull=False),
+                name="uniq_pool_md_sync_scope_db",
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "entity_type"],
+                condition=Q(database__isnull=True),
+                name="uniq_pool_md_sync_scope_default",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.database_id and self.tenant_id and self.database.tenant_id != self.tenant_id:
+            raise ValidationError({"database": "Sync scope database must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataSyncDirection(models.TextChoices):
+    OUTBOUND = "outbound", "Outbound"
+    INBOUND = "inbound", "Inbound"
+    BIDIRECTIONAL = "bidirectional", "Bidirectional"
+
+
+class PoolMasterDataSyncJobStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    RUNNING = "running", "Running"
+    SUCCEEDED = "succeeded", "Succeeded"
+    FAILED = "failed", "Failed"
+    CANCELED = "canceled", "Canceled"
+
+
+class PoolMasterDataSyncCheckpointStatus(models.TextChoices):
+    ACTIVE = "active", "Active"
+    STALE = "stale", "Stale"
+    ERROR = "error", "Error"
+
+
+class PoolMasterDataSyncOutboxStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    PROCESSING = "processing", "Processing"
+    SENT = "sent", "Sent"
+    FAILED = "failed", "Failed"
+
+
+class PoolMasterDataSyncConflictStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    RETRYING = "retrying", "Retrying"
+    RESOLVED = "resolved", "Resolved"
+
+
+class PoolMasterDataSyncJob(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_sync_jobs",
+    )
+    database = models.ForeignKey(
+        "databases.Database",
+        on_delete=models.PROTECT,
+        related_name="pool_master_data_sync_jobs",
+    )
+    entity_type = models.CharField(max_length=32, choices=PoolMasterDataEntityType.choices, db_index=True)
+    policy = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataSyncPolicy.choices,
+        default=PoolMasterDataSyncPolicy.CC_MASTER,
+    )
+    direction = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataSyncDirection.choices,
+        default=PoolMasterDataSyncDirection.BIDIRECTIONAL,
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataSyncJobStatus.choices,
+        default=PoolMasterDataSyncJobStatus.PENDING,
+        db_index=True,
+    )
+    workflow_execution_id = models.UUIDField(null=True, blank=True, db_index=True)
+    operation_id = models.UUIDField(null=True, blank=True, db_index=True)
+    attempt_count = models.PositiveIntegerField(default=0)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    last_error_code = models.CharField(max_length=64, blank=True, default="")
+    last_error = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_sync_jobs"
+        indexes = [
+            models.Index(fields=["tenant", "status", "-created_at"]),
+            models.Index(fields=["tenant", "database", "entity_type", "status"]),
+        ]
+
+    def clean(self) -> None:
+        if self.database_id and self.tenant_id and self.database.tenant_id != self.tenant_id:
+            raise ValidationError({"database": "Sync job database must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataSyncCheckpoint(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_sync_checkpoints",
+    )
+    database = models.ForeignKey(
+        "databases.Database",
+        on_delete=models.PROTECT,
+        related_name="pool_master_data_sync_checkpoints",
+    )
+    entity_type = models.CharField(max_length=32, choices=PoolMasterDataEntityType.choices, db_index=True)
+    status = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataSyncCheckpointStatus.choices,
+        default=PoolMasterDataSyncCheckpointStatus.ACTIVE,
+        db_index=True,
+    )
+    checkpoint_token = models.CharField(max_length=255, blank=True, default="")
+    last_origin_event_id = models.CharField(max_length=128, blank=True, default="")
+    last_applied_at = models.DateTimeField(null=True, blank=True)
+    last_error_code = models.CharField(max_length=64, blank=True, default="")
+    last_error = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_sync_checkpoints"
+        indexes = [
+            models.Index(fields=["tenant", "status", "-updated_at"]),
+            models.Index(fields=["tenant", "database", "entity_type"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "database", "entity_type"],
+                name="uniq_pool_md_sync_checkpoint_scope",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.database_id and self.tenant_id and self.database.tenant_id != self.tenant_id:
+            raise ValidationError({"database": "Sync checkpoint database must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataSyncOutbox(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_sync_outbox_rows",
+    )
+    database = models.ForeignKey(
+        "databases.Database",
+        on_delete=models.PROTECT,
+        related_name="pool_master_data_sync_outbox_rows",
+    )
+    entity_type = models.CharField(max_length=32, choices=PoolMasterDataEntityType.choices, db_index=True)
+    status = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataSyncOutboxStatus.choices,
+        default=PoolMasterDataSyncOutboxStatus.PENDING,
+        db_index=True,
+    )
+    dedupe_key = models.CharField(max_length=128)
+    origin_system = models.CharField(max_length=32, blank=True, default="cc")
+    origin_event_id = models.CharField(max_length=128, blank=True, default="")
+    payload = models.JSONField(default=dict, blank=True)
+    available_at = models.DateTimeField(default=timezone.now, db_index=True)
+    dispatched_at = models.DateTimeField(null=True, blank=True)
+    attempt_count = models.PositiveIntegerField(default=0)
+    last_error_code = models.CharField(max_length=64, blank=True, default="")
+    last_error = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_sync_outbox"
+        indexes = [
+            models.Index(fields=["tenant", "status", "available_at"]),
+            models.Index(fields=["tenant", "database", "entity_type", "status"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(dedupe_key=""),
+                name="chk_pool_md_sync_outbox_dedupe_nonempty",
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "database", "entity_type", "dedupe_key"],
+                name="uniq_pool_md_sync_outbox_scope_dedupe",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.database_id and self.tenant_id and self.database.tenant_id != self.tenant_id:
+            raise ValidationError({"database": "Sync outbox database must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataSyncConflict(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_sync_conflicts",
+    )
+    database = models.ForeignKey(
+        "databases.Database",
+        on_delete=models.PROTECT,
+        related_name="pool_master_data_sync_conflicts",
+    )
+    entity_type = models.CharField(max_length=32, choices=PoolMasterDataEntityType.choices, db_index=True)
+    status = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataSyncConflictStatus.choices,
+        default=PoolMasterDataSyncConflictStatus.PENDING,
+        db_index=True,
+    )
+    conflict_code = models.CharField(max_length=64)
+    canonical_id = models.CharField(max_length=128, blank=True, default="")
+    origin_system = models.CharField(max_length=32, blank=True, default="")
+    origin_event_id = models.CharField(max_length=128, blank=True, default="")
+    diagnostics = models.JSONField(default=dict, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolved_pool_master_data_sync_conflicts",
+    )
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_sync_conflicts"
+        indexes = [
+            models.Index(fields=["tenant", "status", "-created_at"]),
+            models.Index(fields=["tenant", "database", "entity_type", "status"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(conflict_code=""),
+                name="chk_pool_md_sync_conflict_code_nonempty",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.database_id and self.tenant_id and self.database.tenant_id != self.tenant_id:
+            raise ValidationError({"database": "Sync conflict database must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
 class PoolMasterDataBinding(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(

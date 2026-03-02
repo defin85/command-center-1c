@@ -8,6 +8,9 @@ from rest_framework.test import APIClient
 
 from apps.databases.models import Database
 from apps.intercompany_pools.models import (
+    PoolMasterDataEntityType,
+    PoolMasterDataSyncOutbox,
+    PoolMasterDataSyncOutboxStatus,
     PoolMasterParty,
 )
 from apps.tenancy.models import Tenant, TenantMember
@@ -123,6 +126,39 @@ def test_master_data_items_upsert_list_get_roundtrip(authenticated_client: APICl
     get_response = authenticated_client.get(f"/api/v2/pools/master-data/items/{item_id}/")
     assert get_response.status_code == 200
     assert get_response.json()["item"]["canonical_id"] == "item-001"
+
+
+@pytest.mark.django_db
+def test_master_data_party_upsert_creates_outbox_intents_for_tenant_databases(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database_a = _create_database(tenant=default_tenant, name=f"mdm-sync-db-a-{uuid4().hex[:8]}")
+    database_b = _create_database(tenant=default_tenant, name=f"mdm-sync-db-b-{uuid4().hex[:8]}")
+
+    response = authenticated_client.post(
+        "/api/v2/pools/master-data/parties/upsert/",
+        {
+            "canonical_id": "party-sync-001",
+            "name": "Party Sync 001",
+            "is_counterparty": True,
+            "is_our_organization": False,
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+
+    rows = list(
+        PoolMasterDataSyncOutbox.objects.filter(
+            tenant=default_tenant,
+            entity_type=PoolMasterDataEntityType.PARTY,
+        )
+    )
+    assert len(rows) == 2
+    database_ids = {str(row.database_id) for row in rows}
+    assert database_ids == {str(database_a.id), str(database_b.id)}
+    assert all(row.status == PoolMasterDataSyncOutboxStatus.PENDING for row in rows)
+    assert all(row.payload["mutation_kind"] == "party_upsert" for row in rows)
 
 
 @pytest.mark.django_db

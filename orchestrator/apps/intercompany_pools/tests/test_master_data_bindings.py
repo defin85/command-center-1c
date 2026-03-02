@@ -17,6 +17,8 @@ from apps.intercompany_pools.models import (
     PoolMasterBindingCatalogKind,
     PoolMasterDataBinding,
     PoolMasterDataEntityType,
+    PoolMasterDataSyncOutbox,
+    PoolMasterDataSyncOutboxStatus,
 )
 from apps.tenancy.models import Tenant
 
@@ -93,6 +95,16 @@ def test_upsert_pool_master_data_binding_is_idempotent_for_same_scope() -> None:
     assert second.created is False
     assert second.changed is False
     assert first.binding.id == second.binding.id
+    outbox_rows = list(
+        PoolMasterDataSyncOutbox.objects.filter(
+            tenant=tenant,
+            database=database,
+            entity_type=PoolMasterDataEntityType.PARTY,
+        )
+    )
+    assert len(outbox_rows) == 1
+    assert outbox_rows[0].status == PoolMasterDataSyncOutboxStatus.PENDING
+    assert outbox_rows[0].payload["mutation_kind"] == "binding_upsert"
 
 
 @pytest.mark.django_db
@@ -122,6 +134,50 @@ def test_upsert_pool_master_data_binding_updates_existing_scope() -> None:
     assert second.changed is True
     assert second.binding.ib_ref_key == "item-ref-002"
     assert second.binding.fingerprint == "v2"
+
+
+@pytest.mark.django_db
+def test_upsert_binding_skips_outbox_for_ib_origin_event() -> None:
+    tenant = Tenant.objects.create(slug="mdm-bind-anti-loop", name="MDM Binding Anti Loop")
+    database = _create_database(tenant=tenant, suffix="anti-loop")
+
+    result = upsert_pool_master_data_binding(
+        tenant=tenant,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        canonical_id="item-anti-loop",
+        database=database,
+        ib_ref_key="item-ref-anti-loop",
+        origin_system="ib",
+        origin_event_id="evt-ib-anti-loop-001",
+    )
+
+    assert result.created is True
+    assert result.changed is True
+    assert (
+        PoolMasterDataSyncOutbox.objects.filter(
+            tenant=tenant,
+            database=database,
+            entity_type=PoolMasterDataEntityType.ITEM,
+        ).count()
+        == 0
+    )
+
+
+@pytest.mark.django_db
+def test_upsert_binding_requires_origin_event_for_non_cc_origin() -> None:
+    tenant = Tenant.objects.create(slug="mdm-bind-origin-required", name="MDM Binding Origin Required")
+    database = _create_database(tenant=tenant, suffix="origin-required")
+
+    with pytest.raises(ValueError, match="origin_event_id is required for non-CC origin"):
+        upsert_pool_master_data_binding(
+            tenant=tenant,
+            entity_type=PoolMasterDataEntityType.ITEM,
+            canonical_id="item-origin-required",
+            database=database,
+            ib_ref_key="item-ref-origin-required",
+            origin_system="ib",
+            origin_event_id="",
+        )
 
 
 @pytest.mark.django_db
