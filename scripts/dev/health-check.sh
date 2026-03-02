@@ -229,7 +229,7 @@ check_port 8200 "Orchestrator"
 check_port "${WORKER_PORT:-9191}" "Worker (ops)"
 check_port "${WORKER_WORKFLOWS_METRICS_PORT:-9092}" "Worker (flows)"
 check_port 8188 "RAS Adapter"
-check_port "${RAS_PORT:-1539}" "RAS (1C Remote Admin)"
+check_port "${RAS_PORT:-1645}" "RAS (1C Remote Admin)"
 check_port 5432 "PostgreSQL"
 check_port 6379 "Redis"
 check_port 9000 "MinIO"
@@ -359,7 +359,7 @@ if command -v curl &>/dev/null; then
         echo -e "  RAS probe: ${GREEN}✓ online${NC}"
     else
         echo -e "  RAS probe: ${YELLOW}⚠️  offline${NC}"
-        echo -e "    check: http://localhost:9115/probe?module=tcp_connect&target=${RAS_SERVER_ADDR:-${RAS_SERVER:-172.24.80.1:1545}}"
+        echo -e "    check: http://localhost:9115/probe?module=tcp_connect&target=${RAS_SERVER_ADDR:-${RAS_SERVER:-192.168.32.143:1645}}"
     fi
 else
     echo -e "  Frontend probe: ${YELLOW}⚠️  curl not found${NC}"

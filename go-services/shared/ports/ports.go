@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
 // =============================================================================
 // Source: config/services.json
-// Generated: 2026-02-17 12:35:54
+// Generated: 2026-03-02 20:58:50
 // Mode: local
 // Generator: scripts/config/generate.py
 // =============================================================================
@@ -30,7 +30,7 @@ const (
 	Prometheus = 9090
 	Grafana = 5000
 	Jaeger = 16686
-	Ras = 1545
+	Ras = 1645
 )
 
 // Default service URLs (for config fallbacks)

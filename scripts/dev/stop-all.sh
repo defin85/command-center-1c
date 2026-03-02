@@ -104,7 +104,7 @@ kill_process_on_port 8188 "RAS Adapter" || true
 
 # RAS - пропускаем если работает как Windows служба
 if [ "${RAS_SKIP_START:-false}" != "true" ]; then
-    RAS_CHECK_PORT="${RAS_PORT:-1539}"
+    RAS_CHECK_PORT="${RAS_PORT:-1645}"
     if check_port_listening "$RAS_CHECK_PORT"; then
         echo -e "${YELLOW}   Порт $RAS_CHECK_PORT (RAS) все еще занят, принудительная остановка...${NC}"
         if is_wsl; then

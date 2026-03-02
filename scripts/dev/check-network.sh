@@ -213,7 +213,7 @@ check_ras_connectivity() {
 
     # Парсим RAS_SERVER или RAS_SERVER_ADDR (формат: host:port)
     local ras_host=""
-    local ras_port="${RAS_PORT:-1545}"
+    local ras_port="${RAS_PORT:-1645}"
 
     if [[ -n "${RAS_SERVER:-}" ]]; then
         ras_host=$(echo "$RAS_SERVER" | cut -d':' -f1)
@@ -377,8 +377,25 @@ check_infrastructure() {
 print_recommendations() {
     print_section "8. Рекомендации"
 
+    # Загружаем .env.local если есть
+    local env_file="${PROJECT_ROOT:-.}/.env.local"
+    if [[ -f "$env_file" ]]; then
+        # shellcheck disable=SC1090
+        source <(grep -E '^(RAS_SERVER|RAS_SERVER_ADDR|RAS_PORT)=' "$env_file" 2>/dev/null) || true
+    fi
+
     local windows_host=$(grep nameserver /etc/resolv.conf 2>/dev/null | head -1 | awk '{print $2}')
     local wslconfig="/mnt/c/Users/$USER/.wslconfig"
+    local default_ras_port="${RAS_PORT:-1645}"
+    local configured_ras_host=""
+
+    if [[ -n "${RAS_SERVER:-}" ]]; then
+        configured_ras_host=$(echo "$RAS_SERVER" | cut -d':' -f1)
+        default_ras_port=$(echo "$RAS_SERVER" | cut -d':' -f2)
+    elif [[ -n "${RAS_SERVER_ADDR:-}" ]]; then
+        configured_ras_host=$(echo "$RAS_SERVER_ADDR" | cut -d':' -f1)
+        default_ras_port=$(echo "$RAS_SERVER_ADDR" | cut -d':' -f2)
+    fi
 
     # Проверяем режим сети
     local is_mirrored=false
@@ -389,25 +406,34 @@ print_recommendations() {
     # Проверяем доступность RAS
     local ras_via_localhost=false
     local ras_via_windows=false
+    local ras_via_config=false
 
-    if check_port "localhost" "1545" 2; then
+    if check_port "localhost" "$default_ras_port" 2; then
         ras_via_localhost=true
     fi
 
-    if [[ -n "$windows_host" ]] && check_port "$windows_host" "1545" 2; then
+    if [[ -n "$windows_host" ]] && check_port "$windows_host" "$default_ras_port" 2; then
         ras_via_windows=true
+    fi
+
+    if [[ -n "$configured_ras_host" ]] && check_port "$configured_ras_host" "$default_ras_port" 2; then
+        ras_via_config=true
     fi
 
     echo ""
 
-    if $ras_via_localhost; then
+    if $ras_via_config; then
+        echo -e "  ${GREEN}RAS доступен по адресу из .env.local${NC}"
+        echo -e "  Рекомендуемая конфигурация .env.local:"
+        echo -e "    ${BOLD}RAS_SERVER=$configured_ras_host:${default_ras_port}${NC}"
+    elif $ras_via_localhost; then
         echo -e "  ${GREEN}RAS доступен через localhost${NC}"
         echo -e "  Рекомендуемая конфигурация .env.local:"
-        echo -e "    ${BOLD}RAS_SERVER=localhost:1545${NC}"
+        echo -e "    ${BOLD}RAS_SERVER=localhost:${default_ras_port}${NC}"
     elif $ras_via_windows; then
         echo -e "  ${YELLOW}RAS доступен только через Windows IP${NC}"
         echo -e "  Рекомендуемая конфигурация .env.local:"
-        echo -e "    ${BOLD}RAS_SERVER=$windows_host:1545${NC}"
+        echo -e "    ${BOLD}RAS_SERVER=$windows_host:${default_ras_port}${NC}"
         echo ""
         if ! $is_mirrored; then
             echo -e "  ${YELLOW}Рекомендация:${NC} включите mirrored mode в .wslconfig:"
@@ -418,10 +444,11 @@ print_recommendations() {
         echo -e "  ${RED}RAS сервер недоступен!${NC}"
         echo ""
         echo -e "  Проверьте:"
-        echo -e "  1. Запущен ли RAS сервер на Windows (порт 1545)"
-        echo -e "  2. Windows Firewall разрешает входящие на порт 1545:"
-        echo -e "     ${CYAN}New-NetFirewallRule -DisplayName \"1C RAS\" -Direction Inbound -Protocol TCP -LocalPort 1545 -Action Allow${NC}"
-        echo -e "  3. RAS слушает на 0.0.0.0, а не только 127.0.0.1"
+        echo -e "  1. Запущен ли RAS сервер в WSL (порт ${default_ras_port})"
+        echo -e "  2. RAS слушает на localhost/0.0.0.0:"
+        echo -e "     ${CYAN}ss -ltnp | grep :${default_ras_port}${NC}"
+        echo -e "  3. Если RAS работает на Windows-host, разрешите входящие на порт ${default_ras_port}:"
+        echo -e "     ${CYAN}New-NetFirewallRule -DisplayName \"1C RAS\" -Direction Inbound -Protocol TCP -LocalPort ${default_ras_port} -Action Allow${NC}"
 
         if ! $is_mirrored; then
             echo ""

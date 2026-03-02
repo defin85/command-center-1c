@@ -283,12 +283,12 @@ class SystemHealthView(APIView):
             )
 
     def _check_ras_server(self, type_map: dict, url_map: dict) -> dict:
-        ras_server = str(getattr(settings, "RAS_DEFAULT_SERVER", "localhost:1545"))
+        ras_server = str(getattr(settings, "RAS_DEFAULT_SERVER", "192.168.32.143:1645"))
         host, _, port_str = ras_server.partition(":")
         try:
-            port = int(port_str or "1545")
+            port = int(port_str or "1645")
         except ValueError:
-            port = 1545
+            port = 1645
         started = time.monotonic()
         try:
             with socket.create_connection(
@@ -675,7 +675,7 @@ class SystemHealthView(APIView):
 class SystemConfigSerializer(serializers.Serializer):
     """System configuration for frontend defaults."""
     ras_default_server = serializers.CharField(
-        help_text="Default RAS server address for new clusters (e.g., localhost:1545)"
+        help_text="Default RAS server address for new clusters (e.g., 192.168.32.143:1645)"
     )
 
 
@@ -699,10 +699,9 @@ def system_config(request):
 
     Response:
         {
-            "ras_default_server": "localhost:1539",
-            "ras_default_server": "localhost:1539"
+            "ras_default_server": "192.168.32.143:1645"
         }
     """
     return Response({
-        'ras_default_server': getattr(settings, 'RAS_DEFAULT_SERVER', 'localhost:1545'),
+        'ras_default_server': getattr(settings, 'RAS_DEFAULT_SERVER', '192.168.32.143:1645'),
     })

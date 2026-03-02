@@ -19047,7 +19047,7 @@ components:
       properties:
         ras_default_server:
           type: string
-          description: Default RAS server address for new clusters (e.g., localhost:1545)
+          description: Default RAS server address for new clusters (e.g., 192.168.32.143:1645)
       required:
         - ras_default_server
     ServiceHealth:

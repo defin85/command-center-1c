@@ -477,7 +477,7 @@ _start_external_service() {
                 return 1
             fi
 
-            local port="${RAS_PORT:-1545}"
+            local port="${RAS_PORT:-1645}"
             nohup "$ras_exe" cluster --port="$port" > "$log_file" 2>&1 &
             LAST_SERVICE_PID=$!
             ;;

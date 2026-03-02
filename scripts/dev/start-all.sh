@@ -643,23 +643,23 @@ echo ""
 
 # Шаг 8: RAS (1C Remote Administration Server)
 ##############################################################################
-echo -e "${BLUE}[8/9] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1545})...${NC}"
+echo -e "${BLUE}[8/9] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1645})...${NC}"
 
 # Проверить флаг пропуска запуска RAS (если RAS работает как Windows служба)
 if [ "${RAS_SKIP_START:-false}" = "true" ]; then
     echo -e "${GREEN}✓ RAS запущен как Windows служба (RAS_SKIP_START=true)${NC}"
-    echo -e "${CYAN}   Используется внешний RAS на порту ${RAS_PORT:-1545}${NC}"
+    echo -e "${CYAN}   Используется внешний RAS на порту ${RAS_PORT:-1645}${NC}"
     echo ""
 
 # Проверить что RAS еще не запущен
-elif check_port_listening "${RAS_PORT:-1545}"; then
-    echo -e "${YELLOW}⚠️  Порт ${RAS_PORT:-1545} уже занят (RAS уже запущен?)${NC}"
+elif check_port_listening "${RAS_PORT:-1645}"; then
+    echo -e "${YELLOW}⚠️  Порт ${RAS_PORT:-1645} уже занят (RAS уже запущен?)${NC}"
     echo -e "${GREEN}✓ Используется существующий процесс RAS${NC}"
 else
     # Определяем порт ragent (1C Server Agent)
-    RAGENT_PORT="${RAGENT_PORT:-1540}"
-    RAGENT_HOST="${RAGENT_HOST:-localhost}"
-    # Проверить что ragent доступен (порт 1540)
+    RAGENT_PORT="${RAGENT_PORT:-1640}"
+    RAGENT_HOST="${RAGENT_HOST:-192.168.32.143}"
+    # Проверить что ragent доступен (порт по умолчанию 1640)
     if ! check_port_listening "$RAGENT_PORT"; then
         echo -e "${YELLOW}⚠️  1C Server Agent (ragent) не найден на порту $RAGENT_PORT${NC}"
         echo -e "${YELLOW}   Убедитесь, что служба 'Агент сервера 1С:Предприятия' запущена${NC}"
@@ -696,15 +696,15 @@ else
             echo -e "${YELLOW}⚠️  ras.exe не найден: $RAS_EXE${NC}"
             echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
         else
-            # RAS в режиме cluster подключается к ragent и предоставляет API на порту 1545
-            echo -e "${CYAN}   Запуск: ras.exe cluster --port=${RAS_PORT:-1545} ${RAGENT_HOST}:${RAGENT_PORT}${NC}"
+            # RAS в режиме cluster подключается к ragent и предоставляет API на порту 1645
+            echo -e "${CYAN}   Запуск: ras.exe cluster --port=${RAS_PORT:-1645} ${RAGENT_HOST}:${RAGENT_PORT}${NC}"
 
             if is_wsl; then
                 # WSL: запуск через PowerShell (создает Windows процесс)
-                powershell.exe -Command "Start-Process -FilePath '$RAS_WIN_PATH' -ArgumentList 'cluster','--port=${RAS_PORT:-1545}','${RAGENT_HOST}:${RAGENT_PORT}' -WindowStyle Hidden" > "$LOGS_DIR/ras.log" 2>&1
+                powershell.exe -Command "Start-Process -FilePath '$RAS_WIN_PATH' -ArgumentList 'cluster','--port=${RAS_PORT:-1645}','${RAGENT_HOST}:${RAGENT_PORT}' -WindowStyle Hidden" > "$LOGS_DIR/ras.log" 2>&1
             else
                 # Native Windows: запуск напрямую в фоне
-                nohup "$RAS_EXE" cluster --port=${RAS_PORT:-1545} ${RAGENT_HOST}:${RAGENT_PORT} > "$LOGS_DIR/ras.log" 2>&1 &
+                nohup "$RAS_EXE" cluster --port=${RAS_PORT:-1645} ${RAGENT_HOST}:${RAGENT_PORT} > "$LOGS_DIR/ras.log" 2>&1 &
                 RAS_PID=$!
                 echo $RAS_PID > "$PIDS_DIR/ras.pid"
             fi
@@ -712,8 +712,8 @@ else
             # Ждем запуска RAS
             sleep 3
 
-            if check_port_listening "${RAS_PORT:-1545}"; then
-                echo -e "${GREEN}✓ RAS запущен (port: ${RAS_PORT:-1545}, ragent: ${RAGENT_HOST}:${RAGENT_PORT})${NC}"
+            if check_port_listening "${RAS_PORT:-1645}"; then
+                echo -e "${GREEN}✓ RAS запущен (port: ${RAS_PORT:-1645}, ragent: ${RAGENT_HOST}:${RAGENT_PORT})${NC}"
             else
                 echo -e "${RED}✗ Не удалось запустить RAS${NC}"
                 echo -e "${YELLOW}   Проверьте логи: $LOGS_DIR/ras.log${NC}"

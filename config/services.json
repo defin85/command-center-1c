@@ -125,10 +125,10 @@
       "description": "Jaeger - Distributed tracing UI"
     },
     "ras": {
-      "port": 1545,
+      "port": 1645,
       "host": {
         "docker": "ras",
-        "local": "localhost"
+        "local": "192.168.32.143"
       },
       "health_path": null,
       "env_var": "RAS_PORT",

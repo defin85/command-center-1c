@@ -23,13 +23,13 @@ import type { ClusterFilters } from './types'
 // Initialize API client
 const api = getV2()
 
-export const DEFAULT_RAS_SERVER = 'localhost:1545'
-export const DEFAULT_RAS_HOST = 'localhost'
-export const DEFAULT_RAS_PORT = 1545
-export const DEFAULT_RMNGR_PORT = 1541
-export const DEFAULT_RAGENT_PORT = 1540
-export const DEFAULT_RPHOST_PORT_FROM = 1560
-export const DEFAULT_RPHOST_PORT_TO = 1591
+export const DEFAULT_RAS_SERVER = '192.168.32.143:1645'
+export const DEFAULT_RAS_HOST = '192.168.32.143'
+export const DEFAULT_RAS_PORT = 1645
+export const DEFAULT_RMNGR_PORT = 1641
+export const DEFAULT_RAGENT_PORT = 1640
+export const DEFAULT_RPHOST_PORT_FROM = 1660
+export const DEFAULT_RPHOST_PORT_TO = 1691
 export const DEFAULT_CLUSTER_SERVICE_URL = 'http://localhost:8188'
 
 export const parseHostPort = (value?: string, fallbackHost = DEFAULT_RAS_HOST, fallbackPort = DEFAULT_RAS_PORT) => {

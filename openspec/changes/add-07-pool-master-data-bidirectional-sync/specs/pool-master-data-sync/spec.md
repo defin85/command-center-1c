@@ -13,6 +13,22 @@
 - **THEN** система применяет двусторонний контракт синхронизации
 - **AND** конфликтные случаи обрабатываются через conflict queue без silent overwrite
 
+### Requirement: Sync orchestration MUST проходить через workflow+operations execution path
+Система ДОЛЖНА (SHALL) исполнять long-running sync через цепочку:
+- domain master-data sync;
+- workflow execution;
+- operations enqueue/outbox;
+- worker execution.
+
+Система НЕ ДОЛЖНА (SHALL NOT) выполнять долгие sync-операции синхронно в API request/response цикле.
+
+#### Scenario: Запуск sync возвращает execution identifiers, а выполнение идёт асинхронно
+- **GIVEN** оператор или системный процесс запускает sync job для tenant/database/entity scope
+- **WHEN** запрос принят API
+- **THEN** создаётся sync job и запускается workflow execution
+- **AND** sync job связывается с `workflow_execution_id` и `operation_id`
+- **AND** фактические OData/exchange-plan side effects выполняются worker-процессом
+
 ### Requirement: Outbound sync (`CC -> ИБ`) MUST использовать transactional outbox и идемпотентный dispatcher
 Система ДОЛЖНА (SHALL) формировать outbox intents в той же транзакции, где фиксируется mutating изменение canonical master-data в CC.
 
@@ -37,6 +53,17 @@ Dispatcher ДОЛЖЕН (SHALL):
 - **WHEN** часть изменений не проходит local apply и транзакция откатывается
 - **THEN** `NotifyChangesReceived` не отправляется для этого batch
 - **AND** изменения остаются доступными для повторного чтения
+
+### Requirement: Sync persistence MUST использовать общий Postgres с отдельными таблицами домена
+Система ДОЛЖНА (SHALL) хранить `sync_job/sync_scope/sync_checkpoint/sync_outbox/sync_conflict` и dedupe metadata в общем Postgres текущего сервиса.
+
+Система НЕ ДОЛЖНА (SHALL NOT) требовать отдельную физическую БД для sync-контуров в рамках этого change.
+
+#### Scenario: Sync state хранится в общей БД без cross-database транзакций
+- **GIVEN** mutating изменение canonical master-data и формирование outbound intent
+- **WHEN** транзакция фиксируется
+- **THEN** canonical изменение и sync outbox запись фиксируются атомарно в общей БД
+- **AND** не используется distributed transaction между разными БД
 
 ### Requirement: Sync delivery MUST быть at-least-once с дедупликацией
 Система ДОЛЖНА (SHALL) поддерживать at-least-once delivery semantics для inbound/outbound контуров.

@@ -446,7 +446,7 @@ WORKER_WORKFLOWS_URL = env(
 # Should match RAS_SERVER_ADDR in Go services and RAS_PORT in start scripts
 RAS_DEFAULT_SERVER = env(
     'RAS_SERVER_ADDR',
-    default='localhost:1545'
+    default='192.168.32.143:1645'
 )
 
 # Health Check Settings

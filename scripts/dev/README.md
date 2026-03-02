@@ -37,7 +37,7 @@
 - `orchestrator` - Django Orchestrator (port 8000)
 - `api-gateway` - Go API Gateway (port 8180)
 - `worker` - Go Worker
-- `ras` - 1C RAS Server (port 1545)
+- `ras` - 1C RAS Server (port 1645)
 - `frontend` - React Frontend (port 15173)
 
 **Мониторинг и Tracing (Docker, автозапуск):**
@@ -521,7 +521,7 @@ RAS_ADAPTER_URL=http://192.168.1.100:8088 ./scripts/dev/test-lock-unlock-workflo
 - Exit code 1 если хотя бы один тест failed
 
 **Важно:**
-- RAS сервер должен быть доступен на порту 1545
+- RAS сервер должен быть доступен на порту 1645
 - Redis должен быть запущен
 
 ---
