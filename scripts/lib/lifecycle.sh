@@ -459,9 +459,9 @@ _start_external_service() {
 
     case "$service_name" in
         ras)
-            # RAS может работать как Windows служба
+            # RAS может быть внешним (управляется вне этого скрипта)
             if [[ "${RAS_SKIP_START:-false}" == "true" ]]; then
-                log_info "RAS: пропущен (работает как Windows служба)"
+                log_info "RAS: пропущен (используется внешний RAS)"
                 LAST_SERVICE_PID=1  # Фиктивный PID
                 return 0
             fi

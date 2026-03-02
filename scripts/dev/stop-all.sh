@@ -33,11 +33,11 @@ echo ""
 stop_services
 
 ##############################################################################
-# RAS - особая обработка для Windows службы
+# RAS - особая обработка для внешнего сервера
 ##############################################################################
 
 if [ "${RAS_SKIP_START:-false}" == "true" ]; then
-    echo -e "${CYAN}RAS: пропущен (работает как Windows служба)${NC}"
+    echo -e "${CYAN}RAS: пропущен (используется внешний RAS)${NC}"
 else
     echo -e "${BLUE}Остановка RAS (1C Remote Administration Server)...${NC}"
     if is_wsl; then
@@ -102,7 +102,7 @@ FRONTEND_PORT="${FRONTEND_PORT:-15173}"
 kill_process_on_port "$FRONTEND_PORT" "Frontend" || true
 kill_process_on_port 8188 "RAS Adapter" || true
 
-# RAS - пропускаем если работает как Windows служба
+# RAS - пропускаем если используется внешний RAS
 if [ "${RAS_SKIP_START:-false}" != "true" ]; then
     RAS_CHECK_PORT="${RAS_PORT:-1645}"
     if check_port_listening "$RAS_CHECK_PORT"; then
@@ -114,7 +114,7 @@ if [ "${RAS_SKIP_START:-false}" != "true" ]; then
         fi
     fi
 else
-    echo -e "${CYAN}   RAS работает как Windows служба, пропускаем остановку${NC}"
+    echo -e "${CYAN}   Используется внешний RAS, пропускаем остановку${NC}"
 fi
 
 # Legacy порты (для очистки устаревших процессов)

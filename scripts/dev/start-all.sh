@@ -645,9 +645,9 @@ echo ""
 ##############################################################################
 echo -e "${BLUE}[8/9] Запуск RAS (1C Remote Administration Server, port ${RAS_PORT:-1645})...${NC}"
 
-# Проверить флаг пропуска запуска RAS (если RAS работает как Windows служба)
+# Проверить флаг пропуска запуска RAS (используется внешний RAS)
 if [ "${RAS_SKIP_START:-false}" = "true" ]; then
-    echo -e "${GREEN}✓ RAS запущен как Windows служба (RAS_SKIP_START=true)${NC}"
+    echo -e "${GREEN}✓ Запуск локального RAS пропущен (RAS_SKIP_START=true)${NC}"
     echo -e "${CYAN}   Используется внешний RAS на порту ${RAS_PORT:-1645}${NC}"
     echo ""
 
