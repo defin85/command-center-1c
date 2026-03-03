@@ -30,11 +30,14 @@ def default_tenant() -> Tenant:
 @pytest.fixture
 def user(default_tenant: Tenant) -> User:
     user = User.objects.create_user(username=f"pool-mdm-sync-user-{uuid4().hex[:8]}", password="pass")
-    TenantMember.objects.get_or_create(
+    membership, _ = TenantMember.objects.get_or_create(
         tenant=default_tenant,
         user=user,
         defaults={"role": TenantMember.ROLE_ADMIN},
     )
+    if membership.role != TenantMember.ROLE_ADMIN:
+        membership.role = TenantMember.ROLE_ADMIN
+        membership.save(update_fields=["role"])
     return user
 
 
@@ -223,3 +226,69 @@ def test_master_data_sync_conflict_action_returns_not_found(authenticated_client
     assert response.status_code == 404
     payload = response.json()
     assert payload["code"] == "SYNC_CONFLICT_NOT_FOUND"
+
+
+@pytest.mark.django_db
+def test_master_data_sync_conflict_actions_require_staff_or_tenant_admin(
+    default_tenant: Tenant,
+) -> None:
+    member_user = User.objects.create_user(username=f"pool-mdm-sync-member-{uuid4().hex[:8]}", password="pass")
+    TenantMember.objects.update_or_create(
+        tenant=default_tenant,
+        user=member_user,
+        defaults={"role": TenantMember.ROLE_MEMBER},
+    )
+    member_client = APIClient()
+    member_client.force_authenticate(user=member_user)
+    member_client.credentials(HTTP_X_CC1C_TENANT_ID=str(default_tenant.id))
+
+    database = _create_database(tenant=default_tenant, name=f"sync-conflict-rbac-db-{uuid4().hex[:8]}")
+    conflict = PoolMasterDataSyncConflict.objects.create(
+        tenant=default_tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        status=PoolMasterDataSyncConflictStatus.PENDING,
+        conflict_code="POLICY_VIOLATION",
+        canonical_id="item-rbac-001",
+    )
+
+    response = member_client.post(
+        f"/api/v2/pools/master-data/sync-conflicts/{conflict.id}/retry/",
+        {"note": "retry"},
+        format="json",
+    )
+    assert response.status_code == 403
+    payload = response.json()
+    assert payload["code"] == "FORBIDDEN"
+
+    conflict.refresh_from_db()
+    assert conflict.status == PoolMasterDataSyncConflictStatus.PENDING
+
+
+@pytest.mark.django_db
+def test_master_data_sync_conflict_action_is_tenant_scoped(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    other_tenant = Tenant.objects.create(slug=f"sync-conflict-other-{uuid4().hex[:8]}", name="Sync Conflict Other")
+    other_database = _create_database(tenant=other_tenant, name=f"sync-conflict-other-db-{uuid4().hex[:8]}")
+    conflict = PoolMasterDataSyncConflict.objects.create(
+        tenant=other_tenant,
+        database=other_database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        status=PoolMasterDataSyncConflictStatus.PENDING,
+        conflict_code="POLICY_VIOLATION",
+        canonical_id="item-cross-tenant-001",
+    )
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/master-data/sync-conflicts/{conflict.id}/retry/",
+        {"note": "retry"},
+        format="json",
+    )
+    assert response.status_code == 404
+    payload = response.json()
+    assert payload["code"] == "SYNC_CONFLICT_NOT_FOUND"
+
+    conflict.refresh_from_db()
+    assert conflict.status == PoolMasterDataSyncConflictStatus.PENDING

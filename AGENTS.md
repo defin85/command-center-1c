@@ -67,7 +67,8 @@ Work loop:
 - `bd show <task-id>`: Get task context
 - Implement code
 - `bd close <task-id>`: Complete task
-- `bd sync`: Sync state
+- `bd vc status`: Check Beads VC state (Dolt)
+- `bd vc commit -m "..."`: Commit pending Beads changes when needed
 
 **Rule**: For code changes, only work on tasks listed in `bd ready`.
 
@@ -112,7 +113,8 @@ When all tasks are complete, execute the agent commands:
 3. **Update issue status** - Close finished work, update in-progress items
 4. **PUSH TO REMOTE** - This is MANDATORY:
    - `git pull --rebase`
-   - `bd sync`
+   - `bd vc status`
+   - if there are pending Beads changes: `bd vc commit -m "..."`
    - `git push`
    - `git status` - MUST show "up to date with origin"
 5. **Clean up** - Clear stashes, prune remote branches
@@ -137,23 +139,22 @@ Run `bd prime` for workflow context.
 - `bd ready` - Find unblocked work
 - `bd create "Title" --type task --priority 2 --description "..."` - Create ad-hoc issue
 - `bd close <task-id>` - Complete work
-- `bd sync` - Sync with git (run at session end)
+- `bd vc status` - Check Dolt VC status
+- `bd vc commit -m "..."` - Commit pending Beads changes (if any)
 
 For full workflow details: `bd prime`
 
-### Beads sync-branch: “постоянно меняется .beads/issues.jsonl”
+### Beads Dolt Server Mode (текущий репозиторий)
 
-В этом репозитории Beads работает в режиме sync-branch (по умолчанию `sync-branch: beads-sync` в `.beads/config.yaml`).
-В таком режиме `.beads/*.jsonl` часто меняются из-за daemon/auto-flush и **не должны** постоянно “грязнить” рабочее дерево
-на ветках с кодом.
+Актуальный режим в этом репозитории: `dolt_mode: "server"` (`.beads/metadata.json`) + shared `beads-dolt.service`.
 
-Если после коммита у вас регулярно появляется `M .beads/issues.jsonl`:
+Ключевые правила:
 
-- Рекомендовано: `bd doctor --fix` (исправляет git index flags для Beads файлов).
-- Быстрый ручной фикс (локально):
-  - `git update-index --skip-worktree .beads/issues.jsonl .beads/interactions.jsonl .beads/config.yaml .beads/metadata.json`
-- Откатить (если нужно снова видеть изменения):
-  - `git update-index --no-skip-worktree .beads/issues.jsonl .beads/interactions.jsonl .beads/config.yaml .beads/metadata.json`
+- `bd sync` — deprecated/no-op, не использовать как шаг синхронизации.
+- Базовая проверка окружения: `./debug/start-dolt.sh` и `bd doctor --server`.
+- Проверка сервиса: `systemctl --user status beads-dolt.service --no-pager`.
+- Для фиксации изменений использовать `bd vc status` / `bd vc commit`.
+- В этом репозитории **не использовать Dolt remote/store** и не выполнять `bd dolt pull/push`.
 
 ## Семантический поиск (claude-context / ast-index)
 

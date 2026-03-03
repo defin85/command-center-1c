@@ -21,6 +21,7 @@ from apps.intercompany_pools.models import (
     PoolMasterDataSyncConflict,
     PoolMasterDataSyncConflictStatus,
 )
+from apps.tenancy.models import TenantMember
 
 from .intercompany_pools import _problem, _resolve_tenant_id
 
@@ -33,6 +34,27 @@ def _validation_problem(*, detail: str, errors: object | None = None) -> Respons
         status_code=http_status.HTTP_400_BAD_REQUEST,
         errors=errors,
     )
+
+
+def _require_conflict_action_tenant_access(request) -> tuple[str | None, Response | None]:
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return None, _validation_problem(detail="X-CC1C-Tenant-ID is required.")
+
+    is_tenant_admin = TenantMember.objects.filter(
+        user_id=request.user.id,
+        tenant_id=tenant_id,
+        role=TenantMember.ROLE_ADMIN,
+    ).exists()
+    is_staff = bool(getattr(request.user, "is_staff", False) or getattr(request.user, "is_superuser", False))
+    if not (is_staff or is_tenant_admin):
+        return None, _problem(
+            code="FORBIDDEN",
+            title="Forbidden",
+            detail="Tenant admin only.",
+            status_code=http_status.HTTP_403_FORBIDDEN,
+        )
+    return str(tenant_id), None
 
 
 def _serialize_sync_conflict(conflict: PoolMasterDataSyncConflict) -> dict[str, Any]:
@@ -200,6 +222,7 @@ def list_master_data_sync_conflicts(request):
         200: SyncConflictActionResponseSerializer,
         400: ProblemDetailsErrorSerializer,
         401: OpenApiResponse(description="Unauthorized"),
+        403: ProblemDetailsErrorSerializer,
         404: ProblemDetailsErrorSerializer,
         409: ProblemDetailsErrorSerializer,
     },
@@ -207,6 +230,10 @@ def list_master_data_sync_conflicts(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def retry_master_data_sync_conflict_endpoint(request, id: UUID):
+    tenant_id, access_error = _require_conflict_action_tenant_access(request)
+    if access_error is not None:
+        return access_error
+
     serializer = RetryConflictRequestSerializer(data=request.data)
     if not serializer.is_valid():
         return _validation_problem(detail="Retry payload validation failed.", errors=serializer.errors)
@@ -214,6 +241,7 @@ def retry_master_data_sync_conflict_endpoint(request, id: UUID):
     try:
         conflict = retry_master_data_sync_conflict(
             conflict_id=str(id),
+            tenant_id=str(tenant_id),
             actor_id=str(request.user.id),
             note=str(serializer.validated_data.get("note") or ""),
             metadata=serializer.validated_data.get("metadata"),
@@ -243,6 +271,7 @@ def retry_master_data_sync_conflict_endpoint(request, id: UUID):
         200: SyncConflictActionResponseSerializer,
         400: ProblemDetailsErrorSerializer,
         401: OpenApiResponse(description="Unauthorized"),
+        403: ProblemDetailsErrorSerializer,
         404: ProblemDetailsErrorSerializer,
         409: ProblemDetailsErrorSerializer,
     },
@@ -250,6 +279,10 @@ def retry_master_data_sync_conflict_endpoint(request, id: UUID):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def reconcile_master_data_sync_conflict_endpoint(request, id: UUID):
+    tenant_id, access_error = _require_conflict_action_tenant_access(request)
+    if access_error is not None:
+        return access_error
+
     serializer = ReconcileConflictRequestSerializer(data=request.data)
     if not serializer.is_valid():
         return _validation_problem(detail="Reconcile payload validation failed.", errors=serializer.errors)
@@ -257,6 +290,7 @@ def reconcile_master_data_sync_conflict_endpoint(request, id: UUID):
     try:
         conflict = reconcile_master_data_sync_conflict(
             conflict_id=str(id),
+            tenant_id=str(tenant_id),
             actor_id=str(request.user.id),
             reconcile_payload=serializer.validated_data.get("reconcile_payload") or {},
             note=str(serializer.validated_data.get("note") or ""),
@@ -286,6 +320,7 @@ def reconcile_master_data_sync_conflict_endpoint(request, id: UUID):
         200: SyncConflictActionResponseSerializer,
         400: ProblemDetailsErrorSerializer,
         401: OpenApiResponse(description="Unauthorized"),
+        403: ProblemDetailsErrorSerializer,
         404: ProblemDetailsErrorSerializer,
         409: ProblemDetailsErrorSerializer,
     },
@@ -293,6 +328,10 @@ def reconcile_master_data_sync_conflict_endpoint(request, id: UUID):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def resolve_master_data_sync_conflict_endpoint(request, id: UUID):
+    tenant_id, access_error = _require_conflict_action_tenant_access(request)
+    if access_error is not None:
+        return access_error
+
     serializer = ResolveConflictRequestSerializer(data=request.data)
     if not serializer.is_valid():
         return _validation_problem(detail="Resolve payload validation failed.", errors=serializer.errors)
@@ -300,6 +339,7 @@ def resolve_master_data_sync_conflict_endpoint(request, id: UUID):
     try:
         conflict = resolve_master_data_sync_conflict(
             conflict_id=str(id),
+            tenant_id=str(tenant_id),
             actor_id=str(request.user.id),
             resolution_code=str(serializer.validated_data.get("resolution_code") or ""),
             note=str(serializer.validated_data.get("note") or ""),

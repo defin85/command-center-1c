@@ -61,6 +61,7 @@ def test_retry_conflict_moves_status_to_retrying_and_writes_audit() -> None:
 
     updated = retry_master_data_sync_conflict(
         conflict_id=str(conflict.id),
+        tenant_id=str(tenant.id),
         actor_id=str(actor.id),
         note="retry requested by operator",
     )
@@ -82,6 +83,7 @@ def test_reconcile_conflict_persists_reconcile_payload_and_audit() -> None:
 
     updated = reconcile_master_data_sync_conflict(
         conflict_id=str(conflict.id),
+        tenant_id=str(tenant.id),
         actor_id=str(actor.id),
         reconcile_payload={"strategy": "prefer_cc", "scope": "binding"},
         note="operator reconcile requested",
@@ -103,6 +105,7 @@ def test_resolve_conflict_sets_resolved_fields_and_audit() -> None:
 
     updated = resolve_master_data_sync_conflict(
         conflict_id=str(conflict.id),
+        tenant_id=str(tenant.id),
         actor_id=str(actor.id),
         resolution_code="MANUAL_RECONCILE",
         note="operator resolved manually",
@@ -130,17 +133,39 @@ def test_operator_actions_reject_modification_of_resolved_conflict() -> None:
     with pytest.raises(ValueError, match="Cannot retry resolved"):
         retry_master_data_sync_conflict(
             conflict_id=str(conflict.id),
+            tenant_id=str(tenant.id),
             actor_id=str(actor.id),
         )
     with pytest.raises(ValueError, match="Cannot reconcile resolved"):
         reconcile_master_data_sync_conflict(
             conflict_id=str(conflict.id),
+            tenant_id=str(tenant.id),
             actor_id=str(actor.id),
             reconcile_payload={"strategy": "prefer_ib"},
         )
     with pytest.raises(ValueError, match="already resolved"):
         resolve_master_data_sync_conflict(
             conflict_id=str(conflict.id),
+            tenant_id=str(tenant.id),
             actor_id=str(actor.id),
             resolution_code="MANUAL",
         )
+
+
+@pytest.mark.django_db
+def test_operator_actions_are_scoped_by_tenant() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-conflict-tenant-a-{uuid4().hex[:6]}", name="Sync Conflict Tenant A")
+    other_tenant = Tenant.objects.create(slug=f"sync-conflict-tenant-b-{uuid4().hex[:6]}", name="Sync Conflict Tenant B")
+    database = _create_database(tenant=tenant, suffix="tenant-a")
+    actor = User.objects.create_user(username=f"sync-conflict-tenant-{uuid4().hex[:6]}", password="pass")
+    conflict = _create_conflict(tenant=tenant, database=database, entity_type=PoolMasterDataEntityType.ITEM)
+
+    with pytest.raises(PoolMasterDataSyncConflict.DoesNotExist):
+        retry_master_data_sync_conflict(
+            conflict_id=str(conflict.id),
+            tenant_id=str(other_tenant.id),
+            actor_id=str(actor.id),
+        )
+
+    conflict.refresh_from_db()
+    assert conflict.status == PoolMasterDataSyncConflictStatus.PENDING

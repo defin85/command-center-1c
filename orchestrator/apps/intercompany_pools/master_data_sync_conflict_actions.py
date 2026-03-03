@@ -20,12 +20,16 @@ MASTER_DATA_SYNC_CONFLICT_ACTION_RESOLVE = "resolve"
 def retry_master_data_sync_conflict(
     *,
     conflict_id: str,
+    tenant_id: str,
     actor_id: str,
     note: str = "",
     metadata: Mapping[str, Any] | None = None,
 ) -> PoolMasterDataSyncConflict:
     with transaction.atomic():
-        conflict = PoolMasterDataSyncConflict.objects.select_for_update().get(id=conflict_id)
+        conflict = PoolMasterDataSyncConflict.objects.select_for_update().get(
+            id=conflict_id,
+            tenant_id=tenant_id,
+        )
         if conflict.status == PoolMasterDataSyncConflictStatus.RESOLVED:
             raise ValueError("Cannot retry resolved master-data sync conflict.")
         _append_operator_action_audit(
@@ -43,12 +47,16 @@ def retry_master_data_sync_conflict(
 def reconcile_master_data_sync_conflict(
     *,
     conflict_id: str,
+    tenant_id: str,
     actor_id: str,
     reconcile_payload: Mapping[str, Any],
     note: str = "",
 ) -> PoolMasterDataSyncConflict:
     with transaction.atomic():
-        conflict = PoolMasterDataSyncConflict.objects.select_for_update().get(id=conflict_id)
+        conflict = PoolMasterDataSyncConflict.objects.select_for_update().get(
+            id=conflict_id,
+            tenant_id=tenant_id,
+        )
         if conflict.status == PoolMasterDataSyncConflictStatus.RESOLVED:
             raise ValueError("Cannot reconcile resolved master-data sync conflict.")
         _append_operator_action_audit(
@@ -69,6 +77,7 @@ def reconcile_master_data_sync_conflict(
 def resolve_master_data_sync_conflict(
     *,
     conflict_id: str,
+    tenant_id: str,
     actor_id: str,
     resolution_code: str,
     note: str = "",
@@ -80,7 +89,10 @@ def resolve_master_data_sync_conflict(
 
     User = get_user_model()
     with transaction.atomic():
-        conflict = PoolMasterDataSyncConflict.objects.select_for_update().get(id=conflict_id)
+        conflict = PoolMasterDataSyncConflict.objects.select_for_update().get(
+            id=conflict_id,
+            tenant_id=tenant_id,
+        )
         if conflict.status == PoolMasterDataSyncConflictStatus.RESOLVED:
             raise ValueError("Conflict is already resolved.")
         actor = User.objects.get(id=actor_id)
