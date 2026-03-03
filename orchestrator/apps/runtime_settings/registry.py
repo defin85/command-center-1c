@@ -103,6 +103,30 @@ RUNTIME_SETTINGS = {
         ),
         env_default_setting="POOL_RUNTIME_MASTER_DATA_SYNC_ENABLED",
     ),
+    "pools.master_data.sync.inbound.enabled": RuntimeSettingDefinition(
+        key="pools.master_data.sync.inbound.enabled",
+        value_type="bool",
+        default=True,
+        description="Enable inbound (IB -> CC) master-data sync runtime path.",
+        env_default_setting="POOL_RUNTIME_MASTER_DATA_SYNC_INBOUND_ENABLED",
+    ),
+    "pools.master_data.sync.outbound.enabled": RuntimeSettingDefinition(
+        key="pools.master_data.sync.outbound.enabled",
+        value_type="bool",
+        default=True,
+        description="Enable outbound (CC -> IB) master-data sync runtime path.",
+        env_default_setting="POOL_RUNTIME_MASTER_DATA_SYNC_OUTBOUND_ENABLED",
+    ),
+    "pools.master_data.sync.default_policy": RuntimeSettingDefinition(
+        key="pools.master_data.sync.default_policy",
+        value_type="string",
+        default="cc_master",
+        description=(
+            "Fallback policy for scope without explicit PoolMasterDataSyncScope row "
+            "(allowed: cc_master, ib_master, bidirectional)."
+        ),
+        env_default_setting="POOL_RUNTIME_MASTER_DATA_SYNC_DEFAULT_POLICY",
+    ),
     "pools.master_data.sync.poll_interval_seconds": RuntimeSettingDefinition(
         key="pools.master_data.sync.poll_interval_seconds",
         value_type="int",

@@ -9,6 +9,7 @@ from apps.operations.services import OperationsService
 
 from .master_data_sync_workflow_contract import build_master_data_sync_workflow_input_context
 from .master_data_sync_workflow_template import ensure_pool_master_data_sync_workflow_template
+from .runtime_template_registry import sync_pool_runtime_template_registry
 from .models import PoolMasterDataSyncJob, PoolMasterDataSyncJobStatus
 
 
@@ -56,6 +57,7 @@ def start_pool_master_data_sync_job_workflow(
                 created_execution=False,
             )
 
+        sync_pool_runtime_template_registry()
         workflow_template = ensure_pool_master_data_sync_workflow_template()
         input_context = build_master_data_sync_workflow_input_context(
             sync_job=locked_job,

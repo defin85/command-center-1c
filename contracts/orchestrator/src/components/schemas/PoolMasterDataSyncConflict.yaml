@@ -1,0 +1,66 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  database_id:
+    type: string
+    format: uuid
+  entity_type:
+    type: string
+    enum:
+      - party
+      - item
+      - contract
+      - tax_profile
+  status:
+    type: string
+    enum:
+      - pending
+      - retrying
+      - resolved
+  conflict_code:
+    type: string
+  canonical_id:
+    type: string
+  origin_system:
+    type: string
+  origin_event_id:
+    type: string
+  diagnostics:
+    type: object
+    additionalProperties: true
+  metadata:
+    type: object
+    additionalProperties: true
+  resolved_at:
+    type: string
+    format: date-time
+    nullable: true
+  resolved_by_id:
+    type: string
+    format: uuid
+    nullable: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - tenant_id
+  - database_id
+  - entity_type
+  - status
+  - conflict_code
+  - canonical_id
+  - origin_system
+  - origin_event_id
+  - diagnostics
+  - metadata
+  - created_at
+  - updated_at

@@ -10,6 +10,10 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Set
 
+from apps.intercompany_pools.master_data_sync_execution import (
+    execute_pool_master_data_sync_dispatch_step,
+    execute_pool_master_data_sync_finalize_step,
+)
 from apps.intercompany_pools.pool_domain_steps import execute_pool_runtime_step
 from apps.templates.workflow.models import WorkflowExecution
 
@@ -27,6 +31,8 @@ class PoolDomainBackend(AbstractOperationBackend):
         "pool.reconciliation_report",
         "pool.approval_gate",
         "pool.publication_odata",
+        "pool.master_data_sync.dispatch",
+        "pool.master_data_sync.finalize",
     }
 
     BACKEND_NAME = "pool_domain"
@@ -44,12 +50,21 @@ class PoolDomainBackend(AbstractOperationBackend):
         operation_type = str(getattr(template, "operation_type", "") or "")
         step_id = self._resolve_step_id(operation_type=operation_type, rendered_data=rendered_data)
         try:
-            step_output = execute_pool_runtime_step(
-                operation_type=operation_type,
-                rendered_data=rendered_data if isinstance(rendered_data, dict) else {},
-                context=context if isinstance(context, dict) else {},
-                execution=execution,
-            )
+            if operation_type == "pool.master_data_sync.dispatch":
+                step_output = execute_pool_master_data_sync_dispatch_step(
+                    input_context=execution.input_context if isinstance(execution.input_context, dict) else {},
+                )
+            elif operation_type == "pool.master_data_sync.finalize":
+                step_output = execute_pool_master_data_sync_finalize_step(
+                    input_context=execution.input_context if isinstance(execution.input_context, dict) else {},
+                )
+            else:
+                step_output = execute_pool_runtime_step(
+                    operation_type=operation_type,
+                    rendered_data=rendered_data if isinstance(rendered_data, dict) else {},
+                    context=context if isinstance(context, dict) else {},
+                    execution=execution,
+                )
         except Exception as exc:  # noqa: BLE001
             return NodeExecutionResult(
                 success=False,
@@ -69,6 +84,14 @@ class PoolDomainBackend(AbstractOperationBackend):
             "rendered_data": rendered_data if isinstance(rendered_data, dict) else {},
             "context_summary": {
                 "pool_run_id": str(context.get("pool_run_id") or ""),
+                "sync_job_id": str(
+                    (
+                        execution.input_context.get("sync_job_id")
+                        if isinstance(getattr(execution, "input_context", None), dict)
+                        else ""
+                    )
+                    or ""
+                ),
                 "approval_state": str(context.get("approval_state") or ""),
                 "publication_step_state": str(context.get("publication_step_state") or ""),
             },

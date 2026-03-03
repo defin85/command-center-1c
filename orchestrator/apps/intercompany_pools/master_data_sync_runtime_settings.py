@@ -4,15 +4,23 @@ from dataclasses import dataclass
 
 from django.conf import settings
 
+from .models import PoolMasterDataSyncPolicy
+
 from apps.runtime_settings.models import RuntimeSetting, TenantRuntimeSettingOverride
 
 
 POOL_MASTER_DATA_SYNC_ENABLED_RUNTIME_KEY = "pools.master_data.sync.enabled"
+POOL_MASTER_DATA_SYNC_INBOUND_ENABLED_RUNTIME_KEY = "pools.master_data.sync.inbound.enabled"
+POOL_MASTER_DATA_SYNC_OUTBOUND_ENABLED_RUNTIME_KEY = "pools.master_data.sync.outbound.enabled"
+POOL_MASTER_DATA_SYNC_DEFAULT_POLICY_RUNTIME_KEY = "pools.master_data.sync.default_policy"
 POOL_MASTER_DATA_SYNC_POLL_INTERVAL_RUNTIME_KEY = "pools.master_data.sync.poll_interval_seconds"
 POOL_MASTER_DATA_SYNC_DISPATCH_BATCH_RUNTIME_KEY = "pools.master_data.sync.dispatch_batch_size"
 POOL_MASTER_DATA_SYNC_RETRY_BACKOFF_RUNTIME_KEY = "pools.master_data.sync.max_retry_backoff_seconds"
 
 POOL_MASTER_DATA_SYNC_ENABLED_ENV_KEY = "POOL_RUNTIME_MASTER_DATA_SYNC_ENABLED"
+POOL_MASTER_DATA_SYNC_INBOUND_ENABLED_ENV_KEY = "POOL_RUNTIME_MASTER_DATA_SYNC_INBOUND_ENABLED"
+POOL_MASTER_DATA_SYNC_OUTBOUND_ENABLED_ENV_KEY = "POOL_RUNTIME_MASTER_DATA_SYNC_OUTBOUND_ENABLED"
+POOL_MASTER_DATA_SYNC_DEFAULT_POLICY_ENV_KEY = "POOL_RUNTIME_MASTER_DATA_SYNC_DEFAULT_POLICY"
 POOL_MASTER_DATA_SYNC_POLL_INTERVAL_ENV_KEY = "POOL_RUNTIME_MASTER_DATA_SYNC_POLL_INTERVAL_SECONDS"
 POOL_MASTER_DATA_SYNC_DISPATCH_BATCH_ENV_KEY = "POOL_RUNTIME_MASTER_DATA_SYNC_DISPATCH_BATCH_SIZE"
 POOL_MASTER_DATA_SYNC_RETRY_BACKOFF_ENV_KEY = "POOL_RUNTIME_MASTER_DATA_SYNC_MAX_RETRY_BACKOFF_SECONDS"
@@ -29,6 +37,9 @@ class RuntimeSettingResolution:
 @dataclass(frozen=True)
 class PoolMasterDataSyncRuntimeSettings:
     enabled: bool
+    inbound_enabled: bool
+    outbound_enabled: bool
+    default_policy: str
     poll_interval_seconds: int
     dispatch_batch_size: int
     max_retry_backoff_seconds: int
@@ -66,6 +77,24 @@ def resolve_pool_master_data_sync_runtime_settings(
             env_key=POOL_MASTER_DATA_SYNC_ENABLED_ENV_KEY,
             env_default=False,
         ),
+        POOL_MASTER_DATA_SYNC_INBOUND_ENABLED_RUNTIME_KEY: _resolve_runtime_setting(
+            key=POOL_MASTER_DATA_SYNC_INBOUND_ENABLED_RUNTIME_KEY,
+            tenant_id=tenant_id,
+            env_key=POOL_MASTER_DATA_SYNC_INBOUND_ENABLED_ENV_KEY,
+            env_default=True,
+        ),
+        POOL_MASTER_DATA_SYNC_OUTBOUND_ENABLED_RUNTIME_KEY: _resolve_runtime_setting(
+            key=POOL_MASTER_DATA_SYNC_OUTBOUND_ENABLED_RUNTIME_KEY,
+            tenant_id=tenant_id,
+            env_key=POOL_MASTER_DATA_SYNC_OUTBOUND_ENABLED_ENV_KEY,
+            env_default=True,
+        ),
+        POOL_MASTER_DATA_SYNC_DEFAULT_POLICY_RUNTIME_KEY: _resolve_runtime_setting(
+            key=POOL_MASTER_DATA_SYNC_DEFAULT_POLICY_RUNTIME_KEY,
+            tenant_id=tenant_id,
+            env_key=POOL_MASTER_DATA_SYNC_DEFAULT_POLICY_ENV_KEY,
+            env_default=PoolMasterDataSyncPolicy.CC_MASTER,
+        ),
         POOL_MASTER_DATA_SYNC_POLL_INTERVAL_RUNTIME_KEY: _resolve_runtime_setting(
             key=POOL_MASTER_DATA_SYNC_POLL_INTERVAL_RUNTIME_KEY,
             tenant_id=tenant_id,
@@ -99,6 +128,24 @@ def get_pool_master_data_sync_runtime_settings(
         default=False,
         fail_closed_on_invalid=fail_closed_on_invalid,
     )
+    inbound_enabled = _coerce_bool(
+        resolution=resolved[POOL_MASTER_DATA_SYNC_INBOUND_ENABLED_RUNTIME_KEY],
+        runtime_key=POOL_MASTER_DATA_SYNC_INBOUND_ENABLED_RUNTIME_KEY,
+        default=True,
+        fail_closed_on_invalid=fail_closed_on_invalid,
+    )
+    outbound_enabled = _coerce_bool(
+        resolution=resolved[POOL_MASTER_DATA_SYNC_OUTBOUND_ENABLED_RUNTIME_KEY],
+        runtime_key=POOL_MASTER_DATA_SYNC_OUTBOUND_ENABLED_RUNTIME_KEY,
+        default=True,
+        fail_closed_on_invalid=fail_closed_on_invalid,
+    )
+    default_policy = _coerce_policy(
+        resolution=resolved[POOL_MASTER_DATA_SYNC_DEFAULT_POLICY_RUNTIME_KEY],
+        runtime_key=POOL_MASTER_DATA_SYNC_DEFAULT_POLICY_RUNTIME_KEY,
+        default=PoolMasterDataSyncPolicy.CC_MASTER,
+        fail_closed_on_invalid=fail_closed_on_invalid,
+    )
     poll_interval_seconds = _coerce_int(
         resolution=resolved[POOL_MASTER_DATA_SYNC_POLL_INTERVAL_RUNTIME_KEY],
         runtime_key=POOL_MASTER_DATA_SYNC_POLL_INTERVAL_RUNTIME_KEY,
@@ -125,6 +172,9 @@ def get_pool_master_data_sync_runtime_settings(
     )
     return PoolMasterDataSyncRuntimeSettings(
         enabled=enabled,
+        inbound_enabled=inbound_enabled,
+        outbound_enabled=outbound_enabled,
+        default_policy=default_policy,
         poll_interval_seconds=poll_interval_seconds,
         dispatch_batch_size=dispatch_batch_size,
         max_retry_backoff_seconds=max_retry_backoff_seconds,
@@ -207,6 +257,25 @@ def _coerce_int(
     return int(default)
 
 
+def _coerce_policy(
+    *,
+    resolution: RuntimeSettingResolution,
+    runtime_key: str,
+    default: str,
+    fail_closed_on_invalid: bool,
+) -> str:
+    parsed = _parse_policy(resolution.raw_value)
+    if parsed is not None:
+        return parsed
+    if fail_closed_on_invalid:
+        raise MasterDataSyncRuntimeConfigInvalidError(
+            runtime_key=runtime_key,
+            source=resolution.source,
+            raw_value=resolution.raw_value,
+        )
+    return str(default or PoolMasterDataSyncPolicy.CC_MASTER)
+
+
 def _parse_bool(value: object) -> bool | None:
     if isinstance(value, bool):
         return value
@@ -236,4 +305,11 @@ def _parse_int(value: object) -> int | None:
             return int(token)
         except ValueError:
             return None
+    return None
+
+
+def _parse_policy(value: object) -> str | None:
+    token = str(value or "").strip().lower()
+    if token in set(PoolMasterDataSyncPolicy.values):
+        return token
     return None

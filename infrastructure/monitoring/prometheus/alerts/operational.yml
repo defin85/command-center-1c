@@ -85,6 +85,49 @@ groups:
           summary: "Slow scheduler lock acquisition"
           description: "P95 lock hold duration is {{ $value | humanizeDuration }}."
 
+  - name: pool_master_data_sync_alerts
+    interval: 1m
+    rules:
+      - alert: PoolMasterDataSyncLagHigh
+        expr: cc1c_orchestrator_pool_master_data_sync_outbox_lag_seconds > 900
+        for: 10m
+        labels:
+          severity: warning
+          component: pool-master-data-sync
+        annotations:
+          summary: "Pool master-data sync lag is high"
+          description: "Outbox lag is {{ $value | humanizeDuration }} for more than 10 minutes."
+
+      - alert: PoolMasterDataSyncRetrySaturation
+        expr: cc1c_orchestrator_pool_master_data_sync_outbox_retry_saturation_ratio > 0.25
+        for: 10m
+        labels:
+          severity: warning
+          component: pool-master-data-sync
+        annotations:
+          summary: "Pool master-data sync retry saturation is high"
+          description: "Retry saturation ratio is {{ $value | humanizePercentage }} for more than 10 minutes."
+
+      - alert: PoolMasterDataSyncConflictBacklogHigh
+        expr: cc1c_orchestrator_pool_master_data_sync_conflicts_pending_total > 25
+        for: 10m
+        labels:
+          severity: warning
+          component: pool-master-data-sync
+        annotations:
+          summary: "Pool master-data sync conflict backlog is growing"
+          description: "{{ $value }} pending conflicts for more than 10 minutes."
+
+      - alert: PoolMasterDataSyncConflictSpike
+        expr: delta(cc1c_orchestrator_pool_master_data_sync_conflicts_pending_total[15m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: pool-master-data-sync
+        annotations:
+          summary: "Pool master-data sync conflict spike detected"
+          description: "Pending conflicts increased by more than 10 within 15 minutes."
+
   - name: infrastructure_alerts
     interval: 1m
     rules:

@@ -1,0 +1,8 @@
+type: object
+properties:
+  note:
+    type: string
+    maxLength: 512
+  metadata:
+    type: object
+    additionalProperties: true

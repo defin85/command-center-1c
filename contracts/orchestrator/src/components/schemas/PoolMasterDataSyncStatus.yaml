@@ -1,0 +1,59 @@
+type: object
+properties:
+  tenant_id:
+    type: string
+    format: uuid
+  database_id:
+    type: string
+    format: uuid
+  entity_type:
+    type: string
+    enum:
+      - party
+      - item
+      - contract
+      - tax_profile
+  checkpoint_token:
+    type: string
+  pending_checkpoint_token:
+    type: string
+  checkpoint_status:
+    type: string
+  pending_count:
+    type: integer
+    minimum: 0
+  retry_count:
+    type: integer
+    minimum: 0
+  conflict_pending_count:
+    type: integer
+    minimum: 0
+  conflict_retrying_count:
+    type: integer
+    minimum: 0
+  lag_seconds:
+    type: integer
+    minimum: 0
+  last_success_at:
+    type: string
+    format: date-time
+    nullable: true
+  last_applied_at:
+    type: string
+    format: date-time
+    nullable: true
+  last_error_code:
+    type: string
+required:
+  - tenant_id
+  - database_id
+  - entity_type
+  - checkpoint_token
+  - pending_checkpoint_token
+  - checkpoint_status
+  - pending_count
+  - retry_count
+  - conflict_pending_count
+  - conflict_retrying_count
+  - lag_seconds
+  - last_error_code

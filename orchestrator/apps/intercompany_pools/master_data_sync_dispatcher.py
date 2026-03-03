@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Callable
@@ -7,11 +8,24 @@ from typing import Callable
 from django.db import transaction
 from django.utils import timezone
 
+from apps.operations.prometheus_metrics import (
+    set_pool_master_data_sync_backlog_metrics,
+    set_pool_master_data_sync_conflict_metrics,
+)
+
 from .master_data_sync_apply import apply_master_data_outbox_to_ib
-from .models import PoolMasterDataSyncOutbox, PoolMasterDataSyncOutboxStatus
+from .models import (
+    PoolMasterDataSyncConflict,
+    PoolMasterDataSyncConflictStatus,
+    PoolMasterDataSyncOutbox,
+    PoolMasterDataSyncOutboxStatus,
+)
 
 
 DISPATCH_ERROR_UNEXPECTED = "MASTER_DATA_SYNC_DISPATCH_UNEXPECTED"
+MASTER_DATA_SYNC_RETRY_SATURATION_THRESHOLD_ATTEMPTS = 5
+
+logger = logging.getLogger(__name__)
 
 
 class MasterDataSyncTransportError(RuntimeError):
@@ -34,12 +48,21 @@ def dispatch_pending_master_data_sync_outbox(
     ib_apply: Callable[[PoolMasterDataSyncOutbox], dict | None] | None = None,
     batch_size: int = 100,
     max_retry_backoff_seconds: int = 900,
+    tenant_id: str | None = None,
+    database_id: str | None = None,
+    entity_type: str | None = None,
 ) -> MasterDataSyncDispatchBatchResult:
     if transport_apply is None:
         transport_apply = _build_transport_apply(ib_apply=ib_apply)
 
     now = timezone.now()
-    row_ids = _claim_pending_outbox_rows(batch_size=max(1, int(batch_size)), now=now)
+    row_ids = _claim_pending_outbox_rows(
+        batch_size=max(1, int(batch_size)),
+        now=now,
+        tenant_id=str(tenant_id or "").strip() or None,
+        database_id=str(database_id or "").strip() or None,
+        entity_type=str(entity_type or "").strip() or None,
+    )
     sent = 0
     failed = 0
 
@@ -71,11 +94,13 @@ def dispatch_pending_master_data_sync_outbox(
         _mark_sent(row_id=row.id, now=now, result_payload=result_payload)
         sent += 1
 
-    return MasterDataSyncDispatchBatchResult(
+    batch_result = MasterDataSyncDispatchBatchResult(
         claimed=len(row_ids),
         sent=sent,
         failed=failed,
     )
+    _record_master_data_sync_sli_metrics(now=now)
+    return batch_result
 
 
 def _build_transport_apply(
@@ -97,19 +122,30 @@ def _build_transport_apply(
     return _apply
 
 
-def _claim_pending_outbox_rows(*, batch_size: int, now) -> list[str]:
+def _claim_pending_outbox_rows(
+    *,
+    batch_size: int,
+    now,
+    tenant_id: str | None = None,
+    database_id: str | None = None,
+    entity_type: str | None = None,
+) -> list[str]:
     with transaction.atomic():
-        rows = list(
-            PoolMasterDataSyncOutbox.objects.select_for_update(skip_locked=True)
-            .filter(
-                status__in=[
-                    PoolMasterDataSyncOutboxStatus.PENDING,
-                    PoolMasterDataSyncOutboxStatus.FAILED,
-                ],
-                available_at__lte=now,
-            )
-            .order_by("available_at", "created_at", "id")[:batch_size]
+        queryset = PoolMasterDataSyncOutbox.objects.select_for_update(skip_locked=True).filter(
+            status__in=[
+                PoolMasterDataSyncOutboxStatus.PENDING,
+                PoolMasterDataSyncOutboxStatus.FAILED,
+            ],
+            available_at__lte=now,
         )
+        if tenant_id is not None:
+            queryset = queryset.filter(tenant_id=tenant_id)
+        if database_id is not None:
+            queryset = queryset.filter(database_id=database_id)
+        if entity_type is not None:
+            queryset = queryset.filter(entity_type=entity_type)
+
+        rows = list(queryset.order_by("available_at", "created_at", "id")[:batch_size])
         row_ids: list[str] = []
         for row in rows:
             row.status = PoolMasterDataSyncOutboxStatus.PROCESSING
@@ -168,3 +204,54 @@ def _mark_failed(
             "updated_at",
         ]
     )
+
+
+def _record_master_data_sync_sli_metrics(*, now) -> None:
+    try:
+        backlog_queryset = PoolMasterDataSyncOutbox.objects.filter(
+            status__in=[
+                PoolMasterDataSyncOutboxStatus.PENDING,
+                PoolMasterDataSyncOutboxStatus.FAILED,
+            ]
+        )
+        pending_total = int(
+            backlog_queryset.filter(status=PoolMasterDataSyncOutboxStatus.PENDING).count()
+        )
+        retry_total = int(
+            backlog_queryset.filter(status=PoolMasterDataSyncOutboxStatus.FAILED).count()
+        )
+        saturated_total = int(
+            backlog_queryset.filter(
+                attempt_count__gte=MASTER_DATA_SYNC_RETRY_SATURATION_THRESHOLD_ATTEMPTS
+            ).count()
+        )
+        oldest_available_at = (
+            backlog_queryset.order_by("available_at").values_list("available_at", flat=True).first()
+        )
+        lag_seconds = 0.0
+        if oldest_available_at is not None:
+            lag_seconds = max((now - oldest_available_at).total_seconds(), 0.0)
+
+        set_pool_master_data_sync_backlog_metrics(
+            lag_seconds=lag_seconds,
+            pending_total=pending_total,
+            retry_total=retry_total,
+            saturated_total=saturated_total,
+        )
+
+        conflict_pending_total = int(
+            PoolMasterDataSyncConflict.objects.filter(
+                status=PoolMasterDataSyncConflictStatus.PENDING
+            ).count()
+        )
+        conflict_retrying_total = int(
+            PoolMasterDataSyncConflict.objects.filter(
+                status=PoolMasterDataSyncConflictStatus.RETRYING
+            ).count()
+        )
+        set_pool_master_data_sync_conflict_metrics(
+            pending_total=conflict_pending_total,
+            retrying_total=conflict_retrying_total,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Failed to record master-data sync SLI metrics: %s", exc)

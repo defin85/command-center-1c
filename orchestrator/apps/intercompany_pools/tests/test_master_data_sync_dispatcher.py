@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -13,6 +14,8 @@ from apps.intercompany_pools.master_data_sync_dispatcher import (
 )
 from apps.intercompany_pools.models import (
     PoolMasterDataEntityType,
+    PoolMasterDataSyncConflict,
+    PoolMasterDataSyncConflictStatus,
     PoolMasterDataSyncOutbox,
     PoolMasterDataSyncOutboxStatus,
 )
@@ -134,3 +137,69 @@ def test_dispatcher_respects_batch_size_and_availability_window() -> None:
     refreshed_future = PoolMasterDataSyncOutbox.objects.get(id=row_future.id)
     assert refreshed_first.status == PoolMasterDataSyncOutboxStatus.SENT
     assert refreshed_future.status == PoolMasterDataSyncOutboxStatus.PENDING
+
+
+@pytest.mark.django_db
+def test_dispatcher_records_master_data_sync_sli_metrics() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-dispatch-sli-{uuid4().hex[:6]}", name="Sync Dispatch SLI")
+    database = _create_database(tenant=tenant, suffix="sli")
+    now = timezone.now()
+
+    _create_outbox_row(
+        tenant=tenant,
+        database=database,
+        dedupe_key="dedupe-claimed",
+        status=PoolMasterDataSyncOutboxStatus.PENDING,
+        available_at=now - timedelta(minutes=10),
+        attempt_count=0,
+    )
+    _create_outbox_row(
+        tenant=tenant,
+        database=database,
+        dedupe_key="dedupe-saturated",
+        status=PoolMasterDataSyncOutboxStatus.FAILED,
+        available_at=now - timedelta(minutes=5),
+        attempt_count=5,
+    )
+    PoolMasterDataSyncConflict.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        status=PoolMasterDataSyncConflictStatus.PENDING,
+        conflict_code="POLICY_VIOLATION",
+        canonical_id="item-001",
+    )
+    PoolMasterDataSyncConflict.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        status=PoolMasterDataSyncConflictStatus.RETRYING,
+        conflict_code="POLICY_VIOLATION",
+        canonical_id="item-002",
+    )
+
+    with (
+        patch(
+            "apps.intercompany_pools.master_data_sync_dispatcher.set_pool_master_data_sync_backlog_metrics"
+        ) as set_backlog,
+        patch(
+            "apps.intercompany_pools.master_data_sync_dispatcher.set_pool_master_data_sync_conflict_metrics"
+        ) as set_conflicts,
+    ):
+        result = dispatch_pending_master_data_sync_outbox(
+            transport_apply=lambda _outbox: {},
+            batch_size=1,
+        )
+
+    assert result.claimed == 1
+    assert result.sent == 1
+    assert result.failed == 0
+
+    set_backlog.assert_called_once()
+    backlog_kwargs = set_backlog.call_args.kwargs
+    assert float(backlog_kwargs["lag_seconds"]) >= 0.0
+    assert backlog_kwargs["pending_total"] == 0
+    assert backlog_kwargs["retry_total"] == 1
+    assert backlog_kwargs["saturated_total"] == 1
+
+    set_conflicts.assert_called_once_with(pending_total=1, retrying_total=1)

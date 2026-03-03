@@ -7,6 +7,9 @@
 - контур: `CC <-> ИБ` (outbound/inbound);
 - runtime keys:
   - `pools.master_data.sync.enabled`
+  - `pools.master_data.sync.outbound.enabled`
+  - `pools.master_data.sync.inbound.enabled`
+  - `pools.master_data.sync.default_policy`
   - `pools.master_data.sync.poll_interval_seconds`
   - `pools.master_data.sync.dispatch_batch_size`
   - `pools.master_data.sync.max_retry_backoff_seconds`
@@ -15,6 +18,29 @@
   - `GET /api/v2/pools/master-data/sync-status/`
   - `GET /api/v2/pools/master-data/sync-conflicts/`
   - `POST /api/v2/pools/master-data/sync-conflicts/{id}/retry|reconcile|resolve/`
+- prometheus SLI метрики:
+  - `cc1c_orchestrator_pool_master_data_sync_outbox_lag_seconds`
+  - `cc1c_orchestrator_pool_master_data_sync_outbox_pending_total`
+  - `cc1c_orchestrator_pool_master_data_sync_outbox_retry_total`
+  - `cc1c_orchestrator_pool_master_data_sync_outbox_retry_saturated_total`
+  - `cc1c_orchestrator_pool_master_data_sync_outbox_retry_saturation_ratio`
+  - `cc1c_orchestrator_pool_master_data_sync_conflicts_pending_total`
+  - `cc1c_orchestrator_pool_master_data_sync_conflicts_retrying_total`
+
+### Alert Thresholds
+
+- `PoolMasterDataSyncLagHigh`:
+  - условие: `outbox_lag_seconds > 900` в течение 10 минут.
+  - действие: проверить backlog в `sync-status`, снизить `dispatch_batch_size`/увеличить `poll_interval_seconds`, при необходимости временно отключить tenant override.
+- `PoolMasterDataSyncRetrySaturation`:
+  - условие: `outbox_retry_saturation_ratio > 0.25` в течение 10 минут.
+  - действие: проверить `last_error_code` в outbox, доступность ИБ/OData, при устойчивой деградации поднять `max_retry_backoff_seconds`.
+- `PoolMasterDataSyncConflictBacklogHigh`:
+  - условие: `conflicts_pending_total > 25` в течение 10 минут.
+  - действие: triage conflict queue по `conflict_code`, выполнить целевые `retry/reconcile/resolve`, не запускать массовый reconcile без RCA.
+- `PoolMasterDataSyncConflictSpike`:
+  - условие: `delta(conflicts_pending_total[15m]) > 10` в течение 5 минут.
+  - действие: считать инцидентом качества входящих/исходящих данных, проверить последние релизы/изменения policy.
 
 ### Preflight
 
@@ -30,6 +56,9 @@
 
 1. Для pilot tenant включить overrides:
    - `pools.master_data.sync.enabled = true`
+   - `pools.master_data.sync.outbound.enabled = true`
+   - `pools.master_data.sync.inbound.enabled = false`
+   - `pools.master_data.sync.default_policy = cc_master`
    - `pools.master_data.sync.poll_interval_seconds = 60` (консервативный polling)
    - `pools.master_data.sync.dispatch_batch_size = 25`
 2. В shadow mode:
@@ -42,6 +71,8 @@
 ### Stage 1: Pilot Apply
 
 1. Для pilot tenant перейти на рабочие параметры:
+   - `inbound.enabled = true`
+   - `default_policy = bidirectional`
    - `poll_interval_seconds = 30`
    - `dispatch_batch_size = 100`
    - `max_retry_backoff_seconds = 900`

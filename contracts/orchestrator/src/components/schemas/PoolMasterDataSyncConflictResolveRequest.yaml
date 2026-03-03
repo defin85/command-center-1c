@@ -1,0 +1,13 @@
+type: object
+properties:
+  resolution_code:
+    type: string
+    maxLength: 64
+  note:
+    type: string
+    maxLength: 512
+  metadata:
+    type: object
+    additionalProperties: true
+required:
+  - resolution_code

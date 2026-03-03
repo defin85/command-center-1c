@@ -1,0 +1,6 @@
+type: object
+properties:
+  conflict:
+    $ref: ./PoolMasterDataSyncConflict.yaml
+required:
+  - conflict

@@ -1,0 +1,66 @@
+get:
+  operationId: v2_pools_master_data_sync_conflicts_list
+  summary: List master-data sync conflicts
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+    - name: database_id
+      in: query
+      required: false
+      schema:
+        type: string
+        format: uuid
+    - name: entity_type
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - party
+          - item
+          - contract
+          - tax_profile
+    - name: status
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - pending
+          - retrying
+          - resolved
+    - name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 100
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/PoolMasterDataSyncConflictListResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+      description: ''
+    '401':
+      description: Unauthorized

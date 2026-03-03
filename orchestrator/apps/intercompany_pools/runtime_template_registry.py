@@ -96,6 +96,20 @@ _POOL_RUNTIME_TEMPLATE_SPECS: tuple[PoolRuntimeTemplateSpec, ...] = (
         description="System-managed pool runtime step: publication to OData targets.",
         display_order=60,
     ),
+    PoolRuntimeTemplateSpec(
+        alias="pool.master_data_sync.dispatch",
+        label="Pool Master Data Sync Dispatch",
+        step_id="master_data_sync.dispatch",
+        description="System-managed pool runtime step: dispatch master-data sync scope batch.",
+        display_order=65,
+    ),
+    PoolRuntimeTemplateSpec(
+        alias="pool.master_data_sync.finalize",
+        label="Pool Master Data Sync Finalize",
+        step_id="master_data_sync.finalize",
+        description="System-managed pool runtime step: finalize master-data sync job state.",
+        display_order=70,
+    ),
 )
 
 

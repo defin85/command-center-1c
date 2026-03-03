@@ -111,6 +111,13 @@ class TestBackendRouting:
 
         assert isinstance(backend, PoolDomainBackend)
 
+    def test_get_backend_returns_pool_domain_for_master_data_sync_alias(self):
+        """Test that master-data sync alias routes to PoolDomainBackend."""
+        handler = OperationHandler()
+        backend = handler._get_backend('pool.master_data_sync.dispatch')
+
+        assert isinstance(backend, PoolDomainBackend)
+
     def test_get_backend_raises_for_unknown_operation_type(self):
         """Test that unknown operation type raises ValueError."""
         handler = OperationHandler()
@@ -180,6 +187,8 @@ class TestBackendRouting:
         pool_types = all_types['pool_domain']
         assert 'pool.prepare_input' in pool_types
         assert 'pool.publication_odata' in pool_types
+        assert 'pool.master_data_sync.dispatch' in pool_types
+        assert 'pool.master_data_sync.finalize' in pool_types
 
         # Check IBCMD types
         ibcmd_types = all_types['ibcmd']
@@ -206,6 +215,7 @@ class TestBackendRouting:
 
         # Pool backend should support pool runtime aliases
         assert pool_backend.supports_operation_type('pool.prepare_input') is True
+        assert pool_backend.supports_operation_type('pool.master_data_sync.dispatch') is True
         assert pool_backend.supports_operation_type('create') is False
 
         # IBCMD should support ibcmd types

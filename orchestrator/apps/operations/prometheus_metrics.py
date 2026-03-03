@@ -277,6 +277,45 @@ pool_run_command_outbox_retry_saturation_events_total = Counter(
 )
 
 # =============================================================================
+# Pool Master Data Sync SLI Metrics
+# =============================================================================
+
+pool_master_data_sync_outbox_lag_seconds = Gauge(
+    "cc1c_orchestrator_pool_master_data_sync_outbox_lag_seconds",
+    "Current lag in seconds for oldest pending/retrying pool master-data sync outbox entry",
+)
+
+pool_master_data_sync_outbox_pending_total = Gauge(
+    "cc1c_orchestrator_pool_master_data_sync_outbox_pending_total",
+    "Current pending pool master-data sync outbox entries",
+)
+
+pool_master_data_sync_outbox_retry_total = Gauge(
+    "cc1c_orchestrator_pool_master_data_sync_outbox_retry_total",
+    "Current retrying (failed) pool master-data sync outbox entries",
+)
+
+pool_master_data_sync_outbox_retry_saturated_total = Gauge(
+    "cc1c_orchestrator_pool_master_data_sync_outbox_retry_saturated_total",
+    "Current pool master-data sync outbox entries above retry saturation threshold",
+)
+
+pool_master_data_sync_outbox_retry_saturation_ratio = Gauge(
+    "cc1c_orchestrator_pool_master_data_sync_outbox_retry_saturation_ratio",
+    "Ratio of pool master-data sync outbox backlog above retry saturation threshold",
+)
+
+pool_master_data_sync_conflicts_pending_total = Gauge(
+    "cc1c_orchestrator_pool_master_data_sync_conflicts_pending_total",
+    "Current pending pool master-data sync conflicts",
+)
+
+pool_master_data_sync_conflicts_retrying_total = Gauge(
+    "cc1c_orchestrator_pool_master_data_sync_conflicts_retrying_total",
+    "Current retrying pool master-data sync conflicts",
+)
+
+# =============================================================================
 # Event Subscriber (Redis Streams) Metrics
 # =============================================================================
 
@@ -710,6 +749,40 @@ def set_pool_run_command_outbox_retry_saturation(
 
     if safe_saturated_pending > 0:
         pool_run_command_outbox_retry_saturation_events_total.inc()
+
+
+def set_pool_master_data_sync_backlog_metrics(
+    *,
+    lag_seconds: float,
+    pending_total: int,
+    retry_total: int,
+    saturated_total: int,
+) -> None:
+    """Set current pool master-data sync backlog SLI metrics."""
+    safe_lag = max(0.0, float(lag_seconds or 0.0))
+    safe_pending_total = max(0, int(pending_total or 0))
+    safe_retry_total = max(0, int(retry_total or 0))
+    safe_saturated_total = max(0, int(saturated_total or 0))
+    backlog_total = safe_pending_total + safe_retry_total
+    ratio = 0.0
+    if backlog_total > 0:
+        ratio = max(0.0, min(1.0, float(safe_saturated_total / backlog_total)))
+
+    pool_master_data_sync_outbox_lag_seconds.set(safe_lag)
+    pool_master_data_sync_outbox_pending_total.set(safe_pending_total)
+    pool_master_data_sync_outbox_retry_total.set(safe_retry_total)
+    pool_master_data_sync_outbox_retry_saturated_total.set(safe_saturated_total)
+    pool_master_data_sync_outbox_retry_saturation_ratio.set(ratio)
+
+
+def set_pool_master_data_sync_conflict_metrics(
+    *,
+    pending_total: int,
+    retrying_total: int,
+) -> None:
+    """Set current pool master-data sync conflict queue metrics."""
+    pool_master_data_sync_conflicts_pending_total.set(max(0, int(pending_total or 0)))
+    pool_master_data_sync_conflicts_retrying_total.set(max(0, int(retrying_total or 0)))
 
 
 def record_api_v2_duration(endpoint: str, status: str, duration: float) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from uuid import uuid4
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import User
@@ -9,10 +10,16 @@ from rest_framework.test import APIClient
 from apps.databases.models import Database
 from apps.intercompany_pools.models import (
     PoolMasterDataEntityType,
+    PoolMasterDataSyncJob,
+    PoolMasterDataSyncJobStatus,
     PoolMasterDataSyncOutbox,
     PoolMasterDataSyncOutboxStatus,
+    PoolMasterDataSyncPolicy,
+    PoolMasterDataSyncScope,
     PoolMasterParty,
 )
+from apps.operations.services import EnqueueResult
+from apps.runtime_settings.models import RuntimeSetting
 from apps.tenancy.models import Tenant, TenantMember
 
 
@@ -159,6 +166,62 @@ def test_master_data_party_upsert_creates_outbox_intents_for_tenant_databases(
     assert database_ids == {str(database_a.id), str(database_b.id)}
     assert all(row.status == PoolMasterDataSyncOutboxStatus.PENDING for row in rows)
     assert all(row.payload["mutation_kind"] == "party_upsert" for row in rows)
+
+
+@pytest.mark.django_db
+def test_master_data_party_upsert_triggers_sync_job_workflow_when_runtime_enabled(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    django_capture_on_commit_callbacks,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"mdm-sync-job-db-{uuid4().hex[:8]}")
+    PoolMasterDataSyncScope.objects.create(
+        tenant=default_tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.PARTY,
+        policy=PoolMasterDataSyncPolicy.BIDIRECTIONAL,
+    )
+    RuntimeSetting.objects.create(key="pools.master_data.sync.enabled", value=True)
+    RuntimeSetting.objects.create(key="pools.master_data.sync.outbound.enabled", value=True)
+    RuntimeSetting.objects.create(key="pools.master_data.sync.default_policy", value="cc_master")
+
+    def _enqueue(execution_id: str, workflow_config: dict | None = None) -> EnqueueResult:
+        return EnqueueResult(
+            success=True,
+            operation_id=execution_id,
+            status="queued",
+            error=None,
+            error_code=None,
+        )
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_workflow_runtime.OperationsService.enqueue_workflow_execution",
+        side_effect=_enqueue,
+    ):
+        with django_capture_on_commit_callbacks(execute=True):
+            response = authenticated_client.post(
+                "/api/v2/pools/master-data/parties/upsert/",
+                {
+                    "canonical_id": "party-sync-job-001",
+                    "name": "Party Sync Job 001",
+                    "is_counterparty": True,
+                    "is_our_organization": False,
+                },
+                format="json",
+            )
+    assert response.status_code == 201
+
+    jobs = list(
+        PoolMasterDataSyncJob.objects.filter(
+            tenant=default_tenant,
+            database=database,
+            entity_type=PoolMasterDataEntityType.PARTY,
+        )
+    )
+    assert len(jobs) == 1
+    assert jobs[0].status == PoolMasterDataSyncJobStatus.RUNNING
+    assert jobs[0].workflow_execution_id is not None
+    assert jobs[0].operation_id is not None
 
 
 @pytest.mark.django_db

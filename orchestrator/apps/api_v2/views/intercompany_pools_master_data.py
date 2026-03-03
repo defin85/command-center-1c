@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -30,9 +31,14 @@ from apps.intercompany_pools.master_data_sync_origin import (
     normalize_master_data_sync_origin,
     should_skip_outbound_sync_for_origin,
 )
+from apps.intercompany_pools.master_data_sync_execution import (
+    trigger_pool_master_data_outbound_sync_job,
+)
 from apps.intercompany_pools.master_data_sync_outbox import enqueue_master_data_sync_outbox_intent
 
 from .intercompany_pools import _parse_limit, _problem, _resolve_tenant_id
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_offset(raw: object | None, *, default: int = 0) -> int:
@@ -181,6 +187,51 @@ def _enqueue_canonical_mutation_outbox_intents(
             origin_system=origin.origin_system,
             origin_event_id=origin.origin_event_id,
         )
+        _schedule_outbound_master_data_sync_job_trigger(
+            tenant_id=str(tenant_id),
+            database_id=str(database_id),
+            entity_type=entity_type,
+            canonical_id=canonical_id,
+            origin_system=origin.origin_system,
+            origin_event_id=origin.origin_event_id,
+        )
+
+
+def _schedule_outbound_master_data_sync_job_trigger(
+    *,
+    tenant_id: str,
+    database_id: str,
+    entity_type: str,
+    canonical_id: str,
+    origin_system: str,
+    origin_event_id: str,
+) -> None:
+    def _trigger_after_commit() -> None:
+        try:
+            trigger_pool_master_data_outbound_sync_job(
+                tenant_id=tenant_id,
+                database_id=database_id,
+                entity_type=entity_type,
+                canonical_id=canonical_id,
+                origin_system=origin_system,
+                origin_event_id=origin_event_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Master-data outbound sync trigger failed",
+                extra={
+                    "tenant_id": tenant_id,
+                    "database_id": database_id,
+                    "entity_type": entity_type,
+                    "canonical_id": canonical_id,
+                    "origin_system": origin_system,
+                    "origin_event_id": origin_event_id,
+                    "error": str(exc),
+                },
+                exc_info=True,
+            )
+
+    transaction.on_commit(_trigger_after_commit)
 
 
 class _MasterDataListBaseQuerySerializer(serializers.Serializer):
@@ -1379,6 +1430,14 @@ def upsert_master_data_binding(request):
                         "fingerprint": str(binding.fingerprint or ""),
                         "metadata": dict(binding.metadata or {}),
                     },
+                    origin_system="cc",
+                    origin_event_id=origin_event_id,
+                )
+                _schedule_outbound_master_data_sync_job_trigger(
+                    tenant_id=str(binding.tenant_id),
+                    database_id=str(binding.database_id),
+                    entity_type=str(binding.entity_type),
+                    canonical_id=str(binding.canonical_id),
                     origin_system="cc",
                     origin_event_id=origin_event_id,
                 )
