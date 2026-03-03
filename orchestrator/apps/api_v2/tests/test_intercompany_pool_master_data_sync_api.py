@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from types import SimpleNamespace
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -47,6 +49,21 @@ def authenticated_client(user: User, default_tenant: Tenant) -> APIClient:
     client.force_authenticate(user=user)
     client.credentials(HTTP_X_CC1C_TENANT_ID=str(default_tenant.id))
     return client
+
+
+@pytest.fixture(autouse=True)
+def _mock_conflict_action_sync_trigger():
+    with patch(
+        "apps.intercompany_pools.master_data_sync_conflict_actions.trigger_pool_master_data_outbound_sync_job",
+        return_value=SimpleNamespace(
+            started_workflow=True,
+            skipped=False,
+            skip_reason=None,
+            sync_job=None,
+            start_result=None,
+        ),
+    ):
+        yield
 
 
 def _create_database(*, tenant: Tenant, name: str) -> Database:

@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 
+from .master_data_sync_execution import trigger_pool_master_data_outbound_sync_job
 from .models import (
     PoolMasterDataSyncConflict,
     PoolMasterDataSyncConflictStatus,
@@ -41,7 +42,11 @@ def retry_master_data_sync_conflict(
         )
         conflict.status = PoolMasterDataSyncConflictStatus.RETRYING
         conflict.save(update_fields=["status", "metadata", "updated_at"])
-    return conflict
+    return _trigger_conflict_reprocess_or_revert(
+        conflict=conflict,
+        tenant_id=tenant_id,
+        action=MASTER_DATA_SYNC_CONFLICT_ACTION_RETRY,
+    )
 
 
 def reconcile_master_data_sync_conflict(
@@ -71,7 +76,11 @@ def reconcile_master_data_sync_conflict(
         metadata_payload["last_reconcile_payload"] = dict(reconcile_payload or {})
         conflict.metadata = metadata_payload
         conflict.save(update_fields=["status", "metadata", "updated_at"])
-    return conflict
+    return _trigger_conflict_reprocess_or_revert(
+        conflict=conflict,
+        tenant_id=tenant_id,
+        action=MASTER_DATA_SYNC_CONFLICT_ACTION_RECONCILE,
+    )
 
 
 def resolve_master_data_sync_conflict(
@@ -135,3 +144,75 @@ def _append_operator_action_audit(
     )
     metadata_payload["operator_actions"] = history[-50:]
     conflict.metadata = metadata_payload
+
+
+def _trigger_conflict_reprocess_or_revert(
+    *,
+    conflict: PoolMasterDataSyncConflict,
+    tenant_id: str,
+    action: str,
+) -> PoolMasterDataSyncConflict:
+    trigger_result = trigger_pool_master_data_outbound_sync_job(
+        tenant_id=str(conflict.tenant_id),
+        database_id=str(conflict.database_id),
+        entity_type=str(conflict.entity_type),
+        canonical_id=str(conflict.canonical_id or ""),
+        origin_system=str(conflict.origin_system or "cc"),
+        origin_event_id=str(conflict.origin_event_id or ""),
+    )
+    started_workflow = bool(getattr(trigger_result, "started_workflow", False))
+    skipped = bool(getattr(trigger_result, "skipped", False))
+    skip_reason = str(getattr(trigger_result, "skip_reason", "") or "")
+    sync_job = getattr(trigger_result, "sync_job", None)
+    start_result = getattr(trigger_result, "start_result", None)
+    dispatch_summary = {
+        "action": str(action or "").strip(),
+        "started_workflow": started_workflow,
+        "skipped": skipped,
+        "skip_reason": skip_reason,
+        "sync_job_id": str(getattr(sync_job, "id", "") or ""),
+        "workflow_execution_id": str(getattr(start_result, "execution_id", "") or ""),
+        "operation_id": str(getattr(start_result, "operation_id", "") or ""),
+        "enqueue_status": str(getattr(start_result, "enqueue_status", "") or ""),
+        "enqueue_error": str(getattr(start_result, "enqueue_error", "") or ""),
+        "at": timezone.now().isoformat(),
+    }
+    if started_workflow and not skipped:
+        return _persist_conflict_retry_dispatch_state(
+            conflict_id=str(conflict.id),
+            tenant_id=tenant_id,
+            dispatch_summary=dispatch_summary,
+            revert_to_pending=False,
+        )
+
+    _persist_conflict_retry_dispatch_state(
+        conflict_id=str(conflict.id),
+        tenant_id=tenant_id,
+        dispatch_summary=dispatch_summary,
+        revert_to_pending=True,
+    )
+    reason = skip_reason or str(getattr(start_result, "enqueue_error", "") or "").strip() or "unknown trigger failure"
+    raise ValueError(f"Failed to initiate sync workflow for conflict retry/reconcile: {reason}")
+
+
+def _persist_conflict_retry_dispatch_state(
+    *,
+    conflict_id: str,
+    tenant_id: str,
+    dispatch_summary: Mapping[str, Any],
+    revert_to_pending: bool,
+) -> PoolMasterDataSyncConflict:
+    with transaction.atomic():
+        conflict = PoolMasterDataSyncConflict.objects.select_for_update().get(
+            id=conflict_id,
+            tenant_id=tenant_id,
+        )
+        metadata_payload = dict(conflict.metadata or {})
+        metadata_payload["last_retry_dispatch"] = dict(dispatch_summary or {})
+        conflict.metadata = metadata_payload
+        update_fields = ["metadata", "updated_at"]
+        if revert_to_pending and conflict.status == PoolMasterDataSyncConflictStatus.RETRYING:
+            conflict.status = PoolMasterDataSyncConflictStatus.PENDING
+            update_fields.append("status")
+        conflict.save(update_fields=update_fields)
+    return conflict
