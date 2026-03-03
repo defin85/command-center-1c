@@ -2,10 +2,6 @@ name: Deploy Native
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
 
 jobs:
   deploy:
