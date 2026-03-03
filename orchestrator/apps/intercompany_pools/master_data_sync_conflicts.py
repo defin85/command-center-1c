@@ -6,6 +6,10 @@ from typing import Any, Mapping
 from django.db import transaction
 from django.utils import timezone
 
+from .master_data_sync_redaction import (
+    sanitize_master_data_sync_text,
+    sanitize_master_data_sync_value,
+)
 from .models import (
     PoolMasterDataEntityType,
     PoolMasterDataSyncConflict,
@@ -89,8 +93,8 @@ def enqueue_master_data_sync_conflict(
     normalized_canonical_id = str(canonical_id or "").strip()
     normalized_origin_system = str(origin_system or "").strip()
     normalized_origin_event_id = str(origin_event_id or "").strip()
-    diagnostics_payload = dict(diagnostics or {})
-    metadata_payload = dict(metadata or {})
+    diagnostics_payload = sanitize_master_data_sync_value(dict(diagnostics or {}))
+    metadata_payload = sanitize_master_data_sync_value(dict(metadata or {}))
     queue_key = build_master_data_sync_conflict_queue_key(
         tenant_id=str(tenant_id or "").strip(),
         database_id=str(database_id or "").strip(),
@@ -170,9 +174,10 @@ def raise_fail_closed_master_data_sync_conflict(
     diagnostics: Mapping[str, Any] | None = None,
     metadata: Mapping[str, Any] | None = None,
 ) -> None:
-    diagnostics_payload = dict(diagnostics or {})
-    if detail and "detail" not in diagnostics_payload:
-        diagnostics_payload["detail"] = str(detail)
+    diagnostics_payload = sanitize_master_data_sync_value(dict(diagnostics or {}))
+    normalized_detail = sanitize_master_data_sync_text(detail)
+    if normalized_detail and "detail" not in diagnostics_payload:
+        diagnostics_payload["detail"] = normalized_detail
     conflict = enqueue_master_data_sync_conflict(
         tenant_id=tenant_id,
         database_id=database_id,
@@ -186,7 +191,7 @@ def raise_fail_closed_master_data_sync_conflict(
     )
     raise MasterDataSyncConflictError(
         code=str(conflict.conflict_code),
-        detail=str(detail or "master-data sync conflict detected"),
+        detail=normalized_detail or "master-data sync conflict detected",
         conflict_id=str(conflict.id),
         entity_type=str(conflict.entity_type),
         canonical_id=str(conflict.canonical_id or ""),

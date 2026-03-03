@@ -19,7 +19,12 @@ def test_ensure_sync_workflow_template_creates_system_template_when_missing() ->
     assert template.is_valid is True
     assert template.is_active is True
     dag = build_pool_master_data_sync_workflow_dag_v1()
-    assert len(dag["nodes"]) >= 1
+    node_ids = [node["id"] for node in dag["nodes"]]
+    assert node_ids == ["sync_inbound", "sync_dispatch", "sync_finalize"]
+    assert dag["edges"] == [
+        {"from": "sync_inbound", "to": "sync_dispatch"},
+        {"from": "sync_dispatch", "to": "sync_finalize"},
+    ]
 
 
 @pytest.mark.django_db

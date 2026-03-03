@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -65,6 +66,28 @@ type Consumer struct {
 	consumerName  string
 	resultsStream string
 	timeline      tracing.TimelineRecorder
+
+	// dispatchSlots bounds total in-flight processing goroutines.
+	dispatchSlots chan struct{}
+	inflightWG    sync.WaitGroup
+
+	// schedulingPools isolate execution by server_affinity + role.
+	schedulingPoolsMu       sync.Mutex
+	schedulingPools         map[string]chan struct{}
+	perSchedulingPoolSize   int
+	maxSchedulingPoolGroups int
+
+	workerPoolSize int
+
+	manualReserveSlots  chan struct{}
+	generalWorkerSlots  chan struct{}
+	manualWaiters       int64
+	oldestAgeThreshold  time.Duration
+	tenantBudgetShare   float64
+	tenantBudgetBackoff time.Duration
+
+	tenantBudgetMu       sync.Mutex
+	tenantActiveByServer map[string]map[string]int
 }
 
 // NewConsumer creates a new Redis Streams consumer
@@ -92,6 +115,24 @@ func NewConsumer(cfg *config.Config, proc *processor.TaskProcessor, redisClient 
 	}
 
 	consumerName := fmt.Sprintf("worker-%s", cfg.WorkerID)
+	workerPoolSize := cfg.WorkerPoolSize
+	if workerPoolSize <= 0 {
+		workerPoolSize = 1
+	}
+	manualReserveSize := 0
+	if workerPoolSize > 1 {
+		manualReserveSize = 1
+	}
+	generalSlotSize := workerPoolSize - manualReserveSize
+	if generalSlotSize <= 0 {
+		generalSlotSize = 1
+		manualReserveSize = 0
+	}
+
+	var manualReserveSlots chan struct{}
+	if manualReserveSize > 0 {
+		manualReserveSlots = make(chan struct{}, manualReserveSize)
+	}
 
 	return &Consumer{
 		redis:         redisClient,
@@ -102,6 +143,19 @@ func NewConsumer(cfg *config.Config, proc *processor.TaskProcessor, redisClient 
 		consumerName:  consumerName,
 		resultsStream: StreamResultsCompleted,
 		timeline:      timeline,
+		dispatchSlots: make(chan struct{}, workerPoolSize),
+		schedulingPools: map[string]chan struct{}{
+			defaultSchedulingPoolKey: make(chan struct{}, defaultSchedulingPoolSize),
+		},
+		perSchedulingPoolSize:   defaultSchedulingPoolSize,
+		maxSchedulingPoolGroups: defaultMaxSchedulingPoolGroups,
+		workerPoolSize:          workerPoolSize,
+		manualReserveSlots:      manualReserveSlots,
+		generalWorkerSlots:      make(chan struct{}, generalSlotSize),
+		oldestAgeThreshold:      defaultOldestAgeThreshold,
+		tenantBudgetShare:       defaultTenantBudgetShare,
+		tenantBudgetBackoff:     defaultTenantBudgetBackoff,
+		tenantActiveByServer:    map[string]map[string]int{},
 	}, nil
 }
 
@@ -161,7 +215,7 @@ func (c *Consumer) Start(ctx context.Context) error {
 				Group:    c.consumerGroup,
 				Consumer: c.consumerName,
 				Streams:  []string{c.streamName, ">"},
-				Count:    1,
+				Count:    c.readBatchSize(),
 				Block:    ReadBlockTimeout,
 			}).Result()
 			cancel()
@@ -198,10 +252,12 @@ func (c *Consumer) Start(ctx context.Context) error {
 			}
 			consecutiveReadTimeouts = 0
 
-			// Process received messages
+			// Process received messages in bounded concurrent mode.
 			for _, stream := range streams {
 				for _, message := range stream.Messages {
-					c.processMessage(ctx, message)
+					if !c.dispatchMessage(ctx, message) {
+						return ctx.Err()
+					}
 				}
 			}
 		}

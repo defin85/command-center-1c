@@ -33,7 +33,15 @@ class OperationsServiceCore:
         execution_consumer = str(metadata.get("execution_consumer") or "").strip() or "operations"
         lane = str(metadata.get("lane") or "").strip() or execution_consumer
         result: dict[str, Any] = {}
-        for key in ("workflow_execution_id", "node_id", "trace_id"):
+        for key in (
+            "workflow_execution_id",
+            "node_id",
+            "trace_id",
+            "priority",
+            "role",
+            "server_affinity",
+            "deadline_at",
+        ):
             value = metadata.get(key)
             if value:
                 result[key] = value

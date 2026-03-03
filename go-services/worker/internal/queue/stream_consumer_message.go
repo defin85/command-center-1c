@@ -124,8 +124,45 @@ func (c *Consumer) processMessage(ctx context.Context, message redis.XMessage) {
 		return
 	}
 
-	log.Infof("processing operation, operation_id=%s, type=%s, databases=%d",
-		msg.OperationID, msg.OperationType, len(msg.TargetDatabases))
+	releaseSchedulingPoolSlot, schedulingPoolKey, acquired := c.acquireSchedulingPoolSlot(ctx, &msg)
+	if !acquired {
+		log.Warnf(
+			"failed to acquire scheduling pool slot, operation_id=%s, message_id=%s, pool=%s",
+			msg.OperationID,
+			messageID,
+			schedulingPoolKey,
+		)
+		return
+	}
+	defer releaseSchedulingPoolSlot()
+
+	fairness := c.buildFairnessProfile(&msg, messageID)
+	recordFairnessOldestTaskAgeMetric(fairness)
+	releaseFairnessGuards, fairnessAcquired := c.acquireFairnessGuards(ctx, fairness)
+	if !fairnessAcquired {
+		log.Warnf(
+			"failed to acquire fairness guards, operation_id=%s, message_id=%s, role=%s, affinity=%s",
+			msg.OperationID,
+			messageID,
+			fairness.role,
+			fairness.affinity,
+		)
+		return
+	}
+	defer releaseFairnessGuards()
+
+	log.Infof(
+		"processing operation, operation_id=%s, type=%s, databases=%d, role=%s, server_affinity=%s, scheduling_pool=%s, tenant=%s, age_seconds=%.1f, promoted=%t",
+		msg.OperationID,
+		msg.OperationType,
+		len(msg.TargetDatabases),
+		msg.Metadata.Role,
+		msg.Metadata.ServerAffinity,
+		schedulingPoolKey,
+		fairness.tenant,
+		fairness.age.Seconds(),
+		fairness.promoted,
+	)
 
 	// Atomic idempotency check with SetNX (FIX #8)
 	// SetNX returns true if key was set (new task), false if already exists

@@ -7,7 +7,12 @@ from django.db import transaction
 
 from apps.operations.services import OperationsService
 
+from .master_data_sync_redaction import sanitize_master_data_sync_text
 from .master_data_sync_workflow_contract import build_master_data_sync_workflow_input_context
+from .master_data_sync_scheduling import (
+    SERVER_AFFINITY_UNRESOLVED,
+    build_master_data_sync_scheduling_contract,
+)
 from .master_data_sync_workflow_template import ensure_pool_master_data_sync_workflow_template
 from .runtime_template_registry import sync_pool_runtime_template_registry
 from .models import PoolMasterDataSyncJob, PoolMasterDataSyncJobStatus
@@ -28,6 +33,13 @@ def _normalize_operation_id(operation_id: str) -> str:
     return str(UUID(str(operation_id or "").strip()))
 
 
+def _classify_scheduling_contract_error(error: ValueError) -> tuple[str, str]:
+    detail = str(error or "").strip() or "Invalid scheduling contract"
+    if detail == SERVER_AFFINITY_UNRESOLVED or detail.startswith(f"{SERVER_AFFINITY_UNRESOLVED}:"):
+        return SERVER_AFFINITY_UNRESOLVED, detail
+    return "SCHEDULING_CONTRACT_INVALID", detail
+
+
 def start_pool_master_data_sync_job_workflow(
     *,
     sync_job: PoolMasterDataSyncJob,
@@ -37,6 +49,7 @@ def start_pool_master_data_sync_job_workflow(
 ):
     execution_id: str | None = None
     created_execution = False
+    scheduling_contract: dict[str, str] = {}
 
     with transaction.atomic():
         locked_job = PoolMasterDataSyncJob.objects.select_for_update().get(id=sync_job.id)
@@ -54,6 +67,32 @@ def start_pool_master_data_sync_job_workflow(
                 enqueue_success=True,
                 enqueue_status=locked_job.status,
                 enqueue_error=None,
+                created_execution=False,
+            )
+
+        try:
+            scheduling_contract = build_master_data_sync_scheduling_contract(sync_job=locked_job)
+        except ValueError as exc:
+            error_code, error_detail = _classify_scheduling_contract_error(exc)
+            sanitized_error_detail = sanitize_master_data_sync_text(error_detail)
+            locked_job.status = PoolMasterDataSyncJobStatus.FAILED
+            locked_job.last_error_code = error_code
+            locked_job.last_error = sanitized_error_detail
+            locked_job.save(
+                update_fields=[
+                    "status",
+                    "last_error_code",
+                    "last_error",
+                    "updated_at",
+                ]
+            )
+            return PoolMasterDataSyncWorkflowStartResult(
+                sync_job=locked_job,
+                execution_id=None,
+                operation_id=None,
+                enqueue_success=False,
+                enqueue_status="error",
+                enqueue_error=sanitized_error_detail,
                 created_execution=False,
             )
 
@@ -80,9 +119,9 @@ def start_pool_master_data_sync_job_workflow(
         workflow_config={
             "sync_job_id": str(sync_job.id),
             "execution_consumer": "pools",
-            "priority": "normal",
             "idempotency_key": f"pool.master_data.sync:{sync_job.id}",
             "trace_id": str(correlation_id or "").strip(),
+            **scheduling_contract,
         },
     )
 
@@ -115,7 +154,10 @@ def start_pool_master_data_sync_job_workflow(
 
     refreshed.status = PoolMasterDataSyncJobStatus.FAILED
     refreshed.last_error_code = str(enqueue_result.error_code or "ENQUEUE_FAILED")
-    refreshed.last_error = str(enqueue_result.error or "Failed to enqueue workflow execution")
+    sanitized_enqueue_error = sanitize_master_data_sync_text(
+        enqueue_result.error or "Failed to enqueue workflow execution"
+    )
+    refreshed.last_error = sanitized_enqueue_error
     refreshed.save(
         update_fields=[
             "status",
@@ -130,6 +172,6 @@ def start_pool_master_data_sync_job_workflow(
         operation_id=None,
         enqueue_success=False,
         enqueue_status=enqueue_result.status,
-        enqueue_error=enqueue_result.error,
+        enqueue_error=sanitized_enqueue_error,
         created_execution=created_execution,
     )

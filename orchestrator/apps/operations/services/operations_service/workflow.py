@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 import uuid
 from typing import Any, Optional
 
@@ -8,11 +8,15 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from ...events import event_publisher, flow_publisher
+from ...prometheus_metrics import set_pool_master_data_sync_queue_backlog_by_scheduling
 from ...redis_client import redis_client
 from .types import EnqueueResult, classify_enqueue_error_code, logger
 
 
 class OperationsServiceWorkflowMixin:
+    SYNC_SCHEDULING_PRIORITY_ENUM = frozenset(("p0", "p1", "p2", "p3"))
+    SYNC_SCHEDULING_ROLE_ENUM = frozenset(("inbound", "outbound", "reconcile", "manual_remediation"))
+
     @staticmethod
     def _extract_actor_username_from_input_context(input_context: dict[str, Any] | None) -> str:
         context = input_context if isinstance(input_context, dict) else {}
@@ -63,6 +67,90 @@ class OperationsServiceWorkflowMixin:
             return actor_username
 
         return "workflow_engine"
+
+    @staticmethod
+    def _parse_rfc3339_utc_timestamp(value: Any) -> datetime | None:
+        token = str(value or "").strip()
+        if not token or "T" not in token:
+            return None
+        normalized = token[:-1] + "+00:00" if token.endswith("Z") else token
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        if timezone.is_naive(parsed):
+            return None
+        if parsed.utcoffset() != timedelta(0):
+            return None
+        return parsed.astimezone(dt_timezone.utc)
+
+    @staticmethod
+    def _format_rfc3339_utc_timestamp(value: datetime) -> str:
+        normalized = value.astimezone(dt_timezone.utc).replace(microsecond=0)
+        return normalized.isoformat().replace("+00:00", "Z")
+
+    @classmethod
+    def _validate_workflow_scheduling_contract(
+        cls,
+        *,
+        execution_id: str,
+        workflow_config: dict[str, Any],
+    ) -> tuple[dict[str, str], EnqueueResult | None]:
+        config = workflow_config if isinstance(workflow_config, dict) else {}
+        is_sync_workload = bool(str(config.get("sync_job_id") or "").strip())
+        has_new_scheduling_fields = any(
+            str(config.get(field_name) or "").strip()
+            for field_name in ("role", "server_affinity", "deadline_at")
+        )
+        requires_scheduling_contract = is_sync_workload or has_new_scheduling_fields
+        if not requires_scheduling_contract:
+            return {}, None
+
+        priority = str(config.get("priority") or "").strip().lower()
+        role = str(config.get("role") or "").strip().lower()
+        server_affinity = str(config.get("server_affinity") or "").strip()
+        deadline_at_token = str(config.get("deadline_at") or "").strip()
+
+        invalid_fields: list[str] = []
+        if priority not in cls.SYNC_SCHEDULING_PRIORITY_ENUM:
+            invalid_fields.append("priority")
+        if role not in cls.SYNC_SCHEDULING_ROLE_ENUM:
+            invalid_fields.append("role")
+        if not server_affinity:
+            invalid_fields.append("server_affinity")
+        parsed_deadline_at = cls._parse_rfc3339_utc_timestamp(deadline_at_token)
+        if parsed_deadline_at is None:
+            invalid_fields.append("deadline_at")
+
+        if invalid_fields:
+            return {}, EnqueueResult(
+                success=False,
+                operation_id=execution_id,
+                status="error",
+                error=(
+                    "Invalid scheduling contract fields: "
+                    + ", ".join(sorted(set(invalid_fields)))
+                    + ". Required: priority, role, server_affinity, deadline_at."
+                ),
+                error_code="SCHEDULING_CONTRACT_INVALID",
+            )
+
+        now_utc = timezone.now().astimezone(dt_timezone.utc)
+        if parsed_deadline_at <= now_utc:
+            return {}, EnqueueResult(
+                success=False,
+                operation_id=execution_id,
+                status="error",
+                error="deadline_at must be in the future (RFC3339 UTC).",
+                error_code="SCHEDULING_DEADLINE_INVALID",
+            )
+
+        return {
+            "priority": priority,
+            "role": role,
+            "server_affinity": server_affinity,
+            "deadline_at": cls._format_rfc3339_utc_timestamp(parsed_deadline_at),
+        }, None
 
     @classmethod
     def _upsert_workflow_root_operation(
@@ -427,6 +515,97 @@ class OperationsServiceWorkflowMixin:
                 return existing, False
 
     @classmethod
+    def _publish_workflow_queued_event_from_message(
+        cls,
+        *,
+        execution_id: str,
+        message_payload: dict[str, Any],
+    ) -> None:
+        payload = message_payload if isinstance(message_payload, dict) else {}
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        execution_consumer = str(metadata.get("execution_consumer") or "").strip() or "workflows"
+        lane = str(metadata.get("lane") or "").strip() or execution_consumer
+
+        event_kwargs: dict[str, Any] = {
+            "operation_id": execution_id,
+            "state": "QUEUED",
+            "microservice": "orchestrator",
+            "queue": cls.QUEUE_KEY,
+            "workflow_execution_id": execution_id,
+            "node_id": metadata.get("node_id"),
+            "trace_id": metadata.get("trace_id"),
+            "execution_consumer": execution_consumer,
+            "lane": lane,
+        }
+        for field_name in ("priority", "role", "server_affinity", "deadline_at"):
+            value = metadata.get(field_name)
+            if value:
+                event_kwargs[field_name] = value
+
+        event_publisher.publish(**event_kwargs)
+
+    @classmethod
+    def _record_sync_workflow_enqueue_backlog_metrics(
+        cls,
+        *,
+        now: datetime | None = None,
+    ) -> None:
+        from ...models import WorkflowEnqueueOutbox
+
+        snapshot_now = now or timezone.now()
+        grouped_rows: dict[tuple[str, str, str, str], dict[str, float]] = {}
+
+        try:
+            pending_rows = WorkflowEnqueueOutbox.objects.filter(
+                status=WorkflowEnqueueOutbox.STATUS_PENDING
+            ).values("message_payload", "next_retry_at", "dispatch_attempts")
+
+            for row in pending_rows:
+                payload = row.get("message_payload")
+                if not isinstance(payload, dict):
+                    continue
+                metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+                priority = str(metadata.get("priority") or "").strip().lower() or "unknown"
+                role = str(metadata.get("role") or "").strip().lower() or "unknown"
+                server_affinity = str(metadata.get("server_affinity") or "").strip().lower() or "shared"
+
+                # Track only scheduling-aware backlog rows relevant to sync workload.
+                if role == "unknown" and priority == "unknown" and server_affinity == "shared":
+                    continue
+
+                dispatch_attempts = int(row.get("dispatch_attempts") or 0)
+                backlog_status = "retrying" if dispatch_attempts > 0 else "queued"
+                key = (backlog_status, priority, role, server_affinity)
+                aggregate = grouped_rows.setdefault(
+                    key,
+                    {
+                        "backlog_total": 0.0,
+                        "lag_seconds": 0.0,
+                    },
+                )
+                aggregate["backlog_total"] += 1.0
+
+                next_retry_at = row.get("next_retry_at")
+                if next_retry_at is not None:
+                    lag_seconds = max((snapshot_now - next_retry_at).total_seconds(), 0.0)
+                    aggregate["lag_seconds"] = max(aggregate["lag_seconds"], float(lag_seconds))
+
+            metric_rows = [
+                {
+                    "status": status,
+                    "priority": priority,
+                    "role": role,
+                    "server_affinity": server_affinity,
+                    "backlog_total": values["backlog_total"],
+                    "lag_seconds": values["lag_seconds"],
+                }
+                for (status, priority, role, server_affinity), values in grouped_rows.items()
+            ]
+            set_pool_master_data_sync_queue_backlog_by_scheduling(rows=metric_rows)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Failed to record sync workflow enqueue backlog metrics: %s", exc)
+
+    @classmethod
     def _dispatch_workflow_outbox_entry(
         cls,
         *,
@@ -539,6 +718,58 @@ class OperationsServiceWorkflowMixin:
             }
 
     @classmethod
+    def dispatch_pending_workflow_enqueue_outbox(
+        cls,
+        *,
+        batch_size: int = 100,
+        now: datetime | None = None,
+    ) -> dict[str, int]:
+        from ...models import WorkflowEnqueueOutbox
+
+        dispatch_now = now or timezone.now()
+        normalized_batch_size = max(1, int(batch_size))
+
+        with transaction.atomic():
+            claimed_rows = list(
+                WorkflowEnqueueOutbox.objects.select_for_update(skip_locked=True)
+                .filter(
+                    status=WorkflowEnqueueOutbox.STATUS_PENDING,
+                    next_retry_at__lte=dispatch_now,
+                )
+                .order_by("next_retry_at", "id")
+                .values("id", "operation_id", "message_payload")[:normalized_batch_size]
+            )
+
+        dispatched = 0
+        failed = 0
+        for row in claimed_rows:
+            outbox_id = int(row["id"])
+            execution_id = str(row["operation_id"] or "").strip()
+            message_payload = row["message_payload"] if isinstance(row["message_payload"], dict) else {}
+
+            dispatch = cls._dispatch_workflow_outbox_entry(outbox_id=outbox_id)
+            if not dispatch["success"]:
+                failed += 1
+                continue
+
+            dispatched += 1
+            if execution_id:
+                cls._mark_workflow_root_operation_queued(execution_id=execution_id)
+                if dispatch.get("dispatched_now"):
+                    cls._publish_workflow_queued_event_from_message(
+                        execution_id=execution_id,
+                        message_payload=message_payload,
+                    )
+
+        cls._record_sync_workflow_enqueue_backlog_metrics(now=dispatch_now)
+
+        return {
+            "claimed": len(claimed_rows),
+            "dispatched": dispatched,
+            "failed": failed,
+        }
+
+    @classmethod
     def enqueue_extension_install(
         cls,
         database_ids: list[str],
@@ -576,12 +807,43 @@ class OperationsServiceWorkflowMixin:
         """
         data = dict(workflow_config or {})
         data["execution_id"] = execution_id
+        scheduling_contract, validation_error = cls._validate_workflow_scheduling_contract(
+            execution_id=execution_id,
+            workflow_config=data,
+        )
+        if validation_error is not None:
+            logger.warning(
+                "Workflow enqueue rejected by scheduling contract validation",
+                extra={
+                    "execution_id": execution_id,
+                    "error_code": validation_error.error_code,
+                    "execution_consumer": str(data.get("execution_consumer") or ""),
+                },
+            )
+            return validation_error
+        if scheduling_contract:
+            data.update(scheduling_contract)
+
         idempotency_key = str(data.get("idempotency_key") or execution_id).strip() or execution_id
         execution_consumer = str(data.get("execution_consumer") or "").strip() or "workflows"
+        enqueue_priority = scheduling_contract.get("priority") or str(data.get("priority") or "normal")
         created_by = cls._resolve_workflow_created_by(
             execution_id=execution_id,
             workflow_config=data,
         )
+        message_metadata = {
+            "created_by": created_by,
+            "template_id": None,
+            "tags": ["workflow"],
+            "workflow_execution_id": execution_id,
+            "node_id": data.get("node_id"),
+            "root_operation_id": execution_id,
+            "execution_consumer": execution_consumer,
+            "lane": "workflows",
+            "trace_id": data.get("trace_id"),
+        }
+        if scheduling_contract:
+            message_metadata.update(scheduling_contract)
 
         message = cls._build_execution_envelope(
             operation_id=execution_id,
@@ -593,34 +855,11 @@ class OperationsServiceWorkflowMixin:
                 "batch_size": 100,
                 "timeout_seconds": 300,  # 5 minutes for workflow
                 "retry_count": 1,
-                "priority": str(data.get("priority") or "normal"),
+                "priority": enqueue_priority,
                 "idempotency_key": idempotency_key,
             },
-            metadata={
-                "created_by": created_by,
-                "template_id": None,
-                "tags": ["workflow"],
-                "workflow_execution_id": execution_id,
-                "node_id": data.get("node_id"),
-                "root_operation_id": execution_id,
-                "execution_consumer": execution_consumer,
-                "lane": "workflows",
-                "trace_id": data.get("trace_id"),
-            },
+            metadata=message_metadata,
         )
-
-        def _publish_queued_event() -> None:
-            event_publisher.publish(
-                operation_id=execution_id,
-                state="QUEUED",
-                microservice="orchestrator",
-                queue=cls.QUEUE_KEY,
-                workflow_execution_id=execution_id,
-                node_id=data.get("node_id"),
-                trace_id=data.get("trace_id"),
-                execution_consumer=execution_consumer,
-                lane="workflows",
-            )
 
         try:
             with transaction.atomic():
@@ -636,6 +875,7 @@ class OperationsServiceWorkflowMixin:
 
             dispatch = cls._dispatch_workflow_outbox_entry(outbox_id=outbox_entry.id)
             if not dispatch["success"]:
+                cls._record_sync_workflow_enqueue_backlog_metrics()
                 logger.error(
                     "Workflow enqueue outbox dispatch failed",
                     extra={
@@ -655,7 +895,11 @@ class OperationsServiceWorkflowMixin:
             cls._mark_workflow_root_operation_queued(execution_id=execution_id)
 
             if dispatch["dispatched_now"]:
-                _publish_queued_event()
+                cls._publish_workflow_queued_event_from_message(
+                    execution_id=execution_id,
+                    message_payload=message,
+                )
+            cls._record_sync_workflow_enqueue_backlog_metrics()
 
             msg_id = str(dispatch["stream_message_id"] or "")
 
@@ -673,6 +917,7 @@ class OperationsServiceWorkflowMixin:
             )
 
         except Exception as exc:
+            cls._record_sync_workflow_enqueue_backlog_metrics()
             logger.error(f"Error enqueueing workflow: {exc}", exc_info=True)
             return EnqueueResult(
                 success=False,

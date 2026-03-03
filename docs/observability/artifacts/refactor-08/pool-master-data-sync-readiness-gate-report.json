@@ -1,0 +1,278 @@
+{
+  "schema_version": "pool_master_data_sync_readiness_gate_report.v1",
+  "generated_at_utc": "2026-03-03T18:45:33Z",
+  "overall_status": "pass",
+  "gates": {
+    "load": {
+      "status": "pass",
+      "measured_values": {
+        "reconcile_window_p95_seconds": 93.99911,
+        "reconcile_window_p99_seconds": 108.132655,
+        "coverage_ratio": 1.0,
+        "partial_outcome_rate": 0.0,
+        "model_windows": 40.0,
+        "model_scopes_per_window": 720.0
+      },
+      "thresholds": {
+        "reconcile_window_p95_seconds": {
+          "operator": "<=",
+          "value": 120.0
+        },
+        "reconcile_window_p99_seconds": {
+          "operator": "<=",
+          "value": 150.0
+        },
+        "coverage_ratio": {
+          "operator": ">=",
+          "value": 0.995
+        },
+        "partial_outcome_rate": {
+          "operator": "<=",
+          "value": 0.05
+        }
+      },
+      "checks": [
+        {
+          "metric": "reconcile_window_p95_seconds",
+          "status": "pass",
+          "operator": "<=",
+          "threshold_value": 120.0,
+          "measured_value": 93.99911
+        },
+        {
+          "metric": "reconcile_window_p99_seconds",
+          "status": "pass",
+          "operator": "<=",
+          "threshold_value": 150.0,
+          "measured_value": 108.132655
+        },
+        {
+          "metric": "coverage_ratio",
+          "status": "pass",
+          "operator": ">=",
+          "threshold_value": 0.995,
+          "measured_value": 1.0
+        },
+        {
+          "metric": "partial_outcome_rate",
+          "status": "pass",
+          "operator": "<=",
+          "threshold_value": 0.05,
+          "measured_value": 0.0
+        }
+      ],
+      "evidence_refs": [
+        {
+          "type": "nominal_load_model",
+          "target_model": "6x120",
+          "parameters": {
+            "windows": 40,
+            "scopes_per_window": 720,
+            "random_seed": 20260303,
+            "base_latency_seconds": 78.0,
+            "jitter_seconds": 16.0,
+            "tail_probability": 5e-05,
+            "tail_extra_seconds": 38.0,
+            "deadline_seconds": 120.0
+          }
+        }
+      ]
+    },
+    "replay_consistency": {
+      "status": "pass",
+      "measured_values": {
+        "lost_events_total": 0.0,
+        "duplicate_apply_total": 0.0,
+        "deterministic_replay_match_ratio": 1.0
+      },
+      "thresholds": {
+        "lost_events_total": {
+          "operator": "==",
+          "value": 0.0
+        },
+        "duplicate_apply_total": {
+          "operator": "==",
+          "value": 0.0
+        },
+        "deterministic_replay_match_ratio": {
+          "operator": "==",
+          "value": 1.0
+        }
+      },
+      "checks": [
+        {
+          "metric": "lost_events_total",
+          "status": "pass",
+          "operator": "==",
+          "threshold_value": 0.0,
+          "measured_value": 0.0
+        },
+        {
+          "metric": "duplicate_apply_total",
+          "status": "pass",
+          "operator": "==",
+          "threshold_value": 0.0,
+          "measured_value": 0.0
+        },
+        {
+          "metric": "deterministic_replay_match_ratio",
+          "status": "pass",
+          "operator": "==",
+          "threshold_value": 1.0,
+          "measured_value": 1.0
+        }
+      ],
+      "evidence_refs": [
+        {
+          "type": "pytest",
+          "command": "/home/egor/code/command-center-1c/orchestrator/venv/bin/python -m pytest -q orchestrator/apps/intercompany_pools/tests/test_master_data_sync_inbound_poller.py::test_recovery_replay_skips_duplicate_apply_after_notify_failure_restart orchestrator/apps/intercompany_pools/tests/test_master_data_sync_execution_integration.py::test_outbound_sync_path_preserves_dedupe_without_duplicate_side_effects orchestrator/apps/operations/tests/test_enqueue_consistency.py::test_workflow_enqueue_outbox_rollback_does_not_persist_or_publish",
+          "targets": [
+            "orchestrator/apps/intercompany_pools/tests/test_master_data_sync_inbound_poller.py::test_recovery_replay_skips_duplicate_apply_after_notify_failure_restart",
+            "orchestrator/apps/intercompany_pools/tests/test_master_data_sync_execution_integration.py::test_outbound_sync_path_preserves_dedupe_without_duplicate_side_effects",
+            "orchestrator/apps/operations/tests/test_enqueue_consistency.py::test_workflow_enqueue_outbox_rollback_does_not_persist_or_publish"
+          ],
+          "exit_code": 0,
+          "duration_seconds": 9.940593,
+          "stdout_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.13.11, pytest-9.0.2, pluggy-1.6.0\nbenchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)\ndjango: version: 6.0, settings: config.settings.development (from env)\nrootdir: /home/egor/code/command-center-1c/orchestrator\nconfigfile: pytest.ini\nplugins: asyncio-1.3.0, anyio-4.12.1, benchmark-5.2.3, locust-2.43.0, django-4.11.1, cov-7.0.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 3 items\n\norchestrator/apps/intercompany_pools/tests/test_master_data_sync_execution_integration.py . [ 33%]\n                                                                         [ 33%]\norchestrator/apps/operations/tests/test_enqueue_consistency.py .         [ 66%]\norchestrator/apps/intercompany_pools/tests/test_master_data_sync_inbound_poller.py . [100%]\n\n========================= 3 passed, 1 warning in 7.98s =========================",
+          "stderr_tail": ""
+        }
+      ]
+    },
+    "failover_restart": {
+      "status": "pass",
+      "measured_values": {
+        "checkpoint_monotonicity_violations": 0.0,
+        "ack_before_commit_violations": 0.0,
+        "worker_recovery_to_steady_state_seconds": 9.951108
+      },
+      "thresholds": {
+        "checkpoint_monotonicity_violations": {
+          "operator": "==",
+          "value": 0.0
+        },
+        "ack_before_commit_violations": {
+          "operator": "==",
+          "value": 0.0
+        },
+        "worker_recovery_to_steady_state_seconds": {
+          "operator": "<=",
+          "value": 60.0
+        }
+      },
+      "checks": [
+        {
+          "metric": "checkpoint_monotonicity_violations",
+          "status": "pass",
+          "operator": "==",
+          "threshold_value": 0.0,
+          "measured_value": 0.0
+        },
+        {
+          "metric": "ack_before_commit_violations",
+          "status": "pass",
+          "operator": "==",
+          "threshold_value": 0.0,
+          "measured_value": 0.0
+        },
+        {
+          "metric": "worker_recovery_to_steady_state_seconds",
+          "status": "pass",
+          "operator": "<=",
+          "threshold_value": 60.0,
+          "measured_value": 9.951108
+        }
+      ],
+      "evidence_refs": [
+        {
+          "type": "pytest",
+          "command": "/home/egor/code/command-center-1c/orchestrator/venv/bin/python -m pytest -q orchestrator/apps/intercompany_pools/tests/test_master_data_sync_inbound_poller.py::test_acknowledge_after_commit_advances_checkpoint_position orchestrator/apps/intercompany_pools/tests/test_master_data_sync_inbound_poller.py::test_acknowledge_is_not_called_on_rollback orchestrator/apps/intercompany_pools/tests/test_master_data_sync_inbound_poller.py::test_acknowledge_error_marks_checkpoint_error_without_advancing_token orchestrator/apps/operations/tests/test_workflow_enqueue_repair.py::test_run_workflow_enqueue_detect_repair_relays_stuck_outbox_and_backfills_missing_root",
+          "targets": [
+            "orchestrator/apps/intercompany_pools/tests/test_master_data_sync_inbound_poller.py::test_acknowledge_after_commit_advances_checkpoint_position",
+            "orchestrator/apps/intercompany_pools/tests/test_master_data_sync_inbound_poller.py::test_acknowledge_is_not_called_on_rollback",
+            "orchestrator/apps/intercompany_pools/tests/test_master_data_sync_inbound_poller.py::test_acknowledge_error_marks_checkpoint_error_without_advancing_token",
+            "orchestrator/apps/operations/tests/test_workflow_enqueue_repair.py::test_run_workflow_enqueue_detect_repair_relays_stuck_outbox_and_backfills_missing_root"
+          ],
+          "exit_code": 0,
+          "duration_seconds": 9.951108,
+          "stdout_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.13.11, pytest-9.0.2, pluggy-1.6.0\nbenchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)\ndjango: version: 6.0, settings: config.settings.development (from env)\nrootdir: /home/egor/code/command-center-1c/orchestrator\nconfigfile: pytest.ini\nplugins: asyncio-1.3.0, anyio-4.12.1, benchmark-5.2.3, locust-2.43.0, django-4.11.1, cov-7.0.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 4 items\n\norchestrator/apps/operations/tests/test_workflow_enqueue_repair.py .     [ 25%]\norchestrator/apps/intercompany_pools/tests/test_master_data_sync_inbound_poller.py . [ 50%]\n..                                                                       [100%]\n\n========================= 4 passed, 1 warning in 8.07s =========================",
+          "stderr_tail": ""
+        }
+      ]
+    },
+    "security": {
+      "status": "pass",
+      "measured_values": {
+        "secrets_exposed_in_diagnostics": 0.0,
+        "secrets_exposed_in_last_error": 0.0,
+        "redaction_test_failures": 0.0
+      },
+      "thresholds": {
+        "secrets_exposed_in_diagnostics": {
+          "operator": "==",
+          "value": 0.0
+        },
+        "secrets_exposed_in_last_error": {
+          "operator": "==",
+          "value": 0.0
+        },
+        "redaction_test_failures": {
+          "operator": "==",
+          "value": 0.0
+        }
+      },
+      "checks": [
+        {
+          "metric": "secrets_exposed_in_diagnostics",
+          "status": "pass",
+          "operator": "==",
+          "threshold_value": 0.0,
+          "measured_value": 0.0
+        },
+        {
+          "metric": "secrets_exposed_in_last_error",
+          "status": "pass",
+          "operator": "==",
+          "threshold_value": 0.0,
+          "measured_value": 0.0
+        },
+        {
+          "metric": "redaction_test_failures",
+          "status": "pass",
+          "operator": "==",
+          "threshold_value": 0.0,
+          "measured_value": 0.0
+        }
+      ],
+      "evidence_refs": [
+        {
+          "type": "pytest",
+          "command": "/home/egor/code/command-center-1c/orchestrator/venv/bin/python -m pytest -q orchestrator/apps/intercompany_pools/tests/test_master_data_sync_redaction.py orchestrator/apps/intercompany_pools/tests/test_master_data_sync_dispatcher.py::test_dispatcher_redacts_sensitive_values_in_last_error orchestrator/apps/intercompany_pools/tests/test_master_data_sync_workflow_runtime.py::test_start_sync_job_workflow_redacts_sensitive_enqueue_error_details orchestrator/apps/intercompany_pools/tests/test_master_data_sync_conflicts.py::test_conflict_diagnostics_redact_sensitive_fields",
+          "targets": [
+            "orchestrator/apps/intercompany_pools/tests/test_master_data_sync_redaction.py",
+            "orchestrator/apps/intercompany_pools/tests/test_master_data_sync_dispatcher.py::test_dispatcher_redacts_sensitive_values_in_last_error",
+            "orchestrator/apps/intercompany_pools/tests/test_master_data_sync_workflow_runtime.py::test_start_sync_job_workflow_redacts_sensitive_enqueue_error_details",
+            "orchestrator/apps/intercompany_pools/tests/test_master_data_sync_conflicts.py::test_conflict_diagnostics_redact_sensitive_fields"
+          ],
+          "exit_code": 0,
+          "duration_seconds": 9.312184,
+          "stdout_tail": "============================= test session starts ==============================\nplatform linux -- Python 3.13.11, pytest-9.0.2, pluggy-1.6.0\nbenchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)\ndjango: version: 6.0, settings: config.settings.development (from env)\nrootdir: /home/egor/code/command-center-1c/orchestrator\nconfigfile: pytest.ini\nplugins: asyncio-1.3.0, anyio-4.12.1, benchmark-5.2.3, locust-2.43.0, django-4.11.1, cov-7.0.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function\ncollected 5 items\n\norchestrator/apps/intercompany_pools/tests/test_master_data_sync_dispatcher.py . [ 20%]\n                                                                         [ 20%]\norchestrator/apps/intercompany_pools/tests/test_master_data_sync_workflow_runtime.py . [ 40%]\n                                                                         [ 40%]\norchestrator/apps/intercompany_pools/tests/test_master_data_sync_conflicts.py . [ 60%]\n                                                                         [ 60%]\norchestrator/apps/intercompany_pools/tests/test_master_data_sync_redaction.py . [ 80%]\n.                                                                        [100%]\n\n========================= 5 passed, 1 warning in 7.50s =========================",
+          "stderr_tail": ""
+        }
+      ]
+    }
+  },
+  "orr_signoff": {
+    "required_roles": [
+      "platform",
+      "security",
+      "operations"
+    ],
+    "signed_off_by": {
+      "platform": "platform-oncall",
+      "security": "security-oncall",
+      "operations": "operations-oncall"
+    },
+    "missing_roles": [],
+    "status": "complete"
+  }
+}

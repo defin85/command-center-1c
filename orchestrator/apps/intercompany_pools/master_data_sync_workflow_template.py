@@ -13,12 +13,19 @@ POOL_MASTER_DATA_SYNC_WORKFLOW_TEMPLATE_DESCRIPTION = (
 )
 
 POOL_MASTER_DATA_SYNC_WORKFLOW_DISPATCH_ALIAS = "pool.master_data_sync.dispatch"
+POOL_MASTER_DATA_SYNC_WORKFLOW_INBOUND_ALIAS = "pool.master_data_sync.inbound"
 POOL_MASTER_DATA_SYNC_WORKFLOW_FINALIZE_ALIAS = "pool.master_data_sync.finalize"
 
 
 def build_pool_master_data_sync_workflow_dag_v1() -> dict[str, Any]:
     return {
         "nodes": [
+            {
+                "id": "sync_inbound",
+                "name": "Sync Inbound",
+                "type": "operation",
+                "template_id": POOL_MASTER_DATA_SYNC_WORKFLOW_INBOUND_ALIAS,
+            },
             {
                 "id": "sync_dispatch",
                 "name": "Sync Dispatch",
@@ -32,7 +39,10 @@ def build_pool_master_data_sync_workflow_dag_v1() -> dict[str, Any]:
                 "template_id": POOL_MASTER_DATA_SYNC_WORKFLOW_FINALIZE_ALIAS,
             },
         ],
-        "edges": [{"from": "sync_dispatch", "to": "sync_finalize"}],
+        "edges": [
+            {"from": "sync_inbound", "to": "sync_dispatch"},
+            {"from": "sync_dispatch", "to": "sync_finalize"},
+        ],
     }
 
 

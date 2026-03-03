@@ -14600,6 +14600,19 @@ components:
           type: string
         lane:
           type: string
+        priority:
+          type: string
+          nullable: true
+        role:
+          type: string
+          nullable: true
+        server_affinity:
+          type: string
+          nullable: true
+        deadline_at:
+          type: string
+          format: date-time
+          nullable: true
         created_at:
           type: string
           format: date-time

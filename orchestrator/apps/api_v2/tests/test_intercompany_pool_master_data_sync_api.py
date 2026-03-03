@@ -13,13 +13,18 @@ from rest_framework.test import APIClient
 from apps.databases.models import Database
 from apps.intercompany_pools.models import (
     PoolMasterDataEntityType,
+    PoolMasterDataSyncDirection,
     PoolMasterDataSyncCheckpoint,
     PoolMasterDataSyncCheckpointStatus,
     PoolMasterDataSyncConflict,
     PoolMasterDataSyncConflictStatus,
+    PoolMasterDataSyncJob,
+    PoolMasterDataSyncJobStatus,
     PoolMasterDataSyncOutbox,
     PoolMasterDataSyncOutboxStatus,
+    PoolMasterDataSyncPolicy,
 )
+from apps.operations.models import BatchOperation, WorkflowEnqueueOutbox
 from apps.tenancy.models import Tenant, TenantMember
 
 
@@ -144,6 +149,83 @@ def test_master_data_sync_status_aggregates_checkpoint_outbox_and_conflicts(
     assert status_row["conflict_pending_count"] == 1
     assert status_row["conflict_retrying_count"] == 1
     assert status_row["lag_seconds"] >= 120
+
+
+@pytest.mark.django_db
+def test_master_data_sync_status_supports_scheduling_filters_and_queue_states(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"sync-status-filter-db-{uuid4().hex[:8]}")
+    operation_id = uuid4()
+    deadline_at = (timezone.now() + timedelta(minutes=10)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    PoolMasterDataSyncJob.objects.create(
+        tenant=default_tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        policy=PoolMasterDataSyncPolicy.BIDIRECTIONAL,
+        direction=PoolMasterDataSyncDirection.BIDIRECTIONAL,
+        status=PoolMasterDataSyncJobStatus.PENDING,
+        operation_id=operation_id,
+    )
+    BatchOperation.objects.create(
+        id=str(operation_id),
+        name="Sync Workflow Root",
+        operation_type="execute_workflow",
+        target_entity="Workflow",
+        status=BatchOperation.STATUS_PENDING,
+        payload={},
+        config={},
+        total_tasks=0,
+        created_by="test",
+        metadata={
+            "priority": "p1",
+            "role": "reconcile",
+            "server_affinity": "srv-a",
+            "deadline_at": deadline_at,
+        },
+    )
+    WorkflowEnqueueOutbox.objects.create(
+        operation_id=str(operation_id),
+        message_payload={
+            "metadata": {
+                "priority": "p1",
+                "role": "reconcile",
+                "server_affinity": "srv-a",
+            }
+        },
+        status=WorkflowEnqueueOutbox.STATUS_PENDING,
+        dispatch_attempts=2,
+        next_retry_at=timezone.now() - timedelta(seconds=30),
+    )
+
+    response = authenticated_client.get(
+        (
+            "/api/v2/pools/master-data/sync-status/"
+            f"?database_id={database.id}&entity_type=item&priority=p1&role=reconcile"
+            "&server_affinity=srv-a&deadline_state=pending"
+        )
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 1
+    status_row = payload["statuses"][0]
+    assert status_row["priority"] == "p1"
+    assert status_row["role"] == "reconcile"
+    assert status_row["server_affinity"] == "srv-a"
+    assert status_row["deadline_state"] == "pending"
+    assert status_row["queue_states"]["retrying"] == 1
+    assert status_row["queue_states"]["queued"] == 0
+    assert status_row["queue_states"]["processing"] == 0
+    assert status_row["queue_states"]["failed"] == 0
+    assert status_row["queue_states"]["completed"] == 0
+
+    mismatch_response = authenticated_client.get(
+        f"/api/v2/pools/master-data/sync-status/?database_id={database.id}&entity_type=item&deadline_state=missed"
+    )
+    assert mismatch_response.status_code == 200
+    assert mismatch_response.json()["count"] == 0
 
 
 @pytest.mark.django_db

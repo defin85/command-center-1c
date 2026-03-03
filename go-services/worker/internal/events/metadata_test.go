@@ -44,6 +44,10 @@ func TestWorkflowMetadataFromMessage_PrefersExplicitValues(t *testing.T) {
 			ExecutionConsumer: "pools",
 			Lane:              "workflows",
 			TraceID:           "trace-1",
+			Priority:          "p1",
+			Role:              "manual_remediation",
+			ServerAffinity:    "srv-1c-a",
+			DeadlineAt:        "2026-03-03T12:02:00Z",
 		},
 	}
 
@@ -62,6 +66,18 @@ func TestWorkflowMetadataFromMessage_PrefersExplicitValues(t *testing.T) {
 	}
 	if got := metadata["trace_id"]; got != "trace-1" {
 		t.Fatalf("trace_id mismatch: got %v", got)
+	}
+	if got := metadata["priority"]; got != "p1" {
+		t.Fatalf("priority mismatch: got %v", got)
+	}
+	if got := metadata["role"]; got != "manual_remediation" {
+		t.Fatalf("role mismatch: got %v", got)
+	}
+	if got := metadata["server_affinity"]; got != "srv-1c-a" {
+		t.Fatalf("server_affinity mismatch: got %v", got)
+	}
+	if got := metadata["deadline_at"]; got != "2026-03-03T12:02:00Z" {
+		t.Fatalf("deadline_at mismatch: got %v", got)
 	}
 }
 

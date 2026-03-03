@@ -1,0 +1,82 @@
+{
+  "schema_version": "pool_master_data_sync_cutover_report.v1",
+  "generated_at_utc": "2026-03-03T18:52:08Z",
+  "execution_mode": "apply",
+  "overall_status": "pass",
+  "runtime_setting_key": "pools.master_data.sync.enabled",
+  "before": {
+    "exists": true,
+    "value": false,
+    "updated_at_utc": "2026-03-02T20:01:57Z"
+  },
+  "stages": {
+    "freeze": {
+      "applied": true,
+      "target_value": false,
+      "before": {
+        "exists": true,
+        "value": false,
+        "updated_at_utc": "2026-03-02T20:01:57Z"
+      },
+      "after": {
+        "exists": true,
+        "value": false,
+        "updated_at_utc": "2026-03-03T18:52:08Z"
+      }
+    },
+    "drain": {
+      "captured_at_utc": "2026-03-03T18:52:08Z",
+      "pending_sync_outbox_count": 0,
+      "pending_workflow_enqueue_outbox_total": 0,
+      "pending_workflow_enqueue_outbox_sync": 0,
+      "active_sync_jobs_count": 0,
+      "active_sync_conflicts_count": 0,
+      "drained": true
+    },
+    "watermark_capture": {
+      "captured_at_utc": "2026-03-03T18:52:08Z",
+      "pool_master_data_sync_outbox": {
+        "max_id": null,
+        "latest_updated_at_utc": null
+      },
+      "pool_master_data_sync_checkpoint": {
+        "latest_applied_at_utc": null,
+        "latest_updated_at_utc": null
+      },
+      "workflow_enqueue_outbox": {
+        "max_id": 31,
+        "latest_updated_at_utc": "2026-02-27T12:44:44Z"
+      },
+      "pool_master_data_sync_job": {
+        "max_id": null,
+        "latest_updated_at_utc": null
+      }
+    },
+    "gate_report": {
+      "path": "/home/egor/code/command-center-1c/docs/observability/artifacts/refactor-08/pool-master-data-sync-readiness-gate-report.json",
+      "exists": true,
+      "schema_version": "pool_master_data_sync_readiness_gate_report.v1",
+      "overall_status": "pass"
+    },
+    "enable": {
+      "applied": true,
+      "target_value": true,
+      "before": {
+        "exists": true,
+        "value": false,
+        "updated_at_utc": "2026-03-03T18:52:08Z"
+      },
+      "after": {
+        "exists": true,
+        "value": true,
+        "updated_at_utc": "2026-03-03T18:52:08Z"
+      },
+      "enabled_value_after": true
+    }
+  },
+  "after": {
+    "exists": true,
+    "value": true,
+    "updated_at_utc": "2026-03-03T18:52:08Z"
+  }
+}

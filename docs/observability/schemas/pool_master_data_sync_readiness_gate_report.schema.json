@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://command-center-1c.local/schemas/pool_master_data_sync_readiness_gate_report.schema.json",
+  "title": "Pool Master Data Sync Readiness Gate Report",
+  "description": "Machine-readable readiness gates report for big-bang unified sync runtime enablement.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generated_at_utc",
+    "overall_status",
+    "gates",
+    "orr_signoff"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "pool_master_data_sync_readiness_gate_report.v1"
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "overall_status": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail"
+      ]
+    },
+    "gates": {
+      "type": "object",
+      "required": [
+        "load",
+        "replay_consistency",
+        "failover_restart",
+        "security"
+      ],
+      "properties": {
+        "load": {
+          "$ref": "#/$defs/gateSection"
+        },
+        "replay_consistency": {
+          "$ref": "#/$defs/gateSection"
+        },
+        "failover_restart": {
+          "$ref": "#/$defs/gateSection"
+        },
+        "security": {
+          "$ref": "#/$defs/gateSection"
+        }
+      },
+      "additionalProperties": false
+    },
+    "orr_signoff": {
+      "type": "object",
+      "required": [
+        "required_roles",
+        "signed_off_by",
+        "missing_roles",
+        "status"
+      ],
+      "properties": {
+        "required_roles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "platform",
+              "security",
+              "operations"
+            ]
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "signed_off_by": {
+          "type": "object",
+          "required": [
+            "platform",
+            "security",
+            "operations"
+          ],
+          "properties": {
+            "platform": {
+              "type": "string"
+            },
+            "security": {
+              "type": "string"
+            },
+            "operations": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "missing_roles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "platform",
+              "security",
+              "operations"
+            ]
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "missing"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "schema_validation_errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "thresholdRule": {
+      "type": "object",
+      "required": [
+        "operator",
+        "value"
+      ],
+      "properties": {
+        "operator": {
+          "type": "string",
+          "enum": [
+            "<=",
+            ">=",
+            "=="
+          ]
+        },
+        "value": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "gateCheck": {
+      "type": "object",
+      "required": [
+        "metric",
+        "status",
+        "operator",
+        "threshold_value",
+        "measured_value"
+      ],
+      "properties": {
+        "metric": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "missing",
+            "invalid"
+          ]
+        },
+        "operator": {
+          "type": "string",
+          "enum": [
+            "<=",
+            ">=",
+            "=="
+          ]
+        },
+        "threshold_value": {
+          "type": "number"
+        },
+        "measured_value": {
+          "type": [
+            "number",
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "gateSection": {
+      "type": "object",
+      "required": [
+        "status",
+        "measured_values",
+        "thresholds",
+        "checks",
+        "evidence_refs"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
+        "measured_values": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/thresholdRule"
+          }
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gateCheck"
+          }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

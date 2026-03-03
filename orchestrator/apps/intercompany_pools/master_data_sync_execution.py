@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 from uuid import uuid4
 
 from django.db import transaction
@@ -15,6 +15,11 @@ from .master_data_sync_conflicts import (
     raise_fail_closed_master_data_sync_conflict,
 )
 from .master_data_sync_dispatcher import dispatch_pending_master_data_sync_outbox
+from .master_data_sync_inbound_poller import (
+    InboundPollerTransportError,
+    MasterDataSyncSelectChangesResult,
+    process_master_data_sync_inbound_batch,
+)
 from .master_data_sync_policy import resolve_pool_master_data_sync_policy
 from .master_data_sync_runtime_settings import require_pool_master_data_sync_runtime_settings
 from .master_data_sync_workflow_contract import validate_master_data_sync_workflow_input_context
@@ -33,6 +38,26 @@ from .models import (
 MASTER_DATA_SYNC_DISABLED = "MASTER_DATA_SYNC_DISABLED"
 MASTER_DATA_SYNC_OUTBOUND_DISABLED = "MASTER_DATA_SYNC_OUTBOUND_DISABLED"
 MASTER_DATA_SYNC_INBOUND_DISABLED = "MASTER_DATA_SYNC_INBOUND_DISABLED"
+MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED = "MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED"
+SYNC_LEGACY_INBOUND_ROUTE_DISABLED = "SYNC_LEGACY_INBOUND_ROUTE_DISABLED"
+
+
+class LegacyInboundRouteDisabledError(RuntimeError):
+    def __init__(self, *, detail: str) -> None:
+        self.code = SYNC_LEGACY_INBOUND_ROUTE_DISABLED
+        self.detail = str(detail or "").strip() or "legacy inbound route is disabled"
+        super().__init__(f"{self.code}: {self.detail}")
+
+
+_InboundSelectChangesCallback = Callable[..., MasterDataSyncSelectChangesResult]
+_InboundApplyChangeCallback = Callable[..., Any]
+_InboundNotifyChangesReceivedCallback = Callable[..., Any]
+
+_INBOUND_SELECT_CHANGES_CALLBACK: _InboundSelectChangesCallback | None = None
+_INBOUND_APPLY_CHANGE_CALLBACK: _InboundApplyChangeCallback | None = None
+_INBOUND_NOTIFY_CHANGES_RECEIVED_CALLBACK: _InboundNotifyChangesReceivedCallback | None = None
+_INBOUND_SELECT_CHANGES_KWARGS: dict[str, Any] = {}
+_INBOUND_NOTIFY_CHANGES_RECEIVED_KWARGS: dict[str, Any] = {}
 
 
 @dataclass(frozen=True)
@@ -78,6 +103,37 @@ def resolve_effective_pool_master_data_sync_policy(
             source="runtime_default",
         )
     raise ValueError(f"Unsupported runtime default sync policy '{default_policy}'")
+
+
+def configure_pool_master_data_sync_inbound_callbacks(
+    *,
+    select_changes: _InboundSelectChangesCallback,
+    apply_change: _InboundApplyChangeCallback,
+    notify_changes_received: _InboundNotifyChangesReceivedCallback,
+    select_changes_kwargs: Mapping[str, Any] | None = None,
+    notify_changes_received_kwargs: Mapping[str, Any] | None = None,
+) -> None:
+    global _INBOUND_SELECT_CHANGES_CALLBACK
+    global _INBOUND_APPLY_CHANGE_CALLBACK
+    global _INBOUND_NOTIFY_CHANGES_RECEIVED_CALLBACK
+    _INBOUND_SELECT_CHANGES_CALLBACK = select_changes
+    _INBOUND_APPLY_CHANGE_CALLBACK = apply_change
+    _INBOUND_NOTIFY_CHANGES_RECEIVED_CALLBACK = notify_changes_received
+    _INBOUND_SELECT_CHANGES_KWARGS.clear()
+    _INBOUND_SELECT_CHANGES_KWARGS.update(dict(select_changes_kwargs or {}))
+    _INBOUND_NOTIFY_CHANGES_RECEIVED_KWARGS.clear()
+    _INBOUND_NOTIFY_CHANGES_RECEIVED_KWARGS.update(dict(notify_changes_received_kwargs or {}))
+
+
+def reset_pool_master_data_sync_inbound_callbacks() -> None:
+    global _INBOUND_SELECT_CHANGES_CALLBACK
+    global _INBOUND_APPLY_CHANGE_CALLBACK
+    global _INBOUND_NOTIFY_CHANGES_RECEIVED_CALLBACK
+    _INBOUND_SELECT_CHANGES_CALLBACK = None
+    _INBOUND_APPLY_CHANGE_CALLBACK = None
+    _INBOUND_NOTIFY_CHANGES_RECEIVED_CALLBACK = None
+    _INBOUND_SELECT_CHANGES_KWARGS.clear()
+    _INBOUND_NOTIFY_CHANGES_RECEIVED_KWARGS.clear()
 
 
 def trigger_pool_master_data_outbound_sync_job(
@@ -242,6 +298,469 @@ def trigger_pool_master_data_outbound_sync_job(
     )
 
 
+def trigger_pool_master_data_inbound_sync_job(
+    *,
+    tenant_id: str,
+    database_id: str,
+    entity_type: str,
+    origin_system: str = "ib",
+    origin_event_id: str | None = None,
+    correlation_id: str | None = None,
+) -> PoolMasterDataSyncTriggerResult:
+    normalized_tenant_id = str(tenant_id or "").strip()
+    normalized_database_id = str(database_id or "").strip()
+    normalized_entity_type = str(entity_type or "").strip()
+    normalized_origin_system = str(origin_system or "ib").strip().lower() or "ib"
+    normalized_origin_event_id = str(origin_event_id or "").strip() or f"evt-{uuid4()}"
+    normalized_correlation_id = str(correlation_id or "").strip() or f"corr-{uuid4()}"
+
+    if normalized_entity_type not in set(PoolMasterDataEntityType.values):
+        raise ValueError(f"Unsupported master-data entity_type '{entity_type}'")
+
+    runtime_settings = require_pool_master_data_sync_runtime_settings(tenant_id=normalized_tenant_id)
+    if not runtime_settings.enabled:
+        return PoolMasterDataSyncTriggerResult(
+            sync_job=None,
+            created_job=False,
+            started_workflow=False,
+            skipped=True,
+            skip_reason=MASTER_DATA_SYNC_DISABLED,
+            policy=None,
+            policy_source=None,
+            start_result=None,
+        )
+    if not runtime_settings.inbound_enabled:
+        return PoolMasterDataSyncTriggerResult(
+            sync_job=None,
+            created_job=False,
+            started_workflow=False,
+            skipped=True,
+            skip_reason=MASTER_DATA_SYNC_INBOUND_DISABLED,
+            policy=None,
+            policy_source=None,
+            start_result=None,
+        )
+
+    policy_decision = resolve_effective_pool_master_data_sync_policy(
+        tenant_id=normalized_tenant_id,
+        entity_type=normalized_entity_type,
+        database_id=normalized_database_id,
+        default_policy=runtime_settings.default_policy,
+    )
+    if policy_decision.policy not in {
+        PoolMasterDataSyncPolicy.IB_MASTER,
+        PoolMasterDataSyncPolicy.BIDIRECTIONAL,
+    }:
+        raise_fail_closed_master_data_sync_conflict(
+            tenant_id=normalized_tenant_id,
+            database_id=normalized_database_id,
+            entity_type=normalized_entity_type,
+            conflict_code=MASTER_DATA_SYNC_CONFLICT_POLICY_VIOLATION,
+            detail=(
+                "Inbound sync is forbidden by effective policy "
+                f"'{policy_decision.policy}' for scope tenant='{normalized_tenant_id}', "
+                f"database='{normalized_database_id}', entity='{normalized_entity_type}'."
+            ),
+            origin_system=normalized_origin_system,
+            origin_event_id=normalized_origin_event_id,
+            diagnostics={
+                "policy": policy_decision.policy,
+                "policy_source": policy_decision.source,
+            },
+        )
+
+    with transaction.atomic():
+        existing_job = (
+            PoolMasterDataSyncJob.objects.select_for_update()
+            .filter(
+                tenant_id=normalized_tenant_id,
+                database_id=normalized_database_id,
+                entity_type=normalized_entity_type,
+                status__in=[PoolMasterDataSyncJobStatus.PENDING, PoolMasterDataSyncJobStatus.RUNNING],
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if existing_job is None:
+            sync_job = PoolMasterDataSyncJob.objects.create(
+                tenant_id=normalized_tenant_id,
+                database_id=normalized_database_id,
+                entity_type=normalized_entity_type,
+                policy=policy_decision.policy,
+                direction=PoolMasterDataSyncDirection.INBOUND,
+                status=PoolMasterDataSyncJobStatus.PENDING,
+                metadata={
+                    "trigger_count": 1,
+                    "policy_source": policy_decision.source,
+                    "last_trigger": {
+                        "origin_system": normalized_origin_system,
+                        "origin_event_id": normalized_origin_event_id,
+                        "at": timezone.now().isoformat(),
+                    },
+                },
+            )
+            created_job = True
+        else:
+            sync_job = existing_job
+            metadata = dict(sync_job.metadata or {})
+            metadata["trigger_count"] = int(metadata.get("trigger_count") or 0) + 1
+            metadata["policy_source"] = policy_decision.source
+            metadata["last_trigger"] = {
+                "origin_system": normalized_origin_system,
+                "origin_event_id": normalized_origin_event_id,
+                "at": timezone.now().isoformat(),
+            }
+            sync_job.policy = policy_decision.policy
+            sync_job.direction = PoolMasterDataSyncDirection.INBOUND
+            sync_job.metadata = metadata
+            sync_job.save(update_fields=["policy", "direction", "metadata", "updated_at"])
+            created_job = False
+
+    start_result = start_pool_master_data_sync_job_workflow(
+        sync_job=sync_job,
+        correlation_id=normalized_correlation_id,
+        origin_system=normalized_origin_system,
+        origin_event_id=normalized_origin_event_id,
+    )
+    if not start_result.enqueue_success:
+        enqueue_master_data_sync_conflict(
+            tenant_id=normalized_tenant_id,
+            database_id=normalized_database_id,
+            entity_type=normalized_entity_type,
+            conflict_code=MASTER_DATA_SYNC_CONFLICT_APPLY,
+            origin_system=normalized_origin_system,
+            origin_event_id=normalized_origin_event_id,
+            diagnostics={
+                "detail": str(start_result.enqueue_error or ""),
+                "enqueue_status": str(start_result.enqueue_status or ""),
+                "sync_job_id": str(sync_job.id),
+            },
+            metadata={
+                "phase": "enqueue_workflow_execution",
+                "policy": policy_decision.policy,
+                "policy_source": policy_decision.source,
+            },
+        )
+
+    return PoolMasterDataSyncTriggerResult(
+        sync_job=start_result.sync_job,
+        created_job=created_job,
+        started_workflow=bool(start_result.enqueue_success),
+        skipped=False,
+        skip_reason=None,
+        policy=policy_decision.policy,
+        policy_source=policy_decision.source,
+        start_result=start_result,
+    )
+
+
+def trigger_pool_master_data_reconcile_sync_job(
+    *,
+    tenant_id: str,
+    database_id: str,
+    entity_type: str,
+    origin_system: str = "reconcile_scheduler",
+    origin_event_id: str | None = None,
+    correlation_id: str | None = None,
+    reconcile_window_id: str | None = None,
+    reconcile_window_deadline_at: str | None = None,
+) -> PoolMasterDataSyncTriggerResult:
+    normalized_tenant_id = str(tenant_id or "").strip()
+    normalized_database_id = str(database_id or "").strip()
+    normalized_entity_type = str(entity_type or "").strip()
+    normalized_origin_system = str(origin_system or "reconcile_scheduler").strip().lower() or "reconcile_scheduler"
+    normalized_origin_event_id = str(origin_event_id or "").strip() or f"evt-{uuid4()}"
+    normalized_correlation_id = str(correlation_id or "").strip() or f"corr-{uuid4()}"
+    normalized_window_id = str(reconcile_window_id or "").strip()
+    normalized_window_deadline_at = str(reconcile_window_deadline_at or "").strip()
+
+    if normalized_entity_type not in set(PoolMasterDataEntityType.values):
+        raise ValueError(f"Unsupported master-data entity_type '{entity_type}'")
+
+    runtime_settings = require_pool_master_data_sync_runtime_settings(tenant_id=normalized_tenant_id)
+    if not runtime_settings.enabled:
+        return PoolMasterDataSyncTriggerResult(
+            sync_job=None,
+            created_job=False,
+            started_workflow=False,
+            skipped=True,
+            skip_reason=MASTER_DATA_SYNC_DISABLED,
+            policy=None,
+            policy_source=None,
+            start_result=None,
+        )
+    if not runtime_settings.inbound_enabled:
+        return PoolMasterDataSyncTriggerResult(
+            sync_job=None,
+            created_job=False,
+            started_workflow=False,
+            skipped=True,
+            skip_reason=MASTER_DATA_SYNC_INBOUND_DISABLED,
+            policy=None,
+            policy_source=None,
+            start_result=None,
+        )
+    if not runtime_settings.outbound_enabled:
+        return PoolMasterDataSyncTriggerResult(
+            sync_job=None,
+            created_job=False,
+            started_workflow=False,
+            skipped=True,
+            skip_reason=MASTER_DATA_SYNC_OUTBOUND_DISABLED,
+            policy=None,
+            policy_source=None,
+            start_result=None,
+        )
+
+    policy_decision = resolve_effective_pool_master_data_sync_policy(
+        tenant_id=normalized_tenant_id,
+        entity_type=normalized_entity_type,
+        database_id=normalized_database_id,
+        default_policy=runtime_settings.default_policy,
+    )
+
+    with transaction.atomic():
+        existing_job = (
+            PoolMasterDataSyncJob.objects.select_for_update()
+            .filter(
+                tenant_id=normalized_tenant_id,
+                database_id=normalized_database_id,
+                entity_type=normalized_entity_type,
+                status__in=[PoolMasterDataSyncJobStatus.PENDING, PoolMasterDataSyncJobStatus.RUNNING],
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if existing_job is None:
+            sync_job = PoolMasterDataSyncJob.objects.create(
+                tenant_id=normalized_tenant_id,
+                database_id=normalized_database_id,
+                entity_type=normalized_entity_type,
+                policy=policy_decision.policy,
+                direction=PoolMasterDataSyncDirection.BIDIRECTIONAL,
+                status=PoolMasterDataSyncJobStatus.PENDING,
+                metadata={
+                    "trigger_count": 1,
+                    "policy_source": policy_decision.source,
+                    "last_trigger": {
+                        "origin_system": normalized_origin_system,
+                        "origin_event_id": normalized_origin_event_id,
+                        "mode": "reconcile_probe",
+                        "reconcile_window_id": normalized_window_id,
+                        "reconcile_window_deadline_at": normalized_window_deadline_at,
+                        "at": timezone.now().isoformat(),
+                    },
+                },
+            )
+            created_job = True
+        else:
+            sync_job = existing_job
+            metadata = dict(sync_job.metadata or {})
+            metadata["trigger_count"] = int(metadata.get("trigger_count") or 0) + 1
+            metadata["policy_source"] = policy_decision.source
+            metadata["last_trigger"] = {
+                "origin_system": normalized_origin_system,
+                "origin_event_id": normalized_origin_event_id,
+                "mode": "reconcile_probe",
+                "reconcile_window_id": normalized_window_id,
+                "reconcile_window_deadline_at": normalized_window_deadline_at,
+                "at": timezone.now().isoformat(),
+            }
+            sync_job.policy = policy_decision.policy
+            sync_job.direction = PoolMasterDataSyncDirection.BIDIRECTIONAL
+            sync_job.metadata = metadata
+            sync_job.save(update_fields=["policy", "direction", "metadata", "updated_at"])
+            created_job = False
+
+    start_result = start_pool_master_data_sync_job_workflow(
+        sync_job=sync_job,
+        correlation_id=normalized_correlation_id,
+        origin_system=normalized_origin_system,
+        origin_event_id=normalized_origin_event_id,
+    )
+    if not start_result.enqueue_success:
+        enqueue_master_data_sync_conflict(
+            tenant_id=normalized_tenant_id,
+            database_id=normalized_database_id,
+            entity_type=normalized_entity_type,
+            conflict_code=MASTER_DATA_SYNC_CONFLICT_APPLY,
+            origin_system=normalized_origin_system,
+            origin_event_id=normalized_origin_event_id,
+            diagnostics={
+                "detail": str(start_result.enqueue_error or ""),
+                "enqueue_status": str(start_result.enqueue_status or ""),
+                "sync_job_id": str(sync_job.id),
+                "reconcile_window_id": normalized_window_id,
+            },
+            metadata={
+                "phase": "enqueue_workflow_execution",
+                "policy": policy_decision.policy,
+                "policy_source": policy_decision.source,
+                "reconcile_window_id": normalized_window_id,
+            },
+        )
+
+    return PoolMasterDataSyncTriggerResult(
+        sync_job=start_result.sync_job,
+        created_job=created_job,
+        started_workflow=bool(start_result.enqueue_success),
+        skipped=False,
+        skip_reason=None,
+        policy=policy_decision.policy,
+        policy_source=policy_decision.source,
+        start_result=start_result,
+    )
+
+
+def run_pool_master_data_sync_legacy_inbound_route(
+    *,
+    tenant_id: str,
+    database_id: str,
+    entity_type: str,
+) -> None:
+    raise LegacyInboundRouteDisabledError(
+        detail=(
+            "Legacy inbound route is disabled. "
+            f"Use workflow runtime trigger for scope tenant='{tenant_id}', "
+            f"database='{database_id}', entity='{entity_type}'."
+        ),
+    )
+
+
+def execute_pool_master_data_sync_inbound_step(
+    *,
+    input_context: Mapping[str, Any],
+) -> dict[str, Any]:
+    normalized_context = validate_master_data_sync_workflow_input_context(input_context=input_context)
+    sync_job = _get_sync_job_for_context(normalized_context=normalized_context)
+    runtime_settings = require_pool_master_data_sync_runtime_settings(tenant_id=str(sync_job.tenant_id))
+    if not runtime_settings.enabled:
+        raise_fail_closed_master_data_sync_conflict(
+            tenant_id=str(sync_job.tenant_id),
+            database_id=str(sync_job.database_id),
+            entity_type=str(sync_job.entity_type),
+            conflict_code=MASTER_DATA_SYNC_CONFLICT_POLICY_VIOLATION,
+            detail="Master-data sync runtime is disabled for tenant.",
+            origin_system=str(normalized_context["origin_system"]),
+            origin_event_id=str(normalized_context["origin_event_id"]),
+            diagnostics={"runtime_gate": MASTER_DATA_SYNC_DISABLED},
+        )
+
+    if sync_job.direction not in {
+        PoolMasterDataSyncDirection.INBOUND,
+        PoolMasterDataSyncDirection.BIDIRECTIONAL,
+    }:
+        return {
+            "step": "master_data_sync.inbound",
+            "sync_job_id": str(sync_job.id),
+            "skipped": True,
+            "reason": "direction_without_inbound",
+        }
+
+    if not runtime_settings.inbound_enabled:
+        raise_fail_closed_master_data_sync_conflict(
+            tenant_id=str(sync_job.tenant_id),
+            database_id=str(sync_job.database_id),
+            entity_type=str(sync_job.entity_type),
+            conflict_code=MASTER_DATA_SYNC_CONFLICT_POLICY_VIOLATION,
+            detail="Inbound master-data sync runtime is disabled.",
+            origin_system=str(normalized_context["origin_system"]),
+            origin_event_id=str(normalized_context["origin_event_id"]),
+            diagnostics={"runtime_gate": MASTER_DATA_SYNC_INBOUND_DISABLED},
+        )
+
+    policy_decision = resolve_effective_pool_master_data_sync_policy(
+        tenant_id=str(sync_job.tenant_id),
+        entity_type=str(sync_job.entity_type),
+        database_id=str(sync_job.database_id),
+        default_policy=runtime_settings.default_policy,
+    )
+    if policy_decision.policy not in {
+        PoolMasterDataSyncPolicy.IB_MASTER,
+        PoolMasterDataSyncPolicy.BIDIRECTIONAL,
+    }:
+        raise_fail_closed_master_data_sync_conflict(
+            tenant_id=str(sync_job.tenant_id),
+            database_id=str(sync_job.database_id),
+            entity_type=str(sync_job.entity_type),
+            conflict_code=MASTER_DATA_SYNC_CONFLICT_POLICY_VIOLATION,
+            detail=f"Inbound sync is forbidden by effective policy '{policy_decision.policy}'.",
+            origin_system=str(normalized_context["origin_system"]),
+            origin_event_id=str(normalized_context["origin_event_id"]),
+            diagnostics={"policy": policy_decision.policy, "policy_source": policy_decision.source},
+        )
+
+    try:
+        inbound_result = _process_pool_master_data_sync_inbound_batch(
+            sync_job=sync_job,
+        )
+    except InboundPollerTransportError as exc:
+        raise_fail_closed_master_data_sync_conflict(
+            tenant_id=str(sync_job.tenant_id),
+            database_id=str(sync_job.database_id),
+            entity_type=str(sync_job.entity_type),
+            conflict_code=MASTER_DATA_SYNC_CONFLICT_APPLY,
+            detail=exc.detail,
+            origin_system=str(normalized_context["origin_system"]),
+            origin_event_id=str(normalized_context["origin_event_id"]),
+            diagnostics={
+                "runtime_gate": MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED
+                if exc.code == MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED
+                else "inbound_transport_error",
+                "error_code": exc.code,
+                "error_detail": exc.detail,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise_fail_closed_master_data_sync_conflict(
+            tenant_id=str(sync_job.tenant_id),
+            database_id=str(sync_job.database_id),
+            entity_type=str(sync_job.entity_type),
+            conflict_code=MASTER_DATA_SYNC_CONFLICT_APPLY,
+            detail=str(exc) or "inbound apply failed",
+            origin_system=str(normalized_context["origin_system"]),
+            origin_event_id=str(normalized_context["origin_event_id"]),
+            diagnostics={
+                "runtime_gate": "inbound_apply_error",
+                "error_code": "INBOUND_APPLY_FAILED",
+                "error_detail": str(exc) or "inbound apply failed",
+            },
+        )
+
+    metadata = dict(sync_job.metadata or {})
+    metadata["inbound_summary"] = {
+        "polled": int(inbound_result.polled),
+        "applied": int(inbound_result.applied),
+        "duplicates": int(inbound_result.duplicates),
+        "ack_scheduled": bool(inbound_result.ack_scheduled),
+        "next_checkpoint_token": str(inbound_result.next_checkpoint_token or ""),
+        "policy": policy_decision.policy,
+        "policy_source": policy_decision.source,
+        "at": timezone.now().isoformat(),
+    }
+    sync_job.policy = policy_decision.policy
+    sync_job.metadata = metadata
+    update_fields = ["policy", "metadata", "updated_at"]
+    if sync_job.started_at is None:
+        sync_job.started_at = timezone.now()
+        update_fields.append("started_at")
+    sync_job.save(update_fields=update_fields)
+
+    return {
+        "step": "master_data_sync.inbound",
+        "sync_job_id": str(sync_job.id),
+        "policy": policy_decision.policy,
+        "policy_source": policy_decision.source,
+        "inbound": {
+            "polled": int(inbound_result.polled),
+            "applied": int(inbound_result.applied),
+            "duplicates": int(inbound_result.duplicates),
+            "ack_scheduled": bool(inbound_result.ack_scheduled),
+            "next_checkpoint_token": str(inbound_result.next_checkpoint_token or ""),
+        },
+    }
+
+
 def execute_pool_master_data_sync_dispatch_step(
     *,
     input_context: Mapping[str, Any],
@@ -327,18 +846,32 @@ def execute_pool_master_data_sync_dispatch_step(
                 diagnostics={"policy": policy_decision.policy, "policy_source": policy_decision.source},
             )
 
-    dispatch_result = dispatch_pending_master_data_sync_outbox(
-        batch_size=runtime_settings.dispatch_batch_size,
-        max_retry_backoff_seconds=runtime_settings.max_retry_backoff_seconds,
-        tenant_id=str(sync_job.tenant_id),
-        database_id=str(sync_job.database_id),
-        entity_type=str(sync_job.entity_type),
-    )
+    dispatch_claimed = 0
+    dispatch_sent = 0
+    dispatch_failed = 0
+    dispatch_skipped = False
+    if sync_job.direction in {
+        PoolMasterDataSyncDirection.OUTBOUND,
+        PoolMasterDataSyncDirection.BIDIRECTIONAL,
+    }:
+        dispatch_result = dispatch_pending_master_data_sync_outbox(
+            batch_size=runtime_settings.dispatch_batch_size,
+            max_retry_backoff_seconds=runtime_settings.max_retry_backoff_seconds,
+            tenant_id=str(sync_job.tenant_id),
+            database_id=str(sync_job.database_id),
+            entity_type=str(sync_job.entity_type),
+        )
+        dispatch_claimed = int(dispatch_result.claimed)
+        dispatch_sent = int(dispatch_result.sent)
+        dispatch_failed = int(dispatch_result.failed)
+    else:
+        dispatch_skipped = True
     metadata = dict(sync_job.metadata or {})
     metadata["dispatch_summary"] = {
-        "claimed": int(dispatch_result.claimed),
-        "sent": int(dispatch_result.sent),
-        "failed": int(dispatch_result.failed),
+        "claimed": dispatch_claimed,
+        "sent": dispatch_sent,
+        "failed": dispatch_failed,
+        "skipped": dispatch_skipped,
         "policy": policy_decision.policy,
         "policy_source": policy_decision.source,
         "at": timezone.now().isoformat(),
@@ -359,9 +892,10 @@ def execute_pool_master_data_sync_dispatch_step(
         "policy": policy_decision.policy,
         "policy_source": policy_decision.source,
         "dispatch": {
-            "claimed": int(dispatch_result.claimed),
-            "sent": int(dispatch_result.sent),
-            "failed": int(dispatch_result.failed),
+            "claimed": dispatch_claimed,
+            "sent": dispatch_sent,
+            "failed": dispatch_failed,
+            "skipped": dispatch_skipped,
         },
     }
 
@@ -392,6 +926,34 @@ def execute_pool_master_data_sync_finalize_step(
     }
 
 
+def _process_pool_master_data_sync_inbound_batch(
+    *,
+    sync_job: PoolMasterDataSyncJob,
+):
+    select_changes = _INBOUND_SELECT_CHANGES_CALLBACK
+    apply_change = _INBOUND_APPLY_CHANGE_CALLBACK
+    notify_changes_received = _INBOUND_NOTIFY_CHANGES_RECEIVED_CALLBACK
+    if select_changes is None or apply_change is None or notify_changes_received is None:
+        raise InboundPollerTransportError(
+            code=MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED,
+            detail=(
+                "Inbound callbacks are not configured. "
+                "Configure callbacks before running inbound workflow step."
+            ),
+        )
+
+    return process_master_data_sync_inbound_batch(
+        tenant_id=str(sync_job.tenant_id),
+        database_id=str(sync_job.database_id),
+        entity_type=str(sync_job.entity_type),
+        select_changes=select_changes,
+        apply_change=apply_change,
+        notify_changes_received=notify_changes_received,
+        select_changes_kwargs=dict(_INBOUND_SELECT_CHANGES_KWARGS),
+        notify_changes_received_kwargs=dict(_INBOUND_NOTIFY_CHANGES_RECEIVED_KWARGS),
+    )
+
+
 def _get_sync_job_for_context(*, normalized_context: Mapping[str, Any]) -> PoolMasterDataSyncJob:
     sync_job = PoolMasterDataSyncJob.objects.filter(id=str(normalized_context["sync_job_id"])).first()
     if sync_job is None:
@@ -417,10 +979,19 @@ def _get_sync_job_for_context(*, normalized_context: Mapping[str, Any]) -> PoolM
 
 
 __all__ = [
+    "LegacyInboundRouteDisabledError",
+    "MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED",
+    "SYNC_LEGACY_INBOUND_ROUTE_DISABLED",
     "PoolMasterDataSyncPolicyDecision",
     "PoolMasterDataSyncTriggerResult",
+    "configure_pool_master_data_sync_inbound_callbacks",
     "execute_pool_master_data_sync_dispatch_step",
     "execute_pool_master_data_sync_finalize_step",
+    "execute_pool_master_data_sync_inbound_step",
+    "reset_pool_master_data_sync_inbound_callbacks",
+    "run_pool_master_data_sync_legacy_inbound_route",
     "resolve_effective_pool_master_data_sync_policy",
+    "trigger_pool_master_data_inbound_sync_job",
     "trigger_pool_master_data_outbound_sync_job",
+    "trigger_pool_master_data_reconcile_sync_job",
 ]

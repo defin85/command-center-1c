@@ -14,6 +14,10 @@ from apps.operations.prometheus_metrics import (
 )
 
 from .master_data_sync_apply import apply_master_data_outbox_to_ib
+from .master_data_sync_redaction import (
+    sanitize_master_data_sync_text,
+    sanitize_master_data_sync_value,
+)
 from .models import (
     PoolMasterDataSyncConflict,
     PoolMasterDataSyncConflictStatus,
@@ -159,7 +163,7 @@ def _mark_sent(*, row_id: str, now, result_payload: dict | None) -> None:
     row = PoolMasterDataSyncOutbox.objects.get(id=row_id)
     metadata = dict(row.metadata or {})
     if isinstance(result_payload, dict) and result_payload:
-        metadata["dispatch_result"] = dict(result_payload)
+        metadata["dispatch_result"] = sanitize_master_data_sync_value(dict(result_payload))
     row.status = PoolMasterDataSyncOutboxStatus.SENT
     row.dispatched_at = now
     row.last_error_code = ""
@@ -193,7 +197,7 @@ def _mark_failed(
     )
     row.status = PoolMasterDataSyncOutboxStatus.FAILED
     row.last_error_code = str(error_code or DISPATCH_ERROR_UNEXPECTED)
-    row.last_error = str(error_message or "")
+    row.last_error = sanitize_master_data_sync_text(error_message)
     row.available_at = now + timedelta(seconds=delay_seconds)
     row.save(
         update_fields=[

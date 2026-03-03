@@ -95,6 +95,115 @@ func TestOperationMessage_Validate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "valid sync scheduling contract",
+			msg: OperationMessage{
+				Version:         "2.0",
+				OperationID:     "test-123",
+				OperationType:   "execute_workflow",
+				TargetDatabases: []TargetDatabase{},
+				Payload: OperationPayload{
+					Data: map[string]interface{}{
+						"sync_job_id":      "job-1",
+						"server_affinity":  "srv-1c-a",
+						"deadline_at":      "2026-03-03T12:02:00Z",
+						"role":             "inbound",
+						"workflow_context": "sync",
+					},
+				},
+				ExecConfig: ExecutionConfig{
+					Priority: "p2",
+				},
+				Metadata: MessageMetadata{
+					Priority:       "p2",
+					Role:           "inbound",
+					ServerAffinity: "srv-1c-a",
+					DeadlineAt:     "2026-03-03T12:02:00Z",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid sync scheduling priority",
+			msg: OperationMessage{
+				Version:         "2.0",
+				OperationID:     "test-123",
+				OperationType:   "execute_workflow",
+				TargetDatabases: []TargetDatabase{},
+				Payload: OperationPayload{
+					Data: map[string]interface{}{
+						"sync_job_id":     "job-1",
+						"server_affinity": "srv-1c-a",
+						"deadline_at":     "2026-03-03T12:02:00Z",
+						"role":            "inbound",
+					},
+				},
+				ExecConfig: ExecutionConfig{
+					Priority: "normal",
+				},
+				Metadata: MessageMetadata{
+					Priority:       "normal",
+					Role:           "inbound",
+					ServerAffinity: "srv-1c-a",
+					DeadlineAt:     "2026-03-03T12:02:00Z",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid sync scheduling role",
+			msg: OperationMessage{
+				Version:         "2.0",
+				OperationID:     "test-123",
+				OperationType:   "execute_workflow",
+				TargetDatabases: []TargetDatabase{},
+				Payload: OperationPayload{
+					Data: map[string]interface{}{
+						"sync_job_id":     "job-1",
+						"server_affinity": "srv-1c-a",
+						"deadline_at":     "2026-03-03T12:02:00Z",
+						"role":            "unknown",
+					},
+				},
+				ExecConfig: ExecutionConfig{
+					Priority: "p2",
+				},
+				Metadata: MessageMetadata{
+					Priority:       "p2",
+					Role:           "unknown",
+					ServerAffinity: "srv-1c-a",
+					DeadlineAt:     "2026-03-03T12:02:00Z",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid sync scheduling deadline timezone",
+			msg: OperationMessage{
+				Version:         "2.0",
+				OperationID:     "test-123",
+				OperationType:   "execute_workflow",
+				TargetDatabases: []TargetDatabase{},
+				Payload: OperationPayload{
+					Data: map[string]interface{}{
+						"sync_job_id":     "job-1",
+						"server_affinity": "srv-1c-a",
+						"deadline_at":     "2026-03-03T15:02:00+03:00",
+						"role":            "inbound",
+					},
+				},
+				ExecConfig: ExecutionConfig{
+					Priority: "p2",
+				},
+				Metadata: MessageMetadata{
+					Priority:       "p2",
+					Role:           "inbound",
+					ServerAffinity: "srv-1c-a",
+					DeadlineAt:     "2026-03-03T15:02:00+03:00",
+				},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -152,6 +261,10 @@ func TestOperationMessage_JSONSerialization(t *testing.T) {
 			RootOperationID:          "wf-root-1",
 			ExecutionConsumer:        "workflows",
 			Lane:                     "workflows",
+			Priority:                 "p2",
+			Role:                     "inbound",
+			ServerAffinity:           "srv-1c-a",
+			DeadlineAt:               "2026-03-03T12:02:00Z",
 		},
 	}
 
@@ -203,6 +316,34 @@ func TestOperationMessage_JSONSerialization(t *testing.T) {
 			"Lane mismatch: got %s, want %s",
 			decoded.Metadata.Lane,
 			msg.Metadata.Lane,
+		)
+	}
+	if decoded.Metadata.Priority != msg.Metadata.Priority {
+		t.Errorf(
+			"Priority mismatch: got %s, want %s",
+			decoded.Metadata.Priority,
+			msg.Metadata.Priority,
+		)
+	}
+	if decoded.Metadata.Role != msg.Metadata.Role {
+		t.Errorf(
+			"Role mismatch: got %s, want %s",
+			decoded.Metadata.Role,
+			msg.Metadata.Role,
+		)
+	}
+	if decoded.Metadata.ServerAffinity != msg.Metadata.ServerAffinity {
+		t.Errorf(
+			"ServerAffinity mismatch: got %s, want %s",
+			decoded.Metadata.ServerAffinity,
+			msg.Metadata.ServerAffinity,
+		)
+	}
+	if decoded.Metadata.DeadlineAt != msg.Metadata.DeadlineAt {
+		t.Errorf(
+			"DeadlineAt mismatch: got %s, want %s",
+			decoded.Metadata.DeadlineAt,
+			msg.Metadata.DeadlineAt,
 		)
 	}
 }

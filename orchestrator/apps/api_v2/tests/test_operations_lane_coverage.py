@@ -54,6 +54,11 @@ def test_operations_endpoints_cover_workflow_root_and_atomic_steps_across_lanes(
     root_operation = BatchOperation.objects.get(id=execution_id)
     assert root_operation.created_by == user.username
     assert root_operation.metadata.get("lane") == "workflows"
+    root_operation.metadata["priority"] = "p2"
+    root_operation.metadata["role"] = "reconcile"
+    root_operation.metadata["server_affinity"] = "srv-1c-a"
+    root_operation.metadata["deadline_at"] = "2026-03-03T12:02:00Z"
+    root_operation.save(update_fields=["metadata", "updated_at"])
 
     atomic_operation_id = f"{execution_id}:node-n1"
     BatchOperation.objects.create(
@@ -69,6 +74,10 @@ def test_operations_endpoints_cover_workflow_root_and_atomic_steps_across_lanes(
             "root_operation_id": execution_id,
             "execution_consumer": "workflows",
             "lane": "operations",
+            "priority": "p1",
+            "role": "outbound",
+            "server_affinity": "srv-1c-b",
+            "deadline_at": "2026-03-03T12:05:00Z",
         },
     )
 
@@ -87,12 +96,20 @@ def test_operations_endpoints_cover_workflow_root_and_atomic_steps_across_lanes(
     assert root_payload["root_operation_id"] == execution_id
     assert root_payload["execution_consumer"] == "workflows"
     assert root_payload["lane"] == "workflows"
+    assert root_payload["priority"] == "p2"
+    assert root_payload["role"] == "reconcile"
+    assert root_payload["server_affinity"] == "srv-1c-a"
+    assert root_payload["deadline_at"] == "2026-03-03T12:02:00Z"
     atomic_payload = operations_by_id[atomic_operation_id]
     assert atomic_payload["workflow_execution_id"] == execution_id
     assert atomic_payload["node_id"] == "n1"
     assert atomic_payload["root_operation_id"] == execution_id
     assert atomic_payload["execution_consumer"] == "workflows"
     assert atomic_payload["lane"] == "operations"
+    assert atomic_payload["priority"] == "p1"
+    assert atomic_payload["role"] == "outbound"
+    assert atomic_payload["server_affinity"] == "srv-1c-b"
+    assert atomic_payload["deadline_at"] == "2026-03-03T12:05:00Z"
     lanes = {
         str(item.get("metadata", {}).get("lane") or "")
         for item in operations_payload
@@ -142,6 +159,10 @@ def test_operations_endpoints_cover_workflow_root_and_atomic_steps_across_lanes(
     assert detail_operation["root_operation_id"] == execution_id
     assert detail_operation["execution_consumer"] == "workflows"
     assert detail_operation["lane"] == "workflows"
+    assert detail_operation["priority"] == "p2"
+    assert detail_operation["role"] == "reconcile"
+    assert detail_operation["server_affinity"] == "srv-1c-a"
+    assert detail_operation["deadline_at"] == "2026-03-03T12:02:00Z"
 
     stream_ticket_response = client.post(
         "/api/v2/operations/stream-ticket/",

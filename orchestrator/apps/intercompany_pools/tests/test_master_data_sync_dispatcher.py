@@ -111,6 +111,37 @@ def test_dispatcher_marks_row_failed_and_sets_backoff_on_transport_error() -> No
 
 
 @pytest.mark.django_db
+def test_dispatcher_redacts_sensitive_values_in_last_error() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-dispatch-redact-{uuid4().hex[:6]}", name="Sync Dispatch Redact")
+    database = _create_database(tenant=tenant, suffix="redact")
+    row = _create_outbox_row(tenant=tenant, database=database, dedupe_key="dedupe-redact")
+
+    def _raise_transport_error(_outbox):
+        raise MasterDataSyncTransportError(
+            code="IB_HTTP_401",
+            detail=(
+                "auth failed password=super-secret "
+                "checkpoint_token=cp-safe "
+                "url=http://user:pwd@localhost/odata"
+            ),
+        )
+
+    result = dispatch_pending_master_data_sync_outbox(
+        transport_apply=_raise_transport_error,
+        batch_size=10,
+    )
+
+    assert result.failed == 1
+    refreshed = PoolMasterDataSyncOutbox.objects.get(id=row.id)
+    assert refreshed.status == PoolMasterDataSyncOutboxStatus.FAILED
+    assert refreshed.last_error_code == "IB_HTTP_401"
+    assert "password=***" in refreshed.last_error
+    assert "checkpoint_token=cp-safe" in refreshed.last_error
+    assert "http://***:***@localhost/odata" in refreshed.last_error
+    assert "super-secret" not in refreshed.last_error
+
+
+@pytest.mark.django_db
 def test_dispatcher_respects_batch_size_and_availability_window() -> None:
     tenant = Tenant.objects.create(slug=f"sync-dispatch-batch-{uuid4().hex[:6]}", name="Sync Dispatch Batch")
     database = _create_database(tenant=tenant, suffix="batch")

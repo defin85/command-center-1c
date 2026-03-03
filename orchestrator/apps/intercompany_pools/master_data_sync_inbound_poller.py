@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from .master_data_sync_conflicts import MasterDataSyncConflictError
 from .master_data_sync_invariants import build_inbound_dedupe_fingerprint
+from .master_data_sync_redaction import sanitize_master_data_sync_text
 from .models import (
     PoolMasterDataEntityType,
     PoolMasterDataSyncCheckpoint,
@@ -498,6 +499,6 @@ def _mark_checkpoint_error(
     metadata[str(metadata_timestamp_key or "last_poll_error_at")] = timezone.now().isoformat()
     checkpoint.status = PoolMasterDataSyncCheckpointStatus.ERROR
     checkpoint.last_error_code = str(error_code or "SELECT_CHANGES_FAILED")
-    checkpoint.last_error = str(error_detail or "inbound select changes failed")
+    checkpoint.last_error = sanitize_master_data_sync_text(error_detail or "inbound select changes failed")
     checkpoint.metadata = metadata
     checkpoint.save(update_fields=["status", "last_error_code", "last_error", "metadata", "updated_at"])

@@ -68,6 +68,10 @@ type MessageMetadata struct {
 	ExecutionConsumer        string    `json:"execution_consumer,omitempty"`
 	Lane                     string    `json:"lane,omitempty"`
 	TraceID                  string    `json:"trace_id,omitempty"`
+	Priority                 string    `json:"priority,omitempty"`
+	Role                     string    `json:"role,omitempty"`
+	ServerAffinity           string    `json:"server_affinity,omitempty"`
+	DeadlineAt               string    `json:"deadline_at,omitempty"`
 }
 
 // OperationResultV2 - Worker response to Orchestrator (v2.0)
@@ -110,9 +114,53 @@ var metaOperationTypes = map[string]bool{
 	// Future: "health_check_cluster", "backup_cluster", etc.
 }
 
+var schedulingPriorityEnum = map[string]bool{
+	"p0": true,
+	"p1": true,
+	"p2": true,
+	"p3": true,
+}
+
+var schedulingRoleEnum = map[string]bool{
+	"inbound":            true,
+	"outbound":           true,
+	"reconcile":          true,
+	"manual_remediation": true,
+}
+
 // IsMetaOperation checks if operation type is a meta-operation
 func IsMetaOperation(opType string) bool {
 	return metaOperationTypes[opType]
+}
+
+func payloadString(data map[string]interface{}, key string) string {
+	if len(data) == 0 {
+		return ""
+	}
+	raw, ok := data[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	if text, ok := raw.(string); ok {
+		return strings.TrimSpace(text)
+	}
+	return strings.TrimSpace(fmt.Sprint(raw))
+}
+
+func (om *OperationMessage) requiresSchedulingContractValidation() bool {
+	if payloadString(om.Payload.Data, "sync_job_id") != "" {
+		return true
+	}
+	if strings.TrimSpace(om.Metadata.Role) != "" {
+		return true
+	}
+	if strings.TrimSpace(om.Metadata.ServerAffinity) != "" {
+		return true
+	}
+	if strings.TrimSpace(om.Metadata.DeadlineAt) != "" {
+		return true
+	}
+	return false
 }
 
 // Validate validates the OperationMessage
@@ -147,6 +195,45 @@ func (om *OperationMessage) Validate() error {
 	for i, db := range om.TargetDatabases {
 		if db.ID == "" {
 			return fmt.Errorf("target_databases[%d].id cannot be empty", i)
+		}
+	}
+
+	if om.requiresSchedulingContractValidation() {
+		priority := strings.ToLower(strings.TrimSpace(om.Metadata.Priority))
+		if priority == "" {
+			priority = strings.ToLower(strings.TrimSpace(om.ExecConfig.Priority))
+		}
+		if !schedulingPriorityEnum[priority] {
+			return fmt.Errorf("invalid scheduling priority: %s", priority)
+		}
+
+		role := strings.ToLower(strings.TrimSpace(om.Metadata.Role))
+		if role == "" {
+			role = strings.ToLower(payloadString(om.Payload.Data, "role"))
+		}
+		if !schedulingRoleEnum[role] {
+			return fmt.Errorf("invalid scheduling role: %s", role)
+		}
+
+		serverAffinity := strings.TrimSpace(om.Metadata.ServerAffinity)
+		if serverAffinity == "" {
+			serverAffinity = payloadString(om.Payload.Data, "server_affinity")
+		}
+		if serverAffinity == "" {
+			return fmt.Errorf("invalid scheduling server_affinity: must be non-empty")
+		}
+
+		deadlineAt := strings.TrimSpace(om.Metadata.DeadlineAt)
+		if deadlineAt == "" {
+			deadlineAt = payloadString(om.Payload.Data, "deadline_at")
+		}
+		parsedDeadlineAt, err := time.Parse(time.RFC3339, deadlineAt)
+		if err != nil {
+			return fmt.Errorf("invalid scheduling deadline_at: must be RFC3339 UTC")
+		}
+		_, offsetSeconds := parsedDeadlineAt.Zone()
+		if offsetSeconds != 0 {
+			return fmt.Errorf("invalid scheduling deadline_at: timezone must be UTC")
 		}
 	}
 

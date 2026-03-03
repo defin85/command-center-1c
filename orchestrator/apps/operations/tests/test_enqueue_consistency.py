@@ -1,8 +1,10 @@
 import pytest
+from datetime import timedelta, timezone as dt_timezone
 from unittest.mock import patch
 from uuid import uuid4
 
 from django.db import transaction
+from django.utils import timezone
 
 from apps.operations.factory import BatchOperationFactory
 from apps.operations.models import BatchOperation, WorkflowEnqueueOutbox
@@ -252,6 +254,122 @@ def test_enqueue_workflow_execution_preserves_consumer_and_correlation_metadata(
 
 
 @pytest.mark.django_db
+def test_enqueue_workflow_execution_sync_contract_persists_scheduling_metadata():
+    execution_id = str(uuid4())
+    sync_job_id = str(uuid4())
+    deadline_at = (
+        timezone.now().astimezone(dt_timezone.utc) + timedelta(minutes=5)
+    ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    with (
+        patch("apps.operations.services.operations_service.workflow.redis_client") as mock_redis_client,
+        patch("apps.operations.services.operations_service.workflow.event_publisher") as mock_event_publisher,
+    ):
+        mock_redis_client.enqueue_operation_stream.return_value = "1702389123666-0"
+
+        result = OperationsService.enqueue_workflow_execution(
+            execution_id=execution_id,
+            workflow_config={
+                "sync_job_id": sync_job_id,
+                "execution_consumer": "pools",
+                "priority": "p2",
+                "role": "inbound",
+                "server_affinity": "srv-1c-a",
+                "deadline_at": deadline_at,
+            },
+        )
+
+        assert result.success is True
+        message = mock_redis_client.enqueue_operation_stream.call_args.args[0]
+        assert message["payload"]["data"]["priority"] == "p2"
+        assert message["payload"]["data"]["role"] == "inbound"
+        assert message["payload"]["data"]["server_affinity"] == "srv-1c-a"
+        assert message["payload"]["data"]["deadline_at"] == deadline_at
+        assert message["execution_config"]["priority"] == "p2"
+        assert message["metadata"]["priority"] == "p2"
+        assert message["metadata"]["role"] == "inbound"
+        assert message["metadata"]["server_affinity"] == "srv-1c-a"
+        assert message["metadata"]["deadline_at"] == deadline_at
+
+        publish_kwargs = mock_event_publisher.publish.call_args.kwargs
+        assert publish_kwargs["priority"] == "p2"
+        assert publish_kwargs["role"] == "inbound"
+        assert publish_kwargs["server_affinity"] == "srv-1c-a"
+        assert publish_kwargs["deadline_at"] == deadline_at
+
+    root = BatchOperation.objects.get(id=execution_id)
+    assert root.status == BatchOperation.STATUS_QUEUED
+    assert root.config.get("priority") == "p2"
+    assert root.metadata.get("priority") == "p2"
+    assert root.metadata.get("role") == "inbound"
+    assert root.metadata.get("server_affinity") == "srv-1c-a"
+    assert root.metadata.get("deadline_at") == deadline_at
+
+
+@pytest.mark.django_db
+def test_enqueue_workflow_execution_sync_contract_invalid_rejects_without_side_effects():
+    execution_id = str(uuid4())
+    sync_job_id = str(uuid4())
+    deadline_at = (
+        timezone.now().astimezone(dt_timezone.utc) + timedelta(minutes=5)
+    ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    with (
+        patch("apps.operations.services.operations_service.workflow.redis_client") as mock_redis_client,
+        patch("apps.operations.services.operations_service.workflow.event_publisher") as mock_event_publisher,
+    ):
+        result = OperationsService.enqueue_workflow_execution(
+            execution_id=execution_id,
+            workflow_config={
+                "sync_job_id": sync_job_id,
+                "execution_consumer": "pools",
+                "priority": "p2",
+                "role": "inbound",
+                "deadline_at": deadline_at,
+            },
+        )
+
+    assert result.success is False
+    assert result.error_code == "SCHEDULING_CONTRACT_INVALID"
+    mock_redis_client.enqueue_operation_stream.assert_not_called()
+    mock_event_publisher.publish.assert_not_called()
+    assert WorkflowEnqueueOutbox.objects.filter(operation_id=execution_id).count() == 0
+    assert BatchOperation.objects.filter(id=execution_id).count() == 0
+
+
+@pytest.mark.django_db
+def test_enqueue_workflow_execution_sync_contract_past_deadline_rejects_without_side_effects():
+    execution_id = str(uuid4())
+    sync_job_id = str(uuid4())
+    deadline_at = (
+        timezone.now().astimezone(dt_timezone.utc) - timedelta(seconds=1)
+    ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    with (
+        patch("apps.operations.services.operations_service.workflow.redis_client") as mock_redis_client,
+        patch("apps.operations.services.operations_service.workflow.event_publisher") as mock_event_publisher,
+    ):
+        result = OperationsService.enqueue_workflow_execution(
+            execution_id=execution_id,
+            workflow_config={
+                "sync_job_id": sync_job_id,
+                "execution_consumer": "pools",
+                "priority": "p2",
+                "role": "inbound",
+                "server_affinity": "srv-1c-a",
+                "deadline_at": deadline_at,
+            },
+        )
+
+    assert result.success is False
+    assert result.error_code == "SCHEDULING_DEADLINE_INVALID"
+    mock_redis_client.enqueue_operation_stream.assert_not_called()
+    mock_event_publisher.publish.assert_not_called()
+    assert WorkflowEnqueueOutbox.objects.filter(operation_id=execution_id).count() == 0
+    assert BatchOperation.objects.filter(id=execution_id).count() == 0
+
+
+@pytest.mark.django_db
 def test_enqueue_workflow_execution_uses_execution_actor_for_root_created_by():
     execution_id = _create_workflow_execution_for_enqueue(
         input_context={"executed_by": "workflow-owner"},
@@ -376,6 +494,152 @@ def test_workflow_enqueue_outbox_commit_dispatches_to_stream():
     root = BatchOperation.objects.get(id=execution_id)
     assert root.status == BatchOperation.STATUS_QUEUED
     assert root.metadata.get("workflow_execution_id") == execution_id
+
+
+@pytest.mark.django_db
+def test_dispatch_pending_workflow_enqueue_outbox_relays_after_inline_dispatch_failure():
+    execution_id = str(uuid4())
+
+    with (
+        patch("apps.operations.services.operations_service.workflow.redis_client") as mock_redis_client,
+        patch("apps.operations.services.operations_service.workflow.event_publisher") as mock_event_publisher,
+    ):
+        mock_redis_client.enqueue_operation_stream.side_effect = [Exception("redis down"), "1702389123555-1"]
+
+        enqueue_result = OperationsService.enqueue_workflow_execution(execution_id=execution_id)
+        assert enqueue_result.success is False
+        assert enqueue_result.error_code == "ENQUEUE_FAILED"
+
+        outbox = WorkflowEnqueueOutbox.objects.get(operation_id=execution_id)
+        assert outbox.status == WorkflowEnqueueOutbox.STATUS_PENDING
+        outbox.next_retry_at = timezone.now() - timedelta(seconds=1)
+        outbox.save(update_fields=["next_retry_at", "updated_at"])
+
+        stats = OperationsService.dispatch_pending_workflow_enqueue_outbox(batch_size=10)
+
+    assert stats["claimed"] == 1
+    assert stats["dispatched"] == 1
+    assert stats["failed"] == 0
+    assert mock_redis_client.enqueue_operation_stream.call_count == 2
+    assert mock_event_publisher.publish.call_count == 1
+
+    outbox.refresh_from_db()
+    assert outbox.status == WorkflowEnqueueOutbox.STATUS_DISPATCHED
+    assert outbox.stream_message_id == "1702389123555-1"
+    assert outbox.dispatch_attempts == 2
+
+    root = BatchOperation.objects.get(id=execution_id)
+    assert root.status == BatchOperation.STATUS_QUEUED
+
+
+@pytest.mark.django_db
+def test_dispatch_pending_workflow_enqueue_outbox_skips_not_due_entries():
+    execution_id = str(uuid4())
+    message = OperationsService._build_execution_envelope(
+        operation_id=execution_id,
+        operation_type="execute_workflow",
+        entity="Workflow",
+        target_databases=[],
+        payload_data={"execution_id": execution_id},
+        execution_config={"idempotency_key": execution_id},
+        metadata={"created_by": "test"},
+    )
+
+    with transaction.atomic():
+        OperationsService._upsert_workflow_root_operation(
+            execution_id=execution_id,
+            message_payload=message,
+        )
+        outbox_entry, created = OperationsService._enqueue_workflow_outbox_intent(
+            operation_id=execution_id,
+            message_payload=message,
+            stream_name="commands:worker:workflows",
+        )
+        assert created is True
+
+    outbox_entry.next_retry_at = timezone.now() + timedelta(minutes=1)
+    outbox_entry.save(update_fields=["next_retry_at", "updated_at"])
+
+    with (
+        patch("apps.operations.services.operations_service.workflow.redis_client") as mock_redis_client,
+        patch("apps.operations.services.operations_service.workflow.event_publisher") as mock_event_publisher,
+    ):
+        stats = OperationsService.dispatch_pending_workflow_enqueue_outbox(
+            batch_size=10,
+            now=timezone.now(),
+        )
+
+    assert stats["claimed"] == 0
+    assert stats["dispatched"] == 0
+    assert stats["failed"] == 0
+    mock_redis_client.enqueue_operation_stream.assert_not_called()
+    mock_event_publisher.publish.assert_not_called()
+    outbox_entry.refresh_from_db()
+    assert outbox_entry.status == WorkflowEnqueueOutbox.STATUS_PENDING
+    assert BatchOperation.objects.get(id=execution_id).status == BatchOperation.STATUS_PENDING
+
+
+@pytest.mark.django_db
+def test_dispatch_pending_workflow_enqueue_outbox_records_sync_backlog_by_scheduling_dimensions():
+    execution_id = str(uuid4())
+    message = OperationsService._build_execution_envelope(
+        operation_id=execution_id,
+        operation_type="execute_workflow",
+        entity="Workflow",
+        target_databases=[],
+        payload_data={"execution_id": execution_id},
+        execution_config={"idempotency_key": execution_id},
+        metadata={
+            "created_by": "test",
+            "priority": "p1",
+            "role": "reconcile",
+            "server_affinity": "srv-a",
+        },
+    )
+
+    with transaction.atomic():
+        OperationsService._upsert_workflow_root_operation(
+            execution_id=execution_id,
+            message_payload=message,
+        )
+        outbox_entry, created = OperationsService._enqueue_workflow_outbox_intent(
+            operation_id=execution_id,
+            message_payload=message,
+            stream_name="commands:worker:workflows",
+        )
+        assert created is True
+
+    outbox_entry.dispatch_attempts = 2
+    outbox_entry.next_retry_at = timezone.now() + timedelta(minutes=5)
+    outbox_entry.save(update_fields=["dispatch_attempts", "next_retry_at", "updated_at"])
+
+    with (
+        patch(
+            "apps.operations.services.operations_service.workflow.set_pool_master_data_sync_queue_backlog_by_scheduling"
+        ) as metrics_mock,
+        patch("apps.operations.services.operations_service.workflow.redis_client") as mock_redis_client,
+        patch("apps.operations.services.operations_service.workflow.event_publisher") as mock_event_publisher,
+    ):
+        stats = OperationsService.dispatch_pending_workflow_enqueue_outbox(
+            batch_size=10,
+            now=timezone.now(),
+        )
+
+    assert stats["claimed"] == 0
+    assert stats["dispatched"] == 0
+    assert stats["failed"] == 0
+    mock_redis_client.enqueue_operation_stream.assert_not_called()
+    mock_event_publisher.publish.assert_not_called()
+
+    metrics_mock.assert_called_once()
+    metric_rows = metrics_mock.call_args.kwargs["rows"]
+    assert len(metric_rows) == 1
+    assert metric_rows[0]["status"] == "retrying"
+    assert metric_rows[0]["priority"] == "p1"
+    assert metric_rows[0]["role"] == "reconcile"
+    assert metric_rows[0]["server_affinity"] == "srv-a"
+    assert metric_rows[0]["backlog_total"] == 1.0
+    assert float(metric_rows[0]["lag_seconds"]) >= 0.0
 
 
 @pytest.mark.django_db

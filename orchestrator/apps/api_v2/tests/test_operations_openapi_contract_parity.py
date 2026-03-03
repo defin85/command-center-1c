@@ -63,6 +63,10 @@ def test_batch_operation_schema_covers_runtime_serializer_observability_fields()
         "root_operation_id",
         "execution_consumer",
         "lane",
+        "priority",
+        "role",
+        "server_affinity",
+        "deadline_at",
     ):
         assert field_name in properties
 
@@ -78,4 +82,3 @@ def test_timeline_event_schema_covers_runtime_serializer_observability_fields() 
 
     for field_name in ("root_operation_id", "execution_consumer", "lane"):
         assert field_name in properties
-

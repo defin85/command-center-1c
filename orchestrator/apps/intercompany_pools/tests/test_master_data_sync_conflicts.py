@@ -135,3 +135,26 @@ def test_raise_fail_closed_conflict_persists_queue_record_and_raises() -> None:
     assert persisted.status == PoolMasterDataSyncConflictStatus.PENDING
     assert persisted.conflict_code == MASTER_DATA_SYNC_CONFLICT_POLICY_VIOLATION
     assert persisted.diagnostics["hint"] == "manual reconcile"
+
+
+@pytest.mark.django_db
+def test_conflict_diagnostics_redact_sensitive_fields() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-conflict-redact-{uuid4().hex[:6]}", name="Sync Conflict Redact")
+    database = _create_database(tenant=tenant, suffix="redact")
+
+    conflict = enqueue_master_data_sync_conflict(
+        tenant_id=str(tenant.id),
+        database_id=str(database.id),
+        entity_type=PoolMasterDataEntityType.ITEM,
+        conflict_code=MASTER_DATA_SYNC_CONFLICT_POLICY_VIOLATION,
+        diagnostics={
+            "password": "top-secret",
+            "context": "authorization=Bearer abc123 checkpoint_token=cp-001",
+        },
+        metadata={"api_key": "api-secret"},
+    )
+
+    assert conflict.diagnostics["password"] == "***"
+    assert "authorization=***" in conflict.diagnostics["context"] or "authorization=Bearer ***" in conflict.diagnostics["context"]
+    assert "checkpoint_token=cp-001" in conflict.diagnostics["context"]
+    assert conflict.metadata["last_context"]["api_key"] == "***"

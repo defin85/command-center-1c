@@ -71,6 +71,10 @@ class OperationsServiceMessageMixin:
         lane = cls._normalize_text(raw_metadata.get("lane")) or execution_consumer
 
         root_operation_id = cls._normalize_text(raw_metadata.get("root_operation_id")) or operation_id
+        priority = cls._normalize_text(raw_metadata.get("priority")) or None
+        role = cls._normalize_text(raw_metadata.get("role")) or None
+        server_affinity = cls._normalize_text(raw_metadata.get("server_affinity")) or None
+        deadline_at = cls._normalize_text(raw_metadata.get("deadline_at")) or None
 
         return {
             "created_by": cls._normalize_text(raw_metadata.get("created_by")) or "system",
@@ -85,6 +89,10 @@ class OperationsServiceMessageMixin:
             "execution_consumer": execution_consumer,
             "lane": lane,
             "trace_id": raw_metadata.get("trace_id"),
+            "priority": priority,
+            "role": role,
+            "server_affinity": server_affinity,
+            "deadline_at": deadline_at,
         }
 
     @classmethod
@@ -197,6 +205,10 @@ class OperationsServiceMessageMixin:
                 "execution_consumer": operation_metadata.get("execution_consumer") or "operations",
                 "lane": operation_metadata.get("lane") or "operations",
                 "trace_id": operation_metadata.get("trace_id"),
+                "priority": operation_metadata.get("priority"),
+                "role": operation_metadata.get("role"),
+                "server_affinity": operation_metadata.get("server_affinity"),
+                "deadline_at": operation_metadata.get("deadline_at"),
             },
         )
 

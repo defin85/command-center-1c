@@ -105,6 +105,10 @@ class BatchOperationSerializer(serializers.ModelSerializer):
     root_operation_id = serializers.SerializerMethodField()
     execution_consumer = serializers.SerializerMethodField()
     lane = serializers.SerializerMethodField()
+    priority = serializers.SerializerMethodField()
+    role = serializers.SerializerMethodField()
+    server_affinity = serializers.SerializerMethodField()
+    deadline_at = serializers.SerializerMethodField()
     
     class Meta:
         model = BatchOperation
@@ -115,6 +119,7 @@ class BatchOperationSerializer(serializers.ModelSerializer):
             'started_at', 'completed_at', 'duration_seconds', 'success_rate',
             'created_by', 'metadata', 'created_at', 'updated_at',
             'workflow_execution_id', 'node_id', 'root_operation_id', 'execution_consumer', 'lane',
+            'priority', 'role', 'server_affinity', 'deadline_at',
             'database_names', 'tasks'
         ]
         read_only_fields = [
@@ -151,6 +156,10 @@ class BatchOperationSerializer(serializers.ModelSerializer):
             "root_operation_id": str(metadata.get("root_operation_id") or obj.id),
             "execution_consumer": execution_consumer,
             "lane": lane,
+            "priority": str(metadata.get("priority") or "").strip() or None,
+            "role": str(metadata.get("role") or "").strip() or None,
+            "server_affinity": str(metadata.get("server_affinity") or "").strip() or None,
+            "deadline_at": str(metadata.get("deadline_at") or "").strip() or None,
         }
 
     def get_workflow_execution_id(self, obj: BatchOperation) -> str | None:
@@ -169,3 +178,19 @@ class BatchOperationSerializer(serializers.ModelSerializer):
 
     def get_lane(self, obj: BatchOperation) -> str:
         return str(self._workflow_metadata(obj).get("lane") or "operations")
+
+    def get_priority(self, obj: BatchOperation) -> str | None:
+        value = self._workflow_metadata(obj).get("priority")
+        return str(value) if value is not None else None
+
+    def get_role(self, obj: BatchOperation) -> str | None:
+        value = self._workflow_metadata(obj).get("role")
+        return str(value) if value is not None else None
+
+    def get_server_affinity(self, obj: BatchOperation) -> str | None:
+        value = self._workflow_metadata(obj).get("server_affinity")
+        return str(value) if value is not None else None
+
+    def get_deadline_at(self, obj: BatchOperation) -> str | None:
+        value = self._workflow_metadata(obj).get("deadline_at")
+        return str(value) if value is not None else None

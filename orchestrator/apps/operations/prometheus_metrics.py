@@ -315,6 +315,45 @@ pool_master_data_sync_conflicts_retrying_total = Gauge(
     "Current retrying pool master-data sync conflicts",
 )
 
+pool_master_data_sync_queue_backlog_total = Gauge(
+    "cc1c_orchestrator_pool_master_data_sync_queue_backlog_total",
+    "Current workflow enqueue backlog for pool master-data sync by scheduling dimensions",
+    ["status", "priority", "role", "server_affinity"],
+)
+
+pool_master_data_sync_queue_lag_seconds = Gauge(
+    "cc1c_orchestrator_pool_master_data_sync_queue_lag_seconds",
+    "Current workflow enqueue lag for pool master-data sync by scheduling dimensions",
+    ["status", "priority", "role", "server_affinity"],
+)
+
+pool_master_data_sync_reconcile_window_total = Counter(
+    "cc1c_orchestrator_pool_master_data_sync_reconcile_window_total",
+    "Total completed reconcile windows by outcome/deadline state",
+    ["outcome", "deadline_state"],
+)
+
+pool_master_data_sync_reconcile_window_coverage_ratio = Gauge(
+    "cc1c_orchestrator_pool_master_data_sync_reconcile_window_coverage_ratio",
+    "Latest reconcile window coverage ratio for pool master-data sync",
+)
+
+pool_master_data_sync_reconcile_window_deadline_miss_total = Counter(
+    "cc1c_orchestrator_pool_master_data_sync_reconcile_window_deadline_miss_total",
+    "Total reconcile windows with deadline misses",
+)
+
+pool_master_data_sync_reconcile_window_partial_total = Counter(
+    "cc1c_orchestrator_pool_master_data_sync_reconcile_window_partial_total",
+    "Total reconcile windows completed with partial outcome",
+)
+
+pool_master_data_sync_reconcile_window_latency_seconds = Histogram(
+    "cc1c_orchestrator_pool_master_data_sync_reconcile_window_latency_seconds",
+    "Reconcile window end-to-end latency in seconds for pool master-data sync",
+    buckets=[5, 10, 20, 30, 45, 60, 90, 120, 150, 180, 240, 300, 600],
+)
+
 # =============================================================================
 # Event Subscriber (Redis Streams) Metrics
 # =============================================================================
@@ -783,6 +822,64 @@ def set_pool_master_data_sync_conflict_metrics(
     """Set current pool master-data sync conflict queue metrics."""
     pool_master_data_sync_conflicts_pending_total.set(max(0, int(pending_total or 0)))
     pool_master_data_sync_conflicts_retrying_total.set(max(0, int(retrying_total or 0)))
+
+
+def set_pool_master_data_sync_queue_backlog_by_scheduling(
+    *,
+    rows: list[dict[str, object]],
+) -> None:
+    """Set pool sync workflow backlog/lag metrics with scheduling dimensions."""
+    pool_master_data_sync_queue_backlog_total.clear()
+    pool_master_data_sync_queue_lag_seconds.clear()
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        status = str(row.get("status") or "pending").strip().lower() or "pending"
+        priority = str(row.get("priority") or "unknown").strip().lower() or "unknown"
+        role = str(row.get("role") or "unknown").strip().lower() or "unknown"
+        server_affinity = str(row.get("server_affinity") or "shared").strip().lower() or "shared"
+        backlog_total = max(0.0, float(row.get("backlog_total") or 0.0))
+        lag_seconds = max(0.0, float(row.get("lag_seconds") or 0.0))
+
+        pool_master_data_sync_queue_backlog_total.labels(
+            status=status,
+            priority=priority,
+            role=role,
+            server_affinity=server_affinity,
+        ).set(backlog_total)
+        pool_master_data_sync_queue_lag_seconds.labels(
+            status=status,
+            priority=priority,
+            role=role,
+            server_affinity=server_affinity,
+        ).set(lag_seconds)
+
+
+def record_pool_master_data_sync_reconcile_window_metrics(
+    *,
+    coverage_ratio: float,
+    deadline_state: str,
+    outcome: str,
+    latency_seconds: float,
+) -> None:
+    """Record reconcile-window SLA metrics (coverage/deadline/partial/latency)."""
+    normalized_coverage = max(0.0, min(1.0, float(coverage_ratio or 0.0)))
+    normalized_deadline_state = str(deadline_state or "unknown").strip().lower() or "unknown"
+    normalized_outcome = str(outcome or "unknown").strip().lower() or "unknown"
+    normalized_latency = max(0.0, float(latency_seconds or 0.0))
+
+    pool_master_data_sync_reconcile_window_total.labels(
+        outcome=normalized_outcome,
+        deadline_state=normalized_deadline_state,
+    ).inc()
+    pool_master_data_sync_reconcile_window_coverage_ratio.set(normalized_coverage)
+    pool_master_data_sync_reconcile_window_latency_seconds.observe(normalized_latency)
+
+    if normalized_deadline_state == "missed":
+        pool_master_data_sync_reconcile_window_deadline_miss_total.inc()
+    if normalized_outcome == "partial":
+        pool_master_data_sync_reconcile_window_partial_total.inc()
 
 
 def record_api_v2_duration(endpoint: str, status: str, duration: float) -> None:

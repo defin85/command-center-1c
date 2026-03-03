@@ -80,6 +80,13 @@ def _serialize_sync_conflict(conflict: PoolMasterDataSyncConflict) -> dict[str, 
 class MasterDataSyncStatusQuerySerializer(serializers.Serializer):
     database_id = serializers.UUIDField(required=False)
     entity_type = serializers.ChoiceField(required=False, choices=PoolMasterDataEntityType.values)
+    priority = serializers.CharField(required=False, allow_blank=False, max_length=16)
+    role = serializers.CharField(required=False, allow_blank=False, max_length=64)
+    server_affinity = serializers.CharField(required=False, allow_blank=False, max_length=128)
+    deadline_state = serializers.ChoiceField(
+        required=False,
+        choices=["none", "pending", "met", "missed"],
+    )
 
 
 class MasterDataSyncStatusRowSerializer(serializers.Serializer):
@@ -97,6 +104,13 @@ class MasterDataSyncStatusRowSerializer(serializers.Serializer):
     last_success_at = serializers.DateTimeField(required=False, allow_null=True)
     last_applied_at = serializers.DateTimeField(required=False, allow_null=True)
     last_error_code = serializers.CharField(allow_blank=True)
+    last_error_reason = serializers.CharField(allow_blank=True)
+    priority = serializers.CharField(allow_blank=True)
+    role = serializers.CharField(allow_blank=True)
+    server_affinity = serializers.CharField(allow_blank=True)
+    deadline_at = serializers.CharField(allow_blank=True)
+    deadline_state = serializers.ChoiceField(choices=["none", "pending", "met", "missed"])
+    queue_states = serializers.DictField(child=serializers.IntegerField(min_value=0))
 
 
 class MasterDataSyncStatusListResponseSerializer(serializers.Serializer):
@@ -159,10 +173,18 @@ def list_master_data_sync_status(request):
 
     database_id = query_serializer.validated_data.get("database_id")
     entity_type = query_serializer.validated_data.get("entity_type")
+    priority = query_serializer.validated_data.get("priority")
+    role = query_serializer.validated_data.get("role")
+    server_affinity = query_serializer.validated_data.get("server_affinity")
+    deadline_state = query_serializer.validated_data.get("deadline_state")
     rows = list_master_data_sync_status_rows(
         tenant_id=str(tenant_id),
         database_id=str(database_id) if database_id is not None else None,
         entity_type=str(entity_type) if entity_type is not None else None,
+        priority=str(priority) if priority is not None else None,
+        role=str(role) if role is not None else None,
+        server_affinity=str(server_affinity) if server_affinity is not None else None,
+        deadline_state=str(deadline_state) if deadline_state is not None else None,
     )
     payload = {
         "count": len(rows),

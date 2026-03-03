@@ -22,6 +22,18 @@ func WorkflowMetadataFromMessage(msg *models.OperationMessage) map[string]interf
 	if msg.Metadata.TraceID != "" {
 		metadata["trace_id"] = msg.Metadata.TraceID
 	}
+	if priority := strings.TrimSpace(msg.Metadata.Priority); priority != "" {
+		metadata["priority"] = priority
+	}
+	if role := strings.TrimSpace(msg.Metadata.Role); role != "" {
+		metadata["role"] = role
+	}
+	if serverAffinity := strings.TrimSpace(msg.Metadata.ServerAffinity); serverAffinity != "" {
+		metadata["server_affinity"] = serverAffinity
+	}
+	if deadlineAt := strings.TrimSpace(msg.Metadata.DeadlineAt); deadlineAt != "" {
+		metadata["deadline_at"] = deadlineAt
+	}
 	rootOperationID := strings.TrimSpace(msg.Metadata.RootOperationID)
 	if rootOperationID == "" {
 		rootOperationID = strings.TrimSpace(msg.OperationID)

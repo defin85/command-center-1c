@@ -105,7 +105,9 @@ func (c *Consumer) checkAndClaimPending(ctx context.Context) {
 		// Process claimed messages
 		for _, msg := range messages {
 			log.Infof("processing claimed message, message_id=%s", msg.ID)
-			c.processMessage(ctx, msg)
+			if !c.dispatchMessage(ctx, msg) {
+				return
+			}
 		}
 	}
 }
