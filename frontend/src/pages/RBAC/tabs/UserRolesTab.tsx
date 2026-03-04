@@ -325,7 +325,7 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
           userRolesEditorForm.resetFields()
         }}
         onOk={() => userRolesEditorForm.submit()}
-        destroyOnClose
+        destroyOnHidden
       >
         <div data-testid="rbac-user-roles-editor">
           {!userRolesEditorUser ? (
@@ -523,4 +523,3 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
     </>
   )
 }
-

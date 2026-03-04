@@ -1525,21 +1525,30 @@ export function PoolCatalogPage() {
     }
   }, [databaseLinkFilter, query, statusFilter])
 
-  const loadOrganizationDetail = useCallback(async () => {
-    if (!selectedOrganizationId) {
+  const loadOrganizationDetailById = useCallback(async (organizationId: string) => {
+    const normalizedOrganizationId = String(organizationId || '').trim()
+    if (!normalizedOrganizationId) {
       setOrganizationDetail(null)
       return
     }
     setLoadingOrganizationDetail(true)
     try {
-      const detail = await getOrganization(selectedOrganizationId)
+      const detail = await getOrganization(normalizedOrganizationId)
       setOrganizationDetail(detail)
     } catch {
       setError('Не удалось загрузить детали организации.')
     } finally {
       setLoadingOrganizationDetail(false)
     }
-  }, [selectedOrganizationId])
+  }, [])
+
+  const loadOrganizationDetail = useCallback(async () => {
+    if (!selectedOrganizationId) {
+      setOrganizationDetail(null)
+      return
+    }
+    await loadOrganizationDetailById(selectedOrganizationId)
+  }, [loadOrganizationDetailById, selectedOrganizationId])
 
   const loadPools = useCallback(async () => {
     setLoadingPools(true)
@@ -1963,10 +1972,14 @@ export function PoolCatalogPage() {
 
       setIsOrganizationSaving(true)
       const response = await upsertOrganization(payload)
-      setSelectedOrganizationId(response.organization.id)
+      const organizationId = response.organization.id
+      setSelectedOrganizationId(organizationId)
       message.success(response.created ? 'Организация создана.' : 'Организация обновлена.')
       setIsOrganizationDrawerOpen(false)
-      await loadOrganizations()
+      await Promise.all([
+        loadOrganizations(),
+        loadOrganizationDetailById(organizationId),
+      ])
     } catch (err) {
       if (
         err
@@ -1998,6 +2011,7 @@ export function PoolCatalogPage() {
     }
   }, [
     editingOrganization?.id,
+    loadOrganizationDetailById,
     loadOrganizations,
     message,
     mutatingDisabled,

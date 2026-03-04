@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 
@@ -408,6 +408,46 @@ describe('PoolCatalogPage', () => {
       })
     )
     await waitFor(() => expect(mockListOrganizations).toHaveBeenCalledTimes(2))
+  }, 15000)
+
+  it('updates organization details after editing without page reload', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+    const nextDatabaseId = '33333333-3333-3333-3333-333333333333'
+    const updatedOrganization = {
+      ...baseOrganization,
+      database_id: nextDatabaseId,
+      updated_at: '2026-01-01T00:00:02Z',
+    }
+
+    mockListOrganizations
+      .mockResolvedValueOnce([baseOrganization])
+      .mockResolvedValueOnce([updatedOrganization])
+    mockGetOrganization
+      .mockResolvedValueOnce({
+        organization: baseOrganization,
+        pool_bindings: [],
+      })
+      .mockResolvedValueOnce({
+        organization: updatedOrganization,
+        pool_bindings: [],
+      })
+    mockUpsertOrganization.mockResolvedValueOnce({
+      organization: updatedOrganization,
+      created: false,
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+    expect(await screen.findByText(baseOrganization.database_id as string)).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('pool-catalog-edit-org'))
+    const drawer = await screen.findByRole('dialog', { name: 'Edit organization' })
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(mockUpsertOrganization).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText(nextDatabaseId)).toBeInTheDocument()
   }, 15000)
 
   it('creates pool via drawer and reloads pools list', async () => {
