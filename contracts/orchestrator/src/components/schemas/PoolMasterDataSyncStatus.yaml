@@ -48,12 +48,23 @@ properties:
     type: string
   priority:
     type: string
+    enum:
+      - p0
+      - p1
+      - p2
+      - p3
   role:
     type: string
+    enum:
+      - inbound
+      - outbound
+      - reconcile
+      - manual_remediation
   server_affinity:
     type: string
   deadline_at:
     type: string
+    format: date-time
   deadline_state:
     type: string
     enum:

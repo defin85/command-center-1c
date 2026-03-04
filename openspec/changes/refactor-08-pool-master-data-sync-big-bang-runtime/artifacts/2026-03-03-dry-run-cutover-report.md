@@ -8,6 +8,8 @@ Change: `refactor-08-pool-master-data-sync-big-bang-runtime`
   - `docs/observability/artifacts/refactor-08/pool-master-data-sync-readiness-gate-report.json`
 - Cutover dry-run report:
   - `docs/observability/artifacts/refactor-08/pool-master-data-sync-cutover-dry-run-report.json`
+- Rollback snapshot dry-run report:
+  - `docs/observability/artifacts/refactor-08/pool-master-data-sync-cutover-rollback-snapshot-report.json`
 
 ## Dry-run outcome
 

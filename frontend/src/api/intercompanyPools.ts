@@ -718,6 +718,20 @@ export type PoolMasterDataBinding = {
   updated_at: string
 }
 
+export type PoolMasterDataSyncPriority = 'p0' | 'p1' | 'p2' | 'p3'
+
+export type PoolMasterDataSyncRole = 'inbound' | 'outbound' | 'reconcile' | 'manual_remediation'
+
+export type PoolMasterDataSyncDeadlineState = 'none' | 'pending' | 'met' | 'missed'
+
+export type PoolMasterDataSyncQueueStates = {
+  queued: number
+  processing: number
+  retrying: number
+  failed: number
+  completed: number
+}
+
 export type PoolMasterDataSyncStatus = {
   tenant_id: string
   database_id: string
@@ -733,6 +747,13 @@ export type PoolMasterDataSyncStatus = {
   last_success_at: string | null
   last_applied_at: string | null
   last_error_code: string
+  last_error_reason: string
+  priority: PoolMasterDataSyncPriority | ''
+  role: PoolMasterDataSyncRole | ''
+  server_affinity: string
+  deadline_at: string
+  deadline_state: PoolMasterDataSyncDeadlineState
+  queue_states: PoolMasterDataSyncQueueStates
 }
 
 export type PoolMasterDataSyncConflict = {
@@ -852,6 +873,10 @@ export type UpsertMasterDataBindingPayload = {
 export type ListMasterDataSyncStatusParams = {
   database_id?: string
   entity_type?: PoolMasterDataEntityType
+  priority?: PoolMasterDataSyncPriority
+  role?: PoolMasterDataSyncRole
+  server_affinity?: string
+  deadline_state?: PoolMasterDataSyncDeadlineState
 }
 
 export type ListMasterDataSyncConflictsParams = {

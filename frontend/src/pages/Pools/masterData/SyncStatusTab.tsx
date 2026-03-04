@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { App as AntApp, Button, Card, Select, Space, Table, Tag, Typography } from 'antd'
+import { App as AntApp, Button, Card, Input, Select, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import {
@@ -9,7 +9,10 @@ import {
   reconcileMasterDataSyncConflict,
   resolveMasterDataSyncConflict,
   retryMasterDataSyncConflict,
+  type PoolMasterDataSyncDeadlineState,
   type PoolMasterDataEntityType,
+  type PoolMasterDataSyncPriority,
+  type PoolMasterDataSyncRole,
   type PoolMasterDataSyncConflict,
   type PoolMasterDataSyncStatus,
   type SimpleDatabaseRef,
@@ -32,11 +35,43 @@ const CONFLICT_STATUS_OPTIONS: { value: 'pending' | 'retrying' | 'resolved'; lab
   { value: 'resolved', label: 'resolved' },
 ]
 
+const PRIORITY_OPTIONS: { value: PoolMasterDataSyncPriority; label: string }[] = [
+  { value: 'p0', label: 'p0' },
+  { value: 'p1', label: 'p1' },
+  { value: 'p2', label: 'p2' },
+  { value: 'p3', label: 'p3' },
+]
+
+const ROLE_OPTIONS: { value: PoolMasterDataSyncRole; label: string }[] = [
+  { value: 'inbound', label: 'inbound' },
+  { value: 'outbound', label: 'outbound' },
+  { value: 'reconcile', label: 'reconcile' },
+  { value: 'manual_remediation', label: 'manual_remediation' },
+]
+
+const DEADLINE_STATE_OPTIONS: { value: PoolMasterDataSyncDeadlineState; label: string }[] = [
+  { value: 'none', label: 'none' },
+  { value: 'pending', label: 'pending' },
+  { value: 'met', label: 'met' },
+  { value: 'missed', label: 'missed' },
+]
+
+const DEADLINE_STATE_COLORS: Record<PoolMasterDataSyncDeadlineState, string> = {
+  none: 'default',
+  pending: 'processing',
+  met: 'success',
+  missed: 'error',
+}
+
 export function SyncStatusTab() {
   const { message } = AntApp.useApp()
   const [databases, setDatabases] = useState<SimpleDatabaseRef[]>([])
   const [databaseId, setDatabaseId] = useState<string | undefined>(undefined)
   const [entityType, setEntityType] = useState<PoolMasterDataEntityType | undefined>(undefined)
+  const [priority, setPriority] = useState<PoolMasterDataSyncPriority | undefined>(undefined)
+  const [role, setRole] = useState<PoolMasterDataSyncRole | undefined>(undefined)
+  const [serverAffinity, setServerAffinity] = useState<string | undefined>(undefined)
+  const [deadlineState, setDeadlineState] = useState<PoolMasterDataSyncDeadlineState | undefined>(undefined)
   const [conflictStatus, setConflictStatus] = useState<'pending' | 'retrying' | 'resolved' | undefined>(undefined)
   const [statusRows, setStatusRows] = useState<PoolMasterDataSyncStatus[]>([])
   const [conflictRows, setConflictRows] = useState<PoolMasterDataSyncConflict[]>([])
@@ -68,6 +103,10 @@ export function SyncStatusTab() {
         listMasterDataSyncStatus({
           database_id: databaseId,
           entity_type: entityType,
+          priority,
+          role,
+          server_affinity: serverAffinity,
+          deadline_state: deadlineState,
         }),
         listMasterDataSyncConflicts({
           database_id: databaseId,
@@ -84,7 +123,7 @@ export function SyncStatusTab() {
     } finally {
       setLoading(false)
     }
-  }, [conflictStatus, databaseId, entityType, message])
+  }, [conflictStatus, databaseId, deadlineState, entityType, message, priority, role, serverAffinity])
 
   useEffect(() => {
     void loadDatabases()
@@ -142,6 +181,40 @@ export function SyncStatusTab() {
     { title: 'Retry', dataIndex: 'retry_count', key: 'retry_count', width: 100 },
     { title: 'Conflicts', dataIndex: 'conflict_pending_count', key: 'conflict_pending_count', width: 120 },
     { title: 'Lag (s)', dataIndex: 'lag_seconds', key: 'lag_seconds', width: 100 },
+    {
+      title: 'Priority',
+      dataIndex: 'priority',
+      key: 'priority',
+      width: 120,
+      render: (value: PoolMasterDataSyncStatus['priority']) => (
+        value ? <Tag>{value}</Tag> : <Text type="secondary">-</Text>
+      ),
+    },
+    {
+      title: 'Role',
+      dataIndex: 'role',
+      key: 'role',
+      width: 180,
+      render: (value: PoolMasterDataSyncStatus['role']) => (
+        value ? <Tag color="blue">{value}</Tag> : <Text type="secondary">-</Text>
+      ),
+    },
+    {
+      title: 'Server affinity',
+      dataIndex: 'server_affinity',
+      key: 'server_affinity',
+      width: 200,
+      render: (value: string) => (value ? <Text code>{value}</Text> : <Text type="secondary">-</Text>),
+    },
+    {
+      title: 'Deadline state',
+      dataIndex: 'deadline_state',
+      key: 'deadline_state',
+      width: 160,
+      render: (value: PoolMasterDataSyncStatus['deadline_state']) => (
+        <Tag color={DEADLINE_STATE_COLORS[value]}>{value}</Tag>
+      ),
+    },
     {
       title: 'Last Success',
       dataIndex: 'last_success_at',
@@ -242,6 +315,7 @@ export function SyncStatusTab() {
             style={{ width: 280 }}
           />
           <Select
+            data-testid="sync-status-filter-entity-type"
             allowClear
             placeholder="Entity type"
             value={entityType}
@@ -250,6 +324,45 @@ export function SyncStatusTab() {
             style={{ width: 180 }}
           />
           <Select
+            data-testid="sync-status-filter-priority"
+            allowClear
+            placeholder="Priority"
+            value={priority}
+            options={PRIORITY_OPTIONS}
+            onChange={(value) => setPriority(value)}
+            style={{ width: 160 }}
+          />
+          <Select
+            data-testid="sync-status-filter-role"
+            allowClear
+            placeholder="Role"
+            value={role}
+            options={ROLE_OPTIONS}
+            onChange={(value) => setRole(value)}
+            style={{ width: 220 }}
+          />
+          <Input
+            data-testid="sync-status-filter-server-affinity"
+            allowClear
+            placeholder="Server affinity"
+            value={serverAffinity}
+            onChange={(event) => {
+              const value = event.target.value.trim()
+              setServerAffinity(value ? value : undefined)
+            }}
+            style={{ width: 220 }}
+          />
+          <Select
+            data-testid="sync-status-filter-deadline-state"
+            allowClear
+            placeholder="Deadline state"
+            value={deadlineState}
+            options={DEADLINE_STATE_OPTIONS}
+            onChange={(value) => setDeadlineState(value)}
+            style={{ width: 200 }}
+          />
+          <Select
+            data-testid="sync-status-filter-conflict-status"
             allowClear
             placeholder="Conflict status"
             value={conflictStatus}
@@ -257,7 +370,7 @@ export function SyncStatusTab() {
             onChange={(value) => setConflictStatus(value)}
             style={{ width: 200 }}
           />
-          <Button onClick={() => void loadData()} loading={loading}>
+          <Button data-testid="sync-status-refresh" onClick={() => void loadData()} loading={loading}>
             Refresh
           </Button>
         </Space>
@@ -273,7 +386,7 @@ export function SyncStatusTab() {
           columns={statusColumns}
           dataSource={statusRows}
           pagination={false}
-          scroll={{ x: 1560 }}
+          scroll={{ x: 2320 }}
         />
       </Card>
 

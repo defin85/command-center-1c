@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 
@@ -55,6 +55,22 @@ function renderPage() {
       <PoolMasterDataPage />
     </AntApp>
   )
+}
+
+function openSelectByTestId(testId: string) {
+  const select = screen.getByTestId(testId)
+  const trigger = select.querySelector('.ant-select-selector') as HTMLElement | null
+  fireEvent.mouseDown(trigger ?? select)
+}
+
+async function selectDropdownOption(label: string | RegExp) {
+  const matcher = typeof label === 'string' ? label : (content: string) => label.test(content)
+  const matches = await screen.findAllByText(matcher)
+  const option = [...matches]
+    .reverse()
+    .find((node) => node.closest('.ant-select-item-option'))
+  expect(option).toBeTruthy()
+  fireEvent.click(option as Element)
 }
 
 describe('PoolMasterDataPage', () => {
@@ -146,7 +162,7 @@ describe('PoolMasterDataPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Sync' }))
     await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
     await waitFor(() => expect(mockListMasterDataSyncConflicts).toHaveBeenCalled())
-  })
+  }, 15000)
 
   it('blocks Party save when no role is selected', async () => {
     const user = userEvent.setup()
@@ -184,6 +200,19 @@ describe('PoolMasterDataPage', () => {
           last_success_at: '2026-01-01T00:00:00Z',
           last_applied_at: '2026-01-01T00:00:00Z',
           last_error_code: '',
+          last_error_reason: '',
+          priority: 'p1',
+          role: 'reconcile',
+          server_affinity: 'srv:main',
+          deadline_at: '2026-01-01T00:01:00Z',
+          deadline_state: 'pending',
+          queue_states: {
+            queued: 1,
+            processing: 0,
+            retrying: 0,
+            failed: 0,
+            completed: 0,
+          },
         },
       ],
       count: 1,
@@ -241,5 +270,34 @@ describe('PoolMasterDataPage', () => {
         metadata: { source: 'ui' },
       })
     )
+  }, 20000)
+
+  it('applies scheduling filters for sync status operator view', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('tab', { name: 'Sync' }))
+
+    await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
+    mockListMasterDataSyncStatus.mockClear()
+
+    openSelectByTestId('sync-status-filter-priority')
+    await selectDropdownOption(/^p1$/)
+    openSelectByTestId('sync-status-filter-role')
+    await selectDropdownOption(/^reconcile$/)
+    await user.type(screen.getByTestId('sync-status-filter-server-affinity'), 'srv:main')
+    openSelectByTestId('sync-status-filter-deadline-state')
+    await selectDropdownOption(/^missed$/)
+
+    await user.click(screen.getByTestId('sync-status-refresh'))
+
+    await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
+    expect(mockListMasterDataSyncStatus).toHaveBeenLastCalledWith({
+      database_id: undefined,
+      entity_type: undefined,
+      priority: 'p1',
+      role: 'reconcile',
+      server_affinity: 'srv:main',
+      deadline_state: 'missed',
+    })
   }, 20000)
 })

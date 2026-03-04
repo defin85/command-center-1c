@@ -37,13 +37,21 @@ get:
       required: false
       schema:
         type: string
-        maxLength: 16
+        enum:
+          - p0
+          - p1
+          - p2
+          - p3
     - name: role
       in: query
       required: false
       schema:
         type: string
-        maxLength: 64
+        enum:
+          - inbound
+          - outbound
+          - reconcile
+          - manual_remediation
     - name: server_affinity
       in: query
       required: false

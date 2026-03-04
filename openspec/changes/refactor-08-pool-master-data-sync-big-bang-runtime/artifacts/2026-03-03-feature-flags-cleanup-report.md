@@ -29,3 +29,7 @@ Change: `refactor-08-pool-master-data-sync-big-bang-runtime`
 Cleanup 8.4 выполнен в границах безопасного изменения:
 - удаляемых флагов/веток без нарушения контрактов не выявлено;
 - в коде оставлены только контрактно-обязательные runtime keys и fail-closed guardrails.
+
+## Re-validation (2026-03-04)
+
+Повторная проверка по коду (`rg` по `feature-flag|legacy inbound|cutover compatibility` в `orchestrator/apps/intercompany_pools/**`) не выявила новых временных compatibility веток для refactor-08 runtime.

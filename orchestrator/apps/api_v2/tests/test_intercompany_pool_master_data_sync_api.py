@@ -233,6 +233,20 @@ def test_master_data_sync_status_supports_scheduling_filters_and_queue_states(
 
 
 @pytest.mark.django_db
+def test_master_data_sync_status_rejects_invalid_scheduling_filters(
+    authenticated_client: APIClient,
+) -> None:
+    response = authenticated_client.get(
+        "/api/v2/pools/master-data/sync-status/?priority=urgent&role=unknown"
+    )
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["code"] == "VALIDATION_ERROR"
+    assert "priority" in str(payload["errors"])
+    assert "role" in str(payload["errors"])
+
+
+@pytest.mark.django_db
 def test_master_data_sync_conflict_action_endpoints_retry_reconcile_resolve(
     authenticated_client: APIClient,
     default_tenant: Tenant,

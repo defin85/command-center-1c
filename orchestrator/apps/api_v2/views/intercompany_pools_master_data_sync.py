@@ -25,6 +25,9 @@ from apps.tenancy.models import TenantMember
 
 from .intercompany_pools import _problem, _resolve_tenant_id
 
+SCHEDULING_PRIORITY_CHOICES = ["p0", "p1", "p2", "p3"]
+SCHEDULING_ROLE_CHOICES = ["inbound", "outbound", "reconcile", "manual_remediation"]
+
 
 def _validation_problem(*, detail: str, errors: object | None = None) -> Response:
     return _problem(
@@ -80,8 +83,8 @@ def _serialize_sync_conflict(conflict: PoolMasterDataSyncConflict) -> dict[str, 
 class MasterDataSyncStatusQuerySerializer(serializers.Serializer):
     database_id = serializers.UUIDField(required=False)
     entity_type = serializers.ChoiceField(required=False, choices=PoolMasterDataEntityType.values)
-    priority = serializers.CharField(required=False, allow_blank=False, max_length=16)
-    role = serializers.CharField(required=False, allow_blank=False, max_length=64)
+    priority = serializers.ChoiceField(required=False, choices=SCHEDULING_PRIORITY_CHOICES)
+    role = serializers.ChoiceField(required=False, choices=SCHEDULING_ROLE_CHOICES)
     server_affinity = serializers.CharField(required=False, allow_blank=False, max_length=128)
     deadline_state = serializers.ChoiceField(
         required=False,

@@ -1,0 +1,88 @@
+{
+  "schema_version": "pool_master_data_sync_cutover_report.v1",
+  "generated_at_utc": "2026-03-04T18:25:28Z",
+  "execution_mode": "dry_run",
+  "overall_status": "pass",
+  "runtime_setting_key": "pools.master_data.sync.enabled",
+  "before": {
+    "exists": true,
+    "value": true,
+    "updated_at_utc": "2026-03-04T06:47:17Z"
+  },
+  "stages": {
+    "freeze": {
+      "applied": false,
+      "target_value": false,
+      "before": {
+        "exists": true,
+        "value": true,
+        "updated_at_utc": "2026-03-04T06:47:17Z"
+      },
+      "after": {
+        "exists": true,
+        "value": true,
+        "updated_at_utc": "2026-03-04T06:47:17Z"
+      }
+    },
+    "drain": {
+      "captured_at_utc": "2026-03-04T18:25:28Z",
+      "pending_sync_outbox_count": 0,
+      "pending_workflow_enqueue_outbox_total": 0,
+      "pending_workflow_enqueue_outbox_sync": 0,
+      "active_sync_jobs_count": 0,
+      "active_sync_conflicts_count": 0,
+      "drained": true
+    },
+    "watermark_capture": {
+      "captured_at_utc": "2026-03-04T18:25:28Z",
+      "pool_master_data_sync_outbox": {
+        "max_id": null,
+        "latest_updated_at_utc": null
+      },
+      "pool_master_data_sync_checkpoint": {
+        "latest_applied_at_utc": null,
+        "latest_updated_at_utc": null
+      },
+      "workflow_enqueue_outbox": {
+        "max_id": 31,
+        "latest_updated_at_utc": "2026-02-27T12:44:44Z"
+      },
+      "pool_master_data_sync_job": {
+        "max_id": null,
+        "latest_updated_at_utc": null
+      }
+    },
+    "gate_report": {
+      "path": "/home/egor/code/command-center-1c/docs/observability/artifacts/refactor-08/pool-master-data-sync-readiness-gate-report.json",
+      "exists": true,
+      "schema_version": "pool_master_data_sync_readiness_gate_report.v1",
+      "overall_status": "pass",
+      "schema_valid": true,
+      "schema_errors": [],
+      "orr_status": "complete",
+      "orr_missing_roles": [],
+      "enablement_allowed": true,
+      "blocking_reasons": []
+    },
+    "enable": {
+      "applied": false,
+      "target_value": true,
+      "before": {
+        "exists": true,
+        "value": true,
+        "updated_at_utc": "2026-03-04T06:47:17Z"
+      },
+      "after": {
+        "exists": true,
+        "value": true,
+        "updated_at_utc": "2026-03-04T06:47:17Z"
+      },
+      "enabled_value_after": true
+    }
+  },
+  "after": {
+    "exists": true,
+    "value": true,
+    "updated_at_utc": "2026-03-04T06:47:17Z"
+  }
+}

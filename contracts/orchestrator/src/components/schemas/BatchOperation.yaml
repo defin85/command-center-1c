@@ -128,9 +128,19 @@ properties:
     type: string
   priority:
     type: string
+    enum:
+      - p0
+      - p1
+      - p2
+      - p3
     nullable: true
   role:
     type: string
+    enum:
+      - inbound
+      - outbound
+      - reconcile
+      - manual_remediation
     nullable: true
   server_affinity:
     type: string
