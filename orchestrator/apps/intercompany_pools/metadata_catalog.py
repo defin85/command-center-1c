@@ -564,7 +564,6 @@ def _fetch_live_catalog_payload(*, database: Database, requested_by_username: st
         requested_by_username=requested_by_username,
     )
     odata_base_url = str(database.odata_url or "").strip()
-    metadata_url = f"{odata_base_url.rstrip('/')}/$metadata"
     parsed_url = urlparse(odata_base_url)
     if parsed_url.scheme not in {"http", "https"} or not str(parsed_url.netloc or "").strip():
         raise MetadataCatalogError(

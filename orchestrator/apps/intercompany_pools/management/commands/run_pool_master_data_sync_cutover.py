@@ -18,6 +18,10 @@ from apps.intercompany_pools.models import (
     PoolMasterDataSyncOutbox,
     PoolMasterDataSyncOutboxStatus,
 )
+from apps.intercompany_pools.master_data_sync_readiness_gates import (
+    READINESS_GATE_SCHEMA_VERSION,
+    validate_readiness_gate_report_shape,
+)
 from apps.operations.models import WorkflowEnqueueOutbox
 from apps.runtime_settings.models import RuntimeSetting
 
@@ -95,7 +99,15 @@ class Command(BaseCommand):
         drain_stage = self._collect_drain_stage()
         watermark_stage = self._capture_watermark_stage()
         gate_report_stage = self._load_gate_report_stage(gate_report_path)
-        enable_stage = self._enable_stage(apply_changes=execute_enable)
+        enable_blockers = self._collect_enablement_blockers(
+            gate_report_stage=gate_report_stage,
+            drain_stage=drain_stage,
+        )
+        apply_enable = execute_enable and not enable_blockers
+        enable_stage = self._enable_stage(apply_changes=apply_enable)
+        if execute_enable and enable_blockers:
+            enable_stage["blocked"] = True
+            enable_stage["blocking_reasons"] = list(enable_blockers)
         after = self._read_sync_enabled_setting()
 
         report = {
@@ -117,6 +129,8 @@ class Command(BaseCommand):
 
         if str(gate_report_stage.get("overall_status") or "") != "pass":
             report["overall_status"] = "fail"
+        if not bool(gate_report_stage.get("enablement_allowed")):
+            report["overall_status"] = "fail"
         if not bool(drain_stage.get("drained") is True):
             report["overall_status"] = "fail"
         if execute_enable and bool(enable_stage.get("enabled_value_after") is not True):
@@ -135,7 +149,8 @@ class Command(BaseCommand):
                 "Pool master-data sync cutover check failed: "
                 f"overall_status={report.get('overall_status')} "
                 f"gate_report={gate_report_stage.get('overall_status')} "
-                f"drained={drain_stage.get('drained')}."
+                f"drained={drain_stage.get('drained')} "
+                f"enable_blockers={enable_blockers}."
             )
 
     def _resolve_path(self, raw_path: str) -> Path:
@@ -290,6 +305,12 @@ class Command(BaseCommand):
                 "exists": False,
                 "schema_version": "",
                 "overall_status": "missing",
+                "schema_valid": False,
+                "schema_errors": ["gate_report file is missing"],
+                "orr_status": "missing",
+                "orr_missing_roles": [],
+                "enablement_allowed": False,
+                "blocking_reasons": ["GATE_REPORT_MISSING"],
             }
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -299,13 +320,80 @@ class Command(BaseCommand):
                 "exists": True,
                 "schema_version": "",
                 "overall_status": "invalid",
+                "schema_valid": False,
+                "schema_errors": ["gate_report json decode error"],
+                "orr_status": "missing",
+                "orr_missing_roles": [],
+                "enablement_allowed": False,
+                "blocking_reasons": ["GATE_REPORT_INVALID_JSON"],
             }
+        if not isinstance(payload, dict):
+            return {
+                "path": str(path),
+                "exists": True,
+                "schema_version": "",
+                "overall_status": "invalid",
+                "schema_valid": False,
+                "schema_errors": ["gate_report payload must be object"],
+                "orr_status": "missing",
+                "orr_missing_roles": [],
+                "enablement_allowed": False,
+                "blocking_reasons": ["GATE_REPORT_INVALID_PAYLOAD"],
+            }
+
+        schema_errors = validate_readiness_gate_report_shape(payload)
+        schema_version = str(payload.get("schema_version") or "")
+        overall_status = str(payload.get("overall_status") or "missing")
+        orr_signoff = payload.get("orr_signoff")
+        orr_payload = orr_signoff if isinstance(orr_signoff, dict) else {}
+        orr_status = str(orr_payload.get("status") or "missing")
+        orr_missing_roles_raw = orr_payload.get("missing_roles")
+        orr_missing_roles = (
+            [str(role) for role in orr_missing_roles_raw]
+            if isinstance(orr_missing_roles_raw, list)
+            else []
+        )
+
+        blocking_reasons: list[str] = []
+        if schema_version != READINESS_GATE_SCHEMA_VERSION:
+            blocking_reasons.append("GATE_REPORT_SCHEMA_VERSION_MISMATCH")
+        if schema_errors:
+            blocking_reasons.append("GATE_REPORT_SCHEMA_INVALID")
+        if overall_status != "pass":
+            blocking_reasons.append("GATE_REPORT_NOT_PASS")
+        if orr_status != "complete":
+            blocking_reasons.append("GATE_REPORT_ORR_INCOMPLETE")
+
         return {
             "path": str(path),
             "exists": True,
-            "schema_version": str(payload.get("schema_version") or ""),
-            "overall_status": str(payload.get("overall_status") or "missing"),
+            "schema_version": schema_version,
+            "overall_status": overall_status,
+            "schema_valid": not schema_errors,
+            "schema_errors": list(schema_errors),
+            "orr_status": orr_status,
+            "orr_missing_roles": orr_missing_roles,
+            "enablement_allowed": len(blocking_reasons) == 0,
+            "blocking_reasons": blocking_reasons,
         }
+
+    def _collect_enablement_blockers(
+        self,
+        *,
+        gate_report_stage: dict[str, Any],
+        drain_stage: dict[str, Any],
+    ) -> list[str]:
+        blockers: list[str] = []
+        gate_blockers = gate_report_stage.get("blocking_reasons")
+        if isinstance(gate_blockers, list):
+            blockers.extend(str(item) for item in gate_blockers if str(item).strip())
+        if not bool(drain_stage.get("drained") is True):
+            blockers.append("CUTOVER_DRAIN_NOT_CLEAN")
+        deduplicated: list[str] = []
+        for code in blockers:
+            if code not in deduplicated:
+                deduplicated.append(code)
+        return deduplicated
 
     def _print_human_report(self, *, report: dict[str, Any], report_path: Path) -> None:
         self.stdout.write("pool master-data sync cutover report")

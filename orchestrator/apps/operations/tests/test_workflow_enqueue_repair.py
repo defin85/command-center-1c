@@ -78,6 +78,7 @@ def test_run_workflow_enqueue_detect_repair_relays_stuck_outbox_and_backfills_mi
     with (
         patch("apps.operations.services.operations_service.workflow.redis_client") as mock_redis_client,
         patch("apps.operations.services.operations_service.workflow.event_publisher"),
+        patch("apps.operations.workflow_enqueue_repair.event_publisher") as mock_repair_event_publisher,
     ):
         mock_redis_client.enqueue_operation_stream.return_value = "1702389123999-0"
 
@@ -95,10 +96,13 @@ def test_run_workflow_enqueue_detect_repair_relays_stuck_outbox_and_backfills_mi
     assert report.relay_claimed >= 1
     assert report.relay_dispatched >= 1
     assert report.relay_failed == 0
+    assert report.terminal_failed == 0
+    assert report.diagnostic_events_published == 0
     assert report.stuck_outbox_candidates_after == 0
     assert report.root_missing_before >= 1
     assert report.root_repaired >= 1
     assert report.root_repair_failed == 0
+    mock_repair_event_publisher.publish.assert_not_called()
 
     outbox_entry.refresh_from_db()
     assert outbox_entry.status == WorkflowEnqueueOutbox.STATUS_DISPATCHED
@@ -110,6 +114,8 @@ def test_run_workflow_enqueue_detect_repair_relays_stuck_outbox_and_backfills_mi
     assert payload["schema_version"] == "workflow_enqueue_repair.v1"
     assert "stuck_outbox_before" in payload["diagnostics"]
     assert "root_backfill" in payload["diagnostics"]
+    assert payload["terminal_failed"]["count"] == 0
+    assert payload["terminal_failed"]["diagnostic_events_published"] == 0
 
 
 @pytest.mark.django_db
@@ -119,6 +125,7 @@ def test_run_workflow_enqueue_detect_repair_marks_follow_up_when_stuck_outbox_re
     with (
         patch("apps.operations.services.operations_service.workflow.redis_client") as mock_redis_client,
         patch("apps.operations.services.operations_service.workflow.event_publisher"),
+        patch("apps.operations.workflow_enqueue_repair.event_publisher") as mock_repair_event_publisher,
     ):
         mock_redis_client.enqueue_operation_stream.side_effect = RuntimeError("redis down")
 
@@ -134,5 +141,10 @@ def test_run_workflow_enqueue_detect_repair_marks_follow_up_when_stuck_outbox_re
     assert report.status == "needs_follow_up"
     assert report.stuck_outbox_candidates_before >= 1
     assert report.relay_failed >= 1
+    assert report.terminal_failed >= 1
+    assert report.diagnostic_events_published >= 1
     outbox_entry.refresh_from_db()
-    assert outbox_entry.status == WorkflowEnqueueOutbox.STATUS_PENDING
+    assert outbox_entry.status == WorkflowEnqueueOutbox.STATUS_FAILED
+    assert outbox_entry.last_error_code == "WORKFLOW_ENQUEUE_STUCK_OUTBOX_FAILED"
+    assert report.diagnostics["terminal_failed_outbox"]
+    mock_repair_event_publisher.publish.assert_called()

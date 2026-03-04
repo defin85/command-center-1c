@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestLoadFromEnv_EnablePoolOpsRoute_DefaultFalse(t *testing.T) {
 	t.Setenv("ENABLE_POOLOPS_ROUTE", "")
@@ -8,6 +11,72 @@ func TestLoadFromEnv_EnablePoolOpsRoute_DefaultFalse(t *testing.T) {
 	cfg := LoadFromEnv()
 	if cfg.EnablePoolOpsRoute {
 		t.Fatalf("expected EnablePoolOpsRoute=false by default")
+	}
+}
+
+func TestLoadFromEnv_WorkerFairnessDefaults(t *testing.T) {
+	t.Setenv("WORKER_FAIRNESS_OLDEST_AGE_THRESHOLD", "")
+	t.Setenv("WORKER_FAIRNESS_MANUAL_RESERVE_SLOTS", "")
+	t.Setenv("WORKER_FAIRNESS_TENANT_BUDGET_SHARE", "")
+	t.Setenv("WORKER_FAIRNESS_TENANT_BUDGET_BACKOFF", "")
+
+	cfg := LoadFromEnv()
+	if cfg.WorkerFairnessOldestAgeThreshold != 120*time.Second {
+		t.Fatalf(
+			"expected WorkerFairnessOldestAgeThreshold=120s by default, got %v",
+			cfg.WorkerFairnessOldestAgeThreshold,
+		)
+	}
+	if cfg.WorkerFairnessManualReserveSlots != 1 {
+		t.Fatalf(
+			"expected WorkerFairnessManualReserveSlots=1 by default, got %d",
+			cfg.WorkerFairnessManualReserveSlots,
+		)
+	}
+	if cfg.WorkerFairnessTenantBudgetShare != 0.5 {
+		t.Fatalf(
+			"expected WorkerFairnessTenantBudgetShare=0.5 by default, got %v",
+			cfg.WorkerFairnessTenantBudgetShare,
+		)
+	}
+	if cfg.WorkerFairnessTenantBudgetBackoff != 25*time.Millisecond {
+		t.Fatalf(
+			"expected WorkerFairnessTenantBudgetBackoff=25ms by default, got %v",
+			cfg.WorkerFairnessTenantBudgetBackoff,
+		)
+	}
+}
+
+func TestLoadFromEnv_WorkerFairnessOverrides(t *testing.T) {
+	t.Setenv("WORKER_FAIRNESS_OLDEST_AGE_THRESHOLD", "45s")
+	t.Setenv("WORKER_FAIRNESS_MANUAL_RESERVE_SLOTS", "3")
+	t.Setenv("WORKER_FAIRNESS_TENANT_BUDGET_SHARE", "0.3")
+	t.Setenv("WORKER_FAIRNESS_TENANT_BUDGET_BACKOFF", "90ms")
+
+	cfg := LoadFromEnv()
+	if cfg.WorkerFairnessOldestAgeThreshold != 45*time.Second {
+		t.Fatalf(
+			"expected WorkerFairnessOldestAgeThreshold=45s, got %v",
+			cfg.WorkerFairnessOldestAgeThreshold,
+		)
+	}
+	if cfg.WorkerFairnessManualReserveSlots != 3 {
+		t.Fatalf(
+			"expected WorkerFairnessManualReserveSlots=3, got %d",
+			cfg.WorkerFairnessManualReserveSlots,
+		)
+	}
+	if cfg.WorkerFairnessTenantBudgetShare != 0.3 {
+		t.Fatalf(
+			"expected WorkerFairnessTenantBudgetShare=0.3, got %v",
+			cfg.WorkerFairnessTenantBudgetShare,
+		)
+	}
+	if cfg.WorkerFairnessTenantBudgetBackoff != 90*time.Millisecond {
+		t.Fatalf(
+			"expected WorkerFairnessTenantBudgetBackoff=90ms, got %v",
+			cfg.WorkerFairnessTenantBudgetBackoff,
+		)
 	}
 }
 

@@ -55,6 +55,11 @@ type Config struct {
 	WorkerTimeout       time.Duration
 	WorkerStreamName    string
 	WorkerConsumerGroup string
+	// Worker fairness scheduling configuration.
+	WorkerFairnessOldestAgeThreshold  time.Duration
+	WorkerFairnessManualReserveSlots  int
+	WorkerFairnessTenantBudgetShare   float64
+	WorkerFairnessTenantBudgetBackoff time.Duration
 
 	// Logging configuration
 	LogLevel  string
@@ -171,6 +176,22 @@ func LoadFromEnv() *Config {
 		WorkerTimeout:       getDurationEnv("WORKER_TIMEOUT", 5*time.Minute),
 		WorkerStreamName:    getEnv("WORKER_STREAM_NAME", "commands:worker:operations"),
 		WorkerConsumerGroup: getEnv("WORKER_CONSUMER_GROUP", "worker-state-machine"),
+		WorkerFairnessOldestAgeThreshold: getPositiveDurationEnv(
+			"WORKER_FAIRNESS_OLDEST_AGE_THRESHOLD",
+			120*time.Second,
+		),
+		WorkerFairnessManualReserveSlots: getIntEnv(
+			"WORKER_FAIRNESS_MANUAL_RESERVE_SLOTS",
+			1,
+		),
+		WorkerFairnessTenantBudgetShare: getFloat64Env(
+			"WORKER_FAIRNESS_TENANT_BUDGET_SHARE",
+			0.5,
+		),
+		WorkerFairnessTenantBudgetBackoff: getPositiveDurationEnv(
+			"WORKER_FAIRNESS_TENANT_BUDGET_BACKOFF",
+			25*time.Millisecond,
+		),
 
 		// Logging
 		LogLevel:  getEnv("LOG_LEVEL", "info"),

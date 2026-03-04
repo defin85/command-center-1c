@@ -13,8 +13,10 @@ from apps.intercompany_pools.master_data_sync_dispatcher import (
     dispatch_pending_master_data_sync_outbox as real_dispatch_pending_master_data_sync_outbox,
 )
 from apps.intercompany_pools.master_data_sync_execution import (
+    LegacyInboundRouteDisabledError,
     execute_pool_master_data_sync_dispatch_step,
     execute_pool_master_data_sync_finalize_step,
+    run_pool_master_data_sync_legacy_inbound_route,
     trigger_pool_master_data_outbound_sync_job,
 )
 from apps.intercompany_pools.master_data_sync_outbox import (
@@ -24,6 +26,8 @@ from apps.intercompany_pools.master_data_sync_outbox import (
 from apps.intercompany_pools.models import (
     PoolMasterDataBinding,
     PoolMasterDataEntityType,
+    PoolMasterDataSyncCheckpoint,
+    PoolMasterDataSyncConflict,
     PoolMasterDataSyncJob,
     PoolMasterDataSyncJobStatus,
     PoolMasterDataSyncOutbox,
@@ -253,3 +257,23 @@ def test_outbound_sync_path_preserves_dedupe_without_duplicate_side_effects() ->
     assert outbox_row.status == PoolMasterDataSyncOutboxStatus.SENT
     binding.refresh_from_db()
     assert binding.metadata["sync_audit"][-1]["event"] == "idempotent_skip"
+
+
+@pytest.mark.django_db
+def test_legacy_inbound_route_is_fail_closed_with_machine_readable_code_and_no_side_effects() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-e2e-legacy-{uuid4().hex[:6]}", name="Sync E2E Legacy Disabled")
+    database = _create_database(tenant=tenant, suffix="legacy-disabled")
+
+    with pytest.raises(LegacyInboundRouteDisabledError) as exc_info:
+        run_pool_master_data_sync_legacy_inbound_route(
+            tenant_id=str(tenant.id),
+            database_id=str(database.id),
+            entity_type=PoolMasterDataEntityType.ITEM,
+        )
+
+    assert exc_info.value.code == "SYNC_LEGACY_INBOUND_ROUTE_DISABLED"
+    assert "Use workflow runtime trigger" in exc_info.value.detail
+    assert PoolMasterDataSyncJob.objects.filter(tenant=tenant, database=database).count() == 0
+    assert PoolMasterDataSyncOutbox.objects.filter(tenant=tenant, database=database).count() == 0
+    assert PoolMasterDataSyncCheckpoint.objects.filter(tenant=tenant, database=database).count() == 0
+    assert PoolMasterDataSyncConflict.objects.filter(tenant=tenant, database=database).count() == 0

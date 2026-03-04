@@ -58,15 +58,19 @@ def authenticated_client(user: User, default_tenant: Tenant) -> APIClient:
 
 @pytest.fixture(autouse=True)
 def _mock_conflict_action_sync_trigger():
+    trigger_result = SimpleNamespace(
+        started_workflow=True,
+        skipped=False,
+        skip_reason=None,
+        sync_job=None,
+        start_result=None,
+    )
     with patch(
         "apps.intercompany_pools.master_data_sync_conflict_actions.trigger_pool_master_data_outbound_sync_job",
-        return_value=SimpleNamespace(
-            started_workflow=True,
-            skipped=False,
-            skip_reason=None,
-            sync_job=None,
-            start_result=None,
-        ),
+        return_value=trigger_result,
+    ), patch(
+        "apps.intercompany_pools.master_data_sync_conflict_actions.trigger_pool_master_data_inbound_sync_job",
+        return_value=trigger_result,
     ):
         yield
 

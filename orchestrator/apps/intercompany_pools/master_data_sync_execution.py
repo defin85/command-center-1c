@@ -10,7 +10,6 @@ from django.utils import timezone
 from .master_data_sync_conflicts import (
     MASTER_DATA_SYNC_CONFLICT_APPLY,
     MASTER_DATA_SYNC_CONFLICT_POLICY_VIOLATION,
-    MasterDataSyncConflictError,
     enqueue_master_data_sync_conflict,
     raise_fail_closed_master_data_sync_conflict,
 )

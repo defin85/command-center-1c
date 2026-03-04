@@ -9,10 +9,12 @@ class WorkflowEnqueueOutbox(models.Model):
 
     STATUS_PENDING = "pending"
     STATUS_DISPATCHED = "dispatched"
+    STATUS_FAILED = "failed"
 
     STATUS_CHOICES = [
         (STATUS_PENDING, "Pending"),
         (STATUS_DISPATCHED, "Dispatched"),
+        (STATUS_FAILED, "Failed"),
     ]
 
     id = models.BigAutoField(primary_key=True)

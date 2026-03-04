@@ -14,6 +14,9 @@ def test_sync_pool_runtime_template_registry_creates_required_aliases() -> None:
     result = sync_pool_runtime_template_registry()
 
     expected_aliases = set(get_pool_runtime_template_aliases())
+    assert "pool.master_data_sync.inbound" in expected_aliases
+    assert "pool.master_data_sync.dispatch" in expected_aliases
+    assert "pool.master_data_sync.finalize" in expected_aliases
     assert result.created == len(expected_aliases)
     assert result.updated == 0
     assert result.unchanged == 0

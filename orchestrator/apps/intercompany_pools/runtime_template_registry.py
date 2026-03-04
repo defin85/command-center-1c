@@ -97,6 +97,13 @@ _POOL_RUNTIME_TEMPLATE_SPECS: tuple[PoolRuntimeTemplateSpec, ...] = (
         display_order=60,
     ),
     PoolRuntimeTemplateSpec(
+        alias="pool.master_data_sync.inbound",
+        label="Pool Master Data Sync Inbound",
+        step_id="master_data_sync.inbound",
+        description="System-managed pool runtime step: process inbound master-data sync batch.",
+        display_order=62,
+    ),
+    PoolRuntimeTemplateSpec(
         alias="pool.master_data_sync.dispatch",
         label="Pool Master Data Sync Dispatch",
         step_id="master_data_sync.dispatch",

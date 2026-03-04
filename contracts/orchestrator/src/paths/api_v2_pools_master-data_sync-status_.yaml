@@ -32,6 +32,34 @@ get:
           - item
           - contract
           - tax_profile
+    - name: priority
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 16
+    - name: role
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 64
+    - name: server_affinity
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+    - name: deadline_state
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - none
+          - pending
+          - met
+          - missed
   responses:
     '200':
       content:

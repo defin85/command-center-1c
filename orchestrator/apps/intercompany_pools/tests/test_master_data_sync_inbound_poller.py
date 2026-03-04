@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -343,6 +344,90 @@ def test_recovery_replay_skips_duplicate_apply_after_notify_failure_restart() ->
 
     checkpoint.refresh_from_db()
     assert checkpoint.checkpoint_token == "cp-replay-001"
+    assert checkpoint.status == PoolMasterDataSyncCheckpointStatus.ACTIVE
+    assert checkpoint.last_error_code == ""
+    assert "pending_checkpoint_token" not in checkpoint.metadata
+
+
+@pytest.mark.django_db(transaction=True)
+def test_recovery_replays_ack_when_crash_happens_after_notify_before_checkpoint_advance() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-inbound-crash-{uuid4().hex[:6]}", name="Sync Inbound Crash Recovery")
+    database = _create_database(tenant=tenant, suffix="crash")
+    inbound_change = MasterDataSyncInboundChange(
+        origin_system="ib",
+        origin_event_id="evt-crash-001",
+        canonical_id="item-crash-001",
+        entity_type=PoolMasterDataEntityType.ITEM,
+        payload={"name": "Crash Item"},
+        payload_fingerprint="fp-crash-001",
+    )
+    notify_calls: list[dict[str, str]] = []
+    apply_calls: list[str] = []
+
+    def _select_changes(*, checkpoint_token: str, **kwargs):
+        return MasterDataSyncSelectChangesResult(
+            changes=[inbound_change],
+            source_checkpoint_token=checkpoint_token,
+            next_checkpoint_token="cp-crash-001",
+        )
+
+    def _apply_change(*, change: MasterDataSyncInboundChange, **kwargs):
+        apply_calls.append(change.origin_event_id)
+
+    def _notify_ok(*, checkpoint_token: str, next_checkpoint_token: str, **kwargs):
+        notify_calls.append(
+            {
+                "checkpoint_token": checkpoint_token,
+                "next_checkpoint_token": next_checkpoint_token,
+            }
+        )
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_inbound_poller._mark_checkpoint_acknowledged_if_pending",
+        side_effect=RuntimeError("crash after notify"),
+    ):
+        with pytest.raises(RuntimeError, match="crash after notify"):
+            process_master_data_sync_inbound_batch(
+                tenant_id=str(tenant.id),
+                database_id=str(database.id),
+                entity_type=PoolMasterDataEntityType.ITEM,
+                select_changes=_select_changes,
+                apply_change=_apply_change,
+                notify_changes_received=_notify_ok,
+            )
+
+    checkpoint = PoolMasterDataSyncCheckpoint.objects.get(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+    )
+    assert checkpoint.checkpoint_token == ""
+    assert checkpoint.metadata["pending_checkpoint_token"] == "cp-crash-001"
+    assert checkpoint.status == PoolMasterDataSyncCheckpointStatus.ACTIVE
+    assert apply_calls == ["evt-crash-001"]
+    assert notify_calls == [{"checkpoint_token": "", "next_checkpoint_token": "cp-crash-001"}]
+
+    result = process_master_data_sync_inbound_batch(
+        tenant_id=str(tenant.id),
+        database_id=str(database.id),
+        entity_type=PoolMasterDataEntityType.ITEM,
+        select_changes=_select_changes,
+        apply_change=_apply_change,
+        notify_changes_received=_notify_ok,
+    )
+
+    assert isinstance(result, MasterDataSyncInboundProcessResult)
+    assert result.applied == 0
+    assert result.duplicates == 1
+    assert result.ack_scheduled is True
+    assert apply_calls == ["evt-crash-001"]
+    assert notify_calls == [
+        {"checkpoint_token": "", "next_checkpoint_token": "cp-crash-001"},
+        {"checkpoint_token": "", "next_checkpoint_token": "cp-crash-001"},
+    ]
+
+    checkpoint.refresh_from_db()
+    assert checkpoint.checkpoint_token == "cp-crash-001"
     assert checkpoint.status == PoolMasterDataSyncCheckpointStatus.ACTIVE
     assert checkpoint.last_error_code == ""
     assert "pending_checkpoint_token" not in checkpoint.metadata

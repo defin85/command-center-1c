@@ -42,6 +42,66 @@ func extractFallbackIDs(message redis.XMessage) FallbackIDs {
 	return ids
 }
 
+func (c *Consumer) acquireOrRecoverTaskLock(
+	ctx context.Context,
+	operationID string,
+) (acquired bool, activeOwner string, err error) {
+	lockKey := fmt.Sprintf("cc1c:task:%s:lock", operationID)
+	ttl := 1 * time.Hour
+	acquired, err = c.redis.SetNX(ctx, lockKey, c.workerID, ttl).Result()
+	if err != nil {
+		return false, "", err
+	}
+	if acquired {
+		return true, "", nil
+	}
+
+	lockOwner, err := c.redis.Get(ctx, lockKey).Result()
+	if err == redis.Nil {
+		// Lock disappeared between SetNX and GET; defer processing to retry path.
+		return false, "", nil
+	}
+	if err != nil {
+		return false, "", err
+	}
+	if lockOwner == c.workerID {
+		c.redis.Expire(ctx, lockKey, ttl)
+		return true, "", nil
+	}
+
+	ownerHeartbeatKey := fmt.Sprintf("cc1c:worker:%s:heartbeat", lockOwner)
+	ownerAlive, err := c.redis.Exists(ctx, ownerHeartbeatKey).Result()
+	if err != nil {
+		return false, "", err
+	}
+	if ownerAlive > 0 {
+		return false, lockOwner, nil
+	}
+
+	takeoverScript := redis.NewScript(`
+		if redis.call("get", KEYS[1]) == ARGV[1] then
+			redis.call("set", KEYS[1], ARGV[2], "EX", ARGV[3])
+			return 1
+		end
+		return 0
+	`)
+	taken, err := takeoverScript.Run(
+		ctx,
+		c.redis,
+		[]string{lockKey},
+		lockOwner,
+		c.workerID,
+		int(ttl.Seconds()),
+	).Int()
+	if err != nil {
+		return false, "", err
+	}
+	if taken == 1 {
+		return true, "", nil
+	}
+	return false, "", nil
+}
+
 // processMessage handles a single message from the stream
 func (c *Consumer) processMessage(ctx context.Context, message redis.XMessage) {
 	log := logger.GetLogger()
@@ -164,35 +224,22 @@ func (c *Consumer) processMessage(ctx context.Context, message redis.XMessage) {
 		fairness.promoted,
 	)
 
-	// Atomic idempotency check with SetNX (FIX #8)
-	// SetNX returns true if key was set (new task), false if already exists
-	lockKey := fmt.Sprintf("cc1c:task:%s:lock", msg.OperationID)
-	acquired, err := c.redis.SetNX(ctx, lockKey, c.workerID, 1*time.Hour).Result()
+	lockAcquired, activeOwner, err := c.acquireOrRecoverTaskLock(ctx, msg.OperationID)
 	if err != nil {
 		log.Errorf("idempotency check failed: %v, operation_id=%s", err, msg.OperationID)
-		// Don't ACK - will be retried
+		// Don't ACK - lock state unknown, safe retry via pending reclaim.
 		return
 	}
-	if !acquired {
-		// Key already exists - check if it's our own lock (after restart)
-		lockOwner, err := c.redis.Get(ctx, lockKey).Result()
-		if err != nil {
-			log.Errorf("failed to get lock owner: %v, operation_id=%s", err, msg.OperationID)
+	if !lockAcquired {
+		if activeOwner != "" {
+			log.Warnf("task already processed by active worker=%s, acking duplicate, operation_id=%s", activeOwner, msg.OperationID)
 			c.ackMessage(ctx, messageID)
 			return
 		}
-		if lockOwner == c.workerID {
-			// Our own lock from previous run (restart recovery)
-			log.Infof("recovering own lock after restart, operation_id=%s", msg.OperationID)
-			// Refresh TTL since we're taking over
-			c.redis.Expire(ctx, lockKey, 1*time.Hour)
-		} else {
-			// Another worker is processing this task
-			log.Warnf("task already being processed by %s, skipping: operation_id=%s", lockOwner, msg.OperationID)
-			c.ackMessage(ctx, messageID)
-			return
-		}
+		log.Warnf("task lock unresolved, deferring without ACK for reclaim retry, operation_id=%s", msg.OperationID)
+		return
 	}
+	lockKey := fmt.Sprintf("cc1c:task:%s:lock", msg.OperationID)
 
 	// Task timeout context
 	taskCtx, cancel := context.WithTimeout(ctx,

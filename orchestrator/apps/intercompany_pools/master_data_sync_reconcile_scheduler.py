@@ -41,6 +41,7 @@ _RETRYABLE_ERROR_CODE_HINTS = (
     "RATE_LIMIT",
     "UNAVAILABLE",
 )
+_WORKFLOW_QUEUE_STREAM = "commands:worker:workflows"
 
 
 @dataclass(frozen=True)
@@ -116,7 +117,7 @@ def _compute_retry_backoff_seconds(
 
 def _default_queue_depth_provider() -> int | None:
     try:
-        return int(OperationsService.get_queue_depth())
+        return int(OperationsService.get_queue_depth(queue_name=_WORKFLOW_QUEUE_STREAM))
     except Exception:  # noqa: BLE001
         return None
 

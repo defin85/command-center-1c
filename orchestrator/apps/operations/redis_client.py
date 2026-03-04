@@ -137,8 +137,8 @@ class RedisClient:
 
     def get_queue_depth(self, queue_name: str = None) -> int:
         """Get stream length (operations queue)."""
-        # Use Stream instead of LIST
-        return self.get_stream_depth(self.STREAM_COMMANDS)
+        target_stream = str(queue_name or self.STREAM_COMMANDS)
+        return self.get_stream_depth(target_stream)
 
     def get_stream_depth(self, stream_name: str) -> int:
         """Get Redis Stream length."""

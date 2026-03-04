@@ -10,9 +10,9 @@ from .types import _record_batch_metric, logger
 
 class OperationsServiceExtraMixin:
     @classmethod
-    def get_queue_depth(cls) -> int:
+    def get_queue_depth(cls, queue_name: str | None = None) -> int:
         """Get current operations queue depth."""
-        return redis_client.get_queue_depth(cls.QUEUE_KEY)
+        return redis_client.get_queue_depth(queue_name or cls.QUEUE_KEY)
 
     @classmethod
     def enqueue_ras_operation(

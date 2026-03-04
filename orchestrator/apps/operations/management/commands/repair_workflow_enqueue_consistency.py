@@ -118,6 +118,10 @@ class Command(BaseCommand):
             self.stdout.write(f"relay.claimed: {payload['relay']['claimed']}")
             self.stdout.write(f"relay.dispatched: {payload['relay']['dispatched']}")
             self.stdout.write(f"relay.failed: {payload['relay']['failed']}")
+            self.stdout.write(f"terminal_failed.count: {payload['terminal_failed']['count']}")
+            self.stdout.write(
+                f"terminal_failed.diagnostic_events_published: {payload['terminal_failed']['diagnostic_events_published']}"
+            )
             self.stdout.write(
                 f"root_projection_backfill.missing_before: {payload['root_projection_backfill']['missing_before']}"
             )

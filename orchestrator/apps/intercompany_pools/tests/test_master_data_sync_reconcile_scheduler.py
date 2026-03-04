@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -9,6 +10,7 @@ from apps.databases.models import Database
 from apps.intercompany_pools.master_data_sync_execution import PoolMasterDataSyncTriggerResult
 from apps.intercompany_pools.master_data_sync_reconcile_scheduler import (
     RECONCILE_BACKPRESSURE_EXHAUSTED,
+    _default_queue_depth_provider,
     schedule_pool_master_data_reconcile_probe_jobs,
 )
 from apps.intercompany_pools.models import (
@@ -293,3 +295,14 @@ def test_reconcile_fanout_scheduler_retries_retryable_enqueue_failure() -> None:
     assert result.scope_results[0]["status"] == "scheduled"
     assert result.scope_results[0]["attempts"] == "2"
     assert result.scope_results[0]["retry_attempts"] == "1"
+
+
+def test_default_queue_depth_provider_reads_workflow_stream_depth() -> None:
+    with patch(
+        "apps.intercompany_pools.master_data_sync_reconcile_scheduler.OperationsService.get_queue_depth",
+        return_value=42,
+    ) as get_queue_depth_mock:
+        depth = _default_queue_depth_provider()
+
+    assert depth == 42
+    get_queue_depth_mock.assert_called_once_with(queue_name="commands:worker:workflows")

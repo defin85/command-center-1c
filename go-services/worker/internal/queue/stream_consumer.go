@@ -119,15 +119,11 @@ func NewConsumer(cfg *config.Config, proc *processor.TaskProcessor, redisClient 
 	if workerPoolSize <= 0 {
 		workerPoolSize = 1
 	}
-	manualReserveSize := 0
-	if workerPoolSize > 1 {
-		manualReserveSize = 1
-	}
+	manualReserveSize := resolveManualReserveSlots(
+		workerPoolSize,
+		cfg.WorkerFairnessManualReserveSlots,
+	)
 	generalSlotSize := workerPoolSize - manualReserveSize
-	if generalSlotSize <= 0 {
-		generalSlotSize = 1
-		manualReserveSize = 0
-	}
 
 	var manualReserveSlots chan struct{}
 	if manualReserveSize > 0 {
@@ -152,11 +148,47 @@ func NewConsumer(cfg *config.Config, proc *processor.TaskProcessor, redisClient 
 		workerPoolSize:          workerPoolSize,
 		manualReserveSlots:      manualReserveSlots,
 		generalWorkerSlots:      make(chan struct{}, generalSlotSize),
-		oldestAgeThreshold:      defaultOldestAgeThreshold,
-		tenantBudgetShare:       defaultTenantBudgetShare,
-		tenantBudgetBackoff:     defaultTenantBudgetBackoff,
+		oldestAgeThreshold:      resolveOldestAgeThreshold(cfg.WorkerFairnessOldestAgeThreshold),
+		tenantBudgetShare:       resolveTenantBudgetShare(cfg.WorkerFairnessTenantBudgetShare),
+		tenantBudgetBackoff:     resolveTenantBudgetBackoff(cfg.WorkerFairnessTenantBudgetBackoff),
 		tenantActiveByServer:    map[string]map[string]int{},
 	}, nil
+}
+
+func resolveManualReserveSlots(workerPoolSize int, configuredReserve int) int {
+	if workerPoolSize <= 1 {
+		return 0
+	}
+	reserve := configuredReserve
+	if reserve <= 0 {
+		reserve = 1
+	}
+	maxReserve := workerPoolSize - 1
+	if reserve > maxReserve {
+		return maxReserve
+	}
+	return reserve
+}
+
+func resolveOldestAgeThreshold(configured time.Duration) time.Duration {
+	if configured <= 0 {
+		return defaultOldestAgeThreshold
+	}
+	return configured
+}
+
+func resolveTenantBudgetShare(configured float64) float64 {
+	if configured <= 0 || configured > 1 {
+		return defaultTenantBudgetShare
+	}
+	return configured
+}
+
+func resolveTenantBudgetBackoff(configured time.Duration) time.Duration {
+	if configured <= 0 {
+		return defaultTenantBudgetBackoff
+	}
+	return configured
 }
 
 // EnsureConsumerGroup creates the consumer group if it doesn't exist

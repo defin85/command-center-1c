@@ -26,11 +26,11 @@ const ENTITY_TYPE_OPTIONS: { value: PoolMasterDataEntityType; label: string }[] 
   { value: 'tax_profile', label: 'tax_profile' },
 ]
 
-const CONFLICT_STATUS_OPTIONS = [
+const CONFLICT_STATUS_OPTIONS: { value: 'pending' | 'retrying' | 'resolved'; label: string }[] = [
   { value: 'pending', label: 'pending' },
   { value: 'retrying', label: 'retrying' },
   { value: 'resolved', label: 'resolved' },
-] as const
+]
 
 export function SyncStatusTab() {
   const { message } = AntApp.useApp()

@@ -6,7 +6,11 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 
-from .master_data_sync_execution import trigger_pool_master_data_outbound_sync_job
+from .master_data_sync_execution import (
+    trigger_pool_master_data_inbound_sync_job,
+    trigger_pool_master_data_outbound_sync_job,
+)
+from .master_data_sync_origin import MASTER_DATA_SYNC_ORIGIN_IB
 from .models import (
     PoolMasterDataSyncConflict,
     PoolMasterDataSyncConflictStatus,
@@ -152,14 +156,26 @@ def _trigger_conflict_reprocess_or_revert(
     tenant_id: str,
     action: str,
 ) -> PoolMasterDataSyncConflict:
-    trigger_result = trigger_pool_master_data_outbound_sync_job(
-        tenant_id=str(conflict.tenant_id),
-        database_id=str(conflict.database_id),
-        entity_type=str(conflict.entity_type),
-        canonical_id=str(conflict.canonical_id or ""),
-        origin_system=str(conflict.origin_system or "cc"),
-        origin_event_id=str(conflict.origin_event_id or ""),
-    )
+    trigger_mode = "outbound"
+    origin_system = str(conflict.origin_system or "cc").strip().lower() or "cc"
+    if origin_system == MASTER_DATA_SYNC_ORIGIN_IB:
+        trigger_mode = "inbound"
+        trigger_result = trigger_pool_master_data_inbound_sync_job(
+            tenant_id=str(conflict.tenant_id),
+            database_id=str(conflict.database_id),
+            entity_type=str(conflict.entity_type),
+            origin_system=origin_system,
+            origin_event_id=str(conflict.origin_event_id or ""),
+        )
+    else:
+        trigger_result = trigger_pool_master_data_outbound_sync_job(
+            tenant_id=str(conflict.tenant_id),
+            database_id=str(conflict.database_id),
+            entity_type=str(conflict.entity_type),
+            canonical_id=str(conflict.canonical_id or ""),
+            origin_system=origin_system,
+            origin_event_id=str(conflict.origin_event_id or ""),
+        )
     started_workflow = bool(getattr(trigger_result, "started_workflow", False))
     skipped = bool(getattr(trigger_result, "skipped", False))
     skip_reason = str(getattr(trigger_result, "skip_reason", "") or "")
@@ -167,6 +183,7 @@ def _trigger_conflict_reprocess_or_revert(
     start_result = getattr(trigger_result, "start_result", None)
     dispatch_summary = {
         "action": str(action or "").strip(),
+        "trigger_mode": trigger_mode,
         "started_workflow": started_workflow,
         "skipped": skipped,
         "skip_reason": skip_reason,

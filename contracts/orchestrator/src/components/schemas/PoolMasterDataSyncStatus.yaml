@@ -44,6 +44,28 @@ properties:
     nullable: true
   last_error_code:
     type: string
+  last_error_reason:
+    type: string
+  priority:
+    type: string
+  role:
+    type: string
+  server_affinity:
+    type: string
+  deadline_at:
+    type: string
+  deadline_state:
+    type: string
+    enum:
+      - none
+      - pending
+      - met
+      - missed
+  queue_states:
+    type: object
+    additionalProperties:
+      type: integer
+      minimum: 0
 required:
   - tenant_id
   - database_id
@@ -57,3 +79,10 @@ required:
   - conflict_retrying_count
   - lag_seconds
   - last_error_code
+  - last_error_reason
+  - priority
+  - role
+  - server_affinity
+  - deadline_at
+  - deadline_state
+  - queue_states
