@@ -17,8 +17,12 @@ BOOTSTRAP_SOURCE_UNAVAILABLE = "BOOTSTRAP_SOURCE_UNAVAILABLE"
 BOOTSTRAP_SOURCE_ODATA_URL_MISSING = "BOOTSTRAP_SOURCE_ODATA_URL_MISSING"
 BOOTSTRAP_SOURCE_ENTITY_COVERAGE_MISSING = "BOOTSTRAP_SOURCE_ENTITY_COVERAGE_MISSING"
 BOOTSTRAP_SOURCE_ENTITY_TYPE_INVALID = "BOOTSTRAP_SOURCE_ENTITY_TYPE_INVALID"
+BOOTSTRAP_SOURCE_MAPPING_INVALID = "BOOTSTRAP_SOURCE_MAPPING_INVALID"
+BOOTSTRAP_SOURCE_FETCH_FAILED = "BOOTSTRAP_SOURCE_FETCH_FAILED"
 
 BOOTSTRAP_SOURCE_KIND_IB_ODATA = "ib_odata"
+BOOTSTRAP_SOURCE_MODE_ODATA = "odata"
+BOOTSTRAP_SOURCE_MODE_METADATA_ROWS = "metadata_rows"
 
 
 @dataclass(frozen=True)
@@ -36,6 +40,16 @@ class _ResolvedMappingCredentials:
     username: str
     password: str
     strategy: str
+
+
+@dataclass(frozen=True)
+class _BootstrapSourceEntityConfig:
+    entity_type: str
+    entity_name: str
+    field_mapping: dict[str, str]
+    select_fields: list[str]
+    filter_query: str
+    page_size: int
 
 
 _BootstrapPreflightCallback = Callable[..., PoolMasterDataBootstrapSourcePreflightResult]
@@ -120,6 +134,7 @@ def fetch_pool_master_data_bootstrap_source_rows(
         tenant_id=str(tenant_id or "").strip(),
         database=database,
         entity_type=normalized_entity_type,
+        actor_id=str(actor_id or "").strip(),
     )
 
 
@@ -175,7 +190,33 @@ def _default_preflight(
                 )
             )
 
-    coverage = _resolve_source_coverage(database=database, entity_scope=entity_scope)
+    source_mode = _resolve_source_mode(database=database)
+    diagnostics["source_mode"] = source_mode
+
+    if source_mode == BOOTSTRAP_SOURCE_MODE_METADATA_ROWS:
+        coverage = _resolve_metadata_source_coverage(database=database, entity_scope=entity_scope)
+        for entity_type, is_covered in coverage.items():
+            if not is_covered:
+                errors.append(
+                    _error(
+                        code=BOOTSTRAP_SOURCE_ENTITY_COVERAGE_MISSING,
+                        detail=f"Selected entity '{entity_type}' is not covered by source mapping.",
+                        path=f"entity_scope.{entity_type}",
+                    )
+                )
+        diagnostics["coverage"] = dict(coverage)
+        diagnostics["error_count"] = len(errors)
+        return PoolMasterDataBootstrapSourcePreflightResult(
+            ok=not errors,
+            source_kind=BOOTSTRAP_SOURCE_KIND_IB_ODATA,
+            coverage=coverage,
+            credential_strategy=credential_strategy,
+            errors=errors,
+            diagnostics=sanitize_master_data_sync_value(diagnostics),
+        )
+
+    entity_configs = _resolve_odata_source_entity_configs(database=database)
+    coverage = {entity: entity in entity_configs for entity in entity_scope}
     for entity_type, is_covered in coverage.items():
         if not is_covered:
             errors.append(
@@ -185,8 +226,19 @@ def _default_preflight(
                     path=f"entity_scope.{entity_type}",
                 )
             )
+            continue
+        config_error = _validate_source_mapping_config(config=entity_configs[entity_type])
+        if config_error is not None:
+            errors.append(
+                _error(
+                    code=BOOTSTRAP_SOURCE_MAPPING_INVALID,
+                    detail=config_error,
+                    path=f"bootstrap_import_source.entities.{entity_type}.field_mapping",
+                )
+            )
 
     if not errors and credentials is not None:
+        client: ODataClient | None = None
         try:
             client = ODataClient(
                 base_url=str(database.odata_url or ""),
@@ -194,7 +246,6 @@ def _default_preflight(
                 password=credentials.password,
             )
             healthy = bool(client.health_check())
-            client.close()
             if not healthy:
                 errors.append(
                     _error(
@@ -203,6 +254,23 @@ def _default_preflight(
                         path="source.health_check",
                     )
                 )
+            else:
+                for entity_type in entity_scope:
+                    config = entity_configs.get(entity_type)
+                    if config is None:
+                        continue
+                    _check_source_entity_availability(
+                        client=client,
+                        config=config,
+                    )
+        except ValueError as exc:
+            errors.append(
+                _error(
+                    code=BOOTSTRAP_SOURCE_UNAVAILABLE,
+                    detail=str(exc),
+                    path="source.entity_probe",
+                )
+            )
         except Exception as exc:  # noqa: BLE001
             errors.append(
                 _error(
@@ -211,6 +279,9 @@ def _default_preflight(
                     path="source.health_check",
                 )
             )
+        finally:
+            if client is not None:
+                client.close()
 
     diagnostics["coverage"] = dict(coverage)
     diagnostics["error_count"] = len(errors)
@@ -229,15 +300,107 @@ def _default_fetch_rows(
     tenant_id: str,
     database: Database,
     entity_type: str,
+    actor_id: str,
 ) -> list[dict[str, Any]]:
-    metadata = database.metadata if isinstance(database.metadata, dict) else {}
-    rows_by_entity = metadata.get("bootstrap_import_rows")
-    if not isinstance(rows_by_entity, Mapping):
-        return []
-    raw_rows = rows_by_entity.get(entity_type)
-    if not isinstance(raw_rows, list):
-        return []
-    return _normalize_rows(raw_rows)
+    source_mode = _resolve_source_mode(database=database)
+    if source_mode == BOOTSTRAP_SOURCE_MODE_METADATA_ROWS:
+        metadata = database.metadata if isinstance(database.metadata, dict) else {}
+        rows_by_entity = metadata.get("bootstrap_import_rows")
+        if not isinstance(rows_by_entity, Mapping):
+            return []
+        raw_rows = rows_by_entity.get(entity_type)
+        if not isinstance(raw_rows, list):
+            return []
+        return _normalize_rows(raw_rows)
+
+    entity_configs = _resolve_odata_source_entity_configs(database=database)
+    config = entity_configs.get(entity_type)
+    if config is None:
+        raise ValueError(
+            f"{BOOTSTRAP_SOURCE_ENTITY_COVERAGE_MISSING}: "
+            f"Selected entity '{entity_type}' is not covered by source mapping."
+        )
+    mapping_error = _validate_source_mapping_config(config=config)
+    if mapping_error is not None:
+        raise ValueError(f"{BOOTSTRAP_SOURCE_MAPPING_INVALID}: {mapping_error}")
+
+    credentials = _resolve_mapping_credentials(database=database, actor_id=actor_id)
+    if credentials is None:
+        raise ValueError(
+            f"{BOOTSTRAP_SOURCE_MAPPING_NOT_CONFIGURED}: "
+            "Infobase mapping is not configured for bootstrap source."
+        )
+    if credentials.strategy == "ambiguous":
+        raise ValueError(
+            f"{BOOTSTRAP_SOURCE_MAPPING_AMBIGUOUS}: Multiple infobase mappings found for bootstrap source."
+        )
+    if not credentials.username or not credentials.password:
+        raise ValueError(
+            f"{BOOTSTRAP_SOURCE_MAPPING_NOT_CONFIGURED}: "
+            "Infobase mapping requires non-empty username and password."
+        )
+
+    client: ODataClient | None = None
+    try:
+        client = ODataClient(
+            base_url=str(database.odata_url or ""),
+            username=credentials.username,
+            password=credentials.password,
+        )
+        return _fetch_all_source_rows_from_odata(
+            client=client,
+            config=config,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(
+            f"{BOOTSTRAP_SOURCE_FETCH_FAILED}: failed to fetch bootstrap rows for '{entity_type}': {exc}"
+        ) from exc
+    finally:
+        if client is not None:
+            client.close()
+
+
+def _fetch_all_source_rows_from_odata(
+    *,
+    client: ODataClient,
+    config: _BootstrapSourceEntityConfig,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    skip = 0
+    page_size = int(config.page_size)
+    while True:
+        batch = client.get_entities(
+            config.entity_name,
+            filter_query=config.filter_query or None,
+            select_fields=config.select_fields or None,
+            top=page_size,
+            skip=skip,
+        )
+        normalized_batch = _map_source_rows(
+            rows=batch,
+            config=config,
+        )
+        rows.extend(normalized_batch)
+        if len(batch) < page_size:
+            break
+        skip += len(batch)
+    return rows
+
+
+def _map_source_rows(
+    *,
+    rows: list[dict[str, Any]],
+    config: _BootstrapSourceEntityConfig,
+) -> list[dict[str, Any]]:
+    normalized_rows: list[dict[str, Any]] = []
+    for raw_row in rows:
+        if not isinstance(raw_row, Mapping):
+            continue
+        payload: dict[str, Any] = {}
+        for target_key, source_key in config.field_mapping.items():
+            payload[target_key] = raw_row.get(source_key)
+        normalized_rows.append(sanitize_master_data_sync_value(payload))
+    return normalized_rows
 
 
 def _normalize_rows(rows: Any) -> list[dict[str, Any]]:
@@ -298,7 +461,15 @@ def _resolve_mapping_credentials(
     return None
 
 
-def _resolve_source_coverage(*, database: Database, entity_scope: list[str]) -> dict[str, bool]:
+def _resolve_source_mode(*, database: Database) -> str:
+    metadata = database.metadata if isinstance(database.metadata, dict) else {}
+    raw_mode = str(metadata.get("bootstrap_import_source_mode") or "").strip().lower()
+    if raw_mode == BOOTSTRAP_SOURCE_MODE_METADATA_ROWS:
+        return BOOTSTRAP_SOURCE_MODE_METADATA_ROWS
+    return BOOTSTRAP_SOURCE_MODE_ODATA
+
+
+def _resolve_metadata_source_coverage(*, database: Database, entity_scope: list[str]) -> dict[str, bool]:
     metadata = database.metadata if isinstance(database.metadata, dict) else {}
     source = metadata.get("bootstrap_import_coverage")
     if isinstance(source, Mapping):
@@ -306,7 +477,121 @@ def _resolve_source_coverage(*, database: Database, entity_scope: list[str]) -> 
     if isinstance(source, list):
         coverage_set = {str(value or "").strip().lower() for value in source}
         return {entity: entity in coverage_set for entity in entity_scope}
-    return {entity: True for entity in entity_scope}
+    rows_by_entity = metadata.get("bootstrap_import_rows")
+    if isinstance(rows_by_entity, Mapping):
+        return {entity: entity in rows_by_entity for entity in entity_scope}
+    return {entity: False for entity in entity_scope}
+
+
+def _resolve_odata_source_entity_configs(*, database: Database) -> dict[str, _BootstrapSourceEntityConfig]:
+    metadata = database.metadata if isinstance(database.metadata, dict) else {}
+    source = metadata.get("bootstrap_import_source")
+    if not isinstance(source, Mapping):
+        return {}
+    entities = source.get("entities")
+    if not isinstance(entities, Mapping):
+        return {}
+
+    default_page_size = _safe_page_size(source.get("page_size"), default=500)
+    resolved: dict[str, _BootstrapSourceEntityConfig] = {}
+    for raw_entity_type, raw_config in entities.items():
+        try:
+            entity_type = _normalize_entity_type(str(raw_entity_type or ""))
+        except ValueError:
+            continue
+        if not isinstance(raw_config, Mapping):
+            continue
+        entity_name = str(raw_config.get("entity_name") or "").strip()
+        if not entity_name:
+            continue
+        field_mapping = _normalize_field_mapping(raw_config.get("field_mapping"))
+        select_fields = _normalize_select_fields(raw_config.get("select_fields"))
+        if not select_fields:
+            select_fields = sorted({value for value in field_mapping.values() if value})
+        resolved[entity_type] = _BootstrapSourceEntityConfig(
+            entity_type=entity_type,
+            entity_name=entity_name,
+            field_mapping=field_mapping,
+            select_fields=select_fields,
+            filter_query=str(raw_config.get("filter_query") or "").strip(),
+            page_size=_safe_page_size(raw_config.get("page_size"), default=default_page_size),
+        )
+    return resolved
+
+
+def _normalize_field_mapping(value: Any) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    normalized: dict[str, str] = {}
+    for raw_target, raw_source in value.items():
+        target_key = str(raw_target or "").strip()
+        source_key = str(raw_source or "").strip()
+        if not target_key or not source_key:
+            continue
+        normalized[target_key] = source_key
+    return normalized
+
+
+def _normalize_select_fields(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[str] = []
+    for item in value:
+        token = str(item or "").strip()
+        if token:
+            normalized.append(token)
+    return normalized
+
+
+def _required_source_fields_for_entity(*, entity_type: str) -> set[str]:
+    if entity_type == PoolMasterDataBootstrapImportEntityType.PARTY:
+        return {"canonical_id", "name"}
+    if entity_type == PoolMasterDataBootstrapImportEntityType.ITEM:
+        return {"canonical_id", "name"}
+    if entity_type == PoolMasterDataBootstrapImportEntityType.TAX_PROFILE:
+        return {"canonical_id", "vat_code"}
+    if entity_type == PoolMasterDataBootstrapImportEntityType.CONTRACT:
+        return {"canonical_id", "name", "owner_counterparty_canonical_id"}
+    if entity_type == PoolMasterDataBootstrapImportEntityType.BINDING:
+        return {"entity_type", "canonical_id", "ib_ref_key"}
+    return {"canonical_id"}
+
+
+def _validate_source_mapping_config(*, config: _BootstrapSourceEntityConfig) -> str | None:
+    required_fields = _required_source_fields_for_entity(entity_type=config.entity_type)
+    missing = sorted(field for field in required_fields if field not in config.field_mapping)
+    if missing:
+        return (
+            f"Bootstrap source mapping for '{config.entity_type}' is incomplete: "
+            f"missing required field(s): {', '.join(missing)}."
+        )
+    return None
+
+
+def _check_source_entity_availability(
+    *,
+    client: ODataClient,
+    config: _BootstrapSourceEntityConfig,
+) -> None:
+    probe = client.get_entities(
+        config.entity_name,
+        filter_query=config.filter_query or None,
+        select_fields=config.select_fields or None,
+        top=1,
+        skip=0,
+    )
+    if not isinstance(probe, list):
+        raise ValueError(
+            f"Bootstrap source probe for '{config.entity_name}' returned invalid payload."
+        )
+
+
+def _safe_page_size(value: Any, *, default: int) -> int:
+    try:
+        page_size = int(value)
+    except (TypeError, ValueError):
+        return int(default)
+    return max(1, min(page_size, 1000))
 
 
 def _normalize_entity_scope(entity_scope: list[str]) -> list[str]:
@@ -333,8 +618,10 @@ def _error(*, code: str, detail: str, path: str) -> dict[str, Any]:
 __all__ = [
     "BOOTSTRAP_SOURCE_ENTITY_COVERAGE_MISSING",
     "BOOTSTRAP_SOURCE_ENTITY_TYPE_INVALID",
+    "BOOTSTRAP_SOURCE_FETCH_FAILED",
     "BOOTSTRAP_SOURCE_KIND_IB_ODATA",
     "BOOTSTRAP_SOURCE_MAPPING_AMBIGUOUS",
+    "BOOTSTRAP_SOURCE_MAPPING_INVALID",
     "BOOTSTRAP_SOURCE_MAPPING_NOT_CONFIGURED",
     "BOOTSTRAP_SOURCE_ODATA_URL_MISSING",
     "BOOTSTRAP_SOURCE_UNAVAILABLE",

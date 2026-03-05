@@ -72,6 +72,11 @@
 3. Нажми `Run Preflight`:
    - при fail-результате `Execute` будет заблокирован;
    - исправь причину (mapping/source/coverage) и запусти preflight повторно.
+   - для real IB-load требуется OData mapping в `database.metadata.bootstrap_import_source.entities.<entity_type>`:
+     - `entity_name` (OData entity set),
+     - `field_mapping` (например `canonical_id -> Ref_Key`, `name -> Description`);
+     - загрузка идёт постранично по OData до полного исчерпания строк.
+   - режим `database.metadata.bootstrap_import_source_mode=metadata_rows` допускается только как явный временный/тестовый источник.
 4. Нажми `Run Dry-run` и проверь ожидаемый объём (`rows_total`) и scope.
 5. Нажми `Execute` для запуска асинхронного job.
 6. Во вкладке `Current Job` контролируй:

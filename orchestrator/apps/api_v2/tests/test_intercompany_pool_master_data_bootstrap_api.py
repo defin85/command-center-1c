@@ -10,6 +10,9 @@ from apps.databases.models import Database
 from apps.intercompany_pools.master_data_bootstrap_import_feature_flags import (
     POOL_MASTER_DATA_BOOTSTRAP_IMPORT_RUNTIME_KEY,
 )
+from apps.intercompany_pools.master_data_bootstrap_import_service import (
+    run_pool_master_data_bootstrap_import_job_execution,
+)
 from apps.intercompany_pools.master_data_bootstrap_import_source_adapter import (
     PoolMasterDataBootstrapSourcePreflightResult,
     configure_pool_master_data_bootstrap_source_callbacks,
@@ -34,6 +37,14 @@ def _reset_bootstrap_callbacks() -> None:
     reset_pool_master_data_bootstrap_source_callbacks()
     yield
     reset_pool_master_data_bootstrap_source_callbacks()
+
+
+@pytest.fixture(autouse=True)
+def _stub_bootstrap_async_executor(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "apps.intercompany_pools.master_data_bootstrap_import_service.start_pool_master_data_bootstrap_import_job_execution",
+        lambda **_kwargs: True,
+    )
 
 
 @pytest.fixture
@@ -167,6 +178,7 @@ def test_bootstrap_preflight_requires_tenant_admin_or_staff(
 @pytest.mark.django_db
 def test_bootstrap_jobs_dry_run_execute_list_and_get(
     admin_client: APIClient,
+    admin_user: User,
     default_tenant: Tenant,
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"pool-bootstrap-jobs-{uuid4().hex[:8]}")
@@ -214,7 +226,14 @@ def test_bootstrap_jobs_dry_run_execute_list_and_get(
     )
     assert execute_response.status_code == 201
     execute_job = execute_response.json()["job"]
-    assert execute_job["status"] == "finalized"
+    assert execute_job["status"] == "execute_pending"
+    assert not PoolMasterParty.objects.filter(tenant=default_tenant, canonical_id="party-001").exists()
+
+    run_pool_master_data_bootstrap_import_job_execution(
+        job_id=execute_job["id"],
+        actor_id=str(admin_user.id),
+        retry_failed_only=False,
+    )
 
     list_response = admin_client.get("/api/v2/pools/master-data/bootstrap-import/jobs/?limit=20&offset=0")
     assert list_response.status_code == 200
@@ -232,6 +251,7 @@ def test_bootstrap_jobs_dry_run_execute_list_and_get(
 @pytest.mark.django_db
 def test_bootstrap_execute_marks_inbound_origin_and_keeps_partial_diagnostics(
     admin_client: APIClient,
+    admin_user: User,
     default_tenant: Tenant,
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"pool-bootstrap-origin-{uuid4().hex[:8]}")
@@ -262,6 +282,11 @@ def test_bootstrap_execute_marks_inbound_origin_and_keeps_partial_diagnostics(
     )
     assert execute_response.status_code == 201
     job_id = execute_response.json()["job"]["id"]
+    run_pool_master_data_bootstrap_import_job_execution(
+        job_id=job_id,
+        actor_id=str(admin_user.id),
+        retry_failed_only=False,
+    )
 
     detail_response = admin_client.get(f"/api/v2/pools/master-data/bootstrap-import/jobs/{job_id}/")
     assert detail_response.status_code == 200
@@ -287,6 +312,7 @@ def test_bootstrap_execute_marks_inbound_origin_and_keeps_partial_diagnostics(
 @pytest.mark.django_db
 def test_bootstrap_retry_failed_chunks_keeps_idempotent_effects(
     admin_client: APIClient,
+    admin_user: User,
     default_tenant: Tenant,
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"pool-bootstrap-retry-{uuid4().hex[:8]}")
@@ -310,7 +336,15 @@ def test_bootstrap_retry_failed_chunks_keeps_idempotent_effects(
         format="json",
     )
     assert execute_response.status_code == 201
-    job_id = execute_response.json()["job"]["id"]
+    execute_job = execute_response.json()["job"]
+    assert execute_job["status"] == "execute_pending"
+    job_id = execute_job["id"]
+
+    run_pool_master_data_bootstrap_import_job_execution(
+        job_id=job_id,
+        actor_id=str(admin_user.id),
+        retry_failed_only=False,
+    )
 
     first_detail = admin_client.get(f"/api/v2/pools/master-data/bootstrap-import/jobs/{job_id}/")
     assert first_detail.status_code == 200
@@ -323,8 +357,16 @@ def test_bootstrap_retry_failed_chunks_keeps_idempotent_effects(
         format="json",
     )
     assert retry_response.status_code == 200
-    assert retry_response.json()["job"]["status"] == "finalized"
-    assert retry_response.json()["job"]["chunks"][0]["attempt_count"] == 2
+    assert retry_response.json()["job"]["status"] == "execute_pending"
+    run_pool_master_data_bootstrap_import_job_execution(
+        job_id=job_id,
+        actor_id=str(admin_user.id),
+        retry_failed_only=True,
+    )
+    retry_detail = admin_client.get(f"/api/v2/pools/master-data/bootstrap-import/jobs/{job_id}/")
+    assert retry_detail.status_code == 200
+    assert retry_detail.json()["job"]["status"] == "finalized"
+    assert retry_detail.json()["job"]["chunks"][0]["attempt_count"] == 2
     assert PoolMasterParty.objects.filter(tenant=default_tenant, canonical_id=party_canonical_id).count() == 0
 
     second_retry_response = admin_client.post(
@@ -333,7 +375,15 @@ def test_bootstrap_retry_failed_chunks_keeps_idempotent_effects(
         format="json",
     )
     assert second_retry_response.status_code == 200
-    assert second_retry_response.json()["job"]["chunks"][0]["attempt_count"] == 3
+    assert second_retry_response.json()["job"]["status"] == "execute_pending"
+    run_pool_master_data_bootstrap_import_job_execution(
+        job_id=job_id,
+        actor_id=str(admin_user.id),
+        retry_failed_only=True,
+    )
+    second_retry_detail = admin_client.get(f"/api/v2/pools/master-data/bootstrap-import/jobs/{job_id}/")
+    assert second_retry_detail.status_code == 200
+    assert second_retry_detail.json()["job"]["chunks"][0]["attempt_count"] == 3
     assert PoolMasterParty.objects.filter(tenant=default_tenant, canonical_id=party_canonical_id).count() == 0
 
 

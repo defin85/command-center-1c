@@ -41,6 +41,9 @@ from .master_data_bootstrap_import_source_adapter import (
     fetch_pool_master_data_bootstrap_source_rows,
     run_pool_master_data_bootstrap_source_preflight,
 )
+from .master_data_bootstrap_import_runtime import (
+    start_pool_master_data_bootstrap_import_job_execution,
+)
 from .master_data_sync_redaction import sanitize_master_data_sync_text, sanitize_master_data_sync_value
 from .models import (
     PoolMasterBindingSyncStatus,
@@ -72,6 +75,8 @@ BOOTSTRAP_IMPORT_CONTRACT_OWNER_NOT_FOUND = "BOOTSTRAP_IMPORT_CONTRACT_OWNER_NOT
 BOOTSTRAP_IMPORT_BINDING_TARGET_INVALID = "BOOTSTRAP_IMPORT_BINDING_TARGET_INVALID"
 BOOTSTRAP_IMPORT_BINDING_REF_REQUIRED = "BOOTSTRAP_IMPORT_BINDING_REF_REQUIRED"
 BOOTSTRAP_IMPORT_CANCELED = "BOOTSTRAP_IMPORT_CANCELED"
+BOOTSTRAP_IMPORT_ASYNC_EXECUTOR_UNAVAILABLE = "BOOTSTRAP_IMPORT_ASYNC_EXECUTOR_UNAVAILABLE"
+BOOTSTRAP_IMPORT_EXECUTE_IN_PROGRESS = "BOOTSTRAP_IMPORT_EXECUTE_IN_PROGRESS"
 
 _TERMINAL_JOB_STATUSES = {
     PoolMasterDataBootstrapImportJobStatus.FINALIZED,
@@ -85,6 +90,10 @@ class BootstrapRowOutcome:
     canonical_id: str = ""
     error_code: str = ""
     detail: str = ""
+
+
+class _BootstrapExecutionCanceled(RuntimeError):
+    pass
 
 
 def run_pool_master_data_bootstrap_preflight_preview(
@@ -162,7 +171,7 @@ def create_pool_master_data_bootstrap_import_job(
         return job
 
     if normalized_mode == BOOTSTRAP_IMPORT_MODE_EXECUTE:
-        _run_job_execute_step(
+        _enqueue_bootstrap_import_job_execution(
             job=job,
             actor_id=actor_id,
             retry_failed_only=False,
@@ -259,6 +268,14 @@ def retry_failed_pool_master_data_bootstrap_import_chunks(
     actor_id: str,
 ) -> PoolMasterDataBootstrapImportJob:
     job = _get_job_or_raise(tenant_id=tenant_id, job_id=job_id)
+    if job.status in {
+        PoolMasterDataBootstrapImportJobStatus.EXECUTE_PENDING,
+        PoolMasterDataBootstrapImportJobStatus.RUNNING,
+    }:
+        raise ValueError(
+            f"{BOOTSTRAP_IMPORT_EXECUTE_IN_PROGRESS}: "
+            f"bootstrap import job '{job.id}' is already in progress"
+        )
     failed_chunk_count = PoolMasterDataBootstrapImportChunk.objects.filter(
         job=job,
         status__in=[
@@ -295,12 +312,77 @@ def retry_failed_pool_master_data_bootstrap_import_chunks(
             "updated_at",
         ]
     )
-    _run_job_execute_step(
+    _enqueue_bootstrap_import_job_execution(
         job=job,
         actor_id=actor_id,
         retry_failed_only=True,
     )
     return _refresh_job(job_id=str(job.id))
+
+
+def run_pool_master_data_bootstrap_import_job_execution(
+    *,
+    job_id: str,
+    actor_id: str,
+    retry_failed_only: bool,
+) -> None:
+    job = _refresh_job(job_id=str(job_id))
+    if job.status in _TERMINAL_JOB_STATUSES:
+        return
+    if job.status != PoolMasterDataBootstrapImportJobStatus.EXECUTE_PENDING:
+        return
+    _run_job_execute_step(
+        job=job,
+        actor_id=actor_id,
+        retry_failed_only=retry_failed_only,
+    )
+
+
+def _enqueue_bootstrap_import_job_execution(
+    *,
+    job: PoolMasterDataBootstrapImportJob,
+    actor_id: str,
+    retry_failed_only: bool,
+) -> None:
+    enqueued = start_pool_master_data_bootstrap_import_job_execution(
+        job_id=str(job.id),
+        actor_id=actor_id,
+        retry_failed_only=retry_failed_only,
+    )
+    if not enqueued:
+        now = timezone.now()
+        job = _refresh_job(job_id=str(job.id))
+        job.status = PoolMasterDataBootstrapImportJobStatus.FAILED
+        job.finished_at = now
+        job.last_error_code = BOOTSTRAP_IMPORT_ASYNC_EXECUTOR_UNAVAILABLE
+        job.last_error = "Bootstrap import async executor is unavailable."
+        _append_job_audit(
+            job=job,
+            action="execute_enqueue_failed",
+            actor_id=actor_id,
+            metadata={"retry_failed_only": bool(retry_failed_only)},
+        )
+        job.save(
+            update_fields=[
+                "status",
+                "finished_at",
+                "last_error_code",
+                "last_error",
+                "metadata",
+                "updated_at",
+            ]
+        )
+        raise ValueError(
+            f"{BOOTSTRAP_IMPORT_ASYNC_EXECUTOR_UNAVAILABLE}: bootstrap import async executor is unavailable"
+        )
+
+    _append_job_audit(
+        job=job,
+        action="execute_enqueued",
+        actor_id=actor_id,
+        metadata={"retry_failed_only": bool(retry_failed_only)},
+    )
+    job.save(update_fields=["metadata", "updated_at"])
 
 
 def serialize_pool_master_data_bootstrap_import_job(
@@ -442,41 +524,60 @@ def _run_job_execute_step(
     actor_id: str,
     retry_failed_only: bool,
 ) -> None:
-    now = timezone.now()
-    execute_status = resolve_bootstrap_import_next_status(
-        current_status=str(job.status),
-        step=POOL_MASTER_DATA_BOOTSTRAP_IMPORT_STEP_EXECUTE,
-        succeeded=True,
-    )
-    job.status = execute_status
-    if job.started_at is None:
-        job.started_at = now
-    job.last_error_code = ""
-    job.last_error = ""
-    _append_job_audit(
-        job=job,
-        action="execute_started",
-        actor_id=actor_id,
-        metadata={"retry_failed_only": bool(retry_failed_only)},
-    )
-    job.save(
-        update_fields=[
-            "status",
-            "started_at",
-            "last_error_code",
-            "last_error",
-            "metadata",
-            "updated_at",
-        ]
-    )
+    job_id = str(job.id)
+    with transaction.atomic():
+        locked_job = PoolMasterDataBootstrapImportJob.objects.select_for_update().get(id=job.id)
+        if locked_job.status in _TERMINAL_JOB_STATUSES:
+            return
+        if locked_job.status != PoolMasterDataBootstrapImportJobStatus.EXECUTE_PENDING:
+            return
 
+        now = timezone.now()
+        execute_status = resolve_bootstrap_import_next_status(
+            current_status=str(locked_job.status),
+            step=POOL_MASTER_DATA_BOOTSTRAP_IMPORT_STEP_EXECUTE,
+            succeeded=True,
+        )
+        locked_job.status = execute_status
+        if locked_job.started_at is None:
+            locked_job.started_at = now
+        locked_job.last_error_code = ""
+        locked_job.last_error = ""
+        _append_job_audit(
+            job=locked_job,
+            action="execute_started",
+            actor_id=actor_id,
+            metadata={"retry_failed_only": bool(retry_failed_only)},
+        )
+        locked_job.save(
+            update_fields=[
+                "status",
+                "started_at",
+                "last_error_code",
+                "last_error",
+                "metadata",
+                "updated_at",
+            ]
+        )
+
+    active_job = _refresh_job(job_id=job_id)
     try:
         _execute_chunks(
-            job=job,
+            job=active_job,
             actor_id=actor_id,
             retry_failed_only=retry_failed_only,
         )
-        job = _refresh_job(job_id=str(job.id))
+        job = _refresh_job(job_id=job_id)
+        if job.status == PoolMasterDataBootstrapImportJobStatus.CANCELED:
+            _append_job_audit(
+                job=job,
+                action="execute_canceled",
+                actor_id=actor_id,
+                metadata={"retry_failed_only": bool(retry_failed_only)},
+            )
+            job.save(update_fields=["metadata", "updated_at"])
+            return
+
         finalize_status = resolve_bootstrap_import_next_status(
             current_status=str(job.status),
             step=POOL_MASTER_DATA_BOOTSTRAP_IMPORT_STEP_FINALIZE,
@@ -491,8 +592,31 @@ def _run_job_execute_step(
             metadata={"retry_failed_only": bool(retry_failed_only)},
         )
         job.save(update_fields=["status", "finished_at", "metadata", "updated_at"])
+    except _BootstrapExecutionCanceled:
+        job = _refresh_job(job_id=job_id)
+        if job.status != PoolMasterDataBootstrapImportJobStatus.CANCELED:
+            job.status = PoolMasterDataBootstrapImportJobStatus.CANCELED
+            job.last_error_code = BOOTSTRAP_IMPORT_CANCELED
+            job.last_error = "Bootstrap import canceled by operator."
+            job.finished_at = timezone.now()
+            _append_job_audit(
+                job=job,
+                action="execute_canceled",
+                actor_id=actor_id,
+                metadata={"retry_failed_only": bool(retry_failed_only)},
+            )
+            job.save(
+                update_fields=[
+                    "status",
+                    "finished_at",
+                    "last_error_code",
+                    "last_error",
+                    "metadata",
+                    "updated_at",
+                ]
+            )
     except Exception as exc:  # noqa: BLE001
-        job = _refresh_job(job_id=str(job.id))
+        job = _refresh_job(job_id=job_id)
         job.status = PoolMasterDataBootstrapImportJobStatus.FAILED
         job.finished_at = timezone.now()
         job.last_error_code = "BOOTSTRAP_EXECUTE_FAILED"
@@ -514,7 +638,7 @@ def _run_job_execute_step(
             ]
         )
     finally:
-        _rebuild_report_and_progress(job=_refresh_job(job_id=str(job.id)))
+        _rebuild_report_and_progress(job=_refresh_job(job_id=job_id))
 
 
 def _execute_chunks(
@@ -523,6 +647,7 @@ def _execute_chunks(
     actor_id: str,
     retry_failed_only: bool,
 ) -> None:
+    _raise_if_job_canceled(job_id=str(job.id))
     rows_by_entity = _fetch_rows_for_scope(
         tenant_id=str(job.tenant_id),
         database=job.database,
@@ -534,8 +659,10 @@ def _execute_chunks(
     ordered_scope = resolve_bootstrap_import_dependency_order(selected_scope=list(job.entity_scope or []))
 
     for entity_type in ordered_scope:
+        _raise_if_job_canceled(job_id=str(job.id))
         rows = rows_by_entity.get(entity_type, [])
         for chunk_index, chunk_rows in enumerate(_chunk_rows(rows=rows, chunk_size=chunk_size)):
+            _raise_if_job_canceled(job_id=str(job.id))
             chunk, _ = PoolMasterDataBootstrapImportChunk.objects.get_or_create(
                 job=job,
                 entity_type=entity_type,
@@ -562,6 +689,7 @@ def _execute_chunks(
                 status=PoolMasterDataBootstrapImportChunkStatus.DEFERRED,
             )
             for chunk in deferred:
+                _raise_if_job_canceled(job_id=str(job.id))
                 rows = rows_by_entity.get(entity_type, [])
                 if chunk.chunk_index * chunk_size >= len(rows):
                     continue
@@ -581,6 +709,7 @@ def _execute_chunk(
     resolved_ids: dict[str, set[str]],
     actor_id: str,
 ) -> None:
+    _raise_if_job_canceled(job_id=str(chunk.job_id))
     now = timezone.now()
     recomputed_key = build_bootstrap_import_chunk_idempotency_key(
         job_id=str(chunk.job_id),
@@ -670,39 +799,56 @@ def _execute_chunk(
     )
 
     errors: list[dict[str, Any]] = []
-    for row_index, row in enumerate(rows):
-        outcome = _apply_row(
-            job=chunk.job,
-            entity_type=str(chunk.entity_type),
-            row=row,
-            row_index=row_index,
-            chunk_index=int(chunk.chunk_index),
-            resolved_ids=resolved_ids,
-        )
-        if outcome.action == "created":
-            chunk.records_created += 1
-            _mark_resolved_id(resolved_ids=resolved_ids, entity_type=str(chunk.entity_type), canonical_id=outcome.canonical_id)
-            continue
-        if outcome.action == "updated":
-            chunk.records_updated += 1
-            _mark_resolved_id(resolved_ids=resolved_ids, entity_type=str(chunk.entity_type), canonical_id=outcome.canonical_id)
-            continue
-        if outcome.action == "skipped":
-            chunk.records_skipped += 1
-            _mark_resolved_id(resolved_ids=resolved_ids, entity_type=str(chunk.entity_type), canonical_id=outcome.canonical_id)
-            continue
+    try:
+        for row_index, row in enumerate(rows):
+            _raise_if_job_canceled(job_id=str(chunk.job_id))
+            outcome = _apply_row(
+                job=chunk.job,
+                entity_type=str(chunk.entity_type),
+                row=row,
+                row_index=row_index,
+                chunk_index=int(chunk.chunk_index),
+                resolved_ids=resolved_ids,
+            )
+            if outcome.action == "created":
+                chunk.records_created += 1
+                _mark_resolved_id(
+                    resolved_ids=resolved_ids,
+                    entity_type=str(chunk.entity_type),
+                    canonical_id=outcome.canonical_id,
+                )
+                continue
+            if outcome.action == "updated":
+                chunk.records_updated += 1
+                _mark_resolved_id(
+                    resolved_ids=resolved_ids,
+                    entity_type=str(chunk.entity_type),
+                    canonical_id=outcome.canonical_id,
+                )
+                continue
+            if outcome.action == "skipped":
+                chunk.records_skipped += 1
+                _mark_resolved_id(
+                    resolved_ids=resolved_ids,
+                    entity_type=str(chunk.entity_type),
+                    canonical_id=outcome.canonical_id,
+                )
+                continue
 
-        chunk.records_failed += 1
-        errors.append(
-            {
-                "row_index": row_index,
-                "code": str(outcome.error_code or BOOTSTRAP_IMPORT_ROW_INVALID),
-                "detail": sanitize_master_data_sync_text(
-                    str(outcome.detail or "Bootstrap row apply failed.")
-                ),
-                "action": str(outcome.action),
-            }
-        )
+            chunk.records_failed += 1
+            errors.append(
+                {
+                    "row_index": row_index,
+                    "code": str(outcome.error_code or BOOTSTRAP_IMPORT_ROW_INVALID),
+                    "detail": sanitize_master_data_sync_text(
+                        str(outcome.detail or "Bootstrap row apply failed.")
+                    ),
+                    "action": str(outcome.action),
+                }
+            )
+    except _BootstrapExecutionCanceled:
+        _mark_chunk_canceled(chunk=chunk)
+        raise
 
     if errors:
         has_only_deferred = all(str(item.get("action")) == "deferred" for item in errors)
@@ -1133,6 +1279,48 @@ def _mark_resolved_id(
     resolved_ids.setdefault(normalized_entity, set()).add(normalized_id)
 
 
+def _raise_if_job_canceled(*, job_id: str) -> None:
+    status = (
+        PoolMasterDataBootstrapImportJob.objects.filter(id=str(job_id)).values_list("status", flat=True).first()
+    )
+    if status == PoolMasterDataBootstrapImportJobStatus.CANCELED:
+        raise _BootstrapExecutionCanceled("Bootstrap import canceled by operator.")
+
+
+def _mark_chunk_canceled(*, chunk: PoolMasterDataBootstrapImportChunk) -> None:
+    now = timezone.now()
+    chunk.status = PoolMasterDataBootstrapImportChunkStatus.CANCELED
+    chunk.last_error_code = BOOTSTRAP_IMPORT_CANCELED
+    chunk.last_error = "Chunk canceled by operator."
+    chunk.finished_at = now
+    diagnostics = dict(chunk.diagnostics or {})
+    errors = list(diagnostics.get("errors") or [])
+    errors.append(
+        {
+            "code": BOOTSTRAP_IMPORT_CANCELED,
+            "detail": "Chunk canceled by operator.",
+            "at": now.isoformat(),
+        }
+    )
+    diagnostics["errors"] = errors[-100:]
+    chunk.diagnostics = sanitize_master_data_sync_value(diagnostics)
+    chunk.metadata = {
+        **dict(chunk.metadata or {}),
+        "last_finished_at": now.isoformat(),
+    }
+    chunk.save(
+        update_fields=[
+            "status",
+            "last_error_code",
+            "last_error",
+            "diagnostics",
+            "metadata",
+            "finished_at",
+            "updated_at",
+        ]
+    )
+
+
 def _rebuild_report_and_progress(*, job: PoolMasterDataBootstrapImportJob) -> None:
     chunks = list(job.chunks.all())
     created_count = sum(int(chunk.records_created or 0) for chunk in chunks)
@@ -1500,6 +1688,7 @@ def _as_list(value: Any) -> list[Any]:
 
 
 __all__ = [
+    "BOOTSTRAP_IMPORT_ASYNC_EXECUTOR_UNAVAILABLE",
     "BOOTSTRAP_IMPORT_DATABASE_TENANT_MISMATCH",
     "BOOTSTRAP_IMPORT_JOB_NOT_FOUND",
     "BOOTSTRAP_IMPORT_MODE_DRY_RUN",
@@ -1510,6 +1699,7 @@ __all__ = [
     "create_pool_master_data_bootstrap_import_job",
     "get_pool_master_data_bootstrap_import_job",
     "list_pool_master_data_bootstrap_import_jobs",
+    "run_pool_master_data_bootstrap_import_job_execution",
     "retry_failed_pool_master_data_bootstrap_import_chunks",
     "run_pool_master_data_bootstrap_preflight_preview",
     "serialize_pool_master_data_bootstrap_import_job",
