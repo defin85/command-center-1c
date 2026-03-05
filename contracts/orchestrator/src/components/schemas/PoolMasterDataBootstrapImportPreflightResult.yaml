@@ -1,0 +1,27 @@
+type: object
+properties:
+  ok:
+    type: boolean
+  source_kind:
+    type: string
+  coverage:
+    type: object
+    additionalProperties:
+      type: boolean
+  credential_strategy:
+    type: string
+  errors:
+    type: array
+    items:
+      type: object
+      additionalProperties: true
+  diagnostics:
+    type: object
+    additionalProperties: true
+required:
+  - ok
+  - source_kind
+  - coverage
+  - credential_strategy
+  - errors
+  - diagnostics

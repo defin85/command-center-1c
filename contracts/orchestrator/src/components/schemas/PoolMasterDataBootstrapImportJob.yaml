@@ -1,0 +1,87 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  database_id:
+    type: string
+    format: uuid
+  entity_scope:
+    type: array
+    items:
+      type: string
+      enum:
+        - party
+        - item
+        - tax_profile
+        - contract
+        - binding
+  status:
+    type: string
+    enum:
+      - preflight_pending
+      - preflight_failed
+      - dry_run_pending
+      - dry_run_failed
+      - execute_pending
+      - running
+      - finalized
+      - failed
+      - canceled
+  started_at:
+    type: string
+    format: date-time
+    nullable: true
+  finished_at:
+    type: string
+    format: date-time
+    nullable: true
+  last_error_code:
+    type: string
+  last_error:
+    type: string
+  preflight_result:
+    $ref: ./PoolMasterDataBootstrapImportPreflightResult.yaml
+  dry_run_summary:
+    type: object
+    additionalProperties: true
+  progress:
+    type: object
+    additionalProperties: true
+  audit_trail:
+    type: array
+    items:
+      type: object
+      additionalProperties: true
+  report:
+    $ref: ./PoolMasterDataBootstrapImportReport.yaml
+  chunks:
+    type: array
+    items:
+      $ref: ./PoolMasterDataBootstrapImportChunk.yaml
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - tenant_id
+  - database_id
+  - entity_scope
+  - status
+  - started_at
+  - finished_at
+  - last_error_code
+  - last_error
+  - preflight_result
+  - dry_run_summary
+  - progress
+  - audit_trail
+  - report
+  - created_at
+  - updated_at

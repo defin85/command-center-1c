@@ -1,0 +1,19 @@
+type: object
+properties:
+  database_id:
+    type: string
+    format: uuid
+  entity_scope:
+    type: array
+    minItems: 1
+    items:
+      type: string
+      enum:
+        - party
+        - item
+        - tax_profile
+        - contract
+        - binding
+required:
+  - database_id
+  - entity_scope

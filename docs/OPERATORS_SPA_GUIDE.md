@@ -64,6 +64,22 @@
 4. Нажми `Refresh` и убедись, что binding отображается в таблице без дублей scope.
 5. Запусти/повтори `Pool Run` и проверь блок `Master Data Gate` на `/pools/runs`.
 
+#### Bootstrap Import from IB
+Если canonical-справочник ещё пустой или нужно массово первично загрузить данные:
+
+1. Открой вкладку `Bootstrap Import` на `/pools/master-data`.
+2. Выбери `Database` и `Entity scope` (например `party,item,tax_profile,contract,binding`).
+3. Нажми `Run Preflight`:
+   - при fail-результате `Execute` будет заблокирован;
+   - исправь причину (mapping/source/coverage) и запусти preflight повторно.
+4. Нажми `Run Dry-run` и проверь ожидаемый объём (`rows_total`) и scope.
+5. Нажми `Execute` для запуска асинхронного job.
+6. Во вкладке `Current Job` контролируй:
+   - `status`, `progress`, `created/updated/skipped/failed/deferred`;
+   - таблицу chunks и `last_error_code`.
+7. Для частичных ошибок используй `Retry Failed Chunks` (перезапускаются только `failed/deferred` chunks).
+8. Для остановки активного исполнения используй `Cancel`.
+
 #### Как это использовать в Topology/Policy
 - В `Pool Catalog` при настройке `document_policy` используй master-data token:
   - `master_data.party.<canonical_id>.<organization|counterparty>.ref`

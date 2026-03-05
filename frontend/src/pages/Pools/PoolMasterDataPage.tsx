@@ -1,6 +1,7 @@
 import { Card, Space, Tabs, Typography } from 'antd'
 
 import { BindingsTab } from './masterData/BindingsTab'
+import { BootstrapImportTab } from './masterData/BootstrapImportTab'
 import { ContractsTab } from './masterData/ContractsTab'
 import { ItemsTab } from './masterData/ItemsTab'
 import { PartiesTab } from './masterData/PartiesTab'
@@ -29,6 +30,7 @@ export function PoolMasterDataPage() {
           { key: 'tax-profile', label: 'TaxProfile', children: <TaxProfilesTab /> },
           { key: 'bindings', label: 'Bindings', children: <BindingsTab /> },
           { key: 'sync', label: 'Sync', children: <SyncStatusTab /> },
+          { key: 'bootstrap-import', label: 'Bootstrap Import', children: <BootstrapImportTab /> },
         ]}
       />
     </Space>

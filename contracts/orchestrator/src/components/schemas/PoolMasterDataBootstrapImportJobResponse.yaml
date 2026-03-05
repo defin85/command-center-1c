@@ -1,0 +1,6 @@
+type: object
+properties:
+  job:
+    $ref: ./PoolMasterDataBootstrapImportJob.yaml
+required:
+  - job

@@ -36,6 +36,7 @@ from .views import (
     operation_catalog,
     intercompany_pools,
     intercompany_pools_master_data,
+    intercompany_pools_master_data_bootstrap,
     intercompany_pools_master_data_sync,
 )
 
@@ -206,6 +207,31 @@ urlpatterns = [
         'pools/master-data/sync-status/',
         intercompany_pools_master_data_sync.list_master_data_sync_status,
         name='pools-master-data-sync-status-list',
+    ),
+    path(
+        'pools/master-data/bootstrap-import/preflight/',
+        intercompany_pools_master_data_bootstrap.preflight_pool_master_data_bootstrap_import,
+        name='pools-master-data-bootstrap-import-preflight',
+    ),
+    path(
+        'pools/master-data/bootstrap-import/jobs/',
+        intercompany_pools_master_data_bootstrap.pool_master_data_bootstrap_import_jobs_endpoint,
+        name='pools-master-data-bootstrap-import-jobs',
+    ),
+    path(
+        'pools/master-data/bootstrap-import/jobs/<uuid:id>/',
+        intercompany_pools_master_data_bootstrap.get_pool_master_data_bootstrap_import_job_endpoint,
+        name='pools-master-data-bootstrap-import-jobs-get',
+    ),
+    path(
+        'pools/master-data/bootstrap-import/jobs/<uuid:id>/cancel/',
+        intercompany_pools_master_data_bootstrap.cancel_pool_master_data_bootstrap_import_job_endpoint,
+        name='pools-master-data-bootstrap-import-jobs-cancel',
+    ),
+    path(
+        'pools/master-data/bootstrap-import/jobs/<uuid:id>/retry-failed-chunks/',
+        intercompany_pools_master_data_bootstrap.retry_failed_pool_master_data_bootstrap_import_chunks_endpoint,
+        name='pools-master-data-bootstrap-import-jobs-retry-failed-chunks',
     ),
     path(
         'pools/master-data/sync-conflicts/',

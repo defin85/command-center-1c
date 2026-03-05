@@ -22,6 +22,50 @@ const mockListMasterDataSyncConflicts = vi.fn()
 const mockRetryMasterDataSyncConflict = vi.fn()
 const mockReconcileMasterDataSyncConflict = vi.fn()
 const mockResolveMasterDataSyncConflict = vi.fn()
+const mockRunPoolMasterDataBootstrapImportPreflight = vi.fn()
+const mockCreatePoolMasterDataBootstrapImportJob = vi.fn()
+const mockListPoolMasterDataBootstrapImportJobs = vi.fn()
+const mockGetPoolMasterDataBootstrapImportJob = vi.fn()
+const mockCancelPoolMasterDataBootstrapImportJob = vi.fn()
+const mockRetryFailedPoolMasterDataBootstrapImportChunks = vi.fn()
+
+const buildBootstrapJob = (overrides: Record<string, unknown> = {}) => ({
+  id: 'job-1',
+  tenant_id: 'tenant-1',
+  database_id: 'db-1',
+  entity_scope: ['party', 'item'],
+  status: 'finalized',
+  started_at: '2026-01-01T00:00:00Z',
+  finished_at: '2026-01-01T00:02:00Z',
+  last_error_code: '',
+  last_error: '',
+  preflight_result: { ok: true },
+  dry_run_summary: { rows_total: 2, chunks_total: 1 },
+  progress: {
+    total_chunks: 1,
+    processed_chunks: 1,
+    pending_chunks: 0,
+    running_chunks: 0,
+    succeeded_chunks: 1,
+    failed_chunks: 0,
+    deferred_chunks: 0,
+    canceled_chunks: 0,
+    completion_ratio: 1,
+  },
+  audit_trail: [],
+  report: {
+    created_count: 1,
+    updated_count: 1,
+    skipped_count: 0,
+    failed_count: 0,
+    deferred_count: 0,
+    diagnostics: {},
+  },
+  chunks: [],
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:02:00Z',
+  ...overrides,
+})
 
 vi.mock('reactflow', () => ({
   default: ({ children }: { children?: ReactNode }) => <div data-testid="mock-reactflow">{children}</div>,
@@ -47,6 +91,13 @@ vi.mock('../../../api/intercompanyPools', () => ({
   retryMasterDataSyncConflict: (...args: unknown[]) => mockRetryMasterDataSyncConflict(...args),
   reconcileMasterDataSyncConflict: (...args: unknown[]) => mockReconcileMasterDataSyncConflict(...args),
   resolveMasterDataSyncConflict: (...args: unknown[]) => mockResolveMasterDataSyncConflict(...args),
+  runPoolMasterDataBootstrapImportPreflight: (...args: unknown[]) => mockRunPoolMasterDataBootstrapImportPreflight(...args),
+  createPoolMasterDataBootstrapImportJob: (...args: unknown[]) => mockCreatePoolMasterDataBootstrapImportJob(...args),
+  listPoolMasterDataBootstrapImportJobs: (...args: unknown[]) => mockListPoolMasterDataBootstrapImportJobs(...args),
+  getPoolMasterDataBootstrapImportJob: (...args: unknown[]) => mockGetPoolMasterDataBootstrapImportJob(...args),
+  cancelPoolMasterDataBootstrapImportJob: (...args: unknown[]) => mockCancelPoolMasterDataBootstrapImportJob(...args),
+  retryFailedPoolMasterDataBootstrapImportChunks: (...args: unknown[]) =>
+    mockRetryFailedPoolMasterDataBootstrapImportChunks(...args),
 }))
 
 function renderPage() {
@@ -91,6 +142,12 @@ describe('PoolMasterDataPage', () => {
     mockRetryMasterDataSyncConflict.mockReset()
     mockReconcileMasterDataSyncConflict.mockReset()
     mockResolveMasterDataSyncConflict.mockReset()
+    mockRunPoolMasterDataBootstrapImportPreflight.mockReset()
+    mockCreatePoolMasterDataBootstrapImportJob.mockReset()
+    mockListPoolMasterDataBootstrapImportJobs.mockReset()
+    mockGetPoolMasterDataBootstrapImportJob.mockReset()
+    mockCancelPoolMasterDataBootstrapImportJob.mockReset()
+    mockRetryFailedPoolMasterDataBootstrapImportChunks.mockReset()
 
     mockListMasterDataParties.mockResolvedValue({
       parties: [
@@ -141,6 +198,37 @@ describe('PoolMasterDataPage', () => {
     mockRetryMasterDataSyncConflict.mockResolvedValue({ conflict: {} })
     mockReconcileMasterDataSyncConflict.mockResolvedValue({ conflict: {} })
     mockResolveMasterDataSyncConflict.mockResolvedValue({ conflict: {} })
+    mockRunPoolMasterDataBootstrapImportPreflight.mockResolvedValue({
+      preflight: {
+        ok: true,
+        source_kind: 'ib_odata',
+        coverage: {
+          party: true,
+          item: true,
+        },
+        credential_strategy: 'service',
+        errors: [],
+        diagnostics: {},
+      },
+    })
+    mockCreatePoolMasterDataBootstrapImportJob.mockResolvedValue({
+      job: buildBootstrapJob(),
+    })
+    mockListPoolMasterDataBootstrapImportJobs.mockResolvedValue({
+      count: 0,
+      limit: 20,
+      offset: 0,
+      jobs: [],
+    })
+    mockGetPoolMasterDataBootstrapImportJob.mockResolvedValue({
+      job: buildBootstrapJob(),
+    })
+    mockCancelPoolMasterDataBootstrapImportJob.mockResolvedValue({
+      job: buildBootstrapJob({ status: 'canceled' }),
+    })
+    mockRetryFailedPoolMasterDataBootstrapImportChunks.mockResolvedValue({
+      job: buildBootstrapJob(),
+    })
   })
 
   it('renders workspace tabs and loads default Party tab list', async () => {
@@ -299,5 +387,172 @@ describe('PoolMasterDataPage', () => {
       server_affinity: 'srv:main',
       deadline_state: 'missed',
     })
+  }, 20000)
+
+  it('runs bootstrap wizard flow preflight -> dry-run -> execute', async () => {
+    const user = userEvent.setup()
+    const dryRunJob = buildBootstrapJob({
+      id: 'job-dry-run',
+      status: 'execute_pending',
+      dry_run_summary: { rows_total: 2, chunks_total: 1 },
+      report: {
+        created_count: 0,
+        updated_count: 0,
+        skipped_count: 0,
+        failed_count: 0,
+        deferred_count: 0,
+        diagnostics: {},
+      },
+    })
+    const executeJob = buildBootstrapJob({
+      id: 'job-execute',
+      status: 'finalized',
+      report: {
+        created_count: 1,
+        updated_count: 1,
+        skipped_count: 0,
+        failed_count: 0,
+        deferred_count: 0,
+        diagnostics: {},
+      },
+      chunks: [
+        {
+          id: 'chunk-1',
+          job_id: 'job-execute',
+          entity_type: 'party',
+          chunk_index: 0,
+          status: 'succeeded',
+          attempt_count: 1,
+          idempotency_key: 'idem-1',
+          records_total: 2,
+          records_created: 1,
+          records_updated: 1,
+          records_skipped: 0,
+          records_failed: 0,
+          last_error_code: '',
+          last_error: '',
+          diagnostics: {},
+          metadata: {},
+          started_at: '2026-01-01T00:00:00Z',
+          finished_at: '2026-01-01T00:01:00Z',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:01:00Z',
+        },
+      ],
+    })
+    mockCreatePoolMasterDataBootstrapImportJob
+      .mockResolvedValueOnce({ job: dryRunJob })
+      .mockResolvedValueOnce({ job: executeJob })
+    mockGetPoolMasterDataBootstrapImportJob
+      .mockResolvedValueOnce({ job: dryRunJob })
+      .mockResolvedValueOnce({ job: executeJob })
+    mockListPoolMasterDataBootstrapImportJobs.mockResolvedValue({
+      count: 2,
+      limit: 20,
+      offset: 0,
+      jobs: [executeJob, dryRunJob],
+    })
+
+    renderPage()
+    await user.click(await screen.findByRole('tab', { name: 'Bootstrap Import' }))
+
+    openSelectByTestId('bootstrap-import-database-select')
+    await selectDropdownOption(/^Main DB$/)
+
+    await user.click(screen.getByTestId('bootstrap-import-run-preflight'))
+    await waitFor(() =>
+      expect(mockRunPoolMasterDataBootstrapImportPreflight).toHaveBeenCalledWith({
+        database_id: 'db-1',
+        entity_scope: ['party', 'item'],
+      })
+    )
+
+    await user.click(screen.getByTestId('bootstrap-import-run-dry-run'))
+    await waitFor(() =>
+      expect(mockCreatePoolMasterDataBootstrapImportJob).toHaveBeenNthCalledWith(1, {
+        database_id: 'db-1',
+        entity_scope: ['party', 'item'],
+        mode: 'dry_run',
+      })
+    )
+
+    await user.click(screen.getByTestId('bootstrap-import-run-execute'))
+    await waitFor(() =>
+      expect(mockCreatePoolMasterDataBootstrapImportJob).toHaveBeenNthCalledWith(2, {
+        database_id: 'db-1',
+        entity_scope: ['party', 'item'],
+        mode: 'execute',
+      })
+    )
+
+    expect(await screen.findByText('Current Job')).toBeInTheDocument()
+    expect(await screen.findByText('Rows (dry-run)')).toBeInTheDocument()
+  }, 20000)
+
+  it('keeps bootstrap form values after preflight error', async () => {
+    const user = userEvent.setup()
+    mockRunPoolMasterDataBootstrapImportPreflight.mockRejectedValueOnce({
+      response: {
+        data: {
+          title: 'Validation Error',
+          detail: 'Preflight failed in source adapter.',
+          errors: {
+            database_id: ['Database is not available'],
+          },
+        },
+      },
+    })
+
+    renderPage()
+    await user.click(await screen.findByRole('tab', { name: 'Bootstrap Import' }))
+
+    openSelectByTestId('bootstrap-import-database-select')
+    await selectDropdownOption(/^Main DB$/)
+
+    await user.click(screen.getByTestId('bootstrap-import-run-preflight'))
+
+    expect((await screen.findAllByText('Preflight failed in source adapter.')).length).toBeGreaterThan(0)
+    expect(screen.getByTestId('bootstrap-import-database-select')).toHaveTextContent('Main DB')
+    expect(screen.getByTestId('bootstrap-import-entity-scope-select')).toHaveTextContent('party')
+  }, 20000)
+
+  it('runs retry failed chunks action for bootstrap job', async () => {
+    const user = userEvent.setup()
+    const failedJob = buildBootstrapJob({
+      id: 'job-failed',
+      status: 'finalized',
+      report: {
+        created_count: 1,
+        updated_count: 0,
+        skipped_count: 0,
+        failed_count: 1,
+        deferred_count: 0,
+        diagnostics: {},
+      },
+    })
+    mockListPoolMasterDataBootstrapImportJobs.mockResolvedValue({
+      count: 1,
+      limit: 20,
+      offset: 0,
+      jobs: [failedJob],
+    })
+    mockGetPoolMasterDataBootstrapImportJob.mockResolvedValue({
+      job: failedJob,
+    })
+    mockRetryFailedPoolMasterDataBootstrapImportChunks.mockResolvedValue({
+      job: buildBootstrapJob({
+        id: 'job-failed',
+        status: 'finalized',
+      }),
+    })
+
+    renderPage()
+    await user.click(await screen.findByRole('tab', { name: 'Bootstrap Import' }))
+    expect(await screen.findByText('Current Job')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('bootstrap-import-retry-failed'))
+    await waitFor(() =>
+      expect(mockRetryFailedPoolMasterDataBootstrapImportChunks).toHaveBeenCalledWith('job-failed')
+    )
   }, 20000)
 })

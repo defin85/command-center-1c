@@ -196,6 +196,16 @@ paths:
     $ref: paths/api_v2_pools_master-data_bindings_{id}_.yaml
   /api/v2/pools/master-data/bindings/upsert/:
     $ref: paths/api_v2_pools_master-data_bindings_upsert_.yaml
+  /api/v2/pools/master-data/bootstrap-import/preflight/:
+    $ref: paths/api_v2_pools_master-data_bootstrap-import_preflight_.yaml
+  /api/v2/pools/master-data/bootstrap-import/jobs/:
+    $ref: paths/api_v2_pools_master-data_bootstrap-import_jobs_.yaml
+  /api/v2/pools/master-data/bootstrap-import/jobs/{id}/:
+    $ref: paths/api_v2_pools_master-data_bootstrap-import_jobs_{id}_.yaml
+  /api/v2/pools/master-data/bootstrap-import/jobs/{id}/cancel/:
+    $ref: paths/api_v2_pools_master-data_bootstrap-import_jobs_{id}_cancel_.yaml
+  /api/v2/pools/master-data/bootstrap-import/jobs/{id}/retry-failed-chunks/:
+    $ref: paths/api_v2_pools_master-data_bootstrap-import_jobs_{id}_retry-failed-chunks_.yaml
   /api/v2/pools/master-data/contracts/:
     $ref: paths/api_v2_pools_master-data_contracts_.yaml
   /api/v2/pools/master-data/contracts/{id}/:

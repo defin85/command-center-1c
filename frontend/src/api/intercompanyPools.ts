@@ -774,6 +774,123 @@ export type PoolMasterDataSyncConflict = {
   updated_at: string
 }
 
+export type PoolMasterDataBootstrapImportEntityType = PoolMasterDataEntityType | 'binding'
+
+export type PoolMasterDataBootstrapImportJobStatus =
+  | 'preflight_pending'
+  | 'preflight_failed'
+  | 'dry_run_pending'
+  | 'dry_run_failed'
+  | 'execute_pending'
+  | 'running'
+  | 'finalized'
+  | 'failed'
+  | 'canceled'
+
+export type PoolMasterDataBootstrapImportChunkStatus =
+  | 'pending'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'deferred'
+  | 'canceled'
+
+export type PoolMasterDataBootstrapImportPreflightError = {
+  code?: string
+  detail?: string
+  path?: string
+  [key: string]: unknown
+}
+
+export type PoolMasterDataBootstrapImportPreflightResult = {
+  ok: boolean
+  source_kind: string
+  coverage: Record<string, boolean>
+  credential_strategy: string
+  errors: PoolMasterDataBootstrapImportPreflightError[]
+  diagnostics: Record<string, unknown>
+}
+
+export type PoolMasterDataBootstrapImportChunk = {
+  id: string
+  job_id: string
+  entity_type: PoolMasterDataBootstrapImportEntityType
+  chunk_index: number
+  status: PoolMasterDataBootstrapImportChunkStatus
+  attempt_count: number
+  idempotency_key: string
+  records_total: number
+  records_created: number
+  records_updated: number
+  records_skipped: number
+  records_failed: number
+  last_error_code: string
+  last_error: string
+  diagnostics: Record<string, unknown>
+  metadata: Record<string, unknown>
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type PoolMasterDataBootstrapImportReport = {
+  created_count: number
+  updated_count: number
+  skipped_count: number
+  failed_count: number
+  deferred_count: number
+  diagnostics: Record<string, unknown>
+}
+
+export type PoolMasterDataBootstrapImportProgress = {
+  total_chunks: number
+  processed_chunks: number
+  pending_chunks: number
+  running_chunks: number
+  succeeded_chunks: number
+  failed_chunks: number
+  deferred_chunks: number
+  canceled_chunks: number
+  completion_ratio: number
+}
+
+export type PoolMasterDataBootstrapImportJob = {
+  id: string
+  tenant_id: string
+  database_id: string
+  entity_scope: PoolMasterDataBootstrapImportEntityType[]
+  status: PoolMasterDataBootstrapImportJobStatus
+  started_at: string | null
+  finished_at: string | null
+  last_error_code: string
+  last_error: string
+  preflight_result: Record<string, unknown>
+  dry_run_summary: Record<string, unknown>
+  progress: PoolMasterDataBootstrapImportProgress
+  audit_trail: Array<Record<string, unknown>>
+  report: PoolMasterDataBootstrapImportReport
+  chunks?: PoolMasterDataBootstrapImportChunk[]
+  created_at: string
+  updated_at: string
+}
+
+export type PoolMasterDataBootstrapImportScopePayload = {
+  database_id: string
+  entity_scope: PoolMasterDataBootstrapImportEntityType[]
+}
+
+export type CreatePoolMasterDataBootstrapImportJobPayload = PoolMasterDataBootstrapImportScopePayload & {
+  mode: 'dry_run' | 'execute'
+  chunk_size?: number
+}
+
+export type ListPoolMasterDataBootstrapImportJobsParams = {
+  database_id?: string
+  limit?: number
+  offset?: number
+}
+
 export type ListMasterDataPartiesParams = {
   query?: string
   canonical_id?: string
@@ -1149,6 +1266,85 @@ export async function resolveMasterDataSyncConflict(
   const response = await apiClient.post<{ conflict: PoolMasterDataSyncConflict }>(
     `/api/v2/pools/master-data/sync-conflicts/${conflictId}/resolve/`,
     payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function runPoolMasterDataBootstrapImportPreflight(
+  payload: PoolMasterDataBootstrapImportScopePayload
+): Promise<{ preflight: PoolMasterDataBootstrapImportPreflightResult }> {
+  const response = await apiClient.post<{ preflight: PoolMasterDataBootstrapImportPreflightResult }>(
+    '/api/v2/pools/master-data/bootstrap-import/preflight/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function createPoolMasterDataBootstrapImportJob(
+  payload: CreatePoolMasterDataBootstrapImportJobPayload
+): Promise<{ job: PoolMasterDataBootstrapImportJob }> {
+  const response = await apiClient.post<{ job: PoolMasterDataBootstrapImportJob }>(
+    '/api/v2/pools/master-data/bootstrap-import/jobs/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function listPoolMasterDataBootstrapImportJobs(
+  params: ListPoolMasterDataBootstrapImportJobsParams = {}
+): Promise<{
+  count: number
+  limit: number
+  offset: number
+  jobs: PoolMasterDataBootstrapImportJob[]
+}> {
+  const response = await apiClient.get<{
+    count: number
+    limit: number
+    offset: number
+    jobs: PoolMasterDataBootstrapImportJob[]
+  }>('/api/v2/pools/master-data/bootstrap-import/jobs/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    count: response.data.count ?? 0,
+    limit: response.data.limit ?? (params.limit ?? 50),
+    offset: response.data.offset ?? (params.offset ?? 0),
+    jobs: response.data.jobs ?? [],
+  }
+}
+
+export async function getPoolMasterDataBootstrapImportJob(
+  jobId: string
+): Promise<{ job: PoolMasterDataBootstrapImportJob }> {
+  const response = await apiClient.get<{ job: PoolMasterDataBootstrapImportJob }>(
+    `/api/v2/pools/master-data/bootstrap-import/jobs/${jobId}/`,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function cancelPoolMasterDataBootstrapImportJob(
+  jobId: string
+): Promise<{ job: PoolMasterDataBootstrapImportJob }> {
+  const response = await apiClient.post<{ job: PoolMasterDataBootstrapImportJob }>(
+    `/api/v2/pools/master-data/bootstrap-import/jobs/${jobId}/cancel/`,
+    {},
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function retryFailedPoolMasterDataBootstrapImportChunks(
+  jobId: string
+): Promise<{ job: PoolMasterDataBootstrapImportJob }> {
+  const response = await apiClient.post<{ job: PoolMasterDataBootstrapImportJob }>(
+    `/api/v2/pools/master-data/bootstrap-import/jobs/${jobId}/retry-failed-chunks/`,
+    {},
     { skipGlobalError: true }
   )
   return response.data

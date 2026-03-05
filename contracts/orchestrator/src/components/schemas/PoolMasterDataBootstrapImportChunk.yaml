@@ -1,0 +1,93 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  job_id:
+    type: string
+    format: uuid
+  entity_type:
+    type: string
+    enum:
+      - party
+      - item
+      - tax_profile
+      - contract
+      - binding
+  chunk_index:
+    type: integer
+    minimum: 0
+  status:
+    type: string
+    enum:
+      - pending
+      - running
+      - succeeded
+      - failed
+      - deferred
+      - canceled
+  attempt_count:
+    type: integer
+    minimum: 0
+  idempotency_key:
+    type: string
+  records_total:
+    type: integer
+    minimum: 0
+  records_created:
+    type: integer
+    minimum: 0
+  records_updated:
+    type: integer
+    minimum: 0
+  records_skipped:
+    type: integer
+    minimum: 0
+  records_failed:
+    type: integer
+    minimum: 0
+  last_error_code:
+    type: string
+  last_error:
+    type: string
+  diagnostics:
+    type: object
+    additionalProperties: true
+  metadata:
+    type: object
+    additionalProperties: true
+  started_at:
+    type: string
+    format: date-time
+    nullable: true
+  finished_at:
+    type: string
+    format: date-time
+    nullable: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - job_id
+  - entity_type
+  - chunk_index
+  - status
+  - attempt_count
+  - idempotency_key
+  - records_total
+  - records_created
+  - records_updated
+  - records_skipped
+  - records_failed
+  - last_error_code
+  - last_error
+  - diagnostics
+  - metadata
+  - started_at
+  - finished_at
+  - created_at
+  - updated_at

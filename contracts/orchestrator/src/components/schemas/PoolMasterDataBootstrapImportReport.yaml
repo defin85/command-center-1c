@@ -1,0 +1,27 @@
+type: object
+properties:
+  created_count:
+    type: integer
+    minimum: 0
+  updated_count:
+    type: integer
+    minimum: 0
+  skipped_count:
+    type: integer
+    minimum: 0
+  failed_count:
+    type: integer
+    minimum: 0
+  deferred_count:
+    type: integer
+    minimum: 0
+  diagnostics:
+    type: object
+    additionalProperties: true
+required:
+  - created_count
+  - updated_count
+  - skipped_count
+  - failed_count
+  - deferred_count
+  - diagnostics
