@@ -272,6 +272,14 @@ class PoolMasterDataEntityType(models.TextChoices):
     TAX_PROFILE = "tax_profile", "Tax Profile"
 
 
+class PoolMasterDataBootstrapImportEntityType(models.TextChoices):
+    PARTY = "party", "Party"
+    ITEM = "item", "Item"
+    TAX_PROFILE = "tax_profile", "Tax Profile"
+    CONTRACT = "contract", "Contract"
+    BINDING = "binding", "Binding"
+
+
 class PoolMasterBindingCatalogKind(models.TextChoices):
     ORGANIZATION = "organization", "Organization"
     COUNTERPARTY = "counterparty", "Counterparty"
@@ -373,6 +381,27 @@ class PoolMasterDataSyncConflictStatus(models.TextChoices):
     PENDING = "pending", "Pending"
     RETRYING = "retrying", "Retrying"
     RESOLVED = "resolved", "Resolved"
+
+
+class PoolMasterDataBootstrapImportJobStatus(models.TextChoices):
+    PREFLIGHT_PENDING = "preflight_pending", "Preflight Pending"
+    PREFLIGHT_FAILED = "preflight_failed", "Preflight Failed"
+    DRY_RUN_PENDING = "dry_run_pending", "Dry Run Pending"
+    DRY_RUN_FAILED = "dry_run_failed", "Dry Run Failed"
+    EXECUTE_PENDING = "execute_pending", "Execute Pending"
+    RUNNING = "running", "Running"
+    FINALIZED = "finalized", "Finalized"
+    FAILED = "failed", "Failed"
+    CANCELED = "canceled", "Canceled"
+
+
+class PoolMasterDataBootstrapImportChunkStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    RUNNING = "running", "Running"
+    SUCCEEDED = "succeeded", "Succeeded"
+    FAILED = "failed", "Failed"
+    DEFERRED = "deferred", "Deferred"
+    CANCELED = "canceled", "Canceled"
 
 
 class PoolMasterDataSyncJob(models.Model):
@@ -591,6 +620,153 @@ class PoolMasterDataSyncConflict(models.Model):
     def clean(self) -> None:
         if self.database_id and self.tenant_id and self.database.tenant_id != self.tenant_id:
             raise ValidationError({"database": "Sync conflict database must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataBootstrapImportJob(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_bootstrap_import_jobs",
+    )
+    database = models.ForeignKey(
+        "databases.Database",
+        on_delete=models.PROTECT,
+        related_name="pool_master_data_bootstrap_import_jobs",
+    )
+    entity_scope = models.JSONField(default=list, blank=True)
+    status = models.CharField(
+        max_length=32,
+        choices=PoolMasterDataBootstrapImportJobStatus.choices,
+        default=PoolMasterDataBootstrapImportJobStatus.PREFLIGHT_PENDING,
+        db_index=True,
+    )
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    last_error_code = models.CharField(max_length=64, blank=True, default="")
+    last_error = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_bootstrap_import_jobs"
+        indexes = [
+            models.Index(fields=["tenant", "status", "-created_at"]),
+            models.Index(fields=["tenant", "database", "status"]),
+        ]
+
+    def clean(self) -> None:
+        if self.database_id and self.tenant_id and self.database.tenant_id != self.tenant_id:
+            raise ValidationError({"database": "Bootstrap import database must belong to the same tenant."})
+
+        if not isinstance(self.entity_scope, list):
+            raise ValidationError({"entity_scope": "Entity scope must be a list of entity types."})
+        if not self.entity_scope:
+            raise ValidationError({"entity_scope": "Entity scope must contain at least one entity type."})
+
+        normalized: list[str] = []
+        for value in self.entity_scope:
+            normalized_value = str(value or "").strip().lower()
+            if normalized_value not in set(PoolMasterDataBootstrapImportEntityType.values):
+                raise ValidationError({"entity_scope": f"Unsupported bootstrap entity type '{value}'."})
+            normalized.append(normalized_value)
+
+        if len(normalized) != len(set(normalized)):
+            raise ValidationError({"entity_scope": "Entity scope must not contain duplicate entity types."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataBootstrapImportChunk(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.ForeignKey(
+        PoolMasterDataBootstrapImportJob,
+        on_delete=models.CASCADE,
+        related_name="chunks",
+    )
+    entity_type = models.CharField(
+        max_length=32,
+        choices=PoolMasterDataBootstrapImportEntityType.choices,
+        db_index=True,
+    )
+    chunk_index = models.PositiveIntegerField()
+    status = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataBootstrapImportChunkStatus.choices,
+        default=PoolMasterDataBootstrapImportChunkStatus.PENDING,
+        db_index=True,
+    )
+    idempotency_key = models.CharField(max_length=128, blank=True, default="")
+    attempt_count = models.PositiveIntegerField(default=0)
+    records_total = models.PositiveIntegerField(default=0)
+    records_created = models.PositiveIntegerField(default=0)
+    records_updated = models.PositiveIntegerField(default=0)
+    records_skipped = models.PositiveIntegerField(default=0)
+    records_failed = models.PositiveIntegerField(default=0)
+    last_error_code = models.CharField(max_length=64, blank=True, default="")
+    last_error = models.TextField(blank=True, default="")
+    diagnostics = models.JSONField(default=dict, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_bootstrap_import_chunks"
+        indexes = [
+            models.Index(fields=["job", "status", "entity_type"]),
+            models.Index(fields=["status", "-updated_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["job", "entity_type", "chunk_index"],
+                name="uniq_pool_md_bootstrap_chunk_scope",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.job_id and self.entity_type:
+            scope = {str(value or "").strip().lower() for value in (self.job.entity_scope or [])}
+            if str(self.entity_type) not in scope:
+                raise ValidationError(
+                    {"entity_type": "Chunk entity_type must be included in the job entity_scope."}
+                )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataBootstrapImportReport(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job = models.OneToOneField(
+        PoolMasterDataBootstrapImportJob,
+        on_delete=models.CASCADE,
+        related_name="report",
+    )
+    created_count = models.PositiveIntegerField(default=0)
+    updated_count = models.PositiveIntegerField(default=0)
+    skipped_count = models.PositiveIntegerField(default=0)
+    failed_count = models.PositiveIntegerField(default=0)
+    deferred_count = models.PositiveIntegerField(default=0)
+    diagnostics = models.JSONField(default=dict, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_bootstrap_import_reports"
+        indexes = [
+            models.Index(fields=["created_at"]),
+        ]
 
     def save(self, *args, **kwargs):
         self.full_clean()
