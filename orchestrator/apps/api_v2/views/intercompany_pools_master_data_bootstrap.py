@@ -17,6 +17,7 @@ from apps.intercompany_pools.master_data_bootstrap_import_feature_flags import (
 from apps.intercompany_pools.master_data_bootstrap_import_service import (
     BOOTSTRAP_IMPORT_MODE_DRY_RUN,
     BOOTSTRAP_IMPORT_MODE_EXECUTE,
+    BootstrapImportPreflightBlockedError,
     cancel_pool_master_data_bootstrap_import_job,
     create_pool_master_data_bootstrap_import_job,
     get_pool_master_data_bootstrap_import_job,
@@ -271,6 +272,14 @@ def create_pool_master_data_bootstrap_import_job_endpoint(request):
             chunk_size=int(payload.get("chunk_size") or 200),
             actor_id=str(request.user.id),
         )
+    except BootstrapImportPreflightBlockedError as exc:
+        return _problem(
+            code=str(exc.error_code),
+            title="Bootstrap Execute Blocked by Preflight",
+            detail=str(exc.detail),
+            status_code=http_status.HTTP_409_CONFLICT,
+            errors={"preflight": dict(exc.preflight_result)},
+        )
     except ValueError as exc:
         return _validation_problem(detail=str(exc))
 
@@ -385,6 +394,14 @@ def pool_master_data_bootstrap_import_jobs_endpoint(request):
                 mode=str(payload.get("mode")),
                 chunk_size=int(payload.get("chunk_size") or 200),
                 actor_id=str(request.user.id),
+            )
+        except BootstrapImportPreflightBlockedError as exc:
+            return _problem(
+                code=str(exc.error_code),
+                title="Bootstrap Execute Blocked by Preflight",
+                detail=str(exc.detail),
+                status_code=http_status.HTTP_409_CONFLICT,
+                errors={"preflight": dict(exc.preflight_result)},
             )
         except ValueError as exc:
             return _validation_problem(detail=str(exc))

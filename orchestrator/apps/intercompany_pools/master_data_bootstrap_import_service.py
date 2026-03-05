@@ -7,12 +7,18 @@ from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from typing import Any
 
-from django.db import transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.databases.models import Database
 from apps.tenancy.models import Tenant
 
+from .master_data_canonical_upsert import MasterDataCanonicalUpsertError
+from .master_data_canonical_upsert import upsert_pool_master_data_contract
+from .master_data_canonical_upsert import upsert_pool_master_data_item
+from .master_data_canonical_upsert import upsert_pool_master_data_party
+from .master_data_canonical_upsert import upsert_pool_master_data_tax_profile
 from .master_data_bindings import upsert_pool_master_data_binding
 from .master_data_bootstrap_import_dependency_order import (
     BOOTSTRAP_DEPENDENCY_DECISION_DEFERRED,
@@ -77,6 +83,7 @@ BOOTSTRAP_IMPORT_BINDING_REF_REQUIRED = "BOOTSTRAP_IMPORT_BINDING_REF_REQUIRED"
 BOOTSTRAP_IMPORT_CANCELED = "BOOTSTRAP_IMPORT_CANCELED"
 BOOTSTRAP_IMPORT_ASYNC_EXECUTOR_UNAVAILABLE = "BOOTSTRAP_IMPORT_ASYNC_EXECUTOR_UNAVAILABLE"
 BOOTSTRAP_IMPORT_EXECUTE_IN_PROGRESS = "BOOTSTRAP_IMPORT_EXECUTE_IN_PROGRESS"
+BOOTSTRAP_IMPORT_PREFLIGHT_FAILED = "BOOTSTRAP_IMPORT_PREFLIGHT_FAILED"
 
 _TERMINAL_JOB_STATUSES = {
     PoolMasterDataBootstrapImportJobStatus.FINALIZED,
@@ -96,6 +103,20 @@ class _BootstrapExecutionCanceled(RuntimeError):
     pass
 
 
+class BootstrapImportPreflightBlockedError(ValueError):
+    def __init__(
+        self,
+        *,
+        error_code: str,
+        detail: str,
+        preflight_result: dict[str, Any],
+    ) -> None:
+        self.error_code = str(error_code or "").strip() or BOOTSTRAP_IMPORT_PREFLIGHT_FAILED
+        self.detail = str(detail or "").strip() or "Bootstrap preflight failed."
+        self.preflight_result = sanitize_master_data_sync_value(dict(preflight_result or {}))
+        super().__init__(f"{self.error_code}: {self.detail}")
+
+
 def run_pool_master_data_bootstrap_preflight_preview(
     *,
     tenant_id: str,
@@ -110,15 +131,7 @@ def run_pool_master_data_bootstrap_preflight_preview(
         entity_scope=normalized_scope,
         actor_id=actor_id,
     )
-    return {
-        "ok": bool(preflight.ok),
-        "source_kind": str(preflight.source_kind),
-        "entity_scope": normalized_scope,
-        "coverage": dict(preflight.coverage),
-        "credential_strategy": str(preflight.credential_strategy),
-        "errors": list(preflight.errors),
-        "diagnostics": sanitize_master_data_sync_value(dict(preflight.diagnostics)),
-    }
+    return _serialize_preflight_result(preflight=preflight, entity_scope=normalized_scope)
 
 
 def create_pool_master_data_bootstrap_import_job(
@@ -137,6 +150,24 @@ def create_pool_master_data_bootstrap_import_job(
             f"{BOOTSTRAP_IMPORT_DATABASE_TENANT_MISMATCH}: "
             f"database '{database.id}' does not belong to tenant '{tenant.id}'"
         )
+    preflight_preview: PoolMasterDataBootstrapSourcePreflightResult | None = None
+    if normalized_mode == BOOTSTRAP_IMPORT_MODE_EXECUTE:
+        preflight_preview = run_pool_master_data_bootstrap_source_preflight(
+            tenant_id=str(tenant.id),
+            database=database,
+            entity_scope=normalized_scope,
+            actor_id=actor_id,
+        )
+        if not preflight_preview.ok:
+            first_error = preflight_preview.errors[0] if preflight_preview.errors else {}
+            raise BootstrapImportPreflightBlockedError(
+                error_code=str(first_error.get("code") or BOOTSTRAP_IMPORT_PREFLIGHT_FAILED),
+                detail=str(first_error.get("detail") or "Bootstrap preflight failed."),
+                preflight_result=_serialize_preflight_result(
+                    preflight=preflight_preview,
+                    entity_scope=normalized_scope,
+                ),
+            )
 
     job = PoolMasterDataBootstrapImportJob.objects.create(
         tenant=tenant,
@@ -161,7 +192,11 @@ def create_pool_master_data_bootstrap_import_job(
         },
     )
 
-    preflight_result = _run_job_preflight_step(job=job, actor_id=actor_id)
+    preflight_result = _run_job_preflight_step(
+        job=job,
+        actor_id=actor_id,
+        preflight_override=preflight_preview,
+    )
     if not preflight_result.ok:
         return _refresh_job(job_id=str(job.id))
 
@@ -429,27 +464,41 @@ def serialize_pool_master_data_bootstrap_import_job(
     return payload
 
 
+def _serialize_preflight_result(
+    *,
+    preflight: PoolMasterDataBootstrapSourcePreflightResult,
+    entity_scope: list[str],
+) -> dict[str, Any]:
+    return {
+        "ok": bool(preflight.ok),
+        "source_kind": str(preflight.source_kind),
+        "entity_scope": list(entity_scope),
+        "coverage": dict(preflight.coverage),
+        "credential_strategy": str(preflight.credential_strategy),
+        "errors": list(preflight.errors),
+        "diagnostics": sanitize_master_data_sync_value(dict(preflight.diagnostics)),
+    }
+
+
 def _run_job_preflight_step(
     *,
     job: PoolMasterDataBootstrapImportJob,
     actor_id: str,
+    preflight_override: PoolMasterDataBootstrapSourcePreflightResult | None = None,
 ) -> PoolMasterDataBootstrapSourcePreflightResult:
-    preflight = run_pool_master_data_bootstrap_source_preflight(
+    preflight = preflight_override or run_pool_master_data_bootstrap_source_preflight(
         tenant_id=str(job.tenant_id),
         database=job.database,
         entity_scope=list(job.entity_scope or []),
         actor_id=actor_id,
     )
     metadata = job.metadata if isinstance(job.metadata, dict) else {}
-    metadata["preflight_result"] = {
-        "ok": bool(preflight.ok),
-        "source_kind": str(preflight.source_kind),
-        "coverage": dict(preflight.coverage),
-        "credential_strategy": str(preflight.credential_strategy),
-        "errors": list(preflight.errors),
-        "diagnostics": sanitize_master_data_sync_value(dict(preflight.diagnostics)),
-        "at": timezone.now().isoformat(),
-    }
+    serialized = _serialize_preflight_result(
+        preflight=preflight,
+        entity_scope=list(job.entity_scope or []),
+    )
+    serialized["at"] = timezone.now().isoformat()
+    metadata["preflight_result"] = serialized
     next_status = resolve_bootstrap_import_next_status(
         current_status=str(job.status),
         step=POOL_MASTER_DATA_BOOTSTRAP_IMPORT_STEP_PREFLIGHT,
@@ -980,22 +1029,29 @@ def _apply_party_row(
         "is_counterparty": _to_bool(row.get("is_counterparty"), default=True),
         "metadata": _merge_row_metadata(row=row, job_id=job_id, origin_event_id=origin_event_id),
     }
-    with transaction.atomic():
-        current = PoolMasterParty.objects.select_for_update().filter(
-            tenant=tenant,
+    try:
+        result = upsert_pool_master_data_party(
+            tenant_id=str(tenant.id),
             canonical_id=canonical_id,
-        ).first()
-        if current is None:
-            created = PoolMasterParty.objects.create(
-                tenant=tenant,
-                canonical_id=canonical_id,
-                **payload,
-            )
-            return BootstrapRowOutcome(action="created", canonical_id=str(created.canonical_id))
-        if _assign_changed_fields(current, payload):
-            current.save()
-            return BootstrapRowOutcome(action="updated", canonical_id=str(current.canonical_id))
-        return BootstrapRowOutcome(action="skipped", canonical_id=str(current.canonical_id))
+            name=str(payload["name"]),
+            full_name=str(payload.get("full_name") or ""),
+            inn=str(payload.get("inn") or ""),
+            kpp=str(payload.get("kpp") or ""),
+            is_our_organization=bool(payload.get("is_our_organization")),
+            is_counterparty=bool(payload.get("is_counterparty")),
+            metadata=dict(payload.get("metadata") or {}),
+            origin_system="ib",
+            origin_event_id=origin_event_id,
+        )
+    except (MasterDataCanonicalUpsertError, DjangoValidationError, IntegrityError, ValueError) as exc:
+        error_code, detail = _resolve_canonical_upsert_error(exc)
+        return BootstrapRowOutcome(action="failed", error_code=error_code, detail=detail)
+
+    if result.created:
+        return BootstrapRowOutcome(action="created", canonical_id=str(result.entity.canonical_id))
+    if result.changed:
+        return BootstrapRowOutcome(action="updated", canonical_id=str(result.entity.canonical_id))
+    return BootstrapRowOutcome(action="skipped", canonical_id=str(result.entity.canonical_id))
 
 
 def _apply_item_row(
@@ -1026,22 +1082,26 @@ def _apply_item_row(
         "unit": _read_token(row, "unit"),
         "metadata": _merge_row_metadata(row=row, job_id=job_id, origin_event_id=origin_event_id),
     }
-    with transaction.atomic():
-        current = PoolMasterItem.objects.select_for_update().filter(
-            tenant=tenant,
+    try:
+        result = upsert_pool_master_data_item(
+            tenant_id=str(tenant.id),
             canonical_id=canonical_id,
-        ).first()
-        if current is None:
-            created = PoolMasterItem.objects.create(
-                tenant=tenant,
-                canonical_id=canonical_id,
-                **payload,
-            )
-            return BootstrapRowOutcome(action="created", canonical_id=str(created.canonical_id))
-        if _assign_changed_fields(current, payload):
-            current.save()
-            return BootstrapRowOutcome(action="updated", canonical_id=str(current.canonical_id))
-        return BootstrapRowOutcome(action="skipped", canonical_id=str(current.canonical_id))
+            name=str(payload["name"]),
+            sku=str(payload.get("sku") or ""),
+            unit=str(payload.get("unit") or ""),
+            metadata=dict(payload.get("metadata") or {}),
+            origin_system="ib",
+            origin_event_id=origin_event_id,
+        )
+    except (MasterDataCanonicalUpsertError, DjangoValidationError, IntegrityError, ValueError) as exc:
+        error_code, detail = _resolve_canonical_upsert_error(exc)
+        return BootstrapRowOutcome(action="failed", error_code=error_code, detail=detail)
+
+    if result.created:
+        return BootstrapRowOutcome(action="created", canonical_id=str(result.entity.canonical_id))
+    if result.changed:
+        return BootstrapRowOutcome(action="updated", canonical_id=str(result.entity.canonical_id))
+    return BootstrapRowOutcome(action="skipped", canonical_id=str(result.entity.canonical_id))
 
 
 def _apply_tax_profile_row(
@@ -1074,22 +1134,26 @@ def _apply_tax_profile_row(
         "vat_code": vat_code,
         "metadata": _merge_row_metadata(row=row, job_id=job_id, origin_event_id=origin_event_id),
     }
-    with transaction.atomic():
-        current = PoolMasterTaxProfile.objects.select_for_update().filter(
-            tenant=tenant,
+    try:
+        result = upsert_pool_master_data_tax_profile(
+            tenant_id=str(tenant.id),
             canonical_id=canonical_id,
-        ).first()
-        if current is None:
-            created = PoolMasterTaxProfile.objects.create(
-                tenant=tenant,
-                canonical_id=canonical_id,
-                **payload,
-            )
-            return BootstrapRowOutcome(action="created", canonical_id=str(created.canonical_id))
-        if _assign_changed_fields(current, payload):
-            current.save()
-            return BootstrapRowOutcome(action="updated", canonical_id=str(current.canonical_id))
-        return BootstrapRowOutcome(action="skipped", canonical_id=str(current.canonical_id))
+            vat_rate=vat_rate,
+            vat_included=bool(payload.get("vat_included")),
+            vat_code=str(payload.get("vat_code") or ""),
+            metadata=dict(payload.get("metadata") or {}),
+            origin_system="ib",
+            origin_event_id=origin_event_id,
+        )
+    except (MasterDataCanonicalUpsertError, DjangoValidationError, IntegrityError, ValueError) as exc:
+        error_code, detail = _resolve_canonical_upsert_error(exc)
+        return BootstrapRowOutcome(action="failed", error_code=error_code, detail=detail)
+
+    if result.created:
+        return BootstrapRowOutcome(action="created", canonical_id=str(result.entity.canonical_id))
+    if result.changed:
+        return BootstrapRowOutcome(action="updated", canonical_id=str(result.entity.canonical_id))
+    return BootstrapRowOutcome(action="skipped", canonical_id=str(result.entity.canonical_id))
 
 
 def _apply_contract_row(
@@ -1153,23 +1217,27 @@ def _apply_contract_row(
         "date": normalized_date,
         "metadata": _merge_row_metadata(row=row, job_id=job_id, origin_event_id=origin_event_id),
     }
-    with transaction.atomic():
-        current = PoolMasterContract.objects.select_for_update().filter(
-            tenant=tenant,
+    try:
+        result = upsert_pool_master_data_contract(
+            tenant_id=str(tenant.id),
             canonical_id=canonical_id,
+            name=str(payload["name"]),
             owner_counterparty=owner_counterparty,
-        ).first()
-        if current is None:
-            created = PoolMasterContract.objects.create(
-                tenant=tenant,
-                canonical_id=canonical_id,
-                **payload,
-            )
-            return BootstrapRowOutcome(action="created", canonical_id=str(created.canonical_id))
-        if _assign_changed_fields(current, payload):
-            current.save()
-            return BootstrapRowOutcome(action="updated", canonical_id=str(current.canonical_id))
-        return BootstrapRowOutcome(action="skipped", canonical_id=str(current.canonical_id))
+            number=str(payload.get("number") or ""),
+            date=payload.get("date"),
+            metadata=dict(payload.get("metadata") or {}),
+            origin_system="ib",
+            origin_event_id=origin_event_id,
+        )
+    except (MasterDataCanonicalUpsertError, DjangoValidationError, IntegrityError, ValueError) as exc:
+        error_code, detail = _resolve_canonical_upsert_error(exc)
+        return BootstrapRowOutcome(action="failed", error_code=error_code, detail=detail)
+
+    if result.created:
+        return BootstrapRowOutcome(action="created", canonical_id=str(result.entity.canonical_id))
+    if result.changed:
+        return BootstrapRowOutcome(action="updated", canonical_id=str(result.entity.canonical_id))
+    return BootstrapRowOutcome(action="skipped", canonical_id=str(result.entity.canonical_id))
 
 
 def _apply_binding_row(
@@ -1584,13 +1652,37 @@ def _serialize_chunk(chunk: PoolMasterDataBootstrapImportChunk) -> dict[str, Any
     }
 
 
-def _assign_changed_fields(instance: Any, payload: Mapping[str, Any]) -> bool:
-    changed = False
-    for field_name, value in payload.items():
-        if getattr(instance, field_name) != value:
-            setattr(instance, field_name, value)
-            changed = True
-    return changed
+def _resolve_canonical_upsert_error(exc: Exception) -> tuple[str, str]:
+    if isinstance(exc, MasterDataCanonicalUpsertError):
+        return (
+            str(exc.code or BOOTSTRAP_IMPORT_ROW_INVALID),
+            sanitize_master_data_sync_text(str(exc.detail or "Canonical upsert failed.")),
+        )
+    if isinstance(exc, DjangoValidationError):
+        if hasattr(exc, "message_dict"):
+            return (
+                BOOTSTRAP_IMPORT_ROW_INVALID,
+                sanitize_master_data_sync_text(str(exc.message_dict)),
+            )
+        return (
+            BOOTSTRAP_IMPORT_ROW_INVALID,
+            sanitize_master_data_sync_text(str(exc)),
+        )
+
+    detail = sanitize_master_data_sync_text(str(exc) or "Bootstrap row apply failed.")
+    if ":" in detail:
+        code_candidate, detail_candidate = detail.split(":", 1)
+        normalized_code = str(code_candidate or "").strip()
+        if (
+            normalized_code
+            and normalized_code.upper() == normalized_code
+            and len(normalized_code) <= 128
+        ):
+            resolved_detail = sanitize_master_data_sync_text(
+                str(detail_candidate or "").strip() or detail
+            )
+            return normalized_code, resolved_detail
+    return BOOTSTRAP_IMPORT_ROW_INVALID, detail
 
 
 def _read_token(row: Mapping[str, Any], key: str) -> str:
@@ -1694,7 +1786,9 @@ __all__ = [
     "BOOTSTRAP_IMPORT_MODE_DRY_RUN",
     "BOOTSTRAP_IMPORT_MODE_EXECUTE",
     "BOOTSTRAP_IMPORT_MODE_INVALID",
+    "BOOTSTRAP_IMPORT_PREFLIGHT_FAILED",
     "BOOTSTRAP_IMPORT_SCOPE_EMPTY",
+    "BootstrapImportPreflightBlockedError",
     "cancel_pool_master_data_bootstrap_import_job",
     "create_pool_master_data_bootstrap_import_job",
     "get_pool_master_data_bootstrap_import_job",

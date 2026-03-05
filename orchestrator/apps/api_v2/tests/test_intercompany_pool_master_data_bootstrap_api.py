@@ -19,6 +19,8 @@ from apps.intercompany_pools.master_data_bootstrap_import_source_adapter import 
     reset_pool_master_data_bootstrap_source_callbacks,
 )
 from apps.intercompany_pools.models import PoolMasterParty
+from apps.intercompany_pools.models import PoolMasterContract
+from apps.intercompany_pools.models import PoolMasterDataBootstrapImportJob
 from apps.runtime_settings.models import RuntimeSetting
 from apps.runtime_settings.models import TenantRuntimeSettingOverride
 from apps.tenancy.models import Tenant, TenantMember
@@ -176,6 +178,56 @@ def test_bootstrap_preflight_requires_tenant_admin_or_staff(
 
 
 @pytest.mark.django_db
+def test_bootstrap_execute_fails_closed_on_preflight_failure_without_creating_job(
+    admin_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"pool-bootstrap-preflight-fail-{uuid4().hex[:8]}")
+
+    def _preflight_fail(*, entity_scope: list[str], **_kwargs) -> PoolMasterDataBootstrapSourcePreflightResult:
+        return PoolMasterDataBootstrapSourcePreflightResult(
+            ok=False,
+            source_kind="ib_odata",
+            coverage={entity: False for entity in entity_scope},
+            credential_strategy="service",
+            errors=[
+                {
+                    "code": "BOOTSTRAP_SOURCE_AUTH_MAPPING_MISSING",
+                    "detail": "Source auth mapping is missing.",
+                }
+            ],
+            diagnostics={"source": "test"},
+        )
+
+    def _fetch_rows_should_not_run(*, entity_type: str, **_kwargs) -> list[dict]:
+        raise AssertionError(f"fetch_rows must not be called for preflight-failed execute (entity_type={entity_type})")
+
+    configure_pool_master_data_bootstrap_source_callbacks(
+        preflight=_preflight_fail,
+        fetch_rows=_fetch_rows_should_not_run,
+    )
+
+    response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-import/jobs/",
+        {
+            "database_id": str(database.id),
+            "entity_scope": ["party", "contract"],
+            "mode": "execute",
+        },
+        format="json",
+    )
+    _assert_problem_details_response(
+        response,
+        status_code=409,
+        code="BOOTSTRAP_SOURCE_AUTH_MAPPING_MISSING",
+    )
+    assert PoolMasterDataBootstrapImportJob.objects.filter(
+        tenant=default_tenant,
+        database=database,
+    ).count() == 0
+
+
+@pytest.mark.django_db
 def test_bootstrap_jobs_dry_run_execute_list_and_get(
     admin_client: APIClient,
     admin_user: User,
@@ -307,6 +359,67 @@ def test_bootstrap_execute_marks_inbound_origin_and_keeps_partial_diagnostics(
     bootstrap_meta = metadata.get("bootstrap_import")
     assert isinstance(bootstrap_meta, dict)
     assert str(bootstrap_meta.get("job_id")) == str(job_id)
+
+
+@pytest.mark.django_db
+def test_bootstrap_execute_enforces_canonical_contract_owner_role_validation(
+    admin_client: APIClient,
+    admin_user: User,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"pool-bootstrap-contract-role-{uuid4().hex[:8]}")
+    owner_canonical_id = f"party-owner-role-{uuid4().hex[:8]}"
+    contract_canonical_id = f"contract-owner-role-{uuid4().hex[:8]}"
+    _configure_source_callbacks(
+        rows_by_entity={
+            "party": [
+                {
+                    "canonical_id": owner_canonical_id,
+                    "name": "Owner Party",
+                    "is_counterparty": False,
+                    "is_our_organization": True,
+                }
+            ],
+            "contract": [
+                {
+                    "canonical_id": contract_canonical_id,
+                    "name": "Contract Invalid Owner Role",
+                    "owner_counterparty_canonical_id": owner_canonical_id,
+                    "number": "CNT-001",
+                }
+            ],
+        }
+    )
+
+    execute_response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-import/jobs/",
+        {
+            "database_id": str(database.id),
+            "entity_scope": ["party", "contract"],
+            "mode": "execute",
+        },
+        format="json",
+    )
+    assert execute_response.status_code == 201
+    job_id = execute_response.json()["job"]["id"]
+    run_pool_master_data_bootstrap_import_job_execution(
+        job_id=job_id,
+        actor_id=str(admin_user.id),
+        retry_failed_only=False,
+    )
+
+    detail_response = admin_client.get(f"/api/v2/pools/master-data/bootstrap-import/jobs/{job_id}/")
+    assert detail_response.status_code == 200
+    payload = detail_response.json()["job"]
+
+    assert payload["report"]["failed_count"] >= 1
+    diagnostics = payload["report"]["diagnostics"]
+    errors = diagnostics.get("errors", []) if isinstance(diagnostics, dict) else []
+    assert any(str(item.get("code")) == "MASTER_DATA_OWNER_COUNTERPARTY_ROLE_INVALID" for item in errors)
+    assert not PoolMasterContract.objects.filter(
+        tenant=default_tenant,
+        canonical_id=contract_canonical_id,
+    ).exists()
 
 
 @pytest.mark.django_db

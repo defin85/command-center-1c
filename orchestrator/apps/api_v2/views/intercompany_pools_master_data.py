@@ -16,6 +16,14 @@ from rest_framework.response import Response
 
 from apps.api_v2.serializers.common import ProblemDetailsErrorSerializer
 from apps.databases.models import Database
+from apps.intercompany_pools.master_data_canonical_upsert import MasterDataCanonicalUpsertError
+from apps.intercompany_pools.master_data_canonical_upsert import assign_changed_fields
+from apps.intercompany_pools.master_data_canonical_upsert import upsert_pool_master_data_contract
+from apps.intercompany_pools.master_data_canonical_upsert import upsert_pool_master_data_item
+from apps.intercompany_pools.master_data_canonical_upsert import upsert_pool_master_data_party
+from apps.intercompany_pools.master_data_canonical_upsert import upsert_pool_master_data_tax_profile
+from apps.intercompany_pools.master_data_sync_execution import trigger_pool_master_data_outbound_sync_job
+from apps.intercompany_pools.master_data_sync_outbox import enqueue_master_data_sync_outbox_intent
 from apps.intercompany_pools.models import (
     PoolMasterBindingSyncStatus,
     PoolMasterBindingCatalogKind,
@@ -26,15 +34,6 @@ from apps.intercompany_pools.models import (
     PoolMasterParty,
     PoolMasterTaxProfile,
 )
-from apps.intercompany_pools.master_data_sync_origin import (
-    MASTER_DATA_SYNC_ORIGIN_IB,
-    normalize_master_data_sync_origin,
-    should_skip_outbound_sync_for_origin,
-)
-from apps.intercompany_pools.master_data_sync_execution import (
-    trigger_pool_master_data_outbound_sync_job,
-)
-from apps.intercompany_pools.master_data_sync_outbox import enqueue_master_data_sync_outbox_intent
 
 from .intercompany_pools import _parse_limit, _problem, _resolve_tenant_id
 
@@ -141,60 +140,6 @@ def _serialize_binding(binding: PoolMasterDataBinding) -> dict[str, Any]:
         "created_at": binding.created_at,
         "updated_at": binding.updated_at,
     }
-
-
-def _assign_changed_fields(instance: object, payload: dict[str, Any]) -> bool:
-    changed = False
-    for field_name, value in payload.items():
-        if getattr(instance, field_name) != value:
-            setattr(instance, field_name, value)
-            changed = True
-    return changed
-
-
-def _enqueue_canonical_mutation_outbox_intents(
-    *,
-    tenant_id: str | UUID,
-    entity_type: str,
-    canonical_id: str,
-    mutation_kind: str,
-    payload: dict[str, Any],
-    origin_event_id: str,
-    origin_system: str = "cc",
-) -> None:
-    origin = normalize_master_data_sync_origin(
-        origin_system=origin_system,
-        origin_event_id=origin_event_id,
-    )
-    if should_skip_outbound_sync_for_origin(
-        origin_system=origin.origin_system,
-        origin_event_id=origin.origin_event_id,
-        target_system=MASTER_DATA_SYNC_ORIGIN_IB,
-    ):
-        return
-
-    database_ids = list(
-        Database.objects.filter(tenant_id=tenant_id).values_list("id", flat=True)
-    )
-    for database_id in database_ids:
-        enqueue_master_data_sync_outbox_intent(
-            tenant_id=str(tenant_id),
-            database_id=str(database_id),
-            entity_type=entity_type,
-            canonical_id=canonical_id,
-            mutation_kind=mutation_kind,
-            payload=payload,
-            origin_system=origin.origin_system,
-            origin_event_id=origin.origin_event_id,
-        )
-        _schedule_outbound_master_data_sync_job_trigger(
-            tenant_id=str(tenant_id),
-            database_id=str(database_id),
-            entity_type=entity_type,
-            canonical_id=canonical_id,
-            origin_system=origin.origin_system,
-            origin_event_id=origin.origin_event_id,
-        )
 
 
 def _schedule_outbound_master_data_sync_job_trigger(
@@ -638,50 +583,22 @@ def upsert_master_data_party(request):
                 detail="Party not found in current tenant context.",
                 status_code=http_status.HTTP_404_NOT_FOUND,
             )
-    if party is None:
-        party = PoolMasterParty.objects.filter(tenant_id=tenant_id, canonical_id=data["canonical_id"]).first()
-
-    created = party is None
-    payload = {
-        "tenant_id": tenant_id,
-        "canonical_id": data["canonical_id"],
-        "name": data["name"],
-        "full_name": data.get("full_name", ""),
-        "inn": data.get("inn", ""),
-        "kpp": data.get("kpp", ""),
-        "is_our_organization": data.get("is_our_organization", False),
-        "is_counterparty": data.get("is_counterparty", True),
-        "metadata": data.get("metadata", {}),
-    }
     try:
-        with transaction.atomic():
-            changed = True
-            if created:
-                party = PoolMasterParty.objects.create(**payload)
-            else:
-                changed = _assign_changed_fields(party, payload)
-                if changed:
-                    party.save()
-
-            if changed:
-                origin_event_id = f"party:{party.id}:{int(party.updated_at.timestamp())}"
-                _enqueue_canonical_mutation_outbox_intents(
-                    tenant_id=tenant_id,
-                    entity_type=PoolMasterDataEntityType.PARTY,
-                    canonical_id=str(party.canonical_id),
-                    mutation_kind="party_upsert",
-                    payload={
-                        "canonical_id": str(party.canonical_id),
-                        "name": str(party.name or ""),
-                        "full_name": str(party.full_name or ""),
-                        "inn": str(party.inn or ""),
-                        "kpp": str(party.kpp or ""),
-                        "is_our_organization": bool(party.is_our_organization),
-                        "is_counterparty": bool(party.is_counterparty),
-                        "metadata": dict(party.metadata or {}),
-                    },
-                    origin_event_id=origin_event_id,
-                )
+        result = upsert_pool_master_data_party(
+            tenant_id=tenant_id,
+            canonical_id=str(data["canonical_id"]),
+            name=str(data["name"]),
+            full_name=str(data.get("full_name", "")),
+            inn=str(data.get("inn", "")),
+            kpp=str(data.get("kpp", "")),
+            is_our_organization=bool(data.get("is_our_organization", False)),
+            is_counterparty=bool(data.get("is_counterparty", True)),
+            metadata=dict(data.get("metadata", {})),
+            existing=party,
+            origin_system="cc",
+        )
+        party = result.entity
+        created = bool(result.created)
     except DjangoValidationError as exc:
         return _validation_problem(
             detail="Party payload validation failed.",
@@ -817,44 +734,19 @@ def upsert_master_data_item(request):
                 detail="Item not found in current tenant context.",
                 status_code=http_status.HTTP_404_NOT_FOUND,
             )
-    if item is None:
-        item = PoolMasterItem.objects.filter(tenant_id=tenant_id, canonical_id=data["canonical_id"]).first()
-
-    created = item is None
-    payload = {
-        "tenant_id": tenant_id,
-        "canonical_id": data["canonical_id"],
-        "name": data["name"],
-        "sku": data.get("sku", ""),
-        "unit": data.get("unit", ""),
-        "metadata": data.get("metadata", {}),
-    }
     try:
-        with transaction.atomic():
-            changed = True
-            if created:
-                item = PoolMasterItem.objects.create(**payload)
-            else:
-                changed = _assign_changed_fields(item, payload)
-                if changed:
-                    item.save()
-
-            if changed:
-                origin_event_id = f"item:{item.id}:{int(item.updated_at.timestamp())}"
-                _enqueue_canonical_mutation_outbox_intents(
-                    tenant_id=tenant_id,
-                    entity_type=PoolMasterDataEntityType.ITEM,
-                    canonical_id=str(item.canonical_id),
-                    mutation_kind="item_upsert",
-                    payload={
-                        "canonical_id": str(item.canonical_id),
-                        "name": str(item.name or ""),
-                        "sku": str(item.sku or ""),
-                        "unit": str(item.unit or ""),
-                        "metadata": dict(item.metadata or {}),
-                    },
-                    origin_event_id=origin_event_id,
-                )
+        result = upsert_pool_master_data_item(
+            tenant_id=tenant_id,
+            canonical_id=str(data["canonical_id"]),
+            name=str(data["name"]),
+            sku=str(data.get("sku", "")),
+            unit=str(data.get("unit", "")),
+            metadata=dict(data.get("metadata", {})),
+            existing=item,
+            origin_system="cc",
+        )
+        item = result.entity
+        created = bool(result.created)
     except DjangoValidationError as exc:
         return _validation_problem(
             detail="Item payload validation failed.",
@@ -1010,51 +902,27 @@ def upsert_master_data_contract(request):
                 detail="Contract not found in current tenant context.",
                 status_code=http_status.HTTP_404_NOT_FOUND,
             )
-    if contract is None:
-        contract = PoolMasterContract.objects.filter(
-            tenant_id=tenant_id,
-            canonical_id=data["canonical_id"],
-            owner_counterparty=owner_counterparty,
-        ).first()
-
-    created = contract is None
-    payload = {
-        "tenant_id": tenant_id,
-        "canonical_id": data["canonical_id"],
-        "name": data["name"],
-        "owner_counterparty": owner_counterparty,
-        "number": data.get("number", ""),
-        "date": data.get("date"),
-        "metadata": data.get("metadata", {}),
-    }
     try:
-        with transaction.atomic():
-            changed = True
-            if created:
-                contract = PoolMasterContract.objects.create(**payload)
-            else:
-                changed = _assign_changed_fields(contract, payload)
-                if changed:
-                    contract.save()
-
-            if changed:
-                origin_event_id = f"contract:{contract.id}:{int(contract.updated_at.timestamp())}"
-                _enqueue_canonical_mutation_outbox_intents(
-                    tenant_id=tenant_id,
-                    entity_type=PoolMasterDataEntityType.CONTRACT,
-                    canonical_id=str(contract.canonical_id),
-                    mutation_kind="contract_upsert",
-                    payload={
-                        "canonical_id": str(contract.canonical_id),
-                        "name": str(contract.name or ""),
-                        "owner_counterparty_id": str(contract.owner_counterparty_id),
-                        "owner_counterparty_canonical_id": str(contract.owner_counterparty.canonical_id),
-                        "number": str(contract.number or ""),
-                        "date": contract.date.isoformat() if contract.date else "",
-                        "metadata": dict(contract.metadata or {}),
-                    },
-                    origin_event_id=origin_event_id,
-                )
+        result = upsert_pool_master_data_contract(
+            tenant_id=tenant_id,
+            canonical_id=str(data["canonical_id"]),
+            name=str(data["name"]),
+            owner_counterparty=owner_counterparty,
+            number=str(data.get("number", "")),
+            date=data.get("date"),
+            metadata=dict(data.get("metadata", {})),
+            existing=contract,
+            origin_system="cc",
+        )
+        contract = result.entity
+        created = bool(result.created)
+    except MasterDataCanonicalUpsertError as exc:
+        return _problem(
+            code=str(exc.code),
+            title="Master Data Contract Upsert Failed",
+            detail=str(exc.detail),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
     except DjangoValidationError as exc:
         return _validation_problem(
             detail="Contract payload validation failed.",
@@ -1190,44 +1058,19 @@ def upsert_master_data_tax_profile(request):
                 detail="Tax profile not found in current tenant context.",
                 status_code=http_status.HTTP_404_NOT_FOUND,
             )
-    if tax_profile is None:
-        tax_profile = PoolMasterTaxProfile.objects.filter(tenant_id=tenant_id, canonical_id=data["canonical_id"]).first()
-
-    created = tax_profile is None
-    payload = {
-        "tenant_id": tenant_id,
-        "canonical_id": data["canonical_id"],
-        "vat_rate": data["vat_rate"],
-        "vat_included": data["vat_included"],
-        "vat_code": data["vat_code"],
-        "metadata": data.get("metadata", {}),
-    }
     try:
-        with transaction.atomic():
-            changed = True
-            if created:
-                tax_profile = PoolMasterTaxProfile.objects.create(**payload)
-            else:
-                changed = _assign_changed_fields(tax_profile, payload)
-                if changed:
-                    tax_profile.save()
-
-            if changed:
-                origin_event_id = f"tax_profile:{tax_profile.id}:{int(tax_profile.updated_at.timestamp())}"
-                _enqueue_canonical_mutation_outbox_intents(
-                    tenant_id=tenant_id,
-                    entity_type=PoolMasterDataEntityType.TAX_PROFILE,
-                    canonical_id=str(tax_profile.canonical_id),
-                    mutation_kind="tax_profile_upsert",
-                    payload={
-                        "canonical_id": str(tax_profile.canonical_id),
-                        "vat_rate": str(tax_profile.vat_rate),
-                        "vat_included": bool(tax_profile.vat_included),
-                        "vat_code": str(tax_profile.vat_code or ""),
-                        "metadata": dict(tax_profile.metadata or {}),
-                    },
-                    origin_event_id=origin_event_id,
-                )
+        result = upsert_pool_master_data_tax_profile(
+            tenant_id=tenant_id,
+            canonical_id=str(data["canonical_id"]),
+            vat_rate=data["vat_rate"],
+            vat_included=bool(data["vat_included"]),
+            vat_code=str(data["vat_code"]),
+            metadata=dict(data.get("metadata", {})),
+            existing=tax_profile,
+            origin_system="cc",
+        )
+        tax_profile = result.entity
+        created = bool(result.created)
     except DjangoValidationError as exc:
         return _validation_problem(
             detail="Tax profile payload validation failed.",
@@ -1406,7 +1249,7 @@ def upsert_master_data_binding(request):
             if created:
                 binding = PoolMasterDataBinding.objects.create(**payload)
             else:
-                changed = _assign_changed_fields(binding, payload)
+                changed = assign_changed_fields(binding, payload)
                 if changed:
                     binding.save()
 
