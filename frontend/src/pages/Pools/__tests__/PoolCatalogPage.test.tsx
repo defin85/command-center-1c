@@ -596,6 +596,23 @@ describe('PoolCatalogPage', () => {
     expect(screen.getByTestId('pool-catalog-topology-edge-move-down-0')).toBeEnabled()
   }, 15000)
 
+  it('loads master-data token catalogs with backend-compatible limit in topology mode', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+
+    await waitFor(() => {
+      expect(mockListMasterDataParties).toHaveBeenCalledWith({ limit: 200, offset: 0 })
+      expect(mockListMasterDataItems).toHaveBeenCalledWith({ limit: 200, offset: 0 })
+      expect(mockListMasterDataContracts).toHaveBeenCalledWith({ limit: 200, offset: 0 })
+      expect(mockListMasterDataTaxProfiles).toHaveBeenCalledWith({ limit: 200, offset: 0 })
+    })
+  }, 15000)
+
   it('loads topology snapshots list and switches graph date from snapshot row', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()

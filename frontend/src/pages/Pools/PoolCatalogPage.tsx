@@ -65,6 +65,7 @@ const { Title, Text } = Typography
 const { TextArea } = Input
 
 const SYNC_MAX_ROWS = 1000
+const MASTER_DATA_TOKEN_CATALOG_LIMIT = 200
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const STATUS_OPTIONS: OrganizationStatus[] = ['active', 'inactive', 'archived']
 
@@ -1670,10 +1671,10 @@ export function PoolCatalogPage() {
         contractsPayload,
         taxProfilesPayload,
       ] = await Promise.all([
-        listMasterDataParties({ limit: 500, offset: 0 }),
-        listMasterDataItems({ limit: 500, offset: 0 }),
-        listMasterDataContracts({ limit: 500, offset: 0 }),
-        listMasterDataTaxProfiles({ limit: 500, offset: 0 }),
+        listMasterDataParties({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 }),
+        listMasterDataItems({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 }),
+        listMasterDataContracts({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 }),
+        listMasterDataTaxProfiles({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 }),
       ])
       setMasterDataParties(Array.isArray(partiesPayload.parties) ? partiesPayload.parties : [])
       setMasterDataItems(Array.isArray(itemsPayload.items) ? itemsPayload.items : [])
