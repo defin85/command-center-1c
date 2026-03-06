@@ -51,6 +51,21 @@ def _build_policy() -> dict[str, object]:
 
 def test_validate_document_policy_v1_accepts_versioned_chain_contract() -> None:
     policy = _build_policy()
+    policy["completeness_profiles"] = {
+        "minimal_documents_full_payload": {
+            "entities": {
+                "Document_Sales": {
+                    "required_fields": ["Amount"],
+                    "required_table_parts": {
+                        "Goods": {
+                            "min_rows": 1,
+                            "required_fields": ["Qty"],
+                        }
+                    },
+                }
+            }
+        }
+    }
 
     payload = validate_document_policy_v1(policy=policy)
 
@@ -59,6 +74,17 @@ def test_validate_document_policy_v1_accepts_versioned_chain_contract() -> None:
     assert chain["chain_id"] == "sale_chain"
     assert chain["documents"][0]["invoice_mode"] == "optional"
     assert chain["documents"][1]["invoice_mode"] == "required"
+    assert payload["completeness_profiles"]["minimal_documents_full_payload"]["entities"][
+        "Document_Sales"
+    ] == {
+        "required_fields": ["Amount"],
+        "required_table_parts": {
+            "Goods": {
+                "min_rows": 1,
+                "required_fields": ["Qty"],
+            }
+        },
+    }
 
 
 def test_validate_document_policy_v1_rejects_invalid_invoice_mode() -> None:
@@ -91,6 +117,22 @@ def test_validate_document_policy_v1_rejects_duplicate_chain_id() -> None:
 def test_validate_document_policy_v1_rejects_non_object_mappings() -> None:
     policy = _build_policy()
     policy["chains"][0]["documents"][0]["field_mapping"] = []
+
+    with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_MAPPING_INVALID):
+        validate_document_policy_v1(policy=policy)
+
+
+def test_validate_document_policy_v1_rejects_invalid_completeness_profile_shape() -> None:
+    policy = _build_policy()
+    policy["completeness_profiles"] = {
+        "minimal_documents_full_payload": {
+            "entities": {
+                "Document_Sales": {
+                    "required_fields": "Amount",
+                }
+            }
+        }
+    }
 
     with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_MAPPING_INVALID):
         validate_document_policy_v1(policy=policy)

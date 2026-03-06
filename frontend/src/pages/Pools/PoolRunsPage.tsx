@@ -39,11 +39,13 @@ import {
   type PoolGraph,
   type PoolPublicationAttemptDiagnostics,
   type PoolRun,
+  type PoolRunReadinessBlocker,
   type PoolRunMasterDataGate,
   type PoolRunReport,
   type PoolRunRetryChainAttempt,
   type PoolRunSafeCommandConflict,
   type PoolRunSafeCommandType,
+  type PoolRunVerificationMismatch,
   type PoolSchemaTemplate,
 } from '../../api/intercompanyPools'
 
@@ -138,6 +140,12 @@ const MASTER_DATA_GATE_STATUS_COLORS: Record<string, string> = {
   skipped: 'default',
 }
 
+const VERIFICATION_STATUS_COLORS: Record<string, string> = {
+  not_verified: 'default',
+  passed: 'success',
+  failed: 'error',
+}
+
 const MASTER_DATA_GATE_REMEDIATION_HINTS: Record<string, string> = {
   MASTER_DATA_GATE_CONFIG_INVALID: (
     'Проверьте runtime setting pools.master_data.gate_enabled: значение должно приводиться к bool.'
@@ -153,6 +161,9 @@ const MASTER_DATA_GATE_REMEDIATION_HINTS: Record<string, string> = {
   ),
   MASTER_DATA_BINDING_CONFLICT: (
     'Проверьте token scope, owner qualifier и ib_ref_key для target database.'
+  ),
+  POOL_DOCUMENT_POLICY_MAPPING_INVALID: (
+    'Дополните document policy: обязательные поля и табличные части должны присутствовать в completeness profile и mapping.'
   ),
 }
 
@@ -352,6 +363,34 @@ const buildMasterDataGateContextLines = (
     })
     if (missingBindings.length > 3) {
       lines.push(`... +${missingBindings.length - 3} more`)
+    }
+  }
+
+  return lines
+}
+
+const resolveReadinessBlockerHint = (blocker: PoolRunReadinessBlocker): string | null => {
+  const code = typeof blocker.code === 'string' ? blocker.code : null
+  if (!code) {
+    return null
+  }
+  return MASTER_DATA_GATE_REMEDIATION_HINTS[code] ?? null
+}
+
+const buildReadinessBlockerContextLines = (blocker: PoolRunReadinessBlocker): string[] => {
+  const lines: string[] = []
+
+  if (blocker.entity_name || blocker.field_or_table_path) {
+    lines.push(`entity=${blocker.entity_name || '-'} path=${blocker.field_or_table_path || '-'}`)
+  }
+  if (blocker.database_id || blocker.organization_id) {
+    lines.push(`database_id=${blocker.database_id || '-'} organization_id=${blocker.organization_id || '-'}`)
+  }
+
+  const diagnostic = blocker.diagnostic
+  if (diagnostic && typeof diagnostic === 'object' && !Array.isArray(diagnostic)) {
+    for (const [key, value] of Object.entries(diagnostic).slice(0, 3)) {
+      lines.push(`${key}=${String(value)}`)
     }
   }
 
@@ -959,6 +998,46 @@ export function PoolRunsPage() {
     []
   )
 
+  const verificationMismatchColumns: ColumnsType<PoolRunVerificationMismatch> = useMemo(
+    () => [
+      {
+        title: 'Database',
+        dataIndex: 'database_id',
+        key: 'database_id',
+        width: 180,
+        render: (value?: string | null) => <Text code>{value ? formatShortId(value) : '-'}</Text>,
+      },
+      {
+        title: 'Entity',
+        dataIndex: 'entity_name',
+        key: 'entity_name',
+        width: 180,
+        render: (value?: string | null) => value || '-',
+      },
+      {
+        title: 'Document',
+        dataIndex: 'document_idempotency_key',
+        key: 'document_idempotency_key',
+        width: 180,
+        render: (value?: string | null) => value || '-',
+      },
+      {
+        title: 'Path',
+        dataIndex: 'field_or_table_path',
+        key: 'field_or_table_path',
+        render: (value?: string | null) => value || '-',
+      },
+      {
+        title: 'Kind',
+        dataIndex: 'kind',
+        key: 'kind',
+        width: 180,
+        render: (value?: string | null) => value || '-',
+      },
+    ],
+    []
+  )
+
   const workflowRunId = runDetails?.provenance?.workflow_run_id ?? null
   const workflowStatus = runDetails?.provenance?.workflow_status ?? null
   const executionBackend = runDetails?.provenance?.execution_backend ?? runDetails?.execution_backend ?? null
@@ -973,6 +1052,9 @@ export function PoolRunsPage() {
   const masterDataGateContextLines = masterDataGate
     ? buildMasterDataGateContextLines(masterDataGate)
     : []
+  const readinessBlockers = runDetails?.readiness_blockers ?? []
+  const verificationStatus = runDetails?.verification_status ?? 'not_verified'
+  const verificationSummary = runDetails?.verification_summary ?? null
 
   const isSafeRun = runDetails?.mode === 'safe'
   const isPublishedOrPartial = runDetails?.status === 'published' || runDetails?.status === 'partial_success'
@@ -982,6 +1064,7 @@ export function PoolRunsPage() {
     isSafeRun
     && runDetails
     && runDetails.approval_state === 'awaiting_approval'
+    && readinessBlockers.length === 0
     && !isPublishedOrPartial
     && runDetails.status !== 'failed'
   )
@@ -1319,6 +1402,99 @@ export function PoolRunsPage() {
                         )}
                       </Card>
 
+                      <Card size="small" title="Readiness Checklist">
+                        {readinessBlockers.length === 0 ? (
+                          <Alert
+                            type="success"
+                            showIcon
+                            message="Readiness blockers not found"
+                            description="Run readiness snapshot не содержит блокирующих причин для публикации."
+                          />
+                        ) : (
+                          <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                            {readinessBlockers.map((blocker, index) => {
+                              const contextLines = buildReadinessBlockerContextLines(blocker)
+                              const hint = resolveReadinessBlockerHint(blocker)
+                              const title = blocker.code || blocker.kind || `READINESS_BLOCKER_${index + 1}`
+
+                              return (
+                                <Alert
+                                  key={`${title}-${index}`}
+                                  type="error"
+                                  showIcon
+                                  message={title}
+                                  description={(
+                                    <Space direction="vertical" size={2}>
+                                      <Text>{blocker.detail || 'Run readiness blocked.'}</Text>
+                                      {contextLines.map((line) => (
+                                        <Text key={line} code>{line}</Text>
+                                      ))}
+                                      {hint ? <Text type="secondary">{hint}</Text> : null}
+                                    </Space>
+                                  )}
+                                />
+                              )
+                            })}
+                          </Space>
+                        )}
+                      </Card>
+
+                      <Card size="small" title="OData Verification">
+                        <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                          <Space size="small" wrap>
+                            <Tag
+                              color={VERIFICATION_STATUS_COLORS[verificationStatus] ?? 'default'}
+                              data-testid="pool-runs-verification-status"
+                            >
+                              status: {verificationStatus}
+                            </Tag>
+                            {verificationSummary ? <Tag>targets: {verificationSummary.checked_targets}</Tag> : null}
+                            {verificationSummary ? <Tag>documents: {verificationSummary.verified_documents}</Tag> : null}
+                            {verificationSummary ? <Tag>mismatches: {verificationSummary.mismatches_count}</Tag> : null}
+                          </Space>
+                          {verificationStatus === 'not_verified' && (
+                            <Alert
+                              type="info"
+                              showIcon
+                              message="Verification has not started yet"
+                              description="Post-run OData verification ещё не дала результата для этого run."
+                            />
+                          )}
+                          {verificationStatus === 'passed' && verificationSummary && (
+                            <Alert
+                              type="success"
+                              showIcon
+                              message="Published documents verified"
+                              description={`Проверено ${verificationSummary.verified_documents} документ(ов) по ${verificationSummary.checked_targets} target(s) без mismatches.`}
+                            />
+                          )}
+                          {verificationStatus === 'failed' && verificationSummary && (
+                            <Collapse
+                              items={[
+                                {
+                                  key: 'verification-mismatches',
+                                  label: `Mismatches (${verificationSummary.mismatches_count})`,
+                                  children: (
+                                    <Table
+                                      rowKey={(item) => [
+                                        item.database_id ?? '-',
+                                        item.document_idempotency_key ?? '-',
+                                        item.field_or_table_path ?? '-',
+                                        item.kind ?? '-',
+                                      ].join(':')}
+                                      size="small"
+                                      columns={verificationMismatchColumns}
+                                      dataSource={verificationSummary.mismatches}
+                                      pagination={{ pageSize: 5 }}
+                                    />
+                                  ),
+                                },
+                              ]}
+                            />
+                          )}
+                        </Space>
+                      </Card>
+
                       <Text strong>Publication Attempts</Text>
                       <Table
                         rowKey="id"
@@ -1385,6 +1561,14 @@ export function PoolRunsPage() {
                         showIcon
                         message="Pre-publish ещё выполняется"
                         description="Safe run находится на этапе предпросмотра. Дождитесь состояния awaiting_approval, затем станет доступен Confirm publication."
+                      />
+                    )}
+                    {readinessBlockers.length > 0 && (
+                      <Alert
+                        type="error"
+                        showIcon
+                        message="Readiness blockers detected"
+                        description={`Inspect stage показывает ${readinessBlockers.length} blocker(s). Confirm publication будет недоступен до их устранения.`}
                       />
                     )}
                     <Text type="secondary">

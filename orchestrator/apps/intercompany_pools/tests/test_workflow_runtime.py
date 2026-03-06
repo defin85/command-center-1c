@@ -936,7 +936,7 @@ def test_retry_workflow_execution_uses_persisted_document_plan_and_skips_success
                         "field_mapping": {},
                         "table_parts_mapping": {},
                         "link_rules": {},
-                        "payload": {"Amount": "100.00"},
+                        "payload": {},
                         "link_to": "sale-doc",
                         "resolved_link_refs": {"sale-doc": "sale-doc-ref"},
                     }

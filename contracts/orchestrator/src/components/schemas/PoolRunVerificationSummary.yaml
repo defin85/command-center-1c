@@ -1,0 +1,20 @@
+type: object
+properties:
+  checked_targets:
+    type: integer
+    minimum: 0
+  verified_documents:
+    type: integer
+    minimum: 0
+  mismatches_count:
+    type: integer
+    minimum: 0
+  mismatches:
+    type: array
+    items:
+      $ref: ./PoolRunVerificationMismatch.yaml
+required:
+  - checked_targets
+  - verified_documents
+  - mismatches_count
+  - mismatches

@@ -1,0 +1,19 @@
+type: object
+properties:
+  database_id:
+    type: string
+    format: uuid
+    nullable: true
+  entity_name:
+    type: string
+    nullable: true
+  document_idempotency_key:
+    type: string
+    nullable: true
+  field_or_table_path:
+    type: string
+    nullable: true
+  kind:
+    type: string
+    nullable: true
+

@@ -58,6 +58,7 @@ POOL_RUNTIME_RETRY_PAYLOAD_INVALID = "POOL_RUNTIME_RETRY_PAYLOAD_INVALID"
 POOL_DISTRIBUTION_BALANCE_MISMATCH = "POOL_DISTRIBUTION_BALANCE_MISMATCH"
 POOL_DISTRIBUTION_COVERAGE_GAP = "POOL_DISTRIBUTION_COVERAGE_GAP"
 MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING = "MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING"
+POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY = "pool_runtime_readiness_blockers"
 
 
 def execute_pool_runtime_step(
@@ -245,11 +246,20 @@ def _execute_reconciliation(
         run_input=_run_input(run),
     )
     topology = load_runtime_topology_for_period(run=run)
-    document_plan_artifact = compile_document_plan_artifact_v1(
-        run=run,
-        distribution_artifact=distribution_artifact,
-        topology=topology,
-    )
+    try:
+        document_plan_artifact = compile_document_plan_artifact_v1(
+            run=run,
+            distribution_artifact=distribution_artifact,
+            topology=topology,
+        )
+    except ValueError as exc:
+        blocker = _build_readiness_blocker_from_error(exc)
+        if blocker is not None:
+            _update_execution_context(
+                execution=execution,
+                updates={POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY: [blocker]},
+            )
+        raise
     if document_plan_artifact is not None:
         publication_payload = build_publication_payload_from_document_plan_artifact(
             artifact=document_plan_artifact,
@@ -277,6 +287,7 @@ def _execute_reconciliation(
     execution_updates: dict[str, Any] = {
         "pool_runtime_reconciliation": report,
         "pool_runtime_publication_payload": publication_payload,
+        POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY: [],
     }
     if document_plan_artifact is not None:
         execution_updates[POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY] = document_plan_artifact
@@ -617,6 +628,38 @@ def _resolve_locked_retry_publication_payload(
             "pool_runtime_publication_payload.pool_runtime.documents_by_database must be an object"
         )
     return publication_payload
+
+
+def _build_readiness_blocker_from_error(exc: ValueError) -> dict[str, Any] | None:
+    message = str(exc).strip()
+    if ":" not in message:
+        return None
+    raw_code, raw_detail = message.split(":", 1)
+    code = raw_code.strip()
+    detail = raw_detail.strip()
+    if not code:
+        return None
+
+    blocker: dict[str, Any] = {
+        "code": code,
+        "detail": detail,
+    }
+    entity_marker = "for entity '"
+    if entity_marker in detail:
+        entity_name = detail.split(entity_marker, 1)[1].split("'", 1)[0].strip()
+        if entity_name:
+            blocker["entity_name"] = entity_name
+    table_marker = ".table_parts_mapping."
+    if table_marker in detail:
+        table_part_name = detail.split(table_marker, 1)[1].split("[", 1)[0].split(" ", 1)[0].strip()
+        if table_part_name:
+            blocker["field_or_table_path"] = table_part_name
+    field_marker = ".field_mapping."
+    if "field_or_table_path" not in blocker and field_marker in detail:
+        field_name = detail.split(field_marker, 1)[1].split(" ", 1)[0].strip()
+        if field_name:
+            blocker["field_or_table_path"] = field_name
+    return blocker
 
 
 def _run_input(run: PoolRun) -> dict[str, Any]:

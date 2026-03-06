@@ -21,6 +21,7 @@ from apps.intercompany_pools.document_policy_contract import (
     DOCUMENT_POLICY_RESOLUTION_SOURCE_EDGE,
     DOCUMENT_POLICY_RESOLUTION_SOURCE_POOL_DEFAULT,
     POOL_DOCUMENT_POLICY_CHAIN_INVALID,
+    POOL_DOCUMENT_POLICY_MAPPING_INVALID,
 )
 from apps.intercompany_pools.master_data_feature_flags import MasterDataGateConfigInvalidError
 from apps.intercompany_pools.models import (
@@ -718,6 +719,125 @@ def test_reconciliation_fail_closed_on_invalid_edge_document_policy() -> None:
             context={"pool_run_id": str(run.id)},
             execution=execution,
         )
+
+
+@pytest.mark.django_db
+def test_reconciliation_fail_closed_on_missing_required_table_part_from_completeness_profile() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={"starting_amount": "100.00"},
+    )
+    policy = _build_document_policy()
+    policy["completeness_profiles"] = {
+        "minimal_documents_full_payload": {
+            "entities": {
+                "Document_Sales": {
+                    "required_fields": ["Amount"],
+                    "required_table_parts": {
+                        "Goods": {
+                            "min_rows": 1,
+                            "required_fields": ["Qty"],
+                        }
+                    },
+                }
+            }
+        }
+    }
+    _attach_active_topology(
+        run=run,
+        left_edge_metadata={DOCUMENT_POLICY_METADATA_KEY: policy},
+    )
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+        },
+    )
+
+    execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_MAPPING_INVALID):
+        execute_pool_runtime_step(
+            operation_type="pool.reconciliation_report",
+            rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
+
+    execution.refresh_from_db(fields=["input_context"])
+    blockers = execution.input_context.get("pool_runtime_readiness_blockers")
+    assert isinstance(blockers, list)
+    assert blockers[0]["code"] == POOL_DOCUMENT_POLICY_MAPPING_INVALID
+    assert blockers[0]["entity_name"] == "Document_Sales"
+    assert blockers[0]["field_or_table_path"] == "Goods"
+
+    execution.refresh_from_db(fields=["input_context"])
+    assert POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY not in execution.input_context
+
+
+@pytest.mark.django_db
+def test_reconciliation_fail_closed_on_missing_required_header_field_from_completeness_profile() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={"starting_amount": "100.00"},
+    )
+    policy = _build_document_policy()
+    policy["chains"][0]["documents"][0]["field_mapping"] = {}
+    policy["completeness_profiles"] = {
+        "minimal_documents_full_payload": {
+            "entities": {
+                "Document_Sales": {
+                    "required_fields": ["Amount"],
+                    "required_table_parts": {},
+                }
+            }
+        }
+    }
+    _attach_active_topology(
+        run=run,
+        left_edge_metadata={DOCUMENT_POLICY_METADATA_KEY: policy},
+    )
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+        },
+    )
+
+    execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_MAPPING_INVALID):
+        execute_pool_runtime_step(
+            operation_type="pool.reconciliation_report",
+            rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
+
+    execution.refresh_from_db(fields=["input_context"])
+    blockers = execution.input_context.get("pool_runtime_readiness_blockers")
+    assert isinstance(blockers, list)
+    assert blockers[0]["code"] == POOL_DOCUMENT_POLICY_MAPPING_INVALID
+    assert blockers[0]["entity_name"] == "Document_Sales"
+    assert blockers[0]["field_or_table_path"] == "Amount"
 
     execution.refresh_from_db(fields=["input_context"])
     assert POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY not in execution.input_context

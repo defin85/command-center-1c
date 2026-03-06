@@ -136,10 +136,20 @@ MASTER_DATA_GATE_STATUS_COMPLETED = "completed"
 MASTER_DATA_GATE_STATUS_FAILED = "failed"
 MASTER_DATA_GATE_STATUS_SKIPPED = "skipped"
 MASTER_DATA_GATE_READ_MODEL_MODE = "resolve_upsert"
+POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY = "pool_runtime_readiness_blockers"
+POOL_RUNTIME_VERIFICATION_CONTEXT_KEY = "pool_runtime_verification"
+VERIFICATION_STATUS_NOT_VERIFIED = "not_verified"
+VERIFICATION_STATUS_PASSED = "passed"
+VERIFICATION_STATUS_FAILED = "failed"
 _VALID_MASTER_DATA_GATE_STATUSES = {
     MASTER_DATA_GATE_STATUS_COMPLETED,
     MASTER_DATA_GATE_STATUS_FAILED,
     MASTER_DATA_GATE_STATUS_SKIPPED,
+}
+_VALID_VERIFICATION_STATUSES = {
+    VERIFICATION_STATUS_NOT_VERIFIED,
+    VERIFICATION_STATUS_PASSED,
+    VERIFICATION_STATUS_FAILED,
 }
 
 
@@ -523,6 +533,13 @@ def _serialize_run(
     master_data_gate = _resolve_master_data_gate_read_model(
         workflow_input_context=workflow_input_context
     )
+    readiness_blockers = _resolve_readiness_blockers_read_model(
+        workflow_input_context=workflow_input_context,
+        master_data_gate=master_data_gate,
+    )
+    verification_status, verification_summary = _resolve_verification_read_model(
+        workflow_input_context=workflow_input_context
+    )
     terminal_reason = _resolve_terminal_reason(
         run=run,
         workflow_input_context=workflow_input_context,
@@ -576,6 +593,9 @@ def _serialize_run(
         "approval_state": approval_state,
         "publication_step_state": publication_step_state,
         "master_data_gate": master_data_gate,
+        "readiness_blockers": readiness_blockers,
+        "verification_status": verification_status,
+        "verification_summary": verification_summary,
         "terminal_reason": terminal_reason,
         "execution_backend": execution_backend,
         "provenance": provenance,
@@ -829,6 +849,97 @@ def _resolve_master_data_gate_read_model(
         "detail": detail,
         "diagnostic": diagnostic,
     }
+
+
+def _resolve_readiness_blockers_read_model(
+    *,
+    workflow_input_context: dict[str, Any],
+    master_data_gate: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    raw_blockers = workflow_input_context.get(POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY)
+    blockers: list[dict[str, Any]] = []
+    if isinstance(raw_blockers, list):
+        for raw_blocker in raw_blockers:
+            if isinstance(raw_blocker, Mapping):
+                blockers.append(_normalize_readiness_blocker(raw_blocker))
+    if blockers:
+        return blockers
+    if not isinstance(master_data_gate, Mapping):
+        return []
+    if str(master_data_gate.get("status") or "").strip().lower() != MASTER_DATA_GATE_STATUS_FAILED:
+        return []
+    return [
+        _normalize_readiness_blocker(
+            {
+                "code": _normalize_optional_text(master_data_gate.get("error_code")),
+                "detail": _normalize_optional_text(master_data_gate.get("detail")),
+                "diagnostic": dict(master_data_gate.get("diagnostic") or {})
+                if isinstance(master_data_gate.get("diagnostic"), Mapping)
+                else None,
+            }
+        )
+    ]
+
+
+def _normalize_readiness_blocker(raw_blocker: Mapping[str, Any]) -> dict[str, Any]:
+    blocker: dict[str, Any] = {
+        "code": _normalize_optional_text(raw_blocker.get("code")) or _normalize_optional_text(
+            raw_blocker.get("error_code")
+        ),
+        "detail": _normalize_optional_text(raw_blocker.get("detail")),
+    }
+    for field_name in ("kind", "entity_name", "field_or_table_path", "database_id", "organization_id"):
+        blocker[field_name] = _normalize_optional_text(raw_blocker.get(field_name))
+    diagnostic_raw = raw_blocker.get("diagnostic")
+    blocker["diagnostic"] = dict(diagnostic_raw) if isinstance(diagnostic_raw, Mapping) else None
+    return blocker
+
+
+def _normalize_verification_status(raw_status: object) -> str:
+    status_token = str(raw_status or "").strip().lower()
+    if status_token in _VALID_VERIFICATION_STATUSES:
+        return status_token
+    return VERIFICATION_STATUS_NOT_VERIFIED
+
+
+def _normalize_verification_mismatch(raw_mismatch: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "database_id": _normalize_optional_text(raw_mismatch.get("database_id")),
+        "entity_name": _normalize_optional_text(raw_mismatch.get("entity_name")),
+        "document_idempotency_key": _normalize_optional_text(raw_mismatch.get("document_idempotency_key")),
+        "field_or_table_path": _normalize_optional_text(raw_mismatch.get("field_or_table_path")),
+        "kind": _normalize_optional_text(raw_mismatch.get("kind")),
+    }
+
+
+def _resolve_verification_read_model(
+    *,
+    workflow_input_context: dict[str, Any],
+) -> tuple[str, dict[str, Any] | None]:
+    raw_verification = workflow_input_context.get(POOL_RUNTIME_VERIFICATION_CONTEXT_KEY)
+    if not isinstance(raw_verification, Mapping):
+        return VERIFICATION_STATUS_NOT_VERIFIED, None
+    status_value = _normalize_verification_status(raw_verification.get("status"))
+    summary_raw = raw_verification.get("summary")
+    summary = None
+    if isinstance(summary_raw, Mapping):
+        raw_mismatches = summary_raw.get("mismatches")
+        mismatches = (
+            [
+                _normalize_verification_mismatch(raw_mismatch)
+                for raw_mismatch in raw_mismatches
+                if isinstance(raw_mismatch, Mapping)
+            ]
+            if isinstance(raw_mismatches, list)
+            else []
+        )
+        summary = {
+            "checked_targets": _parse_non_negative_int(summary_raw.get("checked_targets")),
+            "verified_documents": _parse_non_negative_int(summary_raw.get("verified_documents")),
+            "mismatches_count": _parse_non_negative_int(summary_raw.get("mismatches_count")),
+            "mismatches": mismatches,
+        }
+    return status_value, summary
 
 
 def _normalize_attempt_kind(raw_attempt_kind: object) -> str | None:
@@ -1493,6 +1604,32 @@ class PoolRunMasterDataGateSerializer(serializers.Serializer):
     diagnostic = serializers.JSONField(required=False, allow_null=True)
 
 
+class PoolRunReadinessBlockerSerializer(serializers.Serializer):
+    code = serializers.CharField(required=False, allow_null=True)
+    detail = serializers.CharField(required=False, allow_null=True)
+    kind = serializers.CharField(required=False, allow_null=True)
+    entity_name = serializers.CharField(required=False, allow_null=True)
+    field_or_table_path = serializers.CharField(required=False, allow_null=True)
+    database_id = serializers.UUIDField(required=False, allow_null=True)
+    organization_id = serializers.UUIDField(required=False, allow_null=True)
+    diagnostic = serializers.JSONField(required=False, allow_null=True)
+
+
+class PoolRunVerificationMismatchSerializer(serializers.Serializer):
+    database_id = serializers.UUIDField(required=False, allow_null=True)
+    entity_name = serializers.CharField(required=False, allow_null=True)
+    document_idempotency_key = serializers.CharField(required=False, allow_null=True)
+    field_or_table_path = serializers.CharField(required=False, allow_null=True)
+    kind = serializers.CharField(required=False, allow_null=True)
+
+
+class PoolRunVerificationSummarySerializer(serializers.Serializer):
+    checked_targets = serializers.IntegerField(min_value=0)
+    verified_documents = serializers.IntegerField(min_value=0)
+    mismatches_count = serializers.IntegerField(min_value=0)
+    mismatches = PoolRunVerificationMismatchSerializer(many=True)
+
+
 class PoolRunSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     tenant_id = serializers.UUIDField()
@@ -1518,6 +1655,13 @@ class PoolRunSerializer(serializers.Serializer):
     approval_state = serializers.CharField(required=False, allow_null=True)
     publication_step_state = serializers.CharField(required=False, allow_null=True)
     master_data_gate = PoolRunMasterDataGateSerializer(required=False, allow_null=True)
+    readiness_blockers = PoolRunReadinessBlockerSerializer(many=True, required=False, default=list)
+    verification_status = serializers.ChoiceField(
+        choices=[VERIFICATION_STATUS_NOT_VERIFIED, VERIFICATION_STATUS_PASSED, VERIFICATION_STATUS_FAILED],
+        required=False,
+        allow_null=True,
+    )
+    verification_summary = PoolRunVerificationSummarySerializer(required=False, allow_null=True)
     terminal_reason = serializers.CharField(required=False, allow_null=True)
     execution_backend = serializers.CharField(required=False, allow_null=True)
     provenance = PoolRunProvenanceSerializer(required=False)

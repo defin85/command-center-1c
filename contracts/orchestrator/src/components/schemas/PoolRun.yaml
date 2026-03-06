@@ -69,6 +69,24 @@ properties:
   master_data_gate:
     $ref: ./PoolRunMasterDataGate.yaml
     nullable: true
+  readiness_blockers:
+    type: array
+    items:
+      $ref: ./PoolRunReadinessBlocker.yaml
+  verification_status:
+    enum:
+      - not_verified
+      - passed
+      - failed
+    type: string
+    nullable: true
+    description: |-
+      * `not_verified` - not_verified
+      * `passed` - passed
+      * `failed` - failed
+  verification_summary:
+    $ref: ./PoolRunVerificationSummary.yaml
+    nullable: true
   terminal_reason:
     type: string
     nullable: true

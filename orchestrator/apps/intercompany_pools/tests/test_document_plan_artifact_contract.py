@@ -162,3 +162,40 @@ def test_build_publication_payload_from_document_plan_artifact_materializes_mapp
     assert sale_payload["Goods"] == [{"Qty": "100.00"}]
     assert invoice_payload["Amount"] == "100.00"
     assert invoice_payload["BaseDocument"] == "sale-ref-123"
+
+
+def test_build_publication_payload_from_document_plan_artifact_does_not_inject_generic_amount() -> None:
+    artifact = _build_artifact()
+    artifact["targets"][0]["chains"][0]["documents"] = [
+        {
+            "document_id": "sale",
+            "entity_name": "Document_РеализацияТоваровУслуг",
+            "document_role": "sale",
+            "field_mapping": {
+                "ВидОперации": "Услуги",
+                "СуммаДокумента": "allocation.amount",
+            },
+            "table_parts_mapping": {
+                "Услуги": [
+                    {
+                        "Количество": 1,
+                        "Цена": "allocation.amount",
+                        "Сумма": "allocation.amount",
+                    }
+                ]
+            },
+            "link_rules": {},
+            "invoice_mode": "optional",
+            "idempotency_key": "doc-plan:sale",
+        }
+    ]
+
+    payload = build_publication_payload_from_document_plan_artifact(artifact=artifact)
+    sale_payload = payload["pool_runtime"]["document_chains_by_database"]["db-1"][0]["documents"][0][
+        "payload"
+    ]
+
+    assert "Amount" not in sale_payload
+    assert sale_payload["ВидОперации"] == "Услуги"
+    assert sale_payload["СуммаДокумента"] == "100.00"
+    assert sale_payload["Услуги"] == [{"Количество": 1, "Цена": "100.00", "Сумма": "100.00"}]

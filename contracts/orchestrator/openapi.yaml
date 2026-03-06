@@ -17085,6 +17085,73 @@ components:
         - mode
         - status
         - targets_count
+    PoolRunReadinessBlocker:
+      type: object
+      properties:
+        code:
+          type: string
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+        kind:
+          type: string
+          nullable: true
+        entity_name:
+          type: string
+          nullable: true
+        field_or_table_path:
+          type: string
+          nullable: true
+        database_id:
+          type: string
+          format: uuid
+          nullable: true
+        organization_id:
+          type: string
+          format: uuid
+          nullable: true
+        diagnostic: {}
+    PoolRunVerificationMismatch:
+      type: object
+      properties:
+        database_id:
+          type: string
+          format: uuid
+          nullable: true
+        entity_name:
+          type: string
+          nullable: true
+        document_idempotency_key:
+          type: string
+          nullable: true
+        field_or_table_path:
+          type: string
+          nullable: true
+        kind:
+          type: string
+          nullable: true
+    PoolRunVerificationSummary:
+      type: object
+      properties:
+        checked_targets:
+          type: integer
+          minimum: 0
+        verified_documents:
+          type: integer
+          minimum: 0
+        mismatches_count:
+          type: integer
+          minimum: 0
+        mismatches:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolRunVerificationMismatch'
+      required:
+        - checked_targets
+        - verified_documents
+        - mismatches_count
+        - mismatches
     PoolRunRetryChainAttempt:
       type: object
       properties:
@@ -17216,6 +17283,24 @@ components:
           nullable: true
         master_data_gate:
           $ref: '#/components/schemas/PoolRunMasterDataGate'
+          nullable: true
+        readiness_blockers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolRunReadinessBlocker'
+        verification_status:
+          enum:
+            - not_verified
+            - passed
+            - failed
+          type: string
+          nullable: true
+          description: |-
+            * `not_verified` - not_verified
+            * `passed` - passed
+            * `failed` - failed
+        verification_summary:
+          $ref: '#/components/schemas/PoolRunVerificationSummary'
           nullable: true
         terminal_reason:
           type: string

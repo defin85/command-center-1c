@@ -69,6 +69,34 @@ export type PoolRunMasterDataGate = {
   diagnostic: Record<string, unknown> | null
 } | null
 
+export type PoolRunReadinessBlocker = {
+  code?: string | null
+  detail?: string | null
+  kind?: string | null
+  entity_name?: string | null
+  field_or_table_path?: string | null
+  database_id?: string | null
+  organization_id?: string | null
+  diagnostic?: Record<string, unknown> | null
+}
+
+export type PoolRunVerificationStatus = 'not_verified' | 'passed' | 'failed'
+
+export type PoolRunVerificationMismatch = {
+  database_id?: string | null
+  entity_name?: string | null
+  document_idempotency_key?: string | null
+  field_or_table_path?: string | null
+  kind?: string | null
+}
+
+export type PoolRunVerificationSummary = {
+  checked_targets: number
+  verified_documents: number
+  mismatches_count: number
+  mismatches: PoolRunVerificationMismatch[]
+} | null
+
 export type PoolRunRetryChainAttempt = {
   workflow_run_id: string
   parent_workflow_run_id: string | null
@@ -145,6 +173,9 @@ export type PoolRun = {
   approval_state: PoolRunApprovalState
   publication_step_state: PoolRunPublicationStepState
   master_data_gate?: PoolRunMasterDataGate
+  readiness_blockers?: PoolRunReadinessBlocker[]
+  verification_status?: PoolRunVerificationStatus | null
+  verification_summary?: PoolRunVerificationSummary
   terminal_reason: string | null
   execution_backend: string | null
   provenance: PoolRunProvenance

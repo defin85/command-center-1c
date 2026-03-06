@@ -873,6 +873,99 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
         self.assertEqual(attempt.status, PoolPublicationAttemptStatus.SUCCESS)
         self.assertTrue(attempt.posted)
 
+    def test_update_workflow_status_completed_projects_attempts_from_all_atomic_publication_nodes(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        db_first = Database.objects.create(
+            tenant=tenant,
+            name=f"projection-atomic-first-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/atomic-first.odata",
+            username="admin",
+            password="secret",
+        )
+        db_second = Database.objects.create(
+            tenant=tenant,
+            name=f"projection-atomic-second-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/atomic-second.odata",
+            username="admin",
+            password="secret",
+        )
+
+        response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "completed",
+                "result": {
+                    "node_results": {
+                        "publication_odata__chain_1": {
+                            "step": "publication_odata",
+                            "pool_run_id": str(run.id),
+                            "status": "published",
+                            "entity_name": "Document_Sales",
+                            "documents_targets": 1,
+                            "succeeded_targets": 1,
+                            "failed_targets": 0,
+                            "max_attempts": 1,
+                            "target_databases": [str(db_first.id)],
+                            "documents_count_by_database": {str(db_first.id): 1},
+                            "attempts": [
+                                {
+                                    "target_database": str(db_first.id),
+                                    "attempt_number": 1,
+                                    "status": "success",
+                                    "documents_count": 1,
+                                    "posted": True,
+                                    "request_summary": {"documents_count": 1},
+                                    "response_summary": {"posted": True},
+                                }
+                            ],
+                        },
+                        "publication_odata__chain_2": {
+                            "step": "publication_odata",
+                            "pool_run_id": str(run.id),
+                            "status": "published",
+                            "entity_name": "Document_Invoice",
+                            "documents_targets": 1,
+                            "succeeded_targets": 1,
+                            "failed_targets": 0,
+                            "max_attempts": 1,
+                            "target_databases": [str(db_second.id)],
+                            "documents_count_by_database": {str(db_second.id): 1},
+                            "attempts": [
+                                {
+                                    "target_database": str(db_second.id),
+                                    "attempt_number": 1,
+                                    "status": "success",
+                                    "documents_count": 1,
+                                    "posted": True,
+                                    "request_summary": {"documents_count": 1},
+                                    "response_summary": {"posted": True},
+                                }
+                            ],
+                        },
+                    }
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        run.refresh_from_db(fields=["publication_summary"])
+        self.assertEqual(run.publication_summary.get("total_targets"), 2)
+        self.assertEqual(run.publication_summary.get("succeeded_targets"), 2)
+        self.assertEqual(run.publication_summary.get("failed_targets"), 0)
+
+        projected_attempts = list(
+            PoolPublicationAttempt.objects.filter(run=run).order_by("target_database_id", "attempt_number")
+        )
+        self.assertEqual(len(projected_attempts), 2)
+        self.assertEqual(
+            {str(item.target_database_id) for item in projected_attempts},
+            {str(db_first.id), str(db_second.id)},
+        )
+
     def test_update_workflow_status_completed_replay_reconciles_publication_state_from_persisted_attempts(self):
         tenant, run, execution, _ = self._create_pool_runtime_fixture()
         database = Database.objects.create(

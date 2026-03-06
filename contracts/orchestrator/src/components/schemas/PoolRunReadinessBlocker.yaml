@@ -1,0 +1,27 @@
+type: object
+properties:
+  code:
+    type: string
+    nullable: true
+  detail:
+    type: string
+    nullable: true
+  kind:
+    type: string
+    nullable: true
+  entity_name:
+    type: string
+    nullable: true
+  field_or_table_path:
+    type: string
+    nullable: true
+  database_id:
+    type: string
+    format: uuid
+    nullable: true
+  organization_id:
+    type: string
+    format: uuid
+    nullable: true
+  diagnostic: {}
+

@@ -58,6 +58,9 @@ function buildRun(overrides: Partial<PoolRun> = {}): PoolRun {
     lane: 'workflows',
     approval_state: 'awaiting_approval',
     publication_step_state: 'not_enqueued',
+    readiness_blockers: [],
+    verification_status: 'not_verified',
+    verification_summary: null,
     terminal_reason: null,
     execution_backend: 'workflow_core',
     provenance: {
@@ -509,6 +512,76 @@ describe('PoolRunsPage', () => {
     expect(
       await screen.findByText('Historical run or gate step was not captured in this execution context.')
     ).toBeInTheDocument()
+  })
+
+  it('renders readiness blockers and verification mismatch summary', async () => {
+    const user = userEvent.setup()
+    const run = buildRun({
+      readiness_blockers: [
+        {
+          code: 'POOL_DOCUMENT_POLICY_MAPPING_INVALID',
+          detail: 'Document policy is incomplete for minimal_documents_full_payload.',
+          entity_name: 'Document_Sales',
+          field_or_table_path: 'Goods',
+        },
+      ],
+      verification_status: 'failed',
+      verification_summary: {
+        checked_targets: 1,
+        verified_documents: 1,
+        mismatches_count: 1,
+        mismatches: [
+          {
+            database_id: '44444444-4444-4444-4444-444444444444',
+            entity_name: 'Document_Sales',
+            document_idempotency_key: 'sales-doc-1',
+            field_or_table_path: 'Goods',
+            kind: 'missing_table_part',
+          },
+        ],
+      },
+    })
+    mockListPoolRuns.mockResolvedValue([run])
+    mockGetPoolRunReport.mockResolvedValue(buildReport(run))
+
+    renderPage()
+
+    await openRunsStage(user, 'Inspect')
+    expect(await screen.findByText('Readiness Checklist')).toBeInTheDocument()
+    expect(screen.getByText('POOL_DOCUMENT_POLICY_MAPPING_INVALID')).toBeInTheDocument()
+    expect(screen.getByText('entity=Document_Sales path=Goods')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Дополните document policy: обязательные поля и табличные части должны присутствовать в completeness profile и mapping.'
+      )
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('pool-runs-verification-status')).toHaveTextContent('status: failed')
+    expect(screen.getByText('targets: 1')).toBeInTheDocument()
+    expect(screen.getByText('documents: 1')).toBeInTheDocument()
+    expect(screen.getByText('mismatches: 1')).toBeInTheDocument()
+    await user.click(screen.getByText('Mismatches (1)'))
+    expect(screen.getByText('sales-doc-1')).toBeInTheDocument()
+    expect(screen.getByText('missing_table_part')).toBeInTheDocument()
+  }, 15000)
+
+  it('disables confirm when readiness blockers are present', async () => {
+    const user = userEvent.setup()
+    const run = buildRun({
+      readiness_blockers: [
+        {
+          code: 'POOL_DOCUMENT_POLICY_MAPPING_INVALID',
+          detail: 'Document policy is incomplete for minimal_documents_full_payload.',
+        },
+      ],
+    })
+    mockListPoolRuns.mockResolvedValue([run])
+    mockGetPoolRunReport.mockResolvedValue(buildReport(run))
+
+    renderPage()
+
+    await openRunsStage(user, 'Safe Actions')
+    expect(await screen.findByText('Readiness blockers detected')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-runs-safe-confirm')).toBeDisabled()
   })
 
   it('renders publication credentials source hint in create run form', async () => {

@@ -12,6 +12,11 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+from apps.intercompany_pools.publication_verification import (
+    POOL_RUNTIME_VERIFICATION_CONTEXT_KEY,
+    verify_published_documents,
+)
+
 from .permissions import IsInternalService
 from .serializers import PoolRuntimeStepExecutionSerializer, WorkflowExecutionStatusUpdateSerializer
 from .views_common import _model_dump, exclude_schema, logger
@@ -562,6 +567,13 @@ def _parse_positive_int(value: object, *, default: int, minimum: int = 1) -> int
 
 
 def _extract_publication_result_payload(result_payload: object) -> dict[str, object] | None:
+    publication_results = _extract_publication_result_payloads(result_payload)
+    if not publication_results:
+        return None
+    return publication_results[0]
+
+
+def _extract_publication_result_payloads(result_payload: object) -> list[dict[str, object]]:
     def _normalize_candidate(candidate: object) -> dict[str, object] | None:
         if not isinstance(candidate, Mapping):
             return None
@@ -574,11 +586,12 @@ def _extract_publication_result_payload(result_payload: object) -> dict[str, obj
         return None
 
     if not isinstance(result_payload, Mapping):
-        return None
+        return []
 
+    normalized_results: list[dict[str, object]] = []
     direct = _normalize_candidate(result_payload)
     if direct is not None:
-        return direct
+        normalized_results.append(direct)
 
     for container_key in ("node_results", "nodes"):
         container = result_payload.get(container_key)
@@ -586,12 +599,12 @@ def _extract_publication_result_payload(result_payload: object) -> dict[str, obj
             continue
         direct_candidate = _normalize_candidate(container.get("publication_odata"))
         if direct_candidate is not None:
-            return direct_candidate
+            normalized_results.append(direct_candidate)
         for candidate in container.values():
             normalized = _normalize_candidate(candidate)
             if normalized is not None:
-                return normalized
-    return None
+                normalized_results.append(normalized)
+    return normalized_results
 
 
 def _normalize_publication_attempt_rows(
@@ -733,13 +746,13 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
     if str(execution.execution_consumer or "") != "pools":
         return
 
-    publication_result = _extract_publication_result_payload(result_payload)
-    if publication_result is None:
+    publication_results = _extract_publication_result_payloads(result_payload)
+    if not publication_results:
         return
 
     execution_context = execution.input_context if isinstance(execution.input_context, dict) else {}
     pool_run_id = str(
-        publication_result.get("pool_run_id")
+        publication_results[0].get("pool_run_id")
         or execution_context.get("pool_run_id")
         or ""
     ).strip()
@@ -777,67 +790,77 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
         return
 
     target_databases: list[str] = []
-    raw_targets = publication_result.get("target_databases")
-    if isinstance(raw_targets, list):
-        for raw_value in raw_targets:
-            normalized = str(raw_value or "").strip()
-            if normalized and normalized not in target_databases:
-                target_databases.append(normalized)
-
     documents_count_by_database: dict[str, int] = {}
-    raw_documents_count = publication_result.get("documents_count_by_database")
-    if isinstance(raw_documents_count, Mapping):
-        for raw_database_id, raw_count in raw_documents_count.items():
-            database_id = str(raw_database_id or "").strip()
-            if not database_id:
-                continue
-            documents_count_by_database[database_id] = _parse_positive_int(
-                raw_count,
-                default=1,
-            )
-            if database_id not in target_databases:
-                target_databases.append(database_id)
-
     failed_databases: dict[str, str] = {}
-    raw_failed_databases = publication_result.get("failed_databases")
-    if isinstance(raw_failed_databases, Mapping):
-        for raw_database_id, raw_error in raw_failed_databases.items():
-            database_id = str(raw_database_id or "").strip()
-            if not database_id:
-                continue
-            failed_databases[database_id] = str(raw_error or "").strip()
-            if database_id not in target_databases:
-                target_databases.append(database_id)
-
     failed_databases_diagnostics: dict[str, dict[str, object]] = {}
-    raw_failed_diagnostics = publication_result.get("failed_databases_diagnostics")
-    if isinstance(raw_failed_diagnostics, Mapping):
-        for raw_database_id, raw_diagnostics in raw_failed_diagnostics.items():
-            database_id = str(raw_database_id or "").strip()
-            if not database_id or not isinstance(raw_diagnostics, Mapping):
-                continue
-            failed_databases_diagnostics[database_id] = dict(raw_diagnostics)
-            if database_id not in target_databases:
-                target_databases.append(database_id)
+    attempt_rows: list[dict[str, object]] = []
+    entity_name = "Document_РеализацияТоваровУслуг"
+    max_attempts = 1
 
-    entity_name = str(
-        publication_result.get("entity_name") or "Document_РеализацияТоваровУслуг"
-    ).strip() or "Document_РеализацияТоваровУслуг"
-    max_attempts = _parse_positive_int(publication_result.get("max_attempts"), default=1)
-    attempt_rows = _normalize_publication_attempt_rows(
-        raw_attempts=publication_result.get("attempts"),
-        entity_name=entity_name,
-        documents_count_by_database=documents_count_by_database,
-    )
-    if not attempt_rows and target_databases:
-        attempt_rows = _synthesize_publication_attempt_rows(
-            target_databases=target_databases,
+    for publication_result in publication_results:
+        raw_targets = publication_result.get("target_databases")
+        if isinstance(raw_targets, list):
+            for raw_value in raw_targets:
+                normalized = str(raw_value or "").strip()
+                if normalized and normalized not in target_databases:
+                    target_databases.append(normalized)
+
+        raw_documents_count = publication_result.get("documents_count_by_database")
+        if isinstance(raw_documents_count, Mapping):
+            for raw_database_id, raw_count in raw_documents_count.items():
+                database_id = str(raw_database_id or "").strip()
+                if not database_id:
+                    continue
+                documents_count_by_database[database_id] = documents_count_by_database.get(database_id, 0) + _parse_positive_int(
+                    raw_count,
+                    default=1,
+                )
+                if database_id not in target_databases:
+                    target_databases.append(database_id)
+
+        raw_failed_databases = publication_result.get("failed_databases")
+        if isinstance(raw_failed_databases, Mapping):
+            for raw_database_id, raw_error in raw_failed_databases.items():
+                database_id = str(raw_database_id or "").strip()
+                if not database_id:
+                    continue
+                failed_databases[database_id] = str(raw_error or "").strip()
+                if database_id not in target_databases:
+                    target_databases.append(database_id)
+
+        raw_failed_diagnostics = publication_result.get("failed_databases_diagnostics")
+        if isinstance(raw_failed_diagnostics, Mapping):
+            for raw_database_id, raw_diagnostics in raw_failed_diagnostics.items():
+                database_id = str(raw_database_id or "").strip()
+                if not database_id or not isinstance(raw_diagnostics, Mapping):
+                    continue
+                failed_databases_diagnostics[database_id] = dict(raw_diagnostics)
+                if database_id not in target_databases:
+                    target_databases.append(database_id)
+
+        normalized_entity_name = str(publication_result.get("entity_name") or "").strip()
+        if normalized_entity_name:
+            entity_name = normalized_entity_name
+        max_attempts = max(
+            max_attempts,
+            _parse_positive_int(publication_result.get("max_attempts"), default=1),
+        )
+
+        normalized_attempt_rows = _normalize_publication_attempt_rows(
+            raw_attempts=publication_result.get("attempts"),
             entity_name=entity_name,
             documents_count_by_database=documents_count_by_database,
-            failed_databases=failed_databases,
-            failed_databases_diagnostics=failed_databases_diagnostics,
-            max_attempts=max_attempts,
         )
+        if not normalized_attempt_rows and target_databases:
+            normalized_attempt_rows = _synthesize_publication_attempt_rows(
+                target_databases=target_databases,
+                entity_name=entity_name,
+                documents_count_by_database=documents_count_by_database,
+                failed_databases=failed_databases,
+                failed_databases_diagnostics=failed_databases_diagnostics,
+                max_attempts=max_attempts,
+            )
+        attempt_rows.extend(normalized_attempt_rows)
 
     database_ids: set[str] = set(target_databases)
     for row in attempt_rows:
@@ -925,21 +948,20 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
                 },
             )
 
-    total_targets = _parse_positive_int(
-        publication_result.get("documents_targets"),
-        default=len(target_databases),
-        minimum=0,
+    failed_target_ids = {
+        str(database_id or "").strip()
+        for database_id in failed_databases.keys()
+        if str(database_id or "").strip()
+    }
+    failed_target_ids.update(
+        str(row.get("target_database") or "").strip()
+        for row in attempt_rows
+        if str(row.get("status") or "").strip().lower() == PoolPublicationAttemptStatus.FAILED
     )
-    failed_targets = _parse_positive_int(
-        publication_result.get("failed_targets"),
-        default=len(failed_databases),
-        minimum=0,
-    )
-    succeeded_targets = _parse_positive_int(
-        publication_result.get("succeeded_targets"),
-        default=max(total_targets - failed_targets, 0),
-        minimum=0,
-    )
+    failed_target_ids.discard("")
+    total_targets = len({database_id for database_id in target_databases if database_id})
+    failed_targets = len(failed_target_ids)
+    succeeded_targets = max(total_targets - failed_targets, 0)
     run.publication_summary = {
         "total_targets": total_targets,
         "succeeded_targets": succeeded_targets,
@@ -955,6 +977,34 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
         updated_context = dict(execution_context)
         updated_context["publication_step_state"] = PUBLICATION_STEP_STATE_COMPLETED
         execution.input_context = updated_context
+
+    _project_pool_publication_verification_from_result(
+        execution=execution,
+        publication_results=publication_results,
+    )
+
+
+def _project_pool_publication_verification_from_result(
+    *,
+    execution,
+    publication_results: list[dict[str, object]],
+) -> None:
+    if str(execution.execution_consumer or "") != "pools":
+        return
+
+    execution_context = execution.input_context if isinstance(execution.input_context, dict) else {}
+    verification = verify_published_documents(
+        tenant_id=str(getattr(execution, "tenant_id", "") or ""),
+        document_plan_artifact=(
+            execution_context.get("pool_runtime_document_plan_artifact")
+            if isinstance(execution_context.get("pool_runtime_document_plan_artifact"), Mapping)
+            else None
+        ),
+        publication_results=publication_results,
+    )
+    updated_context = dict(execution_context)
+    updated_context[POOL_RUNTIME_VERIFICATION_CONTEXT_KEY] = verification
+    execution.input_context = updated_context
 
 
 def _reconcile_pool_publication_step_state_from_persisted_attempts(*, execution) -> bool:

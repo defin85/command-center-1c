@@ -62,6 +62,15 @@ UI показывает:
 - verification summary после завершения.
 Это устраняет "чёрный ящик" между запуском и фактическим состоянием документов.
 
+### Decision 7: Первый full-run baseline ограничивается одним стабильным BP 3.0 сценарием
+Для первого полного dev acceptance baseline выбирается один реальный OData-паттерн вместо попытки покрыть все варианты типовых документов сразу:
+- infobase: `stroygrupp_7751284461`;
+- entity: `Document_РеализацияТоваровУслуг`;
+- variant: `ВидОперации = Услуги`;
+- required table part: `Услуги`.
+
+Подробные результаты исследования сохранены в `artifacts/odata-document-baseline-2026-03-06.md`.
+
 ## Trade-offs
 - Увеличивается число проверок до публикации, но это снижает риск пустых документов и скрытых ошибок.
 - Агрегированная проекция attempts сложнее текущей, но даёт наблюдаемость и корректный отчёт.
@@ -70,6 +79,12 @@ UI показывает:
 ## Risks / Mitigations
 - Риск: неполный completeness profile для отдельных entity.
   - Mitigation: fail-closed validation + явный checklist per entity.
+- Риск: один `entity_name` может иметь несколько валидных форм заполнения между базами и даже внутри одной базы.
+  - Mitigation: первый rollout ограничивается одним baseline; variant-aware policy вводится отдельным следующим шагом.
+- Риск: текущий DSL не умеет выражать derived fields BP 3.0 (`СуммаНДС`, потенциально quantity*price и т.п.).
+  - Mitigation: первый dev acceptance фиксируется как deterministic fixed-amount baseline; arithmetic/value-derivation выносится отдельным следующим шагом.
+- Риск: canonical master-data surface пока уже, чем реальные BP payload dependencies (currency/accounts/subconto/employees).
+  - Mitigation: для baseline допускаются literals/IB refs; для production rollout нужен отдельный этап расширения tokenized master-data model.
 - Риск: historical run-ы могут иметь legacy структуру payload.
   - Mitigation: staged rollout и backward-compatible projection parsing.
 - Риск: OData verify может быть нестабильным по auth/transport.
@@ -85,4 +100,6 @@ UI показывает:
 
 ## Open Questions
 - Полный перечень обязательных полей/табличных частей по каждому `entity_name` должен быть зафиксирован отдельной матрицей (`Requirement -> entity -> field/table`).
+- Для production-like expansion нужен variant-aware completeness profile (`entity_name + operation variant`), так как живые BP 3.0 базы показывают разные валидные формы одного и того же документа.
 - Нужно ли хранить результаты OData verify как отдельный immutable artifact или достаточно run report read-model.
+- Нужен ли arithmetic/value-derivation слой в `document_policy`, либо допускается ограниченный список server-computed BP fields как explicit exception для readiness/completeness.

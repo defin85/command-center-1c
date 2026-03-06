@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from .document_completeness import normalize_completeness_profiles
+
 
 DOCUMENT_POLICY_VERSION = "document_policy.v1"
 DOCUMENT_POLICY_METADATA_KEY = "document_policy"
@@ -169,6 +171,13 @@ def validate_document_policy_v1(*, policy: Any) -> dict[str, Any]:
         "version": DOCUMENT_POLICY_VERSION,
         "chains": chains,
     }
+    completeness_profiles = normalize_completeness_profiles(
+        raw_profiles=payload.get("completeness_profiles"),
+        field_name="document_policy.completeness_profiles",
+        error_code=POOL_DOCUMENT_POLICY_MAPPING_INVALID,
+    )
+    if completeness_profiles:
+        normalized_policy["completeness_profiles"] = completeness_profiles
     policy_metadata = payload.get("metadata")
     if policy_metadata is not None:
         normalized_policy["metadata"] = _require_object(

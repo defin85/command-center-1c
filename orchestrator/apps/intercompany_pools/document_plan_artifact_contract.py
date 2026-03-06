@@ -7,6 +7,10 @@ from typing import Any, Mapping
 
 from django.utils import timezone
 
+from .document_completeness import (
+    ensure_document_mapping_completeness,
+    resolve_document_completeness_requirements,
+)
 from .document_policy_contract import resolve_document_policy_with_precedence
 from .models import PoolEdgeVersion, PoolNodeVersion, PoolRun
 
@@ -435,6 +439,9 @@ def build_publication_payload_from_document_plan_artifact(
                     compiled_document["link_to"] = link_to
                 if resolved_link_refs:
                     compiled_document["resolved_link_refs"] = resolved_link_refs
+                completeness_requirements = document.get("completeness_requirements")
+                if isinstance(completeness_requirements, Mapping):
+                    compiled_document["completeness_requirements"] = dict(completeness_requirements)
                 compiled_documents.append(compiled_document)
 
             if not compiled_documents:
@@ -480,7 +487,7 @@ def _compile_chains_for_edge(
         return []
 
     compiled_chains: list[dict[str, Any]] = []
-    for chain in chains_raw:
+    for chain_index, chain in enumerate(chains_raw):
         if not isinstance(chain, Mapping):
             continue
         chain_id = str(chain.get("chain_id") or "").strip()
@@ -491,7 +498,7 @@ def _compile_chains_for_edge(
             continue
 
         compiled_documents: list[dict[str, Any]] = []
-        for document in documents_raw:
+        for document_index, document in enumerate(documents_raw):
             if not isinstance(document, Mapping):
                 continue
             document_id = str(document.get("document_id") or "").strip()
@@ -517,6 +524,18 @@ def _compile_chains_for_edge(
             link_to = str(document.get("link_to") or "").strip()
             if link_to:
                 compiled_document["link_to"] = link_to
+            completeness_requirements = resolve_document_completeness_requirements(
+                policy=policy,
+                entity_name=compiled_document["entity_name"],
+            )
+            normalized_requirements = ensure_document_mapping_completeness(
+                document=compiled_document,
+                completeness_requirements=completeness_requirements,
+                path_prefix=f"document_policy.chains[{chain_index}].documents[{document_index}]",
+                error_code="POOL_DOCUMENT_POLICY_MAPPING_INVALID",
+            )
+            if normalized_requirements is not None:
+                compiled_document["completeness_requirements"] = normalized_requirements
             compiled_documents.append(compiled_document)
 
         if not compiled_documents:
@@ -617,7 +636,7 @@ def _build_document_payload_from_mapping(
     table_parts_mapping: Mapping[str, Any],
     resolved_link_refs: Mapping[str, Any],
 ) -> dict[str, Any]:
-    payload: dict[str, Any] = {"Amount": amount}
+    payload: dict[str, Any] = {}
     allocation_payload = dict(allocation)
 
     for raw_field_name, raw_mapping in field_mapping.items():

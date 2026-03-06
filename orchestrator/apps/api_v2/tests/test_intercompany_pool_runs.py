@@ -2368,6 +2368,9 @@ def test_get_pool_run_returns_details(
     assert payload["run"]["status"] == PoolRun.STATUS_VALIDATED
     assert payload["run"]["terminal_reason"] is None
     assert payload["run"]["master_data_gate"] is None
+    assert payload["run"]["readiness_blockers"] == []
+    assert payload["run"]["verification_status"] == "not_verified"
+    assert payload["run"]["verification_summary"] is None
     assert payload["run"]["provenance"]["workflow_run_id"] is None
     assert payload["run"]["provenance"]["workflow_status"] is None
     assert payload["run"]["provenance"]["execution_backend"] == "legacy_pool_runtime"
@@ -2497,6 +2500,88 @@ def test_get_pool_run_and_report_include_stable_master_data_gate_read_model(
     assert report_response.status_code == 200
     report_payload = report_response.json()
     assert report_payload["run"]["master_data_gate"] == details_gate
+
+
+@pytest.mark.django_db
+def test_get_pool_run_and_report_include_readiness_and_verification_read_model(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": False,
+            "approval_state": "not_required",
+            "publication_step_state": "completed",
+            "pool_runtime_readiness_blockers": [
+                {
+                    "code": "POOL_DOCUMENT_POLICY_MAPPING_INVALID",
+                    "detail": "Document policy is incomplete for minimal_documents_full_payload.",
+                    "entity_name": "Document_Sales",
+                    "field_or_table_path": "Goods",
+                }
+            ],
+            "pool_runtime_verification": {
+                "status": "failed",
+                "summary": {
+                    "checked_targets": 1,
+                    "verified_documents": 1,
+                    "mismatches_count": 1,
+                    "mismatches": [
+                        {
+                            "database_id": "11111111-1111-1111-1111-111111111111",
+                            "entity_name": "Document_Sales",
+                            "document_idempotency_key": "sales-doc-1",
+                            "field_or_table_path": "Goods",
+                            "kind": "missing_table_part",
+                        }
+                    ],
+                },
+            },
+        },
+    )
+
+    details_response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert details_response.status_code == 200
+    details_payload = details_response.json()
+    assert details_payload["run"]["readiness_blockers"] == [
+        {
+            "code": "POOL_DOCUMENT_POLICY_MAPPING_INVALID",
+            "detail": "Document policy is incomplete for minimal_documents_full_payload.",
+            "kind": None,
+            "entity_name": "Document_Sales",
+            "field_or_table_path": "Goods",
+            "database_id": None,
+            "organization_id": None,
+            "diagnostic": None,
+        }
+    ]
+    assert details_payload["run"]["verification_status"] == "failed"
+    assert details_payload["run"]["verification_summary"] == {
+        "checked_targets": 1,
+        "verified_documents": 1,
+        "mismatches_count": 1,
+        "mismatches": [
+            {
+                "database_id": "11111111-1111-1111-1111-111111111111",
+                "entity_name": "Document_Sales",
+                "document_idempotency_key": "sales-doc-1",
+                "field_or_table_path": "Goods",
+                "kind": "missing_table_part",
+            }
+        ],
+    }
+
+    report_response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/report/")
+    assert report_response.status_code == 200
+    report_payload = report_response.json()
+    assert report_payload["run"]["readiness_blockers"] == details_payload["run"]["readiness_blockers"]
+    assert report_payload["run"]["verification_status"] == "failed"
+    assert report_payload["run"]["verification_summary"] == details_payload["run"]["verification_summary"]
 
 
 @pytest.mark.django_db
