@@ -30,6 +30,20 @@ from ._internal_api_v2_base import InternalAPIV2BaseTestCase
 
 
 class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
+    @staticmethod
+    def _static_execution_queryset(execution: WorkflowExecution):
+        class _StaticExecutionQuerySet:
+            def __init__(self, value: WorkflowExecution):
+                self._value = value
+
+            def filter(self, **kwargs):
+                return self
+
+            def first(self):
+                return self._value
+
+        return _StaticExecutionQuerySet(execution)
+
     def _create_template(self) -> WorkflowTemplate:
         return WorkflowTemplate.objects.create(
             name=f"workflow-internal-{uuid4().hex[:8]}",
@@ -1599,6 +1613,47 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
         self.assertEqual(saved.status, WorkflowExecution.STATUS_COMPLETED)
         self.assertEqual(saved.input_context.get("publication_step_state"), "completed")
 
+    def test_legacy_workflow_execution_patch_preserves_pool_runtime_context_for_stale_instance(self):
+        _, run, execution, _ = self._create_pool_runtime_fixture()
+        execution.start()
+        execution.save()
+
+        stale_execution = WorkflowExecution.objects.get(id=execution.id)
+        expected_distribution_artifact = {
+            "version": "distribution_artifact.v1",
+            "topology_version_ref": "pool_topology_window:test",
+        }
+        WorkflowExecution.objects.filter(id=execution.id).update(
+            input_context={
+                **(execution.input_context or {}),
+                "pool_run_id": str(run.id),
+                "pool_runtime_distribution_artifact": expected_distribution_artifact,
+            }
+        )
+
+        with patch.object(
+            WorkflowExecution.objects,
+            "select_related",
+            return_value=self._static_execution_queryset(stale_execution),
+        ):
+            response = self.client.patch(
+                f"/api/v2/internal/workflow-executions/{execution.id}/",
+                {
+                    "status": "completed",
+                    "output_data": {"step": "done"},
+                    "completed_at": "2026-02-23T12:05:00Z",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        saved = WorkflowExecution.objects.get(id=execution.id)
+        self.assertEqual(saved.status, WorkflowExecution.STATUS_COMPLETED)
+        self.assertEqual(
+            saved.input_context.get("pool_runtime_distribution_artifact"),
+            expected_distribution_artifact,
+        )
+
     def test_legacy_workflow_transition_endpoint_updates_status(self):
         template = self._create_template()
         execution = template.create_execution({}, execution_consumer="legacy")
@@ -1625,6 +1680,47 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
         saved = WorkflowExecution.objects.get(id=execution.id)
         self.assertEqual(saved.status, WorkflowExecution.STATUS_FAILED)
         self.assertEqual(saved.error_message, "legacy transition failure")
+
+    def test_legacy_workflow_transition_preserves_pool_runtime_context_for_stale_instance(self):
+        _, run, execution, _ = self._create_pool_runtime_fixture()
+        execution.start()
+        execution.save()
+
+        stale_execution = WorkflowExecution.objects.get(id=execution.id)
+        expected_distribution_artifact = {
+            "version": "distribution_artifact.v1",
+            "topology_version_ref": "pool_topology_window:test",
+        }
+        WorkflowExecution.objects.filter(id=execution.id).update(
+            input_context={
+                **(execution.input_context or {}),
+                "pool_run_id": str(run.id),
+                "pool_runtime_distribution_artifact": expected_distribution_artifact,
+            }
+        )
+
+        with patch.object(
+            WorkflowExecution.objects,
+            "select_related",
+            return_value=self._static_execution_queryset(stale_execution),
+        ):
+            response = self.client.post(
+                "/api/v2/internal/workflow-transitions/",
+                {
+                    "execution_id": str(execution.id),
+                    "to_status": "failed",
+                    "message": "legacy transition failure",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        saved = WorkflowExecution.objects.get(id=execution.id)
+        self.assertEqual(saved.status, WorkflowExecution.STATUS_FAILED)
+        self.assertEqual(
+            saved.input_context.get("pool_runtime_distribution_artifact"),
+            expected_distribution_artifact,
+        )
 
     def test_legacy_workflow_executions_requires_internal_auth(self):
         unauthenticated = self.get_unauthenticated_client()

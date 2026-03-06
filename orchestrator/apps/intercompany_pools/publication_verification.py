@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import base64
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import quote
-
-import requests
 
 from apps.databases.models import Database, InfobaseUserMapping
-from apps.databases.odata.client import ODataClient
+from apps.databases.odata import (
+    ODataDocumentAdapter,
+    ODataDocumentTransportError,
+    resolve_database_odata_verify_tls,
+)
 
 from .document_completeness import collect_document_payload_mismatches
 from .publication_auth_mapping import (
@@ -246,23 +246,20 @@ def _fetch_document_payload(
 ) -> dict[str, Any]:
     if not entity_name or not document_ref:
         raise ValueError(POOL_PUBLICATION_VERIFICATION_FETCH_FAILED)
-    entity_id = _guid_literal(document_ref)
-    url = f"{database.odata_url.rstrip('/')}/{entity_name}({quote(entity_id, safe='')})"
-    authorization = "Basic " + base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
-    params: dict[str, str] = {}
-    if expand_table_parts:
-        params["$expand"] = ",".join(sorted(item for item in expand_table_parts if item))
+    _ = expand_table_parts
     try:
-        response = requests.get(
-            url,
-            headers={
-                "Accept": "application/json",
-                "Authorization": authorization,
-            },
-            params=params or None,
-            timeout=(ODataClient.CONNECT_TIMEOUT, ODataClient.READ_TIMEOUT),
-        )
-    except requests.RequestException as exc:
+        with ODataDocumentAdapter(
+            base_url=str(database.odata_url or ""),
+            username=username,
+            password=password,
+            timeout=database.connection_timeout,
+            verify_tls=resolve_database_odata_verify_tls(database=database),
+        ) as document_adapter:
+            response = document_adapter.fetch_document(
+                entity_name=entity_name,
+                entity_id=_guid_literal(document_ref),
+            )
+    except ODataDocumentTransportError as exc:
         raise ValueError(POOL_PUBLICATION_VERIFICATION_FETCH_FAILED) from exc
     if response.status_code >= 400:
         raise ValueError(POOL_PUBLICATION_VERIFICATION_FETCH_FAILED)

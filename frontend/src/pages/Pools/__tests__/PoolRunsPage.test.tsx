@@ -17,6 +17,16 @@ const mockRetryPoolRunFailed = vi.fn()
 const mockConfirmPoolRunPublication = vi.fn()
 const mockAbortPoolRunPublication = vi.fn()
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 vi.mock('reactflow', () => ({
   default: ({ children }: { children?: ReactNode }) => <div data-testid="mock-reactflow">{children}</div>,
   Background: () => null,
@@ -650,5 +660,48 @@ describe('PoolRunsPage', () => {
       source_payload: [{ inn: '730000000111', amount: '55.00' }],
     })
     expect(payload).not.toHaveProperty('source_hash')
+  }, 15000)
+
+  it('ignores stale listPoolRuns response after create and keeps latest awaiting_approval run selected', async () => {
+    const user = userEvent.setup()
+    const staleRun = buildRun({
+      id: '99999999-9999-9999-9999-999999999999',
+      status_reason: 'preparing',
+      approval_state: 'preparing',
+      publication_step_state: 'not_enqueued',
+    })
+    const freshRun = buildRun({
+      id: 'aaaaaaaa-1111-1111-1111-111111111111',
+      status_reason: 'awaiting_approval',
+      approval_state: 'awaiting_approval',
+      publication_step_state: 'not_enqueued',
+      updated_at: '2026-01-01T00:05:00Z',
+    })
+    const firstRunsRequest = deferred<PoolRun[]>()
+
+    mockListPoolRuns.mockReset()
+    mockListPoolRuns
+      .mockImplementationOnce(() => firstRunsRequest.promise)
+      .mockResolvedValueOnce([freshRun, staleRun])
+      .mockResolvedValue([freshRun, staleRun])
+    mockCreatePoolRun.mockResolvedValueOnce({ run: freshRun, created: true })
+    mockGetPoolRunReport.mockImplementation(async (runId: string) => (
+      buildReport(runId === freshRun.id ? freshRun : staleRun)
+    ))
+
+    renderPage()
+
+    const submitButton = await screen.findByTestId('pool-runs-create-submit')
+    await user.click(submitButton)
+
+    await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mockListPoolRuns.mock.calls.length).toBeGreaterThanOrEqual(2))
+
+    firstRunsRequest.resolve([staleRun])
+
+    await openRunsStage(user, 'Safe Actions')
+    await waitFor(() => expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled())
+    expect(screen.queryByText('Pre-publish ещё выполняется')).not.toBeInTheDocument()
+    expect(screen.getAllByText('awaiting_approval').length).toBeGreaterThan(0)
   }, 15000)
 })

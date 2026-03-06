@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 from uuid import uuid4
 
 import pytest
@@ -22,11 +21,13 @@ def _create_database(*, tenant: Tenant, name: str) -> Database:
 
 
 @pytest.mark.django_db
-def test_verify_published_documents_uses_utf8_basic_auth_and_reports_missing_table_part(
+def test_verify_published_documents_uses_database_transport_options_and_fetches_single_entity_without_expand(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     tenant = Tenant.objects.create(slug=f"verify-{uuid4().hex[:8]}", name="Verify")
     database = _create_database(tenant=tenant, name=f"verify-db-{uuid4().hex[:8]}")
+    database.metadata = {"odata_transport": {"verify_tls": False}}
+    database.save(update_fields=["metadata", "updated_at"])
     InfobaseUserMapping.objects.create(
         database=database,
         user=None,
@@ -34,7 +35,7 @@ def test_verify_published_documents_uses_utf8_basic_auth_and_reports_missing_tab
         ib_password="пароль",
         is_service=True,
     )
-    captured_headers: dict[str, str] = {}
+    captured: dict[str, object] = {}
 
     class _Response:
         status_code = 200
@@ -43,22 +44,43 @@ def test_verify_published_documents_uses_utf8_basic_auth_and_reports_missing_tab
             return {
                 "Ref_Key": "sale-ref-001",
                 "Amount": "100.00",
+                "Goods": [
+                    {
+                        "Qty": 1,
+                    }
+                ],
             }
 
-    def _fake_get(
-        url: str,
-        *,
-        headers: dict[str, str],
-        params: dict[str, str] | None = None,
-        timeout: tuple[int, int],
-    ):
-        _ = (url, params, timeout)
-        captured_headers.update(headers)
-        return _Response()
+    class _FakeAdapter:
+        def __init__(
+            self,
+            *,
+            base_url: str,
+            username: str,
+            password: str,
+            timeout: int | None = None,
+            verify_tls: bool = True,
+        ) -> None:
+            captured["base_url"] = base_url
+            captured["username"] = username
+            captured["password"] = password
+            captured["timeout"] = timeout
+            captured["verify_tls"] = verify_tls
+
+        def fetch_document(self, *, entity_name: str, entity_id: str) -> _Response:
+            captured["entity_name"] = entity_name
+            captured["entity_id"] = entity_id
+            return _Response()
+
+        def __enter__(self) -> "_FakeAdapter":
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+            return None
 
     monkeypatch.setattr(
-        "apps.intercompany_pools.publication_verification.requests.get",
-        _fake_get,
+        "apps.intercompany_pools.publication_verification.ODataDocumentAdapter",
+        _FakeAdapter,
     )
 
     verification = verify_published_documents(
@@ -106,11 +128,14 @@ def test_verify_published_documents_uses_utf8_basic_auth_and_reports_missing_tab
         ],
     )
 
-    expected_auth = "Basic " + base64.b64encode("ГлавБух:пароль".encode("utf-8")).decode("ascii")
-    assert captured_headers["Authorization"] == expected_auth
-    assert verification["status"] == "failed"
+    assert captured["base_url"] == database.odata_url
+    assert captured["username"] == "ГлавБух"
+    assert captured["password"] == "пароль"
+    assert captured["timeout"] == database.connection_timeout
+    assert captured["verify_tls"] is False
+    assert captured["entity_name"] == "Document_Sales"
+    assert captured["entity_id"] == "guid'sale-ref-001'"
+    assert verification["status"] == "passed"
     assert verification["summary"]["verified_documents"] == 1
-    assert verification["summary"]["mismatches_count"] == 1
-    assert verification["summary"]["mismatches"][0]["database_id"] == str(database.id)
-    assert verification["summary"]["mismatches"][0]["entity_name"] == "Document_Sales"
-    assert verification["summary"]["mismatches"][0]["field_or_table_path"] == "Goods"
+    assert verification["summary"]["mismatches_count"] == 0
+    assert verification["summary"]["mismatches"] == []

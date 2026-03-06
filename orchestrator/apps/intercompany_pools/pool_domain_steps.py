@@ -26,7 +26,10 @@ from .master_data_feature_flags import (
     MasterDataGateConfigInvalidError,
     is_pool_master_data_gate_enabled,
 )
-from .master_data_gate import execute_master_data_resolve_upsert_gate
+from .master_data_gate import (
+    execute_master_data_resolve_upsert_gate,
+    publication_payload_requires_master_data_resolution,
+)
 from .models import Organization, PoolRun, PoolRunDirection, PoolRunMode
 from .runtime_distribution import (
     build_publication_payload_from_artifact,
@@ -418,6 +421,9 @@ def _execute_master_data_gate(
     execution: Any,
     execution_context: dict[str, Any],
 ) -> dict[str, Any]:
+    requires_resolution = publication_payload_requires_master_data_resolution(
+        execution_context=execution_context,
+    )
     try:
         gate_enabled = is_pool_master_data_gate_enabled(
             tenant_id=str(run.tenant_id),
@@ -444,7 +450,7 @@ def _execute_master_data_gate(
         )
         raise ValueError(f"{exc.code}: diagnostic={diagnostic_json}") from exc
 
-    if not gate_enabled:
+    if not gate_enabled and not requires_resolution:
         summary = {
             "status": "skipped",
             "reason": "feature_disabled",

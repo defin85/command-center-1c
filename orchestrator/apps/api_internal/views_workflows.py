@@ -233,20 +233,20 @@ def _apply_legacy_status_transition(
     target_status: str,
     error_message: str,
     output_data: dict[str, object] | None,
-) -> tuple[bool, bool]:
+) -> tuple[set[str], bool]:
     from apps.templates.workflow.models import WorkflowExecution
 
     if not target_status:
-        return False, False
+        return set(), False
 
-    changed = False
+    update_fields: set[str] = set()
     status_changed = False
     normalized_output = dict(output_data or {})
 
     if target_status == execution.status:
         if target_status == WorkflowExecution.STATUS_FAILED and error_message and error_message != execution.error_message:
             execution.error_message = error_message
-            changed = True
+            update_fields.add("error_message")
         if target_status == WorkflowExecution.STATUS_COMPLETED and output_data is not None:
             if (
                 not _should_preserve_final_result_on_legacy_update(
@@ -256,43 +256,43 @@ def _apply_legacy_status_transition(
                 and execution.final_result != normalized_output
             ):
                 execution.final_result = normalized_output
-                changed = True
-        return changed, status_changed
+                update_fields.add("final_result")
+        return update_fields, status_changed
 
     try:
         if target_status == WorkflowExecution.STATUS_RUNNING:
             if execution.status == WorkflowExecution.STATUS_PENDING:
                 execution.start()
-                changed = True
+                update_fields.update({"status", "started_at"})
                 status_changed = True
 
         elif target_status == WorkflowExecution.STATUS_COMPLETED:
             if execution.status == WorkflowExecution.STATUS_PENDING:
                 execution.start()
-                changed = True
+                update_fields.update({"status", "started_at"})
                 status_changed = True
             if execution.status == WorkflowExecution.STATUS_RUNNING:
                 execution.complete(normalized_output)
-                changed = True
+                update_fields.update({"status", "final_result", "completed_at"})
                 status_changed = True
 
         elif target_status == WorkflowExecution.STATUS_FAILED:
             if execution.status == WorkflowExecution.STATUS_PENDING:
                 execution.start()
-                changed = True
+                update_fields.update({"status", "started_at"})
                 status_changed = True
             if execution.status == WorkflowExecution.STATUS_RUNNING:
                 execution.fail(error_message or "Workflow failed")
-                changed = True
+                update_fields.update({"status", "error_message", "error_node_id", "completed_at"})
                 status_changed = True
             elif error_message and error_message != execution.error_message:
                 execution.error_message = error_message
-                changed = True
+                update_fields.add("error_message")
 
         elif target_status == WorkflowExecution.STATUS_CANCELLED:
             if execution.status in {WorkflowExecution.STATUS_PENDING, WorkflowExecution.STATUS_RUNNING}:
                 execution.cancel()
-                changed = True
+                update_fields.update({"status", "completed_at"})
                 status_changed = True
 
     except Exception:
@@ -304,17 +304,17 @@ def _apply_legacy_status_transition(
                 "target_status": target_status,
             },
         )
-        return changed, status_changed
+        return update_fields, status_changed
 
-    return changed, status_changed
+    return update_fields, status_changed
 
 
 def _apply_legacy_execution_payload(
     *,
     execution,
     payload: Mapping[str, object],
-) -> tuple[bool, bool]:
-    changed = False
+) -> tuple[set[str], bool]:
+    update_fields: set[str] = set()
     status_changed = False
 
     existing_input_context = execution.input_context if isinstance(execution.input_context, dict) else {}
@@ -328,7 +328,7 @@ def _apply_legacy_execution_payload(
             )
         if existing_input_context != normalized_input:
             execution.input_context = normalized_input
-            changed = True
+            update_fields.add("input_context")
 
     output_data_raw = payload.get("output_data")
     output_data = dict(output_data_raw) if isinstance(output_data_raw, Mapping) else None
@@ -341,35 +341,35 @@ def _apply_legacy_execution_payload(
             and execution.final_result != output_data
         ):
             execution.final_result = output_data
-            changed = True
+            update_fields.add("final_result")
 
     error_message = str(payload.get("error_message") or "").strip()
     if error_message and error_message != execution.error_message:
         execution.error_message = error_message
-        changed = True
+        update_fields.add("error_message")
 
     target_status = _normalize_legacy_workflow_status(payload.get("status"))
-    transition_changed, transition_status_changed = _apply_legacy_status_transition(
+    transition_update_fields, transition_status_changed = _apply_legacy_status_transition(
         execution=execution,
         target_status=target_status,
         error_message=error_message,
         output_data=output_data,
     )
-    changed = changed or transition_changed
+    update_fields.update(transition_update_fields)
     status_changed = status_changed or transition_status_changed
 
     # Apply explicit timestamps after FSM transitions so payload can override defaults.
     started_at = _parse_legacy_datetime(payload.get("started_at"))
     if started_at is not None and execution.started_at != started_at:
         execution.started_at = started_at
-        changed = True
+        update_fields.add("started_at")
 
     completed_at = _parse_legacy_datetime(payload.get("completed_at"))
     if completed_at is not None and execution.completed_at != completed_at:
         execution.completed_at = completed_at
-        changed = True
+        update_fields.add("completed_at")
 
-    return changed, status_changed
+    return update_fields, status_changed
 
 
 def _build_pool_runtime_request_fingerprint(
@@ -1228,13 +1228,14 @@ def legacy_workflow_executions_collection(request):
             }
         )
 
-    changed, status_changed = _apply_legacy_execution_payload(execution=execution, payload=payload)
+    update_fields, status_changed = _apply_legacy_execution_payload(execution=execution, payload=payload)
     publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
         execution=execution,
     )
-    changed = changed or publication_state_reconciled
-    if changed:
-        execution.save()
+    if publication_state_reconciled:
+        update_fields.add("input_context")
+    if update_fields:
+        execution.save(update_fields=sorted(update_fields))
         if status_changed:
             _sync_workflow_root_projection_from_execution(execution=execution)
 
@@ -1278,13 +1279,14 @@ def legacy_workflow_execution_detail(request, execution_id):
         )
 
     payload = request.data if isinstance(request.data, Mapping) else {}
-    changed, status_changed = _apply_legacy_execution_payload(execution=execution, payload=payload)
+    update_fields, status_changed = _apply_legacy_execution_payload(execution=execution, payload=payload)
     publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
         execution=execution,
     )
-    changed = changed or publication_state_reconciled
-    if changed:
-        execution.save()
+    if publication_state_reconciled:
+        update_fields.add("input_context")
+    if update_fields:
+        execution.save(update_fields=sorted(update_fields))
         if status_changed:
             _sync_workflow_root_projection_from_execution(execution=execution)
 
@@ -1331,7 +1333,7 @@ def legacy_workflow_transitions_collection(request):
         )
 
     target_status = _normalize_legacy_workflow_status(payload.get("to_status") or payload.get("status"))
-    transition_changed, status_changed = _apply_legacy_status_transition(
+    update_fields, status_changed = _apply_legacy_status_transition(
         execution=execution,
         target_status=target_status,
         error_message=str(payload.get("message") or "").strip(),
@@ -1340,9 +1342,10 @@ def legacy_workflow_transitions_collection(request):
     publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
         execution=execution,
     )
-    transition_changed = transition_changed or publication_state_reconciled
-    if transition_changed:
-        execution.save()
+    if publication_state_reconciled:
+        update_fields.add("input_context")
+    if update_fields:
+        execution.save(update_fields=sorted(update_fields))
         if status_changed:
             _sync_workflow_root_projection_from_execution(execution=execution)
 
@@ -1737,18 +1740,28 @@ def update_workflow_execution_status(request):
         _sync_workflow_root_projection_from_execution(execution=execution)
         return Response(_build_status_update_response(execution=execution))
 
+    previous_input_context = (
+        dict(execution.input_context)
+        if isinstance(execution.input_context, dict)
+        else {}
+    )
+
     try:
+        update_fields: set[str] = set()
         if target_status == WorkflowExecution.STATUS_RUNNING:
             if execution.status != WorkflowExecution.STATUS_PENDING:
                 return Response({"success": False, "error": "Execution is not pending"}, status=status.HTTP_409_CONFLICT)
             execution.start()
+            update_fields.update({"status", "started_at"})
 
         elif target_status == WorkflowExecution.STATUS_COMPLETED:
             if execution.status == WorkflowExecution.STATUS_PENDING:
                 execution.start()
+                update_fields.update({"status", "started_at"})
             if execution.status != WorkflowExecution.STATUS_RUNNING:
                 return Response({"success": False, "error": "Execution is not running"}, status=status.HTTP_409_CONFLICT)
             execution.complete(result_payload)
+            update_fields.update({"status", "final_result", "completed_at"})
             _project_pool_publication_attempts_from_result(
                 execution=execution,
                 result_payload=result_payload,
@@ -1760,23 +1773,35 @@ def update_workflow_execution_status(request):
         elif target_status == WorkflowExecution.STATUS_FAILED:
             if execution.status == WorkflowExecution.STATUS_PENDING:
                 execution.start()
+                update_fields.update({"status", "started_at"})
             if execution.status != WorkflowExecution.STATUS_RUNNING:
                 return Response({"success": False, "error": "Execution is not running"}, status=status.HTTP_409_CONFLICT)
             execution.fail(error_message or "Workflow failed")
+            update_fields.update({"status", "error_message", "error_node_id", "completed_at"})
             if error_code_provided:
                 execution.error_code = error_code
+                update_fields.add("error_code")
             if error_details_provided:
                 execution.error_details = error_details
+                update_fields.add("error_details")
 
         elif target_status == WorkflowExecution.STATUS_CANCELLED:
             if execution.status not in [WorkflowExecution.STATUS_PENDING, WorkflowExecution.STATUS_RUNNING]:
                 return Response({"success": False, "error": "Execution cannot be cancelled"}, status=status.HTTP_409_CONFLICT)
             execution.cancel()
+            update_fields.update({"status", "completed_at"})
         else:
             return Response({"success": False, "error": "Unsupported status"}, status=status.HTTP_400_BAD_REQUEST)
 
         _advance_pools_runtime_metadata_on_status_update(execution=execution, target_status=target_status)
-        execution.save()
+        next_input_context = (
+            dict(execution.input_context)
+            if isinstance(execution.input_context, dict)
+            else {}
+        )
+        if next_input_context != previous_input_context:
+            update_fields.add("input_context")
+        execution.save(update_fields=sorted(update_fields))
         _sync_workflow_root_projection_from_execution(execution=execution)
 
     except Exception:

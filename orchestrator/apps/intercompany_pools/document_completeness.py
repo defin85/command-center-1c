@@ -320,6 +320,8 @@ def _mapping_contains_value(mapping: Mapping[str, Any], field_name: str) -> bool
     if value is None:
         return False
     if isinstance(value, str):
+        if value == "":
+            return True
         return bool(value.strip())
     if isinstance(value, list):
         return bool(value)
@@ -335,6 +337,8 @@ def _payload_mapping_contains_value(mapping: Mapping[str, Any], field_name: str)
     if value is None:
         return False
     if isinstance(value, str):
+        if value == "":
+            return True
         return bool(value.strip())
     if isinstance(value, list):
         return bool(value)

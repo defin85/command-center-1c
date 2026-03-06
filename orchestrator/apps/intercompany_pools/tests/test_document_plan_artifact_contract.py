@@ -199,3 +199,37 @@ def test_build_publication_payload_from_document_plan_artifact_does_not_inject_g
     assert sale_payload["ВидОперации"] == "Услуги"
     assert sale_payload["СуммаДокумента"] == "100.00"
     assert sale_payload["Услуги"] == [{"Количество": 1, "Цена": "100.00", "Сумма": "100.00"}]
+
+
+def test_build_publication_payload_from_document_plan_artifact_preserves_explicit_empty_string_literals() -> None:
+    artifact = _build_artifact()
+    artifact["targets"][0]["chains"][0]["documents"] = [
+        {
+            "document_id": "sale",
+            "entity_name": "Document_РеализацияТоваровУслуг",
+            "document_role": "sale",
+            "field_mapping": {
+                "АдресДоставки": "",
+                "СуммаДокумента": "allocation.amount",
+            },
+            "table_parts_mapping": {
+                "Услуги": [
+                    {
+                        "Содержание": "",
+                        "Сумма": "allocation.amount",
+                    }
+                ]
+            },
+            "link_rules": {},
+            "invoice_mode": "optional",
+            "idempotency_key": "doc-plan:sale",
+        }
+    ]
+
+    payload = build_publication_payload_from_document_plan_artifact(artifact=artifact)
+    sale_payload = payload["pool_runtime"]["document_chains_by_database"]["db-1"][0]["documents"][0][
+        "payload"
+    ]
+
+    assert sale_payload["АдресДоставки"] == ""
+    assert sale_payload["Услуги"] == [{"Содержание": "", "Сумма": "100.00"}]

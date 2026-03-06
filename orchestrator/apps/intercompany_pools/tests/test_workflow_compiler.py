@@ -182,7 +182,15 @@ def test_compile_pool_execution_plan_safe_mode_includes_approval_gate() -> None:
     context = _create_context(mode=PoolRunMode.SAFE)
     _sync_runtime_templates()
 
-    plan = compile_pool_execution_plan(schema_template=schema_template, run_context=context)
+    with patch(
+        "apps.intercompany_pools.workflow_compiler.resolve_pool_master_data_gate_flag",
+        return_value=PoolMasterDataGateResolution(
+            source="tenant_override",
+            raw_value=False,
+            value=False,
+        ),
+    ):
+        plan = compile_pool_execution_plan(schema_template=schema_template, run_context=context)
     node_ids = [node["id"] for node in plan.dag_structure["nodes"]]
 
     assert "approval_gate" in node_ids
@@ -208,7 +216,15 @@ def test_compile_pool_execution_plan_unsafe_mode_skips_approval_gate() -> None:
     context = _create_context(mode=PoolRunMode.UNSAFE)
     _sync_runtime_templates()
 
-    plan = compile_pool_execution_plan(schema_template=schema_template, run_context=context)
+    with patch(
+        "apps.intercompany_pools.workflow_compiler.resolve_pool_master_data_gate_flag",
+        return_value=PoolMasterDataGateResolution(
+            source="tenant_override",
+            raw_value=False,
+            value=False,
+        ),
+    ):
+        plan = compile_pool_execution_plan(schema_template=schema_template, run_context=context)
     node_ids = [node["id"] for node in plan.dag_structure["nodes"]]
 
     assert "approval_gate" not in node_ids
@@ -294,13 +310,21 @@ def test_compile_pool_execution_plan_uses_atomic_publication_nodes_from_document
     _sync_runtime_templates()
 
     artifact = _build_document_plan_artifact()
-    plan = compile_pool_execution_plan(
-        schema_template=schema_template,
-        run_context=_create_context(
-            mode=PoolRunMode.SAFE,
-            document_plan_artifact=artifact,
+    with patch(
+        "apps.intercompany_pools.workflow_compiler.resolve_pool_master_data_gate_flag",
+        return_value=PoolMasterDataGateResolution(
+            source="tenant_override",
+            raw_value=False,
+            value=False,
         ),
-    )
+    ):
+        plan = compile_pool_execution_plan(
+            schema_template=schema_template,
+            run_context=_create_context(
+                mode=PoolRunMode.SAFE,
+                document_plan_artifact=artifact,
+            ),
+        )
 
     publication_steps = [step for step in plan.steps if step.operation_alias == "pool.publication_odata"]
     node_ids = [node["id"] for node in plan.dag_structure["nodes"]]
@@ -322,6 +346,64 @@ def test_compile_pool_execution_plan_uses_atomic_publication_nodes_from_document
         if edge["from"] == "approval_gate" and edge["to"] == first_publication_node_id
     )
     assert approval_edge["condition"] == "{{approved_at}}"
+
+
+@pytest.mark.django_db
+def test_compile_pool_execution_plan_includes_master_data_gate_when_document_plan_contains_master_data_tokens() -> None:
+    tenant = Tenant.objects.create(
+        slug=f"pool-atomic-master-data-{uuid4().hex[:8]}",
+        name="Pool Atomic Master Data",
+    )
+    schema_template = _create_schema_template(tenant=tenant, code="atomic-master-data-template")
+    _sync_runtime_templates()
+
+    artifact = _build_document_plan_artifact()
+    artifact["targets"][0]["chains"][0]["documents"][0]["field_mapping"] = {
+        "Контрагент_Key": "master_data.party.party-001.counterparty.ref",
+    }
+
+    with patch(
+        "apps.intercompany_pools.workflow_compiler.resolve_pool_master_data_gate_flag",
+        return_value=PoolMasterDataGateResolution(
+            source="tenant_override",
+            raw_value=False,
+            value=False,
+        ),
+    ):
+        plan = compile_pool_execution_plan(
+            schema_template=schema_template,
+            run_context=_create_context(
+                mode=PoolRunMode.SAFE,
+                document_plan_artifact=artifact,
+            ),
+        )
+
+    node_ids = [node["id"] for node in plan.dag_structure["nodes"]]
+    publication_node_ids = [
+        node_id
+        for node_id in node_ids
+        if node_id.startswith("publication_odata__")
+    ]
+    assert node_ids[:5] == [
+        "prepare_input",
+        "distribution_calculation",
+        "reconciliation_report",
+        "approval_gate",
+        "master_data_gate",
+    ]
+    assert len(publication_node_ids) == 2
+    approval_edge = next(
+        edge
+        for edge in plan.dag_structure["edges"]
+        if edge["from"] == "approval_gate" and edge["to"] == "master_data_gate"
+    )
+    assert approval_edge["condition"] == "{{approved_at}}"
+    gate_edges = [
+        edge
+        for edge in plan.dag_structure["edges"]
+        if edge["from"] == "master_data_gate"
+    ]
+    assert gate_edges == [{"from": "master_data_gate", "to": publication_node_ids[0]}]
 
 
 @pytest.mark.django_db

@@ -686,6 +686,8 @@ def _resolve_mapping_value(
     resolved_link_refs: Mapping[str, Any],
 ) -> tuple[Any, bool]:
     if isinstance(value, str):
+        if value == "":
+            return "", True
         token = value.strip()
         if not token:
             return None, False

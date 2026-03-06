@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   App as AntApp,
@@ -514,6 +514,13 @@ export function PoolRunsPage() {
   const [activeStageTab, setActiveStageTab] = useState<'create' | 'inspect' | 'safe' | 'retry'>('create')
   const [createForm] = Form.useForm<CreateRunFormValues>()
   const [retryForm] = Form.useForm<RetryFormValues>()
+  const selectedPoolIdRef = useRef<string | null>(selectedPoolId)
+  const selectedRunIdRef = useRef<string | null>(selectedRunId)
+  const loadRunsRequestRef = useRef(0)
+  const loadReportRequestRef = useRef(0)
+
+  selectedPoolIdRef.current = selectedPoolId
+  selectedRunIdRef.current = selectedRunId
 
   const selectedRun = useMemo(
     () => runs.find((item) => item.id === selectedRunId) ?? null,
@@ -574,43 +581,68 @@ export function PoolRunsPage() {
     }
   }, [graphDate, selectedPoolId])
 
-  const loadRuns = useCallback(async () => {
-    if (!selectedPoolId) {
+  const loadRuns = useCallback(async (options?: { preferredRunId?: string | null }) => {
+    const poolId = selectedPoolId
+    if (!poolId) {
       setRuns([])
       setSelectedRunId(null)
       return
     }
+    const requestId = loadRunsRequestRef.current + 1
+    loadRunsRequestRef.current = requestId
     setLoadingRuns(true)
     try {
-      const data = await listPoolRuns({ poolId: selectedPoolId, limit: 100 })
-      setRuns(data)
-      if (data.length === 0) {
-        setSelectedRunId(null)
+      const data = await listPoolRuns({ poolId, limit: 100 })
+      if (loadRunsRequestRef.current !== requestId || selectedPoolIdRef.current !== poolId) {
         return
       }
-      if (!selectedRunId || !data.some((item) => item.id === selectedRunId)) {
-        setSelectedRunId(data[0].id)
-      }
+      const normalizedData = Array.isArray(data) ? data : []
+      setRuns(normalizedData)
+      setSelectedRunId((currentSelectedRunId) => {
+        const preferredRunId = options?.preferredRunId?.trim() || null
+        if (preferredRunId && normalizedData.some((item) => item.id === preferredRunId)) {
+          return preferredRunId
+        }
+        if (currentSelectedRunId && normalizedData.some((item) => item.id === currentSelectedRunId)) {
+          return currentSelectedRunId
+        }
+        return normalizedData[0]?.id ?? null
+      })
     } catch {
-      setError('Не удалось загрузить список run.')
+      if (loadRunsRequestRef.current === requestId) {
+        setError('Не удалось загрузить список run.')
+      }
     } finally {
-      setLoadingRuns(false)
+      if (loadRunsRequestRef.current === requestId) {
+        setLoadingRuns(false)
+      }
     }
-  }, [selectedPoolId, selectedRunId])
+  }, [selectedPoolId])
 
   const loadReport = useCallback(async () => {
-    if (!selectedRunId) {
+    const runId = selectedRunId
+    if (!runId) {
       setReport(null)
       return
     }
+    const requestId = loadReportRequestRef.current + 1
+    loadReportRequestRef.current = requestId
     setLoadingReport(true)
+    setReport((currentReport) => (currentReport?.run?.id === runId ? currentReport : null))
     try {
-      const data = await getPoolRunReport(selectedRunId)
+      const data = await getPoolRunReport(runId)
+      if (loadReportRequestRef.current !== requestId || selectedRunIdRef.current !== runId) {
+        return
+      }
       setReport(data)
     } catch {
-      setError('Не удалось загрузить run report.')
+      if (loadReportRequestRef.current === requestId) {
+        setError('Не удалось загрузить run report.')
+      }
     } finally {
-      setLoadingReport(false)
+      if (loadReportRequestRef.current === requestId) {
+        setLoadingReport(false)
+      }
     }
   }, [selectedRunId])
 
@@ -623,6 +655,12 @@ export function PoolRunsPage() {
     void loadGraph()
     void loadRuns()
   }, [loadGraph, loadRuns])
+
+  useEffect(() => {
+    setRuns([])
+    setSelectedRunId(null)
+    setReport(null)
+  }, [selectedPoolId])
 
   useEffect(() => {
     void loadReport()
@@ -700,8 +738,7 @@ export function PoolRunsPage() {
         schema_template_id: schemaTemplateId,
       })
       message.success(payload.created ? 'Run создан' : 'Run переиспользован по idempotency key')
-      await loadRuns()
-      setSelectedRunId(payload.run.id)
+      await loadRuns({ preferredRunId: payload.run.id })
     } catch (err) {
       const problem = parseProblemDetails(err)
       if (problem) {
@@ -816,9 +853,8 @@ export function PoolRunsPage() {
       } else {
         message.info(`${commandLabel}: idempotent replay`)
       }
-      await loadRuns()
+      await loadRuns({ preferredRunId: response.run.id })
       await loadReport()
-      setSelectedRunId(response.run.id)
     } catch (err) {
       const conflict = parseSafeCommandConflict(err)
       if (conflict) {
@@ -1092,6 +1128,7 @@ export function PoolRunsPage() {
       <Card title="Run Context" loading={loadingPools}>
         <Space wrap>
           <Select
+            data-testid="pool-runs-context-pool"
             style={{ width: 320 }}
             placeholder="Select pool"
             value={selectedPoolId ?? undefined}
@@ -1153,6 +1190,7 @@ export function PoolRunsPage() {
                     <Col span={4}>
                       <Form.Item name="mode" label="Mode" rules={[{ required: true }]}>
                         <Select
+                          data-testid="pool-runs-create-mode"
                           options={[
                             { value: 'safe', label: 'safe' },
                             { value: 'unsafe', label: 'unsafe' },

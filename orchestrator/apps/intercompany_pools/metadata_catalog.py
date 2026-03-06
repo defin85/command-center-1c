@@ -17,7 +17,11 @@ from django.contrib.auth import get_user_model
 from django.db import DatabaseError, transaction
 from django.utils import timezone
 
-from apps.databases.odata import ODataMetadataAdapter, ODataMetadataTransportError
+from apps.databases.odata import (
+    ODataMetadataAdapter,
+    ODataMetadataTransportError,
+    resolve_database_odata_verify_tls,
+)
 from apps.databases.models import Database, DatabaseExtensionsSnapshot, InfobaseUserMapping
 
 from .models import (
@@ -593,6 +597,7 @@ def _fetch_live_catalog_payload(*, database: Database, requested_by_username: st
             username=username,
             password=password,
             timeout=database.connection_timeout,
+            verify_tls=resolve_database_odata_verify_tls(database=database),
         ) as metadata_adapter:
             response = metadata_adapter.fetch_metadata()
     except ODataMetadataTransportError as exc:

@@ -71,6 +71,15 @@ UI показывает:
 
 Подробные результаты исследования сохранены в `artifacts/odata-document-baseline-2026-03-06.md`.
 
+### Decision 8: Python OData verification/metadata path использует explicit database-scoped transport override
+Для dev self-signed OData endpoints Python-side read/verify path не может молча полагаться на system CA.
+
+Принятое решение:
+- transport override задаётся явно через `Database.metadata.odata_transport.verify_tls`;
+- secure default сохраняется (`true`, если override не задан);
+- metadata fetch и published-document verification используют один и тот же explicit transport contract;
+- single-document verification больше не использует `$expand`, потому что 1С standard OData отвергает это на single entity (`501`).
+
 ## Trade-offs
 - Увеличивается число проверок до публикации, но это снижает риск пустых документов и скрытых ошибок.
 - Агрегированная проекция attempts сложнее текущей, но даёт наблюдаемость и корректный отчёт.
@@ -85,10 +94,12 @@ UI показывает:
   - Mitigation: первый dev acceptance фиксируется как deterministic fixed-amount baseline; arithmetic/value-derivation выносится отдельным следующим шагом.
 - Риск: canonical master-data surface пока уже, чем реальные BP payload dependencies (currency/accounts/subconto/employees).
   - Mitigation: для baseline допускаются literals/IB refs; для production rollout нужен отдельный этап расширения tokenized master-data model.
+- Риск: UI run выбирает `publication_auth.strategy = actor`, но текущая модель `InfobaseUserMapping` запрещает actor/service dual mapping с одинаковым `ib_username` на одной базе.
+  - Mitigation: для dev acceptance подтверждён dedicated actor mapping (`admin -> ГлавБух/22022`); для дальнейшего rollout правило остаётся fail-closed.
 - Риск: historical run-ы могут иметь legacy структуру payload.
   - Mitigation: staged rollout и backward-compatible projection parsing.
 - Риск: OData verify может быть нестабильным по auth/transport.
-  - Mitigation: единый UTF-8 Basic path и retry/backoff в verifier.
+  - Mitigation: единый UTF-8 Basic path, explicit `Database.metadata.odata_transport.verify_tls`, отказ от `$expand` на single-entity verification.
 
 ## Migration Plan
 1. Зафиксировать spec и acceptance checklist.

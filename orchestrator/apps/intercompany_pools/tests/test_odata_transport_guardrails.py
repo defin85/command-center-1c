@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from apps.databases.models import Database, InfobaseUserMapping
-from apps.intercompany_pools import metadata_catalog
+from apps.intercompany_pools import metadata_catalog, publication_verification
 from apps.intercompany_pools.metadata_catalog import (
     ERROR_CODE_POOL_METADATA_FETCH_FAILED,
     MetadataCatalogError,
@@ -46,6 +46,13 @@ def default_tenant() -> Tenant:
 def test_metadata_catalog_path_does_not_use_direct_requests_get() -> None:
     source = Path(metadata_catalog.__file__).read_text(encoding="utf-8")
     assert "ODataMetadataAdapter(" in source
+    assert "requests.get(" not in source
+
+
+@pytest.mark.django_db
+def test_publication_verification_path_uses_document_adapter_instead_of_direct_requests() -> None:
+    source = Path(publication_verification.__file__).read_text(encoding="utf-8")
+    assert "ODataDocumentAdapter(" in source
     assert "requests.get(" not in source
 
 

@@ -175,6 +175,44 @@ def execute_master_data_resolve_upsert_gate(
     }
 
 
+def publication_payload_requires_master_data_resolution(
+    *,
+    execution_context: Mapping[str, Any],
+) -> bool:
+    try:
+        publication_payload = _resolve_publication_payload(execution_context=execution_context)
+    except MasterDataResolveError:
+        return False
+
+    pool_runtime_payload = publication_payload.get("pool_runtime")
+    if not isinstance(pool_runtime_payload, Mapping):
+        return False
+
+    chains_by_database_raw = pool_runtime_payload.get("document_chains_by_database")
+    if not isinstance(chains_by_database_raw, Mapping):
+        return False
+
+    for database_id_raw, chains_raw in chains_by_database_raw.items():
+        database_id = str(database_id_raw or "").strip()
+        if not database_id or not isinstance(chains_raw, list):
+            continue
+        for chain_raw in chains_raw:
+            if not isinstance(chain_raw, Mapping):
+                continue
+            documents_raw = chain_raw.get("documents")
+            if not isinstance(documents_raw, list):
+                continue
+            for document_raw in documents_raw:
+                if not isinstance(document_raw, Mapping):
+                    continue
+                if _extract_requirements_from_document(
+                    document=document_raw,
+                    database_id=database_id,
+                ):
+                    return True
+    return False
+
+
 def _resolve_publication_payload(*, execution_context: Mapping[str, Any]) -> dict[str, Any]:
     payload = execution_context.get("pool_runtime_publication_payload")
     if not isinstance(payload, Mapping):

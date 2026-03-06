@@ -25,6 +25,8 @@ _OP_APPROVAL_GATE = "pool.approval_gate"
 _OP_MASTER_DATA_GATE = "pool.master_data_gate"
 _OP_PUBLICATION = "pool.publication_odata"
 POOL_RUNTIME_REQUIRED_INVOICE_STEP_MISSING = "POOL_RUNTIME_REQUIRED_INVOICE_STEP_MISSING"
+_MASTER_DATA_TOKEN_PREFIX = "master_data."
+_MASTER_DATA_TOKEN_SUFFIX = ".ref"
 
 
 @dataclass(frozen=True)
@@ -199,8 +201,14 @@ class PoolWorkflowCompiler:
             )
 
         gate_flag_resolution = resolve_pool_master_data_gate_flag(tenant_id=tenant_id)
+        requires_master_data_gate = (
+            gate_flag_resolution.value is not False
+            or self._document_plan_requires_master_data_gate(
+                artifact=run_context.document_plan_artifact
+            )
+        )
         # Invalid gate config must still execute gate-step path and fail-closed at runtime.
-        if gate_flag_resolution.value is not False:
+        if requires_master_data_gate:
             steps.append(
                 self._make_step(
                     node_id="master_data_gate",
@@ -340,6 +348,53 @@ class PoolWorkflowCompiler:
                     )
 
         return publication_steps
+
+    @classmethod
+    def _document_plan_requires_master_data_gate(
+        cls,
+        *,
+        artifact: dict[str, Any] | None,
+    ) -> bool:
+        if not isinstance(artifact, dict):
+            return False
+        validated_artifact = validate_document_plan_artifact_v1(artifact=artifact)
+        targets_raw = validated_artifact.get("targets")
+        if not isinstance(targets_raw, list):
+            return False
+
+        for target in targets_raw:
+            if not isinstance(target, dict):
+                continue
+            chains_raw = target.get("chains")
+            if not isinstance(chains_raw, list):
+                continue
+            for chain in chains_raw:
+                if not isinstance(chain, dict):
+                    continue
+                documents_raw = chain.get("documents")
+                if not isinstance(documents_raw, list):
+                    continue
+                for document in documents_raw:
+                    if not isinstance(document, dict):
+                        continue
+                    if cls._mapping_contains_master_data_token(document.get("field_mapping")):
+                        return True
+                    if cls._mapping_contains_master_data_token(document.get("table_parts_mapping")):
+                        return True
+        return False
+
+    @classmethod
+    def _mapping_contains_master_data_token(cls, value: Any) -> bool:
+        if isinstance(value, str):
+            token = value.strip()
+            return token.startswith(_MASTER_DATA_TOKEN_PREFIX) and token.endswith(
+                _MASTER_DATA_TOKEN_SUFFIX
+            )
+        if isinstance(value, dict):
+            return any(cls._mapping_contains_master_data_token(item) for item in value.values())
+        if isinstance(value, list):
+            return any(cls._mapping_contains_master_data_token(item) for item in value)
+        return False
 
     @classmethod
     def _build_atomic_publication_node_id(
