@@ -527,6 +527,7 @@ def _compile_chains_for_edge(
             completeness_requirements = resolve_document_completeness_requirements(
                 policy=policy,
                 entity_name=compiled_document["entity_name"],
+                document=compiled_document,
             )
             normalized_requirements = ensure_document_mapping_completeness(
                 document=compiled_document,

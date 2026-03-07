@@ -847,6 +847,87 @@ def test_reconciliation_fail_closed_on_missing_required_header_field_from_comple
 
 
 @pytest.mark.django_db
+def test_reconciliation_fail_closed_on_missing_variant_specific_table_part_from_completeness_profile() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={"starting_amount": "100.00"},
+    )
+    policy = _build_document_policy()
+    policy["chains"][0]["documents"] = [
+        {
+            "document_id": "sale",
+            "entity_name": "Document_РеализацияТоваровУслуг",
+            "document_role": "sale",
+            "field_mapping": {
+                "ВидОперации": "Услуги",
+                "СуммаДокумента": "allocation.amount",
+            },
+            "table_parts_mapping": {},
+            "link_rules": {},
+            "invoice_mode": "optional",
+        }
+    ]
+    policy["completeness_profiles"] = {
+        "minimal_documents_full_payload": {
+            "entities": {
+                "Document_РеализацияТоваровУслуг": {
+                    "required_fields": ["ВидОперации", "СуммаДокумента"],
+                    "required_table_parts": {},
+                    "variants": {
+                        "services": {
+                            "match": {"ВидОперации": "Услуги"},
+                            "required_table_parts": {
+                                "Услуги": {
+                                    "min_rows": 1,
+                                    "required_fields": ["Сумма"],
+                                }
+                            },
+                        }
+                    },
+                }
+            }
+        }
+    }
+    _attach_active_topology(
+        run=run,
+        left_edge_metadata={DOCUMENT_POLICY_METADATA_KEY: policy},
+    )
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+        },
+    )
+
+    execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_MAPPING_INVALID):
+        execute_pool_runtime_step(
+            operation_type="pool.reconciliation_report",
+            rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
+
+    execution.refresh_from_db(fields=["input_context"])
+    blockers = execution.input_context.get("pool_runtime_readiness_blockers")
+    assert isinstance(blockers, list)
+    assert blockers[0]["code"] == POOL_DOCUMENT_POLICY_MAPPING_INVALID
+    assert blockers[0]["entity_name"] == "Document_РеализацияТоваровУслуг"
+    assert blockers[0]["field_or_table_path"] == "Услуги"
+    assert POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY not in execution.input_context
+
+
+@pytest.mark.django_db
 def test_reconciliation_accepts_explicit_empty_string_for_required_header_field() -> None:
     run = _create_pool_run(
         mode=PoolRunMode.UNSAFE,

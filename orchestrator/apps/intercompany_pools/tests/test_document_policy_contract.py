@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from apps.intercompany_pools.document_completeness import resolve_document_completeness_requirements
 from apps.intercompany_pools.document_policy_contract import (
     DOCUMENT_POLICY_METADATA_KEY,
     DOCUMENT_POLICY_RESOLUTION_SOURCE_EDGE,
@@ -136,6 +137,151 @@ def test_validate_document_policy_v1_rejects_invalid_completeness_profile_shape(
 
     with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_MAPPING_INVALID):
         validate_document_policy_v1(policy=policy)
+
+
+def test_validate_document_policy_v1_accepts_variant_aware_completeness_profile() -> None:
+    policy = _build_policy()
+    policy["chains"][0]["documents"][0] = {
+        "document_id": "sale",
+        "entity_name": "Document_РеализацияТоваровУслуг",
+        "document_role": "sale",
+        "field_mapping": {
+            "ВидОперации": "Услуги",
+            "СуммаДокумента": "allocation.amount",
+        },
+        "table_parts_mapping": {
+            "Услуги": [
+                {
+                    "Сумма": "allocation.amount",
+                }
+            ]
+        },
+        "link_rules": {},
+    }
+    policy["completeness_profiles"] = {
+        "minimal_documents_full_payload": {
+            "entities": {
+                "Document_РеализацияТоваровУслуг": {
+                    "required_fields": ["ВидОперации"],
+                    "required_table_parts": {},
+                    "variants": {
+                        "services": {
+                            "match": {"ВидОперации": "Услуги"},
+                            "required_fields": ["СуммаДокумента"],
+                            "required_table_parts": {
+                                "Услуги": {
+                                    "min_rows": 1,
+                                    "required_fields": ["Сумма"],
+                                }
+                            },
+                        }
+                    },
+                }
+            }
+        }
+    }
+
+    payload = validate_document_policy_v1(policy=policy)
+    requirements = resolve_document_completeness_requirements(
+        policy=payload,
+        entity_name="Document_РеализацияТоваровУслуг",
+        document=payload["chains"][0]["documents"][0],
+    )
+
+    assert payload["completeness_profiles"]["minimal_documents_full_payload"]["entities"][
+        "Document_РеализацияТоваровУслуг"
+    ]["variants"]["services"] == {
+        "match": {"ВидОперации": "Услуги"},
+        "required_fields": ["СуммаДокумента"],
+        "required_table_parts": {
+            "Услуги": {
+                "min_rows": 1,
+                "required_fields": ["Сумма"],
+            }
+        },
+    }
+    assert requirements == {
+        "required_fields": ["ВидОперации", "СуммаДокумента"],
+        "required_table_parts": {
+            "Услуги": {
+                "min_rows": 1,
+                "required_fields": ["Сумма"],
+            }
+        },
+    }
+
+
+def test_validate_document_policy_v1_rejects_invalid_variant_match_shape() -> None:
+    policy = _build_policy()
+    policy["completeness_profiles"] = {
+        "minimal_documents_full_payload": {
+            "entities": {
+                "Document_Sales": {
+                    "required_fields": ["Amount"],
+                    "required_table_parts": {},
+                    "variants": {
+                        "services": {
+                            "match": [],
+                        }
+                    },
+                }
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_MAPPING_INVALID):
+        validate_document_policy_v1(policy=policy)
+
+
+def test_resolve_document_completeness_requirements_rejects_missing_variant_match() -> None:
+    policy = _build_policy()
+    policy["chains"][0]["documents"][0] = {
+        "document_id": "sale",
+        "entity_name": "Document_РеализацияТоваровУслуг",
+        "document_role": "sale",
+        "field_mapping": {
+            "ВидОперации": "Товары",
+            "СуммаДокумента": "allocation.amount",
+        },
+        "table_parts_mapping": {
+            "Товары": [
+                {
+                    "Сумма": "allocation.amount",
+                }
+            ]
+        },
+        "link_rules": {},
+    }
+    policy["completeness_profiles"] = {
+        "minimal_documents_full_payload": {
+            "entities": {
+                "Document_РеализацияТоваровУслуг": {
+                    "required_fields": ["ВидОперации"],
+                    "required_table_parts": {},
+                    "variants": {
+                        "services": {
+                            "match": {"ВидОперации": "Услуги"},
+                            "required_table_parts": {
+                                "Услуги": {
+                                    "min_rows": 1,
+                                    "required_fields": ["Сумма"],
+                                }
+                            },
+                        }
+                    },
+                }
+            }
+        }
+    }
+
+    payload = validate_document_policy_v1(policy=policy)
+
+    with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_MAPPING_INVALID):
+        resolve_document_completeness_requirements(
+            policy=payload,
+            entity_name="Document_РеализацияТоваровУслуг",
+            document=payload["chains"][0]["documents"][0],
+        )
 
 
 def test_validate_document_policy_v1_rejects_required_invoice_without_invoice_document() -> None:

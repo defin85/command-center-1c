@@ -41,21 +41,11 @@ def normalize_completeness_profiles(
                 raise ValueError(
                     f"{error_code}: {field_name}.{profile_id}.entities.{entity_name} must be an object"
                 )
-
-            required_fields = _normalize_required_fields(
-                raw_requirements.get("required_fields"),
-                field_name=f"{field_name}.{profile_id}.entities.{entity_name}.required_fields",
+            entities[entity_name] = _normalize_completeness_requirements_payload(
+                raw_requirements,
+                field_name=f"{field_name}.{profile_id}.entities.{entity_name}",
                 error_code=error_code,
             )
-            required_table_parts = _normalize_required_table_parts(
-                raw_requirements.get("required_table_parts"),
-                field_name=f"{field_name}.{profile_id}.entities.{entity_name}.required_table_parts",
-                error_code=error_code,
-            )
-            entities[entity_name] = {
-                "required_fields": required_fields,
-                "required_table_parts": required_table_parts,
-            }
 
         normalized_profiles[profile_id] = {
             "entities": entities,
@@ -69,6 +59,7 @@ def resolve_document_completeness_requirements(
     policy: Mapping[str, Any],
     entity_name: str,
     profile_id: str = DEFAULT_DOCUMENT_COMPLETENESS_PROFILE_ID,
+    document: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     normalized_entity_name = str(entity_name or "").strip()
     if not normalized_entity_name:
@@ -85,7 +76,44 @@ def resolve_document_completeness_requirements(
     raw_requirements = raw_entities.get(normalized_entity_name)
     if not isinstance(raw_requirements, Mapping):
         return None
-    return dict(raw_requirements)
+    base_requirements = _build_completeness_requirements_payload(raw_requirements)
+    raw_variants = raw_requirements.get("variants")
+    if not isinstance(raw_variants, Mapping) or not raw_variants:
+        return base_requirements
+    if not isinstance(document, Mapping):
+        raise ValueError(
+            f"POOL_DOCUMENT_POLICY_MAPPING_INVALID: completeness profile for entity "
+            f"'{normalized_entity_name}' requires variant-aware document mapping"
+        )
+
+    matching_variants: list[tuple[str, Mapping[str, Any]]] = []
+    for raw_variant_id, raw_variant_requirements in raw_variants.items():
+        variant_id = str(raw_variant_id or "").strip()
+        if not variant_id or not isinstance(raw_variant_requirements, Mapping):
+            continue
+        if _variant_matches_document(
+            variant_requirements=raw_variant_requirements,
+            document=document,
+        ):
+            matching_variants.append((variant_id, raw_variant_requirements))
+
+    if not matching_variants:
+        raise ValueError(
+            f"POOL_DOCUMENT_POLICY_MAPPING_INVALID: no completeness variant matched entity "
+            f"'{normalized_entity_name}'"
+        )
+    if len(matching_variants) > 1:
+        variant_ids = ", ".join(variant_id for variant_id, _ in matching_variants)
+        raise ValueError(
+            f"POOL_DOCUMENT_POLICY_MAPPING_INVALID: completeness variant match for entity "
+            f"'{normalized_entity_name}' is ambiguous ({variant_ids})"
+        )
+
+    _, variant_requirements = matching_variants[0]
+    return _merge_completeness_requirements(
+        base_requirements=base_requirements,
+        variant_requirements=_build_completeness_requirements_payload(variant_requirements),
+    )
 
 
 def ensure_document_mapping_completeness(
@@ -248,6 +276,192 @@ def _normalize_required_fields(
     if any(not token for token in normalized):
         raise ValueError(f"{error_code}: {field_name} must contain non-empty strings")
     return normalized
+
+
+def _normalize_completeness_requirements_payload(
+    raw_requirements: Mapping[str, Any],
+    *,
+    field_name: str,
+    error_code: str,
+) -> dict[str, Any]:
+    required_fields = _normalize_required_fields(
+        raw_requirements.get("required_fields"),
+        field_name=f"{field_name}.required_fields",
+        error_code=error_code,
+    )
+    required_table_parts = _normalize_required_table_parts(
+        raw_requirements.get("required_table_parts"),
+        field_name=f"{field_name}.required_table_parts",
+        error_code=error_code,
+    )
+    normalized: dict[str, Any] = {
+        "required_fields": required_fields,
+        "required_table_parts": required_table_parts,
+    }
+    variants = _normalize_completeness_variants(
+        raw_requirements.get("variants"),
+        field_name=f"{field_name}.variants",
+        error_code=error_code,
+    )
+    if variants:
+        normalized["variants"] = variants
+    return normalized
+
+
+def _normalize_completeness_variants(
+    raw_variants: Any,
+    *,
+    field_name: str,
+    error_code: str,
+) -> dict[str, Any]:
+    if raw_variants is None:
+        return {}
+    if not isinstance(raw_variants, Mapping):
+        raise ValueError(f"{error_code}: {field_name} must be an object")
+
+    normalized_variants: dict[str, Any] = {}
+    for raw_variant_id, raw_variant_requirements in raw_variants.items():
+        variant_id = str(raw_variant_id or "").strip()
+        if not variant_id:
+            raise ValueError(f"{error_code}: {field_name} keys must be non-empty strings")
+        if not isinstance(raw_variant_requirements, Mapping):
+            raise ValueError(f"{error_code}: {field_name}.{variant_id} must be an object")
+        match = _normalize_variant_match(
+            raw_variant_requirements.get("match"),
+            field_name=f"{field_name}.{variant_id}.match",
+            error_code=error_code,
+        )
+        normalized_variant = _build_completeness_requirements_payload(raw_variant_requirements)
+        normalized_variant["match"] = match
+        normalized_variants[variant_id] = normalized_variant
+    return normalized_variants
+
+
+def _normalize_variant_match(
+    raw_match: Any,
+    *,
+    field_name: str,
+    error_code: str,
+) -> dict[str, Any]:
+    if not isinstance(raw_match, Mapping) or not raw_match:
+        raise ValueError(f"{error_code}: {field_name} must be a non-empty object")
+    normalized: dict[str, Any] = {}
+    for raw_field_name, raw_expected_value in raw_match.items():
+        match_field_name = str(raw_field_name or "").strip()
+        if not match_field_name:
+            raise ValueError(f"{error_code}: {field_name} keys must be non-empty strings")
+        normalized[match_field_name] = _normalize_variant_match_value(
+            raw_expected_value,
+            field_name=f"{field_name}.{match_field_name}",
+            error_code=error_code,
+        )
+    return normalized
+
+
+def _normalize_variant_match_value(
+    raw_value: Any,
+    *,
+    field_name: str,
+    error_code: str,
+) -> Any:
+    if isinstance(raw_value, str):
+        normalized = raw_value.strip()
+        if not normalized:
+            raise ValueError(f"{error_code}: {field_name} must be a non-empty scalar")
+        return normalized
+    if isinstance(raw_value, (bool, int, float)) or raw_value is None:
+        return raw_value
+    raise ValueError(f"{error_code}: {field_name} must be a scalar")
+
+
+def _build_completeness_requirements_payload(raw_requirements: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "required_fields": _normalized_required_field_tokens(raw_requirements.get("required_fields")),
+        "required_table_parts": _normalized_required_table_parts_payload(
+            raw_requirements.get("required_table_parts")
+        ),
+    }
+
+
+def _merge_completeness_requirements(
+    *,
+    base_requirements: Mapping[str, Any],
+    variant_requirements: Mapping[str, Any],
+) -> dict[str, Any]:
+    required_fields = _merge_required_fields(
+        base_requirements.get("required_fields"),
+        variant_requirements.get("required_fields"),
+    )
+    required_table_parts = _merge_required_table_parts(
+        base_requirements.get("required_table_parts"),
+        variant_requirements.get("required_table_parts"),
+    )
+    return {
+        "required_fields": required_fields,
+        "required_table_parts": required_table_parts,
+    }
+
+
+def _merge_required_fields(*raw_field_sets: Any) -> list[str]:
+    merged: list[str] = []
+    for raw_fields in raw_field_sets:
+        for field_name in _normalized_required_field_tokens(raw_fields):
+            if field_name not in merged:
+                merged.append(field_name)
+    return merged
+
+
+def _merge_required_table_parts(*raw_table_parts_sets: Any) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for raw_table_parts in raw_table_parts_sets:
+        normalized_table_parts = _normalized_required_table_parts_payload(raw_table_parts)
+        for table_part_name, requirement in normalized_table_parts.items():
+            current = merged.get(table_part_name)
+            if current is None:
+                merged[table_part_name] = {
+                    "min_rows": max(1, _parse_non_negative_int(requirement.get("min_rows"), default=1)),
+                    "required_fields": _normalized_required_field_tokens(
+                        requirement.get("required_fields")
+                    ),
+                }
+                continue
+            merged[table_part_name] = {
+                "min_rows": max(
+                    _parse_non_negative_int(current.get("min_rows"), default=1),
+                    _parse_non_negative_int(requirement.get("min_rows"), default=1),
+                    1,
+                ),
+                "required_fields": _merge_required_fields(
+                    current.get("required_fields"),
+                    requirement.get("required_fields"),
+                ),
+            }
+    return merged
+
+
+def _variant_matches_document(
+    *,
+    variant_requirements: Mapping[str, Any],
+    document: Mapping[str, Any],
+) -> bool:
+    field_mapping = (
+        dict(document.get("field_mapping"))
+        if isinstance(document.get("field_mapping"), Mapping)
+        else {}
+    )
+    match = variant_requirements.get("match")
+    if not isinstance(match, Mapping) or not match:
+        return False
+    for field_name, expected_value in match.items():
+        if _normalize_document_variant_value(field_mapping.get(field_name)) != expected_value:
+            return False
+    return True
+
+
+def _normalize_document_variant_value(raw_value: Any) -> Any:
+    if isinstance(raw_value, str):
+        return raw_value.strip()
+    return raw_value
 
 
 def _normalize_required_table_parts(

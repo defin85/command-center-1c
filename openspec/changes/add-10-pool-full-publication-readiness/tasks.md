@@ -9,8 +9,8 @@
   - backend integration proof;
   - live UI/browser smoke proof.
 - За пределами текущего baseline, отдельно на следующий scope:
-  - variant-aware policy (`entity + ВидОперации`);
-  - arithmetic/value-derivation для BP 3.0 derived fields.
+  - [x] variant-aware policy (`entity + ВидОперации`).
+  - [ ] arithmetic/value-derivation для BP 3.0 derived fields.
 
 ## 1. Контракт полноты и readiness
 - [x] 1.1 Зафиксировать completeness matrix для целевых document entity (`обязательные header fields`, `обязательные табличные части`, `минимум 1 строка` где требуется).
