@@ -233,3 +233,50 @@ def test_build_publication_payload_from_document_plan_artifact_preserves_explici
 
     assert sale_payload["АдресДоставки"] == ""
     assert sale_payload["Услуги"] == [{"Содержание": "", "Сумма": "100.00"}]
+
+
+def test_build_publication_payload_from_document_plan_artifact_resolves_derived_decimal_values() -> None:
+    artifact = _build_artifact()
+    artifact["targets"][0]["chains"][0]["documents"] = [
+        {
+            "document_id": "sale",
+            "entity_name": "Document_РеализацияТоваровУслуг",
+            "document_role": "sale",
+            "field_mapping": {
+                "СуммаДокумента": "allocation.amount",
+                "СуммаНДСДокумента": {
+                    "$derive": {
+                        "op": "div",
+                        "args": ["allocation.amount", 6],
+                        "scale": 2,
+                    }
+                },
+            },
+            "table_parts_mapping": {
+                "Услуги": [
+                    {
+                        "Сумма": "allocation.amount",
+                        "СуммаНДС": {
+                            "$derive": {
+                                "op": "div",
+                                "args": ["allocation.amount", 6],
+                                "scale": 2,
+                            }
+                        },
+                    }
+                ]
+            },
+            "link_rules": {},
+            "invoice_mode": "optional",
+            "idempotency_key": "doc-plan:sale",
+        }
+    ]
+
+    payload = build_publication_payload_from_document_plan_artifact(artifact=artifact)
+    sale_payload = payload["pool_runtime"]["document_chains_by_database"]["db-1"][0]["documents"][0][
+        "payload"
+    ]
+
+    assert sale_payload["СуммаДокумента"] == "100.00"
+    assert sale_payload["СуммаНДСДокумента"] == "16.67"
+    assert sale_payload["Услуги"] == [{"Сумма": "100.00", "СуммаНДС": "16.67"}]

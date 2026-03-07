@@ -99,7 +99,13 @@ def build_stroygrupp_realization_services_policy() -> dict[str, Any]:
                                         "Цена": "allocation.amount",
                                         "Сумма": "allocation.amount",
                                         "СтавкаНДС": "НДС20",
-                                        "СуммаНДС": 2159472.33,
+                                        "СуммаНДС": {
+                                            "$derive": {
+                                                "op": "div",
+                                                "args": ["allocation.amount", 6],
+                                                "scale": 2,
+                                            }
+                                        },
                                         "СчетДоходов_Key": "02063683-54e8-11e9-80ee-0050569f2e9f",
                                         "СчетРасходов_Key": "02063686-54e8-11e9-80ee-0050569f2e9f",
                                         "СчетУчетаНДСПоРеализации_Key": "02063688-54e8-11e9-80ee-0050569f2e9f",

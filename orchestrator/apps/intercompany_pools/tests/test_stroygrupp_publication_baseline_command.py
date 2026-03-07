@@ -144,6 +144,13 @@ def test_build_stroygrupp_realization_services_policy_matches_odata_verified_ful
     assert field_mapping["АдресДоставки"] == ""
 
     assert row_mapping["LineNumber"] == "1"
+    assert row_mapping["СуммаНДС"] == {
+        "$derive": {
+            "op": "div",
+            "args": ["allocation.amount", 6],
+            "scale": 2,
+        }
+    }
     assert row_mapping["СчетНаОплатуПокупателю_Key"] == ZERO_GUID
     assert row_mapping["ИдентификаторСтрокиГосконтрактаЕИС"] == ""
     assert row_mapping["ИдентификаторСтроки"] == STROYGRUPP_BASELINE_SERVICE_LINE_ID

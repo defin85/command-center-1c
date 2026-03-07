@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from hashlib import sha256
 from typing import Any, Mapping
 
@@ -27,6 +27,13 @@ REQUIRED_DOCUMENT_PLAN_ARTIFACT_FIELDS = {
     "policy_refs",
     "targets",
     "compile_summary",
+}
+_DERIVED_MAPPING_KEY = "$derive"
+_DERIVED_MAPPING_OPERATIONS = {
+    "add",
+    "sub",
+    "mul",
+    "div",
 }
 
 
@@ -686,6 +693,27 @@ def _resolve_mapping_value(
     allocation: Mapping[str, Any],
     resolved_link_refs: Mapping[str, Any],
 ) -> tuple[Any, bool]:
+    if isinstance(value, Mapping):
+        if _DERIVED_MAPPING_KEY in value:
+            return _resolve_derived_mapping_value(
+                value,
+                allocation=allocation,
+                resolved_link_refs=resolved_link_refs,
+            )
+        payload: dict[str, Any] = {}
+        for raw_key, raw_item in value.items():
+            key = str(raw_key or "").strip()
+            if not key:
+                continue
+            resolved_value, is_resolved = _resolve_mapping_value(
+                raw_item,
+                allocation=allocation,
+                resolved_link_refs=resolved_link_refs,
+            )
+            if is_resolved:
+                payload[key] = resolved_value
+        return payload, bool(payload)
+
     if isinstance(value, str):
         if value == "":
             return "", True
@@ -707,21 +735,6 @@ def _resolve_mapping_value(
             return ref_value, True
         return token, True
 
-    if isinstance(value, Mapping):
-        payload: dict[str, Any] = {}
-        for raw_key, raw_item in value.items():
-            key = str(raw_key or "").strip()
-            if not key:
-                continue
-            resolved_value, is_resolved = _resolve_mapping_value(
-                raw_item,
-                allocation=allocation,
-                resolved_link_refs=resolved_link_refs,
-            )
-            if is_resolved:
-                payload[key] = resolved_value
-        return payload, bool(payload)
-
     if isinstance(value, list):
         items: list[Any] = []
         for raw_item in value:
@@ -737,6 +750,86 @@ def _resolve_mapping_value(
     if value is None:
         return None, False
     return value, True
+
+
+def _resolve_derived_mapping_value(
+    value: Mapping[str, Any],
+    *,
+    allocation: Mapping[str, Any],
+    resolved_link_refs: Mapping[str, Any],
+) -> tuple[Any, bool]:
+    if set(value.keys()) != {_DERIVED_MAPPING_KEY}:
+        raise ValueError(
+            "POOL_DOCUMENT_POLICY_MAPPING_INVALID: derived expression must not include sibling keys"
+        )
+    expression = value.get(_DERIVED_MAPPING_KEY)
+    if not isinstance(expression, Mapping):
+        raise ValueError("POOL_DOCUMENT_POLICY_MAPPING_INVALID: $derive must be an object")
+
+    op = str(expression.get("op") or "").strip().lower()
+    if op not in _DERIVED_MAPPING_OPERATIONS:
+        raise ValueError(
+            "POOL_DOCUMENT_POLICY_MAPPING_INVALID: derived expression op must be one of "
+            f"{', '.join(sorted(_DERIVED_MAPPING_OPERATIONS))}"
+        )
+    args = expression.get("args")
+    if not isinstance(args, list):
+        raise ValueError("POOL_DOCUMENT_POLICY_MAPPING_INVALID: derived expression args must be an array")
+    if op in {"add", "mul"} and len(args) < 2:
+        raise ValueError(
+            "POOL_DOCUMENT_POLICY_MAPPING_INVALID: derived expression args must contain at least 2 items"
+        )
+    if op in {"sub", "div"} and len(args) != 2:
+        raise ValueError(
+            "POOL_DOCUMENT_POLICY_MAPPING_INVALID: derived expression args must contain exactly 2 items"
+        )
+
+    resolved_args: list[Decimal] = []
+    for index, raw_arg in enumerate(args):
+        resolved_value, is_resolved = _resolve_mapping_value(
+            raw_arg,
+            allocation=allocation,
+            resolved_link_refs=resolved_link_refs,
+        )
+        if not is_resolved:
+            raise ValueError(
+                "POOL_DOCUMENT_POLICY_MAPPING_INVALID: derived expression argument "
+                f"{index} could not be resolved"
+            )
+        decimal_value = _parse_decimal(resolved_value)
+        if decimal_value is None:
+            raise ValueError(
+                "POOL_DOCUMENT_POLICY_MAPPING_INVALID: derived expression argument "
+                f"{index} must resolve to decimal"
+            )
+        resolved_args.append(decimal_value)
+
+    result: Decimal
+    if op == "add":
+        result = sum(resolved_args, Decimal("0"))
+    elif op == "sub":
+        result = resolved_args[0] - resolved_args[1]
+    elif op == "mul":
+        result = Decimal("1")
+        for item in resolved_args:
+            result *= item
+    else:
+        if resolved_args[1] == 0:
+            raise ValueError("POOL_DOCUMENT_POLICY_MAPPING_INVALID: derived expression division by zero")
+        result = resolved_args[0] / resolved_args[1]
+
+    if "scale" in expression:
+        scale = expression.get("scale")
+        if not isinstance(scale, int) or isinstance(scale, bool) or scale < 0:
+            raise ValueError(
+                "POOL_DOCUMENT_POLICY_MAPPING_INVALID: derived expression scale must be a non-negative integer"
+            )
+        result = result.quantize(
+            Decimal("1").scaleb(-scale),
+            rounding=ROUND_HALF_UP,
+        )
+
+    return _decimal_to_string(result), True
 
 
 def _resolve_dotted_path(payload: Mapping[str, Any], path: str) -> tuple[Any, bool]:

@@ -23,6 +23,13 @@ _ALLOWED_INVOICE_MODES = {
     INVOICE_MODE_OPTIONAL,
     INVOICE_MODE_REQUIRED,
 }
+_DERIVED_MAPPING_KEY = "$derive"
+_DERIVED_MAPPING_OPERATIONS = {
+    "add",
+    "sub",
+    "mul",
+    "div",
+}
 
 
 def validate_document_policy_v1(*, policy: Any) -> dict[str, Any]:
@@ -140,6 +147,16 @@ def validate_document_policy_v1(*, policy: Any) -> dict[str, Any]:
                 ),
                 "invoice_mode": invoice_mode,
             }
+            _validate_mapping_value(
+                normalized_document["field_mapping"],
+                field_name=f"{document_path}.field_mapping",
+                error_code=POOL_DOCUMENT_POLICY_MAPPING_INVALID,
+            )
+            _validate_mapping_value(
+                normalized_document["table_parts_mapping"],
+                field_name=f"{document_path}.table_parts_mapping",
+                error_code=POOL_DOCUMENT_POLICY_MAPPING_INVALID,
+            )
             link_to = document.get("link_to")
             if link_to is not None:
                 normalized_document["link_to"] = _require_string(
@@ -243,3 +260,71 @@ def _require_string(value: Any, *, field_name: str, error_code: str) -> str:
     if not text:
         raise ValueError(f"{error_code}: {field_name} must be a non-empty string")
     return text
+
+
+def _validate_mapping_value(value: Any, *, field_name: str, error_code: str) -> None:
+    if isinstance(value, Mapping):
+        if _DERIVED_MAPPING_KEY in value:
+            if set(value.keys()) != {_DERIVED_MAPPING_KEY}:
+                raise ValueError(
+                    f"{error_code}: {field_name} derived expression must not include sibling keys"
+                )
+            _validate_derived_mapping_expression(
+                value.get(_DERIVED_MAPPING_KEY),
+                field_name=f"{field_name}.{_DERIVED_MAPPING_KEY}",
+                error_code=error_code,
+            )
+            return
+        for raw_key, raw_item in value.items():
+            key = str(raw_key or "").strip()
+            if not key:
+                raise ValueError(f"{error_code}: {field_name} keys must be non-empty strings")
+            _validate_mapping_value(
+                raw_item,
+                field_name=f"{field_name}.{key}",
+                error_code=error_code,
+            )
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _validate_mapping_value(
+                item,
+                field_name=f"{field_name}[{index}]",
+                error_code=error_code,
+            )
+
+
+def _validate_derived_mapping_expression(
+    value: Any,
+    *,
+    field_name: str,
+    error_code: str,
+) -> None:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{error_code}: {field_name} must be an object")
+
+    op = str(value.get("op") or "").strip().lower()
+    if op not in _DERIVED_MAPPING_OPERATIONS:
+        raise ValueError(
+            f"{error_code}: {field_name}.op must be one of "
+            f"{', '.join(sorted(_DERIVED_MAPPING_OPERATIONS))}"
+        )
+
+    args = value.get("args")
+    if not isinstance(args, list):
+        raise ValueError(f"{error_code}: {field_name}.args must be an array")
+    if op in {"add", "mul"} and len(args) < 2:
+        raise ValueError(f"{error_code}: {field_name}.args must contain at least 2 items")
+    if op in {"sub", "div"} and len(args) != 2:
+        raise ValueError(f"{error_code}: {field_name}.args must contain exactly 2 items")
+    for index, arg in enumerate(args):
+        _validate_mapping_value(
+            arg,
+            field_name=f"{field_name}.args[{index}]",
+            error_code=error_code,
+        )
+
+    if "scale" in value:
+        scale = value.get("scale")
+        if not isinstance(scale, int) or isinstance(scale, bool) or scale < 0:
+            raise ValueError(f"{error_code}: {field_name}.scale must be a non-negative integer")

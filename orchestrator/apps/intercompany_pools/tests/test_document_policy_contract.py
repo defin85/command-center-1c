@@ -284,6 +284,21 @@ def test_resolve_document_completeness_requirements_rejects_missing_variant_matc
         )
 
 
+def test_validate_document_policy_v1_rejects_invalid_derived_mapping_expression() -> None:
+    policy = _build_policy()
+    policy["chains"][0]["documents"][0]["field_mapping"] = {
+        "Amount": {
+            "$derive": {
+                "op": "div",
+                "args": ["allocation.amount"],
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_MAPPING_INVALID):
+        validate_document_policy_v1(policy=policy)
+
+
 def test_validate_document_policy_v1_rejects_required_invoice_without_invoice_document() -> None:
     policy = _build_policy()
     policy["chains"][0]["documents"] = [
