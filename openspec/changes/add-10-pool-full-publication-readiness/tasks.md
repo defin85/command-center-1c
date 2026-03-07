@@ -4,11 +4,10 @@
   - deterministic bootstrap для dev;
   - `minimal_documents_full_payload` + fail-closed completeness validation;
   - projection publication attempts + verification status в read-model;
+  - backward-compatible historical diagnostics/read-model degradation без silent fallback;
   - OData verifier;
   - backend integration proof;
   - live UI/browser smoke proof.
-- Следующая итерация:
-  - добить backward compatibility / fail-closed diagnostics для historical runs.
 - За пределами текущего baseline, отдельно на следующий scope:
   - variant-aware policy (`entity + ВидОперации`);
   - arithmetic/value-derivation для BP 3.0 derived fields.
@@ -36,8 +35,8 @@
 ## 4. Projection и отчётность
 - [x] 4.1 Исправить projection publication attempts: агрегировать все atomic `publication_odata` nodes из execution result.
 - [x] 4.2 Синхронизировать run report/read-model с агрегированными attempts и readiness/verification статусами.
-- [ ] 4.3 Сохранить backward compatibility historical runs и fail-closed диагностику.
-  Следующий шаг: отдельно добрать historical/legacy payload cases и зафиксировать для них ожидаемую деградацию без silent fallback.
+- [x] 4.3 Сохранить backward compatibility historical runs и fail-closed диагностику.
+  Подтверждено единым diagnostics projection для `details/report`, сохранением historical non-list payload и stable fail-closed `code` без silent fallback.
 
 ## 5. OData verification
 - [x] 5.1 Добавить verifier по published refs с UTF-8 Basic auth.

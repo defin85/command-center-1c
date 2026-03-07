@@ -676,13 +676,28 @@ def _resolve_run_diagnostics(
     if publication_step_problem is not None:
         generated_problems.append(publication_step_problem)
 
-    base_diagnostics = run.diagnostics
+    return _merge_run_diagnostics(
+        base_diagnostics=run.diagnostics,
+        generated_problems=generated_problems,
+    )
+
+
+def _merge_run_diagnostics(
+    *,
+    base_diagnostics: object,
+    generated_problems: list[dict[str, Any]],
+) -> Any:
     if not generated_problems:
         return base_diagnostics
-    if not isinstance(base_diagnostics, list):
-        return generated_problems
 
-    diagnostics = list(base_diagnostics)
+    diagnostics: list[Any]
+    if isinstance(base_diagnostics, list):
+        diagnostics = list(base_diagnostics)
+    elif _has_legacy_run_diagnostics_payload(base_diagnostics):
+        diagnostics = [base_diagnostics]
+    else:
+        diagnostics = []
+
     existing_codes = {
         str(item.get("code") or "").strip()
         for item in diagnostics
@@ -696,6 +711,18 @@ def _resolve_run_diagnostics(
         if code:
             existing_codes.add(code)
     return diagnostics
+
+
+def _has_legacy_run_diagnostics_payload(raw_value: object) -> bool:
+    if raw_value is None:
+        return False
+    if isinstance(raw_value, str):
+        return bool(raw_value.strip())
+    if isinstance(raw_value, Mapping):
+        return bool(raw_value)
+    if isinstance(raw_value, (list, tuple, set)):
+        return bool(raw_value)
+    return True
 
 
 def _build_workflow_failure_problem_details(
@@ -3515,15 +3542,16 @@ def get_pool_run_report(request, run_id: UUID):
     for attempt in attempts:
         attempts_by_status[attempt.status] = attempts_by_status.get(attempt.status, 0) + 1
     publication_hardening_cutoff_utc = _resolve_publication_hardening_cutoff_utc(tenant_id=tenant_id)
+    serialized_run = _serialize_run(
+        run,
+        publication_hardening_cutoff_utc=publication_hardening_cutoff_utc,
+    )
     payload = {
-        "run": _serialize_run(
-            run,
-            publication_hardening_cutoff_utc=publication_hardening_cutoff_utc,
-        ),
+        "run": serialized_run,
         "publication_attempts": [_serialize_attempt(item) for item in attempts],
         "validation_summary": run.validation_summary,
         "publication_summary": run.publication_summary,
-        "diagnostics": run.diagnostics,
+        "diagnostics": serialized_run.get("diagnostics"),
         "attempts_by_status": attempts_by_status,
     }
     return Response(payload, status=http_status.HTTP_200_OK)

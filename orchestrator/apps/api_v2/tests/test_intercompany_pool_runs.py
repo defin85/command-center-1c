@@ -3341,6 +3341,98 @@ def test_get_pool_run_returns_stable_publication_incomplete_problem_code_with_ex
 
 
 @pytest.mark.django_db
+def test_get_pool_run_and_report_preserve_legacy_non_list_diagnostics_for_publication_incomplete_problem(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    legacy_diagnostic = {
+        "legacy_code": "LEGACY_PUBLICATION_WARNING",
+        "detail": "historical diagnostic payload should stay readable",
+    }
+    run.diagnostics = legacy_diagnostic
+    run.save(update_fields=["diagnostics", "updated_at"])
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": True,
+            "approval_state": "approved",
+            "approved_at": run.publication_confirmed_at.isoformat() if run.publication_confirmed_at else None,
+            "publication_step_state": "queued",
+        },
+    )
+
+    details_response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    report_response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/report/")
+
+    assert details_response.status_code == 200
+    assert report_response.status_code == 200
+    details_payload = details_response.json()
+    report_payload = report_response.json()
+    diagnostics = details_payload["run"]["diagnostics"]
+    assert report_payload["run"]["diagnostics"] == diagnostics
+    assert report_payload["diagnostics"] == diagnostics
+    assert legacy_diagnostic in diagnostics
+    publication_diagnostics = [
+        item
+        for item in diagnostics
+        if isinstance(item, dict) and item.get("code") == "POOL_PUBLICATION_STEP_INCOMPLETE"
+    ]
+    assert len(publication_diagnostics) == 1
+
+
+@pytest.mark.django_db
+def test_get_pool_run_and_report_preserve_legacy_non_list_diagnostics_for_workflow_failure_problem(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    legacy_diagnostic = "historical worker failure summary"
+    run.diagnostics = legacy_diagnostic
+    run.save(update_fields=["diagnostics", "updated_at"])
+    execution = _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_FAILED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": False,
+            "approval_state": "not_required",
+        },
+    )
+    WorkflowExecution.objects.filter(id=execution.id).update(
+        error_code="POOL_RUNTIME_ROUTE_DISABLED",
+        error_message="route disabled for publication",
+        error_details={"operation_type": "pool.publication_odata"},
+    )
+
+    details_response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    report_response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/report/")
+
+    assert details_response.status_code == 200
+    assert report_response.status_code == 200
+    details_payload = details_response.json()
+    report_payload = report_response.json()
+    diagnostics = details_payload["run"]["diagnostics"]
+    assert report_payload["run"]["diagnostics"] == diagnostics
+    assert report_payload["diagnostics"] == diagnostics
+    assert legacy_diagnostic in diagnostics
+    workflow_failure_diagnostics = [
+        item
+        for item in diagnostics
+        if isinstance(item, dict) and item.get("code") == "POOL_RUNTIME_ROUTE_DISABLED"
+    ]
+    assert len(workflow_failure_diagnostics) == 1
+    workflow_failure = workflow_failure_diagnostics[0]
+    assert workflow_failure.get("title") == "Workflow Execution Failed"
+    assert workflow_failure.get("detail") == "route disabled for publication"
+    assert workflow_failure.get("error_details") == {"operation_type": "pool.publication_odata"}
+
+
+@pytest.mark.django_db
 def test_get_pool_run_projects_workflow_core_historical_completed_without_publication_state_uses_legacy_projection(
     authenticated_client: APIClient,
     default_tenant: Tenant,
