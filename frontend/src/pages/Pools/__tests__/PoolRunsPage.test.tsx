@@ -188,6 +188,7 @@ function buildReport(
 }
 
 function renderPage() {
+  window.history.pushState({}, '', '/pools/runs')
   return render(
     <AntApp>
       <PoolRunsPage />
@@ -631,6 +632,76 @@ describe('PoolRunsPage', () => {
     expect(screen.getByText('missing_table_part')).toBeInTheDocument()
   }, 15000)
 
+  it('renders remediation transitions for master-data readiness blockers', async () => {
+    const user = userEvent.setup()
+    const bindingBlocker: PoolRunReadinessBlocker = {
+      code: 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING',
+      detail: 'Bindings are missing for some organizations.',
+      diagnostic: {
+        entity_type: 'organization',
+        canonical_id: 'party-1',
+        target_database_id: 'db-1',
+      },
+    }
+    const canonicalBlocker: PoolRunReadinessBlocker = {
+      code: 'MASTER_DATA_ENTITY_NOT_FOUND',
+      detail: 'Canonical item is missing.',
+      diagnostic: {
+        entity_type: 'item',
+        canonical_id: 'item-missing',
+        target_database_id: 'db-2',
+      },
+    }
+    const run = buildRun({
+      readiness_blockers: [bindingBlocker, canonicalBlocker],
+      readiness_checklist: {
+        status: 'not_ready',
+        checks: [
+          {
+            code: 'master_data_coverage',
+            status: 'not_ready',
+            blocker_codes: ['MASTER_DATA_ENTITY_NOT_FOUND'],
+            blockers: [canonicalBlocker],
+          },
+          {
+            code: 'organization_party_bindings',
+            status: 'not_ready',
+            blocker_codes: ['MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING'],
+            blockers: [bindingBlocker],
+          },
+          {
+            code: 'policy_completeness',
+            status: 'ready',
+            blocker_codes: [],
+            blockers: [],
+          },
+          {
+            code: 'odata_verify_readiness',
+            status: 'ready',
+            blocker_codes: [],
+            blockers: [],
+          },
+        ],
+      },
+    })
+    mockListPoolRuns.mockResolvedValue([run])
+    mockGetPoolRunReport.mockResolvedValue(buildReport(run))
+
+    renderPage()
+
+    await openRunsStage(user, 'Inspect')
+    const bindingsLink = await screen.findByText('Open Bindings workspace', {}, { timeout: 10000 })
+    expect(bindingsLink.closest('a')).toHaveAttribute(
+      'href',
+      '/pools/master-data?tab=bindings&entityType=party&canonicalId=party-1&databaseId=db-1&role=organization'
+    )
+    const itemLink = screen.getByText('Open Item workspace')
+    expect(itemLink.closest('a')).toHaveAttribute(
+      'href',
+      '/pools/master-data?tab=item&entityType=item&canonicalId=item-missing&databaseId=db-2'
+    )
+  }, 15000)
+
   it('disables confirm when readiness blockers are present', async () => {
     const user = userEvent.setup()
     const readinessBlockers: PoolRunReadinessBlocker[] = [
@@ -820,5 +891,55 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled())
     expect(screen.queryByText('Pre-publish ещё выполняется')).not.toBeInTheDocument()
     expect(screen.getAllByText('awaiting_approval').length).toBeGreaterThan(0)
+  }, 15000)
+
+  it('refreshes current run report when Refresh Data is clicked', async () => {
+    const user = userEvent.setup()
+    const initialRun = buildRun({
+      status: 'validated',
+      status_reason: 'awaiting_approval',
+      approval_state: 'awaiting_approval',
+      publication_step_state: 'not_enqueued',
+      verification_status: 'not_verified',
+      verification_summary: null,
+    })
+    const refreshedRun = buildRun({
+      status: 'published',
+      status_reason: null,
+      approval_state: 'approved',
+      publication_step_state: 'completed',
+      verification_status: 'passed',
+      verification_summary: {
+        checked_targets: 1,
+        verified_documents: 1,
+        mismatches_count: 0,
+        mismatches: [],
+      },
+    })
+
+    mockListPoolRuns.mockReset()
+    mockListPoolRuns
+      .mockResolvedValueOnce([initialRun])
+      .mockResolvedValue([refreshedRun])
+    mockGetPoolRunReport.mockReset()
+    mockGetPoolRunReport
+      .mockResolvedValueOnce(buildReport(initialRun))
+      .mockResolvedValue(buildReport(refreshedRun, {
+        status: 'success',
+        posted: true,
+        domain_error_code: '',
+        domain_error_message: '',
+      }))
+
+    renderPage()
+
+    await openRunsStage(user, 'Inspect')
+    expect(await screen.findByTestId('pool-runs-verification-status')).toHaveTextContent('status: not_verified')
+
+    await user.click(screen.getByRole('button', { name: 'Refresh Data' }))
+
+    await waitFor(() => expect(mockGetPoolRunReport).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByTestId('pool-runs-verification-status')).toHaveTextContent('status: passed'))
+    expect(screen.getByText('Published documents verified')).toBeInTheDocument()
   }, 15000)
 })

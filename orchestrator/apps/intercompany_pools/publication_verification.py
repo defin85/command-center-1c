@@ -46,6 +46,7 @@ def verify_published_documents(
         expected_by_document_key = expected_documents.get(database_id)
         if not expected_by_document_key:
             continue
+        checked_targets.add(database_id)
 
         database = Database.objects.filter(id=database_id, tenant_id=tenant_id).first()
         if database is None:
@@ -83,8 +84,6 @@ def verify_published_documents(
                 continue
 
             entity_name = str(expected.get("entity_name") or "").strip()
-            checked_targets.add(database_id)
-            verified_documents += 1
 
             try:
                 payload = _fetch_document_payload(
@@ -109,6 +108,7 @@ def verify_published_documents(
                 )
                 continue
 
+            verified_documents += 1
             mismatches.extend(
                 collect_document_payload_mismatches(
                     database_id=database_id,
@@ -119,7 +119,7 @@ def verify_published_documents(
                 )
             )
 
-    if verified_documents == 0:
+    if verified_documents == 0 and not mismatches:
         return {
             "status": VERIFICATION_STATUS_NOT_VERIFIED,
             "summary": None,

@@ -69,7 +69,7 @@ def test_pool_run_safe_commands_paths_are_in_contract_with_expected_responses() 
         assert conflict_content["application/json"]["schema"]["$ref"] == "#/components/schemas/PoolRunSafeCommandConflict"
         if path.endswith("/confirm-publication/"):
             assert conflict_content["application/problem+json"]["schema"]["$ref"] == (
-                "#/components/schemas/ProblemDetailsError"
+                "#/components/schemas/PoolRunConfirmPublicationReadinessProblemDetails"
             )
 
 
@@ -358,3 +358,22 @@ def test_problem_details_error_schema_supports_field_and_referential_error_shape
     required = referential_item_schema.get("required")
     assert isinstance(required, list)
     assert {"code", "path", "detail"}.issubset(set(required))
+
+
+def test_confirm_publication_readiness_problem_details_schema_matches_runtime_serializer() -> None:
+    contract = _load_openapi_contract()
+    schema = _schema(contract, "PoolRunConfirmPublicationReadinessProblemDetails")
+    properties = schema.get("properties")
+    assert isinstance(properties, dict)
+
+    runtime_fields = set(pools_view.PoolRunConfirmPublicationReadinessProblemDetailsSerializer().fields.keys())
+    assert runtime_fields.issubset(set(properties.keys()))
+
+    code_schema = properties.get("code")
+    assert isinstance(code_schema, dict)
+    assert code_schema.get("enum") == ["POOL_RUN_READINESS_BLOCKED"]
+
+    errors_schema = properties.get("errors")
+    assert isinstance(errors_schema, dict)
+    assert errors_schema.get("type") == "array"
+    assert errors_schema.get("items") == {"$ref": "#/components/schemas/PoolRunReadinessBlocker"}

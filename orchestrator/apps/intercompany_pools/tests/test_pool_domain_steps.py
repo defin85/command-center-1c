@@ -1744,6 +1744,83 @@ def test_master_data_gate_collects_generic_master_data_readiness_blockers_before
             },
         },
     ]
+
+
+@pytest.mark.django_db
+def test_master_data_gate_repeated_preflight_preserves_equivalent_readiness_blocker_snapshot() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    left_database = _create_database(tenant=run.tenant, suffix="gate-replay-left")
+    right_database = _create_database(tenant=run.tenant, suffix="gate-replay-right")
+    PoolMasterParty.objects.create(
+        tenant=run.tenant,
+        canonical_id="party-without-refs",
+        name="Party Without Refs",
+        is_counterparty=True,
+    )
+
+    publication_payload = {
+        "pool_runtime": {
+            "document_chains_by_database": {
+                str(left_database.id): [
+                    {
+                        "chain_id": "left-chain",
+                        "documents": [
+                            {
+                                "document_id": "sale-left",
+                                "field_mapping": {
+                                    "Контрагент": "master_data.party.party-without-refs.counterparty.ref"
+                                },
+                                "table_parts_mapping": {},
+                            }
+                        ],
+                    }
+                ],
+                str(right_database.id): [
+                    {
+                        "chain_id": "right-chain",
+                        "documents": [
+                            {
+                                "document_id": "sale-right",
+                                "field_mapping": {
+                                    "Контрагент": "master_data.party.missing-party.counterparty.ref"
+                                },
+                                "table_parts_mapping": {},
+                            }
+                        ],
+                    }
+                ],
+            }
+        }
+    }
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "master_data_snapshot_ref": "master_data_snapshot.v1:test",
+            "master_data_binding_artifact_ref": "master_data_binding_artifact.v1:test",
+            "pool_runtime_publication_payload": publication_payload,
+        },
+    )
+
+    readiness_snapshots: list[list[dict[str, object]]] = []
+    with patch(
+        "apps.intercompany_pools.pool_domain_steps.is_pool_master_data_gate_enabled",
+        return_value=True,
+    ):
+        for _ in range(2):
+            with pytest.raises(ValueError, match="MASTER_DATA_BINDING_CONFLICT"):
+                execute_pool_runtime_step(
+                    operation_type="pool.master_data_gate",
+                    rendered_data={"pool_runtime": {"step_id": "master_data_gate"}},
+                    context={"pool_run_id": str(run.id)},
+                    execution=execution,
+                )
+            execution.refresh_from_db(fields=["input_context"])
+            blockers = execution.input_context.get(POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY)
+            assert isinstance(blockers, list)
+            readiness_snapshots.append(blockers)
+
+    assert readiness_snapshots[0] == readiness_snapshots[1]
     assert execution.input_context.get("pool_runtime_publication_payload") == publication_payload
 
 

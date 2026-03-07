@@ -980,6 +980,214 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
             {str(db_first.id), str(db_second.id)},
         )
 
+    def test_update_workflow_status_completed_preserves_same_database_attempts_from_atomic_publication_nodes(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        database = Database.objects.create(
+            tenant=tenant,
+            name=f"projection-atomic-shared-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/atomic-shared.odata",
+            username="admin",
+            password="secret",
+        )
+
+        payload = {
+            "execution_id": str(execution.id),
+            "status": "completed",
+            "result": {
+                "node_results": {
+                    "publication_odata__chain_1": {
+                        "step": "publication_odata",
+                        "pool_run_id": str(run.id),
+                        "status": "published",
+                        "entity_name": "Document_Sales",
+                        "documents_targets": 1,
+                        "succeeded_targets": 1,
+                        "failed_targets": 0,
+                        "max_attempts": 1,
+                        "target_databases": [str(database.id)],
+                        "documents_count_by_database": {str(database.id): 1},
+                        "attempts": [
+                            {
+                                "target_database": str(database.id),
+                                "attempt_number": 1,
+                                "status": "success",
+                                "documents_count": 1,
+                                "posted": True,
+                                "request_summary": {"documents_count": 1},
+                                "response_summary": {"posted": True, "chain": "chain_1"},
+                            }
+                        ],
+                    },
+                    "publication_odata__chain_2": {
+                        "step": "publication_odata",
+                        "pool_run_id": str(run.id),
+                        "status": "published",
+                        "entity_name": "Document_Invoice",
+                        "documents_targets": 1,
+                        "succeeded_targets": 1,
+                        "failed_targets": 0,
+                        "max_attempts": 1,
+                        "target_databases": [str(database.id)],
+                        "documents_count_by_database": {str(database.id): 1},
+                        "attempts": [
+                            {
+                                "target_database": str(database.id),
+                                "attempt_number": 1,
+                                "status": "success",
+                                "documents_count": 1,
+                                "posted": True,
+                                "request_summary": {"documents_count": 1},
+                                "response_summary": {"posted": True, "chain": "chain_2"},
+                            }
+                        ],
+                    },
+                }
+            },
+        }
+
+        first_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            payload,
+            format="json",
+        )
+        second_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(second_response.status_code, status.HTTP_200_OK)
+
+        run.refresh_from_db(fields=["publication_summary"])
+        self.assertEqual(run.publication_summary.get("total_targets"), 1)
+        self.assertEqual(run.publication_summary.get("succeeded_targets"), 1)
+        self.assertEqual(run.publication_summary.get("failed_targets"), 0)
+
+        projected_attempts = list(
+            PoolPublicationAttempt.objects.filter(run=run, target_database=database).order_by("attempt_number")
+        )
+        self.assertEqual([item.attempt_number for item in projected_attempts], [1, 2])
+        self.assertEqual(
+            [item.entity_name for item in projected_attempts],
+            ["Document_Sales", "Document_Invoice"],
+        )
+        self.assertEqual(
+            [item.response_summary.get("chain") for item in projected_attempts],
+            ["chain_1", "chain_2"],
+        )
+        self.assertTrue(
+            all(item.identity_strategy == "workflow_projection" for item in projected_attempts)
+        )
+
+    def test_update_workflow_status_completed_keeps_historical_attempts_when_atomic_nodes_share_database(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        database = Database.objects.create(
+            tenant=tenant,
+            name=f"projection-atomic-history-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/atomic-history.odata",
+            username="admin",
+            password="secret",
+        )
+        PoolPublicationAttempt.objects.create(
+            run=run,
+            tenant=tenant,
+            target_database=database,
+            attempt_number=1,
+            status=PoolPublicationAttemptStatus.FAILED,
+            entity_name="Document_Legacy",
+            documents_count=1,
+            external_document_identity="legacy-attempt",
+            identity_strategy="legacy_projection",
+            posted=False,
+            request_summary={"documents_count": 1},
+            response_summary={"posted": False, "chain": "legacy"},
+        )
+
+        payload = {
+            "execution_id": str(execution.id),
+            "status": "completed",
+            "result": {
+                "node_results": {
+                    "publication_odata__chain_1": {
+                        "step": "publication_odata",
+                        "pool_run_id": str(run.id),
+                        "status": "published",
+                        "entity_name": "Document_Sales",
+                        "documents_targets": 1,
+                        "succeeded_targets": 1,
+                        "failed_targets": 0,
+                        "max_attempts": 1,
+                        "target_databases": [str(database.id)],
+                        "documents_count_by_database": {str(database.id): 1},
+                        "attempts": [
+                            {
+                                "target_database": str(database.id),
+                                "attempt_number": 1,
+                                "status": "success",
+                                "documents_count": 1,
+                                "posted": True,
+                                "request_summary": {"documents_count": 1},
+                                "response_summary": {"posted": True, "chain": "chain_1"},
+                            }
+                        ],
+                    },
+                    "publication_odata__chain_2": {
+                        "step": "publication_odata",
+                        "pool_run_id": str(run.id),
+                        "status": "published",
+                        "entity_name": "Document_Invoice",
+                        "documents_targets": 1,
+                        "succeeded_targets": 1,
+                        "failed_targets": 0,
+                        "max_attempts": 1,
+                        "target_databases": [str(database.id)],
+                        "documents_count_by_database": {str(database.id): 1},
+                        "attempts": [
+                            {
+                                "target_database": str(database.id),
+                                "attempt_number": 1,
+                                "status": "success",
+                                "documents_count": 1,
+                                "posted": True,
+                                "request_summary": {"documents_count": 1},
+                                "response_summary": {"posted": True, "chain": "chain_2"},
+                            }
+                        ],
+                    },
+                }
+            },
+        }
+
+        first_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            payload,
+            format="json",
+        )
+        second_response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(second_response.status_code, status.HTTP_200_OK)
+
+        projected_attempts = list(
+            PoolPublicationAttempt.objects.filter(run=run, target_database=database).order_by("attempt_number")
+        )
+        self.assertEqual([item.attempt_number for item in projected_attempts], [1, 2, 3])
+        self.assertEqual(
+            [item.response_summary.get("chain") for item in projected_attempts],
+            ["legacy", "chain_1", "chain_2"],
+        )
+        self.assertEqual(
+            [item.identity_strategy for item in projected_attempts],
+            ["legacy_projection", "workflow_projection", "workflow_projection"],
+        )
+
     def test_update_workflow_status_completed_replay_reconciles_publication_state_from_persisted_attempts(self):
         tenant, run, execution, _ = self._create_pool_runtime_fixture()
         database = Database.objects.create(

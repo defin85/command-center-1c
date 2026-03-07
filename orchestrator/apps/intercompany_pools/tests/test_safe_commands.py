@@ -253,6 +253,63 @@ def test_safe_commands_confirm_returns_readiness_blocked_conflict_without_outbox
 
 
 @pytest.mark.django_db
+def test_safe_commands_readiness_blocked_conflict_replay_preserves_same_snapshot() -> None:
+    blockers = [
+        {
+            "code": "MASTER_DATA_BINDING_CONFLICT",
+            "detail": "Canonical master-data entity does not provide ib_ref_key for the target database binding scope.",
+            "kind": "binding_source_missing",
+            "entity_name": "party",
+            "field_or_table_path": "party-without-refs",
+            "database_id": "11111111-1111-1111-1111-111111111111",
+            "diagnostic": {
+                "canonical_id": "party-without-refs",
+                "token": "master_data.party.party-without-refs.counterparty.ref",
+                "scope_hint": "counterparty",
+            },
+        },
+        {
+            "code": "MASTER_DATA_ENTITY_NOT_FOUND",
+            "detail": "Canonical master-data entity is missing for the publication target binding scope.",
+            "kind": "canonical_entity_missing",
+            "entity_name": "party",
+            "field_or_table_path": "missing-party",
+            "database_id": "22222222-2222-2222-2222-222222222222",
+            "diagnostic": {
+                "canonical_id": "missing-party",
+                "token": "master_data.party.missing-party.counterparty.ref",
+                "scope_hint": "counterparty",
+            },
+        },
+    ]
+    run = _create_safe_run_with_awaiting_approval_execution(
+        input_context_overrides={"pool_runtime_readiness_blockers": blockers}
+    )
+
+    first = process_pool_run_safe_command(
+        run_id=run.id,
+        command_type=PoolRunCommandType.CONFIRM_PUBLICATION,
+        idempotency_key="confirm-readiness-blocked-replay",
+    )
+    replay = process_pool_run_safe_command(
+        run_id=run.id,
+        command_type=PoolRunCommandType.CONFIRM_PUBLICATION,
+        idempotency_key="confirm-readiness-blocked-replay",
+    )
+
+    assert first.response_status_code == 409
+    assert first.result_class == PoolRunCommandResultClass.CONFLICT
+    assert first.conflict_reason == CONFLICT_REASON_READINESS_BLOCKED
+    assert replay.replayed is True
+    assert replay.response_status_code == 409
+    assert replay.result_class == PoolRunCommandResultClass.CONFLICT
+    assert replay.conflict_reason == CONFLICT_REASON_READINESS_BLOCKED
+    assert replay.response_snapshot == first.response_snapshot
+    assert replay.response_snapshot["readiness_blockers"] == blockers
+    assert PoolRunCommandOutbox.objects.filter(run=run).count() == 0
+
+
+@pytest.mark.django_db
 def test_safe_commands_variant_a_atomicity_rolls_back_command_log_when_outbox_write_fails() -> None:
     run = _create_safe_run_with_awaiting_approval_execution()
     execution = WorkflowExecution.objects.get(id=run.workflow_execution_id)

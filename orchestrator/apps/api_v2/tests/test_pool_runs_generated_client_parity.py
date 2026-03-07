@@ -58,6 +58,7 @@ def test_generated_models_cover_contract_pool_runs_schemas() -> None:
         "PoolPublicationAttempt": "poolPublicationAttempt.ts",
         "PoolRunReadinessCheck": "poolRunReadinessCheck.ts",
         "PoolRunReadinessChecklist": "poolRunReadinessChecklist.ts",
+        "PoolRunConfirmPublicationReadinessProblemDetails": "poolRunConfirmPublicationReadinessProblemDetails.ts",
         "PoolRunSafeCommandResponse": "poolRunSafeCommandResponse.ts",
         "PoolRunSafeCommandConflict": "poolRunSafeCommandConflict.ts",
         "PoolRunProvenance": "poolRunProvenance.ts",
@@ -93,8 +94,8 @@ def test_generated_retry_chain_attempt_kind_enum_matches_contract() -> None:
         / "poolRunRetryChainAttemptAttemptKind.ts"
     )
     enum_content = enum_path.read_text(encoding="utf-8")
-    assert 'initial: "initial"' in enum_content
-    assert 'retry: "retry"' in enum_content
+    assert re.search(r"initial:\s*['\"]initial['\"]", enum_content)
+    assert re.search(r"retry:\s*['\"]retry['\"]", enum_content)
 
 
 def test_generated_models_cover_graph_metadata_fields_from_contract() -> None:
@@ -113,3 +114,16 @@ def test_generated_models_cover_graph_metadata_fields_from_contract() -> None:
 
         generated_fields = _generated_model_fields(model_file)
         assert "metadata" in generated_fields, f"{schema_name}.metadata missing in generated {model_file}"
+
+
+def test_generated_confirm_publication_error_alias_uses_readiness_problem_details_model() -> None:
+    generated_v2_path = _repo_root() / "frontend" / "src" / "api" / "generated" / "v2" / "v2.ts"
+    content = generated_v2_path.read_text(encoding="utf-8")
+
+    assert re.search(r"import type \{ ErrorType \} from ['\"]\.\./\.\./mutator['\"]", content)
+    assert re.search(
+        r"import type \{ PoolRunConfirmPublicationReadinessProblemDetails \} from ['\"]\.\./model/poolRunConfirmPublicationReadinessProblemDetails['\"]",
+        content,
+    )
+    assert re.search(r"export type PostPoolsRunsConfirmPublicationError = ErrorType<", content)
+    assert "PoolRunConfirmPublicationReadinessProblemDetails" in content

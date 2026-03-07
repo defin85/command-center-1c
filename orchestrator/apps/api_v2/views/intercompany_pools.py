@@ -1806,6 +1806,15 @@ class PoolRunReadinessBlockerSerializer(serializers.Serializer):
     diagnostic = serializers.JSONField(required=False, allow_null=True)
 
 
+class PoolRunConfirmPublicationReadinessProblemDetailsSerializer(serializers.Serializer):
+    type = serializers.CharField(default="about:blank")
+    title = serializers.CharField()
+    status = serializers.IntegerField()
+    detail = serializers.CharField()
+    code = serializers.CharField()
+    errors = PoolRunReadinessBlockerSerializer(many=True, required=False, default=list)
+
+
 class PoolRunReadinessCheckSerializer(serializers.Serializer):
     code = serializers.ChoiceField(choices=list(READINESS_CHECK_CODES))
     status = serializers.ChoiceField(choices=[READINESS_STATUS_READY, READINESS_STATUS_NOT_READY])
@@ -3896,7 +3905,7 @@ def _handle_pool_run_safe_command(
         401: OpenApiResponse(description="Unauthorized"),
         404: ErrorResponseSerializer,
         (409, "application/json"): PoolRunSafeCommandConflictSerializer,
-        (409, "application/problem+json"): ProblemDetailsErrorSerializer,
+        (409, "application/problem+json"): PoolRunConfirmPublicationReadinessProblemDetailsSerializer,
     },
 )
 @api_view(["POST"])

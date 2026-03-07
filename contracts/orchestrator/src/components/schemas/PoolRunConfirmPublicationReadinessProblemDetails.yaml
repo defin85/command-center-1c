@@ -1,0 +1,28 @@
+type: object
+description: >-
+  RFC 7807 problem details payload returned by confirm-publication when
+  readiness blockers still prevent safe publication.
+properties:
+  type:
+    type: string
+    default: about:blank
+  title:
+    type: string
+  status:
+    type: integer
+  detail:
+    type: string
+  code:
+    type: string
+    enum:
+      - POOL_RUN_READINESS_BLOCKED
+  errors:
+    type: array
+    items:
+      $ref: ./PoolRunReadinessBlocker.yaml
+required:
+  - code
+  - detail
+  - status
+  - title
+  - type

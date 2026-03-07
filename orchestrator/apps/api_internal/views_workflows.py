@@ -5,7 +5,7 @@ from collections.abc import Mapping
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import F, Max
+from django.db.models import F
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 from rest_framework import status
@@ -44,6 +44,8 @@ ERROR_DETAILS_REDACTED_VALUE = "***REDACTED***"
 ERROR_DETAILS_MAX_DEPTH = 4
 ERROR_DETAILS_MAX_LIST_ITEMS = 32
 ERROR_DETAILS_MAX_STRING_LENGTH = 2048
+WORKFLOW_PROJECTION_IDENTITY_STRATEGY = "workflow_projection"
+WORKFLOW_PROJECTION_IDENTITY_PREFIX = "wfproj"
 ERROR_DETAILS_ALLOWED_TOP_LEVEL_KEYS = {
     "http_status",
     "attempts",
@@ -574,22 +576,33 @@ def _extract_publication_result_payload(result_payload: object) -> dict[str, obj
 
 
 def _extract_publication_result_payloads(result_payload: object) -> list[dict[str, object]]:
-    def _normalize_candidate(candidate: object) -> dict[str, object] | None:
+    def _normalize_candidate(
+        candidate: object,
+        *,
+        projection_key: str = "",
+    ) -> dict[str, object] | None:
         if not isinstance(candidate, Mapping):
             return None
         if str(candidate.get("step") or "").strip().lower() == "publication_odata":
-            return dict(candidate)
+            normalized = dict(candidate)
+            normalized["_projection_key"] = projection_key
+            return normalized
         nested_output = candidate.get("output")
         if isinstance(nested_output, Mapping):
             if str(nested_output.get("step") or "").strip().lower() == "publication_odata":
-                return dict(nested_output)
+                normalized = dict(nested_output)
+                normalized["_projection_key"] = projection_key
+                return normalized
         return None
 
     if not isinstance(result_payload, Mapping):
         return []
 
     normalized_results: list[dict[str, object]] = []
-    direct = _normalize_candidate(result_payload)
+    direct = _normalize_candidate(
+        result_payload,
+        projection_key=str(result_payload.get("node_id") or "").strip(),
+    )
     if direct is not None:
         normalized_results.append(direct)
 
@@ -597,11 +610,11 @@ def _extract_publication_result_payloads(result_payload: object) -> list[dict[st
         container = result_payload.get(container_key)
         if not isinstance(container, Mapping):
             continue
-        direct_candidate = _normalize_candidate(container.get("publication_odata"))
-        if direct_candidate is not None:
-            normalized_results.append(direct_candidate)
-        for candidate in container.values():
-            normalized = _normalize_candidate(candidate)
+        for node_key, candidate in container.items():
+            normalized = _normalize_candidate(
+                candidate,
+                projection_key=str(node_key or "").strip(),
+            )
             if normalized is not None:
                 normalized_results.append(normalized)
     return normalized_results
@@ -612,12 +625,13 @@ def _normalize_publication_attempt_rows(
     raw_attempts: object,
     entity_name: str,
     documents_count_by_database: dict[str, int],
+    projection_key: str,
 ) -> list[dict[str, object]]:
     if not isinstance(raw_attempts, list):
         return []
 
     normalized: list[dict[str, object]] = []
-    for raw_attempt in raw_attempts:
+    for raw_index, raw_attempt in enumerate(raw_attempts):
         if not isinstance(raw_attempt, Mapping):
             continue
         target_database = str(
@@ -631,6 +645,7 @@ def _normalize_publication_attempt_rows(
 
         raw_status = str(raw_attempt.get("status") or "").strip().lower()
         status_value = "success" if raw_status == "success" else "failed"
+        local_attempt_number = _parse_positive_int(raw_attempt.get("attempt_number"), default=1)
         default_documents_count = max(int(documents_count_by_database.get(target_database) or 0), 1)
         documents_count = _parse_positive_int(
             raw_attempt.get("documents_count"),
@@ -660,7 +675,7 @@ def _normalize_publication_attempt_rows(
         normalized.append(
             {
                 "target_database": target_database,
-                "attempt_number": _parse_positive_int(raw_attempt.get("attempt_number"), default=1),
+                "attempt_number": local_attempt_number,
                 "status": status_value,
                 "entity_name": str(raw_attempt.get("entity_name") or "").strip() or entity_name,
                 "documents_count": documents_count,
@@ -670,6 +685,8 @@ def _normalize_publication_attempt_rows(
                 "http_status": http_status,
                 "request_summary": dict(request_summary),
                 "response_summary": dict(response_summary),
+                "_projection_key": projection_key,
+                "_projection_attempt_key": f"{projection_key}:{local_attempt_number}:{raw_index}",
             }
         )
     return normalized
@@ -683,6 +700,7 @@ def _synthesize_publication_attempt_rows(
     failed_databases: dict[str, str],
     failed_databases_diagnostics: dict[str, dict[str, object]],
     max_attempts: int,
+    projection_key: str,
 ) -> list[dict[str, object]]:
     synthesized: list[dict[str, object]] = []
     for database_id in target_databases:
@@ -730,9 +748,32 @@ def _synthesize_publication_attempt_rows(
                     "http_status": http_status,
                     "request_summary": {"documents_count": documents_count},
                     "response_summary": {"posted": not is_failed},
+                    "_projection_key": projection_key,
+                    "_projection_attempt_key": (
+                        f"{projection_key}:synthetic:{database_id}:{attempt_number}"
+                    ),
                 }
             )
     return synthesized
+
+
+def _build_publication_projection_identity(
+    *,
+    execution_id: str,
+    database_id: str,
+    projection_key: str,
+    projection_attempt_key: str,
+) -> str:
+    raw = "|".join(
+        [
+            str(execution_id or "").strip(),
+            str(database_id or "").strip(),
+            str(projection_key or "").strip(),
+            str(projection_attempt_key or "").strip(),
+        ]
+    )
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+    return f"{WORKFLOW_PROJECTION_IDENTITY_PREFIX}:{execution_id}:{digest}"
 
 
 def _project_pool_publication_attempts_from_result(*, execution, result_payload: object) -> None:
@@ -797,6 +838,11 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
     entity_name = "Document_РеализацияТоваровУслуг"
     max_attempts = 1
 
+    publication_results = sorted(
+        publication_results,
+        key=lambda item: str(item.get("_projection_key") or ""),
+    )
+
     for publication_result in publication_results:
         raw_targets = publication_result.get("target_databases")
         if isinstance(raw_targets, list):
@@ -845,11 +891,13 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
             max_attempts,
             _parse_positive_int(publication_result.get("max_attempts"), default=1),
         )
+        projection_key = str(publication_result.get("_projection_key") or "").strip()
 
         normalized_attempt_rows = _normalize_publication_attempt_rows(
             raw_attempts=publication_result.get("attempts"),
             entity_name=entity_name,
             documents_count_by_database=documents_count_by_database,
+            projection_key=projection_key,
         )
         if not normalized_attempt_rows and target_databases:
             normalized_attempt_rows = _synthesize_publication_attempt_rows(
@@ -859,6 +907,7 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
                 failed_databases=failed_databases,
                 failed_databases_diagnostics=failed_databases_diagnostics,
                 max_attempts=max_attempts,
+                projection_key=projection_key,
             )
         attempt_rows.extend(normalized_attempt_rows)
 
@@ -889,20 +938,86 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
     }
 
     if attempt_rows:
-        existing_attempts = (
+        projected_attempt_rows: list[dict[str, object]] = []
+        projection_identities_by_database: dict[str, set[str]] = {}
+        for row in attempt_rows:
+            database_id = str(row.get("target_database") or "").strip()
+            if not database_id:
+                continue
+            projection_key = str(row.get("_projection_key") or "").strip()
+            projection_attempt_key = str(row.get("_projection_attempt_key") or "").strip()
+            projection_identity = _build_publication_projection_identity(
+                execution_id=str(execution.id),
+                database_id=database_id,
+                projection_key=projection_key,
+                projection_attempt_key=projection_attempt_key,
+            )
+            projected_row = dict(row)
+            projected_row["_projection_identity"] = projection_identity
+            projected_attempt_rows.append(projected_row)
+            projection_identities_by_database.setdefault(database_id, set()).add(projection_identity)
+
+        projected_database_ids = sorted(
+            {
+                str(row.get("target_database") or "").strip()
+                for row in projected_attempt_rows
+                if str(row.get("target_database") or "").strip() in databases
+            }
+        )
+        existing_attempts = list(
             PoolPublicationAttempt.objects.filter(
                 run=run,
-                target_database_id__in=list(databases.keys()),
+                target_database_id__in=projected_database_ids,
             )
-            .values("target_database_id")
-            .annotate(max_attempt=Max("attempt_number"))
         )
-        attempt_offset_by_database = {
-            str(item["target_database_id"]): int(item["max_attempt"] or 0)
-            for item in existing_attempts
-        }
+        stale_attempt_ids: list[str] = []
+        existing_attempts_by_identity: dict[tuple[str, str], PoolPublicationAttempt] = {}
+        next_attempt_number_by_database: dict[str, int] = {}
+        current_execution_identity_prefix = (
+            f"{WORKFLOW_PROJECTION_IDENTITY_PREFIX}:{str(execution.id)}:"
+        )
+        for attempt in existing_attempts:
+            database_id = str(attempt.target_database_id)
+            next_attempt_number_by_database[database_id] = max(
+                next_attempt_number_by_database.get(database_id, 0),
+                int(attempt.attempt_number or 0),
+            )
+            if attempt.identity_strategy != WORKFLOW_PROJECTION_IDENTITY_STRATEGY:
+                continue
+            identity = str(attempt.external_document_identity or "").strip()
+            if not identity.startswith(current_execution_identity_prefix):
+                continue
+            if identity in projection_identities_by_database.get(database_id, set()):
+                existing_attempts_by_identity[(database_id, identity)] = attempt
+                next_attempt_number_by_database[database_id] = max(
+                    next_attempt_number_by_database.get(database_id, 0),
+                    int(attempt.attempt_number or 0),
+                )
+                continue
+            stale_attempt_ids.append(str(attempt.id))
 
-        for row in attempt_rows:
+        if stale_attempt_ids:
+            PoolPublicationAttempt.objects.filter(id__in=stale_attempt_ids).delete()
+
+        for database_id, identities in projection_identities_by_database.items():
+            preserved_attempt_numbers = {
+                int(existing_attempts_by_identity[(database_id, identity)].attempt_number or 0)
+                for identity in identities
+                if (database_id, identity) in existing_attempts_by_identity
+            }
+            next_attempt_number_by_database[database_id] = max(
+                (
+                    int(attempt.attempt_number or 0)
+                    for attempt in existing_attempts
+                    if str(attempt.target_database_id) == database_id
+                    and str(attempt.id) not in stale_attempt_ids
+                    and int(attempt.attempt_number or 0) not in preserved_attempt_numbers
+                ),
+                default=0,
+            )
+
+        projection_timestamp = timezone.now()
+        for row in projected_attempt_rows:
             database_id = str(row.get("target_database") or "").strip()
             target_database = databases.get(database_id)
             if target_database is None:
@@ -916,14 +1031,19 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
                 )
                 continue
 
-            local_attempt_number = _parse_positive_int(row.get("attempt_number"), default=1)
-            attempt_number = attempt_offset_by_database.get(database_id, 0) + local_attempt_number
             status_value = str(row.get("status") or "").strip().lower()
             if status_value not in {
                 PoolPublicationAttemptStatus.SUCCESS,
                 PoolPublicationAttemptStatus.FAILED,
             }:
                 status_value = PoolPublicationAttemptStatus.FAILED
+            projection_identity = str(row.get("_projection_identity") or "").strip()
+            existing_attempt = existing_attempts_by_identity.get((database_id, projection_identity))
+            if existing_attempt is not None:
+                attempt_number = int(existing_attempt.attempt_number or 0)
+            else:
+                attempt_number = next_attempt_number_by_database.get(database_id, 0) + 1
+                next_attempt_number_by_database[database_id] = attempt_number
 
             PoolPublicationAttempt.objects.update_or_create(
                 run=run,
@@ -937,14 +1057,16 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
                         row.get("documents_count"),
                         default=1,
                     ),
+                    "external_document_identity": projection_identity,
+                    "identity_strategy": WORKFLOW_PROJECTION_IDENTITY_STRATEGY,
                     "posted": bool(row.get("posted")),
                     "http_status": row.get("http_status"),
                     "error_code": str(row.get("error_code") or "").strip(),
                     "error_message": str(row.get("error_message") or "").strip(),
                     "request_summary": dict(row.get("request_summary") or {}),
                     "response_summary": dict(row.get("response_summary") or {}),
-                    "started_at": timezone.now(),
-                    "finished_at": timezone.now(),
+                    "started_at": projection_timestamp,
+                    "finished_at": projection_timestamp,
                 },
             )
 

@@ -72,6 +72,11 @@ type RetryFormValues = {
   documents_json: string
 }
 
+type MasterDataRemediationTarget = {
+  label: string
+  href: string
+}
+
 const DEFAULT_RETRY_DOCUMENTS_JSON = JSON.stringify(
   {
     "<database_id>": [{ Amount: '100.00' }],
@@ -186,6 +191,14 @@ const MASTER_DATA_GATE_REMEDIATION_HINTS: Record<string, string> = {
   POOL_DOCUMENT_POLICY_MAPPING_INVALID: (
     'Дополните document policy: обязательные поля и табличные части должны присутствовать в completeness profile и mapping.'
   ),
+}
+
+const MASTER_DATA_WORKSPACE_TAB_LABELS: Record<string, string> = {
+  party: 'Party',
+  item: 'Item',
+  contract: 'Contract',
+  'tax-profile': 'TaxProfile',
+  bindings: 'Bindings',
 }
 
 const formatDate = (value: string | null | undefined) => {
@@ -443,6 +456,122 @@ const resolveMasterDataGateHint = (errorCode: string | null): string | null => {
     return null
   }
   return MASTER_DATA_GATE_REMEDIATION_HINTS[errorCode] ?? null
+}
+
+const buildMasterDataWorkspaceHref = ({
+  tab,
+  entityType,
+  canonicalId,
+  databaseId,
+  role,
+}: {
+  tab: string
+  entityType?: string
+  canonicalId?: string
+  databaseId?: string
+  role?: string
+}): string => {
+  const params = new URLSearchParams()
+  params.set('tab', tab)
+  if (entityType) {
+    params.set('entityType', entityType)
+  }
+  if (canonicalId) {
+    params.set('canonicalId', canonicalId)
+  }
+  if (databaseId) {
+    params.set('databaseId', databaseId)
+  }
+  if (role) {
+    params.set('role', role)
+  }
+  return `/pools/master-data?${params.toString()}`
+}
+
+const resolveMasterDataEntityWorkspaceTab = (entityType: string): string | null => {
+  switch (entityType) {
+    case 'organization':
+    case 'party':
+      return 'party'
+    case 'item':
+      return 'item'
+    case 'contract':
+      return 'contract'
+    case 'tax_profile':
+      return 'tax-profile'
+    default:
+      return null
+  }
+}
+
+const normalizeMasterDataBindingEntityType = (entityType: string): string => {
+  if (entityType === 'organization') {
+    return 'party'
+  }
+  return entityType
+}
+
+const resolveMasterDataRemediationTarget = ({
+  code,
+  diagnostic,
+}: {
+  code: string | null
+  diagnostic: unknown
+}): MasterDataRemediationTarget | null => {
+  if (!code || !diagnostic || typeof diagnostic !== 'object' || Array.isArray(diagnostic)) {
+    return null
+  }
+  const payload = diagnostic as Record<string, unknown>
+  const entityType = typeof payload.entity_type === 'string' ? payload.entity_type.trim() : ''
+  const canonicalId = typeof payload.canonical_id === 'string' ? payload.canonical_id.trim() : ''
+  const databaseId = typeof payload.target_database_id === 'string' ? payload.target_database_id.trim() : ''
+
+  if (code === 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING') {
+    return {
+      label: 'Open Bindings workspace',
+      href: buildMasterDataWorkspaceHref({
+        tab: 'bindings',
+        entityType: 'party',
+        canonicalId,
+        databaseId,
+        role: 'organization',
+      }),
+    }
+  }
+
+  if (code === 'MASTER_DATA_BINDING_AMBIGUOUS' || code === 'MASTER_DATA_BINDING_CONFLICT') {
+    return {
+      label: 'Open Bindings workspace',
+      href: buildMasterDataWorkspaceHref({
+        tab: 'bindings',
+        entityType: normalizeMasterDataBindingEntityType(entityType),
+        canonicalId,
+        databaseId,
+      }),
+    }
+  }
+
+  if (code === 'MASTER_DATA_ENTITY_NOT_FOUND') {
+    const tab = resolveMasterDataEntityWorkspaceTab(entityType)
+    if (!tab) {
+      return {
+        label: 'Open Master Data workspace',
+        href: '/pools/master-data',
+      }
+    }
+    return {
+      label: `Open ${MASTER_DATA_WORKSPACE_TAB_LABELS[tab] ?? 'Master Data'} workspace`,
+      href: buildMasterDataWorkspaceHref({
+        tab,
+        entityType,
+        canonicalId,
+        databaseId,
+        role: entityType === 'organization' ? 'organization' : undefined,
+      }),
+    }
+  }
+
+  return null
 }
 
 const buildMasterDataGateContextLines = (
@@ -1221,6 +1350,12 @@ export function PoolRunsPage() {
   const masterDataGateHint = masterDataGate?.error_code
     ? resolveMasterDataGateHint(masterDataGate.error_code)
     : null
+  const masterDataGateRemediationTarget = masterDataGate
+    ? resolveMasterDataRemediationTarget({
+      code: masterDataGate.error_code,
+      diagnostic: masterDataGate.diagnostic,
+    })
+    : null
   const masterDataGateContextLines = masterDataGate
     ? buildMasterDataGateContextLines(masterDataGate)
     : []
@@ -1281,7 +1416,7 @@ export function PoolRunsPage() {
             onChange={(event) => setGraphDate(event.target.value)}
             style={{ width: 180 }}
           />
-          <Button onClick={() => { void loadGraph(); void loadRuns() }} loading={loadingGraph || loadingRuns}>
+          <Button onClick={() => { void loadGraph(); void loadRuns(); void loadReport() }} loading={loadingGraph || loadingRuns || loadingReport}>
             Refresh Data
           </Button>
         </Space>
@@ -1563,6 +1698,15 @@ export function PoolRunsPage() {
                                 description={masterDataGateHint}
                               />
                             )}
+                            {masterDataGateRemediationTarget && (
+                              <Button
+                                type="link"
+                                href={masterDataGateRemediationTarget.href}
+                                style={{ paddingInline: 0 }}
+                              >
+                                {masterDataGateRemediationTarget.label}
+                              </Button>
+                            )}
                             {masterDataGateContextLines.length > 0 && (
                               <Space direction="vertical" size={0}>
                                 <Text strong>Diagnostic Context</Text>
@@ -1604,6 +1748,10 @@ export function PoolRunsPage() {
                                     check.blockers.map((blocker, index) => {
                                       const contextLines = buildReadinessBlockerContextLines(blocker)
                                       const hint = resolveReadinessBlockerHint(blocker)
+                                      const remediationTarget = resolveMasterDataRemediationTarget({
+                                        code: typeof blocker.code === 'string' ? blocker.code : null,
+                                        diagnostic: blocker.diagnostic,
+                                      })
                                       const title = blocker.code || blocker.kind || `${check.code}_${index + 1}`
 
                                       return (
@@ -1614,6 +1762,15 @@ export function PoolRunsPage() {
                                             <Text key={line} code>{line}</Text>
                                           ))}
                                           {hint ? <Text type="secondary">{hint}</Text> : null}
+                                          {remediationTarget ? (
+                                            <Button
+                                              type="link"
+                                              href={remediationTarget.href}
+                                              style={{ paddingInline: 0 }}
+                                            >
+                                              {remediationTarget.label}
+                                            </Button>
+                                          ) : null}
                                         </Space>
                                       )
                                     })

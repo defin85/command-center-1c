@@ -2778,6 +2778,226 @@ def test_top_down_pool_run_read_model_projects_publication_attempts_and_verifica
 
 
 @pytest.mark.django_db
+@override_settings(INTERNAL_API_TOKEN="test-internal-token")
+def test_top_down_pool_run_read_model_projects_failed_verification_after_internal_completion(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    database = _attach_pool_target_database(
+        tenant=default_tenant,
+        pool=pool,
+        period_start=date(2026, 1, 1),
+    )
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=user,
+        ib_username="actor-top-down",
+        ib_password="actor-pass",
+        is_service=False,
+    )
+    _create_service_infobase_mapping(
+        database=database,
+        username="svc-top-down",
+        password="svc-pass",
+    )
+
+    class _Response:
+        status_code = 200
+
+        def json(self) -> dict[str, object]:
+            return {
+                "Ref_Key": "sale-ref-001",
+                "ВидОперации": "Услуги",
+                "СуммаДокумента": "12956834.00",
+                "Услуги": [],
+            }
+
+    class _FakeAdapter:
+        def __init__(
+            self,
+            *,
+            base_url: str,
+            username: str,
+            password: str,
+            timeout: int | None = None,
+            verify_tls: bool = True,
+        ) -> None:
+            self.base_url = base_url
+            self.username = username
+            self.password = password
+            self.timeout = timeout
+            self.verify_tls = verify_tls
+
+        def fetch_document(self, *, entity_name: str, entity_id: str) -> _Response:
+            assert entity_name == "Document_РеализацияТоваровУслуг"
+            assert entity_id == "guid'sale-ref-001'"
+            return _Response()
+
+        def __enter__(self) -> "_FakeAdapter":
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+            return None
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="op-top-down-failed-verify", status="queued"),
+    ):
+        create_response = authenticated_client.post(
+            "/api/v2/pools/runs/",
+            {
+                "pool_id": str(pool.id),
+                "direction": PoolRunDirection.TOP_DOWN,
+                "period_start": "2026-01-01",
+                "period_end": "2026-01-31",
+                "run_input": {"starting_amount": "12956834.00"},
+                "mode": PoolRunMode.UNSAFE,
+            },
+            format="json",
+        )
+
+    assert create_response.status_code == 201
+    create_payload = create_response.json()
+    run_id = create_payload["run"]["id"]
+    execution_id = create_payload["run"]["workflow_execution_id"]
+    assert execution_id is not None
+
+    execution = WorkflowExecution.objects.get(id=execution_id)
+    internal_client = APIClient()
+    internal_client.credentials(HTTP_X_INTERNAL_TOKEN="test-internal-token")
+
+    document_plan_artifact = {
+        "targets": [
+            {
+                "database_id": str(database.id),
+                "chains": [
+                    {
+                        "documents": [
+                            {
+                                "entity_name": "Document_РеализацияТоваровУслуг",
+                                "idempotency_key": "realization-uslugi-1",
+                                "completeness_requirements": {
+                                    "required_fields": [
+                                        "ВидОперации",
+                                        "СуммаДокумента",
+                                    ],
+                                    "required_table_parts": {
+                                        "Услуги": {
+                                            "min_rows": 1,
+                                            "required_fields": [
+                                                "Номенклатура_Key",
+                                                "Содержание",
+                                                "Количество",
+                                                "Цена",
+                                                "Сумма",
+                                                "СтавкаНДС",
+                                                "СуммаНДС",
+                                            ],
+                                        }
+                                    },
+                                },
+                            }
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+
+    patch_response = internal_client.patch(
+        f"/api/v2/internal/workflow-executions/{execution.id}/",
+        {
+            "input_data": {
+                **(execution.input_context or {}),
+                "pool_runtime_document_plan_artifact": document_plan_artifact,
+            }
+        },
+        format="json",
+    )
+    assert patch_response.status_code == 200
+
+    with patch(
+        "apps.intercompany_pools.publication_verification.ODataDocumentAdapter",
+        _FakeAdapter,
+    ):
+        complete_response = internal_client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "completed",
+                "result": {
+                    "node_results": {
+                        "publication_odata__chain_1": {
+                            "step": "publication_odata",
+                            "pool_run_id": str(run_id),
+                            "entity_name": "Document_РеализацияТоваровУслуг",
+                            "target_databases": [str(database.id)],
+                            "documents_count_by_database": {str(database.id): 1},
+                            "attempts": [
+                                {
+                                    "target_database": str(database.id),
+                                    "attempt_number": 1,
+                                    "status": "success",
+                                    "entity_name": "Document_РеализацияТоваровУслуг",
+                                    "documents_count": 1,
+                                    "posted": True,
+                                    "request_summary": {"documents_count": 1},
+                                    "response_summary": {
+                                        "posted": True,
+                                        "successful_document_refs": {
+                                            "realization-uslugi-1": "sale-ref-001",
+                                        },
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                },
+            },
+            format="json",
+        )
+
+    assert complete_response.status_code == 200
+    execution = WorkflowExecution.objects.get(id=execution.id)
+    verification = execution.input_context.get("pool_runtime_verification")
+    assert verification == {
+        "status": "failed",
+        "summary": {
+            "checked_targets": 1,
+            "verified_documents": 1,
+            "mismatches_count": 1,
+            "mismatches": [
+                {
+                    "database_id": str(database.id),
+                    "entity_name": "Document_РеализацияТоваровУслуг",
+                    "document_idempotency_key": "realization-uslugi-1",
+                    "field_or_table_path": "Услуги",
+                    "kind": "missing_table_part",
+                }
+            ],
+        },
+    }
+
+    run = PoolRun.objects.get(id=run_id)
+    details_response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert details_response.status_code == 200
+    details_payload = details_response.json()
+    assert details_payload["run"]["status"] == PoolRun.STATUS_PUBLISHED
+    assert details_payload["run"]["verification_status"] == "failed"
+    assert details_payload["run"]["verification_summary"] == verification["summary"]
+
+    report_response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/report/")
+    assert report_response.status_code == 200
+    report_payload = report_response.json()
+    assert report_payload["run"]["status"] == PoolRun.STATUS_PUBLISHED
+    assert report_payload["run"]["verification_status"] == "failed"
+    assert report_payload["run"]["verification_summary"] == verification["summary"]
+    assert report_payload["publication_attempts"] == details_payload["publication_attempts"]
+
+
+@pytest.mark.django_db
 def test_get_pool_run_and_report_include_readiness_and_verification_read_model(
     authenticated_client: APIClient,
     default_tenant: Tenant,

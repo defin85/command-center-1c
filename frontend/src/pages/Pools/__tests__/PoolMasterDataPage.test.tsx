@@ -100,7 +100,8 @@ vi.mock('../../../api/intercompanyPools', () => ({
     mockRetryFailedPoolMasterDataBootstrapImportChunks(...args),
 }))
 
-function renderPage() {
+function renderPage(path = '/pools/master-data') {
+  window.history.pushState({}, '', path)
   return render(
     <AntApp>
       <PoolMasterDataPage />
@@ -251,6 +252,19 @@ describe('PoolMasterDataPage', () => {
     await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
     await waitFor(() => expect(mockListMasterDataSyncConflicts).toHaveBeenCalled())
   }, 15000)
+
+  it('opens remediation target tab from query params and shows remediation context', async () => {
+    renderPage('/pools/master-data?tab=bindings&entityType=organization&canonicalId=party-1&databaseId=db-1&role=organization')
+
+    expect(await screen.findByText('Pool Master Data')).toBeInTheDocument()
+    await waitFor(() => expect(mockListMasterDataBindings).toHaveBeenCalled())
+    expect(screen.getByTestId('pool-master-data-remediation-context')).toHaveTextContent(
+      'entity_type=organization canonical_id=party-1 database_id=db-1'
+    )
+    expect(screen.getByTestId('pool-master-data-remediation-context')).toHaveTextContent(
+      'role=organization'
+    )
+  })
 
   it('blocks Party save when no role is selected', async () => {
     const user = userEvent.setup()

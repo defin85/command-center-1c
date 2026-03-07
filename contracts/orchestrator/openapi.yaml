@@ -6691,7 +6691,7 @@ paths:
                 $ref: '#/components/schemas/PoolRunSafeCommandConflict'
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetailsError'
+                $ref: '#/components/schemas/PoolRunConfirmPublicationReadinessProblemDetails'
           description: ''
   /api/v2/pools/runs/{run_id}/report/:
     get:
@@ -17638,6 +17638,33 @@ components:
         - retryable
         - run_id
         - success
+    PoolRunConfirmPublicationReadinessProblemDetails:
+      type: object
+      description: RFC 7807 problem details payload returned by confirm-publication when readiness blockers still prevent safe publication.
+      properties:
+        type:
+          type: string
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        code:
+          type: string
+          enum:
+            - POOL_RUN_READINESS_BLOCKED
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolRunReadinessBlocker'
+      required:
+        - code
+        - detail
+        - status
+        - title
+        - type
     PoolRunReportResponse:
       type: object
       properties:
