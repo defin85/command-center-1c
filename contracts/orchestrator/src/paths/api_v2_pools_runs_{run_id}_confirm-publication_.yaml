@@ -54,4 +54,7 @@ post:
         application/json:
           schema:
             $ref: ../components/schemas/PoolRunSafeCommandConflict.yaml
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
       description: ''

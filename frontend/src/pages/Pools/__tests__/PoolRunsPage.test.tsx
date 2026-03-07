@@ -4,7 +4,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 
-import type { PoolRun, PoolRunReport } from '../../../api/intercompanyPools'
+import type {
+  PoolRun,
+  PoolRunReadinessBlocker,
+  PoolRunReadinessChecklist,
+  PoolRunReport,
+} from '../../../api/intercompanyPools'
 import { PoolRunsPage } from '../PoolRunsPage'
 
 const mockListOrganizationPools = vi.fn()
@@ -69,6 +74,7 @@ function buildRun(overrides: Partial<PoolRun> = {}): PoolRun {
     approval_state: 'awaiting_approval',
     publication_step_state: 'not_enqueued',
     readiness_blockers: [],
+    readiness_checklist: buildReadinessChecklist({ status: 'ready' }),
     verification_status: 'not_verified',
     verification_summary: null,
     terminal_reason: null,
@@ -103,6 +109,50 @@ function buildRun(overrides: Partial<PoolRun> = {}): PoolRun {
     publishing_started_at: null,
     completed_at: null,
     ...overrides,
+  }
+}
+
+function buildReadinessChecklist({
+  status = 'ready',
+  readinessBlockers = [],
+}: {
+  status?: 'ready' | 'not_ready'
+  readinessBlockers?: PoolRunReadinessBlocker[]
+} = {}): PoolRunReadinessChecklist {
+  const blockerCodes = Array.from(new Set(
+    readinessBlockers
+      .map((item) => (typeof item.code === 'string' ? item.code : null))
+      .filter((item): item is string => Boolean(item))
+  ))
+
+  return {
+    status,
+    checks: [
+      {
+        code: 'master_data_coverage',
+        status: 'ready',
+        blocker_codes: [],
+        blockers: [],
+      },
+      {
+        code: 'organization_party_bindings',
+        status: 'ready',
+        blocker_codes: [],
+        blockers: [],
+      },
+      {
+        code: 'policy_completeness',
+        status: status === 'not_ready' ? 'not_ready' : 'ready',
+        blocker_codes: status === 'not_ready' ? blockerCodes : [],
+        blockers: status === 'not_ready' ? readinessBlockers : [],
+      },
+      {
+        code: 'odata_verify_readiness',
+        status: 'ready',
+        blocker_codes: [],
+        blockers: [],
+      },
+    ],
   }
 }
 
@@ -526,15 +576,20 @@ describe('PoolRunsPage', () => {
 
   it('renders readiness blockers and verification mismatch summary', async () => {
     const user = userEvent.setup()
+    const readinessBlockers: PoolRunReadinessBlocker[] = [
+      {
+        code: 'POOL_DOCUMENT_POLICY_MAPPING_INVALID',
+        detail: 'Document policy is incomplete for minimal_documents_full_payload.',
+        entity_name: 'Document_Sales',
+        field_or_table_path: 'Goods',
+      },
+    ]
     const run = buildRun({
-      readiness_blockers: [
-        {
-          code: 'POOL_DOCUMENT_POLICY_MAPPING_INVALID',
-          detail: 'Document policy is incomplete for minimal_documents_full_payload.',
-          entity_name: 'Document_Sales',
-          field_or_table_path: 'Goods',
-        },
-      ],
+      readiness_blockers: readinessBlockers,
+      readiness_checklist: buildReadinessChecklist({
+        status: 'not_ready',
+        readinessBlockers,
+      }),
       verification_status: 'failed',
       verification_summary: {
         checked_targets: 1,
@@ -558,8 +613,10 @@ describe('PoolRunsPage', () => {
 
     await openRunsStage(user, 'Inspect')
     expect(await screen.findByText('Readiness Checklist')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-runs-readiness-status')).toHaveTextContent('status: not_ready')
     expect(screen.getByText('POOL_DOCUMENT_POLICY_MAPPING_INVALID')).toBeInTheDocument()
     expect(screen.getByText('entity=Document_Sales path=Goods')).toBeInTheDocument()
+    expect(screen.getByText('Policy completeness')).toBeInTheDocument()
     expect(
       screen.getByText(
         'Дополните document policy: обязательные поля и табличные части должны присутствовать в completeness profile и mapping.'
@@ -576,13 +633,18 @@ describe('PoolRunsPage', () => {
 
   it('disables confirm when readiness blockers are present', async () => {
     const user = userEvent.setup()
+    const readinessBlockers: PoolRunReadinessBlocker[] = [
+      {
+        code: 'POOL_DOCUMENT_POLICY_MAPPING_INVALID',
+        detail: 'Document policy is incomplete for minimal_documents_full_payload.',
+      },
+    ]
     const run = buildRun({
-      readiness_blockers: [
-        {
-          code: 'POOL_DOCUMENT_POLICY_MAPPING_INVALID',
-          detail: 'Document policy is incomplete for minimal_documents_full_payload.',
-        },
-      ],
+      readiness_blockers: readinessBlockers,
+      readiness_checklist: buildReadinessChecklist({
+        status: 'not_ready',
+        readinessBlockers,
+      }),
     })
     mockListPoolRuns.mockResolvedValue([run])
     mockGetPoolRunReport.mockResolvedValue(buildReport(run))
@@ -593,6 +655,61 @@ describe('PoolRunsPage', () => {
     expect(await screen.findByText('Readiness blockers detected')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeDisabled()
   })
+
+  it('renders machine-readable readiness checklist for ready safe run', async () => {
+    const user = userEvent.setup()
+    const run = buildRun({
+      readiness_blockers: [],
+      readiness_checklist: buildReadinessChecklist({ status: 'ready' }),
+    })
+    mockListPoolRuns.mockResolvedValue([run])
+    mockGetPoolRunReport.mockResolvedValue(buildReport(run))
+
+    renderPage()
+
+    await openRunsStage(user, 'Inspect')
+    expect(await screen.findByText('Readiness Checklist')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-runs-readiness-status')).toHaveTextContent('status: ready')
+    expect(screen.getByText('Master data coverage')).toBeInTheDocument()
+    expect(screen.getByText('Organization->Party bindings')).toBeInTheDocument()
+    expect(screen.getByText('Policy completeness')).toBeInTheDocument()
+    expect(screen.getByText('OData verify readiness')).toBeInTheDocument()
+  }, 15000)
+
+  it('maps readiness Problem Details from confirm-publication to blocker-specific message', async () => {
+    const user = userEvent.setup()
+    mockConfirmPoolRunPublication.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Pool Run Readiness Blocked',
+          status: 409,
+          detail: 'Resolve readiness blockers before confirm-publication.',
+          code: 'POOL_RUN_READINESS_BLOCKED',
+          errors: [
+            {
+              code: 'POOL_DOCUMENT_POLICY_MAPPING_INVALID',
+              detail: 'Document policy is incomplete for minimal_documents_full_payload.',
+            },
+          ],
+        },
+      },
+    })
+
+    renderPage()
+
+    await openRunsStage(user, 'Safe Actions')
+    const confirmButton = await screen.findByTestId('pool-runs-safe-confirm')
+    await waitFor(() => expect(confirmButton).toBeEnabled())
+    await user.click(confirmButton)
+
+    await waitFor(() => expect(mockConfirmPoolRunPublication).toHaveBeenCalledTimes(1))
+    expect(
+      await screen.findByText(
+        'Document policy is incomplete for minimal_documents_full_payload. (POOL_DOCUMENT_POLICY_MAPPING_INVALID)'
+      )
+    ).toBeInTheDocument()
+  }, 15000)
 
   it('renders publication credentials source hint in create run form', async () => {
     const user = userEvent.setup()

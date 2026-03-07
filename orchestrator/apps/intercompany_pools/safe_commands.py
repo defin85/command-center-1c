@@ -40,6 +40,7 @@ TERMINAL_REASON_ABORTED_BY_OPERATOR = "aborted_by_operator"
 
 CONFLICT_REASON_NOT_SAFE_RUN = "not_safe_run"
 CONFLICT_REASON_AWAITING_PRE_PUBLISH = "awaiting_pre_publish"
+CONFLICT_REASON_READINESS_BLOCKED = "readiness_blocked"
 CONFLICT_REASON_PUBLICATION_STARTED = "publication_started"
 CONFLICT_REASON_TERMINAL_STATE = "terminal_state"
 CONFLICT_REASON_IDEMPOTENCY_KEY_REUSED = "idempotency_key_reused"
@@ -170,6 +171,7 @@ def process_pool_run_safe_command(
 
         response_snapshot = _build_response_snapshot(
             run=run,
+            execution=execution,
             command_type=command_type,
             result_class=decision["result_class"],
             conflict_reason=decision["conflict_reason"],
@@ -326,6 +328,17 @@ def _decide_command_outcome(
                 "outbox_intent": None,
                 "message_payload": None,
             }
+        readiness_blockers = _resolve_readiness_blockers(execution=execution)
+        if approval_state == APPROVAL_STATE_AWAITING_APPROVAL and readiness_blockers:
+            return {
+                "result_class": PoolRunCommandResultClass.CONFLICT,
+                "response_status_code": 409,
+                "conflict_reason": CONFLICT_REASON_READINESS_BLOCKED,
+                "cas_outcome": PoolRunCommandCasOutcome.NOT_APPLICABLE,
+                "updates": {},
+                "outbox_intent": None,
+                "message_payload": None,
+            }
         if approval_state == APPROVAL_STATE_AWAITING_APPROVAL:
             updates = {"approval_state": APPROVAL_STATE_APPROVED, "approved_at": timezone.now().isoformat()}
             if publication_step_state not in {PUBLICATION_STEP_STATE_STARTED, PUBLICATION_STEP_STATE_COMPLETED}:
@@ -439,21 +452,26 @@ def _build_replay_outcome(*, existing: PoolRunCommandLog, run: PoolRun, command_
 def _build_response_snapshot(
     *,
     run: PoolRun,
+    execution: WorkflowExecution | None,
     command_type: str,
     result_class: str,
     conflict_reason: str | None,
 ) -> dict[str, Any]:
-    return {
+    snapshot = {
         "run_id": str(run.id),
         "command_type": command_type,
         "result_class": result_class,
         "conflict_reason": conflict_reason,
     }
+    if conflict_reason == CONFLICT_REASON_READINESS_BLOCKED:
+        snapshot["readiness_blockers"] = _resolve_readiness_blockers(execution=execution)
+    return snapshot
 
 
 def _build_conflict_snapshot(*, run: PoolRun, command_type: str, conflict_reason: str) -> dict[str, Any]:
     return _build_response_snapshot(
         run=run,
+        execution=None,
         command_type=command_type,
         result_class=PoolRunCommandResultClass.CONFLICT,
         conflict_reason=conflict_reason,
@@ -491,6 +509,21 @@ def _resolve_terminal_reason(*, execution: WorkflowExecution) -> str | None:
     context = execution.input_context if isinstance(execution.input_context, dict) else {}
     reason = str(context.get("terminal_reason") or "").strip().lower()
     return reason or None
+
+
+def _resolve_readiness_blockers(*, execution: WorkflowExecution | None) -> list[dict[str, Any]]:
+    if execution is None:
+        return []
+    context = execution.input_context if isinstance(execution.input_context, dict) else {}
+    raw_blockers = context.get("pool_runtime_readiness_blockers")
+    if not isinstance(raw_blockers, list):
+        return []
+
+    blockers: list[dict[str, Any]] = []
+    for raw_blocker in raw_blockers:
+        if isinstance(raw_blocker, dict):
+            blockers.append(dict(raw_blocker))
+    return blockers
 
 
 def _build_enqueue_workflow_message(*, execution_id: str, requested_by=None) -> dict[str, Any]:

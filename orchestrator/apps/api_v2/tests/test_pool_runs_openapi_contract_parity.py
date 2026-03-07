@@ -62,10 +62,15 @@ def test_pool_run_safe_commands_paths_are_in_contract_with_expected_responses() 
 
         ok_ref = responses["200"]["content"]["application/json"]["schema"]["$ref"]
         accepted_ref = responses["202"]["content"]["application/json"]["schema"]["$ref"]
-        conflict_ref = responses["409"]["content"]["application/json"]["schema"]["$ref"]
         assert ok_ref == "#/components/schemas/PoolRunSafeCommandResponse"
         assert accepted_ref == "#/components/schemas/PoolRunSafeCommandResponse"
-        assert conflict_ref == "#/components/schemas/PoolRunSafeCommandConflict"
+        conflict_content = responses["409"]["content"]
+        assert isinstance(conflict_content, dict)
+        assert conflict_content["application/json"]["schema"]["$ref"] == "#/components/schemas/PoolRunSafeCommandConflict"
+        if path.endswith("/confirm-publication/"):
+            assert conflict_content["application/problem+json"]["schema"]["$ref"] == (
+                "#/components/schemas/ProblemDetailsError"
+            )
 
 
 def test_pool_run_retry_path_and_payload_schema_are_in_contract_with_expected_responses() -> None:
@@ -146,6 +151,8 @@ def test_pool_run_schema_covers_runtime_serializer_fields() -> None:
 
     provenance = properties.get("provenance")
     assert provenance == {"$ref": "#/components/schemas/PoolRunProvenance"}
+    readiness_checklist = properties.get("readiness_checklist")
+    assert readiness_checklist == {"$ref": "#/components/schemas/PoolRunReadinessChecklist"}
 
 
 def test_safe_command_payload_schemas_cover_runtime_serializer_fields() -> None:

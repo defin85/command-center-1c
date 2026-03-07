@@ -21,16 +21,27 @@ from .master_data_artifact_contract import (
     MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
     POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY,
 )
-from .master_data_errors import MasterDataResolveError
+from .master_data_errors import (
+    MASTER_DATA_BINDING_AMBIGUOUS,
+    MASTER_DATA_BINDING_CONFLICT,
+    MASTER_DATA_ENTITY_NOT_FOUND,
+    MasterDataResolveError,
+)
 from .master_data_feature_flags import (
     MasterDataGateConfigInvalidError,
     is_pool_master_data_gate_enabled,
 )
 from .master_data_gate import (
+    collect_master_data_resolution_readiness_blockers,
     execute_master_data_resolve_upsert_gate,
     publication_payload_requires_master_data_resolution,
 )
-from .models import Organization, PoolRun, PoolRunDirection, PoolRunMode
+from .models import Organization, PoolMasterParty, PoolRun, PoolRunDirection, PoolRunMode
+from .organization_party_binding_backfill import (
+    REMEDIATION_REASON_AMBIGUOUS_MATCH,
+    REMEDIATION_REASON_CANDIDATE_ALREADY_BOUND,
+    REMEDIATION_REASON_NO_MATCH,
+)
 from .runtime_distribution import (
     build_publication_payload_from_artifact,
     compute_distribution_runtime_state,
@@ -460,7 +471,10 @@ def _execute_master_data_gate(
         }
         _update_execution_context(
             execution=execution,
-            updates={"pool_runtime_master_data_gate": summary},
+            updates={
+                "pool_runtime_master_data_gate": summary,
+                POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY: [],
+            },
         )
         return {
             "step": "master_data_gate",
@@ -468,23 +482,31 @@ def _execute_master_data_gate(
             "summary": summary,
         }
 
-    missing_bindings = _collect_missing_master_party_bindings(run=run)
-    if missing_bindings:
-        diagnostic = {
-            "error_code": MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING,
-            "missing_count": len(missing_bindings),
-            "missing_organization_bindings": missing_bindings,
-        }
+    readiness_blockers = _collect_master_data_readiness_blockers(
+        run=run,
+        execution_context=execution_context,
+    )
+    if readiness_blockers:
+        primary_blocker = readiness_blockers[0]
+        error_code = str(primary_blocker.get("code") or "").strip() or MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING
+        detail = str(primary_blocker.get("detail") or "").strip() or "Master-data readiness blocked publication."
+        diagnostic = _build_master_data_gate_blocked_diagnostic(
+            readiness_blockers=readiness_blockers,
+            error_code=error_code,
+        )
         summary = {
             "status": "failed",
             "mode": MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
-            "error_code": MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING,
-            "detail": "Missing Organization->Party binding for publication target organizations.",
+            "error_code": error_code,
+            "detail": detail,
             "diagnostic": diagnostic,
         }
         _update_execution_context(
             execution=execution,
-            updates={"pool_runtime_master_data_gate": summary},
+            updates={
+                "pool_runtime_master_data_gate": summary,
+                POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY: readiness_blockers,
+            },
         )
         diagnostic_json = json.dumps(
             diagnostic,
@@ -492,7 +514,7 @@ def _execute_master_data_gate(
             sort_keys=True,
             separators=(",", ":"),
         )
-        raise ValueError(f"{MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING}: diagnostic={diagnostic_json}")
+        raise ValueError(f"{error_code}: diagnostic={diagnostic_json}")
 
     try:
         gate_result = execute_master_data_resolve_upsert_gate(
@@ -508,9 +530,13 @@ def _execute_master_data_gate(
             "detail": exc.detail,
             "diagnostic": diagnostic,
         }
+        readiness_blockers = [_build_readiness_blocker_from_master_data_error(exc)]
         _update_execution_context(
             execution=execution,
-            updates={"pool_runtime_master_data_gate": summary},
+            updates={
+                "pool_runtime_master_data_gate": summary,
+                POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY: readiness_blockers,
+            },
         )
         diagnostic_json = json.dumps(
             diagnostic,
@@ -534,6 +560,7 @@ def _execute_master_data_gate(
         "pool_runtime_publication_payload": publication_payload,
         POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY: binding_artifact,
         "pool_runtime_master_data_gate": summary,
+        POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY: [],
     }
     _update_execution_context(execution=execution, updates=updates)
     return {
@@ -545,7 +572,22 @@ def _execute_master_data_gate(
     }
 
 
-def _collect_missing_master_party_bindings(*, run: PoolRun) -> list[dict[str, str]]:
+def _collect_master_data_readiness_blockers(
+    *,
+    run: PoolRun,
+    execution_context: dict[str, Any],
+) -> list[dict[str, Any]]:
+    blockers = [
+        *_collect_missing_master_party_binding_blockers(run=run),
+        *collect_master_data_resolution_readiness_blockers(
+            run=run,
+            execution_context=execution_context,
+        ),
+    ]
+    return _sort_readiness_blockers(blockers)
+
+
+def _collect_missing_master_party_binding_blockers(*, run: PoolRun) -> list[dict[str, Any]]:
     try:
         topology = load_runtime_topology_for_period(run=run)
     except ValueError as exc:
@@ -582,27 +624,157 @@ def _collect_missing_master_party_bindings(*, run: PoolRun) -> list[dict[str, st
         id__in=organization_ids,
     ).only("id", "name", "inn", "database_id", "master_party_id")
 
-    missing: list[dict[str, str]] = []
+    bound_party_ids = {
+        str(value)
+        for value in Organization.objects.filter(tenant_id=run.tenant_id)
+        .exclude(master_party_id__isnull=True)
+        .values_list("master_party_id", flat=True)
+    }
+
+    missing: list[dict[str, Any]] = []
     for organization in organizations:
         if organization.master_party_id is not None:
             continue
+        candidate_parties = _find_master_party_candidates_for_organization(organization=organization)
+        remediation_reason = REMEDIATION_REASON_NO_MATCH
+        if len(candidate_parties) > 1:
+            remediation_reason = REMEDIATION_REASON_AMBIGUOUS_MATCH
+        elif len(candidate_parties) == 1 and str(candidate_parties[0].id) in bound_party_ids:
+            remediation_reason = REMEDIATION_REASON_CANDIDATE_ALREADY_BOUND
+        elif len(candidate_parties) == 1:
+            remediation_reason = "candidate_available"
         missing.append(
             {
+                "code": MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING,
+                "detail": "Missing Organization->Party binding for publication target organization.",
+                "kind": "organization_party_binding_missing",
                 "organization_id": str(organization.id),
-                "name": str(organization.name or ""),
-                "inn": str(organization.inn or ""),
                 "database_id": str(organization.database_id) if organization.database_id else "",
+                "diagnostic": {
+                    "organization_name": str(organization.name or ""),
+                    "organization_inn": str(organization.inn or ""),
+                    "remediation_reason": remediation_reason,
+                    "candidate_party_ids": [str(item.id) for item in candidate_parties],
+                    "candidate_party_canonical_ids": [
+                        str(item.canonical_id) for item in candidate_parties
+                    ],
+                },
             }
         )
 
     missing.sort(
         key=lambda item: (
-            item.get("name", ""),
-            item.get("inn", ""),
+            str(item.get("database_id") or ""),
             item.get("organization_id", ""),
         )
     )
     return missing
+
+
+def _find_master_party_candidates_for_organization(*, organization: Organization) -> list[PoolMasterParty]:
+    inn = str(organization.inn or "").strip()
+    if not inn:
+        return []
+
+    candidates = PoolMasterParty.objects.filter(
+        tenant_id=organization.tenant_id,
+        inn=inn,
+        is_our_organization=True,
+    )
+    kpp = str(organization.kpp or "").strip()
+    if kpp:
+        candidates = candidates.filter(kpp=kpp)
+    return list(candidates.order_by("canonical_id", "id"))
+
+
+def _build_master_data_gate_blocked_diagnostic(
+    *,
+    readiness_blockers: list[dict[str, Any]],
+    error_code: str,
+) -> dict[str, Any]:
+    diagnostic: dict[str, Any] = {
+        "error_code": error_code,
+        "blockers_count": len(readiness_blockers),
+    }
+    primary_diagnostic = readiness_blockers[0].get("diagnostic")
+    if isinstance(primary_diagnostic, Mapping):
+        diagnostic.update(dict(primary_diagnostic))
+    primary_entity_type = str(readiness_blockers[0].get("entity_name") or "").strip()
+    primary_database_id = str(readiness_blockers[0].get("database_id") or "").strip()
+    if primary_entity_type and "entity_type" not in diagnostic:
+        diagnostic["entity_type"] = primary_entity_type
+    if primary_database_id and "target_database_id" not in diagnostic:
+        diagnostic["target_database_id"] = primary_database_id
+
+    missing_organization_bindings: list[dict[str, Any]] = []
+    for blocker in readiness_blockers:
+        if str(blocker.get("code") or "").strip() != MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING:
+            continue
+        row = {
+            "organization_id": blocker.get("organization_id"),
+            "database_id": blocker.get("database_id"),
+        }
+        blocker_diagnostic = blocker.get("diagnostic")
+        if isinstance(blocker_diagnostic, Mapping):
+            if "organization_name" in blocker_diagnostic:
+                row["name"] = blocker_diagnostic.get("organization_name")
+            if "organization_inn" in blocker_diagnostic:
+                row["inn"] = blocker_diagnostic.get("organization_inn")
+            if "remediation_reason" in blocker_diagnostic:
+                row["remediation_reason"] = blocker_diagnostic.get("remediation_reason")
+            if "candidate_party_ids" in blocker_diagnostic:
+                row["candidate_party_ids"] = blocker_diagnostic.get("candidate_party_ids")
+            if "candidate_party_canonical_ids" in blocker_diagnostic:
+                row["candidate_party_canonical_ids"] = blocker_diagnostic.get("candidate_party_canonical_ids")
+        missing_organization_bindings.append(row)
+
+    if missing_organization_bindings:
+        diagnostic["missing_count"] = len(missing_organization_bindings)
+        diagnostic["missing_organization_bindings"] = missing_organization_bindings
+
+    return diagnostic
+
+
+def _build_readiness_blocker_from_master_data_error(exc: MasterDataResolveError) -> dict[str, Any]:
+    blocker: dict[str, Any] = {
+        "code": exc.code,
+        "detail": exc.detail,
+        "diagnostic": exc.to_diagnostic(),
+    }
+    if exc.code == MASTER_DATA_ENTITY_NOT_FOUND:
+        blocker["kind"] = "canonical_entity_missing"
+    elif exc.code == MASTER_DATA_BINDING_AMBIGUOUS:
+        blocker["kind"] = "binding_ambiguous"
+    elif exc.code == MASTER_DATA_BINDING_CONFLICT:
+        blocker["kind"] = "binding_conflict"
+    if exc.entity_type:
+        blocker["entity_name"] = exc.entity_type
+    if exc.canonical_id:
+        blocker["field_or_table_path"] = exc.canonical_id
+    if exc.target_database_id:
+        blocker["database_id"] = exc.target_database_id
+    return blocker
+
+
+def _sort_readiness_blockers(blockers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    code_priority = {
+        MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING: 0,
+        MASTER_DATA_BINDING_CONFLICT: 10,
+        MASTER_DATA_BINDING_AMBIGUOUS: 20,
+        MASTER_DATA_ENTITY_NOT_FOUND: 30,
+    }
+    return sorted(
+        blockers,
+        key=lambda blocker: (
+            code_priority.get(str(blocker.get("code") or "").strip(), 100),
+            str(blocker.get("kind") or ""),
+            str(blocker.get("database_id") or ""),
+            str(blocker.get("organization_id") or ""),
+            str(blocker.get("entity_name") or ""),
+            str(blocker.get("field_or_table_path") or ""),
+            str(blocker.get("detail") or ""),
+        ),
+    )
 
 
 def _resolve_locked_retry_publication_payload(

@@ -39,6 +39,8 @@ import {
   type PoolGraph,
   type PoolPublicationAttemptDiagnostics,
   type PoolRun,
+  type PoolRunReadinessCheck,
+  type PoolRunReadinessChecklist,
   type PoolRunReadinessBlocker,
   type PoolRunMasterDataGate,
   type PoolRunReport,
@@ -146,6 +148,25 @@ const VERIFICATION_STATUS_COLORS: Record<string, string> = {
   failed: 'error',
 }
 
+const READINESS_STATUS_COLORS: Record<string, string> = {
+  ready: 'success',
+  not_ready: 'error',
+}
+
+const READINESS_CHECK_LABELS: Record<string, string> = {
+  master_data_coverage: 'Master data coverage',
+  organization_party_bindings: 'Organization->Party bindings',
+  policy_completeness: 'Policy completeness',
+  odata_verify_readiness: 'OData verify readiness',
+}
+
+const READINESS_CHECK_ORDER: PoolRunReadinessCheck['code'][] = [
+  'master_data_coverage',
+  'organization_party_bindings',
+  'policy_completeness',
+  'odata_verify_readiness',
+]
+
 const MASTER_DATA_GATE_REMEDIATION_HINTS: Record<string, string> = {
   MASTER_DATA_GATE_CONFIG_INVALID: (
     'Проверьте runtime setting pools.master_data.gate_enabled: значение должно приводиться к bool.'
@@ -246,6 +267,7 @@ type ProblemDetailsPayload = {
   detail: string | null
   title: string | null
   status: number | null
+  errors: unknown
 }
 
 const parseProblemDetails = (error: unknown): ProblemDetailsPayload | null => {
@@ -260,6 +282,7 @@ const parseProblemDetails = (error: unknown): ProblemDetailsPayload | null => {
     detail?: unknown
     title?: unknown
     status?: unknown
+    errors?: unknown
   }
   const hasKnownShape = (
     typeof candidate.code === 'string'
@@ -275,6 +298,7 @@ const parseProblemDetails = (error: unknown): ProblemDetailsPayload | null => {
     detail: typeof candidate.detail === 'string' ? candidate.detail.trim() : null,
     title: typeof candidate.title === 'string' ? candidate.title.trim() : null,
     status: typeof candidate.status === 'number' ? candidate.status : null,
+    errors: candidate.errors,
   }
 }
 
@@ -294,6 +318,106 @@ const resolveCreateRunProblemMessage = (
   }
   return fallbackMessage
 }
+
+const parseReadinessProblemBlockers = (problem: ProblemDetailsPayload | null): PoolRunReadinessBlocker[] => {
+  if (!problem || !Array.isArray(problem.errors)) {
+    return []
+  }
+
+  const blockers: PoolRunReadinessBlocker[] = []
+  for (const candidate of problem.errors) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      continue
+    }
+    const raw = candidate as Record<string, unknown>
+    blockers.push({
+      code: typeof raw.code === 'string' ? raw.code : null,
+      detail: typeof raw.detail === 'string' ? raw.detail : null,
+      kind: typeof raw.kind === 'string' ? raw.kind : null,
+      entity_name: typeof raw.entity_name === 'string' ? raw.entity_name : null,
+      field_or_table_path: typeof raw.field_or_table_path === 'string' ? raw.field_or_table_path : null,
+      database_id: typeof raw.database_id === 'string' ? raw.database_id : null,
+      organization_id: typeof raw.organization_id === 'string' ? raw.organization_id : null,
+      diagnostic: raw.diagnostic && typeof raw.diagnostic === 'object' && !Array.isArray(raw.diagnostic)
+        ? raw.diagnostic as Record<string, unknown>
+        : null,
+    })
+  }
+  return blockers
+}
+
+const resolveSafeCommandProblemMessage = (
+  problem: ProblemDetailsPayload,
+  fallbackMessage: string
+): string => {
+  if (problem.code === 'POOL_RUN_READINESS_BLOCKED') {
+    const blockers = parseReadinessProblemBlockers(problem)
+    const primary = blockers[0]
+    if (primary?.detail && primary?.code) {
+      return `${primary.detail} (${primary.code})`
+    }
+  }
+  if (problem.detail && problem.detail.length > 0) {
+    return problem.detail
+  }
+  if (problem.title && problem.title.length > 0) {
+    return problem.title
+  }
+  return fallbackMessage
+}
+
+const matchesReadinessCheck = (
+  checkCode: PoolRunReadinessCheck['code'],
+  blocker: PoolRunReadinessBlocker
+): boolean => {
+  const code = typeof blocker.code === 'string' ? blocker.code.toUpperCase() : ''
+  if (!code) {
+    return false
+  }
+  if (checkCode === 'organization_party_bindings') {
+    return code === 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING'
+  }
+  if (checkCode === 'policy_completeness') {
+    return code === 'POOL_DOCUMENT_POLICY_MAPPING_INVALID'
+  }
+  if (checkCode === 'odata_verify_readiness') {
+    return code === 'ODATA_MAPPING_NOT_CONFIGURED'
+      || code === 'ODATA_MAPPING_AMBIGUOUS'
+      || code === 'ODATA_PUBLICATION_AUTH_CONTEXT_INVALID'
+      || code.startsWith('ODATA_')
+  }
+  if (checkCode === 'master_data_coverage') {
+    return code.startsWith('MASTER_DATA_') && code !== 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING'
+  }
+  return false
+}
+
+const buildLegacyReadinessChecklist = (
+  blockers: PoolRunReadinessBlocker[]
+): PoolRunReadinessChecklist => {
+  const status = blockers.length === 0 ? 'ready' : 'not_ready'
+  return {
+    status,
+    checks: READINESS_CHECK_ORDER.map((checkCode) => {
+      const scopedBlockers = blockers.filter((blocker) => matchesReadinessCheck(checkCode, blocker))
+      const blockerCodes = Array.from(new Set(
+        scopedBlockers
+          .map((item) => (typeof item.code === 'string' ? item.code : null))
+          .filter((item): item is string => Boolean(item))
+      ))
+      return {
+        code: checkCode,
+        status: scopedBlockers.length === 0 && status === 'ready' ? 'ready' : 'not_ready',
+        blocker_codes: blockerCodes,
+        blockers: scopedBlockers,
+      }
+    }),
+  }
+}
+
+const resolveReadinessCheckLabel = (checkCode: PoolRunReadinessCheck['code']): string => (
+  READINESS_CHECK_LABELS[checkCode] ?? checkCode
+)
 
 const resolveInputContractVersion = (run: PoolRun): string => {
   if (run.input_contract_version) {
@@ -860,11 +984,23 @@ export function PoolRunsPage() {
       if (conflict) {
         setError(`${conflict.error_message} (${conflict.conflict_reason})`)
       } else {
-        setError(
-          commandType === 'confirm-publication'
-            ? 'Не удалось выполнить confirm-publication.'
-            : 'Не удалось выполнить abort-publication.'
-        )
+        const problem = parseProblemDetails(err)
+        if (problem) {
+          setError(
+            resolveSafeCommandProblemMessage(
+              problem,
+              commandType === 'confirm-publication'
+                ? 'Не удалось выполнить confirm-publication.'
+                : 'Не удалось выполнить abort-publication.'
+            )
+          )
+        } else {
+          setError(
+            commandType === 'confirm-publication'
+              ? 'Не удалось выполнить confirm-publication.'
+              : 'Не удалось выполнить abort-publication.'
+          )
+        }
       }
     } finally {
       setSafeActionLoading(null)
@@ -1089,6 +1225,7 @@ export function PoolRunsPage() {
     ? buildMasterDataGateContextLines(masterDataGate)
     : []
   const readinessBlockers = runDetails?.readiness_blockers ?? []
+  const readinessChecklist = runDetails?.readiness_checklist ?? buildLegacyReadinessChecklist(readinessBlockers)
   const verificationStatus = runDetails?.verification_status ?? 'not_verified'
   const verificationSummary = runDetails?.verification_summary ?? null
 
@@ -1100,7 +1237,7 @@ export function PoolRunsPage() {
     isSafeRun
     && runDetails
     && runDetails.approval_state === 'awaiting_approval'
-    && readinessBlockers.length === 0
+    && readinessChecklist.status === 'ready'
     && !isPublishedOrPartial
     && runDetails.status !== 'failed'
   )
@@ -1441,40 +1578,51 @@ export function PoolRunsPage() {
                       </Card>
 
                       <Card size="small" title="Readiness Checklist">
-                        {readinessBlockers.length === 0 ? (
-                          <Alert
-                            type="success"
-                            showIcon
-                            message="Readiness blockers not found"
-                            description="Run readiness snapshot не содержит блокирующих причин для публикации."
-                          />
-                        ) : (
-                          <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                            {readinessBlockers.map((blocker, index) => {
-                              const contextLines = buildReadinessBlockerContextLines(blocker)
-                              const hint = resolveReadinessBlockerHint(blocker)
-                              const title = blocker.code || blocker.kind || `READINESS_BLOCKER_${index + 1}`
-
-                              return (
-                                <Alert
-                                  key={`${title}-${index}`}
-                                  type="error"
-                                  showIcon
-                                  message={title}
-                                  description={(
-                                    <Space direction="vertical" size={2}>
-                                      <Text>{blocker.detail || 'Run readiness blocked.'}</Text>
-                                      {contextLines.map((line) => (
-                                        <Text key={line} code>{line}</Text>
-                                      ))}
-                                      {hint ? <Text type="secondary">{hint}</Text> : null}
-                                    </Space>
-                                  )}
-                                />
-                              )
-                            })}
+                        <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                          <Space size="small" wrap>
+                            <Tag
+                              color={READINESS_STATUS_COLORS[readinessChecklist.status] ?? 'default'}
+                              data-testid="pool-runs-readiness-status"
+                            >
+                              status: {readinessChecklist.status}
+                            </Tag>
+                            <Tag>checks: {readinessChecklist.checks.length}</Tag>
+                            <Tag>blockers: {readinessBlockers.length}</Tag>
                           </Space>
-                        )}
+                          {readinessChecklist.checks.map((check) => (
+                            <Alert
+                              key={check.code}
+                              type={check.status === 'ready' ? 'success' : check.blockers.length > 0 ? 'error' : 'warning'}
+                              showIcon
+                              message={resolveReadinessCheckLabel(check.code)}
+                              description={(
+                                <Space direction="vertical" size={2}>
+                                  <Text>status: {check.status}</Text>
+                                  {check.blockers.length === 0 ? (
+                                    <Text type="secondary">No blocking diagnostics.</Text>
+                                  ) : (
+                                    check.blockers.map((blocker, index) => {
+                                      const contextLines = buildReadinessBlockerContextLines(blocker)
+                                      const hint = resolveReadinessBlockerHint(blocker)
+                                      const title = blocker.code || blocker.kind || `${check.code}_${index + 1}`
+
+                                      return (
+                                        <Space key={`${title}-${index}`} direction="vertical" size={2}>
+                                          <Text strong>{title}</Text>
+                                          <Text>{blocker.detail || 'Run readiness blocked.'}</Text>
+                                          {contextLines.map((line) => (
+                                            <Text key={line} code>{line}</Text>
+                                          ))}
+                                          {hint ? <Text type="secondary">{hint}</Text> : null}
+                                        </Space>
+                                      )
+                                    })
+                                  )}
+                                </Space>
+                              )}
+                            />
+                          ))}
+                        </Space>
                       </Card>
 
                       <Card size="small" title="OData Verification">

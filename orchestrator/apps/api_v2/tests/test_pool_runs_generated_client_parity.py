@@ -56,6 +56,8 @@ def test_generated_models_cover_contract_pool_runs_schemas() -> None:
     checks = {
         "PoolRun": "poolRun.ts",
         "PoolPublicationAttempt": "poolPublicationAttempt.ts",
+        "PoolRunReadinessCheck": "poolRunReadinessCheck.ts",
+        "PoolRunReadinessChecklist": "poolRunReadinessChecklist.ts",
         "PoolRunSafeCommandResponse": "poolRunSafeCommandResponse.ts",
         "PoolRunSafeCommandConflict": "poolRunSafeCommandConflict.ts",
         "PoolRunProvenance": "poolRunProvenance.ts",

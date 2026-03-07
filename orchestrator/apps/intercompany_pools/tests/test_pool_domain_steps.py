@@ -35,7 +35,10 @@ from apps.intercompany_pools.models import (
     PoolRunDirection,
     PoolRunMode,
 )
-from apps.intercompany_pools.pool_domain_steps import execute_pool_runtime_step
+from apps.intercompany_pools.pool_domain_steps import (
+    POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY,
+    execute_pool_runtime_step,
+)
 from apps.intercompany_pools.runtime_distribution import DISTRIBUTION_ARTIFACT_VERSION
 from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate, WorkflowType
 from apps.tenancy.models import Tenant
@@ -1541,6 +1544,126 @@ def test_master_data_gate_fails_closed_when_target_organization_binding_is_missi
     assert isinstance(gate_summary, dict)
     assert gate_summary.get("status") == "failed"
     assert gate_summary.get("error_code") == "MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING"
+    readiness_blockers = execution.input_context.get(POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY)
+    assert isinstance(readiness_blockers, list)
+    assert readiness_blockers == [
+        {
+            "code": "MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING",
+            "detail": "Missing Organization->Party binding for publication target organization.",
+            "kind": "organization_party_binding_missing",
+            "database_id": str(right_org.database_id),
+            "organization_id": str(right_org.id),
+            "diagnostic": {
+                "organization_name": right_org.name,
+                "organization_inn": right_org.inn,
+                "remediation_reason": "no_match",
+                "candidate_party_ids": [],
+                "candidate_party_canonical_ids": [],
+            },
+        }
+    ]
+
+
+@pytest.mark.django_db
+def test_master_data_gate_collects_generic_master_data_readiness_blockers_before_resolution() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    left_database = _create_database(tenant=run.tenant, suffix="gate-readiness-left")
+    right_database = _create_database(tenant=run.tenant, suffix="gate-readiness-right")
+    PoolMasterParty.objects.create(
+        tenant=run.tenant,
+        canonical_id="party-without-refs",
+        name="Party Without Refs",
+        is_counterparty=True,
+    )
+
+    publication_payload = {
+        "pool_runtime": {
+            "document_chains_by_database": {
+                str(left_database.id): [
+                    {
+                        "chain_id": "left-chain",
+                        "documents": [
+                            {
+                                "document_id": "sale-left",
+                                "field_mapping": {
+                                    "Контрагент": "master_data.party.party-without-refs.counterparty.ref"
+                                },
+                                "table_parts_mapping": {},
+                            }
+                        ],
+                    }
+                ],
+                str(right_database.id): [
+                    {
+                        "chain_id": "right-chain",
+                        "documents": [
+                            {
+                                "document_id": "sale-right",
+                                "field_mapping": {
+                                    "Контрагент": "master_data.party.missing-party.counterparty.ref"
+                                },
+                                "table_parts_mapping": {},
+                            }
+                        ],
+                    }
+                ],
+            }
+        }
+    }
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "master_data_snapshot_ref": "master_data_snapshot.v1:test",
+            "master_data_binding_artifact_ref": "master_data_binding_artifact.v1:test",
+            "pool_runtime_publication_payload": publication_payload,
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.pool_domain_steps.is_pool_master_data_gate_enabled",
+        return_value=True,
+    ):
+        with pytest.raises(ValueError, match="MASTER_DATA_BINDING_CONFLICT"):
+            execute_pool_runtime_step(
+                operation_type="pool.master_data_gate",
+                rendered_data={"pool_runtime": {"step_id": "master_data_gate"}},
+                context={"pool_run_id": str(run.id)},
+                execution=execution,
+            )
+
+    execution.refresh_from_db(fields=["input_context"])
+    readiness_blockers = execution.input_context.get(POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY)
+    assert isinstance(readiness_blockers, list)
+    assert readiness_blockers == [
+        {
+            "code": "MASTER_DATA_BINDING_CONFLICT",
+            "detail": "Canonical master-data entity does not provide ib_ref_key for the target database binding scope.",
+            "kind": "binding_source_missing",
+            "entity_name": "party",
+            "field_or_table_path": "party-without-refs",
+            "database_id": str(left_database.id),
+            "diagnostic": {
+                "canonical_id": "party-without-refs",
+                "token": "master_data.party.party-without-refs.counterparty.ref",
+                "scope_hint": "counterparty",
+            },
+        },
+        {
+            "code": "MASTER_DATA_ENTITY_NOT_FOUND",
+            "detail": "Canonical master-data entity is missing for the publication target binding scope.",
+            "kind": "canonical_entity_missing",
+            "entity_name": "party",
+            "field_or_table_path": "missing-party",
+            "database_id": str(right_database.id),
+            "diagnostic": {
+                "canonical_id": "missing-party",
+                "token": "master_data.party.missing-party.counterparty.ref",
+                "scope_hint": "counterparty",
+            },
+        },
+    ]
+    assert execution.input_context.get("pool_runtime_publication_payload") == publication_payload
 
 
 @pytest.mark.django_db

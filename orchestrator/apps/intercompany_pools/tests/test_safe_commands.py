@@ -19,6 +19,7 @@ from apps.intercompany_pools.models import (
 )
 from apps.intercompany_pools.safe_commands import (
     CONFLICT_REASON_IDEMPOTENCY_KEY_REUSED,
+    CONFLICT_REASON_READINESS_BLOCKED,
     CONFLICT_REASON_TERMINAL_STATE,
     TERMINAL_REASON_ABORTED_BY_OPERATOR,
     process_pool_run_safe_command,
@@ -30,7 +31,10 @@ from apps.tenancy.models import Tenant
 User = get_user_model()
 
 
-def _create_safe_run_with_awaiting_approval_execution() -> PoolRun:
+def _create_safe_run_with_awaiting_approval_execution(
+    *,
+    input_context_overrides: dict[str, object] | None = None,
+) -> PoolRun:
     tenant = Tenant.objects.create(slug=f"safe-commands-{uuid4().hex[:8]}", name="Safe Commands")
     pool = OrganizationPool.objects.create(tenant=tenant, code=f"pool-{uuid4().hex[:6]}", name="Pool Safe")
     run = PoolRun.objects.create(
@@ -60,14 +64,18 @@ def _create_safe_run_with_awaiting_approval_execution() -> PoolRun:
         is_valid=True,
         is_active=True,
     )
+    input_context: dict[str, object] = {
+        "pool_run_id": str(run.id),
+        "approval_required": True,
+        "approval_state": "awaiting_approval",
+        "approved_at": None,
+        "publication_step_state": "not_enqueued",
+    }
+    if input_context_overrides:
+        input_context.update(input_context_overrides)
+
     execution = template.create_execution(
-        {
-            "pool_run_id": str(run.id),
-            "approval_required": True,
-            "approval_state": "awaiting_approval",
-            "approved_at": None,
-            "publication_step_state": "not_enqueued",
-        },
+        input_context,
         tenant=tenant,
         execution_consumer="pools",
     )
@@ -216,6 +224,32 @@ def test_safe_commands_reused_key_for_other_command_returns_idempotency_conflict
     assert reused.result_class == PoolRunCommandResultClass.CONFLICT
     assert reused.conflict_reason == CONFLICT_REASON_IDEMPOTENCY_KEY_REUSED
     assert PoolRunCommandOutbox.objects.filter(run=run).count() == 1
+
+
+@pytest.mark.django_db
+def test_safe_commands_confirm_returns_readiness_blocked_conflict_without_outbox() -> None:
+    blocker = {
+        "code": "POOL_DOCUMENT_POLICY_MAPPING_INVALID",
+        "detail": "Document policy is incomplete for minimal_documents_full_payload.",
+        "entity_name": "Document_Sales",
+        "field_or_table_path": "Goods",
+    }
+    run = _create_safe_run_with_awaiting_approval_execution(
+        input_context_overrides={"pool_runtime_readiness_blockers": [blocker]}
+    )
+
+    outcome = process_pool_run_safe_command(
+        run_id=run.id,
+        command_type=PoolRunCommandType.CONFIRM_PUBLICATION,
+        idempotency_key="confirm-readiness-blocked-1",
+    )
+
+    assert outcome.response_status_code == 409
+    assert outcome.result_class == PoolRunCommandResultClass.CONFLICT
+    assert outcome.conflict_reason == CONFLICT_REASON_READINESS_BLOCKED
+    assert outcome.outbox_entry_id is None
+    assert outcome.response_snapshot["readiness_blockers"] == [blocker]
+    assert PoolRunCommandOutbox.objects.filter(run=run).count() == 0
 
 
 @pytest.mark.django_db

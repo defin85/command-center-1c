@@ -6689,6 +6689,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PoolRunSafeCommandConflict'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
           description: ''
   /api/v2/pools/runs/{run_id}/report/:
     get:
@@ -17112,6 +17115,49 @@ components:
           format: uuid
           nullable: true
         diagnostic: {}
+    PoolRunReadinessCheck:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - master_data_coverage
+            - organization_party_bindings
+            - policy_completeness
+            - odata_verify_readiness
+        status:
+          type: string
+          enum:
+            - ready
+            - not_ready
+        blocker_codes:
+          type: array
+          items:
+            type: string
+        blockers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolRunReadinessBlocker'
+      required:
+        - code
+        - status
+        - blocker_codes
+        - blockers
+    PoolRunReadinessChecklist:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - ready
+            - not_ready
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolRunReadinessCheck'
+      required:
+        - status
+        - checks
     PoolRunVerificationMismatch:
       type: object
       properties:
@@ -17288,6 +17334,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PoolRunReadinessBlocker'
+        readiness_checklist:
+          $ref: '#/components/schemas/PoolRunReadinessChecklist'
         verification_status:
           enum:
             - not_verified

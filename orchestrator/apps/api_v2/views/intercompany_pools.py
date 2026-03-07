@@ -63,6 +63,7 @@ from apps.intercompany_pools.safe_commands import (
     CONFLICT_REASON_IDEMPOTENCY_KEY_REUSED,
     CONFLICT_REASON_NOT_SAFE_RUN,
     CONFLICT_REASON_PUBLICATION_STARTED,
+    CONFLICT_REASON_READINESS_BLOCKED,
     CONFLICT_REASON_TERMINAL_STATE,
     process_pool_run_safe_command,
 )
@@ -138,6 +139,26 @@ MASTER_DATA_GATE_STATUS_SKIPPED = "skipped"
 MASTER_DATA_GATE_READ_MODEL_MODE = "resolve_upsert"
 POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY = "pool_runtime_readiness_blockers"
 POOL_RUNTIME_VERIFICATION_CONTEXT_KEY = "pool_runtime_verification"
+READINESS_STATUS_READY = "ready"
+READINESS_STATUS_NOT_READY = "not_ready"
+READINESS_CHECK_CODE_MASTER_DATA_COVERAGE = "master_data_coverage"
+READINESS_CHECK_CODE_ORGANIZATION_PARTY_BINDINGS = "organization_party_bindings"
+READINESS_CHECK_CODE_POLICY_COMPLETENESS = "policy_completeness"
+READINESS_CHECK_CODE_ODATA_VERIFY_READINESS = "odata_verify_readiness"
+READINESS_CHECK_CODES = (
+    READINESS_CHECK_CODE_MASTER_DATA_COVERAGE,
+    READINESS_CHECK_CODE_ORGANIZATION_PARTY_BINDINGS,
+    READINESS_CHECK_CODE_POLICY_COMPLETENESS,
+    READINESS_CHECK_CODE_ODATA_VERIFY_READINESS,
+)
+READINESS_BLOCKER_CODE_ORGANIZATION_PARTY_BINDING_MISSING = "MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING"
+READINESS_BLOCKER_CODE_POLICY_MAPPING_INVALID = "POOL_DOCUMENT_POLICY_MAPPING_INVALID"
+READINESS_ODATA_BLOCKER_CODES = {
+    "ODATA_MAPPING_NOT_CONFIGURED",
+    "ODATA_MAPPING_AMBIGUOUS",
+    "ODATA_PUBLICATION_AUTH_CONTEXT_INVALID",
+}
+POOL_RUN_READINESS_BLOCKED_CODE = "POOL_RUN_READINESS_BLOCKED"
 VERIFICATION_STATUS_NOT_VERIFIED = "not_verified"
 VERIFICATION_STATUS_PASSED = "passed"
 VERIFICATION_STATUS_FAILED = "failed"
@@ -198,6 +219,10 @@ def _safe_command_conflict_payload(*, run_id: UUID, conflict_reason: str | None)
         CONFLICT_REASON_AWAITING_PRE_PUBLISH: (
             "AWAITING_PRE_PUBLISH",
             "Pre-publish этап ещё выполняется, команда пока недоступна.",
+        ),
+        CONFLICT_REASON_READINESS_BLOCKED: (
+            POOL_RUN_READINESS_BLOCKED_CODE,
+            "Resolve readiness blockers before confirm-publication.",
         ),
         CONFLICT_REASON_PUBLICATION_STARTED: (
             "PUBLICATION_STARTED",
@@ -540,6 +565,15 @@ def _serialize_run(
     verification_status, verification_summary = _resolve_verification_read_model(
         workflow_input_context=workflow_input_context
     )
+    readiness_checklist = _resolve_readiness_checklist_read_model(
+        workflow_status=workflow_status,
+        approval_state=approval_state,
+        publication_step_state=publication_step_state,
+        execution_backend=execution_backend,
+        master_data_gate=master_data_gate,
+        readiness_blockers=readiness_blockers,
+        verification_status=verification_status,
+    )
     terminal_reason = _resolve_terminal_reason(
         run=run,
         workflow_input_context=workflow_input_context,
@@ -594,6 +628,7 @@ def _serialize_run(
         "publication_step_state": publication_step_state,
         "master_data_gate": master_data_gate,
         "readiness_blockers": readiness_blockers,
+        "readiness_checklist": readiness_checklist,
         "verification_status": verification_status,
         "verification_summary": verification_summary,
         "terminal_reason": terminal_reason,
@@ -857,11 +892,7 @@ def _resolve_readiness_blockers_read_model(
     master_data_gate: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
     raw_blockers = workflow_input_context.get(POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY)
-    blockers: list[dict[str, Any]] = []
-    if isinstance(raw_blockers, list):
-        for raw_blocker in raw_blockers:
-            if isinstance(raw_blocker, Mapping):
-                blockers.append(_normalize_readiness_blocker(raw_blocker))
+    blockers = _normalize_readiness_blockers(raw_blockers)
     if blockers:
         return blockers
     if not isinstance(master_data_gate, Mapping):
@@ -881,6 +912,16 @@ def _resolve_readiness_blockers_read_model(
     ]
 
 
+def _normalize_readiness_blockers(raw_blockers: object) -> list[dict[str, Any]]:
+    blockers: list[dict[str, Any]] = []
+    if not isinstance(raw_blockers, list):
+        return blockers
+    for raw_blocker in raw_blockers:
+        if isinstance(raw_blocker, Mapping):
+            blockers.append(_normalize_readiness_blocker(raw_blocker))
+    return blockers
+
+
 def _normalize_readiness_blocker(raw_blocker: Mapping[str, Any]) -> dict[str, Any]:
     blocker: dict[str, Any] = {
         "code": _normalize_optional_text(raw_blocker.get("code")) or _normalize_optional_text(
@@ -893,6 +934,129 @@ def _normalize_readiness_blocker(raw_blocker: Mapping[str, Any]) -> dict[str, An
     diagnostic_raw = raw_blocker.get("diagnostic")
     blocker["diagnostic"] = dict(diagnostic_raw) if isinstance(diagnostic_raw, Mapping) else None
     return blocker
+
+
+def _resolve_readiness_checklist_read_model(
+    *,
+    workflow_status: str | None,
+    approval_state: str | None,
+    publication_step_state: str | None,
+    execution_backend: str | None,
+    master_data_gate: dict[str, Any] | None,
+    readiness_blockers: list[dict[str, Any]],
+    verification_status: str,
+) -> dict[str, Any]:
+    has_runtime_evidence = _readiness_has_runtime_evidence(
+        workflow_status=workflow_status,
+        approval_state=approval_state,
+        publication_step_state=publication_step_state,
+        execution_backend=execution_backend,
+        master_data_gate=master_data_gate,
+        verification_status=verification_status,
+    )
+    checks = [
+        _build_readiness_check(
+            check_code=check_code,
+            readiness_blockers=readiness_blockers,
+            has_runtime_evidence=has_runtime_evidence,
+            execution_backend=execution_backend,
+        )
+        for check_code in READINESS_CHECK_CODES
+    ]
+    return {
+        "status": (
+            READINESS_STATUS_READY
+            if checks and all(item["status"] == READINESS_STATUS_READY for item in checks)
+            else READINESS_STATUS_NOT_READY
+        ),
+        "checks": checks,
+    }
+
+
+def _readiness_has_runtime_evidence(
+    *,
+    workflow_status: str | None,
+    approval_state: str | None,
+    publication_step_state: str | None,
+    execution_backend: str | None,
+    master_data_gate: dict[str, Any] | None,
+    verification_status: str,
+) -> bool:
+    if isinstance(master_data_gate, Mapping):
+        gate_status = str(master_data_gate.get("status") or "").strip().lower()
+        if gate_status in _VALID_MASTER_DATA_GATE_STATUSES:
+            return True
+
+    if approval_state in {
+        APPROVAL_STATE_AWAITING_APPROVAL,
+        APPROVAL_STATE_APPROVED,
+        APPROVAL_STATE_NOT_REQUIRED,
+    }:
+        return True
+
+    if publication_step_state in {
+        PUBLICATION_STEP_STATE_QUEUED,
+        PUBLICATION_STEP_STATE_STARTED,
+        PUBLICATION_STEP_STATE_COMPLETED,
+    }:
+        return True
+
+    if verification_status in {VERIFICATION_STATUS_PASSED, VERIFICATION_STATUS_FAILED}:
+        return True
+
+    workflow_state = str(workflow_status or "").strip().lower()
+    return execution_backend == "workflow_core" and workflow_state == WorkflowExecution.STATUS_COMPLETED
+
+
+def _build_readiness_check(
+    *,
+    check_code: str,
+    readiness_blockers: list[dict[str, Any]],
+    has_runtime_evidence: bool,
+    execution_backend: str | None,
+) -> dict[str, Any]:
+    blockers = [
+        dict(blocker)
+        for blocker in readiness_blockers
+        if _readiness_blocker_matches_check(check_code=check_code, blocker=blocker)
+    ]
+    default_ready = has_runtime_evidence
+    if check_code == READINESS_CHECK_CODE_ODATA_VERIFY_READINESS:
+        default_ready = has_runtime_evidence and execution_backend == "workflow_core"
+    blocker_codes = sorted(
+        {
+            code
+            for code in (_normalize_optional_text(item.get("code")) for item in blockers)
+            if code
+        }
+    )
+    return {
+        "code": check_code,
+        "status": READINESS_STATUS_READY if not blockers and default_ready else READINESS_STATUS_NOT_READY,
+        "blocker_codes": blocker_codes,
+        "blockers": blockers,
+    }
+
+
+def _readiness_blocker_matches_check(*, check_code: str, blocker: Mapping[str, Any]) -> bool:
+    code = str(blocker.get("code") or "").strip().upper()
+    if not code:
+        return False
+    if check_code == READINESS_CHECK_CODE_ORGANIZATION_PARTY_BINDINGS:
+        return code == READINESS_BLOCKER_CODE_ORGANIZATION_PARTY_BINDING_MISSING
+    if check_code == READINESS_CHECK_CODE_POLICY_COMPLETENESS:
+        return code == READINESS_BLOCKER_CODE_POLICY_MAPPING_INVALID
+    if check_code == READINESS_CHECK_CODE_ODATA_VERIFY_READINESS:
+        return code in READINESS_ODATA_BLOCKER_CODES or code.startswith("ODATA_")
+    if check_code == READINESS_CHECK_CODE_MASTER_DATA_COVERAGE:
+        if code == READINESS_BLOCKER_CODE_ORGANIZATION_PARTY_BINDING_MISSING:
+            return False
+        if code == READINESS_BLOCKER_CODE_POLICY_MAPPING_INVALID:
+            return False
+        if code in READINESS_ODATA_BLOCKER_CODES or code.startswith("ODATA_"):
+            return False
+        return code.startswith("MASTER_DATA_")
+    return False
 
 
 def _normalize_verification_status(raw_status: object) -> str:
@@ -1615,6 +1779,18 @@ class PoolRunReadinessBlockerSerializer(serializers.Serializer):
     diagnostic = serializers.JSONField(required=False, allow_null=True)
 
 
+class PoolRunReadinessCheckSerializer(serializers.Serializer):
+    code = serializers.ChoiceField(choices=list(READINESS_CHECK_CODES))
+    status = serializers.ChoiceField(choices=[READINESS_STATUS_READY, READINESS_STATUS_NOT_READY])
+    blocker_codes = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    blockers = PoolRunReadinessBlockerSerializer(many=True, required=False, default=list)
+
+
+class PoolRunReadinessChecklistSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=[READINESS_STATUS_READY, READINESS_STATUS_NOT_READY])
+    checks = PoolRunReadinessCheckSerializer(many=True, required=False, default=list)
+
+
 class PoolRunVerificationMismatchSerializer(serializers.Serializer):
     database_id = serializers.UUIDField(required=False, allow_null=True)
     entity_name = serializers.CharField(required=False, allow_null=True)
@@ -1656,6 +1832,7 @@ class PoolRunSerializer(serializers.Serializer):
     publication_step_state = serializers.CharField(required=False, allow_null=True)
     master_data_gate = PoolRunMasterDataGateSerializer(required=False, allow_null=True)
     readiness_blockers = PoolRunReadinessBlockerSerializer(many=True, required=False, default=list)
+    readiness_checklist = PoolRunReadinessChecklistSerializer(required=False)
     verification_status = serializers.ChoiceField(
         choices=[VERIFICATION_STATUS_NOT_VERIFIED, VERIFICATION_STATUS_PASSED, VERIFICATION_STATUS_FAILED],
         required=False,
@@ -3579,6 +3756,31 @@ def get_pool_run(request, run_id: UUID):
     return Response(payload, status=http_status.HTTP_200_OK)
 
 
+def _resolve_safe_command_readiness_blockers(
+    *,
+    run: PoolRun,
+    outcome,
+) -> list[dict[str, Any]]:
+    snapshot = outcome.response_snapshot if isinstance(outcome.response_snapshot, Mapping) else {}
+    blockers = _normalize_readiness_blockers(snapshot.get("readiness_blockers"))
+    if blockers:
+        return blockers
+
+    if run.workflow_execution_id is None:
+        return []
+
+    execution_context = (
+        WorkflowExecution.objects.filter(id=run.workflow_execution_id)
+        .values_list("input_context", flat=True)
+        .first()
+    )
+    if not isinstance(execution_context, Mapping):
+        return []
+    return _normalize_readiness_blockers(
+        execution_context.get(POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY)
+    )
+
+
 def _handle_pool_run_safe_command(
     *,
     request,
@@ -3628,6 +3830,14 @@ def _handle_pool_run_safe_command(
         )
 
     if outcome.result_class == PoolRunCommandResultClass.CONFLICT:
+        if outcome.conflict_reason == CONFLICT_REASON_READINESS_BLOCKED:
+            return _problem(
+                code=POOL_RUN_READINESS_BLOCKED_CODE,
+                title="Pool Run Readiness Blocked",
+                detail="Resolve readiness blockers before confirm-publication.",
+                status_code=http_status.HTTP_409_CONFLICT,
+                errors=_resolve_safe_command_readiness_blockers(run=run, outcome=outcome),
+            )
         return Response(
             _safe_command_conflict_payload(run_id=run.id, conflict_reason=outcome.conflict_reason),
             status=http_status.HTTP_409_CONFLICT,
@@ -3657,7 +3867,8 @@ def _handle_pool_run_safe_command(
         400: ErrorResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         404: ErrorResponseSerializer,
-        409: PoolRunSafeCommandConflictSerializer,
+        (409, "application/json"): PoolRunSafeCommandConflictSerializer,
+        (409, "application/problem+json"): ProblemDetailsErrorSerializer,
     },
 )
 @api_view(["POST"])

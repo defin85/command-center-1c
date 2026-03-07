@@ -175,6 +175,7 @@ def _create_run_with_execution_state(
     approved_at: str | None = None,
     publication_step_state: str = "not_enqueued",
     terminal_reason: str | None = None,
+    input_context_overrides: dict[str, object] | None = None,
 ) -> PoolRun:
     run = PoolRun.objects.create(
         tenant=tenant,
@@ -195,6 +196,8 @@ def _create_run_with_execution_state(
     }
     if terminal_reason:
         input_context["terminal_reason"] = terminal_reason
+    if input_context_overrides:
+        input_context.update(input_context_overrides)
 
     _attach_workflow_execution_to_run(
         run=run,
@@ -2370,6 +2373,35 @@ def test_get_pool_run_returns_details(
     assert payload["run"]["terminal_reason"] is None
     assert payload["run"]["master_data_gate"] is None
     assert payload["run"]["readiness_blockers"] == []
+    assert payload["run"]["readiness_checklist"] == {
+        "status": "not_ready",
+        "checks": [
+            {
+                "code": "master_data_coverage",
+                "status": "not_ready",
+                "blocker_codes": [],
+                "blockers": [],
+            },
+            {
+                "code": "organization_party_bindings",
+                "status": "not_ready",
+                "blocker_codes": [],
+                "blockers": [],
+            },
+            {
+                "code": "policy_completeness",
+                "status": "not_ready",
+                "blocker_codes": [],
+                "blockers": [],
+            },
+            {
+                "code": "odata_verify_readiness",
+                "status": "not_ready",
+                "blocker_codes": [],
+                "blockers": [],
+            },
+        ],
+    }
     assert payload["run"]["verification_status"] == "not_verified"
     assert payload["run"]["verification_summary"] is None
     assert payload["run"]["provenance"]["workflow_run_id"] is None
@@ -2803,6 +2835,46 @@ def test_get_pool_run_and_report_include_readiness_and_verification_read_model(
             "diagnostic": None,
         }
     ]
+    assert details_payload["run"]["readiness_checklist"] == {
+        "status": "not_ready",
+        "checks": [
+            {
+                "code": "master_data_coverage",
+                "status": "ready",
+                "blocker_codes": [],
+                "blockers": [],
+            },
+            {
+                "code": "organization_party_bindings",
+                "status": "ready",
+                "blocker_codes": [],
+                "blockers": [],
+            },
+            {
+                "code": "policy_completeness",
+                "status": "not_ready",
+                "blocker_codes": ["POOL_DOCUMENT_POLICY_MAPPING_INVALID"],
+                "blockers": [
+                    {
+                        "code": "POOL_DOCUMENT_POLICY_MAPPING_INVALID",
+                        "detail": "Document policy is incomplete for minimal_documents_full_payload.",
+                        "kind": None,
+                        "entity_name": "Document_Sales",
+                        "field_or_table_path": "Goods",
+                        "database_id": None,
+                        "organization_id": None,
+                        "diagnostic": None,
+                    }
+                ],
+            },
+            {
+                "code": "odata_verify_readiness",
+                "status": "ready",
+                "blocker_codes": [],
+                "blockers": [],
+            },
+        ],
+    }
     assert details_payload["run"]["verification_status"] == "failed"
     assert details_payload["run"]["verification_summary"] == {
         "checked_targets": 1,
@@ -2823,6 +2895,7 @@ def test_get_pool_run_and_report_include_readiness_and_verification_read_model(
     assert report_response.status_code == 200
     report_payload = report_response.json()
     assert report_payload["run"]["readiness_blockers"] == details_payload["run"]["readiness_blockers"]
+    assert report_payload["run"]["readiness_checklist"] == details_payload["run"]["readiness_checklist"]
     assert report_payload["run"]["verification_status"] == "failed"
     assert report_payload["run"]["verification_summary"] == details_payload["run"]["verification_summary"]
 
@@ -3699,6 +3772,58 @@ def test_confirm_publication_from_preparing_returns_retryable_conflict_payload(
         expected_reason="awaiting_pre_publish",
         expected_retryable=True,
     )
+
+
+@pytest.mark.django_db
+def test_confirm_publication_with_readiness_blockers_returns_problem_details(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_run_with_execution_state(
+        tenant=default_tenant,
+        pool=pool,
+        approval_required=True,
+        approval_state="awaiting_approval",
+        publication_step_state="not_enqueued",
+        input_context_overrides={
+            "pool_runtime_readiness_blockers": [
+                {
+                    "code": "POOL_DOCUMENT_POLICY_MAPPING_INVALID",
+                    "detail": "Document policy is incomplete for minimal_documents_full_payload.",
+                    "entity_name": "Document_Sales",
+                    "field_or_table_path": "Goods",
+                }
+            ]
+        },
+    )
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/confirm-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="confirm-readiness-problem-1",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=409,
+        code="POOL_RUN_READINESS_BLOCKED",
+    )
+    assert payload["title"] == "Pool Run Readiness Blocked"
+    assert payload["errors"] == [
+        {
+            "code": "POOL_DOCUMENT_POLICY_MAPPING_INVALID",
+            "detail": "Document policy is incomplete for minimal_documents_full_payload.",
+            "kind": None,
+            "entity_name": "Document_Sales",
+            "field_or_table_path": "Goods",
+            "database_id": None,
+            "organization_id": None,
+            "diagnostic": None,
+        }
+    ]
+    assert PoolRunCommandOutbox.objects.filter(run=run).count() == 0
 
 
 @pytest.mark.django_db

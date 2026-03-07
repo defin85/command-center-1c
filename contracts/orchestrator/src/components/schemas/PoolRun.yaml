@@ -73,6 +73,8 @@ properties:
     type: array
     items:
       $ref: ./PoolRunReadinessBlocker.yaml
+  readiness_checklist:
+    $ref: ./PoolRunReadinessChecklist.yaml
   verification_status:
     enum:
       - not_verified

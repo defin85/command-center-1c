@@ -213,6 +213,66 @@ def publication_payload_requires_master_data_resolution(
     return False
 
 
+def collect_master_data_resolution_readiness_blockers(
+    *,
+    run: PoolRun,
+    execution_context: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    try:
+        publication_payload = _resolve_publication_payload(execution_context=execution_context)
+    except MasterDataResolveError:
+        return []
+
+    pool_runtime_payload = dict(publication_payload.get("pool_runtime") or {})
+    chains_by_database_raw = pool_runtime_payload.get("document_chains_by_database")
+    if not isinstance(chains_by_database_raw, Mapping):
+        return []
+
+    blockers: list[dict[str, Any]] = []
+    seen_requirements: set[tuple[str, str]] = set()
+    for database_id_raw, chains_raw in sorted(
+        chains_by_database_raw.items(),
+        key=lambda item: str(item[0] or ""),
+    ):
+        database_id = str(database_id_raw or "").strip()
+        if not database_id or not isinstance(chains_raw, list):
+            continue
+        for chain_raw in chains_raw:
+            if not isinstance(chain_raw, Mapping):
+                continue
+            documents_raw = chain_raw.get("documents")
+            if not isinstance(documents_raw, list):
+                continue
+            for document_raw in documents_raw:
+                if not isinstance(document_raw, Mapping):
+                    continue
+                try:
+                    requirements = _extract_requirements_from_document(
+                        document=document_raw,
+                        database_id=database_id,
+                    )
+                except MasterDataResolveError as exc:
+                    blockers.append(
+                        _build_readiness_blocker_from_master_data_error(
+                            exc,
+                            kind="token_requirement_invalid",
+                        )
+                    )
+                    continue
+                for requirement in requirements:
+                    requirement_key = (requirement.database_id, requirement.token)
+                    if requirement_key in seen_requirements:
+                        continue
+                    seen_requirements.add(requirement_key)
+                    blocker = _collect_requirement_readiness_blocker(
+                        run=run,
+                        requirement=requirement,
+                    )
+                    if blocker is not None:
+                        blockers.append(blocker)
+    return _sort_readiness_blockers(blockers)
+
+
 def _resolve_publication_payload(*, execution_context: Mapping[str, Any]) -> dict[str, Any]:
     payload = execution_context.get("pool_runtime_publication_payload")
     if not isinstance(payload, Mapping):
@@ -404,6 +464,73 @@ def _resolve_requirement_ib_ref_key(
     return str(upsert_result.binding.ib_ref_key)
 
 
+def _collect_requirement_readiness_blocker(
+    *,
+    run: PoolRun,
+    requirement: MasterDataTokenRequirement,
+) -> dict[str, Any] | None:
+    database = run.tenant.databases.filter(id=requirement.database_id).only("id").first()
+    if database is None:
+        return _build_requirement_readiness_blocker(
+            code=MASTER_DATA_BINDING_CONFLICT,
+            detail="Target database is not available for the pool run tenant.",
+            kind="target_database_missing",
+            requirement=requirement,
+        )
+
+    existing_qs = PoolMasterDataBinding.objects.filter(
+        tenant=run.tenant,
+        entity_type=requirement.entity_type,
+        canonical_id=requirement.canonical_id,
+        database=database,
+        ib_catalog_kind=requirement.ib_catalog_kind,
+        owner_counterparty_canonical_id=requirement.owner_counterparty_canonical_id,
+    ).order_by("created_at", "id")
+    existing = list(existing_qs[:2])
+    if len(existing) > 1:
+        return _build_requirement_readiness_blocker(
+            code=MASTER_DATA_BINDING_AMBIGUOUS,
+            detail="Ambiguous binding scope: multiple bindings match token requirement.",
+            kind="binding_ambiguous",
+            requirement=requirement,
+            diagnostic_extra={
+                "binding_ids": [str(item.id) for item in existing],
+            },
+        )
+    if existing:
+        return None
+
+    try:
+        entity = _load_canonical_entity(run=run, requirement=requirement)
+    except MasterDataResolveError as exc:
+        if exc.code != MASTER_DATA_ENTITY_NOT_FOUND:
+            return _build_readiness_blocker_from_master_data_error(exc)
+        return _build_requirement_readiness_blocker(
+            code=exc.code,
+            detail="Canonical master-data entity is missing for the publication target binding scope.",
+            kind="canonical_entity_missing",
+            requirement=requirement,
+        )
+
+    metadata = entity.metadata if isinstance(getattr(entity, "metadata", None), Mapping) else {}
+    ib_ref_key = _read_ib_ref_key_from_metadata(
+        metadata=metadata,
+        entity_type=requirement.entity_type,
+        database_id=requirement.database_id,
+        party_catalog_kind=requirement.ib_catalog_kind,
+        owner_counterparty_canonical_id=requirement.owner_counterparty_canonical_id,
+    )
+    if ib_ref_key:
+        return None
+
+    return _build_requirement_readiness_blocker(
+        code=MASTER_DATA_BINDING_CONFLICT,
+        detail="Canonical master-data entity does not provide ib_ref_key for the target database binding scope.",
+        kind="binding_source_missing",
+        requirement=requirement,
+    )
+
+
 def _resolve_ib_ref_key_from_canonical_entity(
     *,
     run: PoolRun,
@@ -502,3 +629,109 @@ def _read_ib_ref_key_from_metadata(
     if isinstance(database_entry, Mapping):
         return str(database_entry.get("ref") or database_entry.get("value") or "").strip()
     return ""
+
+
+def _build_requirement_readiness_blocker(
+    *,
+    code: str,
+    detail: str,
+    kind: str,
+    requirement: MasterDataTokenRequirement,
+    diagnostic_extra: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    blocker: dict[str, Any] = {
+        "code": code,
+        "detail": detail,
+        "kind": kind,
+        "entity_name": requirement.entity_type,
+        "field_or_table_path": requirement.canonical_id,
+        "database_id": requirement.database_id,
+    }
+    diagnostic = _build_requirement_readiness_diagnostic(
+        requirement=requirement,
+        diagnostic_extra=diagnostic_extra,
+    )
+    if diagnostic:
+        blocker["diagnostic"] = diagnostic
+    return blocker
+
+
+def _build_requirement_readiness_diagnostic(
+    *,
+    requirement: MasterDataTokenRequirement,
+    diagnostic_extra: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    diagnostic: dict[str, Any] = {
+        "canonical_id": requirement.canonical_id,
+        "token": requirement.token,
+    }
+    scope_hint = _resolve_requirement_scope_hint(requirement=requirement)
+    if scope_hint:
+        diagnostic["scope_hint"] = scope_hint
+    if requirement.owner_counterparty_canonical_id:
+        diagnostic["owner_counterparty_canonical_id"] = requirement.owner_counterparty_canonical_id
+    if diagnostic_extra:
+        diagnostic.update(dict(diagnostic_extra))
+    return diagnostic
+
+
+def _build_readiness_blocker_from_master_data_error(
+    exc: MasterDataResolveError,
+    *,
+    kind: str | None = None,
+) -> dict[str, Any]:
+    blocker: dict[str, Any] = {
+        "code": exc.code,
+        "detail": exc.detail,
+    }
+    resolved_kind = kind or _resolve_readiness_blocker_kind_from_error_code(exc.code)
+    if resolved_kind:
+        blocker["kind"] = resolved_kind
+    if exc.entity_type:
+        blocker["entity_name"] = exc.entity_type
+    if exc.canonical_id:
+        blocker["field_or_table_path"] = exc.canonical_id
+    if exc.target_database_id:
+        blocker["database_id"] = exc.target_database_id
+    diagnostic = exc.to_diagnostic()
+    if diagnostic:
+        blocker["diagnostic"] = diagnostic
+    return blocker
+
+
+def _resolve_readiness_blocker_kind_from_error_code(error_code: str) -> str | None:
+    if error_code == MASTER_DATA_ENTITY_NOT_FOUND:
+        return "canonical_entity_missing"
+    if error_code == MASTER_DATA_BINDING_AMBIGUOUS:
+        return "binding_ambiguous"
+    if error_code == MASTER_DATA_BINDING_CONFLICT:
+        return "binding_conflict"
+    return None
+
+
+def _resolve_requirement_scope_hint(*, requirement: MasterDataTokenRequirement) -> str:
+    if requirement.ib_catalog_kind:
+        return requirement.ib_catalog_kind
+    if requirement.owner_counterparty_canonical_id:
+        return requirement.owner_counterparty_canonical_id
+    return ""
+
+
+def _sort_readiness_blockers(blockers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    code_priority = {
+        MASTER_DATA_BINDING_CONFLICT: 10,
+        MASTER_DATA_BINDING_AMBIGUOUS: 20,
+        MASTER_DATA_ENTITY_NOT_FOUND: 30,
+    }
+    return sorted(
+        blockers,
+        key=lambda blocker: (
+            code_priority.get(str(blocker.get("code") or "").strip(), 100),
+            str(blocker.get("kind") or ""),
+            str(blocker.get("database_id") or ""),
+            str(blocker.get("organization_id") or ""),
+            str(blocker.get("entity_name") or ""),
+            str(blocker.get("field_or_table_path") or ""),
+            str(blocker.get("detail") or ""),
+        ),
+    )

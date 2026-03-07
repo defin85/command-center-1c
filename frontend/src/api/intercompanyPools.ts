@@ -80,6 +80,26 @@ export type PoolRunReadinessBlocker = {
   diagnostic?: Record<string, unknown> | null
 }
 
+export type PoolRunReadinessCheckCode =
+  | 'master_data_coverage'
+  | 'organization_party_bindings'
+  | 'policy_completeness'
+  | 'odata_verify_readiness'
+
+export type PoolRunReadinessCheckStatus = 'ready' | 'not_ready'
+
+export type PoolRunReadinessCheck = {
+  code: PoolRunReadinessCheckCode
+  status: PoolRunReadinessCheckStatus
+  blocker_codes: string[]
+  blockers: PoolRunReadinessBlocker[]
+}
+
+export type PoolRunReadinessChecklist = {
+  status: PoolRunReadinessCheckStatus
+  checks: PoolRunReadinessCheck[]
+}
+
 export type PoolRunVerificationStatus = 'not_verified' | 'passed' | 'failed'
 
 export type PoolRunVerificationMismatch = {
@@ -174,6 +194,7 @@ export type PoolRun = {
   publication_step_state: PoolRunPublicationStepState
   master_data_gate?: PoolRunMasterDataGate
   readiness_blockers?: PoolRunReadinessBlocker[]
+  readiness_checklist?: PoolRunReadinessChecklist
   verification_status?: PoolRunVerificationStatus | null
   verification_summary?: PoolRunVerificationSummary
   terminal_reason: string | null

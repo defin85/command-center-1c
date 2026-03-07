@@ -8,8 +8,6 @@
   - backend integration proof;
   - live UI/browser smoke proof.
 - Следующая итерация:
-  - довести readiness до полноценного machine-readable контракта;
-  - обобщить master-data readiness blockers с operator-readable remediation;
   - добить backward compatibility / fail-closed diagnostics для historical runs.
 - За пределами текущего baseline, отдельно на следующий scope:
   - variant-aware policy (`entity + ВидОперации`);
@@ -17,10 +15,10 @@
 
 ## 1. Контракт полноты и readiness
 - [x] 1.1 Зафиксировать completeness matrix для целевых document entity (`обязательные header fields`, `обязательные табличные части`, `минимум 1 строка` где требуется).
-- [ ] 1.2 Добавить machine-readable readiness checklist для run: master-data coverage, Organization->Party bindings, policy completeness, OData verify readiness.
-  Частично готово: `readiness_blockers` уже выводятся в run read-model/UI, но ещё нет единого нормализованного checklist contract с полным покрытием всех источников блокировок.
-- [ ] 1.3 Зафиксировать fail-closed коды ошибок и Problem Details для всех readiness блокеров.
-  Следующий шаг: свести readiness blockers к финальному набору кодов/Problem Details, чтобы beads/операторский процесс опирались на стабильные machine-readable причины отказа.
+- [x] 1.2 Добавить machine-readable readiness checklist для run: master-data coverage, Organization->Party bindings, policy completeness, OData verify readiness.
+  Подтверждено единым `readiness_checklist` contract в run/report + UI, с fallback для historical payload без silent omission.
+- [x] 1.3 Зафиксировать fail-closed коды ошибок и Problem Details для всех readiness блокеров.
+  Подтверждено `POOL_RUN_READINESS_BLOCKED` + стабильными blocker codes в `application/problem+json`, read-model и UI.
 
 ## 2. Document policy и compile path
 - [x] 2.1 Добавить/обновить режим `minimal_documents_full_payload` в compile path.
@@ -28,10 +26,10 @@
 - [x] 2.3 Заблокировать publication transition при неполном profile/mapping (без silent fallback).
 
 ## 3. Master-data readiness
-- [ ] 3.1 Реализовать проверку обязательного наличия canonical master-data и bindings по publish targets.
-  Частично готово только для baseline через bootstrap `stroygrupp`; generic runtime guard по всем target'ам ещё не доведён.
-- [ ] 3.2 Обеспечить операторски читаемый список отсутствующих сущностей/связей для remediation.
-  Следующий шаг: выдавать отсутствующие `party/contract/item/binding` как структурированный remediation list до publication.
+- [x] 3.1 Реализовать проверку обязательного наличия canonical master-data и bindings по publish targets.
+  Подтверждено generic runtime guard по publish targets с fail-closed blockers до publication side effects.
+- [x] 3.2 Обеспечить операторски читаемый список отсутствующих сущностей/связей для remediation.
+  Подтверждено структурированным remediation list для `party/contract/item/binding` в diagnostics/readiness/UI.
 - [x] 3.3 Подготовить deterministic bootstrap sequence для dev, чтобы run можно было реально выполнить end-to-end.
   Подтверждено на `default / stroygrupp_7751284461`: bootstrap applied, actor/service mappings валидны, run readiness = `ready_for_ui_run`.
 

@@ -1,0 +1,14 @@
+type: object
+properties:
+  status:
+    type: string
+    enum:
+      - ready
+      - not_ready
+  checks:
+    type: array
+    items:
+      $ref: ./PoolRunReadinessCheck.yaml
+required:
+  - status
+  - checks
