@@ -5,6 +5,8 @@ properties:
     type: array
     items:
       $ref: ./WorkflowTemplateList.yaml
+  authoring_phase:
+    $ref: ./WorkflowAuthoringPhase.yaml
   count:
     type: integer
     description: Number of workflows in current page
@@ -12,6 +14,7 @@ properties:
     type: integer
     description: Total number of workflows
 required:
+  - authoring_phase
   - count
   - total
   - workflows

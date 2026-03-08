@@ -335,3 +335,86 @@ def test_get_workflow_read_path_supports_legacy_dag_without_operation_ref(staff_
     node = response.json()["workflow"]["dag_structure"]["nodes"][0]
     assert node["template_id"] == "tpl-test-step1"
     assert node["operation_ref"]["alias"] == "tpl-test-step1"
+
+
+@pytest.mark.django_db
+def test_create_workflow_round_trips_pinned_subworkflow_binding(staff_client):
+    response = staff_client.post(
+        "/api/v2/workflows/create-workflow/",
+        data={
+            "name": f"wf-{uuid.uuid4().hex[:8]}",
+            "description": "",
+            "workflow_type": "complex",
+            "dag_structure": {
+                "nodes": [
+                    {
+                        "id": "approval",
+                        "name": "Approval Gate",
+                        "type": "subworkflow",
+                        "subworkflow_config": {
+                            "subworkflow_id": "approval-rev-7",
+                            "subworkflow_ref": {
+                                "binding_mode": "pinned_revision",
+                                "workflow_definition_key": "approval-gate",
+                                "workflow_revision_id": "approval-rev-7",
+                                "workflow_revision": 7,
+                            },
+                            "input_mapping": {"workflow.request": "input.request"},
+                            "output_mapping": {"workflow.approval": "result.approval"},
+                        },
+                    }
+                ],
+                "edges": [],
+            },
+            "is_active": True,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201
+    node = response.json()["workflow"]["dag_structure"]["nodes"][0]
+    assert node["subworkflow_config"]["subworkflow_id"] == "approval-rev-7"
+    assert node["subworkflow_config"]["subworkflow_ref"] == {
+        "binding_mode": "pinned_revision",
+        "workflow_definition_key": "approval-gate",
+        "workflow_revision_id": "approval-rev-7",
+        "workflow_revision": 7,
+    }
+
+
+@pytest.mark.django_db
+def test_create_workflow_rejects_mismatched_pinned_subworkflow_binding(staff_client):
+    response = staff_client.post(
+        "/api/v2/workflows/create-workflow/",
+        data={
+            "name": f"wf-{uuid.uuid4().hex[:8]}",
+            "description": "",
+            "workflow_type": "complex",
+            "dag_structure": {
+                "nodes": [
+                    {
+                        "id": "approval",
+                        "name": "Approval Gate",
+                        "type": "subworkflow",
+                        "subworkflow_config": {
+                            "subworkflow_id": "approval-rev-7",
+                            "subworkflow_ref": {
+                                "binding_mode": "pinned_revision",
+                                "workflow_definition_key": "approval-gate",
+                                "workflow_revision_id": "approval-rev-8",
+                                "workflow_revision": 7,
+                            },
+                        },
+                    }
+                ],
+                "edges": [],
+            },
+            "is_active": True,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["error"]["code"] == "CREATE_ERROR"
+    assert "workflow_revision_id must match subworkflow_id" in payload["error"]["message"]

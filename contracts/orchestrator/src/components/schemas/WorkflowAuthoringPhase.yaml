@@ -1,0 +1,74 @@
+type: object
+description: Workflow authoring rollout phase summary for analyst-facing surfaces.
+properties:
+  phase:
+    type: string
+    description: Canonical workflow authoring phase key.
+  label:
+    type: string
+    description: Human-readable workflow authoring phase label.
+  description:
+    type: string
+    description: Rollout description for the current workflow authoring phase.
+  is_prerequisite_platform_phase:
+    type: boolean
+    description: Whether the current phase is the platform prerequisite stage before full cutover.
+  analyst_surface:
+    type: string
+    description: Primary analyst-facing surface for this phase.
+  rollout_scope:
+    type: array
+    description: Domains included in the current workflow authoring rollout.
+    items:
+      type: string
+  deferred_scope:
+    type: array
+    description: Domains explicitly deferred out of the current rollout phase.
+    items:
+      type: string
+  follow_up_changes:
+    type: array
+    description: OpenSpec follow-up changes that own deferred domains.
+    items:
+      type: string
+  construct_visibility:
+    type: object
+    description: Visibility split between public analyst constructs and runtime-only constructs.
+    properties:
+      contract_version:
+        type: string
+        description: Contract version for workflow construct visibility.
+      public_constructs:
+        type: array
+        description: Analyst-facing workflow constructs that remain public.
+        items:
+          type: string
+      internal_runtime_only_constructs:
+        type: array
+        description: Runtime-only constructs that must not leak into analyst authoring.
+        items:
+          type: string
+      compatibility_constructs:
+        type: array
+        description: Temporary compatibility constructs retained during cutover.
+        items:
+          type: string
+    required:
+      - contract_version
+      - public_constructs
+      - internal_runtime_only_constructs
+      - compatibility_constructs
+  source:
+    type: string
+    description: Effective runtime setting source for the phase value.
+required:
+  - phase
+  - label
+  - description
+  - is_prerequisite_platform_phase
+  - analyst_surface
+  - rollout_scope
+  - deferred_scope
+  - follow_up_changes
+  - construct_visibility
+  - source

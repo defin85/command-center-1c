@@ -1,0 +1,17 @@
+type: object
+description: Pinned DMN-lite decision table reference used by pool workflow bindings.
+properties:
+  decision_table_id:
+    type: string
+    description: Stable decision table identifier.
+  decision_key:
+    type: string
+    description: Decision table key.
+  decision_revision:
+    type: integer
+    minimum: 1
+    description: Pinned decision table revision number.
+required:
+  - decision_table_id
+  - decision_key
+  - decision_revision

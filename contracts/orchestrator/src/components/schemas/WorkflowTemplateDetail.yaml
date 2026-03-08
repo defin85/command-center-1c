@@ -30,6 +30,10 @@ properties:
       * `conditional` - Conditional
       * `parallel` - Parallel
       * `complex` - Complex
+  category:
+    type: string
+    description: Workflow category (for example `custom` or `system`).
+    readOnly: true
   dag_structure:
     $ref: ./DAGStructure.yaml
   config:
@@ -41,6 +45,29 @@ properties:
   is_active:
     type: boolean
     description: Template is active and can be executed
+  is_system_managed:
+    type: boolean
+    readOnly: true
+    description: Whether this workflow is a system-managed runtime projection.
+  management_mode:
+    type: string
+    enum:
+      - user_authored
+      - system_managed
+    readOnly: true
+    description: Contract-level management mode for workflow authoring surfaces.
+  visibility_surface:
+    type: string
+    enum:
+      - workflow_library
+      - runtime_diagnostics
+    readOnly: true
+    description: Primary UI surface where this workflow should be listed.
+  read_only_reason:
+    type: string
+    nullable: true
+    readOnly: true
+    description: Read-only explanation for system-managed runtime projections.
   version_number:
     type: integer
     readOnly: true
@@ -75,13 +102,18 @@ properties:
     format: date-time
     readOnly: true
 required:
+  - category
   - created_at
   - created_by_username
   - dag_structure
   - execution_count
   - id
   - is_valid
+  - is_system_managed
+  - management_mode
   - name
   - parent_version_name
+  - read_only_reason
   - updated_at
   - version_number
+  - visibility_surface

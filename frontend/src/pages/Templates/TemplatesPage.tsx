@@ -652,7 +652,9 @@ function OperationTemplateListShell({
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <div>
           <Title level={2} style={{ marginBottom: 0 }}>Operation Templates</Title>
-          <Text type="secondary">Templates-only registry for manual operations and workflow execution.</Text>
+          <Text type="secondary">
+            Atomic operation catalog for manual execution and workflow nodes. Analyst-authored schemes belong in /workflows.
+          </Text>
         </div>
         <Space>
           {canManageAnyTemplate && <Button onClick={openCreateModal}>New Template</Button>}
@@ -678,6 +680,13 @@ function OperationTemplateListShell({
           showIcon
         />
       )}
+
+      <Alert
+        type="info"
+        showIcon
+        message="Atomic operations only"
+        description="Use /workflows to model analyst-facing schemes. workflow executor templates remain available here only as a compatibility/integration path."
+      />
 
       {showPoolRuntimeDiagnostics && (
         <Alert

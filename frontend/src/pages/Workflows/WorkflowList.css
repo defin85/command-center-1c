@@ -9,12 +9,23 @@
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 16px;
+  gap: 16px;
 }
 
 .page-header h3 {
   margin: 0;
+}
+
+.page-header-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.page-header-subtitle {
+  max-width: 720px;
 }
 
 .filters-card {

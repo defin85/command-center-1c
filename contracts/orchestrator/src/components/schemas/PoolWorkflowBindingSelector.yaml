@@ -1,0 +1,16 @@
+type: object
+description: Optional selector used to choose a workflow binding for a concrete pool run.
+properties:
+  direction:
+    type: string
+    nullable: true
+    description: Optional pool run direction discriminator.
+  mode:
+    type: string
+    nullable: true
+    description: Optional pool run mode discriminator.
+  tags:
+    type: array
+    description: Optional tag matchers required by the binding.
+    items:
+      type: string

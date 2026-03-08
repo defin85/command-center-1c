@@ -674,7 +674,7 @@ const PropertyEditor = ({
     return (
       <Card className="property-editor empty">
         <div className="empty-state">
-          <Text type="secondary">Select a node to edit its properties</Text>
+          <Text type="secondary">Select a scheme step to edit its contract</Text>
         </div>
       </Card>
     )
@@ -816,11 +816,11 @@ const PropertyEditor = ({
       </div>
 
       <Form layout="vertical" size="small">
-        <Form.Item label="Name" required htmlFor={`${idPrefix}-node-name`}>
+        <Form.Item label="Step Name" required htmlFor={`${idPrefix}-node-name`}>
           <Input
             id={`${idPrefix}-node-name`}
             value={localData.label}
-            placeholder="Node name"
+            placeholder="Step name"
             disabled={readOnly}
             onChange={(e) => handleLabelChange(e.target.value)}
           />

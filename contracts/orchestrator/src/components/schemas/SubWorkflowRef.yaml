@@ -1,0 +1,27 @@
+type: object
+description: Pinned binding metadata for analyst-authored subworkflow calls.
+properties:
+  binding_mode:
+    type: string
+    description: |-
+      Binding mode for subworkflow reference
+
+      * `direct_runtime_id` - direct_runtime_id
+      * `pinned_revision` - pinned_revision
+    enum:
+      - direct_runtime_id
+      - pinned_revision
+    default: direct_runtime_id
+  workflow_definition_key:
+    type: string
+    nullable: true
+    description: Stable definition key for pinned subworkflow binding
+  workflow_revision_id:
+    type: string
+    nullable: true
+    description: Pinned workflow revision ID
+  workflow_revision:
+    type: integer
+    nullable: true
+    minimum: 1
+    description: Pinned workflow revision number

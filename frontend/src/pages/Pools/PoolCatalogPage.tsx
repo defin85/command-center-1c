@@ -49,6 +49,7 @@ import {
   type OrganizationPool,
   type OrganizationPoolBinding,
   type OrganizationStatus,
+  type PoolWorkflowBinding,
   type PoolGraph,
   type PoolMasterContract,
   type PoolMasterItem,
@@ -66,6 +67,7 @@ const { TextArea } = Input
 
 const SYNC_MAX_ROWS = 1000
 const MASTER_DATA_TOKEN_CATALOG_LIMIT = 200
+const DEFAULT_WORKFLOW_BINDINGS_JSON = JSON.stringify([], null, 2)
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const STATUS_OPTIONS: OrganizationStatus[] = ['active', 'inactive', 'archived']
 
@@ -102,6 +104,7 @@ type PoolFormValues = {
   name: string
   description: string
   is_active: boolean
+  workflow_bindings_json?: string
 }
 
 type TopologyNodeFormValue = {
@@ -527,6 +530,96 @@ const normalizeMetadataObject = (rawMetadata: unknown): Record<string, unknown> 
     return {}
   }
   return { ...(rawMetadata as Record<string, unknown>) }
+}
+
+const normalizeWorkflowBindingsArray = (rawBindings: unknown): PoolWorkflowBinding[] => {
+  if (!Array.isArray(rawBindings)) {
+    return []
+  }
+  return rawBindings.filter((item) => item && typeof item === 'object' && !Array.isArray(item)) as PoolWorkflowBinding[]
+}
+
+const extractWorkflowBindingsFromPool = (pool: OrganizationPool | null | undefined): PoolWorkflowBinding[] => {
+  if (!pool) {
+    return []
+  }
+  if (Array.isArray(pool.workflow_bindings)) {
+    return normalizeWorkflowBindingsArray(pool.workflow_bindings)
+  }
+  return normalizeWorkflowBindingsArray(normalizeMetadataObject(pool.metadata).workflow_bindings)
+}
+
+const stringifyWorkflowBindingsForForm = (rawBindings: unknown): string => {
+  const bindings = normalizeWorkflowBindingsArray(rawBindings)
+  if (bindings.length === 0) {
+    return DEFAULT_WORKFLOW_BINDINGS_JSON
+  }
+  try {
+    return JSON.stringify(bindings, null, 2)
+  } catch {
+    return DEFAULT_WORKFLOW_BINDINGS_JSON
+  }
+}
+
+const parseWorkflowBindingsInput = (
+  value: string | undefined
+): { bindings: PoolWorkflowBinding[]; error: string | null } => {
+  const source = String(value ?? '').trim()
+  if (!source) {
+    return { bindings: [], error: null }
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(source)
+  } catch {
+    return {
+      bindings: [],
+      error: 'Workflow bindings JSON должен быть валидным JSON array.',
+    }
+  }
+
+  if (!Array.isArray(parsed)) {
+    return {
+      bindings: [],
+      error: 'Workflow bindings JSON должен быть JSON array.',
+    }
+  }
+
+  const invalidIndex = parsed.findIndex((item) => !item || typeof item !== 'object' || Array.isArray(item))
+  if (invalidIndex >= 0) {
+    return {
+      bindings: [],
+      error: `Workflow bindings JSON: элемент #${invalidIndex + 1} должен быть объектом.`,
+    }
+  }
+
+  return { bindings: parsed as PoolWorkflowBinding[], error: null }
+}
+
+const summarizeWorkflowBindings = (
+  pool: OrganizationPool
+): { primary: string; secondary: string | null } => {
+  const bindings = extractWorkflowBindingsFromPool(pool)
+  if (bindings.length === 0) {
+    return { primary: '0 bindings', secondary: null }
+  }
+
+  const activeCount = bindings.filter((binding) => binding.status === 'active').length
+  const firstBinding = bindings[0]
+  const workflowKey = String(
+    firstBinding?.workflow?.workflow_definition_key || firstBinding?.workflow?.workflow_name || ''
+  ).trim()
+
+  return {
+    primary: `${bindings.length} ${bindings.length === 1 ? 'binding' : 'bindings'}`,
+    secondary: [
+      workflowKey,
+      activeCount > 0 ? `${activeCount} active` : null,
+    ]
+      .filter((item): item is string => Boolean(item))
+      .join(' · ') || null,
+  }
 }
 
 const parseTopologyMetadata = (
@@ -2049,6 +2142,9 @@ export function PoolCatalogPage() {
         name: selectedPool.name,
         description: selectedPool.description || '',
         is_active: selectedPool.is_active,
+        workflow_bindings_json: stringifyWorkflowBindingsForForm(
+          extractWorkflowBindingsFromPool(selectedPool)
+        ),
       })
       return
     }
@@ -2057,6 +2153,7 @@ export function PoolCatalogPage() {
       name: '',
       description: '',
       is_active: true,
+      workflow_bindings_json: DEFAULT_WORKFLOW_BINDINGS_JSON,
     })
   }, [isPoolDrawerOpen, poolDrawerMode, poolForm, selectedPool])
 
@@ -2066,6 +2163,11 @@ export function PoolCatalogPage() {
     setPoolSubmitError(null)
     try {
       const values = await poolForm.validateFields()
+      const parsedWorkflowBindings = parseWorkflowBindingsInput(values.workflow_bindings_json)
+      if (parsedWorkflowBindings.error) {
+        setPoolSubmitError(parsedWorkflowBindings.error)
+        return
+      }
       setIsPoolSaving(true)
       const response = await upsertOrganizationPool({
         pool_id: poolDrawerMode === 'edit' ? selectedPool?.id : undefined,
@@ -2074,6 +2176,7 @@ export function PoolCatalogPage() {
         description: values.description.trim(),
         is_active: Boolean(values.is_active),
         metadata: selectedPool?.metadata ?? {},
+        workflow_bindings: parsedWorkflowBindings.bindings,
       })
       setSelectedPoolId(response.pool.id)
       message.success(response.created ? 'Пул создан.' : 'Пул обновлён.')
@@ -2325,6 +2428,20 @@ export function PoolCatalogPage() {
         render: (value: boolean) => (
           value ? <Tag color="success">active</Tag> : <Tag color="default">inactive</Tag>
         ),
+      },
+      {
+        title: 'Workflow bindings',
+        key: 'workflow_bindings',
+        width: 220,
+        render: (_value, record) => {
+          const summary = summarizeWorkflowBindings(record)
+          return (
+            <Space direction="vertical" size={0}>
+              <Text>{summary.primary}</Text>
+              {summary.secondary ? <Text type="secondary">{summary.secondary}</Text> : null}
+            </Space>
+          )
+        },
       },
       {
         title: 'Updated',
@@ -4156,6 +4273,17 @@ export function PoolCatalogPage() {
             </Form.Item>
             <Form.Item name="is_active" label="Active" valuePropName="checked">
               <Switch />
+            </Form.Item>
+            <Form.Item
+              name="workflow_bindings_json"
+              label="Workflow bindings JSON"
+              extra="JSON array of pool_workflow_binding.v1 contracts."
+            >
+              <TextArea
+                aria-label="Workflow bindings JSON"
+                autoSize={{ minRows: 8, maxRows: 18 }}
+                placeholder={DEFAULT_WORKFLOW_BINDINGS_JSON}
+              />
             </Form.Item>
           </Form>
         </Space>

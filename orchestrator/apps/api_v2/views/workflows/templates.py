@@ -14,7 +14,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 from apps.core import permission_codes as perms
 from apps.databases.models import PermissionLevel
 from apps.templates.rbac import TemplatePermissionService
-from apps.templates.workflow.models import WorkflowTemplate, WorkflowExecution
+from apps.templates.workflow.models import WorkflowCategory, WorkflowTemplate, WorkflowExecution
 from apps.templates.workflow.serializers import (
     WorkflowTemplateListSerializer,
     WorkflowTemplateDetailSerializer,
@@ -24,6 +24,14 @@ from apps.api_v2.serializers.common import ErrorResponseSerializer
 from apps.operations.utils.feature_flags import (
     is_production_execution_profile,
     is_workflow_debug_fallback_enabled,
+)
+from apps.templates.workflow.authoring_phase import get_workflow_authoring_phase_summary
+from apps.templates.workflow.management_mode import (
+    WORKFLOW_SYSTEM_MANAGED_READ_ONLY_CODE,
+    WORKFLOW_SYSTEM_MANAGED_READ_ONLY_REASON,
+    WORKFLOW_VISIBILITY_SURFACE_LIBRARY,
+    WORKFLOW_VISIBILITY_SURFACE_RUNTIME_DIAGNOSTICS,
+    is_system_managed_workflow,
 )
 
 from .common import (
@@ -87,6 +95,10 @@ def _build_workflow_enqueue_fail_closed_response(
             description='Search by name or description'
         ),
         OpenApiParameter(
+            name='surface', type=str, required=False,
+            description='Visibility surface: workflow_library (default) or runtime_diagnostics'
+        ),
+        OpenApiParameter(
             name='filters', type=str, required=False,
             description='JSON object with filter conditions'
         ),
@@ -141,6 +153,9 @@ def list_workflows(request):
     is_active = request.query_params.get('is_active')
     is_valid = request.query_params.get('is_valid')
     search = request.query_params.get('search')
+    surface = str(
+        request.query_params.get('surface') or WORKFLOW_VISIBILITY_SURFACE_LIBRARY
+    ).strip() or WORKFLOW_VISIBILITY_SURFACE_LIBRARY
     raw_filters = request.query_params.get('filters')
     raw_sort = request.query_params.get('sort')
 
@@ -160,6 +175,11 @@ def list_workflows(request):
     qs = WorkflowTemplate.objects.annotate(
         _execution_count=Count('executions')
     )
+
+    if surface == WORKFLOW_VISIBILITY_SURFACE_RUNTIME_DIAGNOSTICS:
+        qs = qs.filter(category=WorkflowCategory.SYSTEM)
+    else:
+        qs = qs.exclude(category=WorkflowCategory.SYSTEM)
 
     if workflow_type:
         qs = qs.filter(workflow_type=workflow_type)
@@ -199,9 +219,13 @@ def list_workflows(request):
     qs = qs[offset:offset + limit]
 
     serializer = WorkflowTemplateListSerializer(qs, many=True)
+    authoring_phase = get_workflow_authoring_phase_summary(
+        tenant_id=str(getattr(getattr(request, "tenant", None), "id", "") or "") or None
+    )
 
     return Response({
         'workflows': serializer.data,
+        'authoring_phase': authoring_phase,
         'count': len(serializer.data),
         'total': total,
     })
@@ -395,6 +419,17 @@ def execute_workflow(request):
 
     if not request.user.has_perm(perms.PERM_TEMPLATES_EXECUTE_WORKFLOW_TEMPLATE, workflow):
         return _permission_denied("You do not have permission to execute this workflow.")
+    if is_system_managed_workflow(workflow):
+        return Response(
+            {
+                'success': False,
+                'error': {
+                    'code': WORKFLOW_SYSTEM_MANAGED_READ_ONLY_CODE,
+                    'message': WORKFLOW_SYSTEM_MANAGED_READ_ONLY_REASON,
+                }
+            },
+            status=409,
+        )
 
     # Validate workflow is executable
     if not workflow.is_active:

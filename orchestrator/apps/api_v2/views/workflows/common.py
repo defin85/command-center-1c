@@ -263,9 +263,33 @@ class WorkflowStatisticsSerializer(serializers.Serializer):
     average_duration = serializers.FloatField(allow_null=True)
 
 
+class WorkflowAuthoringPhaseSerializer(serializers.Serializer):
+    """Workflow authoring phase summary for rollout diagnostics."""
+
+    class WorkflowConstructVisibilitySerializer(serializers.Serializer):
+        contract_version = serializers.CharField()
+        public_constructs = serializers.ListField(child=serializers.CharField())
+        internal_runtime_only_constructs = serializers.ListField(
+            child=serializers.CharField()
+        )
+        compatibility_constructs = serializers.ListField(child=serializers.CharField())
+
+    phase = serializers.CharField()
+    label = serializers.CharField()
+    description = serializers.CharField()
+    is_prerequisite_platform_phase = serializers.BooleanField()
+    analyst_surface = serializers.CharField()
+    rollout_scope = serializers.ListField(child=serializers.CharField())
+    deferred_scope = serializers.ListField(child=serializers.CharField())
+    follow_up_changes = serializers.ListField(child=serializers.CharField())
+    construct_visibility = WorkflowConstructVisibilitySerializer()
+    source = serializers.CharField()
+
+
 class WorkflowListResponseSerializer(serializers.Serializer):
     """Response for list_workflows endpoint."""
     workflows = WorkflowTemplateListSerializer(many=True)
+    authoring_phase = WorkflowAuthoringPhaseSerializer()
     count = serializers.IntegerField(help_text="Number of workflows in current page")
     total = serializers.IntegerField(help_text="Total number of workflows")
 
@@ -438,5 +462,3 @@ class CloneWorkflowRequestSerializer(serializers.Serializer):
     """Request for clone_workflow endpoint."""
     workflow_id = serializers.UUIDField()
     new_name = serializers.CharField(max_length=200, required=False)
-
-

@@ -26,13 +26,22 @@ def build_pool_run_idempotency_key(
     period_start: date,
     period_end: date | None,
     direction: str,
+    workflow_binding_id: str | None = None,
     run_input: dict[str, Any] | None,
 ) -> str:
     normalized_run_input = _canonicalize_run_input(run_input)
     period_signature = period_start.isoformat()
     if period_end is not None:
         period_signature = f"{period_signature}:{period_end.isoformat()}"
-    raw = "|".join([str(pool_id), period_signature, str(direction), normalized_run_input])
+    raw = "|".join(
+        [
+            str(pool_id),
+            period_signature,
+            str(direction),
+            f"workflow_binding={str(workflow_binding_id or '').strip()}",
+            normalized_run_input,
+        ]
+    )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -92,6 +101,7 @@ def upsert_pool_run(
     direction: str,
     period_start: date,
     period_end: date | None,
+    workflow_binding_id: str | None = None,
     run_input: dict[str, Any] | None,
     mode: str = PoolRunMode.SAFE,
     schema_template: PoolSchemaTemplate | None = None,
@@ -110,6 +120,7 @@ def upsert_pool_run(
         period_start=period_start,
         period_end=period_end,
         direction=direction,
+        workflow_binding_id=workflow_binding_id,
         run_input=run_input,
     )
 
@@ -144,6 +155,7 @@ def upsert_pool_run(
                     "idempotency_key": idempotency_key,
                     "direction": direction,
                     "mode": mode,
+                    "pool_workflow_binding_id": str(workflow_binding_id or "").strip() or None,
                 },
             )
             return PoolRunUpsertResult(run=run, created=True)
@@ -175,7 +187,11 @@ def upsert_pool_run(
                 actor=created_by,
                 status_before=run.status,
                 status_after=run.status,
-                payload={"updated_fields": changed_fields, "idempotency_key": idempotency_key},
+                payload={
+                    "updated_fields": changed_fields,
+                    "idempotency_key": idempotency_key,
+                    "pool_workflow_binding_id": str(workflow_binding_id or "").strip() or None,
+                },
             )
 
         return PoolRunUpsertResult(run=run, created=False)

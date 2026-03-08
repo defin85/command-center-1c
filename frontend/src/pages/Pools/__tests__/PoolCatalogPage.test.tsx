@@ -87,12 +87,24 @@ const secondOrganization: Organization = {
   inn: '730000000002',
 }
 
+let initialCatalogLoadPromise: Promise<void> | null = null
+
+async function waitForInitialCatalogLoad() {
+  await waitFor(() => expect(mockListOrganizations).toHaveBeenCalled())
+  await waitFor(() => expect(mockGetOrganization).toHaveBeenCalled())
+  await waitFor(() => expect(mockListOrganizationPools).toHaveBeenCalled())
+  await waitFor(() => expect(mockGetPoolGraph).toHaveBeenCalled())
+  await waitFor(() => expect(mockListPoolTopologySnapshots).toHaveBeenCalled())
+}
+
 function renderPage() {
-  return render(
+  const result = render(
     <AntApp>
       <PoolCatalogPage />
     </AntApp>
   )
+  initialCatalogLoadPromise = waitForInitialCatalogLoad()
+  return result
 }
 
 function openSelectByTestId(testId: string) {
@@ -112,7 +124,16 @@ async function selectDropdownOption(label: string | RegExp) {
 }
 
 async function openWorkspaceTab(user: ReturnType<typeof userEvent.setup>, tabLabel: 'Pools' | 'Topology Editor') {
+  await initialCatalogLoadPromise
   await user.click(screen.getByRole('tab', { name: tabLabel }))
+  if (tabLabel === 'Pools') {
+    await screen.findByText('Pools management')
+    return
+  }
+  await screen.findByText('Topology snapshots by date')
+  await waitFor(() => {
+    expect(screen.getByTestId('pool-catalog-topology-save')).toBeInTheDocument()
+  })
 }
 
 async function expandFirstEdgeAdvanced(user: ReturnType<typeof userEvent.setup>) {
@@ -122,6 +143,7 @@ async function expandFirstEdgeAdvanced(user: ReturnType<typeof userEvent.setup>)
 
 describe('PoolCatalogPage', () => {
   beforeEach(() => {
+    initialCatalogLoadPromise = null
     localStorage.clear()
 
     mockListOrganizations.mockReset()
@@ -531,6 +553,55 @@ describe('PoolCatalogPage', () => {
         pool_id: '44444444-4444-4444-4444-444444444444',
         code: 'pool-1',
         name: 'Pool One Updated',
+      })
+    )
+  }, 15000)
+
+  it('submits workflow bindings from pool drawer as structured payload', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Pools')
+    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    fireEvent.change(screen.getByLabelText('Workflow bindings JSON'), {
+      target: {
+        value: JSON.stringify(
+          [
+            {
+              workflow: {
+                workflow_definition_key: 'services-publication',
+                workflow_revision_id: '11111111-1111-1111-1111-111111111111',
+                workflow_revision: 3,
+                workflow_name: 'services_publication',
+              },
+              selector: { direction: 'top_down', mode: 'safe', tags: ['baseline'] },
+              effective_from: '2026-01-01',
+              status: 'active',
+            },
+          ],
+          null,
+          2
+        ),
+      },
+    })
+    await user.click(screen.getByTestId('pool-catalog-save-pool'))
+
+    await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
+    expect(mockUpsertOrganizationPool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pool_id: '44444444-4444-4444-4444-444444444444',
+        workflow_bindings: [
+          expect.objectContaining({
+            workflow: expect.objectContaining({
+              workflow_definition_key: 'services-publication',
+              workflow_revision: 3,
+            }),
+            status: 'active',
+          }),
+        ],
       })
     )
   }, 15000)

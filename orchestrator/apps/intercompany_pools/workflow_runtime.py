@@ -32,9 +32,15 @@ from .publication_auth_mapping import (
     build_publication_auth_fail_closed_error,
     evaluate_publication_auth_coverage,
 )
+from .runtime_projection_contract import (
+    POOL_RUNTIME_PROJECTION_CONTEXT_KEY,
+    build_pool_runtime_projection_v1,
+    validate_pool_runtime_projection_v1,
+)
 from .runtime_template_registry import sync_pool_runtime_template_registry
 from .runtime_distribution import compute_distribution_runtime_state, load_runtime_topology_for_period
 from .run_input_sanitizer import sanitize_run_input_for_runtime_contract
+from .workflow_authoring_contract import PoolWorkflowBindingContract
 from .workflow_compiler import PoolWorkflowRunContext, compile_pool_execution_plan
 
 
@@ -60,6 +66,7 @@ PUBLICATION_AUTH_SOURCE_RUN_CREATE = "run_create"
 PUBLICATION_AUTH_SOURCE_CONFIRM_PUBLICATION = "confirm_publication"
 PUBLICATION_AUTH_SOURCE_RETRY_PUBLICATION = "retry_publication"
 POOL_RUNTIME_RETRY_PAYLOAD_INVALID = "POOL_RUNTIME_RETRY_PAYLOAD_INVALID"
+POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY = "pool_workflow_binding"
 
 
 @dataclass(frozen=True)
@@ -86,9 +93,11 @@ def start_pool_run_workflow_execution(
     *,
     run: PoolRun,
     requested_by: User | None = None,
+    workflow_binding: dict[str, Any] | None = None,
 ) -> PoolWorkflowStartResult:
     execution_id: str | None = None
     created_execution = False
+    normalized_workflow_binding = _normalize_runtime_workflow_binding(workflow_binding)
 
     with transaction.atomic():
         locked_run = (
@@ -134,7 +143,13 @@ def start_pool_run_workflow_execution(
                 mode=locked_run.mode,
                 run_input=sanitized_run_input,
                 document_plan_artifact=document_plan_artifact,
+                workflow_binding=normalized_workflow_binding,
             ),
+        )
+        runtime_projection = build_pool_runtime_projection_v1(
+            run=locked_run,
+            plan=plan,
+            document_plan_artifact=document_plan_artifact,
         )
         save_fields = {
             "updated_at",
@@ -170,6 +185,8 @@ def start_pool_run_workflow_execution(
                 publication_auth_source=PUBLICATION_AUTH_SOURCE_RUN_CREATE,
                 master_data_snapshot_ref=master_data_snapshot_ref,
                 master_data_binding_artifact_ref=master_data_binding_artifact_ref,
+                runtime_projection=runtime_projection,
+                workflow_binding=normalized_workflow_binding,
             ),
             tenant=locked_run.tenant,
             execution_consumer="pools",
@@ -291,6 +308,7 @@ def start_pool_run_retry_workflow_execution(
         parent_input_context = (
             parent_execution.input_context if isinstance(parent_execution.input_context, dict) else {}
         )
+        retry_workflow_binding = _resolve_retry_workflow_binding(parent_input_context)
         root_workflow_run_id = str(
             parent_input_context.get("root_workflow_run_id") or parent_execution.id
         )
@@ -337,7 +355,13 @@ def start_pool_run_retry_workflow_execution(
                 mode=locked_run.mode,
                 run_input=sanitized_run_input,
                 document_plan_artifact=document_plan_artifact,
+                workflow_binding=retry_workflow_binding,
             ),
+        )
+        runtime_projection = build_pool_runtime_projection_v1(
+            run=locked_run,
+            plan=plan,
+            document_plan_artifact=document_plan_artifact,
         )
         workflow_template = _resolve_or_create_workflow_template(plan=plan, requested_by=requested_by)
 
@@ -348,6 +372,8 @@ def start_pool_run_retry_workflow_execution(
             fallback_publication_auth=parent_input_context.get("publication_auth"),
             master_data_snapshot_ref=master_data_snapshot_ref,
             master_data_binding_artifact_ref=master_data_binding_artifact_ref,
+            runtime_projection=runtime_projection,
+            workflow_binding=retry_workflow_binding,
         )
         persisted_binding_artifact = parent_input_context.get(
             POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY
@@ -474,9 +500,11 @@ def _build_input_context(
     fallback_publication_auth: object | None = None,
     master_data_snapshot_ref: str = "",
     master_data_binding_artifact_ref: str = "",
+    runtime_projection: dict[str, Any] | None = None,
+    workflow_binding: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     run_input = sanitize_run_input_for_runtime_contract(run_input=run.run_input)
-    return {
+    context = {
         "pool_run_id": str(run.id),
         "pool_run_idempotency_key": run.idempotency_key,
         "pool_id": str(run.pool_id),
@@ -498,6 +526,31 @@ def _build_input_context(
         "master_data_snapshot_ref": str(master_data_snapshot_ref or "").strip(),
         "master_data_binding_artifact_ref": str(master_data_binding_artifact_ref or "").strip(),
     }
+    if isinstance(runtime_projection, dict):
+        context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY] = validate_pool_runtime_projection_v1(
+            projection=runtime_projection
+        )
+    normalized_workflow_binding = _normalize_runtime_workflow_binding(workflow_binding)
+    if normalized_workflow_binding is not None:
+        context[POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY] = normalized_workflow_binding
+    return context
+
+
+def _normalize_runtime_workflow_binding(
+    workflow_binding: object | None,
+) -> dict[str, Any] | None:
+    if not isinstance(workflow_binding, dict) or not workflow_binding:
+        return None
+    binding = PoolWorkflowBindingContract(**workflow_binding)
+    return binding.model_dump(mode="json")
+
+
+def _resolve_retry_workflow_binding(
+    parent_input_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    return _normalize_runtime_workflow_binding(
+        parent_input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)
+    )
 
 
 def _build_publication_auth_context(
@@ -1211,6 +1264,13 @@ def _build_execution_plan_snapshot(
         if isinstance(execution_context, dict)
         else ""
     )
+    runtime_projection = (
+        validate_pool_runtime_projection_v1(
+            projection=(execution_context or {}).get(POOL_RUNTIME_PROJECTION_CONTEXT_KEY)
+        )
+        if isinstance((execution_context or {}).get(POOL_RUNTIME_PROJECTION_CONTEXT_KEY), dict)
+        else None
+    )
     return {
         "kind": "workflow",
         "plan_version": plan.plan_version,
@@ -1234,6 +1294,7 @@ def _build_execution_plan_snapshot(
             "publication_auth": publication_auth,
             "master_data_snapshot_ref": master_data_snapshot_ref,
             "master_data_binding_artifact_ref": master_data_binding_artifact_ref,
+            POOL_RUNTIME_PROJECTION_CONTEXT_KEY: runtime_projection,
         },
         "execution_snapshot": {
             "pool_run_id": str(run.id),
@@ -1244,6 +1305,7 @@ def _build_execution_plan_snapshot(
             "publication_auth": publication_auth,
             "master_data_snapshot_ref": master_data_snapshot_ref,
             "master_data_binding_artifact_ref": master_data_binding_artifact_ref,
+            POOL_RUNTIME_PROJECTION_CONTEXT_KEY: runtime_projection,
             "lineage": execution_lineage,
         },
         "targets": {
@@ -1251,6 +1313,7 @@ def _build_execution_plan_snapshot(
             "pool_id": str(run.pool_id),
             "approval_required": run.mode == PoolRunMode.SAFE,
         },
+        "runtime_projection": runtime_projection,
         "operation_bindings": _build_operation_binding_snapshot(plan=plan),
     }
 
@@ -1275,7 +1338,25 @@ def _build_execution_lineage_snapshot(
 
 def _build_execution_bindings(*, plan) -> list[dict[str, Any]]:
     bindings: list[dict[str, Any]] = []
-    if plan.workflow_binding_hint:
+    if isinstance(getattr(plan, "workflow_binding_snapshot", None), dict):
+        workflow_binding_snapshot = dict(plan.workflow_binding_snapshot)
+        binding_mode = str(workflow_binding_snapshot.get("binding_mode") or "").strip()
+        bindings.append(
+            {
+                "target_ref": "workflow.binding",
+                "source_ref": (
+                    f"pool_workflow_binding:{workflow_binding_snapshot.get('binding_id')}"
+                    if binding_mode == "pool_workflow_binding"
+                    else "pool_schema_template.metadata.workflow_binding"
+                ),
+                "resolve_at": "compile",
+                "sensitive": False,
+                "status": "applied" if binding_mode != "unbound" else "skipped",
+                "binding_mode": binding_mode or "unbound",
+                "provenance": workflow_binding_snapshot,
+            }
+        )
+    elif plan.workflow_binding_hint:
         bindings.append(
             {
                 "target_ref": "workflow.binding_hint",

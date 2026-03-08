@@ -133,6 +133,25 @@ def test_build_pool_run_idempotency_key_is_deterministic(run_fixture: PoolRun) -
 
 
 @pytest.mark.django_db
+def test_build_pool_run_idempotency_key_changes_with_workflow_binding() -> None:
+    tenant = Tenant.objects.create(slug="pool-run-binding-key", name="Pool Run Binding Key")
+    pool = OrganizationPool.objects.create(tenant=tenant, code="pool-binding-key", name="Pool Binding Key")
+
+    base_kwargs = {
+        "pool_id": str(pool.id),
+        "period_start": date(2026, 1, 1),
+        "period_end": date(2026, 1, 31),
+        "direction": PoolRunDirection.BOTTOM_UP,
+        "run_input": {"source_payload": [{"inn": "770000000001", "amount": "10.00"}]},
+    }
+
+    first = build_pool_run_idempotency_key(workflow_binding_id="binding-a", **base_kwargs)
+    second = build_pool_run_idempotency_key(workflow_binding_id="binding-b", **base_kwargs)
+
+    assert first != second
+
+
+@pytest.mark.django_db
 def test_upsert_pool_run_reuses_existing_run(run_fixture: PoolRun) -> None:
     run = run_fixture
     first = upsert_pool_run(
@@ -168,3 +187,32 @@ def test_upsert_pool_run_reuses_existing_run(run_fixture: PoolRun) -> None:
     )
     assert "run.created" in event_types
     assert "run.upserted" in event_types
+
+
+@pytest.mark.django_db
+def test_upsert_pool_run_does_not_reuse_existing_run_for_different_binding(run_fixture: PoolRun) -> None:
+    run = run_fixture
+    first = upsert_pool_run(
+        tenant=run.tenant,
+        pool=run.pool,
+        direction=run.direction,
+        period_start=run.period_start,
+        period_end=run.period_end,
+        workflow_binding_id="binding-a",
+        run_input={"source_payload": [{"inn": "770000000001", "amount": "10.00"}]},
+        mode=PoolRunMode.SAFE,
+    )
+    second = upsert_pool_run(
+        tenant=run.tenant,
+        pool=run.pool,
+        direction=run.direction,
+        period_start=run.period_start,
+        period_end=run.period_end,
+        workflow_binding_id="binding-b",
+        run_input={"source_payload": [{"inn": "770000000001", "amount": "10.00"}]},
+        mode=PoolRunMode.SAFE,
+    )
+
+    assert first.created is True
+    assert second.created is True
+    assert first.run.id != second.run.id

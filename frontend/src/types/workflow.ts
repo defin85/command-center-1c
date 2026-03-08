@@ -101,10 +101,15 @@ export interface WorkflowTemplate {
   name: string
   description?: string
   workflow_type: WorkflowType
+  category?: string
   dag_structure: DAGStructure
   config?: WorkflowTemplateConfig
   is_valid: boolean
   is_active: boolean
+  is_system_managed?: boolean
+  management_mode?: string
+  visibility_surface?: string
+  read_only_reason?: string | null
   created_at: string
   updated_at: string
   created_by?: string
@@ -301,40 +306,40 @@ export interface NodeTypeInfo {
 export const NODE_TYPE_INFO: Record<NodeType, NodeTypeInfo> = {
   operation: {
     type: 'operation',
-    label: 'Operation',
-    description: 'Execute an operation template',
+    label: 'Operation Task',
+    description: 'Run a reusable atomic operation from the templates catalog',
     icon: 'ToolOutlined',
     color: '#1890ff',
     requiredFields: ['template_id']
   },
   condition: {
     type: 'condition',
-    label: 'Condition',
-    description: 'Branch based on expression',
+    label: 'Decision Gate',
+    description: 'Route the scheme through an explicit branch or decision point',
     icon: 'BranchesOutlined',
     color: '#faad14',
     requiredFields: ['expression']
   },
   parallel: {
     type: 'parallel',
-    label: 'Parallel',
-    description: 'Execute nodes in parallel',
+    label: 'Parallel Stage',
+    description: 'Run several scheme steps at the same time and join them later',
     icon: 'ForkOutlined',
     color: '#52c41a',
     requiredFields: ['parallel_nodes']
   },
   loop: {
     type: 'loop',
-    label: 'Loop',
-    description: 'Repeat nodes multiple times',
+    label: 'Repeat Stage',
+    description: 'Repeat a scheme fragment with explicit iteration rules',
     icon: 'SyncOutlined',
     color: '#722ed1',
     requiredFields: ['loop_mode']
   },
   subworkflow: {
     type: 'subworkflow',
-    label: 'Sub-Workflow',
-    description: 'Execute another workflow',
+    label: 'Subworkflow Call',
+    description: 'Reuse another workflow definition as a pinned scheme fragment',
     icon: 'ApartmentOutlined',
     color: '#eb2f96',
     requiredFields: ['subworkflow_id']

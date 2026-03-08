@@ -75,6 +75,15 @@ RUNTIME_SETTINGS = {
             "on workflow create/update."
         ),
     ),
+    "workflows.authoring.phase": RuntimeSettingDefinition(
+        key="workflows.authoring.phase",
+        value_type="string",
+        default="workflow_centric_prerequisite",
+        description=(
+            "Controls workflow authoring rollout phase for analyst-facing pool modeling "
+            "(legacy_technical_dag, workflow_centric_prerequisite, workflow_centric_active)."
+        ),
+    ),
     "pools.projection.publication_hardening_cutoff_utc": RuntimeSettingDefinition(
         key="pools.projection.publication_hardening_cutoff_utc",
         value_type="string",

@@ -13,7 +13,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   App,
   Layout,
@@ -84,6 +84,7 @@ const initialDagStructure: DAGStructure = {
 const WorkflowDesigner = () => {
   const { id: templateId } = useParams<{ id?: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { message } = App.useApp()
   const [form] = Form.useForm()
 
@@ -102,6 +103,14 @@ const WorkflowDesigner = () => {
   const [saveModalVisible, setSaveModalVisible] = useState(false)
   const [executeModalVisible, setExecuteModalVisible] = useState(false)
   const [executeInput, setExecuteInput] = useState('{}')
+  const isSystemManagedProjection = state.template?.is_system_managed === true
+  const isRuntimeDiagnosticsSurface =
+    searchParams.get('surface') === 'runtime_diagnostics' || isSystemManagedProjection
+  const backTarget = isRuntimeDiagnosticsSurface
+    ? '/workflows?surface=runtime_diagnostics'
+    : '/workflows'
+  const runtimeProjectionReadOnlyReason = state.template?.read_only_reason
+    || 'System-managed runtime workflow projections are available for diagnostics only.'
 
   // Load template if editing
   useEffect(() => {
@@ -262,6 +271,10 @@ const WorkflowDesigner = () => {
 
   // Validate workflow
   const handleValidate = async () => {
+    if (isSystemManagedProjection) {
+      message.info(runtimeProjectionReadOnlyReason)
+      return
+    }
     if (!state.template?.id) {
       message.warning('Save the workflow first to validate')
       return
@@ -296,6 +309,10 @@ const WorkflowDesigner = () => {
 
   // Save workflow
   const handleSave = async () => {
+    if (isSystemManagedProjection) {
+      message.info(runtimeProjectionReadOnlyReason)
+      return
+    }
     try {
       const values = await form.validateFields()
 
@@ -349,6 +366,10 @@ const WorkflowDesigner = () => {
 
   // Execute workflow
   const handleExecute = async () => {
+    if (isSystemManagedProjection) {
+      message.info(runtimeProjectionReadOnlyReason)
+      return
+    }
     if (!state.template?.id) {
       message.warning('Save the workflow first')
       return
@@ -385,6 +406,10 @@ const WorkflowDesigner = () => {
 
   // Handle save button click
   const handleSaveClick = () => {
+    if (isSystemManagedProjection) {
+      message.info(runtimeProjectionReadOnlyReason)
+      return
+    }
     if (!state.template) {
       // New workflow - show modal for name
       setSaveModalVisible(true)
@@ -411,12 +436,12 @@ const WorkflowDesigner = () => {
         <div className="header-left">
           <Button
             icon={<ArrowLeftOutlined />}
-            onClick={() => navigate('/workflows')}
+            onClick={() => navigate(backTarget)}
           >
             Back
           </Button>
           <Title level={4} className="header-title">
-            {state.template ? state.template.name : 'New Workflow'}
+            {state.template ? state.template.name : 'New Workflow Scheme'}
             {state.isModified && <span className="modified-indicator">*</span>}
           </Title>
         </div>
@@ -426,7 +451,7 @@ const WorkflowDesigner = () => {
               icon={<CheckCircleOutlined />}
               onClick={handleValidate}
               loading={state.isValidating}
-              disabled={!state.template?.id || state.isModified}
+              disabled={isSystemManagedProjection || !state.template?.id || state.isModified}
             >
               Validate
             </Button>
@@ -436,23 +461,52 @@ const WorkflowDesigner = () => {
             icon={<SaveOutlined />}
             onClick={handleSaveClick}
             loading={state.isSaving}
+            disabled={isSystemManagedProjection}
           >
             Save
           </Button>
           <Button
             icon={<PlayCircleOutlined />}
             onClick={() => setExecuteModalVisible(true)}
-            disabled={!state.template?.is_valid}
+            disabled={isSystemManagedProjection || !state.template?.is_valid}
           >
             Execute
           </Button>
         </Space>
       </Header>
 
+      {isSystemManagedProjection ? (
+        <Alert
+          showIcon
+          type="warning"
+          message="Runtime diagnostics surface"
+          description={runtimeProjectionReadOnlyReason}
+          style={{ margin: '16px 16px 0' }}
+        />
+      ) : (
+        <Alert
+          showIcon
+          type="info"
+          message="Workflow scheme library"
+          description="This editor authors reusable workflow definitions for pools. Templates stay atomic, pool bindings decide where the scheme is active, and runtime projections are compiled into diagnostics-only artifacts."
+          style={{ margin: '16px 16px 0' }}
+        />
+      )}
+
       <Layout className="designer-body">
         {/* Left Sider - Node Palette */}
         <Sider width={220} className="designer-sider-left">
-          <NodePalette />
+          {isSystemManagedProjection ? (
+            <Alert
+              showIcon
+              type="info"
+              message="Read-only runtime projection"
+              description="Generated runtime projections can be inspected, but not changed from the analyst workflow surface."
+              style={{ margin: 16 }}
+            />
+          ) : (
+            <NodePalette />
+          )}
         </Sider>
 
         {/* Main Content - Canvas */}
@@ -475,7 +529,7 @@ const WorkflowDesigner = () => {
           )}
           <WorkflowCanvas
             dagStructure={state.dagStructure}
-            mode="design"
+            mode={isSystemManagedProjection ? 'monitor' : 'design'}
             onDagChange={handleDagChange}
             onNodeSelect={handleNodeSelect}
           />
@@ -489,13 +543,14 @@ const WorkflowDesigner = () => {
             onNodeUpdate={handleNodeUpdate}
             onNodeDelete={handleNodeDelete}
             operationTemplates={state.operationTemplates}
+            readOnly={isSystemManagedProjection}
           />
         </Sider>
       </Layout>
 
       {/* Save Modal (for new workflows) */}
       <Modal
-        title="Save Workflow"
+        title="Save Workflow Scheme"
         open={saveModalVisible}
         onOk={handleSave}
         onCancel={() => setSaveModalVisible(false)}
@@ -505,14 +560,18 @@ const WorkflowDesigner = () => {
         <Form form={form} layout="vertical">
           <Form.Item
             name="name"
-            label="Workflow Name"
+            label="Scheme Name"
             rules={[{ required: true, message: 'Please enter a name' }]}
             htmlFor="workflow-name"
           >
-            <Input id="workflow-name" placeholder="My Workflow" />
+            <Input id="workflow-name" placeholder="Services Publication" />
           </Form.Item>
           <Form.Item name="description" label="Description" htmlFor="workflow-description">
-            <Input.TextArea id="workflow-description" rows={3} placeholder="Optional description" />
+            <Input.TextArea
+              id="workflow-description"
+              rows={3}
+              placeholder="Reusable analyst-facing distribution or publication scheme"
+            />
           </Form.Item>
         </Form>
       </Modal>

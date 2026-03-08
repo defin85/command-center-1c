@@ -19,6 +19,7 @@ from apps.intercompany_pools.workflow_compiler import (
     PoolWorkflowRunContext,
     compile_pool_execution_plan,
 )
+from apps.intercompany_pools.workflow_authoring_contract import PoolWorkflowBindingContract
 from apps.tenancy.models import Tenant
 from apps.templates.models import OperationExposure
 
@@ -43,6 +44,7 @@ def _create_context(
     mode: str = PoolRunMode.SAFE,
     run_input: dict | None = None,
     document_plan_artifact: dict | None = None,
+    workflow_binding: dict | None = None,
 ) -> PoolWorkflowRunContext:
     return PoolWorkflowRunContext(
         pool_id=pool_id or str(uuid4()),
@@ -52,6 +54,7 @@ def _create_context(
         mode=mode,
         run_input=run_input if isinstance(run_input, dict) else {"source_payload": [{"inn": "770000000001", "amount": "10.00"}]},
         document_plan_artifact=document_plan_artifact if isinstance(document_plan_artifact, dict) else None,
+        workflow_binding=workflow_binding if isinstance(workflow_binding, dict) else None,
     )
 
 
@@ -125,6 +128,58 @@ def _build_document_plan_artifact() -> dict[str, object]:
             "documents_count": 2,
             "compiled_at": "2026-01-01T00:00:00+00:00",
         },
+    }
+
+
+@pytest.mark.django_db
+def test_compile_pool_execution_plan_captures_structured_workflow_binding_snapshot() -> None:
+    tenant = Tenant.objects.create(slug=f"pool-binding-{uuid4().hex[:8]}", name="Pool Binding")
+    schema_template = _create_schema_template(tenant=tenant, code="binding-template")
+    _sync_runtime_templates()
+
+    binding = PoolWorkflowBindingContract(
+        binding_id=str(uuid4()),
+        pool_id=str(uuid4()),
+        workflow={
+            "workflow_definition_key": "services-publication",
+            "workflow_revision_id": str(uuid4()),
+            "workflow_revision": 3,
+            "workflow_name": "services_publication",
+        },
+        decisions=[
+            {
+                "decision_table_id": "decision-1",
+                "decision_key": "invoice_mode",
+                "decision_revision": 2,
+            }
+        ],
+        selector={"direction": "bottom_up", "mode": "safe", "tags": ["baseline"]},
+        effective_from=date(2026, 1, 1),
+        status="active",
+    )
+
+    plan = compile_pool_execution_plan(
+        schema_template=schema_template,
+        run_context=_create_context(workflow_binding=binding.model_dump(mode="json")),
+    )
+
+    assert plan.workflow_binding_snapshot == {
+        "binding_mode": "pool_workflow_binding",
+        "binding_id": binding.binding_id,
+        "pool_id": binding.pool_id,
+        "workflow_definition_key": "services-publication",
+        "workflow_revision_id": binding.workflow.workflow_revision_id,
+        "workflow_revision": 3,
+        "workflow_name": "services_publication",
+        "decision_refs": [
+            {
+                "decision_table_id": "decision-1",
+                "decision_key": "invoice_mode",
+                "decision_revision": 2,
+            }
+        ],
+        "selector": {"direction": "bottom_up", "mode": "safe", "tags": ["baseline"]},
+        "status": "active",
     }
 
 

@@ -13,6 +13,7 @@ from apps.templates.workflow.models import WorkflowCategory, WorkflowTemplate, W
 from .document_plan_artifact_contract import validate_document_plan_artifact_v1
 from .master_data_feature_flags import resolve_pool_master_data_gate_flag
 from .models import PoolRunDirection, PoolRunMode, PoolSchemaTemplate
+from .workflow_authoring_contract import PoolWorkflowBindingContract
 
 
 PLAN_VERSION = 1
@@ -38,6 +39,7 @@ class PoolWorkflowRunContext:
     mode: str
     run_input: dict[str, Any]
     document_plan_artifact: dict[str, Any] | None = None
+    workflow_binding: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,7 @@ class PoolExecutionPlan:
     plan_version: int
     template_version: str
     workflow_binding_hint: str | None
+    workflow_binding_snapshot: dict[str, Any] | None
     workflow_template_name: str
     workflow_template_description: str
     workflow_type: str
@@ -100,11 +103,15 @@ class PoolWorkflowCompiler:
         )
         dag_structure = self._build_dag_structure(steps, run_context=run_context)
         workflow_binding_hint = self._resolve_workflow_binding_hint(schema_template)
+        workflow_binding_snapshot = self._build_workflow_binding_snapshot(
+            workflow_binding=run_context.workflow_binding,
+            workflow_binding_hint=workflow_binding_hint,
+        )
 
         definition_seed = self._build_definition_seed(
             run_context=run_context,
             template_version=template_version,
-            workflow_binding_hint=workflow_binding_hint,
+            workflow_binding_snapshot=workflow_binding_snapshot,
             dag_structure=dag_structure,
         )
         definition_key = self._sha256(self._canonical_json(definition_seed))
@@ -120,6 +127,7 @@ class PoolWorkflowCompiler:
             plan_version=PLAN_VERSION,
             template_version=template_version,
             workflow_binding_hint=workflow_binding_hint,
+            workflow_binding_snapshot=workflow_binding_snapshot,
             workflow_template_name=workflow_name,
             workflow_template_description=workflow_description,
             workflow_type=WorkflowType.SEQUENTIAL,
@@ -141,7 +149,7 @@ class PoolWorkflowCompiler:
         *,
         run_context: PoolWorkflowRunContext,
         template_version: str,
-        workflow_binding_hint: str | None,
+        workflow_binding_snapshot: dict[str, Any] | None,
         dag_structure: dict[str, Any],
     ) -> dict[str, Any]:
         return {
@@ -149,9 +157,43 @@ class PoolWorkflowCompiler:
             "direction": run_context.direction,
             "mode": run_context.mode,
             "template_version": template_version,
-            "workflow_binding_hint": workflow_binding_hint,
+            "workflow_binding": workflow_binding_snapshot,
             "dag_structure": dag_structure,
         }
+
+    @staticmethod
+    def _build_workflow_binding_snapshot(
+        *,
+        workflow_binding: dict[str, Any] | None,
+        workflow_binding_hint: str | None,
+    ) -> dict[str, Any] | None:
+        if isinstance(workflow_binding, dict) and workflow_binding:
+            binding = PoolWorkflowBindingContract(**workflow_binding)
+            return {
+                "binding_mode": "pool_workflow_binding",
+                "binding_id": binding.binding_id,
+                "pool_id": binding.pool_id,
+                "workflow_definition_key": binding.workflow.workflow_definition_key,
+                "workflow_revision_id": binding.workflow.workflow_revision_id,
+                "workflow_revision": binding.workflow.workflow_revision,
+                "workflow_name": binding.workflow.workflow_name,
+                "decision_refs": [
+                    {
+                        "decision_table_id": decision.decision_table_id,
+                        "decision_key": decision.decision_key,
+                        "decision_revision": decision.decision_revision,
+                    }
+                    for decision in binding.decisions
+                ],
+                "selector": binding.selector.model_dump(mode="json"),
+                "status": binding.status.value,
+            }
+        if workflow_binding_hint:
+            return {
+                "binding_mode": "legacy_schema_template_hint",
+                "legacy_hint": workflow_binding_hint,
+            }
+        return None
 
     def _build_steps(
         self,

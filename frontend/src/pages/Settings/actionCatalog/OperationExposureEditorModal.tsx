@@ -340,6 +340,26 @@ export type OperationExposureEditorModalProps = {
   executorKindOptions?: ExecutorKind[]
 }
 
+export const buildExecutorKindOptionsForSurface = (
+  surface: OperationExposureEditorModalProps['surface'],
+  executorKindOptions?: ExecutorKind[]
+): Array<{ value: ExecutorKind; label: string }> => {
+  const allowed = (
+    Array.isArray(executorKindOptions) && executorKindOptions.length > 0
+      ? new Set(executorKindOptions)
+      : null
+  )
+
+  return EXECUTOR_KIND_OPTIONS
+    .filter((item) => !allowed || allowed.has(item.value))
+    .map((item) => {
+      if (surface === 'template' && item.value === 'workflow') {
+        return { ...item, label: 'workflow (compatibility)' }
+      }
+      return item
+    })
+}
+
 export function OperationExposureEditorModal({
   open,
   title,
@@ -377,11 +397,10 @@ export function OperationExposureEditorModal({
   const editorCommandId = Form.useWatch(['executor', 'command_id'], form) as string | undefined
   const targetBindingValue = Form.useWatch(['executor', 'target_binding_extension_name_param'], form) as string | undefined
   const commandsDriver = canonicalDriverForExecutorKind(editorKind) ?? 'ibcmd'
-  const resolvedExecutorKindOptions = useMemo(() => {
-    if (!Array.isArray(executorKindOptions) || executorKindOptions.length === 0) return EXECUTOR_KIND_OPTIONS
-    const allowed = new Set(executorKindOptions)
-    return EXECUTOR_KIND_OPTIONS.filter((item) => allowed.has(item.value))
-  }, [executorKindOptions])
+  const resolvedExecutorKindOptions = useMemo(
+    () => buildExecutorKindOptionsForSurface(surface, executorKindOptions),
+    [executorKindOptions, surface]
+  )
 
   const commandsQuery = useDriverCommands(
     commandsDriver,
@@ -1074,6 +1093,15 @@ export function OperationExposureEditorModal({
                       }}
                     />
                   </Form.Item>
+
+                  {isTemplateSurface && editorKind === 'workflow' && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message="Compatibility path only"
+                      description="Use /workflows for analyst-authored schemes. Keep /templates focused on atomic operations and integration building blocks."
+                    />
+                  )}
 
                   {editorKind === 'workflow' ? (
                     <Form.Item

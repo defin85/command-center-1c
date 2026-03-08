@@ -93,10 +93,10 @@ const NodePalette = ({ collapsed = false }: NodePaletteProps) => {
   return (
     <Card className="node-palette" size="small">
       <Title level={5} className="palette-title">
-        Node Types
+        Scheme Building Blocks
       </Title>
       <div className="palette-description">
-        Drag nodes to the canvas
+        Compose reusable analyst-authored schemes from operations, decision gates, parallel stages, repeat stages, and subworkflow calls
       </div>
       <div className="palette-items">
         {(Object.keys(NODE_TYPE_INFO) as NodeType[]).map((type) => (

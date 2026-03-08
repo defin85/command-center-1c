@@ -36,6 +36,14 @@ get:
         type: string
       description: Search by name or description
     - in: query
+      name: surface
+      schema:
+        type: string
+        enum:
+          - workflow_library
+          - runtime_diagnostics
+      description: 'Visibility surface: workflow_library (default) or runtime_diagnostics'
+    - in: query
       name: sort
       schema:
         type: string

@@ -24,7 +24,44 @@ export type OrganizationPool = {
   description: string
   is_active: boolean
   metadata: Record<string, unknown>
+  workflow_bindings?: PoolWorkflowBinding[]
   updated_at: string
+}
+
+export type WorkflowDefinitionRef = {
+  contract_version?: string
+  workflow_definition_key: string
+  workflow_revision_id: string
+  workflow_revision: number
+  workflow_name: string
+}
+
+export type DecisionTableRef = {
+  decision_table_id: string
+  decision_key: string
+  decision_revision: number
+}
+
+export type PoolWorkflowBindingSelector = {
+  direction?: string | null
+  mode?: string | null
+  tags?: string[]
+}
+
+export type PoolWorkflowBindingStatus = 'draft' | 'active' | 'inactive'
+
+export type PoolWorkflowBinding = {
+  contract_version?: string
+  binding_id?: string
+  pool_id?: string
+  workflow: WorkflowDefinitionRef
+  decisions?: DecisionTableRef[]
+  parameters?: Record<string, unknown>
+  role_mapping?: Record<string, string>
+  selector?: PoolWorkflowBindingSelector
+  effective_from: string
+  effective_to?: string | null
+  status?: PoolWorkflowBindingStatus
 }
 
 export type OrganizationStatus = 'active' | 'inactive' | 'archived'
@@ -58,6 +95,7 @@ export type PoolRunStatus = 'draft' | 'validated' | 'publishing' | 'published' |
 export type PoolRunStatusReason = 'preparing' | 'awaiting_approval' | 'queued' | null
 export type PoolRunApprovalState = 'not_required' | 'preparing' | 'awaiting_approval' | 'approved' | null
 export type PoolRunPublicationStepState = 'not_enqueued' | 'queued' | 'started' | 'completed' | null
+export type PoolRunInputContractVersion = 'run_input_v1' | 'legacy_pre_run_input'
 
 export type PoolRunMasterDataGate = {
   status: 'completed' | 'failed' | 'skipped'
@@ -121,7 +159,7 @@ export type PoolRunRetryChainAttempt = {
   workflow_run_id: string
   parent_workflow_run_id: string | null
   attempt_number: number
-  attempt_kind: 'initial' | 'retry' | string
+  attempt_kind: 'initial' | 'retry'
   status: string
 }
 
@@ -134,6 +172,58 @@ export type PoolRunProvenance = {
   lane?: string | null
   retry_chain: PoolRunRetryChainAttempt[]
   legacy_reference?: string | null
+}
+
+export type PoolRunRuntimeProjectionWorkflowDefinition = {
+  plan_key: string
+  template_version: string
+  workflow_template_name: string
+  workflow_type: string
+}
+
+export type PoolRunRuntimeProjectionWorkflowBinding = {
+  binding_mode: string
+  binding_id?: string
+  pool_id?: string
+  workflow_definition_key?: string
+  workflow_revision_id?: string
+  workflow_revision?: number
+  workflow_name?: string
+  decision_refs?: DecisionTableRef[]
+  selector?: PoolWorkflowBindingSelector
+  status?: string
+}
+
+export type PoolRunRuntimeProjectionDocumentPolicyProjection = {
+  source_mode: string
+  policy_refs: Array<Record<string, unknown>>
+  policy_refs_count: number
+  targets_count: number
+}
+
+export type PoolRunRuntimeProjectionArtifacts = {
+  document_plan_artifact_version: string | null
+  topology_version_ref: string | null
+  distribution_artifact_ref: Record<string, unknown> | null
+}
+
+export type PoolRunRuntimeProjectionCompileSummary = {
+  steps_count: number
+  atomic_publication_steps_count: number
+  compiled_targets_count: number
+}
+
+export type PoolRunRuntimeProjection = {
+  version: string
+  run_id: string
+  pool_id: string
+  direction: string
+  mode: string
+  workflow_definition: PoolRunRuntimeProjectionWorkflowDefinition
+  workflow_binding: PoolRunRuntimeProjectionWorkflowBinding
+  document_policy_projection: PoolRunRuntimeProjectionDocumentPolicyProjection
+  artifacts: PoolRunRuntimeProjectionArtifacts
+  compile_summary: PoolRunRuntimeProjectionCompileSummary
 }
 
 export type PoolPublicationAttemptHttpError = {
@@ -183,7 +273,7 @@ export type PoolRun = {
   period_start: string
   period_end: string | null
   run_input: Record<string, unknown> | null
-  input_contract_version?: string | null
+  input_contract_version?: PoolRunInputContractVersion
   idempotency_key: string
   workflow_execution_id: string | null
   workflow_status: string | null
@@ -200,6 +290,8 @@ export type PoolRun = {
   terminal_reason: string | null
   execution_backend: string | null
   provenance: PoolRunProvenance
+  workflow_binding?: PoolWorkflowBinding | null
+  runtime_projection?: PoolRunRuntimeProjection | null
   workflow_template_name: string | null
   seed: number | null
   validation_summary: Record<string, unknown>
@@ -359,6 +451,7 @@ export type ListOrganizationsParams = {
 
 export type CreatePoolRunPayload = {
   pool_id: string
+  pool_workflow_binding_id?: string
   direction: 'top_down' | 'bottom_up'
   period_start: string
   period_end?: string | null
@@ -377,6 +470,7 @@ export type UpsertOrganizationPoolPayload = {
   description?: string
   is_active?: boolean
   metadata?: Record<string, unknown>
+  workflow_bindings?: PoolWorkflowBinding[]
 }
 
 export type PoolTopologySnapshotNodeInput = {

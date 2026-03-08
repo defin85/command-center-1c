@@ -22,6 +22,12 @@ from .models import (
     WorkflowStepResult,
     WorkflowTemplate,
 )
+from .management_mode import (
+    is_system_managed_workflow,
+    resolve_workflow_management_mode,
+    resolve_workflow_read_only_reason,
+    resolve_workflow_visibility_surface,
+)
 
 User = get_user_model()
 
@@ -91,13 +97,63 @@ class LoopConfigSerializer(serializers.Serializer):
     )
 
 
+class SubWorkflowRefSerializer(serializers.Serializer):
+    """Serializer for SubWorkflowRef Pydantic model."""
+
+    binding_mode = serializers.ChoiceField(
+        choices=["direct_runtime_id", "pinned_revision"],
+        default="direct_runtime_id",
+        help_text="Binding mode for subworkflow reference",
+    )
+    workflow_definition_key = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=False,
+        help_text="Stable definition key for pinned subworkflow binding",
+    )
+    workflow_revision_id = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=False,
+        help_text="Pinned workflow revision ID",
+    )
+    workflow_revision = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=1,
+        help_text="Pinned workflow revision number",
+    )
+
+    def validate(self, attrs):
+        if attrs.get("binding_mode") == "pinned_revision":
+            if not attrs.get("workflow_definition_key"):
+                raise serializers.ValidationError(
+                    {"workflow_definition_key": "This field is required for pinned_revision mode."}
+                )
+            if not attrs.get("workflow_revision_id"):
+                raise serializers.ValidationError(
+                    {"workflow_revision_id": "This field is required for pinned_revision mode."}
+                )
+            if attrs.get("workflow_revision") is None:
+                raise serializers.ValidationError(
+                    {"workflow_revision": "This field is required for pinned_revision mode."}
+                )
+        return attrs
+
+
 class SubWorkflowConfigSerializer(serializers.Serializer):
     """Serializer for SubWorkflowConfig Pydantic model."""
 
     subworkflow_id = serializers.CharField(help_text="Subworkflow template ID")
+    subworkflow_ref = SubWorkflowRefSerializer(
+        required=False,
+        allow_null=True,
+        help_text="Pinned binding metadata for analyst-authored subworkflow calls",
+    )
     input_mapping = serializers.DictField(
         child=serializers.CharField(),
-        required=False, default=dict
+        required=False,
+        default=dict
     )
     output_mapping = serializers.DictField(
         child=serializers.CharField(),
@@ -290,6 +346,11 @@ class WorkflowTemplateListSerializer(serializers.ModelSerializer):
     )
     node_count = serializers.SerializerMethodField()
     execution_count = serializers.SerializerMethodField()
+    category = serializers.CharField(read_only=True)
+    is_system_managed = serializers.SerializerMethodField()
+    management_mode = serializers.SerializerMethodField()
+    visibility_surface = serializers.SerializerMethodField()
+    read_only_reason = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowTemplate
@@ -298,8 +359,13 @@ class WorkflowTemplateListSerializer(serializers.ModelSerializer):
             'name',
             'description',
             'workflow_type',
+            'category',
             'is_valid',
             'is_active',
+            'is_system_managed',
+            'management_mode',
+            'visibility_surface',
+            'read_only_reason',
             'version_number',
             'parent_version',
             'created_by',
@@ -335,6 +401,18 @@ class WorkflowTemplateListSerializer(serializers.ModelSerializer):
         """
         return getattr(obj, '_execution_count', obj.executions.count())
 
+    def get_is_system_managed(self, obj) -> bool:
+        return is_system_managed_workflow(obj)
+
+    def get_management_mode(self, obj) -> str:
+        return resolve_workflow_management_mode(obj)
+
+    def get_visibility_surface(self, obj) -> str:
+        return resolve_workflow_visibility_surface(obj)
+
+    def get_read_only_reason(self, obj) -> str | None:
+        return resolve_workflow_read_only_reason(obj)
+
 
 class WorkflowTemplateDetailSerializer(serializers.ModelSerializer):
     """
@@ -352,6 +430,11 @@ class WorkflowTemplateDetailSerializer(serializers.ModelSerializer):
     parent_version_name = serializers.CharField(
         source='parent_version.name', read_only=True, allow_null=True
     )
+    category = serializers.CharField(read_only=True)
+    is_system_managed = serializers.SerializerMethodField()
+    management_mode = serializers.SerializerMethodField()
+    visibility_surface = serializers.SerializerMethodField()
+    read_only_reason = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowTemplate
@@ -360,10 +443,15 @@ class WorkflowTemplateDetailSerializer(serializers.ModelSerializer):
             'name',
             'description',
             'workflow_type',
+            'category',
             'dag_structure',
             'config',
             'is_valid',
             'is_active',
+            'is_system_managed',
+            'management_mode',
+            'visibility_surface',
+            'read_only_reason',
             'version_number',
             'parent_version',
             'parent_version_name',
@@ -384,6 +472,18 @@ class WorkflowTemplateDetailSerializer(serializers.ModelSerializer):
     def get_execution_count(self, obj) -> int:
         """Return number of executions for this template."""
         return obj.executions.count()
+
+    def get_is_system_managed(self, obj) -> bool:
+        return is_system_managed_workflow(obj)
+
+    def get_management_mode(self, obj) -> str:
+        return resolve_workflow_management_mode(obj)
+
+    def get_visibility_surface(self, obj) -> str:
+        return resolve_workflow_visibility_surface(obj)
+
+    def get_read_only_reason(self, obj) -> str | None:
+        return resolve_workflow_read_only_reason(obj)
 
     def validate_dag_structure(self, value: Dict[str, Any]) -> Dict[str, Any]:
         """Validate DAG structure using Pydantic model."""

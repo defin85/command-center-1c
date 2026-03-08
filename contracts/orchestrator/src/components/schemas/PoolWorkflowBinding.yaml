@@ -1,0 +1,49 @@
+type: object
+description: Workflow binding assigned to an organization pool.
+properties:
+  contract_version:
+    type: string
+    description: Pool workflow binding contract version.
+  binding_id:
+    type: string
+    description: Stable binding identifier within the pool.
+  pool_id:
+    type: string
+    format: uuid
+    description: Enclosing organization pool identifier.
+  workflow:
+    $ref: ./WorkflowDefinitionRef.yaml
+  decisions:
+    type: array
+    items:
+      $ref: ./DecisionTableRef.yaml
+  parameters:
+    type: object
+    additionalProperties: true
+    description: Arbitrary workflow parameter overrides for this binding.
+  role_mapping:
+    type: object
+    additionalProperties:
+      type: string
+    description: Mapping from workflow roles to concrete pool-scoped targets.
+  selector:
+    $ref: ./PoolWorkflowBindingSelector.yaml
+  effective_from:
+    type: string
+    format: date
+    description: Binding effective start date.
+  effective_to:
+    type: string
+    format: date
+    nullable: true
+    description: Binding effective end date, inclusive.
+  status:
+    type: string
+    enum:
+      - draft
+      - active
+      - inactive
+    description: Binding lifecycle status.
+required:
+  - workflow
+  - effective_from

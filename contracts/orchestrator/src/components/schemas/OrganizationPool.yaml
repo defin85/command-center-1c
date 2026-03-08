@@ -12,6 +12,10 @@ properties:
   is_active:
     type: boolean
   metadata: {}
+  workflow_bindings:
+    type: array
+    items:
+      $ref: ./PoolWorkflowBinding.yaml
   updated_at:
     type: string
     format: date-time

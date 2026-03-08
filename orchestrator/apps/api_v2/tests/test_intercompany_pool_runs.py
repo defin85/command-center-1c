@@ -37,6 +37,8 @@ from apps.intercompany_pools.models import (
     PoolSchemaTemplate,
     PoolSchemaTemplateFormat,
 )
+from apps.intercompany_pools.runtime_projection_contract import POOL_RUNTIME_PROJECTION_CONTEXT_KEY
+from apps.intercompany_pools.workflow_runtime import POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY
 from apps.operations.services import EnqueueResult
 from apps.runtime_settings.models import RuntimeSetting
 from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate, WorkflowType
@@ -264,6 +266,38 @@ def _build_document_policy_payload() -> dict[str, object]:
                 ],
             }
         ],
+    }
+
+
+def _build_pool_workflow_binding_payload(
+    *,
+    pool: OrganizationPool,
+    workflow_definition_key: str,
+    workflow_revision: int,
+    direction: str | None = None,
+    mode: str | None = None,
+    effective_from: str = "2026-01-01",
+    effective_to: str | None = None,
+    status: str = "active",
+    tags: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "binding_id": str(uuid4()),
+        "pool_id": str(pool.id),
+        "workflow": {
+            "workflow_definition_key": workflow_definition_key,
+            "workflow_revision_id": str(uuid4()),
+            "workflow_revision": workflow_revision,
+            "workflow_name": workflow_definition_key.replace("-", "_"),
+        },
+        "selector": {
+            "direction": direction,
+            "mode": mode,
+            "tags": list(tags or []),
+        },
+        "effective_from": effective_from,
+        "effective_to": effective_to,
+        "status": status,
     }
 
 
@@ -984,6 +1018,89 @@ def test_upsert_pool_metadata_creates_updates_and_enforces_tenant_boundary(
     )
     assert cross_tenant_response.status_code == 404
     assert cross_tenant_response.json()["code"] == "POOL_NOT_FOUND"
+
+
+@pytest.mark.django_db
+def test_upsert_pool_metadata_round_trips_workflow_bindings(
+    authenticated_client: APIClient,
+) -> None:
+    create_response = authenticated_client.post(
+        "/api/v2/pools/upsert/",
+        {
+            "code": "pool-bindings",
+            "name": "Pool Bindings",
+            "workflow_bindings": [
+                {
+                    "workflow": {
+                        "workflow_definition_key": "services-publication",
+                        "workflow_revision_id": "11111111-1111-1111-1111-111111111111",
+                        "workflow_revision": 3,
+                        "workflow_name": "services_publication",
+                    },
+                    "selector": {"direction": "top_down", "mode": "safe", "tags": ["baseline"]},
+                    "role_mapping": {"seller": "organization:stroygrupp"},
+                    "parameters": {"invoice_mode": "optional"},
+                    "effective_from": "2026-01-01",
+                    "status": "active",
+                }
+            ],
+        },
+        format="json",
+    )
+
+    assert create_response.status_code == 201
+    create_payload = create_response.json()
+    bindings = create_payload["pool"]["workflow_bindings"]
+    assert len(bindings) == 1
+    assert bindings[0]["pool_id"] == create_payload["pool"]["id"]
+    assert bindings[0]["workflow"]["workflow_definition_key"] == "services-publication"
+    assert bindings[0]["workflow"]["workflow_revision"] == 3
+    assert bindings[0]["selector"] == {
+        "direction": "top_down",
+        "mode": "safe",
+        "tags": ["baseline"],
+    }
+    assert bindings[0]["status"] == "active"
+    assert bindings[0]["binding_id"]
+
+    pools_response = authenticated_client.get("/api/v2/pools/")
+    assert pools_response.status_code == 200
+    listed_pool = next(
+        item for item in pools_response.json()["pools"] if item["id"] == create_payload["pool"]["id"]
+    )
+    assert listed_pool["workflow_bindings"][0]["workflow"]["workflow_name"] == "services_publication"
+
+
+@pytest.mark.django_db
+def test_upsert_pool_metadata_rejects_invalid_workflow_bindings(
+    authenticated_client: APIClient,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/upsert/",
+        {
+            "code": "pool-invalid-bindings",
+            "name": "Pool Invalid Bindings",
+            "workflow_bindings": [
+                {
+                    "workflow": {
+                        "workflow_definition_key": "services-publication",
+                        "workflow_revision_id": "11111111-1111-1111-1111-111111111111",
+                        "workflow_revision": 3,
+                        "workflow_name": "services_publication",
+                    },
+                    "effective_from": "2026-01-01",
+                    "effective_to": "2025-01-01",
+                    "status": "active",
+                }
+            ],
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["code"] == "VALIDATION_ERROR"
+    assert "effective_to must be greater than or equal to effective_from" in payload["detail"]
 
 
 @pytest.mark.django_db
@@ -2001,6 +2118,144 @@ def test_list_pool_topology_snapshots_returns_periods_with_counts(
 
 
 @pytest.mark.django_db
+def test_create_pool_run_rejects_ambiguous_workflow_bindings_fail_closed(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    first_binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication-a",
+        workflow_revision=3,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    second_binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication-b",
+        workflow_revision=4,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    pool.metadata = {"workflow_bindings": [first_binding, second_binding]}
+    pool.save(update_fields=["metadata", "updated_at"])
+
+    response = authenticated_client.post(
+        "/api/v2/pools/runs/",
+        {
+            "pool_id": str(pool.id),
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_WORKFLOW_BINDING_AMBIGUOUS",
+    )
+    errors = payload.get("errors")
+    assert isinstance(errors, list) and len(errors) == 2
+    assert {item["binding_id"] for item in errors} == {
+        first_binding["binding_id"],
+        second_binding["binding_id"],
+    }
+    assert not PoolRun.objects.filter(pool=pool).exists()
+
+
+@pytest.mark.django_db
+def test_create_pool_run_rejects_when_no_workflow_binding_matches_selector(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="top-down-only",
+        workflow_revision=2,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+    )
+    pool.metadata = {"workflow_bindings": [binding]}
+    pool.save(update_fields=["metadata", "updated_at"])
+
+    response = authenticated_client.post(
+        "/api/v2/pools/runs/",
+        {
+            "pool_id": str(pool.id),
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_WORKFLOW_BINDING_NOT_RESOLVED",
+    )
+    errors = payload.get("errors")
+    assert isinstance(errors, list) and len(errors) == 1
+    assert errors[0]["binding_id"] == binding["binding_id"]
+    assert not PoolRun.objects.filter(pool=pool).exists()
+
+
+@pytest.mark.django_db
+def test_create_pool_run_accepts_explicit_workflow_binding_id_when_selector_is_ambiguous(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    first_binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication-a",
+        workflow_revision=3,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    second_binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication-b",
+        workflow_revision=4,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    pool.metadata = {"workflow_bindings": [first_binding, second_binding]}
+    pool.save(update_fields=["metadata", "updated_at"])
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="binding-op", status="queued"),
+    ):
+        response = authenticated_client.post(
+            "/api/v2/pools/runs/",
+            {
+                "pool_id": str(pool.id),
+                "pool_workflow_binding_id": first_binding["binding_id"],
+                "direction": PoolRunDirection.BOTTOM_UP,
+                "period_start": "2026-01-01",
+                "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+                "mode": PoolRunMode.SAFE,
+            },
+            format="json",
+        )
+
+    assert response.status_code == 201
+    run_id = response.json()["run"]["id"]
+    execution_id = response.json()["run"]["workflow_execution_id"]
+    assert run_id
+    assert execution_id
+
+    execution = WorkflowExecution.objects.get(id=execution_id)
+    assert execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)["binding_id"] == first_binding["binding_id"]
+    assert execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["workflow_binding"]["binding_id"] == (
+        first_binding["binding_id"]
+    )
+
+
+@pytest.mark.django_db
 def test_create_pool_run_rejects_top_down_without_starting_amount(
     authenticated_client: APIClient,
     pool: OrganizationPool,
@@ -2066,8 +2321,18 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    pool.metadata = {"workflow_bindings": [binding]}
+    pool.save(update_fields=["metadata", "updated_at"])
     payload = {
         "pool_id": str(pool.id),
+        "pool_workflow_binding_id": binding["binding_id"],
         "direction": PoolRunDirection.BOTTOM_UP,
         "period_start": "2026-01-01",
         "period_end": "2026-01-31",
@@ -2112,11 +2377,64 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
     assert workflow_execution.input_context.get("publication_step_state") == "not_enqueued"
     assert workflow_execution.input_context.get("run_input") == payload["run_input"]
     assert workflow_execution.input_context.get("pool_run_idempotency_key") == run.idempotency_key
+    assert workflow_execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)["binding_id"] == binding["binding_id"]
+    assert workflow_execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["workflow_binding"]["binding_id"] == binding["binding_id"]
     assert workflow_execution.input_context.get("workflow_run_id") == str(workflow_execution.id)
     assert workflow_execution.input_context.get("root_workflow_run_id") == str(workflow_execution.id)
     assert workflow_execution.input_context.get("parent_workflow_run_id") is None
     assert workflow_execution.input_context.get("attempt_number") == 1
     assert workflow_execution.input_context.get("attempt_kind") == "initial"
+
+
+@pytest.mark.django_db
+def test_create_pool_run_endpoint_uses_binding_in_idempotency_key(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    first_binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication-a",
+        workflow_revision=3,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    second_binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication-b",
+        workflow_revision=4,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    pool.metadata = {"workflow_bindings": [first_binding, second_binding]}
+    pool.save(update_fields=["metadata", "updated_at"])
+
+    base_payload = {
+        "pool_id": str(pool.id),
+        "direction": PoolRunDirection.BOTTOM_UP,
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-31",
+        "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+        "mode": PoolRunMode.SAFE,
+    }
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="op-binding-key", status="queued"),
+    ):
+        first = authenticated_client.post(
+            "/api/v2/pools/runs/",
+            {**base_payload, "pool_workflow_binding_id": first_binding["binding_id"]},
+            format="json",
+        )
+        second = authenticated_client.post(
+            "/api/v2/pools/runs/",
+            {**base_payload, "pool_workflow_binding_id": second_binding["binding_id"]},
+            format="json",
+        )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["run"]["id"] != second.json()["run"]["id"]
 
 
 @pytest.mark.django_db
@@ -3429,6 +3747,111 @@ def test_get_pool_run_projects_safe_pending_workflow_to_validated_preparing(
             "status": WorkflowExecution.STATUS_PENDING,
         }
     ]
+
+
+@pytest.mark.django_db
+def test_get_pool_run_report_exposes_binding_lineage_and_runtime_projection(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=7,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+        tags=["quarter-close"],
+    )
+    binding["decisions"] = [
+        {
+            "decision_table_id": "decision-1",
+            "decision_key": "invoice_mode",
+            "decision_revision": 2,
+        }
+    ]
+    binding["parameters"] = {"publication_variant": "full"}
+    binding["role_mapping"] = {"initiator": "finance"}
+    projection = {
+        "version": "pool_runtime_projection.v1",
+        "run_id": str(run.id),
+        "pool_id": str(pool.id),
+        "direction": PoolRunDirection.TOP_DOWN,
+        "mode": PoolRunMode.SAFE,
+        "workflow_definition": {
+            "plan_key": "plan-services-v7",
+            "template_version": "workflow-template:7",
+            "workflow_template_name": "compiled-services-publication",
+            "workflow_type": WorkflowType.SEQUENTIAL,
+        },
+        "workflow_binding": {
+            "binding_mode": "pool_workflow_binding",
+            "binding_id": binding["binding_id"],
+            "pool_id": str(pool.id),
+            "workflow_definition_key": binding["workflow"]["workflow_definition_key"],
+            "workflow_revision_id": binding["workflow"]["workflow_revision_id"],
+            "workflow_revision": binding["workflow"]["workflow_revision"],
+            "workflow_name": binding["workflow"]["workflow_name"],
+            "decision_refs": [
+                {
+                    "decision_table_id": "decision-1",
+                    "decision_key": "invoice_mode",
+                    "decision_revision": 2,
+                }
+            ],
+            "selector": {
+                "direction": PoolRunDirection.TOP_DOWN,
+                "mode": PoolRunMode.SAFE,
+                "tags": ["quarter-close"],
+            },
+            "status": "active",
+        },
+        "document_policy_projection": {
+            "source_mode": "document_plan_artifact",
+            "policy_refs": [{"policy_id": "policy-1"}],
+            "policy_refs_count": 1,
+            "targets_count": 3,
+        },
+        "artifacts": {
+            "document_plan_artifact_version": "document_plan_artifact.v1",
+            "topology_version_ref": "topology:v7",
+            "distribution_artifact_ref": {"id": "distribution-artifact:v7"},
+        },
+        "compile_summary": {
+            "steps_count": 5,
+            "atomic_publication_steps_count": 3,
+            "compiled_targets_count": 3,
+        },
+    }
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_PENDING,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "awaiting_approval",
+            "publication_step_state": "not_enqueued",
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: binding,
+            POOL_RUNTIME_PROJECTION_CONTEXT_KEY: projection,
+        },
+    )
+
+    report_response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/report/")
+    assert report_response.status_code == 200
+    payload = report_response.json()
+    run_payload = payload["run"]
+    assert run_payload["workflow_binding"]["binding_id"] == binding["binding_id"]
+    assert run_payload["workflow_binding"]["workflow"]["workflow_revision"] == 7
+    assert run_payload["workflow_binding"]["decisions"] == [
+        {
+            "decision_table_id": "decision-1",
+            "decision_key": "invoice_mode",
+            "decision_revision": 2,
+        }
+    ]
+    assert run_payload["runtime_projection"]["workflow_definition"]["plan_key"] == "plan-services-v7"
+    assert run_payload["runtime_projection"]["workflow_binding"]["binding_id"] == binding["binding_id"]
+    assert run_payload["runtime_projection"]["compile_summary"]["compiled_targets_count"] == 3
 
 
 @pytest.mark.django_db

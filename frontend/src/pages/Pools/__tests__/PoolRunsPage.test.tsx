@@ -187,6 +187,28 @@ function buildReport(
   }
 }
 
+function buildWorkflowBinding(overrides: Record<string, unknown> = {}) {
+  return {
+    binding_id: 'binding-top-down',
+    pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    workflow: {
+      workflow_definition_key: 'services-publication',
+      workflow_revision_id: '77777777-7777-7777-7777-777777777777',
+      workflow_revision: 3,
+      workflow_name: 'services_publication',
+    },
+    selector: {
+      direction: 'top_down',
+      mode: 'safe',
+      tags: [],
+    },
+    effective_from: '2026-01-01',
+    effective_to: null,
+    status: 'active',
+    ...overrides,
+  }
+}
+
 function renderPage() {
   window.history.pushState({}, '', '/pools/runs')
   return render(
@@ -226,6 +248,23 @@ describe('PoolRunsPage', () => {
         description: 'Main pool',
         is_active: true,
         metadata: {},
+        workflow_bindings: [
+          buildWorkflowBinding(),
+          buildWorkflowBinding({
+            binding_id: 'binding-bottom-up',
+            workflow: {
+              workflow_definition_key: 'bottom-up-import',
+              workflow_revision_id: '88888888-8888-8888-8888-888888888888',
+              workflow_revision: 5,
+              workflow_name: 'bottom_up_import',
+            },
+            selector: {
+              direction: 'bottom_up',
+              mode: 'safe',
+              tags: [],
+            },
+          }),
+        ],
         updated_at: '2026-01-01T00:00:00Z',
       },
     ])
@@ -304,6 +343,116 @@ describe('PoolRunsPage', () => {
     await openRunsStage(user, 'Safe Actions')
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled()
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
+  }, 15000)
+
+  it('shows run lineage as primary operator context and keeps workflow diagnostics secondary', async () => {
+    const user = userEvent.setup()
+    const run = {
+      ...buildRun({
+        direction: 'top_down',
+      }),
+      workflow_binding: {
+        binding_id: 'binding-top-down',
+        pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        workflow: {
+          workflow_definition_key: 'services-publication',
+          workflow_revision_id: '77777777-7777-7777-7777-777777777777',
+          workflow_revision: 7,
+          workflow_name: 'services_publication',
+        },
+        decisions: [
+          {
+            decision_table_id: 'decision-1',
+            decision_key: 'invoice_mode',
+            decision_revision: 2,
+          },
+        ],
+        parameters: {
+          publication_variant: 'full',
+        },
+        role_mapping: {
+          initiator: 'finance',
+        },
+        selector: {
+          direction: 'top_down',
+          mode: 'safe',
+          tags: ['quarter-close'],
+        },
+        effective_from: '2026-01-01',
+        effective_to: null,
+        status: 'active',
+      },
+      runtime_projection: {
+        version: 'pool_runtime_projection.v1',
+        run_id: '11111111-1111-1111-1111-111111111111',
+        pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        direction: 'top_down',
+        mode: 'safe',
+        workflow_definition: {
+          plan_key: 'plan-services-v7',
+          template_version: 'workflow-template:7',
+          workflow_template_name: 'compiled-services-publication',
+          workflow_type: 'sequential',
+        },
+        workflow_binding: {
+          binding_mode: 'pool_workflow_binding',
+          binding_id: 'binding-top-down',
+          pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+          workflow_definition_key: 'services-publication',
+          workflow_revision_id: '77777777-7777-7777-7777-777777777777',
+          workflow_revision: 7,
+          workflow_name: 'services_publication',
+          decision_refs: [
+            {
+              decision_table_id: 'decision-1',
+              decision_key: 'invoice_mode',
+              decision_revision: 2,
+            },
+          ],
+          selector: {
+            direction: 'top_down',
+            mode: 'safe',
+            tags: ['quarter-close'],
+          },
+          status: 'active',
+        },
+        document_policy_projection: {
+          source_mode: 'document_plan_artifact',
+          policy_refs: [{ policy_id: 'policy-1' }],
+          policy_refs_count: 1,
+          targets_count: 3,
+        },
+        artifacts: {
+          document_plan_artifact_version: 'document_plan_artifact.v1',
+          topology_version_ref: 'topology:v7',
+          distribution_artifact_ref: {
+            id: 'distribution-artifact:v7',
+          },
+        },
+        compile_summary: {
+          steps_count: 5,
+          atomic_publication_steps_count: 3,
+          compiled_targets_count: 3,
+        },
+      },
+    } as PoolRun
+    mockListPoolRuns.mockResolvedValue([run])
+    mockGetPoolRunReport.mockResolvedValue(buildReport(run))
+
+    renderPage()
+
+    await openRunsStage(user, 'Inspect')
+    expect(await screen.findByText('Run Lineage')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-runs-lineage-pool')).toHaveTextContent('pool-code')
+    expect(screen.getByTestId('pool-runs-lineage-binding-id')).toHaveTextContent('binding-top-down')
+    expect(screen.getByTestId('pool-runs-lineage-workflow')).toHaveTextContent('services_publication')
+    expect(screen.getByText('invoice_mode r2')).toBeInTheDocument()
+    expect(screen.getByText('compiled targets: 3')).toBeInTheDocument()
+    const diagnosticsLink = screen.getByRole('link', { name: 'Open Workflow Diagnostics' })
+    expect(diagnosticsLink).toHaveAttribute(
+      'href',
+      '/workflows/executions/22222222-2222-2222-2222-222222222222'
+    )
   }, 15000)
 
   it('disables confirm while safe run is in pre-publish preparing state', async () => {
@@ -806,6 +955,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     const payload = mockCreatePoolRun.mock.calls[0][0] as Record<string, unknown>
     expect(payload.direction).toBe('top_down')
+    expect(payload.pool_workflow_binding_id).toBe('binding-top-down')
     expect(payload.run_input).toEqual({ starting_amount: '100.00' })
     expect(payload).not.toHaveProperty('source_hash')
   }, 15000)
@@ -843,6 +993,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     const payload = mockCreatePoolRun.mock.calls[0][0] as Record<string, unknown>
     expect(payload.direction).toBe('bottom_up')
+    expect(payload.pool_workflow_binding_id).toBe('binding-bottom-up')
     expect(payload.schema_template_id).toBe('55555555-5555-5555-5555-555555555555')
     expect(payload.run_input).toEqual({
       source_payload: [{ inn: '730000000111', amount: '55.00' }],

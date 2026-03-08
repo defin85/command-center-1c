@@ -1,0 +1,24 @@
+type: object
+description: Pinned workflow definition revision used by analyst-facing pool bindings.
+properties:
+  contract_version:
+    type: string
+    description: Workflow definition ref contract version.
+  workflow_definition_key:
+    type: string
+    description: Stable workflow definition key.
+  workflow_revision_id:
+    type: string
+    description: Pinned workflow revision identifier.
+  workflow_revision:
+    type: integer
+    minimum: 1
+    description: Pinned workflow revision number.
+  workflow_name:
+    type: string
+    description: Human-readable workflow name at the pinned revision.
+required:
+  - workflow_definition_key
+  - workflow_revision_id
+  - workflow_revision
+  - workflow_name

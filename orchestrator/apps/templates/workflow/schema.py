@@ -89,18 +89,62 @@ class LoopConfig(BaseModel):
     )
 
 
+class SubWorkflowRef(BaseModel):
+    """Pinned binding metadata for analyst-authored subworkflow calls."""
+
+    binding_mode: str = Field(
+        default="direct_runtime_id",
+        pattern="^(direct_runtime_id|pinned_revision)$",
+    )
+    workflow_definition_key: Optional[str] = Field(default=None)
+    workflow_revision_id: Optional[str] = Field(default=None)
+    workflow_revision: Optional[int] = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_binding_mode(self) -> "SubWorkflowRef":
+        if self.binding_mode == "pinned_revision":
+            if not self.workflow_definition_key:
+                raise ValueError(
+                    "workflow_definition_key is required for pinned_revision binding_mode"
+                )
+            if not self.workflow_revision_id:
+                raise ValueError(
+                    "workflow_revision_id is required for pinned_revision binding_mode"
+                )
+            if self.workflow_revision is None:
+                raise ValueError("workflow_revision is required for pinned_revision binding_mode")
+        return self
+
+
 class SubWorkflowConfig(BaseModel):
     """Configuration for SubWorkflow nodes."""
 
     subworkflow_id: str = Field(...)
+    subworkflow_ref: Optional[SubWorkflowRef] = Field(default=None)
     input_mapping: Dict[str, str] = Field(default_factory=dict)
     output_mapping: Dict[str, str] = Field(default_factory=dict)
     max_depth: int = Field(default=10, ge=1, le=20)
+
+    @model_validator(mode="after")
+    def validate_subworkflow_binding(self) -> "SubWorkflowConfig":
+        if (
+            self.subworkflow_ref
+            and self.subworkflow_ref.binding_mode == "pinned_revision"
+            and self.subworkflow_ref.workflow_revision_id != self.subworkflow_id
+        ):
+            raise ValueError("workflow_revision_id must match subworkflow_id for pinned_revision")
+        return self
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "subworkflow_id": "sub_workflow_v1",
+                "subworkflow_ref": {
+                    "binding_mode": "pinned_revision",
+                    "workflow_definition_key": "approval_gate",
+                    "workflow_revision_id": "sub_workflow_v1",
+                    "workflow_revision": 7,
+                },
                 "input_mapping": {"database.id": "target_db_id"},
                 "output_mapping": {"result.status": "sub_status"},
                 "max_depth": 10,
@@ -486,6 +530,7 @@ __all__ = [
     "OperationRef",
     "ParallelConfig",
     "SubWorkflowConfig",
+    "SubWorkflowRef",
     "WorkflowConfig",
     "WorkflowEdge",
     "WorkflowNode",

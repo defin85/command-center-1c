@@ -45,10 +45,12 @@ import {
   type PoolRunMasterDataGate,
   type PoolRunReport,
   type PoolRunRetryChainAttempt,
+  type PoolRunRuntimeProjection,
   type PoolRunSafeCommandConflict,
   type PoolRunSafeCommandType,
   type PoolRunVerificationMismatch,
   type PoolSchemaTemplate,
+  type PoolWorkflowBinding,
 } from '../../api/intercompanyPools'
 
 const { Title, Text } = Typography
@@ -59,6 +61,7 @@ type CreateRunFormValues = {
   period_end?: string
   direction: 'top_down' | 'bottom_up'
   mode: 'safe' | 'unsafe'
+  pool_workflow_binding_id?: string
   starting_amount?: number
   schema_template_id?: string
   source_payload_json?: string
@@ -91,10 +94,33 @@ const DEFAULT_BOTTOM_UP_SOURCE_PAYLOAD_JSON = JSON.stringify(
   2
 )
 
+const CREATE_RUN_FORM_INITIAL_VALUES: CreateRunFormValues = {
+  period_start: new Date().toISOString().slice(0, 10),
+  period_end: '',
+  direction: 'top_down',
+  mode: 'safe',
+  pool_workflow_binding_id: undefined,
+  starting_amount: 100,
+  schema_template_id: undefined,
+  source_payload_json: DEFAULT_BOTTOM_UP_SOURCE_PAYLOAD_JSON,
+  source_artifact_id: '',
+}
+
+const RETRY_FORM_INITIAL_VALUES: RetryFormValues = {
+  entity_name: 'Document_РеализацияТоваровУслуг',
+  max_attempts: 5,
+  retry_interval_seconds: 0,
+  documents_json: DEFAULT_RETRY_DOCUMENTS_JSON,
+}
+
 const CREATE_RUN_PROBLEM_CODE_MESSAGES: Record<string, string> = {
   VALIDATION_ERROR: 'Проверьте корректность параметров запуска.',
   TENANT_CONTEXT_REQUIRED: 'Для запуска run требуется активный tenant context.',
   POOL_NOT_FOUND: 'Пул не найден в текущем tenant context.',
+  POOL_WORKFLOW_BINDING_NOT_FOUND: 'Выбранный workflow binding не найден для текущего пула.',
+  POOL_WORKFLOW_BINDING_NOT_RESOLVED: 'Для выбранного pool не найден подходящий активный workflow binding.',
+  POOL_WORKFLOW_BINDING_AMBIGUOUS: 'Найдено несколько подходящих workflow bindings. Нужен явный выбор binding.',
+  POOL_WORKFLOW_BINDING_INVALID: 'Сохранённые workflow bindings невалидны и не могут быть использованы для запуска.',
   SCHEMA_TEMPLATE_NOT_FOUND: 'Выбранный schema template недоступен в текущем tenant context.',
   ODATA_MAPPING_NOT_CONFIGURED: 'Для target databases не настроены OData Infobase Users. Проверьте /rbac → Infobase Users.',
   ODATA_MAPPING_AMBIGUOUS: 'Обнаружены неоднозначные OData Infobase Users mappings. Исправьте дубликаты в /rbac → Infobase Users.',
@@ -745,6 +771,85 @@ const parseSafeCommandConflict = (error: unknown): PoolRunSafeCommandConflict | 
   return null
 }
 
+const matchesWorkflowBindingForCreateRun = ({
+  binding,
+  direction,
+  mode,
+  periodStart,
+}: {
+  binding: NonNullable<OrganizationPool['workflow_bindings']>[number]
+  direction: CreateRunFormValues['direction']
+  mode: CreateRunFormValues['mode']
+  periodStart: string
+}): boolean => {
+  if ((binding.status ?? 'draft') !== 'active') {
+    return false
+  }
+  const selector = binding.selector ?? {}
+  if (selector.direction && selector.direction !== direction) {
+    return false
+  }
+  if (selector.mode && selector.mode !== mode) {
+    return false
+  }
+  const effectiveFrom = binding.effective_from?.trim() || ''
+  if (effectiveFrom && periodStart && periodStart < effectiveFrom) {
+    return false
+  }
+  const effectiveTo = binding.effective_to?.trim() || ''
+  if (effectiveTo && periodStart && periodStart > effectiveTo) {
+    return false
+  }
+  return Boolean(binding.binding_id)
+}
+
+const formatWorkflowBindingOptionLabel = (
+  binding: NonNullable<OrganizationPool['workflow_bindings']>[number]
+): string => {
+  const workflowName = binding.workflow.workflow_name || binding.workflow.workflow_definition_key
+  const bindingId = binding.binding_id || 'binding'
+  return `${workflowName} · r${binding.workflow.workflow_revision} · ${bindingId.slice(0, 8)}`
+}
+
+const formatWorkflowBindingScope = (binding: PoolWorkflowBinding | null | undefined): string => {
+  const selector = binding?.selector ?? {}
+  const parts: string[] = []
+  if (selector.direction) {
+    parts.push(`direction=${selector.direction}`)
+  }
+  if (selector.mode) {
+    parts.push(`mode=${selector.mode}`)
+  }
+  if (selector.tags && selector.tags.length > 0) {
+    parts.push(`tags=${selector.tags.join(', ')}`)
+  }
+  return parts.length > 0 ? parts.join(' · ') : 'unscoped'
+}
+
+const formatWorkflowBindingEffectivePeriod = (binding: PoolWorkflowBinding | null | undefined): string => {
+  if (!binding?.effective_from) {
+    return '-'
+  }
+  return binding.effective_to
+    ? `${binding.effective_from}..${binding.effective_to}`
+    : `${binding.effective_from}..open`
+}
+
+const resolveWorkflowLineageName = ({
+  binding,
+  runtimeProjection,
+  workflowTemplateName,
+}: {
+  binding: PoolWorkflowBinding | null | undefined
+  runtimeProjection: PoolRunRuntimeProjection | null | undefined
+  workflowTemplateName: string | null | undefined
+}): string => (
+  binding?.workflow.workflow_name
+  || runtimeProjection?.workflow_binding.workflow_name
+  || workflowTemplateName
+  || '-'
+)
+
 export function PoolRunsPage() {
   const { message } = AntApp.useApp()
   const [pools, setPools] = useState<OrganizationPool[]>([])
@@ -789,6 +894,21 @@ export function PoolRunsPage() {
 
   const flow = useMemo(() => buildFlowLayout(graph), [graph])
   const createDirection = Form.useWatch('direction', createForm) ?? 'top_down'
+  const createMode = Form.useWatch('mode', createForm) ?? 'safe'
+  const createPeriodStart = Form.useWatch('period_start', createForm) ?? new Date().toISOString().slice(0, 10)
+  const selectedPool = useMemo(
+    () => pools.find((item) => item.id === selectedPoolId) ?? null,
+    [pools, selectedPoolId]
+  )
+  const matchingWorkflowBindings = useMemo(
+    () => (selectedPool?.workflow_bindings ?? []).filter((binding) => matchesWorkflowBindingForCreateRun({
+      binding,
+      direction: createDirection,
+      mode: createMode,
+      periodStart: createPeriodStart,
+    })),
+    [createDirection, createMode, createPeriodStart, selectedPool]
+  )
 
   const loadPools = useCallback(async () => {
     setLoadingPools(true)
@@ -920,23 +1040,24 @@ export function PoolRunsPage() {
   }, [loadReport])
 
   useEffect(() => {
-    createForm.setFieldsValue({
-      period_start: new Date().toISOString().slice(0, 10),
-      period_end: '',
-      direction: 'top_down',
-      mode: 'safe',
-      starting_amount: 100,
-      schema_template_id: undefined,
-      source_payload_json: DEFAULT_BOTTOM_UP_SOURCE_PAYLOAD_JSON,
-      source_artifact_id: '',
-    })
-    retryForm.setFieldsValue({
-      entity_name: 'Document_РеализацияТоваровУслуг',
-      max_attempts: 5,
-      retry_interval_seconds: 0,
-      documents_json: DEFAULT_RETRY_DOCUMENTS_JSON,
-    })
-  }, [createForm, retryForm])
+    const currentBindingId = createForm.getFieldValue('pool_workflow_binding_id') as string | undefined
+    const normalizedCurrentBindingId = currentBindingId?.trim() || ''
+    const matchingBindingIds = new Set(
+      matchingWorkflowBindings
+        .map((item) => item.binding_id?.trim() || '')
+        .filter((item) => item.length > 0)
+    )
+    if (matchingWorkflowBindings.length === 1) {
+      const nextBindingId = matchingWorkflowBindings[0].binding_id?.trim() || ''
+      if (nextBindingId && nextBindingId !== normalizedCurrentBindingId) {
+        createForm.setFieldValue('pool_workflow_binding_id', nextBindingId)
+      }
+      return
+    }
+    if (normalizedCurrentBindingId && !matchingBindingIds.has(normalizedCurrentBindingId)) {
+      createForm.setFieldValue('pool_workflow_binding_id', undefined)
+    }
+  }, [createForm, matchingWorkflowBindings])
 
   const handleCreateRun = useCallback(async () => {
     if (!selectedPoolId) {
@@ -956,7 +1077,18 @@ export function PoolRunsPage() {
     setError(null)
     try {
       const runInput: Record<string, unknown> = {}
+      const workflowBindingId = values.pool_workflow_binding_id?.trim() || ''
       let schemaTemplateId: string | null | undefined = undefined
+
+      if (!workflowBindingId) {
+        createForm.setFields([
+          {
+            name: 'pool_workflow_binding_id',
+            errors: ['Выберите workflow binding для запуска run.'],
+          },
+        ])
+        return
+      }
 
       if (direction === 'top_down') {
         const startingAmount = Number(values.starting_amount)
@@ -983,6 +1115,7 @@ export function PoolRunsPage() {
 
       const payload = await createPoolRun({
         pool_id: selectedPoolId,
+        pool_workflow_binding_id: workflowBindingId,
         direction,
         period_start: values.period_start,
         period_end: values.period_end?.trim() || null,
@@ -1016,10 +1149,26 @@ export function PoolRunsPage() {
           if (normalizedDetail.includes('schema_template')) {
             fieldErrors.push({ name: 'schema_template_id', errors: [problem.detail] })
           }
+          if (normalizedDetail.includes('pool_workflow_binding')) {
+            fieldErrors.push({ name: 'pool_workflow_binding_id', errors: [problem.detail] })
+          }
 
           if (fieldErrors.length > 0) {
             createForm.setFields(fieldErrors)
           }
+        }
+        if (
+          problem.code === 'POOL_WORKFLOW_BINDING_NOT_FOUND'
+          || problem.code === 'POOL_WORKFLOW_BINDING_NOT_RESOLVED'
+          || problem.code === 'POOL_WORKFLOW_BINDING_AMBIGUOUS'
+          || problem.code === 'POOL_WORKFLOW_BINDING_INVALID'
+        ) {
+          createForm.setFields([
+            {
+              name: 'pool_workflow_binding_id',
+              errors: [resolveCreateRunProblemMessage(problem, 'Не удалось выбрать workflow binding.')],
+            },
+          ])
         }
         setError(resolveCreateRunProblemMessage(problem, 'Не удалось создать run.'))
       } else if (err instanceof Error && err.message) {
@@ -1346,6 +1495,18 @@ export function PoolRunsPage() {
   const executionConsumer = runDetails?.provenance?.execution_consumer ?? null
   const lane = runDetails?.provenance?.lane ?? null
   const retryChain = runDetails?.provenance?.retry_chain ?? []
+  const workflowBinding = runDetails?.workflow_binding ?? null
+  const runtimeProjection = runDetails?.runtime_projection ?? null
+  const workflowDecisionRefs = workflowBinding?.decisions ?? runtimeProjection?.workflow_binding.decision_refs ?? []
+  const workflowDiagnosticsId = runDetails?.workflow_execution_id
+    ?? (retryChain.length > 0 ? retryChain[retryChain.length - 1].workflow_run_id : null)
+    ?? workflowRunId
+    ?? null
+  const selectedPoolLabel = selectedPool
+    ? `${selectedPool.code} - ${selectedPool.name}`
+    : runDetails?.pool_id
+      ? formatShortId(runDetails.pool_id)
+      : '-'
   const masterDataGate = runDetails?.master_data_gate ?? null
   const masterDataGateHint = masterDataGate?.error_code
     ? resolveMasterDataGateHint(masterDataGate.error_code)
@@ -1391,7 +1552,7 @@ export function PoolRunsPage() {
           Pool Runs
         </Title>
         <Text type="secondary">
-          Единая модель статусов/provenance для run, прозрачная диагностика workflow и safe-команды.
+          Operator-facing surface для lifecycle run: pool/binding lineage, safe-команды, retry и secondary workflow diagnostics.
         </Text>
       </div>
 
@@ -1432,7 +1593,7 @@ export function PoolRunsPage() {
             label: 'Create',
             children: (
               <Card title="Create Run">
-                <Form form={createForm} layout="vertical">
+                <Form form={createForm} layout="vertical" initialValues={CREATE_RUN_FORM_INITIAL_VALUES}>
                   <Alert
                     type="info"
                     showIcon
@@ -1502,6 +1663,33 @@ export function PoolRunsPage() {
                           />
                         </Form.Item>
                       )}
+                    </Col>
+                  </Row>
+
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="pool_workflow_binding_id"
+                        label="Workflow binding"
+                        rules={[{ required: true, message: 'workflow binding required' }]}
+                        extra={
+                          matchingWorkflowBindings.length === 0
+                            ? 'Для выбранного pool/direction/mode/period_start нет активного workflow binding.'
+                            : 'Run запускается по pinned workflow binding, а не по raw selector.'
+                        }
+                      >
+                        <Select
+                          data-testid="pool-runs-create-workflow-binding"
+                          aria-label="Workflow binding"
+                          allowClear={matchingWorkflowBindings.length > 1}
+                          disabled={matchingWorkflowBindings.length === 0}
+                          placeholder={matchingWorkflowBindings.length === 0 ? 'No matching binding' : 'Select binding'}
+                          options={matchingWorkflowBindings.map((binding) => ({
+                            value: binding.binding_id,
+                            label: formatWorkflowBindingOptionLabel(binding),
+                          }))}
+                        />
+                      </Form.Item>
                     </Col>
                   </Row>
 
@@ -1579,7 +1767,7 @@ export function PoolRunsPage() {
                   </Col>
                 </Row>
 
-                <Card title="Execution Provenance / Report" loading={loadingReport}>
+                <Card title="Run Lineage / Operator Report" loading={loadingReport}>
                   {!runDetails && (
                     <Text type="secondary">Select a run to inspect report.</Text>
                   )}
@@ -1595,76 +1783,164 @@ export function PoolRunsPage() {
                         ))}
                       </Space>
 
-                      <Descriptions bordered size="small" column={2}>
-                        <Descriptions.Item label="Workflow Run" span={1}>
-                          <Text code data-testid="pool-runs-provenance-workflow-id">{workflowRunId ?? '-'}</Text>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Workflow Status" span={1}>
-                          {workflowStatus ? <Tag color="processing">{workflowStatus}</Tag> : <Text type="secondary">legacy</Text>}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Root Operation" span={1}>
-                          <Text code data-testid="pool-runs-provenance-root-operation-id">{rootOperationId ?? '-'}</Text>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Execution Consumer" span={1}>
-                          <Text data-testid="pool-runs-provenance-execution-consumer">{executionConsumer ?? '-'}</Text>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Lane" span={1}>
-                          <Text data-testid="pool-runs-provenance-lane">{lane ?? '-'}</Text>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Execution Backend" span={1}>
-                          <Text>{executionBackend ?? '-'}</Text>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Workflow Template" span={1}>
-                          <Text>{runDetails.workflow_template_name ?? '-'}</Text>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Input Contract" span={1}>
-                          <Tag color={getInputContractColor(resolveInputContractVersion(runDetails))}>
-                            {resolveInputContractVersion(runDetails)}
-                          </Tag>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Run Input" span={1}>
-                          <Text>{summarizeRunInput(runDetails)}</Text>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Approval State" span={1}>
-                          {runDetails.approval_state ? (
-                            <Tag color={getApprovalStateColor(runDetails.approval_state)}>{runDetails.approval_state}</Tag>
-                          ) : (
-                            <Text type="secondary">n/a</Text>
-                          )}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Publication Step" span={1}>
-                          {runDetails.publication_step_state ? (
-                            <Tag color={getPublicationStepColor(runDetails.publication_step_state)}>{runDetails.publication_step_state}</Tag>
-                          ) : (
-                            <Text type="secondary">n/a</Text>
-                          )}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Terminal Reason" span={2}>
-                          <Text>{runDetails.terminal_reason ?? '-'}</Text>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="Retry Chain" span={2}>
-                          {retryChain.length > 0 ? (
-                            <Space direction="vertical" size={4}>
-                              {retryChain.map((item: PoolRunRetryChainAttempt) => (
-                                <Space key={item.workflow_run_id} size={4} wrap>
-                                  <Tag color={getWorkflowAttemptKindColor(item.attempt_kind)}>
-                                    #{item.attempt_number} {item.attempt_kind}
+                      <Alert
+                        type="info"
+                        showIcon
+                        message="Run Lineage is the primary operator context"
+                        description="Pool, selected binding, pinned workflow revision and compiled runtime projection stay on this screen. Generic workflow execution remains a secondary diagnostics surface."
+                      />
+
+                      <Card size="small" title="Run Lineage">
+                        <Descriptions bordered size="small" column={2}>
+                          <Descriptions.Item label="Pool" span={1}>
+                            <Text data-testid="pool-runs-lineage-pool">{selectedPoolLabel}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Binding ID" span={1}>
+                            <Text code data-testid="pool-runs-lineage-binding-id">{workflowBinding?.binding_id ?? '-'}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Workflow Scheme" span={1}>
+                            <Text data-testid="pool-runs-lineage-workflow">
+                              {resolveWorkflowLineageName({
+                                binding: workflowBinding,
+                                runtimeProjection,
+                                workflowTemplateName: runDetails.workflow_template_name,
+                              })}
+                            </Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Workflow Revision" span={1}>
+                            <Text>
+                              {workflowBinding?.workflow.workflow_revision != null
+                                ? `r${workflowBinding.workflow.workflow_revision}`
+                                : runtimeProjection?.workflow_binding.workflow_revision != null
+                                  ? `r${runtimeProjection.workflow_binding.workflow_revision}`
+                                  : '-'}
+                            </Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Binding Scope" span={1}>
+                            <Text>{formatWorkflowBindingScope(workflowBinding)}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Effective Period" span={1}>
+                            <Text>{formatWorkflowBindingEffectivePeriod(workflowBinding)}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Decision Snapshot" span={2}>
+                            {workflowDecisionRefs.length > 0 ? (
+                              <Space size={[4, 4]} wrap>
+                                {workflowDecisionRefs.map((decision) => (
+                                  <Tag key={`${decision.decision_table_id}:${decision.decision_revision}`}>
+                                    {decision.decision_key} r{decision.decision_revision}
                                   </Tag>
-                                  <Tag color={getWorkflowExecutionStatusColor(item.status)}>{item.status}</Tag>
-                                  <Text code>{formatShortId(item.workflow_run_id)}</Text>
-                                  {item.parent_workflow_run_id ? (
-                                    <Text type="secondary">parent: {formatShortId(item.parent_workflow_run_id)}</Text>
-                                  ) : (
-                                    <Text type="secondary">root</Text>
-                                  )}
-                                </Space>
-                              ))}
-                            </Space>
-                          ) : (
-                            <Text type="secondary">empty</Text>
-                          )}
-                        </Descriptions.Item>
-                      </Descriptions>
+                                ))}
+                              </Space>
+                            ) : (
+                              <Text type="secondary">No pinned decision refs.</Text>
+                            )}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Compiled Runtime" span={1}>
+                            <Text>{runtimeProjection?.workflow_definition.workflow_template_name ?? '-'}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Compile Plan" span={1}>
+                            <Text code>{runtimeProjection?.workflow_definition.plan_key ?? '-'}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Compile Summary" span={2}>
+                            {runtimeProjection ? (
+                              <Space size={[4, 4]} wrap>
+                                <Tag>compiled targets: {runtimeProjection.compile_summary.compiled_targets_count}</Tag>
+                                <Tag>policy refs: {runtimeProjection.document_policy_projection.policy_refs_count}</Tag>
+                                <Tag>steps: {runtimeProjection.compile_summary.steps_count}</Tag>
+                                <Tag>atomic publication: {runtimeProjection.compile_summary.atomic_publication_steps_count}</Tag>
+                              </Space>
+                            ) : (
+                              <Text type="secondary">Historical run without compiled runtime projection.</Text>
+                            )}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Workflow Diagnostics" span={2}>
+                            {workflowDiagnosticsId ? (
+                              <Button
+                                type="link"
+                                href={`/workflows/executions/${workflowDiagnosticsId}`}
+                                style={{ paddingInline: 0 }}
+                              >
+                                Open Workflow Diagnostics
+                              </Button>
+                            ) : (
+                              <Text type="secondary">No linked workflow execution diagnostics.</Text>
+                            )}
+                          </Descriptions.Item>
+                        </Descriptions>
+                      </Card>
+
+                      <Card size="small" title="Underlying Workflow Runtime">
+                        <Descriptions bordered size="small" column={2}>
+                          <Descriptions.Item label="Workflow Run" span={1}>
+                            <Text code data-testid="pool-runs-provenance-workflow-id">{workflowRunId ?? '-'}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Workflow Status" span={1}>
+                            {workflowStatus ? <Tag color="processing">{workflowStatus}</Tag> : <Text type="secondary">legacy</Text>}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Root Operation" span={1}>
+                            <Text code data-testid="pool-runs-provenance-root-operation-id">{rootOperationId ?? '-'}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Execution Consumer" span={1}>
+                            <Text data-testid="pool-runs-provenance-execution-consumer">{executionConsumer ?? '-'}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Lane" span={1}>
+                            <Text data-testid="pool-runs-provenance-lane">{lane ?? '-'}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Execution Backend" span={1}>
+                            <Text>{executionBackend ?? '-'}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Workflow Template" span={1}>
+                            <Text>{runDetails.workflow_template_name ?? '-'}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Input Contract" span={1}>
+                            <Tag color={getInputContractColor(resolveInputContractVersion(runDetails))}>
+                              {resolveInputContractVersion(runDetails)}
+                            </Tag>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Run Input" span={2}>
+                            <Text>{summarizeRunInput(runDetails)}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Approval State" span={1}>
+                            {runDetails.approval_state ? (
+                              <Tag color={getApprovalStateColor(runDetails.approval_state)}>{runDetails.approval_state}</Tag>
+                            ) : (
+                              <Text type="secondary">n/a</Text>
+                            )}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Publication Step" span={1}>
+                            {runDetails.publication_step_state ? (
+                              <Tag color={getPublicationStepColor(runDetails.publication_step_state)}>{runDetails.publication_step_state}</Tag>
+                            ) : (
+                              <Text type="secondary">n/a</Text>
+                            )}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Terminal Reason" span={2}>
+                            <Text>{runDetails.terminal_reason ?? '-'}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Retry Chain" span={2}>
+                            {retryChain.length > 0 ? (
+                              <Space direction="vertical" size={4}>
+                                {retryChain.map((item: PoolRunRetryChainAttempt) => (
+                                  <Space key={item.workflow_run_id} size={4} wrap>
+                                    <Tag color={getWorkflowAttemptKindColor(item.attempt_kind)}>
+                                      #{item.attempt_number} {item.attempt_kind}
+                                    </Tag>
+                                    <Tag color={getWorkflowExecutionStatusColor(item.status)}>{item.status}</Tag>
+                                    <Text code>{formatShortId(item.workflow_run_id)}</Text>
+                                    {item.parent_workflow_run_id ? (
+                                      <Text type="secondary">parent: {formatShortId(item.parent_workflow_run_id)}</Text>
+                                    ) : (
+                                      <Text type="secondary">root</Text>
+                                    )}
+                                  </Space>
+                                ))}
+                              </Space>
+                            ) : (
+                              <Text type="secondary">empty</Text>
+                            )}
+                          </Descriptions.Item>
+                        </Descriptions>
+                      </Card>
 
                       <Card size="small" title="Master Data Gate">
                         {!masterDataGate && (
@@ -1950,7 +2226,7 @@ export function PoolRunsPage() {
             label: 'Retry Failed',
             children: (
               <Card title="Retry Failed Targets">
-                <Form form={retryForm} layout="vertical">
+                <Form form={retryForm} layout="vertical" initialValues={RETRY_FORM_INITIAL_VALUES}>
                   <Row gutter={16}>
                     <Col span={8}>
                       <Form.Item name="entity_name" label="Entity Name" rules={[{ required: true }]}>

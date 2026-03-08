@@ -3,6 +3,9 @@ properties:
   pool_id:
     type: string
     format: uuid
+  pool_workflow_binding_id:
+    type: string
+    description: Explicit pool workflow binding identifier used to disambiguate create-run resolution.
   direction:
     enum:
       - top_down

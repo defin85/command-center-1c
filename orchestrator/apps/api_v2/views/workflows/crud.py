@@ -16,6 +16,11 @@ from apps.templates.workflow.models import (
     WorkflowExecution,
     WorkflowTemplate,
 )
+from apps.templates.workflow.management_mode import (
+    WORKFLOW_SYSTEM_MANAGED_READ_ONLY_CODE,
+    WORKFLOW_SYSTEM_MANAGED_READ_ONLY_REASON,
+    is_system_managed_workflow,
+)
 from apps.templates.workflow.serializers import (
     WorkflowTemplateDetailSerializer,
 )
@@ -91,6 +96,19 @@ def _pinned_policy_error(node_ids: list[str]) -> Response:
             },
         },
         status=400,
+    )
+
+
+def _system_managed_read_only_response() -> Response:
+    return Response(
+        {
+            "success": False,
+            "error": {
+                "code": WORKFLOW_SYSTEM_MANAGED_READ_ONLY_CODE,
+                "message": WORKFLOW_SYSTEM_MANAGED_READ_ONLY_REASON,
+            },
+        },
+        status=409,
     )
 
 @extend_schema(
@@ -265,6 +283,8 @@ def update_workflow(request):
 
     if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_WORKFLOW_TEMPLATE, workflow):
         return _permission_denied("You do not have permission to manage this workflow.")
+    if is_system_managed_workflow(workflow):
+        return _system_managed_read_only_response()
 
     # Check for running executions
     running_count = workflow.executions.filter(
@@ -418,6 +438,8 @@ def delete_workflow(request):
 
     if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_WORKFLOW_TEMPLATE, workflow):
         return _permission_denied("You do not have permission to manage this workflow.")
+    if is_system_managed_workflow(workflow):
+        return _system_managed_read_only_response()
 
     workflow_name = workflow.name
 
@@ -539,6 +561,8 @@ def validate_workflow(request):
                 }, status=404)
             if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_WORKFLOW_TEMPLATE, workflow):
                 return _permission_denied("You do not have permission to manage this workflow.")
+            if is_system_managed_workflow(workflow):
+                return _system_managed_read_only_response()
         else:
             # Parse dag_structure directly
             try:
@@ -657,6 +681,8 @@ def clone_workflow(request):
 
     if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_WORKFLOW_TEMPLATE, source_workflow):
         return _permission_denied("You do not have permission to manage this workflow.")
+    if is_system_managed_workflow(source_workflow):
+        return _system_managed_read_only_response()
 
     try:
         if new_name:

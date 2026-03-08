@@ -97,6 +97,12 @@ properties:
     nullable: true
   provenance:
     $ref: ./PoolRunProvenance.yaml
+  workflow_binding:
+    $ref: ./PoolWorkflowBinding.yaml
+    nullable: true
+  runtime_projection:
+    $ref: ./PoolRuntimeProjection.yaml
+    nullable: true
   workflow_template_name:
     type: string
     nullable: true

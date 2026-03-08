@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
 from datetime import date, datetime, timedelta, timezone as dt_timezone
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
@@ -50,6 +50,10 @@ from apps.intercompany_pools.metadata_catalog import (
     refresh_metadata_catalog_snapshot,
     validate_document_policy_references,
 )
+from apps.intercompany_pools.runtime_projection_contract import (
+    POOL_RUNTIME_PROJECTION_CONTEXT_KEY,
+    validate_pool_runtime_projection_v1,
+)
 from apps.intercompany_pools.command_log import (
     PoolRunCommandIdempotencyConflict,
     record_pool_run_command_outcome,
@@ -75,8 +79,14 @@ from apps.intercompany_pools.publication_policy import (
 )
 from apps.intercompany_pools.runs import upsert_pool_run
 from apps.intercompany_pools.workflow_runtime import (
+    POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY,
     start_pool_run_retry_workflow_execution,
     start_pool_run_workflow_execution,
+)
+from apps.intercompany_pools.workflow_authoring_contract import PoolWorkflowBindingContract
+from apps.intercompany_pools.workflow_binding_resolution import (
+    PoolWorkflowBindingResolutionError,
+    resolve_pool_workflow_binding_for_run,
 )
 from apps.templates.workflow.models import WorkflowExecution
 from apps.runtime_settings.effective import get_effective_runtime_setting
@@ -605,6 +615,12 @@ def _serialize_run(
         execution_backend=execution_backend,
         observability_fields=observability_fields,
     )
+    workflow_binding = _resolve_workflow_binding_read_model(
+        workflow_input_context=workflow_input_context
+    )
+    runtime_projection = _resolve_runtime_projection_read_model(
+        workflow_input_context=workflow_input_context
+    )
     return {
         "id": str(run.id),
         "tenant_id": str(run.tenant_id),
@@ -634,6 +650,8 @@ def _serialize_run(
         "terminal_reason": terminal_reason,
         "execution_backend": execution_backend,
         "provenance": provenance,
+        "workflow_binding": workflow_binding,
+        "runtime_projection": runtime_projection,
         "workflow_template_name": run.workflow_template_name or None,
         "seed": run.seed,
         "validation_summary": run.validation_summary,
@@ -1357,6 +1375,32 @@ def _resolve_terminal_reason(
     return raw_reason or None
 
 
+def _resolve_workflow_binding_read_model(
+    *,
+    workflow_input_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    raw_binding = workflow_input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)
+    if not isinstance(raw_binding, Mapping):
+        return None
+    try:
+        return PoolWorkflowBindingContract(**dict(raw_binding)).model_dump(mode="json")
+    except Exception:
+        return None
+
+
+def _resolve_runtime_projection_read_model(
+    *,
+    workflow_input_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    raw_projection = workflow_input_context.get(POOL_RUNTIME_PROJECTION_CONTEXT_KEY)
+    if not isinstance(raw_projection, Mapping):
+        return None
+    try:
+        return validate_pool_runtime_projection_v1(projection=raw_projection)
+    except Exception:
+        return None
+
+
 def _execution_sort_key_for_lineage(candidate: dict[str, Any]) -> tuple[int, str, str]:
     attempt_number = _execution_attempt_number(candidate)
     attempt_sort = attempt_number if attempt_number is not None else 10**9
@@ -1742,6 +1786,71 @@ def _serialize_schema_template(template: PoolSchemaTemplate) -> dict[str, Any]:
     }
 
 
+def _extract_pool_workflow_bindings(metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = metadata.get("workflow_bindings")
+    if not isinstance(raw, list):
+        return []
+    bindings: list[dict[str, Any]] = []
+    for item in raw:
+        if isinstance(item, dict):
+            bindings.append(item)
+    return bindings
+
+
+def _serialize_organization_pool(pool: OrganizationPool) -> dict[str, Any]:
+    metadata = pool.metadata if isinstance(pool.metadata, dict) else {}
+    return {
+        "id": str(pool.id),
+        "code": pool.code,
+        "name": pool.name,
+        "description": pool.description,
+        "is_active": pool.is_active,
+        "metadata": metadata,
+        "workflow_bindings": _extract_pool_workflow_bindings(metadata),
+        "updated_at": pool.updated_at,
+    }
+
+
+def _normalize_pool_workflow_bindings_for_storage(
+    *,
+    pool_id: str,
+    workflow_bindings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    normalized_bindings: list[dict[str, Any]] = []
+    seen_binding_ids: set[str] = set()
+
+    for index, binding in enumerate(workflow_bindings, start=1):
+        payload = dict(binding)
+        provided_pool_id = str(payload.get("pool_id") or "").strip()
+        if provided_pool_id and provided_pool_id != pool_id:
+            raise serializers.ValidationError(
+                {
+                    "workflow_bindings": [
+                        f"binding #{index}: pool_id must match enclosing pool id"
+                    ]
+                }
+            )
+
+        binding_id = str(payload.get("binding_id") or "").strip() or str(uuid4())
+        if binding_id in seen_binding_ids:
+            raise serializers.ValidationError(
+                {"workflow_bindings": [f"binding #{index}: binding_id must be unique"]}
+            )
+        seen_binding_ids.add(binding_id)
+
+        payload["binding_id"] = binding_id
+        payload["pool_id"] = pool_id
+
+        try:
+            contract = PoolWorkflowBindingContract(**payload)
+        except Exception as exc:
+            raise serializers.ValidationError({"workflow_bindings": [str(exc)]}) from exc
+
+        normalized_bindings.append(contract.model_dump(mode="json"))
+
+    return normalized_bindings
+
+
 def _serialize_organization(organization: Organization) -> dict[str, Any]:
     return {
         "id": str(organization.id),
@@ -1878,6 +1987,8 @@ class PoolRunSerializer(serializers.Serializer):
     terminal_reason = serializers.CharField(required=False, allow_null=True)
     execution_backend = serializers.CharField(required=False, allow_null=True)
     provenance = PoolRunProvenanceSerializer(required=False)
+    workflow_binding = serializers.JSONField(required=False, allow_null=True)
+    runtime_projection = serializers.JSONField(required=False, allow_null=True)
     workflow_template_name = serializers.CharField(required=False, allow_null=True)
     seed = serializers.IntegerField(required=False, allow_null=True)
     validation_summary = serializers.JSONField(required=False)
@@ -1928,6 +2039,7 @@ class PoolRunAuditEventSerializer(serializers.Serializer):
 
 class PoolRunCreateRequestSerializer(serializers.Serializer):
     pool_id = serializers.UUIDField()
+    pool_workflow_binding_id = serializers.CharField(required=False, allow_blank=False)
     direction = serializers.ChoiceField(choices=PoolRunDirection.values)
     period_start = serializers.DateField()
     period_end = serializers.DateField(required=False, allow_null=True)
@@ -2172,12 +2284,54 @@ class OrganizationPoolSerializer(serializers.Serializer):
     description = serializers.CharField(required=False, allow_blank=True)
     is_active = serializers.BooleanField()
     metadata = serializers.JSONField(required=False)
+    workflow_bindings = serializers.ListField(child=serializers.JSONField(), required=False)
     updated_at = serializers.DateTimeField(required=False)
 
 
 class OrganizationPoolListResponseSerializer(serializers.Serializer):
     pools = OrganizationPoolSerializer(many=True)
     count = serializers.IntegerField()
+
+
+class WorkflowDefinitionRefInputSerializer(serializers.Serializer):
+    contract_version = serializers.CharField(required=False)
+    workflow_definition_key = serializers.CharField()
+    workflow_revision_id = serializers.CharField()
+    workflow_revision = serializers.IntegerField(min_value=1)
+    workflow_name = serializers.CharField()
+
+
+class DecisionTableRefInputSerializer(serializers.Serializer):
+    decision_table_id = serializers.CharField()
+    decision_key = serializers.CharField()
+    decision_revision = serializers.IntegerField(min_value=1)
+
+
+class PoolWorkflowBindingSelectorInputSerializer(serializers.Serializer):
+    direction = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    mode = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    tags = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+
+
+class PoolWorkflowBindingInputSerializer(serializers.Serializer):
+    binding_id = serializers.CharField(required=False, allow_blank=False)
+    pool_id = serializers.UUIDField(required=False)
+    workflow = WorkflowDefinitionRefInputSerializer()
+    decisions = DecisionTableRefInputSerializer(many=True, required=False, default=list)
+    parameters = serializers.JSONField(required=False, default=dict)
+    role_mapping = serializers.DictField(
+        child=serializers.CharField(),
+        required=False,
+        default=dict,
+    )
+    selector = PoolWorkflowBindingSelectorInputSerializer(required=False, default=dict)
+    effective_from = serializers.DateField()
+    effective_to = serializers.DateField(required=False, allow_null=True)
+    status = serializers.ChoiceField(
+        choices=["draft", "active", "inactive"],
+        required=False,
+        default="draft",
+    )
 
 
 class OrganizationPoolUpsertRequestSerializer(serializers.Serializer):
@@ -2187,6 +2341,7 @@ class OrganizationPoolUpsertRequestSerializer(serializers.Serializer):
     description = serializers.CharField(required=False, allow_blank=True, default="")
     is_active = serializers.BooleanField(required=False, default=True)
     metadata = serializers.JSONField(required=False, default=dict)
+    workflow_bindings = PoolWorkflowBindingInputSerializer(many=True, required=False)
 
     def validate_metadata(self, value):
         if not isinstance(value, dict):
@@ -2441,6 +2596,31 @@ def create_pool_run(request):
             status_code=http_status.HTTP_404_NOT_FOUND,
         )
 
+    try:
+        resolved_workflow_binding = resolve_pool_workflow_binding_for_run(
+            raw_bindings=_extract_pool_workflow_bindings(
+                pool.metadata if isinstance(pool.metadata, dict) else {}
+            ),
+            requested_binding_id=str(data.get("pool_workflow_binding_id") or "").strip() or None,
+            direction=data["direction"],
+            mode=data.get("mode", PoolRunMode.SAFE),
+            period_start=data["period_start"],
+        )
+    except PoolWorkflowBindingResolutionError as exc:
+        return _problem(
+            code=exc.code,
+            title="Pool Workflow Binding Resolution Failed",
+            detail=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=exc.errors,
+        )
+
+    resolved_workflow_binding_payload = (
+        resolved_workflow_binding.model_dump(mode="json")
+        if resolved_workflow_binding is not None
+        else None
+    )
+
     schema_template = None
     schema_template_id = data.get("schema_template_id")
     if schema_template_id:
@@ -2460,6 +2640,9 @@ def create_pool_run(request):
             direction=data["direction"],
             period_start=data["period_start"],
             period_end=data.get("period_end"),
+            workflow_binding_id=(
+                resolved_workflow_binding.binding_id if resolved_workflow_binding is not None else None
+            ),
             run_input=data.get("run_input"),
             mode=data.get("mode", PoolRunMode.SAFE),
             schema_template=schema_template,
@@ -2480,6 +2663,7 @@ def create_pool_run(request):
         runtime_result = start_pool_run_workflow_execution(
             run=result.run,
             requested_by=request.user if request.user and request.user.is_authenticated else None,
+            workflow_binding=resolved_workflow_binding_payload,
         )
     except (ValueError, DjangoValidationError) as exc:
         error_code, detail = _resolve_pool_runtime_start_error(exc)
@@ -3025,18 +3209,7 @@ def list_organization_pools(request):
         queryset = queryset.filter(is_active=str(is_active_value).strip().lower() in {"1", "true", "yes"})
     pools = list(queryset.order_by("code"))
     payload = {
-        "pools": [
-            {
-                "id": str(pool.id),
-                "code": pool.code,
-                "name": pool.name,
-                "description": pool.description,
-                "is_active": pool.is_active,
-                "metadata": pool.metadata if isinstance(pool.metadata, dict) else {},
-                "updated_at": pool.updated_at,
-            }
-            for pool in pools
-        ],
+        "pools": [_serialize_organization_pool(pool) for pool in pools],
         "count": len(pools),
     }
     return Response(payload, status=http_status.HTTP_200_OK)
@@ -3093,12 +3266,28 @@ def upsert_organization_pool(request):
 
     created = pool is None
     description_value = data.get("description", pool.description if pool else "")
-    metadata_value = data.get("metadata", pool.metadata if pool else {})
+    metadata_value = dict(data.get("metadata", pool.metadata if pool else {}) or {})
     is_active_value = data.get("is_active", pool.is_active if pool else True)
+    pool_uuid = pool.id if pool else uuid4()
+
+    if "workflow_bindings" in data:
+        try:
+            metadata_value["workflow_bindings"] = _normalize_pool_workflow_bindings_for_storage(
+                pool_id=str(pool_uuid),
+                workflow_bindings=data["workflow_bindings"],
+            )
+        except serializers.ValidationError as exc:
+            return _problem(
+                code="VALIDATION_ERROR",
+                title="Validation Error",
+                detail=str(exc.detail),
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+            )
 
     try:
         if created:
             pool = OrganizationPool.objects.create(
+                id=pool_uuid,
                 tenant_id=tenant_id,
                 code=data["code"],
                 name=data["name"],
@@ -3130,15 +3319,7 @@ def upsert_organization_pool(request):
         )
 
     payload = {
-        "pool": {
-            "id": str(pool.id),
-            "code": pool.code,
-            "name": pool.name,
-            "description": pool.description,
-            "is_active": pool.is_active,
-            "metadata": pool.metadata if isinstance(pool.metadata, dict) else {},
-            "updated_at": pool.updated_at,
-        },
+        "pool": _serialize_organization_pool(pool),
         "created": created,
     }
     response_status = http_status.HTTP_201_CREATED if created else http_status.HTTP_200_OK

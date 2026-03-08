@@ -4,6 +4,11 @@ properties:
   subworkflow_id:
     type: string
     description: Subworkflow template ID
+  subworkflow_ref:
+    allOf:
+      - $ref: ./SubWorkflowRef.yaml
+    nullable: true
+    description: Pinned binding metadata for analyst-authored subworkflow calls
   input_mapping:
     type: object
     additionalProperties:

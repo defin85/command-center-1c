@@ -11404,6 +11404,14 @@ paths:
             type: string
           description: Search by name or description
         - in: query
+          name: surface
+          schema:
+            type: string
+            enum:
+              - workflow_library
+              - runtime_diagnostics
+          description: 'Visibility surface: workflow_library (default) or runtime_diagnostics'
+        - in: query
           name: sort
           schema:
             type: string
@@ -15442,6 +15450,116 @@ components:
           description: Operation IDs to unsubscribe from
       required:
         - operation_ids
+    WorkflowDefinitionRef:
+      type: object
+      description: Pinned workflow definition revision used by analyst-facing pool bindings.
+      properties:
+        contract_version:
+          type: string
+          description: Workflow definition ref contract version.
+        workflow_definition_key:
+          type: string
+          description: Stable workflow definition key.
+        workflow_revision_id:
+          type: string
+          description: Pinned workflow revision identifier.
+        workflow_revision:
+          type: integer
+          minimum: 1
+          description: Pinned workflow revision number.
+        workflow_name:
+          type: string
+          description: Human-readable workflow name at the pinned revision.
+      required:
+        - workflow_definition_key
+        - workflow_revision_id
+        - workflow_revision
+        - workflow_name
+    DecisionTableRef:
+      type: object
+      description: Pinned DMN-lite decision table reference used by pool workflow bindings.
+      properties:
+        decision_table_id:
+          type: string
+          description: Stable decision table identifier.
+        decision_key:
+          type: string
+          description: Decision table key.
+        decision_revision:
+          type: integer
+          minimum: 1
+          description: Pinned decision table revision number.
+      required:
+        - decision_table_id
+        - decision_key
+        - decision_revision
+    PoolWorkflowBindingSelector:
+      type: object
+      description: Optional selector used to choose a workflow binding for a concrete pool run.
+      properties:
+        direction:
+          type: string
+          nullable: true
+          description: Optional pool run direction discriminator.
+        mode:
+          type: string
+          nullable: true
+          description: Optional pool run mode discriminator.
+        tags:
+          type: array
+          description: Optional tag matchers required by the binding.
+          items:
+            type: string
+    PoolWorkflowBinding:
+      type: object
+      description: Workflow binding assigned to an organization pool.
+      properties:
+        contract_version:
+          type: string
+          description: Pool workflow binding contract version.
+        binding_id:
+          type: string
+          description: Stable binding identifier within the pool.
+        pool_id:
+          type: string
+          format: uuid
+          description: Enclosing organization pool identifier.
+        workflow:
+          $ref: '#/components/schemas/WorkflowDefinitionRef'
+        decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DecisionTableRef'
+        parameters:
+          type: object
+          additionalProperties: true
+          description: Arbitrary workflow parameter overrides for this binding.
+        role_mapping:
+          type: object
+          additionalProperties:
+            type: string
+          description: Mapping from workflow roles to concrete pool-scoped targets.
+        selector:
+          $ref: '#/components/schemas/PoolWorkflowBindingSelector'
+        effective_from:
+          type: string
+          format: date
+          description: Binding effective start date.
+        effective_to:
+          type: string
+          format: date
+          nullable: true
+          description: Binding effective end date, inclusive.
+        status:
+          type: string
+          enum:
+            - draft
+            - active
+            - inactive
+          description: Binding lifecycle status.
+      required:
+        - workflow
+        - effective_from
     OrganizationPool:
       type: object
       properties:
@@ -15457,6 +15575,10 @@ components:
         is_active:
           type: boolean
         metadata: {}
+        workflow_bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolWorkflowBinding'
         updated_at:
           type: string
           format: date-time
@@ -17258,6 +17380,124 @@ components:
       required:
         - execution_backend
         - retry_chain
+    PoolRuntimeProjection:
+      type: object
+      description: Compiled runtime projection snapshot for pool-run lineage and operator diagnostics.
+      properties:
+        version:
+          type: string
+        run_id:
+          type: string
+          format: uuid
+        pool_id:
+          type: string
+          format: uuid
+        direction:
+          type: string
+        mode:
+          type: string
+        workflow_definition:
+          type: object
+          properties:
+            plan_key:
+              type: string
+            template_version:
+              type: string
+            workflow_template_name:
+              type: string
+            workflow_type:
+              type: string
+          required:
+            - plan_key
+            - template_version
+            - workflow_template_name
+            - workflow_type
+        workflow_binding:
+          type: object
+          properties:
+            binding_mode:
+              type: string
+            binding_id:
+              type: string
+            pool_id:
+              type: string
+              format: uuid
+            workflow_definition_key:
+              type: string
+            workflow_revision_id:
+              type: string
+            workflow_revision:
+              type: integer
+            workflow_name:
+              type: string
+            decision_refs:
+              type: array
+              items:
+                $ref: '#/components/schemas/DecisionTableRef'
+            selector:
+              $ref: '#/components/schemas/PoolWorkflowBindingSelector'
+            status:
+              type: string
+          required:
+            - binding_mode
+        document_policy_projection:
+          type: object
+          properties:
+            source_mode:
+              type: string
+            policy_refs:
+              type: array
+              items: {}
+            policy_refs_count:
+              type: integer
+            targets_count:
+              type: integer
+          required:
+            - source_mode
+            - policy_refs
+            - policy_refs_count
+            - targets_count
+        artifacts:
+          type: object
+          properties:
+            document_plan_artifact_version:
+              type: string
+              nullable: true
+            topology_version_ref:
+              type: string
+              nullable: true
+            distribution_artifact_ref:
+              type: object
+              additionalProperties: true
+              nullable: true
+          required:
+            - document_plan_artifact_version
+            - topology_version_ref
+            - distribution_artifact_ref
+        compile_summary:
+          type: object
+          properties:
+            steps_count:
+              type: integer
+            atomic_publication_steps_count:
+              type: integer
+            compiled_targets_count:
+              type: integer
+          required:
+            - steps_count
+            - atomic_publication_steps_count
+            - compiled_targets_count
+      required:
+        - version
+        - run_id
+        - pool_id
+        - direction
+        - mode
+        - workflow_definition
+        - workflow_binding
+        - document_policy_projection
+        - artifacts
+        - compile_summary
     PoolRun:
       type: object
       properties:
@@ -17358,6 +17598,12 @@ components:
           nullable: true
         provenance:
           $ref: '#/components/schemas/PoolRunProvenance'
+        workflow_binding:
+          $ref: '#/components/schemas/PoolWorkflowBinding'
+          nullable: true
+        runtime_projection:
+          $ref: '#/components/schemas/PoolRuntimeProjection'
+          nullable: true
         workflow_template_name:
           type: string
           nullable: true
@@ -17444,6 +17690,9 @@ components:
         pool_id:
           type: string
           format: uuid
+        pool_workflow_binding_id:
+          type: string
+          description: Explicit pool workflow binding identifier used to disambiguate create-run resolution.
         direction:
           enum:
             - top_down
@@ -17714,9 +17963,6 @@ components:
         use_retry_subset_payload:
           type: boolean
           default: false
-      required:
-        - documents_by_database
-        - entity_name
     PoolRunRetryTargetSummary:
       type: object
       properties:
@@ -17866,6 +18112,10 @@ components:
           type: boolean
           default: true
         metadata: {}
+        workflow_bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolWorkflowBinding'
       required:
         - code
         - name
@@ -21158,6 +21408,34 @@ components:
       required:
         - loop_node_id
         - mode
+    SubWorkflowRef:
+      type: object
+      description: Pinned binding metadata for analyst-authored subworkflow calls.
+      properties:
+        binding_mode:
+          type: string
+          description: |-
+            Binding mode for subworkflow reference
+
+            * `direct_runtime_id` - direct_runtime_id
+            * `pinned_revision` - pinned_revision
+          enum:
+            - direct_runtime_id
+            - pinned_revision
+          default: direct_runtime_id
+        workflow_definition_key:
+          type: string
+          nullable: true
+          description: Stable definition key for pinned subworkflow binding
+        workflow_revision_id:
+          type: string
+          nullable: true
+          description: Pinned workflow revision ID
+        workflow_revision:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: Pinned workflow revision number
     SubWorkflowConfig:
       type: object
       description: Serializer for SubWorkflowConfig Pydantic model.
@@ -21165,6 +21443,11 @@ components:
         subworkflow_id:
           type: string
           description: Subworkflow template ID
+        subworkflow_ref:
+          allOf:
+            - $ref: '#/components/schemas/SubWorkflowRef'
+          nullable: true
+          description: Pinned binding metadata for analyst-authored subworkflow calls
         input_mapping:
           type: object
           additionalProperties:
@@ -21325,6 +21608,10 @@ components:
             * `conditional` - Conditional
             * `parallel` - Parallel
             * `complex` - Complex
+        category:
+          type: string
+          description: Workflow category (for example `custom` or `system`).
+          readOnly: true
         dag_structure:
           $ref: '#/components/schemas/DAGStructure'
         config:
@@ -21336,6 +21623,29 @@ components:
         is_active:
           type: boolean
           description: Template is active and can be executed
+        is_system_managed:
+          type: boolean
+          readOnly: true
+          description: Whether this workflow is a system-managed runtime projection.
+        management_mode:
+          type: string
+          enum:
+            - user_authored
+            - system_managed
+          readOnly: true
+          description: Contract-level management mode for workflow authoring surfaces.
+        visibility_surface:
+          type: string
+          enum:
+            - workflow_library
+            - runtime_diagnostics
+          readOnly: true
+          description: Primary UI surface where this workflow should be listed.
+        read_only_reason:
+          type: string
+          nullable: true
+          readOnly: true
+          description: Read-only explanation for system-managed runtime projections.
         version_number:
           type: integer
           readOnly: true
@@ -21370,16 +21680,21 @@ components:
           format: date-time
           readOnly: true
       required:
+        - category
         - created_at
         - created_by_username
         - dag_structure
         - execution_count
         - id
         - is_valid
+        - is_system_managed
+        - management_mode
         - name
         - parent_version_name
+        - read_only_reason
         - updated_at
         - version_number
+        - visibility_surface
     WorkflowCloneResponse:
       type: object
       description: Response for clone_workflow endpoint.
@@ -22017,6 +22332,10 @@ components:
             * `conditional` - Conditional
             * `parallel` - Parallel
             * `complex` - Complex
+        category:
+          type: string
+          description: Workflow category (for example `custom` or `system`).
+          readOnly: true
         is_valid:
           type: boolean
           readOnly: true
@@ -22024,6 +22343,29 @@ components:
         is_active:
           type: boolean
           description: Template is active and can be executed
+        is_system_managed:
+          type: boolean
+          readOnly: true
+          description: Whether this workflow is a system-managed runtime projection.
+        management_mode:
+          type: string
+          enum:
+            - user_authored
+            - system_managed
+          readOnly: true
+          description: Contract-level management mode for workflow authoring surfaces.
+        visibility_surface:
+          type: string
+          enum:
+            - workflow_library
+            - runtime_diagnostics
+          readOnly: true
+          description: Primary UI surface where this workflow should be listed.
+        read_only_reason:
+          type: string
+          nullable: true
+          readOnly: true
+          description: Read-only explanation for system-managed runtime projections.
         version_number:
           type: integer
           readOnly: true
@@ -22062,15 +22404,95 @@ components:
           format: date-time
           readOnly: true
       required:
+        - category
         - created_at
         - created_by_username
         - execution_count
         - id
         - is_valid
+        - is_system_managed
+        - management_mode
         - name
         - node_count
+        - read_only_reason
         - updated_at
         - version_number
+        - visibility_surface
+    WorkflowAuthoringPhase:
+      type: object
+      description: Workflow authoring rollout phase summary for analyst-facing surfaces.
+      properties:
+        phase:
+          type: string
+          description: Canonical workflow authoring phase key.
+        label:
+          type: string
+          description: Human-readable workflow authoring phase label.
+        description:
+          type: string
+          description: Rollout description for the current workflow authoring phase.
+        is_prerequisite_platform_phase:
+          type: boolean
+          description: Whether the current phase is the platform prerequisite stage before full cutover.
+        analyst_surface:
+          type: string
+          description: Primary analyst-facing surface for this phase.
+        rollout_scope:
+          type: array
+          description: Domains included in the current workflow authoring rollout.
+          items:
+            type: string
+        deferred_scope:
+          type: array
+          description: Domains explicitly deferred out of the current rollout phase.
+          items:
+            type: string
+        follow_up_changes:
+          type: array
+          description: OpenSpec follow-up changes that own deferred domains.
+          items:
+            type: string
+        construct_visibility:
+          type: object
+          description: Visibility split between public analyst constructs and runtime-only constructs.
+          properties:
+            contract_version:
+              type: string
+              description: Contract version for workflow construct visibility.
+            public_constructs:
+              type: array
+              description: Analyst-facing workflow constructs that remain public.
+              items:
+                type: string
+            internal_runtime_only_constructs:
+              type: array
+              description: Runtime-only constructs that must not leak into analyst authoring.
+              items:
+                type: string
+            compatibility_constructs:
+              type: array
+              description: Temporary compatibility constructs retained during cutover.
+              items:
+                type: string
+          required:
+            - contract_version
+            - public_constructs
+            - internal_runtime_only_constructs
+            - compatibility_constructs
+        source:
+          type: string
+          description: Effective runtime setting source for the phase value.
+      required:
+        - phase
+        - label
+        - description
+        - is_prerequisite_platform_phase
+        - analyst_surface
+        - rollout_scope
+        - deferred_scope
+        - follow_up_changes
+        - construct_visibility
+        - source
     WorkflowListResponse:
       type: object
       description: Response for list_workflows endpoint.
@@ -22079,6 +22501,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WorkflowTemplateList'
+        authoring_phase:
+          $ref: '#/components/schemas/WorkflowAuthoringPhase'
         count:
           type: integer
           description: Number of workflows in current page
@@ -22086,6 +22510,7 @@ components:
           type: integer
           description: Total number of workflows
       required:
+        - authoring_phase
         - count
         - total
         - workflows

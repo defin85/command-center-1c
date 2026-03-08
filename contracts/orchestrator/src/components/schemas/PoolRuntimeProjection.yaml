@@ -1,0 +1,117 @@
+type: object
+description: Compiled runtime projection snapshot for pool-run lineage and operator diagnostics.
+properties:
+  version:
+    type: string
+  run_id:
+    type: string
+    format: uuid
+  pool_id:
+    type: string
+    format: uuid
+  direction:
+    type: string
+  mode:
+    type: string
+  workflow_definition:
+    type: object
+    properties:
+      plan_key:
+        type: string
+      template_version:
+        type: string
+      workflow_template_name:
+        type: string
+      workflow_type:
+        type: string
+    required:
+      - plan_key
+      - template_version
+      - workflow_template_name
+      - workflow_type
+  workflow_binding:
+    type: object
+    properties:
+      binding_mode:
+        type: string
+      binding_id:
+        type: string
+      pool_id:
+        type: string
+        format: uuid
+      workflow_definition_key:
+        type: string
+      workflow_revision_id:
+        type: string
+      workflow_revision:
+        type: integer
+      workflow_name:
+        type: string
+      decision_refs:
+        type: array
+        items:
+          $ref: ./DecisionTableRef.yaml
+      selector:
+        $ref: ./PoolWorkflowBindingSelector.yaml
+      status:
+        type: string
+    required:
+      - binding_mode
+  document_policy_projection:
+    type: object
+    properties:
+      source_mode:
+        type: string
+      policy_refs:
+        type: array
+        items: {}
+      policy_refs_count:
+        type: integer
+      targets_count:
+        type: integer
+    required:
+      - source_mode
+      - policy_refs
+      - policy_refs_count
+      - targets_count
+  artifacts:
+    type: object
+    properties:
+      document_plan_artifact_version:
+        type: string
+        nullable: true
+      topology_version_ref:
+        type: string
+        nullable: true
+      distribution_artifact_ref:
+        type: object
+        additionalProperties: true
+        nullable: true
+    required:
+      - document_plan_artifact_version
+      - topology_version_ref
+      - distribution_artifact_ref
+  compile_summary:
+    type: object
+    properties:
+      steps_count:
+        type: integer
+      atomic_publication_steps_count:
+        type: integer
+      compiled_targets_count:
+        type: integer
+    required:
+      - steps_count
+      - atomic_publication_steps_count
+      - compiled_targets_count
+required:
+  - version
+  - run_id
+  - pool_id
+  - direction
+  - mode
+  - workflow_definition
+  - workflow_binding
+  - document_policy_projection
+  - artifacts
+  - compile_summary

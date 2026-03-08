@@ -13,6 +13,10 @@ from apps.intercompany_pools.master_data_artifact_contract import (
     MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
     POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY,
 )
+from apps.intercompany_pools.runtime_projection_contract import (
+    POOL_RUNTIME_PROJECTION_CONTEXT_KEY,
+    POOL_RUNTIME_PROJECTION_VERSION,
+)
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationPool,
@@ -22,9 +26,13 @@ from apps.intercompany_pools.models import (
     PoolRun,
     PoolRunDirection,
     PoolRunMode,
+    PoolSchemaTemplate,
+    PoolSchemaTemplateFormat,
 )
 from apps.intercompany_pools.runs import build_pool_run_idempotency_key
+from apps.intercompany_pools.workflow_authoring_contract import PoolWorkflowBindingContract
 from apps.intercompany_pools.workflow_runtime import (
+    POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY,
     start_pool_run_retry_workflow_execution,
     start_pool_run_workflow_execution,
 )
@@ -184,9 +192,45 @@ def _build_document_plan_artifact_for_compile() -> dict[str, object]:
     }
 
 
+def _build_workflow_binding_payload(*, pool_id: str) -> dict[str, object]:
+    return {
+        "binding_id": str(uuid4()),
+        "pool_id": pool_id,
+        "workflow": {
+            "workflow_definition_key": "services-publication",
+            "workflow_revision_id": str(uuid4()),
+            "workflow_revision": 3,
+            "workflow_name": "services_publication",
+        },
+        "decisions": [
+            {
+                "decision_table_id": "decision-1",
+                "decision_key": "invoice_mode",
+                "decision_revision": 2,
+            }
+        ],
+        "selector": {
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "mode": PoolRunMode.SAFE,
+            "tags": [],
+        },
+        "effective_from": "2026-01-01",
+        "status": "active",
+    }
+
+
 @pytest.mark.django_db
 def test_start_pool_run_workflow_execution_persists_pinned_binding_snapshot() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
+    run.schema_template = PoolSchemaTemplate.objects.create(
+        tenant=run.tenant,
+        code=f"legacy-binding-{uuid4().hex[:8]}",
+        name="Legacy Binding Template",
+        format=PoolSchemaTemplateFormat.JSON,
+        schema={},
+        metadata={"workflow_binding": "legacy-binding-hint"},
+    )
+    run.save(update_fields=["schema_template", "updated_at"])
 
     with patch(
         "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
@@ -215,6 +259,49 @@ def test_start_pool_run_workflow_execution_persists_pinned_binding_snapshot() ->
     ]
     assert len(binding_entries) == len(operation_bindings)
     assert all(item.get("binding_mode") == "pinned_exposure" for item in binding_entries)
+    runtime_projection = execution.input_context.get(POOL_RUNTIME_PROJECTION_CONTEXT_KEY)
+    assert isinstance(runtime_projection, dict)
+    assert runtime_projection["version"] == POOL_RUNTIME_PROJECTION_VERSION
+    assert runtime_projection["workflow_binding"]["binding_mode"] == "legacy_schema_template_hint"
+    assert runtime_projection["compile_summary"]["steps_count"] >= 4
+    assert execution.execution_plan.get("runtime_projection") == runtime_projection
+
+
+@pytest.mark.django_db
+def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_binding() -> None:
+    run = _create_pool_run(mode=PoolRunMode.SAFE)
+    workflow_binding = _build_workflow_binding_payload(pool_id=str(run.pool_id))
+    normalized_workflow_binding = PoolWorkflowBindingContract(**workflow_binding).model_dump(mode="json")
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-binding",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        result = start_pool_run_workflow_execution(run=run, workflow_binding=workflow_binding)
+
+    execution = WorkflowExecution.objects.get(id=result.execution_id)
+    persisted_binding = execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)
+    runtime_projection = execution.input_context.get(POOL_RUNTIME_PROJECTION_CONTEXT_KEY)
+
+    assert persisted_binding == normalized_workflow_binding
+    assert isinstance(runtime_projection, dict)
+    assert runtime_projection["workflow_binding"]["binding_mode"] == "pool_workflow_binding"
+    assert runtime_projection["workflow_binding"]["binding_id"] == workflow_binding["binding_id"]
+    assert runtime_projection["workflow_binding"]["workflow_revision"] == 3
+
+    binding_entry = next(
+        item
+        for item in execution.bindings
+        if item.get("target_ref") == "workflow.binding"
+    )
+    assert binding_entry["source_ref"] == f"pool_workflow_binding:{workflow_binding['binding_id']}"
+    assert binding_entry["binding_mode"] == "pool_workflow_binding"
 
 
 @pytest.mark.django_db
@@ -243,9 +330,21 @@ def test_start_pool_run_workflow_execution_uses_atomic_publication_nodes_when_do
     execution = WorkflowExecution.objects.get(id=result.execution_id)
     node_ids = [node.id for node in execution.workflow_template.dag_structure.nodes]
     atomic_publication_node_ids = [node_id for node_id in node_ids if node_id.startswith("publication_odata_")]
+    runtime_projection = execution.input_context.get(POOL_RUNTIME_PROJECTION_CONTEXT_KEY)
 
     assert len(atomic_publication_node_ids) == 2
     assert "publication_odata" not in node_ids
+    assert isinstance(runtime_projection, dict)
+    assert runtime_projection["document_policy_projection"] == {
+        "source_mode": "document_plan_artifact",
+        "policy_refs": artifact["policy_refs"],
+        "policy_refs_count": 1,
+        "targets_count": 1,
+    }
+    assert runtime_projection["artifacts"]["document_plan_artifact_version"] == "document_plan_artifact.v1"
+    assert runtime_projection["artifacts"]["topology_version_ref"] == "topology-v1"
+    assert runtime_projection["artifacts"]["distribution_artifact_ref"] == artifact["distribution_artifact_ref"]
+    assert runtime_projection["compile_summary"]["compiled_targets_count"] == 1
 
     operation_bindings = execution.execution_plan.get("operation_bindings")
     assert isinstance(operation_bindings, list)
@@ -671,6 +770,49 @@ def test_retry_workflow_execution_keeps_operation_binding_snapshot() -> None:
         "actor_username": retry_actor.username,
         "source": "retry_publication",
     }
+
+
+@pytest.mark.django_db
+def test_retry_workflow_execution_reuses_explicit_pool_workflow_binding() -> None:
+    run = _create_pool_run(mode=PoolRunMode.SAFE)
+    workflow_binding = _build_workflow_binding_payload(pool_id=str(run.pool_id))
+    normalized_workflow_binding = PoolWorkflowBindingContract(**workflow_binding).model_dump(mode="json")
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-initial-binding",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        first = start_pool_run_workflow_execution(run=run, workflow_binding=workflow_binding)
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-retry-binding",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        retry = start_pool_run_retry_workflow_execution(
+            run=run,
+            retry_request={"documents_by_database": {}, "use_retry_subset_payload": False},
+        )
+
+    first_execution = WorkflowExecution.objects.get(id=first.execution_id)
+    retry_execution = WorkflowExecution.objects.get(id=retry.execution_id)
+
+    assert first_execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY) == normalized_workflow_binding
+    assert retry_execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY) == normalized_workflow_binding
+    assert retry_execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["workflow_binding"]["binding_id"] == (
+        workflow_binding["binding_id"]
+    )
 
 
 @pytest.mark.django_db

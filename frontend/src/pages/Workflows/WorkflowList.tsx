@@ -9,9 +9,10 @@
  */
 
 import { useCallback, useMemo } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   App,
+  Alert,
   Button,
   Space,
   Tag,
@@ -39,7 +40,7 @@ import './WorkflowList.css'
 
 const api = getV2()
 
-const { Title } = Typography
+const { Title, Text } = Typography
 
 const workflowTypeColors: Record<string, string> = {
   sequential: 'blue',
@@ -48,10 +49,24 @@ const workflowTypeColors: Record<string, string> = {
   complex: 'purple'
 }
 
+const WORKFLOW_LIBRARY_SURFACE = 'workflow_library'
+const WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE = 'runtime_diagnostics'
+
+const buildWorkflowHref = (id: string, isSystemManaged?: boolean) => (
+  isSystemManaged
+    ? `/workflows/${id}?surface=${WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE}`
+    : `/workflows/${id}`
+)
+
 const WorkflowList = () => {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
+  const surface = searchParams.get('surface') === WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE
+    ? WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE
+    : WORKFLOW_LIBRARY_SURFACE
+  const isRuntimeDiagnosticsSurface = surface === WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE
   const fallbackColumnConfigs = useMemo(() => [
     { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
     { key: 'workflow_type', label: 'Type', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
@@ -84,13 +99,22 @@ const WorkflowList = () => {
     }
   }, [message, navigate])
 
+  const openWorkflow = useCallback((id: string, isSystemManaged?: boolean) => {
+    navigate(buildWorkflowHref(id, isSystemManaged))
+  }, [navigate])
+
   const columns: ColumnsType<WorkflowTemplateList> = useMemo(() => ([
     {
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
       render: (name, record) => (
-        <Link to={`/workflows/${record.id}`}>{name}</Link>
+        <Space>
+          <Link to={buildWorkflowHref(record.id, record.is_system_managed)}>{name}</Link>
+          {record.is_system_managed ? (
+            <Tag color="gold">System managed</Tag>
+          ) : null}
+        </Space>
       )
     },
     {
@@ -119,6 +143,11 @@ const WorkflowList = () => {
           <Tag color={record.is_active ? 'green' : 'default'}>
             {record.is_active ? 'Active' : 'Inactive'}
           </Tag>
+          {record.visibility_surface === WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE ? (
+            <Tag color="geekblue">Runtime diagnostics</Tag>
+          ) : (
+            <Tag color="blue">Analyst library</Tag>
+          )}
         </Space>
       )
     },
@@ -139,46 +168,50 @@ const WorkflowList = () => {
       key: 'actions',
       render: (_value, record) => (
         <Space>
-          <Tooltip title="Edit">
+          <Tooltip title={record.is_system_managed ? 'Inspect read-only runtime projection' : 'Edit'}>
             <Button
               icon={<EditOutlined />}
               size="small"
-              aria-label="Edit workflow"
-              onClick={() => navigate(`/workflows/${record.id}`)}
+              aria-label={record.is_system_managed ? 'Inspect workflow' : 'Edit workflow'}
+              onClick={() => openWorkflow(record.id, record.is_system_managed)}
             />
           </Tooltip>
-          <Tooltip title="Clone">
-            <Button
-              icon={<CopyOutlined />}
-              size="small"
-              aria-label="Clone workflow"
-              onClick={() => handleClone(record.id, record.name)}
-            />
-          </Tooltip>
-          <Tooltip title="Execute">
-            <Button
-              icon={<PlayCircleOutlined />}
-              size="small"
-              aria-label="Execute workflow"
-              disabled={!record.is_valid}
-              onClick={() => navigate(`/workflows/${record.id}?execute=true`)}
-            />
-          </Tooltip>
-          <Popconfirm
-            title="Delete workflow?"
-            description="This action cannot be undone."
-            onConfirm={() => handleDelete(record.id)}
-            okText="Delete"
-            okButtonProps={{ danger: true }}
-          >
-            <Tooltip title="Delete">
-              <Button icon={<DeleteOutlined />} size="small" danger aria-label="Delete workflow" />
-            </Tooltip>
-          </Popconfirm>
+          {!record.is_system_managed ? (
+            <>
+              <Tooltip title="Clone">
+                <Button
+                  icon={<CopyOutlined />}
+                  size="small"
+                  aria-label="Clone scheme"
+                  onClick={() => handleClone(record.id, record.name)}
+                />
+              </Tooltip>
+              <Tooltip title="Execute">
+                <Button
+                  icon={<PlayCircleOutlined />}
+                  size="small"
+                  aria-label="Execute workflow"
+                  disabled={!record.is_valid}
+                  onClick={() => navigate(`/workflows/${record.id}?execute=true`)}
+                />
+              </Tooltip>
+              <Popconfirm
+                title="Delete workflow?"
+                description="This action cannot be undone."
+                onConfirm={() => handleDelete(record.id)}
+                okText="Delete"
+                okButtonProps={{ danger: true }}
+              >
+                <Tooltip title="Delete">
+                  <Button icon={<DeleteOutlined />} size="small" danger aria-label="Delete workflow" />
+                </Tooltip>
+              </Popconfirm>
+            </>
+          ) : null}
         </Space>
       )
     }
-  ]), [handleClone, handleDelete, navigate])
+  ]), [handleClone, handleDelete, openWorkflow])
 
   const table = useTableToolkit({
     tableId: 'workflows',
@@ -194,6 +227,7 @@ const WorkflowList = () => {
   const workflowsQuery = useQuery({
     queryKey: [
       'workflows',
+      surface,
       table.search,
       table.filtersPayload,
       table.sortPayload,
@@ -201,6 +235,7 @@ const WorkflowList = () => {
       table.pagination.pageSize
     ],
     queryFn: () => api.getWorkflowsListWorkflows({
+      surface,
       search: table.search || undefined,
       filters: filtersParam,
       sort: sortParam,
@@ -210,6 +245,7 @@ const WorkflowList = () => {
   })
 
   const workflows = workflowsQuery.data?.workflows ?? []
+  const authoringPhase = workflowsQuery.data?.authoring_phase
   const totalWorkflows = typeof workflowsQuery.data?.total === 'number'
     ? workflowsQuery.data.total
     : workflows.length
@@ -217,7 +253,16 @@ const WorkflowList = () => {
   return (
     <div className="workflow-list-page">
       <div className="page-header">
-        <Title level={3}>Workflows</Title>
+        <div className="page-header-copy">
+          <Title level={3}>
+            {isRuntimeDiagnosticsSurface ? 'Workflow Runtime Projections' : 'Workflow Scheme Library'}
+          </Title>
+          <Text type="secondary" className="page-header-subtitle">
+            {isRuntimeDiagnosticsSurface
+              ? 'Read-only generated projections compiled from pool bindings and analyst-authored definitions.'
+              : 'Reusable analyst-authored workflow definitions for pool distribution and publication.'}
+          </Text>
+        </div>
         <Space>
           <Button
             icon={<ClockCircleOutlined />}
@@ -226,14 +271,71 @@ const WorkflowList = () => {
             Executions
           </Button>
           <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => navigate('/workflows/new')}
+            onClick={() => {
+              const next = new URLSearchParams(searchParams)
+              if (isRuntimeDiagnosticsSurface) {
+                next.delete('surface')
+              } else {
+                next.set('surface', WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE)
+              }
+              setSearchParams(next)
+            }}
           >
-            New Workflow
+            {isRuntimeDiagnosticsSurface ? 'Analyst Library' : 'Runtime Diagnostics'}
           </Button>
+          {!isRuntimeDiagnosticsSurface ? (
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => navigate('/workflows/new')}
+            >
+              New Scheme
+            </Button>
+          ) : null}
         </Space>
       </div>
+
+      {isRuntimeDiagnosticsSurface ? (
+        <Alert
+          showIcon
+          type="warning"
+          message="Runtime diagnostics surface"
+          description="System-managed runtime workflow projections are listed separately and remain read-only."
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
+
+      {authoringPhase ? (
+        <Alert
+          showIcon
+          type={authoringPhase.is_prerequisite_platform_phase ? 'info' : 'success'}
+          message={authoringPhase.label}
+          description={(
+            <Space direction="vertical" size={4}>
+              <span>{authoringPhase.description}</span>
+              <span>{`Primary analyst surface: ${authoringPhase.analyst_surface}`}</span>
+              <Space wrap size={[8, 8]}>
+                {authoringPhase.rollout_scope.map((scope) => (
+                  <Tag key={scope} color="blue">
+                    {scope}
+                  </Tag>
+                ))}
+                {authoringPhase.deferred_scope.map((scope) => (
+                  <Tag key={scope} color="gold">
+                    {`Deferred: ${scope}`}
+                  </Tag>
+                ))}
+                {authoringPhase.follow_up_changes.map((changeId) => (
+                  <Tag key={changeId} color="purple">
+                    {`Follow-up: ${changeId}`}
+                  </Tag>
+                ))}
+              </Space>
+            </Space>
+          )}
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
 
       <TableToolkit
         table={table}
@@ -242,7 +344,7 @@ const WorkflowList = () => {
         loading={workflowsQuery.isLoading}
         rowKey="id"
         columns={columns}
-        searchPlaceholder="Search workflows"
+        searchPlaceholder="Search workflow schemes"
       />
     </div>
   )
