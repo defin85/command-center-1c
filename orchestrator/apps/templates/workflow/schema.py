@@ -310,6 +310,14 @@ class OperationIO(BaseModel):
     )
 
 
+class DecisionRef(BaseModel):
+    """Pinned decision table reference for condition/decision nodes."""
+
+    decision_table_id: str = Field(..., min_length=1)
+    decision_key: str = Field(..., min_length=1)
+    decision_revision: int = Field(..., ge=1)
+
+
 class WorkflowNode(BaseModel):
     """Represents a single node in the workflow DAG."""
 
@@ -324,6 +332,10 @@ class WorkflowNode(BaseModel):
     operation_ref: Optional[OperationRef] = Field(
         default=None,
         description="OperationExposure binding for Operation nodes",
+    )
+    decision_ref: Optional[DecisionRef] = Field(
+        default=None,
+        description="Pinned decision table reference for decision-gate nodes",
     )
     io: Optional[OperationIO] = Field(
         default=None,
@@ -388,8 +400,19 @@ class WorkflowNode(BaseModel):
                 raise ValueError(
                     f"operation_ref must be None for {self.type} nodes (node: {self.id})"
                 )
-            if self.io is not None:
+            if self.type != "condition" and self.io is not None:
                 raise ValueError(f"io must be None for {self.type} nodes (node: {self.id})")
+            if self.type != "condition" and self.decision_ref is not None:
+                raise ValueError(
+                    f"decision_ref must be None for {self.type} nodes (node: {self.id})"
+                )
+            if self.type == "condition":
+                if self.decision_ref is None and self.io is not None:
+                    raise ValueError(
+                        f"io is supported for condition nodes only when decision_ref is provided (node: {self.id})"
+                    )
+                if self.decision_ref is not None and self.io is None:
+                    self.io = OperationIO()
         return self
 
     # Note: validate_config removed - config validation now handled by validate_node_configs
@@ -399,6 +422,8 @@ class WorkflowNode(BaseModel):
     def validate_expression(self) -> "WorkflowNode":
         """Validate expression for condition nodes."""
         if self.type == "condition":
+            if self.decision_ref is not None and not self.config.expression:
+                self.config.expression = f"{{{{ decisions.{self.decision_ref.decision_key} }}}}"
             if not self.config.expression:
                 raise ValueError(f"expression is required for condition nodes (node: {self.id})")
         return self

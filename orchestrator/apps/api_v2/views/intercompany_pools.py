@@ -77,6 +77,7 @@ from apps.intercompany_pools.publication_policy import (
     MAX_PUBLICATION_ATTEMPTS,
     MAX_RETRY_INTERVAL_SECONDS,
 )
+from apps.intercompany_pools.binding_preview import build_pool_workflow_binding_preview
 from apps.intercompany_pools.runs import upsert_pool_run
 from apps.intercompany_pools.workflow_runtime import (
     POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY,
@@ -137,6 +138,7 @@ _POOL_RUNTIME_START_FAIL_CLOSED_CODES = {
     "POOL_RUNTIME_TEMPLATE_INACTIVE",
     "TEMPLATE_DRIFT",
     "POOL_RUNTIME_TEMPLATE_UNSUPPORTED_EXECUTOR",
+    "POOL_WORKFLOW_BINDING_REQUIRED",
     "ODATA_MAPPING_NOT_CONFIGURED",
     "ODATA_MAPPING_AMBIGUOUS",
     "ODATA_PUBLICATION_AUTH_CONTEXT_INVALID",
@@ -616,10 +618,12 @@ def _serialize_run(
         observability_fields=observability_fields,
     )
     workflow_binding = _resolve_workflow_binding_read_model(
-        workflow_input_context=workflow_input_context
+        run=run,
+        workflow_input_context=workflow_input_context,
     )
     runtime_projection = _resolve_runtime_projection_read_model(
-        workflow_input_context=workflow_input_context
+        run=run,
+        workflow_input_context=workflow_input_context,
     )
     return {
         "id": str(run.id),
@@ -1377,8 +1381,15 @@ def _resolve_terminal_reason(
 
 def _resolve_workflow_binding_read_model(
     *,
+    run: PoolRun,
     workflow_input_context: dict[str, Any],
 ) -> dict[str, Any] | None:
+    raw_binding = run.workflow_binding_snapshot
+    if isinstance(raw_binding, Mapping) and raw_binding:
+        try:
+            return PoolWorkflowBindingContract(**dict(raw_binding)).model_dump(mode="json")
+        except Exception:
+            pass
     raw_binding = workflow_input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)
     if not isinstance(raw_binding, Mapping):
         return None
@@ -1390,8 +1401,15 @@ def _resolve_workflow_binding_read_model(
 
 def _resolve_runtime_projection_read_model(
     *,
+    run: PoolRun,
     workflow_input_context: dict[str, Any],
 ) -> dict[str, Any] | None:
+    raw_projection = run.runtime_projection_snapshot
+    if isinstance(raw_projection, Mapping) and raw_projection:
+        try:
+            return validate_pool_runtime_projection_v1(projection=raw_projection)
+        except Exception:
+            pass
     raw_projection = workflow_input_context.get(POOL_RUNTIME_PROJECTION_CONTEXT_KEY)
     if not isinstance(raw_projection, Mapping):
         return None
@@ -2109,6 +2127,16 @@ class PoolRunCreateResponseSerializer(serializers.Serializer):
     created = serializers.BooleanField()
 
 
+class PoolWorkflowBindingPreviewRequestSerializer(PoolRunCreateRequestSerializer):
+    pool_workflow_binding_id = serializers.CharField(required=True, allow_blank=False)
+
+
+class PoolWorkflowBindingPreviewResponseSerializer(serializers.Serializer):
+    workflow_binding = serializers.JSONField()
+    compiled_document_policy = serializers.JSONField()
+    runtime_projection = serializers.JSONField()
+
+
 class PoolRunListResponseSerializer(serializers.Serializer):
     runs = PoolRunSerializer(many=True)
     count = serializers.IntegerField()
@@ -2620,6 +2648,14 @@ def create_pool_run(request):
         if resolved_workflow_binding is not None
         else None
     )
+    if resolved_workflow_binding is None:
+        return _problem(
+            code="POOL_WORKFLOW_BINDING_NOT_RESOLVED",
+            title="Pool Workflow Binding Resolution Failed",
+            detail="No pool workflow bindings are configured for this pool.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=[],
+        )
 
     schema_template = None
     schema_template_id = data.get("schema_template_id")
@@ -2688,6 +2724,111 @@ def create_pool_run(request):
     }
     response_status = http_status.HTTP_201_CREATED if result.created else http_status.HTTP_200_OK
     return Response(payload, status=response_status)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_workflow_bindings_preview",
+    summary="Preview effective pool workflow binding runtime projection",
+    request=PoolWorkflowBindingPreviewRequestSerializer,
+    responses={
+        200: PoolWorkflowBindingPreviewResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def preview_pool_workflow_binding(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _problem(
+            code="TENANT_CONTEXT_REQUIRED",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = PoolWorkflowBindingPreviewRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        if "pool_workflow_binding_id" in serializer.errors:
+            return _problem(
+                code="POOL_WORKFLOW_BINDING_REQUIRED",
+                title="Pool Workflow Binding Required",
+                detail="pool_workflow_binding_id is required.",
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+            )
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = serializer.validated_data
+    pool = OrganizationPool.objects.filter(id=data["pool_id"], tenant_id=tenant_id).first()
+    if pool is None:
+        return _problem(
+            code="POOL_NOT_FOUND",
+            title="Pool Not Found",
+            detail="Organization pool not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    schema_template_id = data.get("schema_template_id")
+    if schema_template_id:
+        schema_template = PoolSchemaTemplate.objects.filter(id=schema_template_id, tenant_id=tenant_id).first()
+        if schema_template is None:
+            return _problem(
+                code="SCHEMA_TEMPLATE_NOT_FOUND",
+                title="Schema Template Not Found",
+                detail="Schema template not found in current tenant context.",
+                status_code=http_status.HTTP_404_NOT_FOUND,
+            )
+    else:
+        schema_template = PoolSchemaTemplate.objects.filter(
+            tenant_id=tenant_id,
+            is_active=True,
+        ).order_by("-is_public", "code").first()
+        if schema_template is None:
+            return _problem(
+                code="SCHEMA_TEMPLATE_NOT_FOUND",
+                title="Schema Template Not Found",
+                detail="Active schema template is required for binding preview.",
+                status_code=http_status.HTTP_404_NOT_FOUND,
+            )
+
+    try:
+        preview = build_pool_workflow_binding_preview(
+            tenant=pool.tenant,
+            pool=pool,
+            pool_workflow_binding_id=str(data["pool_workflow_binding_id"]),
+            direction=data["direction"],
+            mode=data.get("mode", PoolRunMode.SAFE),
+            period_start=data["period_start"],
+            period_end=data.get("period_end"),
+            run_input=data.get("run_input"),
+            schema_template=schema_template,
+        )
+    except PoolWorkflowBindingResolutionError as exc:
+        return _problem(
+            code=exc.code,
+            title="Pool Workflow Binding Resolution Failed",
+            detail=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=exc.errors,
+        )
+    except ValueError as exc:
+        error_code, detail = _resolve_pool_runtime_start_error(exc)
+        return _problem(
+            code=error_code,
+            title="Pool Workflow Binding Preview Failed",
+            detail=detail,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(preview, status=http_status.HTTP_200_OK)
 
 
 @extend_schema(

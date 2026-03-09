@@ -1,0 +1,39 @@
+type: object
+description: Create a new decision table revision.
+properties:
+  decision_table_id:
+    type: string
+  decision_key:
+    type: string
+  name:
+    type: string
+  description:
+    type: string
+    default: ''
+  inputs:
+    type: array
+    items:
+      $ref: ./DecisionField.yaml
+  outputs:
+    type: array
+    items:
+      $ref: ./DecisionField.yaml
+  rules:
+    type: array
+    items:
+      $ref: ./DecisionRule.yaml
+  hit_policy:
+    type: string
+    default: first_match
+  validation_mode:
+    type: string
+    default: fail_closed
+  is_active:
+    type: boolean
+    default: true
+  parent_version_id:
+    type: string
+    format: uuid
+required:
+  - name
+  - rules

@@ -49,6 +49,7 @@ properties:
     type: array
     items: {}
 required:
+  - pool_workflow_binding_id
   - direction
   - period_start
   - pool_id

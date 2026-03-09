@@ -7,6 +7,7 @@ This module is a compatibility facade:
 """
 
 from .models_django import (  # noqa: F401
+    DecisionTable,
     WorkflowCategory,
     WorkflowExecution,
     WorkflowStepResult,
@@ -15,6 +16,7 @@ from .models_django import (  # noqa: F401
 )
 from .schema import (  # noqa: F401
     DAGStructure,
+    DecisionRef,
     LoopConfig,
     NodeConfig,
     OperationIO,
@@ -29,6 +31,8 @@ from .schema import (  # noqa: F401
 
 __all__ = [
     "DAGStructure",
+    "DecisionRef",
+    "DecisionTable",
     "LoopConfig",
     "NodeConfig",
     "OperationIO",

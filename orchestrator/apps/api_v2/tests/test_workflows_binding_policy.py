@@ -418,3 +418,58 @@ def test_create_workflow_rejects_mismatched_pinned_subworkflow_binding(staff_cli
     payload = response.json()
     assert payload["error"]["code"] == "CREATE_ERROR"
     assert "workflow_revision_id must match subworkflow_id" in payload["error"]["message"]
+
+
+@pytest.mark.django_db
+def test_create_workflow_round_trips_structured_decision_gate(staff_client):
+    response = staff_client.post(
+        "/api/v2/workflows/create-workflow/",
+        data={
+            "name": f"wf-{uuid.uuid4().hex[:8]}",
+            "description": "",
+            "workflow_type": "complex",
+            "dag_structure": {
+                "nodes": [
+                    {
+                        "id": "decision",
+                        "name": "Document Policy",
+                        "type": "condition",
+                        "config": {
+                            "expression": "{{ decisions.document_policy }}",
+                        },
+                        "decision_ref": {
+                            "decision_table_id": "doc-policy",
+                            "decision_key": "document_policy",
+                            "decision_revision": 4,
+                        },
+                        "io": {
+                            "mode": "explicit_strict",
+                            "input_mapping": {
+                                "input.direction": "workflow.input.direction",
+                                "input.mode": "workflow.input.mode",
+                            },
+                            "output_mapping": {
+                                "workflow.state.document_policy": "result.document_policy",
+                            },
+                        },
+                    }
+                ],
+                "edges": [],
+            },
+            "is_active": True,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201
+    node = response.json()["workflow"]["dag_structure"]["nodes"][0]
+    assert node["decision_ref"] == {
+        "decision_table_id": "doc-policy",
+        "decision_key": "document_policy",
+        "decision_revision": 4,
+    }
+    assert node["io"]["mode"] == "explicit_strict"
+    assert node["io"]["input_mapping"] == {
+        "input.direction": "workflow.input.direction",
+        "input.mode": "workflow.input.mode",
+    }

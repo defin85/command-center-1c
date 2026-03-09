@@ -226,6 +226,12 @@ export type PoolRunRuntimeProjection = {
   compile_summary: PoolRunRuntimeProjectionCompileSummary
 }
 
+export type PoolWorkflowBindingPreview = {
+  workflow_binding: PoolWorkflowBinding
+  compiled_document_policy: Record<string, unknown>
+  runtime_projection: PoolRunRuntimeProjection
+}
+
 export type PoolPublicationAttemptHttpError = {
   status: number
   code?: string
@@ -451,7 +457,7 @@ export type ListOrganizationsParams = {
 
 export type CreatePoolRunPayload = {
   pool_id: string
-  pool_workflow_binding_id?: string
+  pool_workflow_binding_id: string
   direction: 'top_down' | 'bottom_up'
   period_start: string
   period_end?: string | null
@@ -727,6 +733,17 @@ export async function listPoolRuns(params: ListPoolRunsParams = {}): Promise<Poo
 export async function createPoolRun(payload: CreatePoolRunPayload): Promise<{ run: PoolRun; created: boolean }> {
   const response = await apiClient.post<{ run: PoolRun; created: boolean }>(
     '/api/v2/pools/runs/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function previewPoolWorkflowBinding(
+  payload: CreatePoolRunPayload
+): Promise<PoolWorkflowBindingPreview> {
+  const response = await apiClient.post<PoolWorkflowBindingPreview>(
+    '/api/v2/pools/workflow-bindings/preview/',
     payload,
     { skipGlobalError: true }
   )

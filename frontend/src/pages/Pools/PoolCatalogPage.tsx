@@ -70,6 +70,10 @@ const MASTER_DATA_TOKEN_CATALOG_LIMIT = 200
 const DEFAULT_WORKFLOW_BINDINGS_JSON = JSON.stringify([], null, 2)
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const STATUS_OPTIONS: OrganizationStatus[] = ['active', 'inactive', 'archived']
+const LEGACY_EDGE_DOCUMENT_POLICY_COMPATIBILITY_MESSAGE = (
+  'Workflow-centric source-of-truth moved to /workflows + pool workflow bindings. '
+  + 'Open the legacy edge document_policy editor only for historical compatibility and controlled migration.'
+)
 
 const API_ERROR_MESSAGE_MAP: Record<string, string> = {
   DATABASE_ALREADY_LINKED: 'Выбранная база уже привязана к другой организации.',
@@ -1511,6 +1515,7 @@ export function PoolCatalogPage() {
   const [masterDataTaxProfiles, setMasterDataTaxProfiles] = useState<PoolMasterTaxProfile[]>([])
   const [loadingMasterDataTokenCatalog, setLoadingMasterDataTokenCatalog] = useState(false)
   const [masterDataTokenCatalogError, setMasterDataTokenCatalogError] = useState<string | null>(null)
+  const [legacyEdgePolicyEditorOpenByKey, setLegacyEdgePolicyEditorOpenByKey] = useState<Record<string, boolean>>({})
   const watchedEdges = Form.useWatch('edges', topologyForm)
 
   const selectedOrganization = useMemo(
@@ -1946,6 +1951,7 @@ export function PoolCatalogPage() {
   useEffect(() => {
     setTopologyPreflightErrors([])
     setTopologySubmitError(null)
+    setLegacyEdgePolicyEditorOpenByKey({})
     if (activeWorkspaceTab !== 'topology' || !selectedPool) return
     topologyForm.setFieldsValue({
       effective_from: new Date().toISOString().slice(0, 10),
@@ -1957,6 +1963,7 @@ export function PoolCatalogPage() {
 
   useEffect(() => {
     if (activeWorkspaceTab !== 'topology' || !selectedPool || !selectedPoolId || !graph) return
+    setLegacyEdgePolicyEditorOpenByKey({})
     const organizationByNodeVersion = new Map(
       graph.nodes.map((node) => [node.node_version_id, node.organization_id])
     )
@@ -2715,8 +2722,8 @@ export function PoolCatalogPage() {
                           type="info"
                           showIcon
                           style={{ marginBottom: 12 }}
-                          message="Advanced JSON fields are hidden by default"
-                          description="Раскройте нужный блок только для metadata/document_policy редактирования."
+                          message="Workflow-centric authoring is the default path"
+                          description="Topology editor remains for structural metadata. Legacy edge document_policy editing now requires an explicit compatibility action."
                         />
 
                         <Space direction="vertical" size={8} style={{ width: '100%', marginBottom: 12 }}>
@@ -2949,30 +2956,91 @@ export function PoolCatalogPage() {
                                     items={[
                                       {
                                         key: `edge-advanced-${field.key}`,
-                                        label: 'Advanced edge JSON / document policy',
+                                        label: 'Advanced edge metadata / legacy document policy',
                                         children: (
                                           <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                                            <Form.Item
-                                              name={[field.name, 'document_policy_mode']}
-                                              label="Document policy mode"
-                                              style={{ marginBottom: 0 }}
-                                            >
-                                              <Select
-                                                options={[
-                                                  { value: 'builder', label: 'Builder' },
-                                                  { value: 'raw', label: 'Raw JSON' },
-                                                ]}
-                                                onChange={(value) => {
-                                                  switchEdgePolicyMode(
-                                                    field.name,
-                                                    value === 'builder' ? 'builder' : 'raw'
-                                                  )
-                                                }}
-                                                data-testid={`pool-catalog-topology-edge-policy-mode-${field.name}`}
-                                              />
+                                            <Form.Item noStyle shouldUpdate>
+                                              {({ getFieldValue }) => {
+                                                const legacyEditorKey = String(field.key)
+                                                const legacyPolicyJson = String(
+                                                  getFieldValue(['edges', field.name, 'document_policy_json']) ?? ''
+                                                ).trim()
+                                                const legacyEditorOpen = Boolean(
+                                                  legacyEdgePolicyEditorOpenByKey[legacyEditorKey]
+                                                )
+                                                return (
+                                                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                                    <Alert
+                                                      type={legacyEditorOpen ? 'warning' : 'info'}
+                                                      showIcon
+                                                      message="Legacy edge document_policy compatibility"
+                                                      description={LEGACY_EDGE_DOCUMENT_POLICY_COMPATIBILITY_MESSAGE}
+                                                      action={legacyEditorOpen ? undefined : (
+                                                        <Button
+                                                          size="small"
+                                                          onClick={() => {
+                                                            setLegacyEdgePolicyEditorOpenByKey((current) => ({
+                                                              ...current,
+                                                              [legacyEditorKey]: true,
+                                                            }))
+                                                          }}
+                                                          data-testid={`pool-catalog-topology-edge-open-legacy-policy-editor-${field.name}`}
+                                                        >
+                                                          Open legacy editor
+                                                        </Button>
+                                                      )}
+                                                    />
+                                                    {legacyPolicyJson && !legacyEditorOpen ? (
+                                                      <Form.Item
+                                                        name={[field.name, 'document_policy_json']}
+                                                        label="Legacy document policy (read-only)"
+                                                        style={{ marginBottom: 0 }}
+                                                      >
+                                                        <TextArea
+                                                          autoSize={{ minRows: 2, maxRows: 8 }}
+                                                          disabled
+                                                          placeholder='{"version":"document_policy.v1","chains":[...]}'
+                                                          data-testid={`pool-catalog-topology-edge-policy-readonly-${field.name}`}
+                                                        />
+                                                      </Form.Item>
+                                                    ) : null}
+                                                  </Space>
+                                                )
+                                              }}
+                                            </Form.Item>
+                                            <Form.Item noStyle shouldUpdate>
+                                              {() => {
+                                                if (!legacyEdgePolicyEditorOpenByKey[String(field.key)]) {
+                                                  return null
+                                                }
+                                                return (
+                                                  <Form.Item
+                                                    name={[field.name, 'document_policy_mode']}
+                                                    label="Legacy document policy mode"
+                                                    style={{ marginBottom: 0 }}
+                                                  >
+                                                    <Select
+                                                      options={[
+                                                        { value: 'builder', label: 'Builder' },
+                                                        { value: 'raw', label: 'Raw JSON' },
+                                                      ]}
+                                                      onChange={(value) => {
+                                                        switchEdgePolicyMode(
+                                                          field.name,
+                                                          value === 'builder' ? 'builder' : 'raw'
+                                                        )
+                                                      }}
+                                                      data-testid={`pool-catalog-topology-edge-policy-mode-${field.name}`}
+                                                    />
+                                                  </Form.Item>
+                                                )
+                                              }}
                                             </Form.Item>
                                             <Form.Item noStyle shouldUpdate>
                                               {({ getFieldValue }) => {
+                                                if (!legacyEdgePolicyEditorOpenByKey[String(field.key)]) {
+                                                  return null
+                                                }
                                                 const policyMode = (
                                                   String(getFieldValue(['edges', field.name, 'document_policy_mode']) || 'raw')
                                                     .trim()

@@ -1,0 +1,18 @@
+type: object
+description: Deterministic decision table rule.
+properties:
+  rule_id:
+    type: string
+  conditions:
+    type: object
+    additionalProperties: true
+    default: {}
+  outputs:
+    type: object
+    additionalProperties: true
+  priority:
+    type: integer
+    default: 0
+required:
+  - rule_id
+  - outputs

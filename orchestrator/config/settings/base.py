@@ -530,10 +530,10 @@ ENABLE_GO_TEMPLATE_ENGINE = env.bool('ENABLE_GO_TEMPLATE_ENGINE', default=False)
 ENABLE_GO_WORKFLOW_ENGINE = env.bool('ENABLE_GO_WORKFLOW_ENGINE', default=False)
 
 # Pool runtime master-data gate (pre-publication resolve+upsert).
-# Enabled by default to enforce fail-closed master-data behavior.
+# Disabled by default; activation comes from checked-in runtime setting policy.
 POOL_RUNTIME_MASTER_DATA_GATE_ENABLED = env.bool(
     'POOL_RUNTIME_MASTER_DATA_GATE_ENABLED',
-    default=True,
+    default=False,
 )
 
 # Explicit debug control for local in-process workflow fallback.

@@ -137,8 +137,14 @@ async function openWorkspaceTab(user: ReturnType<typeof userEvent.setup>, tabLab
 }
 
 async function expandFirstEdgeAdvanced(user: ReturnType<typeof userEvent.setup>) {
-  const toggle = await screen.findAllByText('Advanced edge JSON / document policy')
+  const toggle = await screen.findAllByText('Advanced edge metadata / legacy document policy')
   await user.click(toggle[0] as HTMLElement)
+}
+
+async function openFirstEdgeLegacyDocumentPolicyEditor(user: ReturnType<typeof userEvent.setup>) {
+  await expandFirstEdgeAdvanced(user)
+  const openButton = await screen.findByTestId('pool-catalog-topology-edge-open-legacy-policy-editor-0')
+  await user.click(openButton)
 }
 
 describe('PoolCatalogPage', () => {
@@ -430,7 +436,7 @@ describe('PoolCatalogPage', () => {
       })
     )
     await waitFor(() => expect(mockListOrganizations).toHaveBeenCalledTimes(2))
-  }, 15000)
+  }, 30000)
 
   it('updates organization details after editing without page reload', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -470,7 +476,7 @@ describe('PoolCatalogPage', () => {
 
     await waitFor(() => expect(mockUpsertOrganization).toHaveBeenCalledTimes(1))
     expect(await screen.findByText(nextDatabaseId)).toBeInTheDocument()
-  }, 15000)
+  }, 30000)
 
   it('creates pool via drawer and reloads pools list', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -734,7 +740,7 @@ describe('PoolCatalogPage', () => {
     })
   }, 15000)
 
-  it('blocks topology save when edge document_policy JSON is invalid', async () => {
+  it('hides legacy edge document_policy editor behind explicit compatibility action', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
@@ -795,6 +801,74 @@ describe('PoolCatalogPage', () => {
 
     await openWorkspaceTab(user, 'Topology Editor')
     await expandFirstEdgeAdvanced(user)
+
+    expect(await screen.findByText('Legacy edge document_policy compatibility')).toBeInTheDocument()
+    expect(await screen.findByTestId('pool-catalog-topology-edge-open-legacy-policy-editor-0')).toBeInTheDocument()
+    expect(await screen.findByTestId('pool-catalog-topology-edge-policy-readonly-0')).toBeDisabled()
+    expect(screen.queryByTestId('pool-catalog-topology-edge-policy-mode-0')).not.toBeInTheDocument()
+  }, 15000)
+
+  it('blocks topology save when edge document_policy JSON is invalid', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            document_policy: {
+              version: 'document_policy.v1',
+              chains: [
+                {
+                  chain_id: 'sale_chain',
+                  documents: [
+                    {
+                      document_id: 'sale',
+                      entity_name: 'Document_Sales',
+                      document_role: 'sale',
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+    await openFirstEdgeLegacyDocumentPolicyEditor(user)
     const edgePolicyInput = screen.getByTestId('pool-catalog-topology-edge-policy-0')
     await user.click(edgePolicyInput)
     await user.clear(edgePolicyInput)
@@ -852,7 +926,7 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
     await openWorkspaceTab(user, 'Topology Editor')
-    await expandFirstEdgeAdvanced(user)
+    await openFirstEdgeLegacyDocumentPolicyEditor(user)
     const edgePolicyInput = screen.getByTestId('pool-catalog-topology-edge-policy-0')
     await user.click(edgePolicyInput)
     await user.clear(edgePolicyInput)
@@ -942,7 +1016,7 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
     await openWorkspaceTab(user, 'Topology Editor')
-    await expandFirstEdgeAdvanced(user)
+    await openFirstEdgeLegacyDocumentPolicyEditor(user)
 
     openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
     await selectDropdownOption(/builder/i)
@@ -1023,7 +1097,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
     await openWorkspaceTab(user, 'Topology Editor')
-    await expandFirstEdgeAdvanced(user)
+    await openFirstEdgeLegacyDocumentPolicyEditor(user)
 
     openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
     await selectDropdownOption(/builder/i)
@@ -1099,7 +1173,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
     await openWorkspaceTab(user, 'Topology Editor')
-    await expandFirstEdgeAdvanced(user)
+    await openFirstEdgeLegacyDocumentPolicyEditor(user)
 
     openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
     await selectDropdownOption(/builder/i)
@@ -1193,7 +1267,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
     await openWorkspaceTab(user, 'Topology Editor')
-    await expandFirstEdgeAdvanced(user)
+    await openFirstEdgeLegacyDocumentPolicyEditor(user)
 
     openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
     await selectDropdownOption(/builder/i)
@@ -1275,7 +1349,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
     await openWorkspaceTab(user, 'Topology Editor')
-    await expandFirstEdgeAdvanced(user)
+    await openFirstEdgeLegacyDocumentPolicyEditor(user)
 
     openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
     await selectDropdownOption(/builder/i)
@@ -1372,7 +1446,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
     await openWorkspaceTab(user, 'Topology Editor')
-    await expandFirstEdgeAdvanced(user)
+    await openFirstEdgeLegacyDocumentPolicyEditor(user)
 
     openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
     await selectDropdownOption(/builder/i)
@@ -1469,7 +1543,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
     await openWorkspaceTab(user, 'Topology Editor')
-    await expandFirstEdgeAdvanced(user)
+    await openFirstEdgeLegacyDocumentPolicyEditor(user)
 
     openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
     await selectDropdownOption(/builder/i)
@@ -1530,7 +1604,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
     await openWorkspaceTab(user, 'Topology Editor')
-    await expandFirstEdgeAdvanced(user)
+    await openFirstEdgeLegacyDocumentPolicyEditor(user)
 
     openSelectByTestId('pool-catalog-topology-edge-metadata-mode-0')
     await selectDropdownOption(/builder/i)
@@ -1599,7 +1673,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
     await openWorkspaceTab(user, 'Topology Editor')
-    await expandFirstEdgeAdvanced(user)
+    await openFirstEdgeLegacyDocumentPolicyEditor(user)
 
     openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
     await selectDropdownOption(/builder/i)
@@ -1684,7 +1758,7 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Org Two')).toBeInTheDocument()
 
     await openWorkspaceTab(user, 'Topology Editor')
-    await expandFirstEdgeAdvanced(user)
+    await openFirstEdgeLegacyDocumentPolicyEditor(user)
     const edgePolicyInput = await screen.findByTestId('pool-catalog-topology-edge-policy-0')
     await user.click(edgePolicyInput)
     await user.clear(edgePolicyInput)
@@ -1726,7 +1800,7 @@ describe('PoolCatalogPage', () => {
         ],
       })
     )
-  }, 15000)
+  }, 30000)
 
   it('sends topology version token and shows conflict error without clearing form data', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')

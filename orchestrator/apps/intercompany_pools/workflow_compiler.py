@@ -5,10 +5,12 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Mapping
 
 from apps.templates.models import OperationExposure
-from apps.templates.workflow.models import WorkflowCategory, WorkflowTemplate, WorkflowType
+from apps.templates.template_runtime import TemplateResolveError, resolve_runtime_template
+from apps.templates.workflow.authoring_contract import derive_workflow_definition_key
+from apps.templates.workflow.models import DAGStructure, WorkflowCategory, WorkflowTemplate, WorkflowType
 
 from .document_plan_artifact_contract import validate_document_plan_artifact_v1
 from .master_data_feature_flags import resolve_pool_master_data_gate_flag
@@ -96,17 +98,30 @@ class PoolWorkflowCompiler:
     ) -> PoolExecutionPlan:
         self._validate_context(run_context)
 
-        template_version = self._build_template_version(schema_template)
-        steps = self._build_steps(
-            run_context,
-            tenant_id=str(schema_template.tenant_id),
-        )
-        dag_structure = self._build_dag_structure(steps, run_context=run_context)
-        workflow_binding_hint = self._resolve_workflow_binding_hint(schema_template)
         workflow_binding_snapshot = self._build_workflow_binding_snapshot(
             workflow_binding=run_context.workflow_binding,
-            workflow_binding_hint=workflow_binding_hint,
+            workflow_binding_hint=None,
         )
+        authored_workflow = self._resolve_bound_workflow_template(
+            workflow_binding=run_context.workflow_binding,
+        )
+        template_version = self._build_template_version(
+            schema_template,
+            authored_workflow=authored_workflow,
+        )
+        if authored_workflow is not None:
+            steps, dag_structure, workflow_type, workflow_config = self._build_authored_workflow_projection(
+                workflow_template=authored_workflow,
+                run_context=run_context,
+            )
+        else:
+            steps = self._build_steps(
+                run_context,
+                tenant_id=str(schema_template.tenant_id),
+            )
+            dag_structure = self._build_dag_structure(steps, run_context=run_context)
+            workflow_type = WorkflowType.SEQUENTIAL
+            workflow_config = self._build_workflow_config(run_context.mode)
 
         definition_seed = self._build_definition_seed(
             run_context=run_context,
@@ -120,17 +135,16 @@ class PoolWorkflowCompiler:
             "Compiled pool execution workflow "
             f"(definition_key={definition_key}, template_version={template_version}, mode={run_context.mode})"
         )
-        workflow_config = self._build_workflow_config(run_context.mode)
 
         return PoolExecutionPlan(
             plan_key=definition_key,
             plan_version=PLAN_VERSION,
             template_version=template_version,
-            workflow_binding_hint=workflow_binding_hint,
+            workflow_binding_hint=None,
             workflow_binding_snapshot=workflow_binding_snapshot,
             workflow_template_name=workflow_name,
             workflow_template_description=workflow_description,
-            workflow_type=WorkflowType.SEQUENTIAL,
+            workflow_type=workflow_type,
             workflow_config=workflow_config,
             dag_structure=dag_structure,
             input_schema=self._build_input_schema(),
@@ -188,12 +202,145 @@ class PoolWorkflowCompiler:
                 "selector": binding.selector.model_dump(mode="json"),
                 "status": binding.status.value,
             }
-        if workflow_binding_hint:
-            return {
-                "binding_mode": "legacy_schema_template_hint",
-                "legacy_hint": workflow_binding_hint,
-            }
         return None
+
+    @staticmethod
+    def _resolve_bound_workflow_template(
+        *,
+        workflow_binding: dict[str, Any] | None,
+    ) -> WorkflowTemplate | None:
+        if not isinstance(workflow_binding, dict) or not workflow_binding:
+            return None
+        binding = PoolWorkflowBindingContract(**workflow_binding)
+        workflow_revision_id = str(binding.workflow.workflow_revision_id or "").strip()
+        workflow = (
+            WorkflowTemplate.objects.filter(id=workflow_revision_id, is_active=True, is_valid=True)
+            .order_by("-version_number")
+            .first()
+        )
+        if workflow is None:
+            raise ValueError(
+                "POOL_WORKFLOW_DEFINITION_NOT_FOUND: "
+                f"workflow revision '{workflow_revision_id}' was not found or is inactive"
+            )
+        expected_definition_key = str(binding.workflow.workflow_definition_key or "").strip()
+        actual_definition_key = derive_workflow_definition_key(workflow_template=workflow)
+        if expected_definition_key and actual_definition_key != expected_definition_key:
+            raise ValueError(
+                "POOL_WORKFLOW_DEFINITION_MISMATCH: "
+                f"workflow revision '{workflow_revision_id}' does not match "
+                f"workflow_definition_key '{expected_definition_key}'"
+            )
+        return workflow
+
+    def _build_authored_workflow_projection(
+        self,
+        *,
+        workflow_template: WorkflowTemplate,
+        run_context: PoolWorkflowRunContext,
+    ) -> tuple[list[PoolExecutionPlanStep], dict[str, Any], str, dict[str, Any]]:
+        source_dag = (
+            workflow_template.dag_structure
+            if isinstance(workflow_template.dag_structure, DAGStructure)
+            else DAGStructure(**workflow_template.dag_structure)
+        )
+        atomic_publication_steps = self._build_atomic_publication_steps(run_context=run_context)
+        publication_nodes = [
+            node
+            for node in source_dag.nodes
+            if node.type == "operation"
+            and self._resolve_operation_alias_from_node(node=node) == _OP_PUBLICATION
+        ]
+        if atomic_publication_steps and len(publication_nodes) > 1:
+            raise ValueError(
+                "POOL_RUNTIME_PUBLICATION_NODE_AMBIGUOUS: "
+                "workflow contains multiple publication nodes and cannot be expanded deterministically"
+            )
+
+        expanded_nodes: list[dict[str, Any]] = []
+        expanded_edges: list[dict[str, Any]] = []
+        steps: list[PoolExecutionPlanStep] = []
+        expansion_by_node_id: dict[str, list[str]] = {}
+
+        for node in source_dag.nodes:
+            if node.type != "operation":
+                expanded_nodes.append(node.model_dump(mode="json", by_alias=True))
+                continue
+
+            operation_alias = self._resolve_operation_alias_from_node(node=node)
+            if operation_alias == _OP_PUBLICATION and atomic_publication_steps:
+                expansion_by_node_id[node.id] = [step.node_id for step in atomic_publication_steps]
+                for step in atomic_publication_steps:
+                    expanded_nodes.append(
+                        {
+                            "id": step.node_id,
+                            "name": step.name,
+                            "type": "operation",
+                            "template_id": step.operation_alias,
+                            "operation_ref": {
+                                "alias": step.operation_alias,
+                                "binding_mode": "pinned_exposure",
+                                "template_exposure_id": step.template_exposure_id,
+                                "template_exposure_revision": step.template_exposure_revision,
+                            },
+                            "io": {
+                                "mode": "implicit_legacy",
+                                "input_mapping": {},
+                                "output_mapping": {},
+                            },
+                            "config": {
+                                "timeout_seconds": step.timeout_seconds,
+                                "max_retries": step.max_retries,
+                            },
+                        }
+                    )
+                steps.extend(atomic_publication_steps)
+                continue
+
+            step = self._build_step_from_workflow_node(node=node)
+            steps.append(step)
+            expansion_by_node_id[node.id] = [step.node_id]
+            expanded_nodes.append(
+                self._build_pinned_operation_node_payload(
+                    node=node,
+                    step=step,
+                )
+            )
+
+        for edge in source_dag.edges:
+            from_candidates = expansion_by_node_id.get(edge.from_node, [edge.from_node])
+            to_candidates = expansion_by_node_id.get(edge.to_node, [edge.to_node])
+            edge_payload: dict[str, Any] = {
+                "from": from_candidates[-1],
+                "to": to_candidates[0],
+            }
+            if edge.condition:
+                edge_payload["condition"] = edge.condition
+            expanded_edges.append(edge_payload)
+
+        for expanded_node_ids in expansion_by_node_id.values():
+            if len(expanded_node_ids) < 2:
+                continue
+            for from_node_id, to_node_id in zip(expanded_node_ids, expanded_node_ids[1:]):
+                expanded_edges.append({"from": from_node_id, "to": to_node_id})
+
+        authored_config = (
+            workflow_template.config.model_dump(mode="json")
+            if hasattr(workflow_template.config, "model_dump")
+            else dict(workflow_template.config or {})
+            if isinstance(workflow_template.config, Mapping)
+            else {}
+        )
+        workflow_config = {
+            **self._build_workflow_config(run_context.mode),
+            **authored_config,
+        }
+        return (
+            steps,
+            {"nodes": expanded_nodes, "edges": expanded_edges},
+            str(workflow_template.workflow_type or WorkflowType.SEQUENTIAL),
+            workflow_config,
+        )
 
     def _build_steps(
         self,
@@ -510,6 +657,73 @@ class PoolWorkflowCompiler:
             provenance=dict(provenance) if isinstance(provenance, dict) else None,
         )
 
+    def _build_step_from_workflow_node(
+        self,
+        *,
+        node,
+    ) -> PoolExecutionPlanStep:
+        operation_alias = self._resolve_operation_alias_from_node(node=node)
+        runtime_template = self._resolve_runtime_template_for_node(node=node, alias=operation_alias)
+        return PoolExecutionPlanStep(
+            node_id=str(node.id),
+            name=str(node.name),
+            operation_alias=operation_alias,
+            template_exposure_id=runtime_template.exposure_id,
+            template_exposure_revision=runtime_template.exposure_revision,
+            timeout_seconds=int(getattr(node.config, "timeout_seconds", 300) or 300),
+            max_retries=int(getattr(node.config, "max_retries", 0) or 0),
+            provenance=None,
+        )
+
+    @staticmethod
+    def _resolve_operation_alias_from_node(*, node) -> str:
+        operation_ref = getattr(node, "operation_ref", None)
+        alias = str(getattr(operation_ref, "alias", "") or "").strip()
+        if alias:
+            return alias
+        return str(getattr(node, "template_id", "") or "").strip()
+
+    @staticmethod
+    def _resolve_runtime_template_for_node(*, node, alias: str):
+        operation_ref = getattr(node, "operation_ref", None)
+        binding_mode = str(getattr(operation_ref, "binding_mode", "") or "").strip()
+        template_exposure_id = (
+            str(getattr(operation_ref, "template_exposure_id", "") or "").strip()
+            if binding_mode == "pinned_exposure"
+            else None
+        )
+        expected_exposure_revision = (
+            getattr(operation_ref, "template_exposure_revision", None)
+            if binding_mode == "pinned_exposure"
+            else None
+        )
+        try:
+            return resolve_runtime_template(
+                template_alias=alias or None,
+                template_exposure_id=template_exposure_id or None,
+                expected_exposure_revision=expected_exposure_revision,
+                require_active=True,
+                require_published=True,
+            )
+        except TemplateResolveError as exc:
+            raise ValueError(f"{exc.code}: {exc.message}") from exc
+
+    @staticmethod
+    def _build_pinned_operation_node_payload(
+        *,
+        node,
+        step: PoolExecutionPlanStep,
+    ) -> dict[str, Any]:
+        payload = node.model_dump(mode="json", by_alias=True)
+        payload["template_id"] = step.operation_alias
+        payload["operation_ref"] = {
+            "alias": step.operation_alias,
+            "binding_mode": "pinned_exposure",
+            "template_exposure_id": step.template_exposure_id,
+            "template_exposure_revision": step.template_exposure_revision,
+        }
+        return payload
+
     def _resolve_pinned_template_binding(self, *, alias: str) -> tuple[str, int]:
         exposure = (
             OperationExposure.objects.select_related("definition")
@@ -590,7 +804,12 @@ class PoolWorkflowCompiler:
 
         return {"nodes": nodes, "edges": edges}
 
-    def _build_template_version(self, schema_template: PoolSchemaTemplate) -> str:
+    def _build_template_version(
+        self,
+        schema_template: PoolSchemaTemplate,
+        *,
+        authored_workflow: WorkflowTemplate | None = None,
+    ) -> str:
         payload = {
             "id": str(schema_template.id),
             "code": schema_template.code,
@@ -599,6 +818,13 @@ class PoolWorkflowCompiler:
             "schema": schema_template.schema if isinstance(schema_template.schema, dict) else {},
             "metadata": schema_template.metadata if isinstance(schema_template.metadata, dict) else {},
             "updated_at": self._iso(schema_template.updated_at),
+            "workflow_revision_id": str(authored_workflow.id) if authored_workflow is not None else None,
+            "workflow_revision": (
+                int(authored_workflow.version_number)
+                if authored_workflow is not None
+                else None
+            ),
+            "workflow_updated_at": self._iso(authored_workflow.updated_at) if authored_workflow is not None else None,
         }
         return self._sha256(self._canonical_json(payload))
 
@@ -653,6 +879,13 @@ class PoolWorkflowCompiler:
                         "source": {"type": "string"},
                     },
                     "required": ["strategy", "source"],
+                },
+                "decisions": {
+                    "type": "object",
+                    "additionalProperties": True,
+                },
+                "pool_runtime_document_plan_artifact": {
+                    "type": "object",
                 },
             },
             "required": ["pool_run_id", "pool_id", "period_start", "direction", "mode", "run_input"],

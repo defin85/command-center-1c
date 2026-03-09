@@ -60,7 +60,7 @@ def get_workflow_authoring_phase_summary(*, tenant_id: str | None) -> dict[str, 
     summary = dict(
         _PHASE_SUMMARIES.get(
             raw_phase,
-            _PHASE_SUMMARIES[WORKFLOW_AUTHORING_PHASE_WORKFLOW_CENTRIC_PREREQUISITE],
+            _PHASE_SUMMARIES[WORKFLOW_AUTHORING_PHASE_WORKFLOW_CENTRIC_ACTIVE],
         )
     )
     summary["construct_visibility"] = build_workflow_construct_visibility().model_dump()

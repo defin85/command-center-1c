@@ -6,11 +6,15 @@ Evaluates boolean expressions in sandboxed Jinja2 environment.
 
 import logging
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Mapping
 
 from jinja2 import StrictUndefined
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
+from apps.templates.workflow.decision_tables import (
+    evaluate_decision_table,
+    resolve_pinned_decision_table,
+)
 from apps.templates.workflow.models import WorkflowExecution, WorkflowNode
 
 from .base import BaseNodeHandler, NodeExecutionMode, NodeExecutionResult
@@ -90,6 +94,13 @@ class ConditionHandler(BaseNodeHandler):
             # 1. Get expression from node config
             # Check if expression is in config dict or as separate field
             expression = self._get_expression(node)
+            render_context = dict(context)
+            context_updates: dict[str, Any] = {}
+            if getattr(node, "decision_ref", None) is not None:
+                render_context, context_updates = self._apply_decision_ref(
+                    node=node,
+                    context=context,
+                )
 
             logger.info(
                 f"Executing condition node {node.id}",
@@ -102,7 +113,7 @@ class ConditionHandler(BaseNodeHandler):
 
             # 2. Render expression in sandbox
             template = self.env.from_string(expression)
-            rendered = template.render(context)
+            rendered = template.render(render_context)
 
             # 3. Convert to boolean
             bool_result = self._to_bool(rendered)
@@ -115,7 +126,8 @@ class ConditionHandler(BaseNodeHandler):
                 output=bool_result,
                 error=None,
                 mode=NodeExecutionMode.SYNC,  # Conditions are always SYNC
-                duration_seconds=duration
+                duration_seconds=duration,
+                context_updates=context_updates or None,
             )
 
             # Update step result
@@ -150,6 +162,130 @@ class ConditionHandler(BaseNodeHandler):
             )
             self._update_step_result(step_result, result)
             return result
+
+    def _apply_decision_ref(
+        self,
+        *,
+        node: WorkflowNode,
+        context: Dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        decision_ref = getattr(node, "decision_ref", None)
+        if decision_ref is None:
+            return dict(context), {}
+
+        decision_table = resolve_pinned_decision_table(
+            decision_table_id=decision_ref.decision_table_id,
+            decision_revision=decision_ref.decision_revision,
+        )
+        decision_inputs = self._build_decision_inputs(node=node, context=context)
+        outputs = evaluate_decision_table(
+            decision_table=decision_table,
+            inputs=decision_inputs,
+        )
+        decision_value = self._resolve_decision_value(
+            decision_key=decision_ref.decision_key,
+            outputs=outputs,
+        )
+        render_context = dict(context)
+        decisions_context = (
+            dict(context.get("decisions"))
+            if isinstance(context.get("decisions"), Mapping)
+            else {}
+        )
+        decisions_context[decision_ref.decision_key] = decision_value
+        render_context["decisions"] = decisions_context
+        render_context["result"] = outputs
+
+        updates = {
+            f"decisions.{decision_ref.decision_key}": decision_value,
+        }
+        updates.update(self._build_output_context_updates(node=node, outputs=outputs))
+        return render_context, updates
+
+    def _build_decision_inputs(
+        self,
+        *,
+        node: WorkflowNode,
+        context: Dict[str, Any],
+    ) -> dict[str, Any]:
+        io = getattr(node, "io", None)
+        io_mode = str(getattr(io, "mode", "implicit_legacy") or "implicit_legacy")
+        input_mapping = dict(getattr(io, "input_mapping", {}) or {})
+        if io_mode != "explicit_strict" or not input_mapping:
+            return dict(context)
+
+        decision_inputs: dict[str, Any] = {}
+        missing_source_paths: list[str] = []
+        for target_path, source_path in input_mapping.items():
+            normalized_target = self._normalize_decision_input_target(target_path)
+            try:
+                decision_inputs[normalized_target] = self._resolve_path(context, source_path)
+            except KeyError:
+                missing_source_paths.append(source_path)
+        if missing_source_paths:
+            raise ValueError(
+                "DECISION_INPUT_MAPPING_ERROR: missing source_path(s) for explicit_strict mode: "
+                + ", ".join(sorted(set(missing_source_paths)))
+            )
+        return decision_inputs
+
+    @staticmethod
+    def _normalize_decision_input_target(target_path: str) -> str:
+        normalized = str(target_path or "").strip()
+        if normalized.startswith("input."):
+            normalized = normalized[len("input.") :]
+        if not normalized:
+            raise ValueError("DECISION_INPUT_MAPPING_ERROR: target_path must not be empty")
+        return normalized
+
+    def _build_output_context_updates(
+        self,
+        *,
+        node: WorkflowNode,
+        outputs: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        io = getattr(node, "io", None)
+        io_mode = str(getattr(io, "mode", "implicit_legacy") or "implicit_legacy")
+        output_mapping = dict(getattr(io, "output_mapping", {}) or {})
+        if io_mode != "explicit_strict" or not output_mapping:
+            return {}
+
+        source_payload = {"result": dict(outputs)}
+        updates: dict[str, Any] = {}
+        for target_path, source_path in output_mapping.items():
+            try:
+                updates[target_path] = self._resolve_path(source_payload, source_path)
+            except KeyError:
+                logger.warning(
+                    "Condition output mapping source path is missing; skipping mapping entry",
+                    extra={
+                        "node_id": node.id,
+                        "target_path": target_path,
+                        "source_path": source_path,
+                    },
+                )
+        return updates
+
+    @staticmethod
+    def _resolve_decision_value(
+        *,
+        decision_key: str,
+        outputs: Mapping[str, Any],
+    ) -> Any:
+        if decision_key in outputs:
+            return outputs[decision_key]
+        if len(outputs) == 1:
+            return next(iter(outputs.values()))
+        return dict(outputs)
+
+    @staticmethod
+    def _resolve_path(source: Mapping[str, Any], path: str) -> Any:
+        current: Any = source
+        for segment in str(path or "").split("."):
+            if not isinstance(current, Mapping) or segment not in current:
+                raise KeyError(path)
+            current = current[segment]
+        return current
 
     def _get_expression(self, node: WorkflowNode) -> str:
         """

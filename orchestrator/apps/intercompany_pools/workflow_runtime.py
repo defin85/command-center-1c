@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
@@ -12,11 +12,14 @@ from apps.operations.services import OperationsService
 from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate
 
 from .document_plan_artifact_contract import (
+    POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY,
     POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
+    POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY,
     build_publication_payload_from_document_plan_artifact,
     compile_document_plan_artifact_v1,
     validate_document_plan_artifact_v1,
 )
+from .binding_preview import build_pool_workflow_binding_runtime_bundle
 from .distribution_artifact_contract import validate_distribution_artifact_v1
 from .master_data_artifact_contract import (
     POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY,
@@ -67,6 +70,8 @@ PUBLICATION_AUTH_SOURCE_CONFIRM_PUBLICATION = "confirm_publication"
 PUBLICATION_AUTH_SOURCE_RETRY_PUBLICATION = "retry_publication"
 POOL_RUNTIME_RETRY_PAYLOAD_INVALID = "POOL_RUNTIME_RETRY_PAYLOAD_INVALID"
 POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY = "pool_workflow_binding"
+POOL_RUNTIME_DECISIONS_CONTEXT_KEY = "decisions"
+POOL_WORKFLOW_BINDING_REQUIRED = "POOL_WORKFLOW_BINDING_REQUIRED"
 
 
 @dataclass(frozen=True)
@@ -98,6 +103,10 @@ def start_pool_run_workflow_execution(
     execution_id: str | None = None
     created_execution = False
     normalized_workflow_binding = _normalize_runtime_workflow_binding(workflow_binding)
+    if normalized_workflow_binding is None:
+        raise ValueError(
+            f"{POOL_WORKFLOW_BINDING_REQUIRED}: pool_workflow_binding_id is required for workflow runtime start"
+        )
 
     with transaction.atomic():
         locked_run = (
@@ -119,11 +128,22 @@ def start_pool_run_workflow_execution(
 
         sync_pool_runtime_template_registry()
         schema_template = locked_run.schema_template or _get_or_create_default_schema_template(locked_run)
-        sanitized_run_input = sanitize_run_input_for_runtime_contract(run_input=locked_run.run_input)
-        document_plan_artifact = _build_atomic_compile_document_plan_artifact(
+        bundle = build_pool_workflow_binding_runtime_bundle(
+            tenant=locked_run.tenant,
+            pool=locked_run.pool,
+            pool_workflow_binding_id=str(normalized_workflow_binding["binding_id"]),
+            workflow_binding=normalized_workflow_binding,
+            direction=locked_run.direction,
+            mode=locked_run.mode,
+            period_start=locked_run.period_start,
+            period_end=locked_run.period_end,
+            run_input=locked_run.run_input,
+            schema_template=schema_template,
             run=locked_run,
-            run_input=sanitized_run_input,
         )
+        sanitized_run_input = bundle["run_input"]
+        document_plan_artifact = bundle["document_plan_artifact"]
+        decision_outputs = bundle["decision_outputs"]
         master_data_snapshot_ref = build_master_data_snapshot_ref(
             run=locked_run,
             run_input=sanitized_run_input,
@@ -133,24 +153,8 @@ def start_pool_run_workflow_execution(
             snapshot_ref=master_data_snapshot_ref,
             document_plan_artifact=document_plan_artifact,
         )
-        plan = compile_pool_execution_plan(
-            schema_template=schema_template,
-            run_context=PoolWorkflowRunContext(
-                pool_id=str(locked_run.pool_id),
-                period_start=locked_run.period_start,
-                period_end=locked_run.period_end,
-                direction=locked_run.direction,
-                mode=locked_run.mode,
-                run_input=sanitized_run_input,
-                document_plan_artifact=document_plan_artifact,
-                workflow_binding=normalized_workflow_binding,
-            ),
-        )
-        runtime_projection = build_pool_runtime_projection_v1(
-            run=locked_run,
-            plan=plan,
-            document_plan_artifact=document_plan_artifact,
-        )
+        plan = bundle["plan"]
+        runtime_projection = bundle["runtime_projection"]
         save_fields = {
             "updated_at",
             "workflow_execution_id",
@@ -187,6 +191,10 @@ def start_pool_run_workflow_execution(
                 master_data_binding_artifact_ref=master_data_binding_artifact_ref,
                 runtime_projection=runtime_projection,
                 workflow_binding=normalized_workflow_binding,
+                decision_outputs=decision_outputs,
+                compiled_document_policy=bundle["compiled_document_policy"],
+                document_policy_source=bundle["document_policy_source"],
+                document_plan_artifact=document_plan_artifact,
             ),
             tenant=locked_run.tenant,
             execution_consumer="pools",
@@ -212,6 +220,9 @@ def start_pool_run_workflow_execution(
         locked_run.workflow_status = execution.status
         locked_run.execution_backend = "workflow_core"
         locked_run.workflow_template_name = workflow_template.name
+        locked_run.workflow_binding_snapshot = normalized_workflow_binding
+        locked_run.runtime_projection_snapshot = runtime_projection
+        save_fields.update({"workflow_binding_snapshot", "runtime_projection_snapshot"})
 
         locked_run.save(update_fields=sorted(save_fields))
         locked_run.add_audit_event(
@@ -309,6 +320,10 @@ def start_pool_run_retry_workflow_execution(
             parent_execution.input_context if isinstance(parent_execution.input_context, dict) else {}
         )
         retry_workflow_binding = _resolve_retry_workflow_binding(parent_input_context)
+        if retry_workflow_binding is None:
+            raise ValueError(
+                f"{POOL_WORKFLOW_BINDING_REQUIRED}: retry requires persisted pool workflow binding snapshot"
+            )
         root_workflow_run_id = str(
             parent_input_context.get("root_workflow_run_id") or parent_execution.id
         )
@@ -330,10 +345,49 @@ def start_pool_run_retry_workflow_execution(
             retry_publication_payload=retry_publication_payload,
         )
         if document_plan_artifact is None:
-            document_plan_artifact = _build_atomic_compile_document_plan_artifact(
+            retry_bundle = build_pool_workflow_binding_runtime_bundle(
+                tenant=locked_run.tenant,
+                pool=locked_run.pool,
+                pool_workflow_binding_id=str(retry_workflow_binding["binding_id"]),
+                workflow_binding=retry_workflow_binding,
+                direction=locked_run.direction,
+                mode=locked_run.mode,
+                period_start=locked_run.period_start,
+                period_end=locked_run.period_end,
+                run_input=locked_run.run_input,
+                schema_template=schema_template,
                 run=locked_run,
-                run_input=sanitized_run_input,
             )
+            sanitized_run_input = retry_bundle["run_input"]
+            document_plan_artifact = retry_bundle["document_plan_artifact"]
+            plan = retry_bundle["plan"]
+            runtime_projection = retry_bundle["runtime_projection"]
+            decision_outputs = retry_bundle["decision_outputs"]
+            compiled_document_policy = retry_bundle["compiled_document_policy"]
+            document_policy_source = retry_bundle["document_policy_source"]
+        else:
+            compiled_document_policy = _resolve_retry_compiled_document_policy(parent_input_context)
+            document_policy_source = _resolve_retry_document_policy_source(parent_input_context)
+            plan = compile_pool_execution_plan(
+                schema_template=schema_template,
+                run_context=PoolWorkflowRunContext(
+                    pool_id=str(locked_run.pool_id),
+                    period_start=locked_run.period_start,
+                    period_end=locked_run.period_end,
+                    direction=locked_run.direction,
+                    mode=locked_run.mode,
+                    run_input=sanitized_run_input,
+                    document_plan_artifact=document_plan_artifact,
+                    workflow_binding=retry_workflow_binding,
+                ),
+            )
+            runtime_projection = build_pool_runtime_projection_v1(
+                run=locked_run,
+                plan=plan,
+                document_plan_artifact=document_plan_artifact,
+                compiled_document_policy=compiled_document_policy,
+            )
+            decision_outputs = _resolve_retry_decision_outputs(parent_input_context)
         master_data_snapshot_ref = _resolve_retry_master_data_snapshot_ref(
             run=locked_run,
             run_input=sanitized_run_input,
@@ -343,24 +397,6 @@ def start_pool_run_retry_workflow_execution(
             run=locked_run,
             parent_input_context=parent_input_context,
             master_data_snapshot_ref=master_data_snapshot_ref,
-            document_plan_artifact=document_plan_artifact,
-        )
-        plan = compile_pool_execution_plan(
-            schema_template=schema_template,
-            run_context=PoolWorkflowRunContext(
-                pool_id=str(locked_run.pool_id),
-                period_start=locked_run.period_start,
-                period_end=locked_run.period_end,
-                direction=locked_run.direction,
-                mode=locked_run.mode,
-                run_input=sanitized_run_input,
-                document_plan_artifact=document_plan_artifact,
-                workflow_binding=retry_workflow_binding,
-            ),
-        )
-        runtime_projection = build_pool_runtime_projection_v1(
-            run=locked_run,
-            plan=plan,
             document_plan_artifact=document_plan_artifact,
         )
         workflow_template = _resolve_or_create_workflow_template(plan=plan, requested_by=requested_by)
@@ -374,6 +410,10 @@ def start_pool_run_retry_workflow_execution(
             master_data_binding_artifact_ref=master_data_binding_artifact_ref,
             runtime_projection=runtime_projection,
             workflow_binding=retry_workflow_binding,
+            decision_outputs=decision_outputs,
+            compiled_document_policy=compiled_document_policy,
+            document_policy_source=document_policy_source,
+            document_plan_artifact=document_plan_artifact,
         )
         persisted_binding_artifact = parent_input_context.get(
             POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY
@@ -418,12 +458,16 @@ def start_pool_run_retry_workflow_execution(
         locked_run.workflow_status = execution.status
         locked_run.execution_backend = "workflow_core"
         locked_run.workflow_template_name = workflow_template.name
+        locked_run.workflow_binding_snapshot = retry_workflow_binding
+        locked_run.runtime_projection_snapshot = runtime_projection
         locked_run.save(
             update_fields=[
                 "workflow_execution_id",
                 "workflow_status",
                 "execution_backend",
                 "workflow_template_name",
+                "workflow_binding_snapshot",
+                "runtime_projection_snapshot",
                 "updated_at",
             ]
         )
@@ -502,6 +546,10 @@ def _build_input_context(
     master_data_binding_artifact_ref: str = "",
     runtime_projection: dict[str, Any] | None = None,
     workflow_binding: dict[str, Any] | None = None,
+    decision_outputs: Mapping[str, Any] | None = None,
+    compiled_document_policy: Mapping[str, Any] | None = None,
+    document_policy_source: str | None = None,
+    document_plan_artifact: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     run_input = sanitize_run_input_for_runtime_contract(run_input=run.run_input)
     context = {
@@ -533,6 +581,18 @@ def _build_input_context(
     normalized_workflow_binding = _normalize_runtime_workflow_binding(workflow_binding)
     if normalized_workflow_binding is not None:
         context[POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY] = normalized_workflow_binding
+    normalized_decision_outputs = _normalize_decision_outputs(decision_outputs)
+    if normalized_decision_outputs:
+        context[POOL_RUNTIME_DECISIONS_CONTEXT_KEY] = normalized_decision_outputs
+    if isinstance(compiled_document_policy, Mapping):
+        context[POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY] = dict(compiled_document_policy)
+    normalized_document_policy_source = str(document_policy_source or "").strip()
+    if normalized_document_policy_source:
+        context[POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY] = normalized_document_policy_source
+    if isinstance(document_plan_artifact, Mapping):
+        context[POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY] = validate_document_plan_artifact_v1(
+            artifact=document_plan_artifact
+        )
     return context
 
 
@@ -551,6 +611,44 @@ def _resolve_retry_workflow_binding(
     return _normalize_runtime_workflow_binding(
         parent_input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)
     )
+
+
+def _normalize_decision_outputs(
+    decision_outputs: object | None,
+) -> dict[str, Any]:
+    if not isinstance(decision_outputs, Mapping):
+        return {}
+    normalized: dict[str, Any] = {}
+    for raw_key, raw_value in dict(decision_outputs).items():
+        key = str(raw_key or "").strip()
+        if not key:
+            continue
+        normalized[key] = raw_value
+    return normalized
+
+
+def _resolve_retry_decision_outputs(
+    parent_input_context: dict[str, Any],
+) -> dict[str, Any]:
+    return _normalize_decision_outputs(
+        parent_input_context.get(POOL_RUNTIME_DECISIONS_CONTEXT_KEY)
+    )
+
+
+def _resolve_retry_compiled_document_policy(
+    parent_input_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    raw_policy = parent_input_context.get(POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY)
+    if not isinstance(raw_policy, Mapping):
+        return None
+    return dict(raw_policy)
+
+
+def _resolve_retry_document_policy_source(
+    parent_input_context: dict[str, Any],
+) -> str | None:
+    source = str(parent_input_context.get(POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY) or "").strip()
+    return source or None
 
 
 def _build_publication_auth_context(
@@ -638,6 +736,8 @@ def _build_atomic_compile_document_plan_artifact(
     *,
     run: PoolRun,
     run_input: dict[str, Any],
+    compiled_document_policy: Mapping[str, Any] | None = None,
+    document_policy_source: str | None = None,
 ) -> dict[str, Any] | None:
     try:
         distribution_state = compute_distribution_runtime_state(
@@ -652,6 +752,8 @@ def _build_atomic_compile_document_plan_artifact(
             run=run,
             distribution_artifact=distribution_artifact,
             topology=topology,
+            compiled_document_policy=compiled_document_policy,
+            document_policy_source=document_policy_source,
         )
     except Exception:
         return None

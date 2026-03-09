@@ -49,6 +49,60 @@ class WorkflowCategory(models.TextChoices):
     CUSTOM = "custom", "Custom Operations"
 
 
+class DecisionTable(models.Model):
+    """Versioned decision table used by workflow-centric authoring."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    decision_table_id = models.CharField(max_length=200, help_text="Stable decision table key")
+    decision_key = models.CharField(max_length=200, help_text="Business decision capability key")
+    name = models.CharField(max_length=200, help_text="Decision table name")
+    description = models.TextField(blank=True, help_text="Decision table description")
+    inputs = models.JSONField(default=list, blank=True)
+    outputs = models.JSONField(default=list, blank=True)
+    rules = models.JSONField(default=list, blank=True)
+    hit_policy = models.CharField(max_length=32, default="first_match")
+    validation_mode = models.CharField(max_length=32, default="fail_closed")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_decision_tables",
+    )
+    parent_version = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="child_versions",
+        help_text="Parent decision revision if this is a new version",
+    )
+    version_number = models.PositiveIntegerField(
+        default=1,
+        help_text="Decision revision number (auto-incremented by helper service)",
+    )
+
+    class Meta:
+        db_table = "workflow_decision_tables"
+        ordering = ["decision_table_id", "-version_number", "-created_at"]
+        indexes = [
+            models.Index(fields=["decision_key", "is_active"], name="wf_decision_key_active_idx"),
+            models.Index(fields=["decision_table_id", "-version_number"], name="wf_decision_id_ver_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["decision_table_id", "version_number"],
+                name="unique_decision_table_revision",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.decision_table_id} (v{self.version_number})"
+
+
 class WorkflowTemplate(models.Model):
     """
     Workflow template with DAG structure.

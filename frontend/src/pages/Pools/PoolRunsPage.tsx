@@ -34,7 +34,9 @@ import {
   listOrganizationPools,
   listPoolRuns,
   listPoolSchemaTemplates,
+  previewPoolWorkflowBinding,
   retryPoolRunFailed,
+  type CreatePoolRunPayload,
   type OrganizationPool,
   type PoolGraph,
   type PoolPublicationAttemptDiagnostics,
@@ -51,6 +53,7 @@ import {
   type PoolRunVerificationMismatch,
   type PoolSchemaTemplate,
   type PoolWorkflowBinding,
+  type PoolWorkflowBindingPreview,
 } from '../../api/intercompanyPools'
 
 const { Title, Text } = Typography
@@ -299,6 +302,54 @@ const parseBottomUpSourcePayload = (raw: string): Record<string, unknown> | Arra
     }
     return item as Record<string, unknown>
   })
+}
+
+const buildCreateRunPayload = ({
+  poolId,
+  values,
+}: {
+  poolId: string
+  values: CreateRunFormValues
+}): CreatePoolRunPayload => {
+  const runInput: Record<string, unknown> = {}
+  const workflowBindingId = values.pool_workflow_binding_id?.trim() || ''
+  let schemaTemplateId: string | null | undefined = undefined
+
+  if (!workflowBindingId) {
+    throw new Error('Выберите workflow binding для запуска run.')
+  }
+
+  if (values.direction === 'top_down') {
+    const startingAmount = Number(values.starting_amount)
+    if (!Number.isFinite(startingAmount) || startingAmount <= 0) {
+      throw new Error('top_down: starting amount должен быть положительным числом.')
+    }
+    runInput.starting_amount = startingAmount.toFixed(2)
+  } else {
+    const artifactId = values.source_artifact_id?.trim()
+    const sourcePayloadRaw = values.source_payload_json?.trim() || ''
+    if (sourcePayloadRaw.length > 0) {
+      runInput.source_payload = parseBottomUpSourcePayload(sourcePayloadRaw)
+    }
+    if (artifactId) {
+      runInput.source_artifact_id = artifactId
+    }
+    if (!Object.prototype.hasOwnProperty.call(runInput, 'source_payload') && !artifactId) {
+      throw new Error('bottom_up: укажите source payload JSON или source artifact ID.')
+    }
+    schemaTemplateId = values.schema_template_id?.trim() || null
+  }
+
+  return {
+    pool_id: poolId,
+    pool_workflow_binding_id: workflowBindingId,
+    direction: values.direction,
+    period_start: values.period_start,
+    period_end: values.period_end?.trim() || null,
+    run_input: runInput,
+    mode: values.mode,
+    schema_template_id: schemaTemplateId,
+  }
 }
 
 type ProblemDetailsPayload = {
@@ -866,9 +917,11 @@ export function PoolRunsPage() {
   const [loadingRuns, setLoadingRuns] = useState(false)
   const [loadingReport, setLoadingReport] = useState(false)
   const [creatingRun, setCreatingRun] = useState(false)
+  const [previewingBinding, setPreviewingBinding] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const [safeActionLoading, setSafeActionLoading] = useState<PoolRunSafeCommandType | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [bindingPreview, setBindingPreview] = useState<PoolWorkflowBindingPreview | null>(null)
   const [activeStageTab, setActiveStageTab] = useState<'create' | 'inspect' | 'safe' | 'retry'>('create')
   const [createForm] = Form.useForm<CreateRunFormValues>()
   const [retryForm] = Form.useForm<RetryFormValues>()
@@ -896,6 +949,11 @@ export function PoolRunsPage() {
   const createDirection = Form.useWatch('direction', createForm) ?? 'top_down'
   const createMode = Form.useWatch('mode', createForm) ?? 'safe'
   const createPeriodStart = Form.useWatch('period_start', createForm) ?? new Date().toISOString().slice(0, 10)
+  const createBindingId = Form.useWatch('pool_workflow_binding_id', createForm)
+  const createStartingAmount = Form.useWatch('starting_amount', createForm)
+  const createSchemaTemplateId = Form.useWatch('schema_template_id', createForm)
+  const createSourcePayloadJson = Form.useWatch('source_payload_json', createForm)
+  const createSourceArtifactId = Form.useWatch('source_artifact_id', createForm)
   const selectedPool = useMemo(
     () => pools.find((item) => item.id === selectedPoolId) ?? null,
     [pools, selectedPoolId]
@@ -1059,6 +1117,20 @@ export function PoolRunsPage() {
     }
   }, [createForm, matchingWorkflowBindings])
 
+  useEffect(() => {
+    setBindingPreview(null)
+  }, [
+    createBindingId,
+    createDirection,
+    createMode,
+    createPeriodStart,
+    createSchemaTemplateId,
+    createSourceArtifactId,
+    createSourcePayloadJson,
+    createStartingAmount,
+    selectedPoolId,
+  ])
+
   const handleCreateRun = useCallback(async () => {
     if (!selectedPoolId) {
       setError('Выберите пул перед созданием run.')
@@ -1076,54 +1148,13 @@ export function PoolRunsPage() {
     setCreatingRun(true)
     setError(null)
     try {
-      const runInput: Record<string, unknown> = {}
-      const workflowBindingId = values.pool_workflow_binding_id?.trim() || ''
-      let schemaTemplateId: string | null | undefined = undefined
-
-      if (!workflowBindingId) {
-        createForm.setFields([
-          {
-            name: 'pool_workflow_binding_id',
-            errors: ['Выберите workflow binding для запуска run.'],
-          },
-        ])
-        return
-      }
-
-      if (direction === 'top_down') {
-        const startingAmount = Number(values.starting_amount)
-        if (!Number.isFinite(startingAmount) || startingAmount <= 0) {
-          setError('top_down: starting amount должен быть положительным числом.')
-          return
-        }
-        runInput.starting_amount = startingAmount.toFixed(2)
-      } else {
-        const artifactId = values.source_artifact_id?.trim()
-        const sourcePayloadRaw = values.source_payload_json?.trim() || ''
-        if (sourcePayloadRaw.length > 0) {
-          runInput.source_payload = parseBottomUpSourcePayload(sourcePayloadRaw)
-        }
-        if (artifactId) {
-          runInput.source_artifact_id = artifactId
-        }
-        if (!Object.prototype.hasOwnProperty.call(runInput, 'source_payload') && !artifactId) {
-          setError('bottom_up: укажите source payload JSON или source artifact ID.')
-          return
-        }
-        schemaTemplateId = values.schema_template_id?.trim() || null
-      }
-
-      const payload = await createPoolRun({
-        pool_id: selectedPoolId,
-        pool_workflow_binding_id: workflowBindingId,
-        direction,
-        period_start: values.period_start,
-        period_end: values.period_end?.trim() || null,
-        run_input: runInput,
-        mode: values.mode,
-        schema_template_id: schemaTemplateId,
+      const requestPayload = buildCreateRunPayload({
+        poolId: selectedPoolId,
+        values,
       })
+      const payload = await createPoolRun(requestPayload)
       message.success(payload.created ? 'Run создан' : 'Run переиспользован по idempotency key')
+      setBindingPreview(null)
       await loadRuns({ preferredRunId: payload.run.id })
     } catch (err) {
       const problem = parseProblemDetails(err)
@@ -1180,6 +1211,89 @@ export function PoolRunsPage() {
       setCreatingRun(false)
     }
   }, [createForm, loadRuns, message, selectedPoolId])
+
+  const handlePreviewBinding = useCallback(async () => {
+    if (!selectedPoolId) {
+      setError('Выберите пул перед preview workflow binding.')
+      return
+    }
+    let values: CreateRunFormValues
+    let direction: CreateRunFormValues['direction'] = 'top_down'
+    try {
+      values = await createForm.validateFields()
+      direction = values.direction
+    } catch {
+      return
+    }
+
+    setPreviewingBinding(true)
+    setError(null)
+    try {
+      const requestPayload = buildCreateRunPayload({
+        poolId: selectedPoolId,
+        values,
+      })
+      const preview = await previewPoolWorkflowBinding(requestPayload)
+      setBindingPreview(preview)
+      message.success('Binding preview updated')
+    } catch (err) {
+      const problem = parseProblemDetails(err)
+      if (problem) {
+        if (problem.code === 'VALIDATION_ERROR' && problem.detail) {
+          const normalizedDetail = problem.detail.toLowerCase()
+          const fieldErrors: Array<{ name: keyof CreateRunFormValues; errors: string[] }> = []
+
+          if (direction === 'top_down' && normalizedDetail.includes('starting_amount')) {
+            fieldErrors.push({ name: 'starting_amount', errors: [problem.detail] })
+          }
+          if (
+            direction === 'bottom_up'
+            && (
+              normalizedDetail.includes('source_payload')
+              || normalizedDetail.includes('source_artifact_id')
+              || normalizedDetail.includes('bottom_up run_input')
+            )
+          ) {
+            fieldErrors.push({ name: 'source_payload_json', errors: [problem.detail] })
+            fieldErrors.push({ name: 'source_artifact_id', errors: [problem.detail] })
+          }
+          if (normalizedDetail.includes('schema_template')) {
+            fieldErrors.push({ name: 'schema_template_id', errors: [problem.detail] })
+          }
+          if (normalizedDetail.includes('pool_workflow_binding')) {
+            fieldErrors.push({ name: 'pool_workflow_binding_id', errors: [problem.detail] })
+          }
+
+          if (fieldErrors.length > 0) {
+            createForm.setFields(fieldErrors)
+          }
+        }
+        if (
+          problem.code === 'POOL_WORKFLOW_BINDING_NOT_FOUND'
+          || problem.code === 'POOL_WORKFLOW_BINDING_NOT_RESOLVED'
+          || problem.code === 'POOL_WORKFLOW_BINDING_AMBIGUOUS'
+          || problem.code === 'POOL_WORKFLOW_BINDING_INVALID'
+        ) {
+          createForm.setFields([
+            {
+              name: 'pool_workflow_binding_id',
+              errors: [resolveCreateRunProblemMessage(problem, 'Не удалось выбрать workflow binding.')],
+            },
+          ])
+        }
+        setBindingPreview(null)
+        setError(resolveCreateRunProblemMessage(problem, 'Не удалось построить binding preview.'))
+      } else if (err instanceof Error && err.message) {
+        setBindingPreview(null)
+        setError(err.message)
+      } else {
+        setBindingPreview(null)
+        setError('Не удалось построить binding preview.')
+      }
+    } finally {
+      setPreviewingBinding(false)
+    }
+  }, [createForm, message, selectedPoolId])
 
   const handleRetryFailed = useCallback(async () => {
     if (!selectedRunId) {
@@ -1725,9 +1839,80 @@ export function PoolRunsPage() {
                     </Row>
                   )}
 
-                  <Button type="primary" loading={creatingRun} onClick={() => void handleCreateRun()} data-testid="pool-runs-create-submit">
-                    Create / Upsert Run
-                  </Button>
+                  <Space wrap>
+                    <Button
+                      onClick={() => void handlePreviewBinding()}
+                      loading={previewingBinding}
+                      disabled={!selectedPoolId || !createBindingId}
+                      data-testid="pool-runs-create-preview"
+                    >
+                      Preview Binding
+                    </Button>
+                    <Button type="primary" loading={creatingRun} onClick={() => void handleCreateRun()} data-testid="pool-runs-create-submit">
+                      Create / Upsert Run
+                    </Button>
+                  </Space>
+
+                  {bindingPreview && (
+                    <Card
+                      size="small"
+                      title="Binding Preview"
+                      data-testid="pool-runs-binding-preview"
+                      style={{ marginTop: 16 }}
+                    >
+                      <Descriptions bordered size="small" column={2}>
+                        <Descriptions.Item label="Binding ID" span={1}>
+                          <Text code>{bindingPreview.workflow_binding.binding_id ?? '-'}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Workflow Scheme" span={1}>
+                          <Text>
+                            {bindingPreview.workflow_binding.workflow.workflow_name
+                              || bindingPreview.workflow_binding.workflow.workflow_definition_key}
+                          </Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Workflow Revision" span={1}>
+                          <Text>r{bindingPreview.workflow_binding.workflow.workflow_revision}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Binding Scope" span={1}>
+                          <Text>{formatWorkflowBindingScope(bindingPreview.workflow_binding)}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Decision Snapshot" span={2}>
+                          {(bindingPreview.workflow_binding.decisions ?? []).length > 0 ? (
+                            <Space size={[4, 4]} wrap>
+                              {(bindingPreview.workflow_binding.decisions ?? []).map((decision) => (
+                                <Tag key={`${decision.decision_table_id}:${decision.decision_revision}`}>
+                                  {decision.decision_key} r{decision.decision_revision}
+                                </Tag>
+                              ))}
+                            </Space>
+                          ) : (
+                            <Text type="secondary">No pinned decision refs.</Text>
+                          )}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Document Policy Source" span={1}>
+                          <Text>{bindingPreview.runtime_projection.document_policy_projection.source_mode}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Compile Plan" span={1}>
+                          <Text code>{bindingPreview.runtime_projection.workflow_definition.plan_key}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Compile Summary" span={2}>
+                          <Space size={[4, 4]} wrap>
+                            <Tag>compiled targets: {bindingPreview.runtime_projection.compile_summary.compiled_targets_count}</Tag>
+                            <Tag>policy refs: {bindingPreview.runtime_projection.document_policy_projection.policy_refs_count}</Tag>
+                            <Tag>steps: {bindingPreview.runtime_projection.compile_summary.steps_count}</Tag>
+                            <Tag>atomic publication: {bindingPreview.runtime_projection.compile_summary.atomic_publication_steps_count}</Tag>
+                          </Space>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Compiled Policy Preview" span={2}>
+                          <TextArea
+                            value={JSON.stringify(bindingPreview.compiled_document_policy, null, 2)}
+                            rows={8}
+                            readOnly
+                          />
+                        </Descriptions.Item>
+                      </Descriptions>
+                    </Card>
+                  )}
                 </Form>
               </Card>
             ),

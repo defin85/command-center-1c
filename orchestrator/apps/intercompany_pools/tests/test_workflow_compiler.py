@@ -22,6 +22,7 @@ from apps.intercompany_pools.workflow_compiler import (
 from apps.intercompany_pools.workflow_authoring_contract import PoolWorkflowBindingContract
 from apps.tenancy.models import Tenant
 from apps.templates.models import OperationExposure
+from apps.templates.workflow.models import DAGStructure, WorkflowTemplate, WorkflowType
 
 
 def _create_schema_template(*, tenant: Tenant, code: str = "pool-template") -> PoolSchemaTemplate:
@@ -131,31 +132,140 @@ def _build_document_plan_artifact() -> dict[str, object]:
     }
 
 
+def _create_authored_workflow_revision(
+    *,
+    name: str,
+    subworkflow: WorkflowTemplate,
+) -> tuple[WorkflowTemplate, WorkflowTemplate]:
+    root = WorkflowTemplate.objects.create(
+        name=name,
+        description="Authoring root",
+        workflow_type=WorkflowType.COMPLEX,
+        dag_structure=DAGStructure(
+            nodes=[
+                {"id": "prepare", "name": "Prepare", "type": "operation", "template_id": "pool.prepare_input"},
+                {
+                    "id": "decision",
+                    "name": "Route decision",
+                    "type": "condition",
+                    "decision_ref": {
+                        "decision_table_id": "route-policy",
+                        "decision_key": "route_policy",
+                        "decision_revision": 2,
+                    },
+                    "io": {
+                        "mode": "explicit_strict",
+                        "input_mapping": {
+                            "direction": "direction",
+                            "mode": "mode",
+                        },
+                        "output_mapping": {
+                            "workflow.state.route_policy": "result.route_policy",
+                        },
+                    },
+                    "config": {},
+                },
+                {
+                    "id": "approval_call",
+                    "name": "Approval Call",
+                    "type": "subworkflow",
+                    "subworkflow_config": {
+                        "subworkflow_id": str(subworkflow.id),
+                        "subworkflow_ref": {
+                            "binding_mode": "pinned_revision",
+                            "workflow_definition_key": str(subworkflow.id),
+                            "workflow_revision_id": str(subworkflow.id),
+                            "workflow_revision": subworkflow.version_number,
+                        },
+                        "input_mapping": {},
+                        "output_mapping": {},
+                        "max_depth": 5,
+                    },
+                    "config": {},
+                },
+                {"id": "publish", "name": "Publish", "type": "operation", "template_id": "pool.publication_odata"},
+            ],
+            edges=[
+                {"from": "prepare", "to": "decision"},
+                {"from": "decision", "to": "approval_call"},
+                {"from": "approval_call", "to": "publish"},
+            ],
+        ),
+        config={},
+        is_valid=True,
+        is_active=True,
+        version_number=1,
+    )
+    revision = WorkflowTemplate.objects.create(
+        name=name,
+        description="Authoring revision",
+        workflow_type=WorkflowType.COMPLEX,
+        dag_structure=root.dag_structure,
+        config=root.config,
+        is_valid=True,
+        is_active=True,
+        parent_version=root,
+        version_number=2,
+    )
+    return root, revision
+
+
+def _build_workflow_binding_from_revision(
+    *,
+    pool_id: str,
+    workflow_revision: WorkflowTemplate,
+    decision_refs: list[dict[str, object]] | None = None,
+) -> PoolWorkflowBindingContract:
+    root_definition = workflow_revision.parent_version or workflow_revision
+    return PoolWorkflowBindingContract(
+        binding_id=str(uuid4()),
+        pool_id=pool_id,
+        workflow={
+            "workflow_definition_key": str(root_definition.id),
+            "workflow_revision_id": str(workflow_revision.id),
+            "workflow_revision": workflow_revision.version_number,
+            "workflow_name": workflow_revision.name,
+        },
+        decisions=list(decision_refs or []),
+        selector={"direction": "bottom_up", "mode": "safe", "tags": ["baseline"]},
+        effective_from=date(2026, 1, 1),
+        status="active",
+    )
+
+
 @pytest.mark.django_db
 def test_compile_pool_execution_plan_captures_structured_workflow_binding_snapshot() -> None:
     tenant = Tenant.objects.create(slug=f"pool-binding-{uuid4().hex[:8]}", name="Pool Binding")
     schema_template = _create_schema_template(tenant=tenant, code="binding-template")
     _sync_runtime_templates()
+    subworkflow = WorkflowTemplate.objects.create(
+        name=f"approval-gate-{uuid4().hex[:8]}",
+        description="Approval subworkflow",
+        workflow_type=WorkflowType.SEQUENTIAL,
+        dag_structure=DAGStructure(
+            nodes=[{"id": "approve", "name": "Approve", "type": "operation", "template_id": "pool.approval_gate"}],
+            edges=[],
+        ),
+        config={},
+        is_valid=True,
+        is_active=True,
+        version_number=7,
+    )
+    root, revision = _create_authored_workflow_revision(
+        name=f"services-publication-{uuid4().hex[:8]}",
+        subworkflow=subworkflow,
+    )
 
-    binding = PoolWorkflowBindingContract(
-        binding_id=str(uuid4()),
+    binding = _build_workflow_binding_from_revision(
         pool_id=str(uuid4()),
-        workflow={
-            "workflow_definition_key": "services-publication",
-            "workflow_revision_id": str(uuid4()),
-            "workflow_revision": 3,
-            "workflow_name": "services_publication",
-        },
-        decisions=[
+        workflow_revision=revision,
+        decision_refs=[
             {
                 "decision_table_id": "decision-1",
                 "decision_key": "invoice_mode",
                 "decision_revision": 2,
             }
         ],
-        selector={"direction": "bottom_up", "mode": "safe", "tags": ["baseline"]},
-        effective_from=date(2026, 1, 1),
-        status="active",
     )
 
     plan = compile_pool_execution_plan(
@@ -167,10 +277,10 @@ def test_compile_pool_execution_plan_captures_structured_workflow_binding_snapsh
         "binding_mode": "pool_workflow_binding",
         "binding_id": binding.binding_id,
         "pool_id": binding.pool_id,
-        "workflow_definition_key": "services-publication",
+        "workflow_definition_key": str(root.id),
         "workflow_revision_id": binding.workflow.workflow_revision_id,
-        "workflow_revision": 3,
-        "workflow_name": "services_publication",
+        "workflow_revision": revision.version_number,
+        "workflow_name": revision.name,
         "decision_refs": [
             {
                 "decision_table_id": "decision-1",
@@ -181,6 +291,72 @@ def test_compile_pool_execution_plan_captures_structured_workflow_binding_snapsh
         "selector": {"direction": "bottom_up", "mode": "safe", "tags": ["baseline"]},
         "status": "active",
     }
+
+
+@pytest.mark.django_db
+def test_compile_pool_execution_plan_uses_pinned_workflow_revision_as_source_graph() -> None:
+    tenant = Tenant.objects.create(
+        slug=f"pool-authored-compiler-{uuid4().hex[:8]}",
+        name="Pool Authored Compiler",
+    )
+    schema_template = _create_schema_template(tenant=tenant, code="authored-template")
+    _sync_runtime_templates()
+    subworkflow = WorkflowTemplate.objects.create(
+        name=f"approval-gate-{uuid4().hex[:8]}",
+        description="Approval subworkflow",
+        workflow_type=WorkflowType.SEQUENTIAL,
+        dag_structure=DAGStructure(
+            nodes=[{"id": "approve", "name": "Approve", "type": "operation", "template_id": "pool.approval_gate"}],
+            edges=[],
+        ),
+        config={},
+        is_valid=True,
+        is_active=True,
+        version_number=7,
+    )
+    _root, revision = _create_authored_workflow_revision(
+        name=f"services-publication-{uuid4().hex[:8]}",
+        subworkflow=subworkflow,
+    )
+    binding = _build_workflow_binding_from_revision(
+        pool_id=str(uuid4()),
+        workflow_revision=revision,
+        decision_refs=[
+            {
+                "decision_table_id": "route-policy",
+                "decision_key": "route_policy",
+                "decision_revision": 2,
+            }
+        ],
+    )
+
+    plan = compile_pool_execution_plan(
+        schema_template=schema_template,
+        run_context=_create_context(workflow_binding=binding.model_dump(mode="json")),
+    )
+
+    node_ids = [node["id"] for node in plan.dag_structure["nodes"]]
+    assert node_ids == ["prepare", "decision", "approval_call", "publish"]
+
+    decision_node = next(node for node in plan.dag_structure["nodes"] if node["id"] == "decision")
+    assert decision_node["decision_ref"] == {
+        "decision_table_id": "route-policy",
+        "decision_key": "route_policy",
+        "decision_revision": 2,
+    }
+    assert decision_node["config"]["expression"] == "{{ decisions.route_policy }}"
+
+    approval_node = next(node for node in plan.dag_structure["nodes"] if node["id"] == "approval_call")
+    assert approval_node["subworkflow_config"]["subworkflow_ref"] == {
+        "binding_mode": "pinned_revision",
+        "workflow_definition_key": str(subworkflow.id),
+        "workflow_revision_id": str(subworkflow.id),
+        "workflow_revision": subworkflow.version_number,
+    }
+
+    operation_steps = [step for step in plan.steps]
+    assert [step.node_id for step in operation_steps] == ["prepare", "publish"]
+    assert plan.workflow_type == WorkflowType.COMPLEX
 
 
 @pytest.mark.django_db
@@ -586,7 +762,7 @@ def test_compiled_plan_builds_valid_workflow_template() -> None:
     assert workflow_template.is_valid is True
     assert len(workflow_template.dag_structure.nodes) == len(plan.steps)
     assert workflow_template.config.timeout_seconds == 86400
-    assert plan.workflow_binding_hint == "legacy-binding-hint"
+    assert plan.workflow_binding_hint is None
 
 
 @pytest.mark.django_db
@@ -616,3 +792,90 @@ def test_compile_pool_execution_plan_fails_closed_when_required_alias_missing() 
 
     with pytest.raises(ValueError, match="POOL_RUNTIME_TEMPLATE_NOT_CONFIGURED"):
         compile_pool_execution_plan(schema_template=schema_template, run_context=_create_context())
+
+
+@pytest.mark.django_db
+def test_compile_pool_execution_plan_uses_authored_workflow_revision_from_binding() -> None:
+    tenant = Tenant.objects.create(slug=f"pool-authored-{uuid4().hex[:8]}", name="Pool Authored")
+    schema_template = _create_schema_template(tenant=tenant, code="authored-template")
+    _sync_runtime_templates()
+
+    subworkflow = WorkflowTemplate.objects.create(
+        name=f"approval-gate-{uuid4().hex[:6]}",
+        description="Pinned approval subworkflow",
+        workflow_type=WorkflowType.SEQUENTIAL,
+        dag_structure=DAGStructure(
+            nodes=[
+                {
+                    "id": "approve",
+                    "name": "Approve",
+                    "type": "operation",
+                    "template_id": "pool.approval_gate",
+                }
+            ],
+            edges=[],
+        ),
+        config={},
+        is_valid=True,
+        is_active=True,
+        version_number=1,
+    )
+    root, revision = _create_authored_workflow_revision(
+        name=f"services-publication-{uuid4().hex[:6]}",
+        subworkflow=subworkflow,
+    )
+
+    binding = PoolWorkflowBindingContract(
+        binding_id=str(uuid4()),
+        pool_id=str(uuid4()),
+        workflow={
+            "workflow_definition_key": str(root.id),
+            "workflow_revision_id": str(revision.id),
+            "workflow_revision": revision.version_number,
+            "workflow_name": revision.name,
+        },
+        decisions=[],
+        selector={"direction": "bottom_up", "mode": "safe", "tags": []},
+        effective_from=date(2026, 1, 1),
+        status="active",
+    )
+
+    plan = compile_pool_execution_plan(
+        schema_template=schema_template,
+        run_context=_create_context(
+            workflow_binding=binding.model_dump(mode="json"),
+            document_plan_artifact=_build_document_plan_artifact(),
+        ),
+    )
+
+    nodes_by_id = {node["id"]: node for node in plan.dag_structure["nodes"]}
+    node_ids = list(nodes_by_id)
+
+    assert "prepare" in node_ids
+    assert "decision" in node_ids
+    assert "approval_call" in node_ids
+    assert "distribution_calculation" not in node_ids
+    assert "reconciliation_report" not in node_ids
+    assert "publish" not in node_ids
+    assert any(node_id.startswith("publication_odata__") for node_id in node_ids)
+
+    prepare_node = nodes_by_id["prepare"]
+    assert prepare_node["operation_ref"]["binding_mode"] == "pinned_exposure"
+    assert prepare_node["operation_ref"]["alias"] == "pool.prepare_input"
+    assert prepare_node["operation_ref"]["template_exposure_id"]
+
+    decision_node = nodes_by_id["decision"]
+    assert decision_node["decision_ref"] == {
+        "decision_table_id": "route-policy",
+        "decision_key": "route_policy",
+        "decision_revision": 2,
+    }
+    assert decision_node["config"]["expression"] == "{{ decisions.route_policy }}"
+
+    approval_node = nodes_by_id["approval_call"]
+    assert approval_node["subworkflow_config"]["subworkflow_ref"] == {
+        "binding_mode": "pinned_revision",
+        "workflow_definition_key": str(subworkflow.id),
+        "workflow_revision_id": str(subworkflow.id),
+        "workflow_revision": 1,
+    }

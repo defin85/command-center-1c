@@ -3306,6 +3306,93 @@ paths:
             type: string
             format: uuid
           description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+  /api/v2/decisions/:
+    get:
+      operationId: v2_decisions_collection
+      summary: List decision tables
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisionTableListResponse'
+        '401':
+          description: Unauthorized
+    post:
+      operationId: v2_decisions_collection_create
+      summary: Create decision table revision
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionTableWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DecisionTableWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DecisionTableWriteRequest'
+      responses:
+        '201':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisionTableDetailResponse'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v2/decisions/{decision_id}/:
+    get:
+      operationId: v2_decisions_detail
+      summary: Get decision table detail
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: decision_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisionTableDetailResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v2/operation-catalog/definitions/:
     get:
       operationId: v2_operation_catalog_definitions_retrieve
@@ -4512,6 +4599,55 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+  /api/v2/pools/workflow-bindings/preview/:
+    post:
+      operationId: v2_pools_workflow_bindings_preview
+      summary: Preview effective pool workflow binding runtime projection
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolRunCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolRunCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolRunCreateRequest'
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolWorkflowBindingPreviewResponse'
+        '400':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+        '401':
+          description: Unauthorized
+        '404':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
       parameters:
         - name: X-CC1C-Tenant-ID
           in: header
@@ -13917,6 +14053,158 @@ components:
             * `published` - published
           x-spec-enum-id: e49ce86be5712ba2
         spec: {}
+    DecisionField:
+      type: object
+      description: Decision table field definition.
+      properties:
+        name:
+          type: string
+        value_type:
+          type: string
+        required:
+          type: boolean
+          default: true
+      required:
+        - name
+        - value_type
+    DecisionRule:
+      type: object
+      description: Deterministic decision table rule.
+      properties:
+        rule_id:
+          type: string
+        conditions:
+          type: object
+          additionalProperties: true
+          default: {}
+        outputs:
+          type: object
+          additionalProperties: true
+        priority:
+          type: integer
+          default: 0
+      required:
+        - rule_id
+        - outputs
+    DecisionTable:
+      type: object
+      description: Versioned DMN-lite decision table resource.
+      properties:
+        id:
+          type: string
+          format: uuid
+        decision_table_id:
+          type: string
+        decision_key:
+          type: string
+        decision_revision:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+        description:
+          type: string
+        inputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/DecisionField'
+        outputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/DecisionField'
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/DecisionRule'
+        hit_policy:
+          type: string
+        validation_mode:
+          type: string
+        is_active:
+          type: boolean
+        parent_version:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - decision_table_id
+        - decision_key
+        - decision_revision
+        - name
+        - inputs
+        - outputs
+        - rules
+        - hit_policy
+        - validation_mode
+        - is_active
+        - created_at
+        - updated_at
+    DecisionTableListResponse:
+      type: object
+      properties:
+        decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DecisionTable'
+        count:
+          type: integer
+      required:
+        - decisions
+        - count
+    DecisionTableWriteRequest:
+      type: object
+      description: Create a new decision table revision.
+      properties:
+        decision_table_id:
+          type: string
+        decision_key:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          default: ''
+        inputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/DecisionField'
+        outputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/DecisionField'
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/DecisionRule'
+        hit_policy:
+          type: string
+          default: first_match
+        validation_mode:
+          type: string
+          default: fail_closed
+        is_active:
+          type: boolean
+          default: true
+        parent_version_id:
+          type: string
+          format: uuid
+      required:
+        - name
+        - rules
+    DecisionTableDetailResponse:
+      type: object
+      properties:
+        decision:
+          $ref: '#/components/schemas/DecisionTable'
+      required:
+        - decision
     OperationCatalogDefinition:
       type: object
       properties:
@@ -15599,6 +15887,274 @@ components:
       required:
         - count
         - pools
+    PoolRunInputTopDown:
+      type: object
+      properties:
+        starting_amount:
+          type: string
+          format: decimal
+      required:
+        - starting_amount
+    PoolRunInputBottomUp:
+      type: object
+      properties:
+        source_payload:
+          oneOf:
+            - type: object
+              additionalProperties: {}
+            - type: array
+              items:
+                type: object
+                additionalProperties: {}
+        source_artifact_id:
+          type: string
+      anyOf:
+        - required:
+            - source_payload
+        - required:
+            - source_artifact_id
+    PoolRunCreateRequest:
+      type: object
+      properties:
+        pool_id:
+          type: string
+          format: uuid
+        pool_workflow_binding_id:
+          type: string
+          description: Explicit pool workflow binding identifier used to disambiguate create-run resolution.
+        direction:
+          enum:
+            - top_down
+            - bottom_up
+          type: string
+          description: |-
+            * `top_down` - top_down
+            * `bottom_up` - bottom_up
+          x-spec-enum-id: d9ebd7a9e5097372
+        period_start:
+          type: string
+          format: date
+        period_end:
+          type: string
+          format: date
+          nullable: true
+        run_input:
+          oneOf:
+            - $ref: '#/components/schemas/PoolRunInputTopDown'
+            - $ref: '#/components/schemas/PoolRunInputBottomUp'
+          description: Direction-specific run input payload.
+        mode:
+          enum:
+            - safe
+            - unsafe
+          type: string
+          description: |-
+            * `safe` - safe
+            * `unsafe` - unsafe
+          x-spec-enum-id: 7203601382e63e68
+          default: safe
+        schema_template_id:
+          type: string
+          format: uuid
+          nullable: true
+        seed:
+          type: integer
+          nullable: true
+        validation_summary: {}
+        diagnostics:
+          type: array
+          items: {}
+      required:
+        - pool_workflow_binding_id
+        - direction
+        - period_start
+        - pool_id
+        - run_input
+    PoolRuntimeProjection:
+      type: object
+      description: Compiled runtime projection snapshot for pool-run lineage and operator diagnostics.
+      properties:
+        version:
+          type: string
+        run_id:
+          type: string
+          format: uuid
+        pool_id:
+          type: string
+          format: uuid
+        direction:
+          type: string
+        mode:
+          type: string
+        workflow_definition:
+          type: object
+          properties:
+            plan_key:
+              type: string
+            template_version:
+              type: string
+            workflow_template_name:
+              type: string
+            workflow_type:
+              type: string
+          required:
+            - plan_key
+            - template_version
+            - workflow_template_name
+            - workflow_type
+        workflow_binding:
+          type: object
+          properties:
+            binding_mode:
+              type: string
+            binding_id:
+              type: string
+            pool_id:
+              type: string
+              format: uuid
+            workflow_definition_key:
+              type: string
+            workflow_revision_id:
+              type: string
+            workflow_revision:
+              type: integer
+            workflow_name:
+              type: string
+            decision_refs:
+              type: array
+              items:
+                $ref: '#/components/schemas/DecisionTableRef'
+            selector:
+              $ref: '#/components/schemas/PoolWorkflowBindingSelector'
+            status:
+              type: string
+          required:
+            - binding_mode
+        document_policy_projection:
+          type: object
+          properties:
+            source_mode:
+              type: string
+            policy_refs:
+              type: array
+              items: {}
+            policy_refs_count:
+              type: integer
+            targets_count:
+              type: integer
+          required:
+            - source_mode
+            - policy_refs
+            - policy_refs_count
+            - targets_count
+        artifacts:
+          type: object
+          properties:
+            document_plan_artifact_version:
+              type: string
+              nullable: true
+            topology_version_ref:
+              type: string
+              nullable: true
+            distribution_artifact_ref:
+              type: object
+              additionalProperties: true
+              nullable: true
+          required:
+            - document_plan_artifact_version
+            - topology_version_ref
+            - distribution_artifact_ref
+        compile_summary:
+          type: object
+          properties:
+            steps_count:
+              type: integer
+            atomic_publication_steps_count:
+              type: integer
+            compiled_targets_count:
+              type: integer
+          required:
+            - steps_count
+            - atomic_publication_steps_count
+            - compiled_targets_count
+      required:
+        - version
+        - run_id
+        - pool_id
+        - direction
+        - mode
+        - workflow_definition
+        - workflow_binding
+        - document_policy_projection
+        - artifacts
+        - compile_summary
+    PoolWorkflowBindingPreviewResponse:
+      type: object
+      description: Preview of effective binding lineage and compiled runtime projection before run start.
+      properties:
+        workflow_binding:
+          $ref: '#/components/schemas/PoolWorkflowBinding'
+        compiled_document_policy:
+          type: object
+          additionalProperties: true
+        runtime_projection:
+          $ref: '#/components/schemas/PoolRuntimeProjection'
+      required:
+        - workflow_binding
+        - compiled_document_policy
+        - runtime_projection
+    ProblemDetailsFieldErrors:
+      type: object
+      description: Field-level validation errors map.
+      additionalProperties:
+        oneOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+          - type: object
+            additionalProperties: {}
+    ProblemDetailsReferentialError:
+      type: object
+      description: Metadata referential validation error item.
+      properties:
+        code:
+          type: string
+        path:
+          type: string
+        detail:
+          type: string
+      required:
+        - code
+        - detail
+        - path
+    ProblemDetailsError:
+      type: object
+      properties:
+        type:
+          type: string
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        code:
+          type: string
+        errors:
+          description: Optional structured error details. For validation failures this is a field-errors map; for metadata referential validation this is an array of items with code/path/detail.
+          oneOf:
+            - $ref: '#/components/schemas/ProblemDetailsFieldErrors'
+            - type: array
+              items:
+                $ref: '#/components/schemas/ProblemDetailsReferentialError'
+      required:
+        - code
+        - detail
+        - status
+        - title
+        - type
     PoolMasterDataBinding:
       type: object
       properties:
@@ -15678,58 +16234,6 @@ components:
         - count
         - limit
         - offset
-    ProblemDetailsFieldErrors:
-      type: object
-      description: Field-level validation errors map.
-      additionalProperties:
-        oneOf:
-          - type: string
-          - type: array
-            items:
-              type: string
-          - type: object
-            additionalProperties: {}
-    ProblemDetailsReferentialError:
-      type: object
-      description: Metadata referential validation error item.
-      properties:
-        code:
-          type: string
-        path:
-          type: string
-        detail:
-          type: string
-      required:
-        - code
-        - detail
-        - path
-    ProblemDetailsError:
-      type: object
-      properties:
-        type:
-          type: string
-          default: about:blank
-        title:
-          type: string
-        status:
-          type: integer
-        detail:
-          type: string
-        code:
-          type: string
-        errors:
-          description: Optional structured error details. For validation failures this is a field-errors map; for metadata referential validation this is an array of items with code/path/detail.
-          oneOf:
-            - $ref: '#/components/schemas/ProblemDetailsFieldErrors'
-            - type: array
-              items:
-                $ref: '#/components/schemas/ProblemDetailsReferentialError'
-      required:
-        - code
-        - detail
-        - status
-        - title
-        - type
     PoolMasterDataBindingDetailResponse:
       type: object
       properties:
@@ -17380,124 +17884,6 @@ components:
       required:
         - execution_backend
         - retry_chain
-    PoolRuntimeProjection:
-      type: object
-      description: Compiled runtime projection snapshot for pool-run lineage and operator diagnostics.
-      properties:
-        version:
-          type: string
-        run_id:
-          type: string
-          format: uuid
-        pool_id:
-          type: string
-          format: uuid
-        direction:
-          type: string
-        mode:
-          type: string
-        workflow_definition:
-          type: object
-          properties:
-            plan_key:
-              type: string
-            template_version:
-              type: string
-            workflow_template_name:
-              type: string
-            workflow_type:
-              type: string
-          required:
-            - plan_key
-            - template_version
-            - workflow_template_name
-            - workflow_type
-        workflow_binding:
-          type: object
-          properties:
-            binding_mode:
-              type: string
-            binding_id:
-              type: string
-            pool_id:
-              type: string
-              format: uuid
-            workflow_definition_key:
-              type: string
-            workflow_revision_id:
-              type: string
-            workflow_revision:
-              type: integer
-            workflow_name:
-              type: string
-            decision_refs:
-              type: array
-              items:
-                $ref: '#/components/schemas/DecisionTableRef'
-            selector:
-              $ref: '#/components/schemas/PoolWorkflowBindingSelector'
-            status:
-              type: string
-          required:
-            - binding_mode
-        document_policy_projection:
-          type: object
-          properties:
-            source_mode:
-              type: string
-            policy_refs:
-              type: array
-              items: {}
-            policy_refs_count:
-              type: integer
-            targets_count:
-              type: integer
-          required:
-            - source_mode
-            - policy_refs
-            - policy_refs_count
-            - targets_count
-        artifacts:
-          type: object
-          properties:
-            document_plan_artifact_version:
-              type: string
-              nullable: true
-            topology_version_ref:
-              type: string
-              nullable: true
-            distribution_artifact_ref:
-              type: object
-              additionalProperties: true
-              nullable: true
-          required:
-            - document_plan_artifact_version
-            - topology_version_ref
-            - distribution_artifact_ref
-        compile_summary:
-          type: object
-          properties:
-            steps_count:
-              type: integer
-            atomic_publication_steps_count:
-              type: integer
-            compiled_targets_count:
-              type: integer
-          required:
-            - steps_count
-            - atomic_publication_steps_count
-            - compiled_targets_count
-      required:
-        - version
-        - run_id
-        - pool_id
-        - direction
-        - mode
-        - workflow_definition
-        - workflow_binding
-        - document_policy_projection
-        - artifacts
-        - compile_summary
     PoolRun:
       type: object
       properties:
@@ -17658,88 +18044,6 @@ components:
       required:
         - count
         - runs
-    PoolRunInputTopDown:
-      type: object
-      properties:
-        starting_amount:
-          type: string
-          format: decimal
-      required:
-        - starting_amount
-    PoolRunInputBottomUp:
-      type: object
-      properties:
-        source_payload:
-          oneOf:
-            - type: object
-              additionalProperties: {}
-            - type: array
-              items:
-                type: object
-                additionalProperties: {}
-        source_artifact_id:
-          type: string
-      anyOf:
-        - required:
-            - source_payload
-        - required:
-            - source_artifact_id
-    PoolRunCreateRequest:
-      type: object
-      properties:
-        pool_id:
-          type: string
-          format: uuid
-        pool_workflow_binding_id:
-          type: string
-          description: Explicit pool workflow binding identifier used to disambiguate create-run resolution.
-        direction:
-          enum:
-            - top_down
-            - bottom_up
-          type: string
-          description: |-
-            * `top_down` - top_down
-            * `bottom_up` - bottom_up
-          x-spec-enum-id: d9ebd7a9e5097372
-        period_start:
-          type: string
-          format: date
-        period_end:
-          type: string
-          format: date
-          nullable: true
-        run_input:
-          oneOf:
-            - $ref: '#/components/schemas/PoolRunInputTopDown'
-            - $ref: '#/components/schemas/PoolRunInputBottomUp'
-          description: Direction-specific run input payload.
-        mode:
-          enum:
-            - safe
-            - unsafe
-          type: string
-          description: |-
-            * `safe` - safe
-            * `unsafe` - unsafe
-          x-spec-enum-id: 7203601382e63e68
-          default: safe
-        schema_template_id:
-          type: string
-          format: uuid
-          nullable: true
-        seed:
-          type: integer
-          nullable: true
-        validation_summary: {}
-        diagnostics:
-          type: array
-          items: {}
-      required:
-        - direction
-        - period_start
-        - pool_id
-        - run_input
     PoolRunCreateResponse:
       type: object
       properties:
@@ -21503,6 +21807,11 @@ components:
             - $ref: '#/components/schemas/OperationRef'
           nullable: true
           description: OperationExposure binding for Operation nodes
+        decision_ref:
+          allOf:
+            - $ref: '#/components/schemas/DecisionTableRef'
+          nullable: true
+          description: Pinned decision table reference for decision-gate nodes
         io:
           allOf:
             - $ref: '#/components/schemas/OperationIO'

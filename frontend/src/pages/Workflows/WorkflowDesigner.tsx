@@ -12,7 +12,7 @@
  * Legacy adapter (api/adapters/workflows) is no longer used here.
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   App,
@@ -43,6 +43,8 @@ import type {
   WorkflowTemplate,
   ValidationResult,
   OperationTemplateListItem,
+  AvailableWorkflowRevision,
+  AvailableDecisionRevision,
 } from '../../types/workflow'
 
 // Generated API
@@ -58,9 +60,6 @@ import {
 
 import './WorkflowDesigner.css'
 
-// Initialize generated API
-const api = getV2()
-
 const { Header, Sider, Content } = Layout
 const { Title } = Typography
 
@@ -74,6 +73,8 @@ interface WorkflowDesignerState {
   isValidating: boolean
   validationResult: ValidationResult | null
   operationTemplates: OperationTemplateListItem[]
+  availableWorkflows: AvailableWorkflowRevision[]
+  availableDecisions: AvailableDecisionRevision[]
 }
 
 const initialDagStructure: DAGStructure = {
@@ -87,6 +88,7 @@ const WorkflowDesigner = () => {
   const [searchParams] = useSearchParams()
   const { message } = App.useApp()
   const [form] = Form.useForm()
+  const api = useMemo(() => getV2(), [])
 
   const [state, setState] = useState<WorkflowDesignerState>({
     template: null,
@@ -97,7 +99,9 @@ const WorkflowDesigner = () => {
     isSaving: false,
     isValidating: false,
     validationResult: null,
-    operationTemplates: []
+    operationTemplates: [],
+    availableWorkflows: [],
+    availableDecisions: [],
   })
 
   const [saveModalVisible, setSaveModalVisible] = useState(false)
@@ -138,7 +142,76 @@ const WorkflowDesigner = () => {
     }
 
     loadTemplate()
-  }, [templateId, form, message])
+  }, [api, templateId, form, message])
+
+  useEffect(() => {
+    const loadAuthoringReferences = async () => {
+      try {
+        const [workflowResponse, decisionResponse] = await Promise.all([
+          api.getWorkflowsListWorkflows({ surface: 'workflow_library', limit: 1000 }),
+          api.getDecisionsCollection(),
+        ])
+
+        const workflowsById = new Map(
+          (workflowResponse.workflows ?? []).map((workflow) => [workflow.id, workflow])
+        )
+        const workflowDefinitionKeyCache = new Map<string, string>()
+        const resolveWorkflowDefinitionKey = (workflowId: string): string => {
+          const cached = workflowDefinitionKeyCache.get(workflowId)
+          if (cached) {
+            return cached
+          }
+          const workflow = workflowsById.get(workflowId)
+          if (!workflow?.parent_version) {
+            workflowDefinitionKeyCache.set(workflowId, workflowId)
+            return workflowId
+          }
+          if (!workflowsById.has(workflow.parent_version)) {
+            workflowDefinitionKeyCache.set(workflowId, workflow.parent_version)
+            return workflow.parent_version
+          }
+          const resolved = resolveWorkflowDefinitionKey(workflow.parent_version)
+          workflowDefinitionKeyCache.set(workflowId, resolved)
+          return resolved
+        }
+
+        const availableWorkflows = (workflowResponse.workflows ?? [])
+          .filter((workflow) => workflow.is_system_managed !== true)
+          .map((workflow) => ({
+            id: workflow.id,
+            name: workflow.name,
+            workflowDefinitionKey: resolveWorkflowDefinitionKey(workflow.id),
+            workflowRevisionId: workflow.id,
+            workflowRevision: workflow.version_number,
+          }))
+          .sort((left, right) => (
+            left.name.localeCompare(right.name) || left.workflowRevision - right.workflowRevision
+          ))
+
+        const availableDecisions = (decisionResponse.decisions ?? [])
+          .map((decision) => ({
+            id: decision.id,
+            name: decision.name,
+            decisionTableId: decision.decision_table_id,
+            decisionKey: decision.decision_key,
+            decisionRevision: decision.decision_revision,
+          }))
+          .sort((left, right) => (
+            left.name.localeCompare(right.name) || left.decisionRevision - right.decisionRevision
+          ))
+
+        setState((prev) => ({
+          ...prev,
+          availableWorkflows,
+          availableDecisions,
+        }))
+      } catch (error) {
+        console.error('Failed to load workflow authoring references:', error)
+      }
+    }
+
+    void loadAuthoringReferences()
+  }, [api])
 
   // Load operation templates
   useEffect(() => {
@@ -207,12 +280,14 @@ const WorkflowDesigner = () => {
         if (node.id === nodeId) {
           const hasTemplateId = Object.prototype.hasOwnProperty.call(data, 'templateId')
           const hasOperationRef = Object.prototype.hasOwnProperty.call(data, 'operationRef')
+          const hasDecisionRef = Object.prototype.hasOwnProperty.call(data, 'decisionRef')
           const hasIo = Object.prototype.hasOwnProperty.call(data, 'io')
           return {
             ...node,
             name: data.label ?? node.name,
             template_id: hasTemplateId ? data.templateId : node.template_id,
             operation_ref: hasOperationRef ? data.operationRef : node.operation_ref,
+            decision_ref: hasDecisionRef ? data.decisionRef : node.decision_ref,
             io: hasIo ? data.io : node.io,
             config: data.config ?? node.config
           }
@@ -263,6 +338,7 @@ const WorkflowDesigner = () => {
           nodeType: node.type,
           templateId: node.template_id,
           operationRef: node.operation_ref,
+          decisionRef: node.decision_ref,
           io: node.io,
           config: node.config
         } as WorkflowNodeData
@@ -543,6 +619,8 @@ const WorkflowDesigner = () => {
             onNodeUpdate={handleNodeUpdate}
             onNodeDelete={handleNodeDelete}
             operationTemplates={state.operationTemplates}
+            availableWorkflows={state.availableWorkflows}
+            availableDecisions={state.availableDecisions}
             readOnly={isSystemManagedProjection}
           />
         </Sider>

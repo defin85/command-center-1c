@@ -11,12 +11,17 @@ from .document_completeness import (
     ensure_document_mapping_completeness,
     resolve_document_completeness_requirements,
 )
-from .document_policy_contract import resolve_document_policy_with_precedence
+from .document_policy_contract import (
+    resolve_document_policy_with_precedence,
+    validate_document_policy_v1,
+)
 from .models import PoolEdgeVersion, PoolNodeVersion, PoolRun
 
 
 DOCUMENT_PLAN_ARTIFACT_VERSION = "document_plan_artifact.v1"
 POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY = "pool_runtime_document_plan_artifact"
+POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY = "pool_runtime_compiled_document_policy"
+POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY = "pool_runtime_document_policy_source"
 POOL_DOCUMENT_PLAN_ARTIFACT_INVALID = "POOL_DOCUMENT_PLAN_ARTIFACT_INVALID"
 
 REQUIRED_DOCUMENT_PLAN_ARTIFACT_FIELDS = {
@@ -42,6 +47,8 @@ def compile_document_plan_artifact_v1(
     run: PoolRun,
     distribution_artifact: Mapping[str, Any],
     topology: Mapping[str, Any],
+    compiled_document_policy: Mapping[str, Any] | None = None,
+    document_policy_source: str | None = None,
 ) -> dict[str, Any] | None:
     edge_allocations = distribution_artifact.get("edge_allocations")
     if not isinstance(edge_allocations, list):
@@ -53,6 +60,12 @@ def compile_document_plan_artifact_v1(
         return None
 
     pool_metadata = run.pool.metadata if isinstance(run.pool.metadata, Mapping) else {}
+    normalized_compiled_policy = (
+        validate_document_policy_v1(policy=compiled_document_policy)
+        if isinstance(compiled_document_policy, Mapping)
+        else None
+    )
+    normalized_document_policy_source = str(document_policy_source or "").strip() or None
     targets_by_database: dict[str, dict[str, Any]] = {}
     policy_refs: list[dict[str, Any]] = []
     seen_policy_refs: set[tuple[str, str]] = set()
@@ -98,10 +111,14 @@ def compile_document_plan_artifact_v1(
             continue
 
         edge_metadata = edge_model.metadata if isinstance(edge_model.metadata, Mapping) else {}
-        policy, source = resolve_document_policy_with_precedence(
-            edge_metadata=edge_metadata,
-            pool_metadata=pool_metadata,
-        )
+        if normalized_compiled_policy is not None:
+            policy = normalized_compiled_policy
+            source = normalized_document_policy_source or "workflow_binding.decision_table"
+        else:
+            policy, source = resolve_document_policy_with_precedence(
+                edge_metadata=edge_metadata,
+                pool_metadata=pool_metadata,
+            )
         if policy is None:
             continue
 

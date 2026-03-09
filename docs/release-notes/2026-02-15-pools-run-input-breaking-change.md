@@ -4,8 +4,10 @@
 
 - `POST /api/v2/pools/runs/` больше **не принимает** поле `source_hash`.
 - Create-run контракт использует `run_input` как source-of-truth для входных данных.
+- Create-run контракт использует `pool_workflow_binding_id` как pinned binding reference для workflow-centric запуска.
 - Idempotency для create-run теперь считается по:
   - `pool_id`
+  - `pool_workflow_binding_id`
   - `period_start`/`period_end`
   - `direction`
   - `canonicalized(run_input)`
@@ -19,7 +21,7 @@
 ## Миграция интеграций (обязательно)
 
 1. Уберите `source_hash` из payload create-run.
-2. Передавайте direction-specific `run_input`.
+2. Передавайте `pool_workflow_binding_id` и direction-specific `run_input`.
 3. Обновите обработку ошибок create-run/topology mutating на `application/problem+json` (`type`, `title`, `status`, `detail`, `code`).
 4. Для topology update всегда делайте round-trip:
    - сначала read (`graph`) и берите `version`;
@@ -44,6 +46,7 @@
 ```json
 {
   "pool_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+  "pool_workflow_binding_id": "binding-top-down-v3",
   "direction": "top_down",
   "period_start": "2026-01-01",
   "run_input": {

@@ -230,6 +230,12 @@ class OperationIOSerializer(serializers.Serializer):
     )
 
 
+class DecisionRefSerializer(serializers.Serializer):
+    decision_table_id = serializers.CharField()
+    decision_key = serializers.CharField()
+    decision_revision = serializers.IntegerField(min_value=1)
+
+
 class WorkflowNodeSerializer(serializers.Serializer):
     """Serializer for WorkflowNode Pydantic model."""
 
@@ -254,10 +260,15 @@ class WorkflowNodeSerializer(serializers.Serializer):
         allow_null=True,
         help_text="OperationExposure binding for Operation nodes",
     )
+    decision_ref = DecisionRefSerializer(
+        required=False,
+        allow_null=True,
+        help_text="Pinned decision table reference for condition nodes",
+    )
     io = OperationIOSerializer(
         required=False,
         allow_null=True,
-        help_text="Operation node data-flow contract",
+        help_text="Explicit IO contract for operation or decision nodes",
     )
     config = NodeConfigSerializer(required=False, default=dict)
     parallel_config = ParallelConfigSerializer(required=False, allow_null=True)

@@ -81,6 +81,7 @@ const dagToReactFlow = (dag: DAGStructure): { nodes: WorkflowNode[], edges: Work
         nodeType: node.type,
         templateId: node.template_id,
         operationRef: node.operation_ref,
+        decisionRef: node.decision_ref,
         config: node.config
       }
     }
@@ -107,6 +108,7 @@ const reactFlowToDag = (nodes: WorkflowNode[], edges: WorkflowEdge[]): DAGStruct
       type: node.data.nodeType,
       template_id: node.data.templateId,
       operation_ref: node.data.operationRef,
+      decision_ref: node.data.decisionRef,
       config: node.data.config,
       position: node.position
     })),
@@ -292,6 +294,7 @@ const WorkflowCanvasInner = ({
 
       const nodeType = event.dataTransfer.getData('application/workflow-node-type') as NodeType
       const nodeLabel = event.dataTransfer.getData('application/workflow-node-label')
+      const nodePreset = event.dataTransfer.getData('application/workflow-node-preset')
 
       if (!nodeType || !nodeLabel) return
 
@@ -307,6 +310,13 @@ const WorkflowCanvasInner = ({
         data: {
           label: nodeLabel,
           nodeType: nodeType,
+          templateId: nodePreset === 'approval_gate' ? 'pool.approval_gate' : undefined,
+          operationRef: nodePreset === 'approval_gate'
+            ? {
+                alias: 'pool.approval_gate',
+                binding_mode: 'alias_latest',
+              }
+            : undefined,
           config: {}
         }
       }

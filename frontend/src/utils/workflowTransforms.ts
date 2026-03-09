@@ -48,6 +48,19 @@ type RawOperationIO = {
   output_mapping?: unknown
 }
 
+type RawDecisionRef = {
+  decision_table_id?: unknown
+  decision_key?: unknown
+  decision_revision?: unknown
+}
+
+type RawSubWorkflowRef = {
+  binding_mode?: unknown
+  workflow_definition_key?: unknown
+  workflow_revision_id?: unknown
+  workflow_revision?: unknown
+}
+
 function normalizeOperationRef(raw: unknown): LegacyDAGNode['operation_ref'] {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return undefined
@@ -92,6 +105,56 @@ function normalizeOperationIO(raw: unknown): LegacyDAGNode['io'] {
     mode,
     input_mapping: normalizeMapping(candidate.input_mapping),
     output_mapping: normalizeMapping(candidate.output_mapping),
+  }
+}
+
+function normalizeDecisionRef(raw: unknown): LegacyDAGNode['decision_ref'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined
+  }
+  const candidate = raw as RawDecisionRef
+  const decisionTableId = typeof candidate.decision_table_id === 'string'
+    ? candidate.decision_table_id.trim()
+    : ''
+  const decisionKey = typeof candidate.decision_key === 'string'
+    ? candidate.decision_key.trim()
+    : ''
+  const revision = Number.parseInt(String(candidate.decision_revision ?? ''), 10)
+  if (!decisionTableId || !decisionKey || Number.isNaN(revision) || revision < 1) {
+    return undefined
+  }
+  return {
+    decision_table_id: decisionTableId,
+    decision_key: decisionKey,
+    decision_revision: revision,
+  }
+}
+
+function normalizeSubWorkflowRef(
+  raw: unknown
+): NonNullable<LegacyDAGNode['config']>['subworkflow_ref'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined
+  }
+  const candidate = raw as RawSubWorkflowRef
+  const bindingMode = candidate.binding_mode === 'pinned_revision'
+    ? 'pinned_revision'
+    : candidate.binding_mode === 'direct_runtime_id'
+      ? 'direct_runtime_id'
+      : undefined
+  const workflowDefinitionKey = typeof candidate.workflow_definition_key === 'string'
+    ? candidate.workflow_definition_key.trim()
+    : ''
+  const workflowRevisionId = typeof candidate.workflow_revision_id === 'string'
+    ? candidate.workflow_revision_id.trim()
+    : ''
+  const revision = Number.parseInt(String(candidate.workflow_revision ?? ''), 10)
+
+  return {
+    ...(bindingMode ? { binding_mode: bindingMode } : {}),
+    ...(workflowDefinitionKey ? { workflow_definition_key: workflowDefinitionKey } : {}),
+    ...(workflowRevisionId ? { workflow_revision_id: workflowRevisionId } : {}),
+    ...(Number.isNaN(revision) ? {} : { workflow_revision: revision }),
   }
 }
 
@@ -164,6 +227,9 @@ export function convertNodeToLegacy(node: GeneratedWorkflowNode): LegacyDAGNode 
   const operationRef = normalizeOperationRef(
     (node as GeneratedWorkflowNode & { operation_ref?: unknown }).operation_ref
   )
+  const decisionRef = normalizeDecisionRef(
+    (node as GeneratedWorkflowNode & { decision_ref?: unknown }).decision_ref
+  )
   const operationIo = normalizeOperationIO(
     (node as GeneratedWorkflowNode & { io?: unknown }).io
   )
@@ -190,6 +256,7 @@ export function convertNodeToLegacy(node: GeneratedWorkflowNode): LegacyDAGNode 
     // Subworkflow config
     ...(node.subworkflow_config && {
       subworkflow_id: node.subworkflow_config.subworkflow_id,
+      subworkflow_ref: normalizeSubWorkflowRef(node.subworkflow_config.subworkflow_ref),
       input_mapping: node.subworkflow_config.input_mapping as Record<string, string> | undefined,
       output_mapping: node.subworkflow_config.output_mapping as Record<string, string> | undefined,
     }),
@@ -201,6 +268,7 @@ export function convertNodeToLegacy(node: GeneratedWorkflowNode): LegacyDAGNode 
     type: node.type as LegacyDAGNode['type'],
     template_id: node.template_id ?? operationRef?.alias ?? undefined,
     operation_ref: operationRef,
+    decision_ref: decisionRef,
     io: operationIo,
     config: mergedConfig,
     // Note: position is not present in generated type, will be undefined
@@ -232,6 +300,10 @@ export function convertNodeToGenerated(node: LegacyDAGNode): GeneratedWorkflowNo
   if (operationRef) {
     ;(generatedNode as GeneratedWorkflowNode & { operation_ref?: unknown }).operation_ref = operationRef
   }
+  const decisionRef = normalizeDecisionRef(node.decision_ref)
+  if (decisionRef) {
+    ;(generatedNode as GeneratedWorkflowNode & { decision_ref?: unknown }).decision_ref = decisionRef
+  }
   const operationIo = normalizeOperationIO(node.io)
   if (operationIo) {
     ;(generatedNode as GeneratedWorkflowNode & { io?: unknown }).io = operationIo
@@ -259,6 +331,7 @@ export function convertNodeToGenerated(node: LegacyDAGNode): GeneratedWorkflowNo
   if (node.config?.subworkflow_id) {
     generatedNode.subworkflow_config = {
       subworkflow_id: node.config.subworkflow_id,
+      subworkflow_ref: node.config.subworkflow_ref,
       input_mapping: node.config.input_mapping,
       output_mapping: node.config.output_mapping,
     }

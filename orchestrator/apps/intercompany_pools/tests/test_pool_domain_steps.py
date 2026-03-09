@@ -11,7 +11,9 @@ import pytest
 from apps.databases.models import Database
 from apps.intercompany_pools.document_plan_artifact_contract import (
     DOCUMENT_PLAN_ARTIFACT_VERSION,
+    POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY,
     POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
+    POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY,
 )
 from apps.intercompany_pools.master_data_artifact_contract import (
     POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY,
@@ -42,6 +44,7 @@ from apps.intercompany_pools.pool_domain_steps import (
 from apps.intercompany_pools.runtime_distribution import DISTRIBUTION_ARTIFACT_VERSION
 from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate, WorkflowType
 from apps.tenancy.models import Tenant
+from apps.intercompany_pools.workflow_runtime import POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY
 
 
 def _create_pool_run(
@@ -622,6 +625,107 @@ def test_reconciliation_compiles_document_plan_artifact_from_edge_policy() -> No
         execution.input_context.get(POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY)
         == artifact
     )
+
+
+@pytest.mark.django_db
+def test_reconciliation_prefers_compiled_document_policy_from_execution_context() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={
+            "starting_amount": "100.00",
+            "entity_name": "Document_IntercompanyPoolDistribution",
+        },
+    )
+    edge_policy = _build_document_policy(chain_id="edge_chain")
+    compiled_policy = _build_document_policy(chain_id="compiled_chain")
+    topology = _attach_active_topology(
+        run=run,
+        left_edge_metadata={DOCUMENT_POLICY_METADATA_KEY: edge_policy},
+    )
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+            POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY: compiled_policy,
+            POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY: "workflow_binding.decision_table:doc-policy:v4",
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: {
+                "binding_mode": "pool_workflow_binding",
+                "binding_id": str(uuid4()),
+            },
+        },
+    )
+
+    execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+    reconciliation_output = execute_pool_runtime_step(
+        operation_type="pool.reconciliation_report",
+        rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    artifact = reconciliation_output.get("document_plan_artifact")
+    assert isinstance(artifact, dict)
+    assert artifact["policy_refs"][0]["source"] == "workflow_binding.decision_table:doc-policy:v4"
+
+    left_target = next(
+        target
+        for target in artifact["targets"]
+        if isinstance(target, dict) and target.get("database_id") == topology["left_database_id"]
+    )
+    assert left_target["chains"][0]["chain_id"] == "compiled_chain"
+
+
+@pytest.mark.django_db
+def test_reconciliation_fails_closed_when_workflow_binding_lacks_compiled_document_policy() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={
+            "starting_amount": "100.00",
+            "entity_name": "Document_IntercompanyPoolDistribution",
+        },
+    )
+    _attach_active_topology(
+        run=run,
+        left_edge_metadata={DOCUMENT_POLICY_METADATA_KEY: _build_document_policy(chain_id="edge_chain")},
+    )
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: {
+                "binding_mode": "pool_workflow_binding",
+                "binding_id": str(uuid4()),
+            },
+        },
+    )
+
+    execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    with pytest.raises(ValueError, match="POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_REQUIRED"):
+        execute_pool_runtime_step(
+            operation_type="pool.reconciliation_report",
+            rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
 
 
 @pytest.mark.django_db

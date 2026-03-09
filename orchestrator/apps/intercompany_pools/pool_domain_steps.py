@@ -7,9 +7,12 @@ from typing import Any, Mapping
 from django.utils import timezone
 
 from .document_plan_artifact_contract import (
+    POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY,
     POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
+    POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY,
     build_publication_payload_from_document_plan_artifact,
     compile_document_plan_artifact_v1,
+    validate_document_plan_artifact_v1,
 )
 from .distribution_artifact_contract import (
     POOL_DISTRIBUTION_ARTIFACT_INVALID,
@@ -71,6 +74,7 @@ POOL_RUNTIME_PUBLICATION_PATH_DISABLED = "POOL_RUNTIME_PUBLICATION_PATH_DISABLED
 POOL_RUNTIME_RETRY_PAYLOAD_INVALID = "POOL_RUNTIME_RETRY_PAYLOAD_INVALID"
 POOL_DISTRIBUTION_BALANCE_MISMATCH = "POOL_DISTRIBUTION_BALANCE_MISMATCH"
 POOL_DISTRIBUTION_COVERAGE_GAP = "POOL_DISTRIBUTION_COVERAGE_GAP"
+POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_REQUIRED = "POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_REQUIRED"
 MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING = "MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING"
 POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY = "pool_runtime_readiness_blockers"
 
@@ -255,26 +259,48 @@ def _execute_reconciliation(
             f"{POOL_DISTRIBUTION_COVERAGE_GAP}: missing publish-target nodes: {missing_nodes_text}"
         )
 
-    publication_payload = build_publication_payload_from_artifact(
-        artifact=distribution_artifact,
-        run_input=_run_input(run),
+    document_plan_artifact = _resolve_persisted_document_plan_artifact(
+        execution_context=execution_context
     )
-    topology = load_runtime_topology_for_period(run=run)
-    try:
-        document_plan_artifact = compile_document_plan_artifact_v1(
-            run=run,
-            distribution_artifact=distribution_artifact,
-            topology=topology,
+    if document_plan_artifact is None:
+        compiled_document_policy = _resolve_compiled_document_policy_for_execution_context(
+            execution_context=execution_context
         )
-    except ValueError as exc:
-        blocker = _build_readiness_blocker_from_error(exc)
-        if blocker is not None:
-            _update_execution_context(
-                execution=execution,
-                updates={POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY: [blocker]},
+        document_policy_source = _resolve_document_policy_source_for_execution_context(
+            execution_context=execution_context
+        )
+        if _has_workflow_binding_context(execution_context) and compiled_document_policy is None:
+            raise ValueError(
+                f"{POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_REQUIRED}: "
+                "compiled document policy is required for workflow-bound reconciliation"
             )
-        raise
-    if document_plan_artifact is not None:
+        publication_payload = build_publication_payload_from_artifact(
+            artifact=distribution_artifact,
+            run_input=_run_input(run),
+        )
+        topology = load_runtime_topology_for_period(run=run)
+        try:
+            document_plan_artifact = compile_document_plan_artifact_v1(
+                run=run,
+                distribution_artifact=distribution_artifact,
+                topology=topology,
+                compiled_document_policy=compiled_document_policy,
+                document_policy_source=document_policy_source,
+            )
+        except ValueError as exc:
+            blocker = _build_readiness_blocker_from_error(exc)
+            if blocker is not None:
+                _update_execution_context(
+                    execution=execution,
+                    updates={POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY: [blocker]},
+                )
+            raise
+        if document_plan_artifact is not None:
+            publication_payload = build_publication_payload_from_document_plan_artifact(
+                artifact=document_plan_artifact,
+                run_input=_run_input(run),
+            )
+    else:
         publication_payload = build_publication_payload_from_document_plan_artifact(
             artifact=document_plan_artifact,
             run_input=_run_input(run),
@@ -320,6 +346,39 @@ def _execute_reconciliation(
     if document_plan_artifact is not None:
         response["document_plan_artifact"] = document_plan_artifact
     return response
+
+
+def _resolve_persisted_document_plan_artifact(
+    *,
+    execution_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    artifact_raw = execution_context.get(POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY)
+    if artifact_raw is None:
+        return None
+    return validate_document_plan_artifact_v1(artifact=artifact_raw)
+
+
+def _resolve_compiled_document_policy_for_execution_context(
+    *,
+    execution_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    raw_policy = execution_context.get(POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY)
+    if not isinstance(raw_policy, Mapping):
+        return None
+    return dict(raw_policy)
+
+
+def _resolve_document_policy_source_for_execution_context(
+    *,
+    execution_context: dict[str, Any],
+) -> str | None:
+    source = str(execution_context.get(POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY) or "").strip()
+    return source or None
+
+
+def _has_workflow_binding_context(execution_context: dict[str, Any]) -> bool:
+    binding = execution_context.get("pool_workflow_binding")
+    return isinstance(binding, Mapping) and bool(binding)
 
 
 def _execute_distribution_calculation(

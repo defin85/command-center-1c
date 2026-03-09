@@ -18,6 +18,7 @@ const mockGetPoolGraph = vi.fn()
 const mockListPoolRuns = vi.fn()
 const mockGetPoolRunReport = vi.fn()
 const mockCreatePoolRun = vi.fn()
+const mockPreviewPoolWorkflowBinding = vi.fn()
 const mockRetryPoolRunFailed = vi.fn()
 const mockConfirmPoolRunPublication = vi.fn()
 const mockAbortPoolRunPublication = vi.fn()
@@ -46,6 +47,7 @@ vi.mock('../../../api/intercompanyPools', () => ({
   listPoolRuns: (...args: unknown[]) => mockListPoolRuns(...args),
   getPoolRunReport: (...args: unknown[]) => mockGetPoolRunReport(...args),
   createPoolRun: (...args: unknown[]) => mockCreatePoolRun(...args),
+  previewPoolWorkflowBinding: (...args: unknown[]) => mockPreviewPoolWorkflowBinding(...args),
   retryPoolRunFailed: (...args: unknown[]) => mockRetryPoolRunFailed(...args),
   confirmPoolRunPublication: (...args: unknown[]) => mockConfirmPoolRunPublication(...args),
   abortPoolRunPublication: (...args: unknown[]) => mockAbortPoolRunPublication(...args),
@@ -209,6 +211,76 @@ function buildWorkflowBinding(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function buildWorkflowBindingPreview(overrides: Record<string, unknown> = {}) {
+  return {
+    workflow_binding: buildWorkflowBinding({
+      decisions: [
+        {
+          decision_table_id: 'decision-1',
+          decision_key: 'invoice_mode',
+          decision_revision: 2,
+        },
+      ],
+    }),
+    compiled_document_policy: {
+      version: 'document_policy.v1',
+      targets: 3,
+    },
+    runtime_projection: {
+      version: 'pool_runtime_projection.v1',
+      run_id: 'preview-run',
+      pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      direction: 'top_down',
+      mode: 'safe',
+      workflow_definition: {
+        plan_key: 'plan-services-v7',
+        template_version: 'workflow-template:7',
+        workflow_template_name: 'compiled-services-publication',
+        workflow_type: 'sequential',
+      },
+      workflow_binding: {
+        binding_mode: 'pool_workflow_binding',
+        binding_id: 'binding-top-down',
+        pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        workflow_definition_key: 'services-publication',
+        workflow_revision_id: '77777777-7777-7777-7777-777777777777',
+        workflow_revision: 3,
+        workflow_name: 'services_publication',
+        decision_refs: [
+          {
+            decision_table_id: 'decision-1',
+            decision_key: 'invoice_mode',
+            decision_revision: 2,
+          },
+        ],
+        selector: {
+          direction: 'top_down',
+          mode: 'safe',
+          tags: [],
+        },
+        status: 'active',
+      },
+      document_policy_projection: {
+        source_mode: 'decision_tables',
+        policy_refs: [{ policy_id: 'policy-1' }],
+        policy_refs_count: 1,
+        targets_count: 3,
+      },
+      artifacts: {
+        document_plan_artifact_version: 'document_plan_artifact.v1',
+        topology_version_ref: 'topology:v7',
+        distribution_artifact_ref: { id: 'distribution-artifact:v7' },
+      },
+      compile_summary: {
+        steps_count: 5,
+        atomic_publication_steps_count: 3,
+        compiled_targets_count: 3,
+      },
+    },
+    ...overrides,
+  }
+}
+
 function renderPage() {
   window.history.pushState({}, '', '/pools/runs')
   return render(
@@ -235,6 +307,7 @@ describe('PoolRunsPage', () => {
     mockListPoolRuns.mockReset()
     mockGetPoolRunReport.mockReset()
     mockCreatePoolRun.mockReset()
+    mockPreviewPoolWorkflowBinding.mockReset()
     mockRetryPoolRunFailed.mockReset()
     mockConfirmPoolRunPublication.mockReset()
     mockAbortPoolRunPublication.mockReset()
@@ -294,6 +367,7 @@ describe('PoolRunsPage', () => {
     mockListPoolRuns.mockResolvedValue([run])
     mockGetPoolRunReport.mockResolvedValue(buildReport(run))
     mockCreatePoolRun.mockResolvedValue({ run, created: true })
+    mockPreviewPoolWorkflowBinding.mockResolvedValue(buildWorkflowBindingPreview())
     mockRetryPoolRunFailed.mockResolvedValue({
       accepted: true,
       workflow_execution_id: '22222222-2222-2222-2222-222222222222',
@@ -958,6 +1032,28 @@ describe('PoolRunsPage', () => {
     expect(payload.pool_workflow_binding_id).toBe('binding-top-down')
     expect(payload.run_input).toEqual({ starting_amount: '100.00' })
     expect(payload).not.toHaveProperty('source_hash')
+  }, 15000)
+
+  it('previews effective workflow binding before run start', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await openRunsStage(user, 'Create')
+    await user.click(await screen.findByTestId('pool-runs-create-preview'))
+
+    await waitFor(() => expect(mockPreviewPoolWorkflowBinding).toHaveBeenCalledTimes(1))
+    expect(mockPreviewPoolWorkflowBinding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        pool_workflow_binding_id: 'binding-top-down',
+        direction: 'top_down',
+        mode: 'safe',
+      })
+    )
+    expect(await screen.findByTestId('pool-runs-binding-preview')).toBeInTheDocument()
+    expect(screen.getByText('invoice_mode r2')).toBeInTheDocument()
+    expect(screen.getByText('compiled targets: 3')).toBeInTheDocument()
+    expect(screen.getByText('decision_tables')).toBeInTheDocument()
   }, 15000)
 
   it('submits bottom_up create-run payload with source_payload and selected schema template', async () => {

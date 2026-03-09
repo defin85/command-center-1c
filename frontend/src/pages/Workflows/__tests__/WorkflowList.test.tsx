@@ -51,10 +51,10 @@ describe('WorkflowList', () => {
       count: 0,
       total: 0,
       authoring_phase: {
-        phase: 'workflow_centric_prerequisite',
-        label: 'Workflow-centric prerequisite phase',
-        description: 'Workflows are becoming the primary analyst-facing scheme library for pools.',
-        is_prerequisite_platform_phase: true,
+        phase: 'workflow_centric_active',
+        label: 'Workflow-centric active phase',
+        description: 'Workflow-centric analyst modeling is active for pools and drives runtime projection for new scheme authoring.',
+        is_prerequisite_platform_phase: false,
         analyst_surface: '/workflows',
         rollout_scope: ['pool_distribution', 'pool_publication'],
         deferred_scope: ['extensions.*', 'database.ib_user.*'],
@@ -74,11 +74,11 @@ describe('WorkflowList', () => {
     renderPage()
 
     await waitFor(() => {
-      expect(screen.getByText('Workflow-centric prerequisite phase')).toBeInTheDocument()
+      expect(screen.getByText('Workflow-centric active phase')).toBeInTheDocument()
     })
 
     expect(
-      screen.getByText('Workflows are becoming the primary analyst-facing scheme library for pools.')
+      screen.getByText('Workflow-centric analyst modeling is active for pools and drives runtime projection for new scheme authoring.')
     ).toBeInTheDocument()
     expect(screen.getByText('Workflow Scheme Library')).toBeInTheDocument()
     expect(

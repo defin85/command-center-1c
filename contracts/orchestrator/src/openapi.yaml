@@ -138,6 +138,10 @@ paths:
     $ref: paths/api_v2_mappings_preview_.yaml
   /api/v2/mappings/upsert/:
     $ref: paths/api_v2_mappings_upsert_.yaml
+  /api/v2/decisions/:
+    $ref: paths/api_v2_decisions_.yaml
+  /api/v2/decisions/{decision_id}/:
+    $ref: paths/api_v2_decisions_{decision_id}_.yaml
   /api/v2/operation-catalog/definitions/:
     $ref: paths/api_v2_operation-catalog_definitions_.yaml
   /api/v2/operation-catalog/definitions/{definition_id}/:
@@ -190,6 +194,8 @@ paths:
     $ref: paths/api_v2_operations_stream-unsubscribe_.yaml
   /api/v2/pools/:
     $ref: paths/api_v2_pools_.yaml
+  /api/v2/pools/workflow-bindings/preview/:
+    $ref: paths/api_v2_pools_workflow-bindings_preview_.yaml
   /api/v2/pools/master-data/bindings/:
     $ref: paths/api_v2_pools_master-data_bindings_.yaml
   /api/v2/pools/master-data/bindings/{id}/:

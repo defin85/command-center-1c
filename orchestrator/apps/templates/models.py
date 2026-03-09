@@ -8,6 +8,7 @@ from django.utils import timezone
 
 # Import workflow models to make them discoverable by Django migrations
 from .workflow.models import (  # noqa: F401
+    DecisionTable,
     WorkflowType,
     WorkflowTemplate,
     WorkflowExecution,

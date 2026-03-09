@@ -30,7 +30,10 @@ import type {
   WorkflowNodeData,
   NodeConfig,
   OperationTemplateListItem,
+  AvailableWorkflowRevision,
+  AvailableDecisionRevision,
   OperationRef,
+  DecisionRef,
   OperationIO,
   OperationIOMode,
 } from '../../types/workflow'
@@ -55,7 +58,9 @@ interface PropertyEditorProps {
   // Available operation templates (for operation nodes)
   operationTemplates?: OperationTemplateListItem[]
   // Available workflows (for subworkflow nodes)
-  availableWorkflows?: { id: string; name: string }[]
+  availableWorkflows?: AvailableWorkflowRevision[]
+  // Available decisions (for decision-gate nodes)
+  availableDecisions?: AvailableDecisionRevision[]
   // Read-only mode (monitor mode)
   readOnly?: boolean
 }
@@ -346,41 +351,133 @@ const OperationForm = ({
 // Form for Condition node
 const ConditionForm = ({
   config,
+  decisionRef,
   onChange,
+  onDecisionChange,
+  availableDecisions,
   readOnly,
   idPrefix,
 }: {
   config: NodeConfig
+  decisionRef?: DecisionRef
   onChange: (config: NodeConfig) => void
+  onDecisionChange: (decisionRef?: DecisionRef) => void
+  availableDecisions: AvailableDecisionRevision[]
   readOnly: boolean
   idPrefix: string
-}) => (
-  <>
-    <Form.Item
-      label="Expression"
-      htmlFor={`${idPrefix}-condition-expression`}
-      required
-      help="Jinja2 expression that evaluates to true/false. Example: {{ amount > 100 }}"
-    >
-      <TextArea
-        id={`${idPrefix}-condition-expression`}
-        value={config.expression}
-        placeholder="{{ variable > value }}"
-        disabled={readOnly}
-        rows={3}
-        onChange={(e) => onChange({ ...config, expression: e.target.value })}
-      />
-    </Form.Item>
+}) => {
+  const selectedDecisionValue = decisionRef
+    ? `${decisionRef.decision_table_id}:${decisionRef.decision_revision}`
+    : undefined
+  const selectedDecision = decisionRef
+    ? availableDecisions.find(
+        (decision) => (
+          decision.decisionTableId === decisionRef.decision_table_id
+          && decision.decisionRevision === decisionRef.decision_revision
+        )
+      )
+    : undefined
+  const compiledExpression = decisionRef
+    ? `{{ decisions.${decisionRef.decision_key} }}`
+    : ''
 
-    <Alert
-      type="info"
-      message="Available variables"
-      description="Use {{ variable_name }} to access context variables. Results from previous nodes are available as {{ node_id.output.field }}."
-      showIcon
-      style={{ marginTop: 8 }}
-    />
-  </>
-)
+  return (
+    <>
+      <Form.Item
+        label="Decision Table"
+        htmlFor={`${idPrefix}-condition-decision`}
+        help="Pin a fail-closed decision table for analyst-facing routing. Leave empty only for legacy expression mode."
+      >
+        <Select
+          id={`${idPrefix}-condition-decision`}
+          data-testid={`${idPrefix}-condition-decision`}
+          value={selectedDecisionValue}
+          placeholder="Select decision table"
+          disabled={readOnly}
+          showSearch
+          allowClear
+          optionFilterProp="label"
+          onChange={(value) => {
+            if (!value) {
+              onDecisionChange(undefined)
+              return
+            }
+            const selected = availableDecisions.find(
+              (decision) => `${decision.decisionTableId}:${decision.decisionRevision}` === value
+            )
+            onDecisionChange(selected
+              ? {
+                  decision_table_id: selected.decisionTableId,
+                  decision_key: selected.decisionKey,
+                  decision_revision: selected.decisionRevision,
+                }
+              : undefined)
+          }}
+          options={availableDecisions.map((decision) => ({
+            value: `${decision.decisionTableId}:${decision.decisionRevision}`,
+            label: `${decision.name} (${decision.decisionKey}) · r${decision.decisionRevision}`,
+          }))}
+        />
+      </Form.Item>
+
+      {decisionRef ? (
+        <>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="Decision-gate expression is managed by the pinned decision table"
+            description={
+              selectedDecision
+                ? `${selectedDecision.name} evaluates into decisions.${selectedDecision.decisionKey} and is compiled fail-closed.`
+                : 'Pinned decision ref is preserved in the workflow definition and compiled into decisions.<key>.'
+            }
+          />
+          <Form.Item
+            label="Compiled Expression"
+            htmlFor={`${idPrefix}-condition-expression`}
+            help="Read-only compatibility expression synthesized from decision_ref."
+          >
+            <TextArea
+              id={`${idPrefix}-condition-expression`}
+              data-testid={`${idPrefix}-condition-expression`}
+              value={compiledExpression}
+              disabled
+              rows={2}
+            />
+          </Form.Item>
+        </>
+      ) : (
+        <>
+          <Form.Item
+            label="Legacy Expression"
+            htmlFor={`${idPrefix}-condition-expression`}
+            required
+            help="Jinja2 expression that evaluates to true/false. Example: {{ amount > 100 }}"
+          >
+            <TextArea
+              id={`${idPrefix}-condition-expression`}
+              data-testid={`${idPrefix}-condition-expression`}
+              value={config.expression}
+              placeholder="{{ variable > value }}"
+              disabled={readOnly}
+              rows={3}
+              onChange={(e) => onChange({ ...config, expression: e.target.value })}
+            />
+          </Form.Item>
+
+          <Alert
+            type="warning"
+            message="Legacy condition mode"
+            description="Prefer a pinned decision table for default analyst authoring; raw expressions remain only for compatibility."
+            showIcon
+            style={{ marginTop: 8 }}
+          />
+        </>
+      )}
+    </>
+  )
+}
 
 // Form for Parallel node
 const ParallelForm = ({
@@ -535,7 +632,7 @@ const SubWorkflowForm = ({
 }: {
   config: NodeConfig
   onChange: (config: NodeConfig) => void
-  workflows: { id: string; name: string }[]
+  workflows: AvailableWorkflowRevision[]
   readOnly: boolean
   idPrefix: string
 }) => {
@@ -600,18 +697,46 @@ const SubWorkflowForm = ({
 
   return (
     <>
-      <Form.Item label="Sub-Workflow" htmlFor={`${idPrefix}-subworkflow`} required>
+      <Form.Item
+        label="Sub-Workflow"
+        htmlFor={`${idPrefix}-subworkflow`}
+        required
+        help="Analyst-facing subworkflow calls pin an explicit workflow revision by default."
+      >
         <Select
           id={`${idPrefix}-subworkflow`}
-          value={config.subworkflow_id}
+          data-testid={`${idPrefix}-subworkflow`}
+          value={config.subworkflow_ref?.workflow_revision_id ?? config.subworkflow_id}
           placeholder="Select workflow"
           disabled={readOnly}
           showSearch
-          optionFilterProp="children"
-          onChange={(value) => onChange({ ...config, subworkflow_id: value })}
+          optionFilterProp="label"
+          onChange={(value) => {
+            const selectedWorkflow = workflows.find(
+              (workflow) => workflow.workflowRevisionId === value
+            )
+            if (!selectedWorkflow) {
+              onChange({
+                ...config,
+                subworkflow_id: value,
+                subworkflow_ref: undefined,
+              })
+              return
+            }
+            onChange({
+              ...config,
+              subworkflow_id: selectedWorkflow.workflowRevisionId,
+              subworkflow_ref: {
+                binding_mode: 'pinned_revision',
+                workflow_definition_key: selectedWorkflow.workflowDefinitionKey,
+                workflow_revision_id: selectedWorkflow.workflowRevisionId,
+                workflow_revision: selectedWorkflow.workflowRevision,
+              },
+            })
+          }}
           options={workflows.map((w) => ({
-            value: w.id,
-            label: w.name
+            value: w.workflowRevisionId,
+            label: `${w.name} · r${w.workflowRevision}`
           }))}
         />
       </Form.Item>
@@ -660,6 +785,7 @@ const PropertyEditor = ({
   onNodeDuplicate,
   operationTemplates = [],
   availableWorkflows = [],
+  availableDecisions = [],
   readOnly = false
 }: PropertyEditorProps) => {
   const [localData, setLocalData] = useState<WorkflowNodeData | null>(null)
@@ -695,6 +821,17 @@ const PropertyEditor = ({
   const handleIoChange = (io: OperationIO) => {
     setLocalData({ ...localData, io })
     onNodeUpdate(nodeId, { io })
+  }
+
+  const handleDecisionChange = (decisionRef?: DecisionRef) => {
+    const nextConfig: NodeConfig = decisionRef
+      ? {
+          ...(localData.config || {}),
+          expression: `{{ decisions.${decisionRef.decision_key} }}`,
+        }
+      : { ...(localData.config || {}) }
+    setLocalData({ ...localData, decisionRef, config: nextConfig })
+    onNodeUpdate(nodeId, { decisionRef, config: nextConfig })
   }
 
   const handleTemplateChange = (templateId?: string) => {
@@ -766,7 +903,10 @@ const PropertyEditor = ({
         return (
           <ConditionForm
             config={config}
+            decisionRef={localData.decisionRef}
             onChange={handleConfigChange}
+            onDecisionChange={handleDecisionChange}
+            availableDecisions={availableDecisions}
             readOnly={readOnly}
             idPrefix={idPrefix}
           />

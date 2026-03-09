@@ -11,9 +11,8 @@ import { Card, Typography, Tooltip } from 'antd'
 import {
   ToolOutlined,
   BranchesOutlined,
-  ForkOutlined,
-  SyncOutlined,
-  ApartmentOutlined
+  ApartmentOutlined,
+  CheckCircleOutlined
 } from '@ant-design/icons'
 import type { NodeType } from '../../types/workflow'
 import { NODE_TYPE_INFO } from '../../types/workflow'
@@ -25,37 +24,84 @@ const { Title } = Typography
 const nodeIcons: Record<NodeType, React.ReactNode> = {
   operation: <ToolOutlined />,
   condition: <BranchesOutlined />,
-  parallel: <ForkOutlined />,
-  loop: <SyncOutlined />,
+  parallel: <ToolOutlined />,
+  loop: <ToolOutlined />,
   subworkflow: <ApartmentOutlined />
 }
 
-interface NodePaletteItemProps {
+type PaletteItem = {
+  key: string
   type: NodeType
+  label: string
+  description: string
+  color: string
+  icon: React.ReactNode
+  preset?: 'approval_gate'
 }
 
-const NodePaletteItem = ({ type }: NodePaletteItemProps) => {
-  const info = NODE_TYPE_INFO[type]
+const paletteItems: PaletteItem[] = [
+  {
+    key: 'operation_task',
+    type: 'operation',
+    label: NODE_TYPE_INFO.operation.label,
+    description: NODE_TYPE_INFO.operation.description,
+    color: NODE_TYPE_INFO.operation.color,
+    icon: nodeIcons.operation,
+  },
+  {
+    key: 'decision_gate',
+    type: 'condition',
+    label: NODE_TYPE_INFO.condition.label,
+    description: NODE_TYPE_INFO.condition.description,
+    color: NODE_TYPE_INFO.condition.color,
+    icon: nodeIcons.condition,
+  },
+  {
+    key: 'approval_gate',
+    type: 'operation',
+    label: 'Approval Gate',
+    description: 'Insert the operator approval checkpoint used by safe-mode publication workflows.',
+    color: '#13c2c2',
+    icon: <CheckCircleOutlined />,
+    preset: 'approval_gate',
+  },
+  {
+    key: 'subworkflow_call',
+    type: 'subworkflow',
+    label: NODE_TYPE_INFO.subworkflow.label,
+    description: NODE_TYPE_INFO.subworkflow.description,
+    color: NODE_TYPE_INFO.subworkflow.color,
+    icon: nodeIcons.subworkflow,
+  },
+]
 
+interface NodePaletteItemProps {
+  item: PaletteItem
+}
+
+const NodePaletteItem = ({ item }: NodePaletteItemProps) => {
   const onDragStart = (event: React.DragEvent) => {
-    event.dataTransfer.setData('application/workflow-node-type', type)
-    event.dataTransfer.setData('application/workflow-node-label', `New ${info.label}`)
+    event.dataTransfer.setData('application/workflow-node-type', item.type)
+    event.dataTransfer.setData('application/workflow-node-label', `New ${item.label}`)
+    if (item.preset) {
+      event.dataTransfer.setData('application/workflow-node-preset', item.preset)
+    }
     event.dataTransfer.effectAllowed = 'move'
   }
 
   return (
-    <Tooltip title={info.description} placement="right">
+    <Tooltip title={item.description} placement="right">
       <div
         className="node-palette-item"
         draggable
         onDragStart={onDragStart}
-        style={{ borderLeftColor: info.color }}
+        style={{ borderLeftColor: item.color }}
       >
-        <div className="palette-item-icon" style={{ color: info.color }}>
-          {nodeIcons[type]}
+        <div className="palette-item-icon" style={{ color: item.color }}>
+          {item.icon}
         </div>
         <div className="palette-item-content">
-          <span className="palette-item-label">{info.label}</span>
+          <span className="palette-item-label">{item.label}</span>
         </div>
       </div>
     </Tooltip>
@@ -70,19 +116,22 @@ const NodePalette = ({ collapsed = false }: NodePaletteProps) => {
   if (collapsed) {
     return (
       <div className="node-palette collapsed">
-        {(Object.keys(NODE_TYPE_INFO) as NodeType[]).map((type) => (
-          <Tooltip key={type} title={NODE_TYPE_INFO[type].label} placement="right">
+        {paletteItems.map((item) => (
+          <Tooltip key={item.key} title={item.label} placement="right">
             <div
               className="node-palette-item-collapsed"
               draggable
               onDragStart={(e) => {
-                e.dataTransfer.setData('application/workflow-node-type', type)
-                e.dataTransfer.setData('application/workflow-node-label', `New ${NODE_TYPE_INFO[type].label}`)
+                e.dataTransfer.setData('application/workflow-node-type', item.type)
+                e.dataTransfer.setData('application/workflow-node-label', `New ${item.label}`)
+                if (item.preset) {
+                  e.dataTransfer.setData('application/workflow-node-preset', item.preset)
+                }
                 e.dataTransfer.effectAllowed = 'move'
               }}
-              style={{ color: NODE_TYPE_INFO[type].color }}
+              style={{ color: item.color }}
             >
-              {nodeIcons[type]}
+              {item.icon}
             </div>
           </Tooltip>
         ))}
@@ -96,11 +145,11 @@ const NodePalette = ({ collapsed = false }: NodePaletteProps) => {
         Scheme Building Blocks
       </Title>
       <div className="palette-description">
-        Compose reusable analyst-authored schemes from operations, decision gates, parallel stages, repeat stages, and subworkflow calls
+        Compose reusable analyst-authored schemes from operation tasks, decision gates, approval gates, and pinned subworkflow calls
       </div>
       <div className="palette-items">
-        {(Object.keys(NODE_TYPE_INFO) as NodeType[]).map((type) => (
-          <NodePaletteItem key={type} type={type} />
+        {paletteItems.map((item) => (
+          <NodePaletteItem key={item.key} item={item} />
         ))}
       </div>
     </Card>

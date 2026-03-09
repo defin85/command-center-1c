@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from apps.runtime_settings.models import RuntimeSetting
 from apps.templates.models import OperationDefinition, OperationExposure
+from apps.templates.workflow.decision_tables import create_decision_table_revision
 from apps.templates.workflow.handlers import (
     NodeExecutionMode,
     NodeExecutionResult,
@@ -913,6 +914,68 @@ class TestConditionHandler:
 
         # Should fail (sandbox prevents import)
         assert result.success is False
+
+    def test_condition_handler_evaluates_pinned_decision_ref_and_applies_output_mapping(
+        self,
+        workflow_execution,
+    ):
+        decision = create_decision_table_revision(
+            contract={
+                "decision_table_id": f"route-policy-{uuid4().hex[:8]}",
+                "decision_key": "route_policy",
+                "name": "Route Policy",
+                "inputs": [
+                    {"name": "direction", "value_type": "string", "required": True},
+                    {"name": "mode", "value_type": "string", "required": True},
+                ],
+                "outputs": [
+                    {"name": "route_policy", "value_type": "string", "required": True},
+                ],
+                "rules": [
+                    {
+                        "rule_id": "safe-bottom-up",
+                        "priority": 0,
+                        "conditions": {"direction": "bottom_up", "mode": "safe"},
+                        "outputs": {"route_policy": "publish"},
+                    }
+                ],
+            }
+        )
+        node = WorkflowNode(
+            id="decision_gate",
+            name="Decision Gate",
+            type="condition",
+            decision_ref={
+                "decision_table_id": decision.decision_table_id,
+                "decision_key": decision.decision_key,
+                "decision_revision": decision.version_number,
+            },
+            io={
+                "mode": "explicit_strict",
+                "input_mapping": {
+                    "direction": "direction",
+                    "mode": "mode",
+                },
+                "output_mapping": {
+                    "workflow.state.route_policy": "result.route_policy",
+                },
+            },
+            config=NodeConfig(),
+        )
+
+        handler = ConditionHandler()
+        result = handler.execute(
+            node,
+            {"direction": "bottom_up", "mode": "safe"},
+            workflow_execution,
+        )
+
+        assert result.success is True
+        assert result.output is True
+        assert result.context_updates == {
+            "decisions.route_policy": "publish",
+            "workflow.state.route_policy": "publish",
+        }
 
 
 # ========== Integration Tests ==========

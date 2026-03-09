@@ -37,6 +37,11 @@ properties:
       - $ref: ./OperationRef.yaml
     nullable: true
     description: OperationExposure binding for Operation nodes
+  decision_ref:
+    allOf:
+      - $ref: ./DecisionTableRef.yaml
+    nullable: true
+    description: Pinned decision table reference for decision-gate nodes
   io:
     allOf:
       - $ref: ./OperationIO.yaml

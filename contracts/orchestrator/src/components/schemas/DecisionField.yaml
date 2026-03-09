@@ -1,0 +1,13 @@
+type: object
+description: Decision table field definition.
+properties:
+  name:
+    type: string
+  value_type:
+    type: string
+  required:
+    type: boolean
+    default: true
+required:
+  - name
+  - value_type

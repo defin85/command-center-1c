@@ -14,16 +14,16 @@ from apps.tenancy.models import Tenant
 
 
 @pytest.mark.django_db
-def test_master_data_gate_flag_uses_env_default_when_db_values_are_absent() -> None:
-    with override_settings(POOL_RUNTIME_MASTER_DATA_GATE_ENABLED=True):
+def test_master_data_gate_flag_uses_disabled_env_default_when_db_values_are_absent() -> None:
+    with override_settings(POOL_RUNTIME_MASTER_DATA_GATE_ENABLED=False):
         resolution = resolve_pool_master_data_gate_flag(tenant_id=None)
 
     assert resolution.source == "env_default"
-    assert resolution.raw_value is True
-    assert resolution.value is True
+    assert resolution.raw_value is False
+    assert resolution.value is False
 
-    with override_settings(POOL_RUNTIME_MASTER_DATA_GATE_ENABLED=True):
-        assert is_pool_master_data_gate_enabled() is True
+    with override_settings(POOL_RUNTIME_MASTER_DATA_GATE_ENABLED=False):
+        assert is_pool_master_data_gate_enabled() is False
 
 
 @pytest.mark.django_db

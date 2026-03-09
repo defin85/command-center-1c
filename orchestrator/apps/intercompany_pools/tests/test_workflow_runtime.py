@@ -8,6 +8,12 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from apps.databases.models import Database, InfobaseUserMapping
+from apps.intercompany_pools.document_plan_artifact_contract import (
+    POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY,
+    POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
+    POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY,
+)
+from apps.intercompany_pools.document_policy_contract import DOCUMENT_POLICY_VERSION
 from apps.intercompany_pools.master_data_artifact_contract import (
     MASTER_DATA_BINDING_ARTIFACT_VERSION,
     MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
@@ -20,6 +26,7 @@ from apps.intercompany_pools.runtime_projection_contract import (
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationPool,
+    PoolEdgeVersion,
     PoolNodeVersion,
     PoolPublicationAttempt,
     PoolPublicationAttemptStatus,
@@ -29,6 +36,7 @@ from apps.intercompany_pools.models import (
     PoolSchemaTemplate,
     PoolSchemaTemplateFormat,
 )
+from apps.intercompany_pools.pool_domain_steps import execute_pool_runtime_step
 from apps.intercompany_pools.runs import build_pool_run_idempotency_key
 from apps.intercompany_pools.workflow_authoring_contract import PoolWorkflowBindingContract
 from apps.intercompany_pools.workflow_runtime import (
@@ -37,7 +45,8 @@ from apps.intercompany_pools.workflow_runtime import (
     start_pool_run_workflow_execution,
 )
 from apps.operations.services.operations_service.types import EnqueueResult
-from apps.templates.workflow.models import WorkflowExecution
+from apps.templates.workflow.decision_tables import create_decision_table_revision
+from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate, WorkflowType
 from apps.tenancy.models import Tenant
 
 
@@ -100,6 +109,49 @@ def _attach_pool_target_database(
     pool: OrganizationPool,
     period_start: date,
 ) -> Database:
+    existing_root = (
+        PoolNodeVersion.objects.select_related("organization")
+        .filter(
+            pool=pool,
+            is_root=True,
+            effective_from__lte=period_start,
+        )
+        .order_by("-effective_from")
+        .first()
+    )
+    if existing_root is None:
+        root_organization = Organization.objects.create(
+            tenant=tenant,
+            name=f"Root Org {uuid4().hex[:6]}",
+            inn=f"72{uuid4().hex[:10]}",
+        )
+        existing_root = PoolNodeVersion.objects.create(
+            pool=pool,
+            organization=root_organization,
+            effective_from=period_start,
+            is_root=True,
+        )
+
+    existing_target = (
+        PoolNodeVersion.objects.select_related("organization__database")
+        .filter(
+            pool=pool,
+            is_root=False,
+            organization__database__isnull=False,
+            effective_from__lte=period_start,
+        )
+        .order_by("-effective_from")
+        .first()
+    )
+    if existing_target is not None and existing_target.organization.database is not None:
+        PoolEdgeVersion.objects.get_or_create(
+            pool=pool,
+            parent_node=existing_root,
+            child_node=existing_target,
+            effective_from=existing_target.effective_from,
+        )
+        return existing_target.organization.database
+
     database = Database.objects.create(
         tenant=tenant,
         name=f"pool-runtime-db-{uuid4().hex[:8]}",
@@ -114,13 +166,264 @@ def _attach_pool_target_database(
         name=f"Org {uuid4().hex[:6]}",
         inn=f"73{uuid4().hex[:10]}",
     )
-    PoolNodeVersion.objects.create(
+    target_node = PoolNodeVersion.objects.create(
         pool=pool,
         organization=organization,
         effective_from=period_start,
-        is_root=True,
+    )
+    PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=existing_root,
+        child_node=target_node,
+        effective_from=period_start,
     )
     return database
+
+
+def _build_document_policy_decision_payload(*, decision_table_id: str) -> dict[str, object]:
+    return {
+        "decision_table_id": decision_table_id,
+        "decision_key": "document_policy",
+        "name": "Runtime Test Document Policy",
+        "inputs": [
+            {"name": "direction", "value_type": "string", "required": True},
+            {"name": "mode", "value_type": "string", "required": True},
+        ],
+        "outputs": [
+            {"name": "document_policy", "value_type": "json", "required": True},
+        ],
+        "rules": [
+            {
+                "rule_id": "default",
+                "priority": 0,
+                "conditions": {},
+                "outputs": {
+                    "document_policy": {
+                        "version": DOCUMENT_POLICY_VERSION,
+                        "chains": [
+                            {
+                                "chain_id": "sale_chain",
+                                "documents": [
+                                    {
+                                        "document_id": "sale",
+                                        "entity_name": "Document_Sales",
+                                        "document_role": "base",
+                                        "field_mapping": {"Amount": "allocation.amount"},
+                                        "table_parts_mapping": {},
+                                        "link_rules": {},
+                                        "invoice_mode": "required",
+                                    },
+                                    {
+                                        "document_id": "invoice",
+                                        "entity_name": "Document_Invoice",
+                                        "document_role": "invoice",
+                                        "field_mapping": {"BaseDocument": "sale.ref"},
+                                        "table_parts_mapping": {},
+                                        "link_rules": {"depends_on": "sale"},
+                                        "link_to": "sale",
+                                    },
+                                ],
+                            }
+                        ],
+                    }
+                },
+            }
+        ],
+    }
+
+
+def _create_runtime_workflow_template(
+    *,
+    direction: str,
+) -> tuple[WorkflowTemplate, WorkflowTemplate]:
+    distribution_alias = (
+        "pool.distribution_calculation.top_down"
+        if direction == PoolRunDirection.TOP_DOWN
+        else "pool.distribution_calculation.bottom_up"
+    )
+    root = WorkflowTemplate.objects.create(
+        name=f"runtime-workflow-{uuid4().hex[:8]}",
+        description="",
+        workflow_type=WorkflowType.SEQUENTIAL,
+        dag_structure={
+            "nodes": [
+                {
+                    "id": "prepare_input",
+                    "name": "Prepare Input",
+                    "type": "operation",
+                    "template_id": "pool.prepare_input",
+                },
+                {
+                    "id": "distribution",
+                    "name": "Distribution",
+                    "type": "operation",
+                    "template_id": distribution_alias,
+                },
+                {
+                    "id": "reconciliation",
+                    "name": "Reconciliation",
+                    "type": "operation",
+                    "template_id": "pool.reconciliation_report",
+                },
+                {
+                    "id": "approval_gate",
+                    "name": "Approval Gate",
+                    "type": "operation",
+                    "template_id": "pool.approval_gate",
+                },
+                {
+                    "id": "publication",
+                    "name": "Publication",
+                    "type": "operation",
+                    "template_id": "pool.publication_odata",
+                },
+            ],
+            "edges": [
+                {"from": "prepare_input", "to": "distribution"},
+                {"from": "distribution", "to": "reconciliation"},
+                {"from": "reconciliation", "to": "approval_gate"},
+                {"from": "approval_gate", "to": "publication", "condition": "{{approved_at}}"},
+            ],
+        },
+        config={"timeout_seconds": 86400, "max_retries": 0},
+        is_valid=True,
+        is_active=True,
+        version_number=1,
+    )
+    revision = root
+    for version_number in (2, 3):
+        revision = WorkflowTemplate.objects.create(
+            name=root.name,
+            description=root.description,
+            workflow_type=root.workflow_type,
+            dag_structure=root.dag_structure,
+            config=root.config,
+            is_valid=True,
+            is_active=True,
+            parent_version=revision,
+            version_number=version_number,
+        )
+    return root, revision
+
+
+def _ensure_runtime_test_workflow_binding(*, run: PoolRun) -> dict[str, object]:
+    metadata = run.pool.metadata if isinstance(run.pool.metadata, dict) else {}
+    raw_bindings = metadata.get("workflow_bindings")
+    if isinstance(raw_bindings, list):
+        for raw_binding in raw_bindings:
+            if isinstance(raw_binding, dict):
+                return raw_binding
+
+    _attach_pool_target_database(
+        tenant=run.tenant,
+        pool=run.pool,
+        period_start=run.period_start,
+    )
+    decision = create_decision_table_revision(
+        contract=_build_document_policy_decision_payload(
+            decision_table_id=f"runtime-doc-policy-{uuid4().hex[:8]}"
+        )
+    )
+    workflow_root, workflow = _create_runtime_workflow_template(direction=run.direction)
+    binding = {
+        "binding_id": str(uuid4()),
+        "pool_id": str(run.pool_id),
+        "workflow": {
+            "workflow_definition_key": str(workflow_root.id),
+            "workflow_revision_id": str(workflow.id),
+            "workflow_revision": workflow.version_number,
+            "workflow_name": workflow.name,
+        },
+        "decisions": [
+            {
+                "decision_table_id": decision.decision_table_id,
+                "decision_key": decision.decision_key,
+                "decision_revision": decision.version_number,
+            }
+        ],
+        "selector": {
+            "direction": run.direction,
+            "mode": run.mode,
+            "tags": [],
+        },
+        "effective_from": run.period_start.isoformat(),
+        "status": "active",
+    }
+    run.pool.metadata = {
+        **metadata,
+        "workflow_bindings": [binding],
+    }
+    run.pool.save(update_fields=["metadata", "updated_at"])
+    return binding
+
+
+def _ensure_service_mapping(*, database: Database) -> None:
+    if InfobaseUserMapping.objects.filter(database=database, is_service=True).exists():
+        return
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=None,
+        ib_username=f"svc-{uuid4().hex[:8]}",
+        ib_password="svc-pass",
+        is_service=True,
+    )
+
+
+def _ensure_actor_mapping(*, database: Database, actor: User) -> None:
+    if InfobaseUserMapping.objects.filter(database=database, user=actor, is_service=False).exists():
+        return
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=actor,
+        ib_username=f"actor-{actor.username}-{uuid4().hex[:4]}",
+        ib_password="actor-pass",
+        is_service=False,
+    )
+
+
+def _start_runtime_workflow_execution(
+    *,
+    run: PoolRun,
+    requested_by: User | None = None,
+    workflow_binding: dict[str, object] | None = None,
+):
+    binding = workflow_binding or _ensure_runtime_test_workflow_binding(run=run)
+    database = _attach_pool_target_database(
+        tenant=run.tenant,
+        pool=run.pool,
+        period_start=run.period_start,
+    )
+    if requested_by is None:
+        _ensure_service_mapping(database=database)
+    else:
+        _ensure_actor_mapping(database=database, actor=requested_by)
+    return start_pool_run_workflow_execution(
+        run=run,
+        requested_by=requested_by,
+        workflow_binding=binding,
+    )
+
+
+def _start_runtime_retry_workflow_execution(
+    *,
+    run: PoolRun,
+    retry_request: dict[str, object],
+    requested_by: User | None = None,
+):
+    database = _attach_pool_target_database(
+        tenant=run.tenant,
+        pool=run.pool,
+        period_start=run.period_start,
+    )
+    if requested_by is None:
+        _ensure_service_mapping(database=database)
+    else:
+        _ensure_actor_mapping(database=database, actor=requested_by)
+    return start_pool_run_retry_workflow_execution(
+        run=run,
+        retry_request=retry_request,
+        requested_by=requested_by,
+    )
 
 
 def _build_document_plan_artifact_for_compile() -> dict[str, object]:
@@ -220,7 +523,7 @@ def _build_workflow_binding_payload(*, pool_id: str) -> dict[str, object]:
 
 
 @pytest.mark.django_db
-def test_start_pool_run_workflow_execution_persists_pinned_binding_snapshot() -> None:
+def test_start_pool_run_workflow_execution_requires_explicit_pool_workflow_binding() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
     run.schema_template = PoolSchemaTemplate.objects.create(
         tenant=run.tenant,
@@ -242,35 +545,14 @@ def test_start_pool_run_workflow_execution_persists_pinned_binding_snapshot() ->
             error_code=None,
         ),
     ):
-        result = start_pool_run_workflow_execution(run=run)
-
-    execution = WorkflowExecution.objects.get(id=result.execution_id)
-    operation_bindings = execution.execution_plan.get("operation_bindings")
-    assert isinstance(operation_bindings, list)
-    assert len(operation_bindings) >= 4
-    assert all(item.get("binding_mode") == "pinned_exposure" for item in operation_bindings)
-    assert all(str(item.get("template_exposure_id") or "").strip() for item in operation_bindings)
-    assert all(int(item.get("template_exposure_revision") or 0) >= 1 for item in operation_bindings)
-
-    binding_entries = [
-        item
-        for item in execution.bindings
-        if str(item.get("target_ref") or "").startswith("workflow.operation_ref.")
-    ]
-    assert len(binding_entries) == len(operation_bindings)
-    assert all(item.get("binding_mode") == "pinned_exposure" for item in binding_entries)
-    runtime_projection = execution.input_context.get(POOL_RUNTIME_PROJECTION_CONTEXT_KEY)
-    assert isinstance(runtime_projection, dict)
-    assert runtime_projection["version"] == POOL_RUNTIME_PROJECTION_VERSION
-    assert runtime_projection["workflow_binding"]["binding_mode"] == "legacy_schema_template_hint"
-    assert runtime_projection["compile_summary"]["steps_count"] >= 4
-    assert execution.execution_plan.get("runtime_projection") == runtime_projection
+        with pytest.raises(ValueError, match="POOL_WORKFLOW_BINDING_REQUIRED"):
+            start_pool_run_workflow_execution(run=run)
 
 
 @pytest.mark.django_db
 def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_binding() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
-    workflow_binding = _build_workflow_binding_payload(pool_id=str(run.pool_id))
+    workflow_binding = _ensure_runtime_test_workflow_binding(run=run)
     normalized_workflow_binding = PoolWorkflowBindingContract(**workflow_binding).model_dump(mode="json")
 
     with patch(
@@ -283,14 +565,23 @@ def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_bindi
             error_code=None,
         ),
     ):
-        result = start_pool_run_workflow_execution(run=run, workflow_binding=workflow_binding)
+        result = _start_runtime_workflow_execution(run=run, workflow_binding=workflow_binding)
 
     execution = WorkflowExecution.objects.get(id=result.execution_id)
     persisted_binding = execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)
     runtime_projection = execution.input_context.get(POOL_RUNTIME_PROJECTION_CONTEXT_KEY)
+    compiled_document_policy = execution.input_context.get(
+        POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY
+    )
 
     assert persisted_binding == normalized_workflow_binding
     assert isinstance(runtime_projection, dict)
+    assert isinstance(compiled_document_policy, dict)
+    assert compiled_document_policy["version"] == DOCUMENT_POLICY_VERSION
+    assert (
+        execution.input_context.get(POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY)
+        .startswith("workflow_binding.decision_table:")
+    )
     assert runtime_projection["workflow_binding"]["binding_mode"] == "pool_workflow_binding"
     assert runtime_projection["workflow_binding"]["binding_id"] == workflow_binding["binding_id"]
     assert runtime_projection["workflow_binding"]["workflow_revision"] == 3
@@ -303,6 +594,10 @@ def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_bindi
     assert binding_entry["source_ref"] == f"pool_workflow_binding:{workflow_binding['binding_id']}"
     assert binding_entry["binding_mode"] == "pool_workflow_binding"
 
+    persisted_run = PoolRun.objects.get(id=run.id)
+    assert persisted_run.workflow_binding_snapshot == normalized_workflow_binding
+    assert persisted_run.runtime_projection_snapshot == runtime_projection
+
 
 @pytest.mark.django_db
 def test_start_pool_run_workflow_execution_uses_atomic_publication_nodes_when_document_plan_artifact_is_available() -> None:
@@ -311,7 +606,7 @@ def test_start_pool_run_workflow_execution_uses_atomic_publication_nodes_when_do
 
     with (
         patch(
-            "apps.intercompany_pools.workflow_runtime._build_atomic_compile_document_plan_artifact",
+            "apps.intercompany_pools.binding_preview.compile_document_plan_artifact_v1",
             return_value=artifact,
         ),
         patch(
@@ -325,7 +620,7 @@ def test_start_pool_run_workflow_execution_uses_atomic_publication_nodes_when_do
             ),
         ),
     ):
-        result = start_pool_run_workflow_execution(run=run)
+        result = _start_runtime_workflow_execution(run=run)
 
     execution = WorkflowExecution.objects.get(id=result.execution_id)
     node_ids = [node.id for node in execution.workflow_template.dag_structure.nodes]
@@ -345,6 +640,7 @@ def test_start_pool_run_workflow_execution_uses_atomic_publication_nodes_when_do
     assert runtime_projection["artifacts"]["topology_version_ref"] == "topology-v1"
     assert runtime_projection["artifacts"]["distribution_artifact_ref"] == artifact["distribution_artifact_ref"]
     assert runtime_projection["compile_summary"]["compiled_targets_count"] == 1
+    assert execution.input_context.get(POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY) == artifact
 
     operation_bindings = execution.execution_plan.get("operation_bindings")
     assert isinstance(operation_bindings, list)
@@ -367,6 +663,104 @@ def test_start_pool_run_workflow_execution_uses_atomic_publication_nodes_when_do
 
 
 @pytest.mark.django_db
+def test_start_pool_run_workflow_execution_reconciliation_uses_persisted_document_plan_artifact() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    database = _attach_pool_target_database(
+        tenant=run.tenant,
+        pool=run.pool,
+        period_start=run.period_start,
+    )
+    target_node = (
+        PoolNodeVersion.objects.select_related("organization")
+        .filter(
+            pool=run.pool,
+            is_root=False,
+            organization__database=database,
+            effective_from__lte=run.period_start,
+        )
+        .order_by("-effective_from")
+        .first()
+    )
+    assert target_node is not None
+    run.run_input = {
+        "source_payload": [
+            {
+                "inn": target_node.organization.inn,
+                "amount": "100.00",
+            }
+        ]
+    }
+    run.save(update_fields=["run_input", "updated_at"])
+    _ensure_service_mapping(database=database)
+    invalid_edge_policy = {
+        "version": DOCUMENT_POLICY_VERSION,
+        "chains": [
+            {
+                "chain_id": "invalid-edge-chain",
+                "documents": [
+                    {
+                        "document_id": "sale",
+                        "entity_name": "Document_Sales",
+                        "document_role": "base",
+                        "field_mapping": {"Amount": "allocation.amount"},
+                        "table_parts_mapping": {},
+                        "link_rules": {},
+                        "invoice_mode": "always",
+                    }
+                ],
+            }
+        ],
+    }
+    edge = PoolEdgeVersion.objects.filter(pool=run.pool).first()
+    assert edge is not None
+    edge.metadata = {"document_policy": invalid_edge_policy}
+    edge.save(update_fields=["metadata", "updated_at"])
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-persisted-artifact",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        result = _start_runtime_workflow_execution(run=run)
+
+    execution = WorkflowExecution.objects.get(id=result.execution_id)
+    persisted_artifact = execution.input_context.get(POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY)
+
+    assert isinstance(persisted_artifact, dict)
+    assert persisted_artifact["version"] == "document_plan_artifact.v1"
+    assert any(
+        str(ref.get("source") or "").startswith("workflow_binding.decision_table:")
+        for ref in persisted_artifact.get("policy_refs", [])
+        if isinstance(ref, dict)
+    )
+    assert execution.input_context.get("decisions", {}).get("document_policy", {}).get("version") == (
+        DOCUMENT_POLICY_VERSION
+    )
+
+    execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.bottom_up",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+    reconciliation_output = execute_pool_runtime_step(
+        operation_type="pool.reconciliation_report",
+        rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    assert reconciliation_output["document_plan_artifact"] == persisted_artifact
+    execution.refresh_from_db(fields=["input_context"])
+    assert execution.input_context[POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY] == persisted_artifact
+
+
+@pytest.mark.django_db
 def test_start_pool_run_workflow_execution_fails_closed_when_required_invoice_step_is_missing() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
     invalid_artifact = _build_document_plan_artifact_for_compile()
@@ -385,13 +779,13 @@ def test_start_pool_run_workflow_execution_fails_closed_when_required_invoice_st
 
     with (
         patch(
-            "apps.intercompany_pools.workflow_runtime._build_atomic_compile_document_plan_artifact",
+            "apps.intercompany_pools.binding_preview.compile_document_plan_artifact_v1",
             return_value=invalid_artifact,
         ),
         patch("apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution") as enqueue_mock,
     ):
         with pytest.raises(ValueError, match="POOL_RUNTIME_REQUIRED_INVOICE_STEP_MISSING"):
-            start_pool_run_workflow_execution(run=run)
+            _start_runtime_workflow_execution(run=run)
 
     enqueue_mock.assert_not_called()
 
@@ -414,7 +808,7 @@ def test_start_pool_run_workflow_execution_sets_publication_auth_context() -> No
             error_code=None,
         ),
     ):
-        result = start_pool_run_workflow_execution(run=run, requested_by=actor)
+        result = _start_runtime_workflow_execution(run=run, requested_by=actor)
 
     execution = WorkflowExecution.objects.get(id=result.execution_id)
     publication_auth = execution.input_context.get("publication_auth")
@@ -439,7 +833,7 @@ def test_start_pool_run_workflow_execution_sets_master_data_refs_in_input_contex
             error_code=None,
         ),
     ):
-        result = start_pool_run_workflow_execution(run=run)
+        result = _start_runtime_workflow_execution(run=run)
 
     execution = WorkflowExecution.objects.get(id=result.execution_id)
     snapshot_ref = str(execution.input_context.get("master_data_snapshot_ref") or "").strip()
@@ -473,7 +867,7 @@ def test_start_pool_run_workflow_execution_does_not_prefill_publication_payload_
             error_code=None,
         ),
     ):
-        result = start_pool_run_workflow_execution(run=run)
+        result = _start_runtime_workflow_execution(run=run)
 
     execution = WorkflowExecution.objects.get(id=result.execution_id)
     assert "pool_runtime_publication_payload" not in execution.input_context
@@ -507,7 +901,7 @@ def test_start_pool_run_workflow_execution_sanitizes_reserved_artifact_keys_from
             error_code=None,
         ),
     ):
-        result = start_pool_run_workflow_execution(run=run)
+        result = _start_runtime_workflow_execution(run=run)
 
     execution = WorkflowExecution.objects.get(id=result.execution_id)
     run_input = execution.input_context.get("run_input")
@@ -523,18 +917,14 @@ def test_start_pool_run_workflow_execution_sanitizes_reserved_artifact_keys_from
 @pytest.mark.django_db
 def test_start_pool_run_workflow_execution_fail_closed_when_actor_mapping_missing() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
-    _attach_pool_target_database(
-        tenant=run.tenant,
-        pool=run.pool,
-        period_start=run.period_start,
-    )
+    workflow_binding = _ensure_runtime_test_workflow_binding(run=run)
     actor = User.objects.create_user(
         username=f"workflow-missing-map-{uuid4().hex[:8]}",
         email=f"workflow-missing-map-{uuid4().hex[:8]}@example.test",
     )
 
     with pytest.raises(ValueError) as exc:
-        start_pool_run_workflow_execution(run=run, requested_by=actor)
+        start_pool_run_workflow_execution(run=run, requested_by=actor, workflow_binding=workflow_binding)
 
     error_text = str(exc.value)
     assert "ODATA_MAPPING_NOT_CONFIGURED" in error_text
@@ -544,6 +934,7 @@ def test_start_pool_run_workflow_execution_fail_closed_when_actor_mapping_missin
 @pytest.mark.django_db
 def test_start_pool_run_workflow_execution_uses_service_mapping_when_actor_not_provided() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
+    workflow_binding = _ensure_runtime_test_workflow_binding(run=run)
     database = _attach_pool_target_database(
         tenant=run.tenant,
         pool=run.pool,
@@ -567,7 +958,11 @@ def test_start_pool_run_workflow_execution_uses_service_mapping_when_actor_not_p
             error_code=None,
         ),
     ):
-        result = start_pool_run_workflow_execution(run=run, requested_by=None)
+        result = start_pool_run_workflow_execution(
+            run=run,
+            requested_by=None,
+            workflow_binding=workflow_binding,
+        )
 
     execution = WorkflowExecution.objects.get(id=result.execution_id)
     assert execution.input_context.get("publication_auth") == {
@@ -580,6 +975,7 @@ def test_start_pool_run_workflow_execution_uses_service_mapping_when_actor_not_p
 @pytest.mark.django_db
 def test_start_pool_run_workflow_execution_fail_closed_when_service_mapping_ambiguous() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
+    workflow_binding = _ensure_runtime_test_workflow_binding(run=run)
     database = _attach_pool_target_database(
         tenant=run.tenant,
         pool=run.pool,
@@ -601,7 +997,7 @@ def test_start_pool_run_workflow_execution_fail_closed_when_service_mapping_ambi
     )
 
     with pytest.raises(ValueError) as exc:
-        start_pool_run_workflow_execution(run=run, requested_by=None)
+        start_pool_run_workflow_execution(run=run, requested_by=None, workflow_binding=workflow_binding)
 
     error_text = str(exc.value)
     assert "ODATA_MAPPING_AMBIGUOUS" in error_text
@@ -645,8 +1041,8 @@ def test_start_pool_run_workflow_execution_reuses_definition_for_same_pool_struc
             error_code=None,
         ),
     ):
-        result_1 = start_pool_run_workflow_execution(run=run_1)
-        result_2 = start_pool_run_workflow_execution(run=run_2)
+        result_1 = _start_runtime_workflow_execution(run=run_1)
+        result_2 = _start_runtime_workflow_execution(run=run_2)
 
     execution_1 = WorkflowExecution.objects.get(id=result_1.execution_id)
     execution_2 = WorkflowExecution.objects.get(id=result_2.execution_id)
@@ -690,7 +1086,7 @@ def test_retry_workflow_execution_keeps_operation_binding_snapshot() -> None:
             error_code=None,
         ),
     ):
-        first = start_pool_run_workflow_execution(run=run, requested_by=creator)
+        first = _start_runtime_workflow_execution(run=run, requested_by=creator)
 
     retry_payload = {
         "entity_name": "Document_IntercompanyPoolDistribution",
@@ -712,7 +1108,7 @@ def test_retry_workflow_execution_keeps_operation_binding_snapshot() -> None:
             error_code=None,
         ),
     ):
-        retry = start_pool_run_retry_workflow_execution(
+        retry = _start_runtime_retry_workflow_execution(
             run=run,
             retry_request=retry_payload,
             requested_by=retry_actor,
@@ -775,7 +1171,7 @@ def test_retry_workflow_execution_keeps_operation_binding_snapshot() -> None:
 @pytest.mark.django_db
 def test_retry_workflow_execution_reuses_explicit_pool_workflow_binding() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
-    workflow_binding = _build_workflow_binding_payload(pool_id=str(run.pool_id))
+    workflow_binding = _ensure_runtime_test_workflow_binding(run=run)
     normalized_workflow_binding = PoolWorkflowBindingContract(**workflow_binding).model_dump(mode="json")
 
     with patch(
@@ -788,7 +1184,7 @@ def test_retry_workflow_execution_reuses_explicit_pool_workflow_binding() -> Non
             error_code=None,
         ),
     ):
-        first = start_pool_run_workflow_execution(run=run, workflow_binding=workflow_binding)
+        first = _start_runtime_workflow_execution(run=run, workflow_binding=workflow_binding)
 
     with patch(
         "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
@@ -800,7 +1196,7 @@ def test_retry_workflow_execution_reuses_explicit_pool_workflow_binding() -> Non
             error_code=None,
         ),
     ):
-        retry = start_pool_run_retry_workflow_execution(
+        retry = _start_runtime_retry_workflow_execution(
             run=run,
             retry_request={"documents_by_database": {}, "use_retry_subset_payload": False},
         )
@@ -829,7 +1225,7 @@ def test_retry_workflow_execution_reuses_master_data_refs_and_binding_artifact()
             error_code=None,
         ),
     ):
-        first = start_pool_run_workflow_execution(run=run)
+        first = _start_runtime_workflow_execution(run=run)
 
     first_execution = WorkflowExecution.objects.get(id=first.execution_id)
     first_execution.input_context = {
@@ -860,7 +1256,7 @@ def test_retry_workflow_execution_reuses_master_data_refs_and_binding_artifact()
             error_code=None,
         ),
     ):
-        retry = start_pool_run_retry_workflow_execution(
+        retry = _start_runtime_retry_workflow_execution(
             run=run,
             retry_request={"documents_by_database": {}, "use_retry_subset_payload": False},
         )
@@ -908,7 +1304,7 @@ def test_retry_workflow_execution_uses_persisted_document_plan_and_skips_success
             error_code=None,
         ),
     ):
-        first = start_pool_run_workflow_execution(run=run)
+        first = _start_runtime_workflow_execution(run=run)
 
     first_execution = WorkflowExecution.objects.get(id=first.execution_id)
     first_execution.input_context = {
@@ -1040,7 +1436,7 @@ def test_retry_workflow_execution_uses_persisted_document_plan_and_skips_success
             error_code=None,
         ),
     ):
-        retry = start_pool_run_retry_workflow_execution(
+        retry = _start_runtime_retry_workflow_execution(
             run=run,
             retry_request={
                 "target_database_ids": [str(failed_database.id)],

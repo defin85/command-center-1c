@@ -30,12 +30,26 @@ export type NodeType = 'operation' | 'condition' | 'parallel' | 'loop' | 'subwor
 export type WorkflowType = 'sequential' | 'parallel' | 'conditional' | 'complex'
 export type OperationBindingMode = 'alias_latest' | 'pinned_exposure'
 export type OperationIOMode = 'implicit_legacy' | 'explicit_strict'
+export type SubWorkflowBindingMode = 'direct_runtime_id' | 'pinned_revision'
 
 export interface OperationRef {
   alias: string
   binding_mode: OperationBindingMode
   template_exposure_id?: string
   template_exposure_revision?: number
+}
+
+export interface DecisionRef {
+  decision_table_id: string
+  decision_key: string
+  decision_revision: number
+}
+
+export interface SubWorkflowRef {
+  binding_mode?: SubWorkflowBindingMode
+  workflow_definition_key?: string | null
+  workflow_revision_id?: string | null
+  workflow_revision?: number | null
 }
 
 export interface OperationIO {
@@ -57,6 +71,7 @@ export interface NodeConfig {
   loop_items?: string
   max_iterations?: number
   subworkflow_id?: string       // For subworkflow nodes
+  subworkflow_ref?: SubWorkflowRef
   input_mapping?: Record<string, string>
   output_mapping?: Record<string, string>
 }
@@ -67,6 +82,7 @@ export interface DAGNode {
   type: NodeType
   template_id?: string          // For operation nodes
   operation_ref?: OperationRef  // OperationExposure binding for operation nodes
+  decision_ref?: DecisionRef
   io?: OperationIO              // Explicit data-flow contract for operation nodes
   config?: NodeConfig
   position?: { x: number; y: number }  // For React Flow
@@ -147,6 +163,22 @@ export interface OperationTemplateListItem {
   exposure_revision?: number
 }
 
+export interface AvailableWorkflowRevision {
+  id: string
+  name: string
+  workflowDefinitionKey: string
+  workflowRevisionId: string
+  workflowRevision: number
+}
+
+export interface AvailableDecisionRevision {
+  id: string
+  name: string
+  decisionTableId: string
+  decisionKey: string
+  decisionRevision: number
+}
+
 // ============================================================================
 // Workflow Execution Types
 // ============================================================================
@@ -225,6 +257,7 @@ export interface WorkflowNodeData {
   nodeType: NodeType
   templateId?: string
   operationRef?: OperationRef
+  decisionRef?: DecisionRef
   io?: OperationIO
   config?: NodeConfig
   status?: StepStatus          // For monitor mode
@@ -252,6 +285,7 @@ export const dagNodeToReactFlow = (node: DAGNode, index: number): WorkflowNode =
       nodeType: node.type,
       templateId: node.template_id,
       operationRef: node.operation_ref,
+      decisionRef: node.decision_ref,
       io: node.io,
       config: node.config
     }
@@ -276,6 +310,7 @@ export const reactFlowToDagNode = (node: WorkflowNode): DAGNode => {
     type: node.data.nodeType,
     template_id: node.data.templateId,
     operation_ref: node.data.operationRef,
+    decision_ref: node.data.decisionRef,
     io: node.data.io,
     config: node.data.config,
     position: node.position

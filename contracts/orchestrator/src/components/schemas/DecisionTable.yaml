@@ -1,0 +1,59 @@
+type: object
+description: Versioned DMN-lite decision table resource.
+properties:
+  id:
+    type: string
+    format: uuid
+  decision_table_id:
+    type: string
+  decision_key:
+    type: string
+  decision_revision:
+    type: integer
+    minimum: 1
+  name:
+    type: string
+  description:
+    type: string
+  inputs:
+    type: array
+    items:
+      $ref: ./DecisionField.yaml
+  outputs:
+    type: array
+    items:
+      $ref: ./DecisionField.yaml
+  rules:
+    type: array
+    items:
+      $ref: ./DecisionRule.yaml
+  hit_policy:
+    type: string
+  validation_mode:
+    type: string
+  is_active:
+    type: boolean
+  parent_version:
+    type: string
+    format: uuid
+    nullable: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - decision_table_id
+  - decision_key
+  - decision_revision
+  - name
+  - inputs
+  - outputs
+  - rules
+  - hit_policy
+  - validation_mode
+  - is_active
+  - created_at
+  - updated_at

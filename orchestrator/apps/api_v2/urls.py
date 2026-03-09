@@ -34,6 +34,7 @@ from .views import (
     ui,
     driver_catalogs,
     operation_catalog,
+    decisions,
     intercompany_pools,
     intercompany_pools_master_data,
     intercompany_pools_master_data_bootstrap,
@@ -120,10 +121,21 @@ urlpatterns = [
     path('mappings/preview/', mappings.preview_mapping, name='mappings-preview'),
 
     # ========================================================================
+    # Decisions
+    # ========================================================================
+    path('decisions/', decisions.decisions_collection, name='decisions-collection'),
+    path('decisions/<uuid:decision_id>/', decisions.decision_detail, name='decisions-detail'),
+
+    # ========================================================================
     # Intercompany Pools
     # ========================================================================
     path('pools/', intercompany_pools.list_organization_pools, name='pools-list'),
     path('pools/upsert/', intercompany_pools.upsert_organization_pool, name='pools-upsert'),
+    path(
+        'pools/workflow-bindings/preview/',
+        intercompany_pools.preview_pool_workflow_binding,
+        name='pools-workflow-bindings-preview',
+    ),
     path('pools/organizations/', intercompany_pools.list_organizations, name='pools-organizations-list'),
     path('pools/organizations/upsert/', intercompany_pools.upsert_organization, name='pools-organizations-upsert'),
     path('pools/organizations/sync/', intercompany_pools.sync_organizations_catalog, name='pools-organizations-sync'),

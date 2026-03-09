@@ -31,6 +31,7 @@ class PoolDomainBackend(AbstractOperationBackend):
         "pool.distribution_calculation.bottom_up",
         "pool.reconciliation_report",
         "pool.approval_gate",
+        "pool.master_data_gate",
         "pool.publication_odata",
         "pool.master_data_sync.inbound",
         "pool.master_data_sync.dispatch",

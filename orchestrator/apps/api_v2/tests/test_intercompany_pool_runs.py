@@ -41,6 +41,7 @@ from apps.intercompany_pools.runtime_projection_contract import POOL_RUNTIME_PRO
 from apps.intercompany_pools.workflow_runtime import POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY
 from apps.operations.services import EnqueueResult
 from apps.runtime_settings.models import RuntimeSetting
+from apps.templates.workflow.decision_tables import create_decision_table_revision
 from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate, WorkflowType
 from apps.tenancy.models import Tenant, TenantMember
 
@@ -140,6 +141,22 @@ def _create_service_infobase_mapping(*, database: Database, username: str = "svc
         ib_username=username,
         ib_password=password,
         is_service=True,
+    )
+
+
+def _create_actor_infobase_mapping(
+    *,
+    database: Database,
+    user: User,
+    username: str = "actor-user",
+    password: str = "actor-pass",
+) -> None:
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=user,
+        ib_username=username,
+        ib_password=password,
+        is_service=False,
     )
 
 
@@ -269,6 +286,31 @@ def _build_document_policy_payload() -> dict[str, object]:
     }
 
 
+def _build_document_policy_decision_payload(*, decision_table_id: str) -> dict[str, object]:
+    return {
+        "decision_table_id": decision_table_id,
+        "decision_key": "document_policy",
+        "name": "API Test Document Policy",
+        "inputs": [
+            {"name": "direction", "value_type": "string", "required": True},
+            {"name": "mode", "value_type": "string", "required": True},
+        ],
+        "outputs": [
+            {"name": "document_policy", "value_type": "json", "required": True},
+        ],
+        "rules": [
+            {
+                "rule_id": "default",
+                "priority": 0,
+                "conditions": {},
+                "outputs": {
+                    "document_policy": _build_document_policy_payload(),
+                },
+            }
+        ],
+    }
+
+
 def _build_pool_workflow_binding_payload(
     *,
     pool: OrganizationPool,
@@ -299,6 +341,152 @@ def _build_pool_workflow_binding_payload(
         "effective_to": effective_to,
         "status": status,
     }
+
+
+def _create_pool_runtime_workflow_revision(
+    *,
+    workflow_name: str,
+    direction: str | None,
+    workflow_revision: int,
+) -> tuple[WorkflowTemplate, WorkflowTemplate]:
+    normalized_direction = direction or PoolRunDirection.BOTTOM_UP
+    distribution_alias = (
+        "pool.distribution_calculation.top_down"
+        if normalized_direction == PoolRunDirection.TOP_DOWN
+        else "pool.distribution_calculation.bottom_up"
+    )
+    root = WorkflowTemplate.objects.create(
+        name=workflow_name,
+        description="",
+        workflow_type=WorkflowType.SEQUENTIAL,
+        dag_structure={
+            "nodes": [
+                {
+                    "id": "prepare_input",
+                    "name": "Prepare Input",
+                    "type": "operation",
+                    "template_id": "pool.prepare_input",
+                },
+                {
+                    "id": "distribution",
+                    "name": "Distribution",
+                    "type": "operation",
+                    "template_id": distribution_alias,
+                },
+                {
+                    "id": "reconciliation",
+                    "name": "Reconciliation",
+                    "type": "operation",
+                    "template_id": "pool.reconciliation_report",
+                },
+                {
+                    "id": "approval_gate",
+                    "name": "Approval Gate",
+                    "type": "operation",
+                    "template_id": "pool.approval_gate",
+                },
+                {
+                    "id": "publication",
+                    "name": "Publication",
+                    "type": "operation",
+                    "template_id": "pool.publication_odata",
+                },
+            ],
+            "edges": [
+                {"from": "prepare_input", "to": "distribution"},
+                {"from": "distribution", "to": "reconciliation"},
+                {"from": "reconciliation", "to": "approval_gate"},
+                {"from": "approval_gate", "to": "publication", "condition": "{{approved_at}}"},
+            ],
+        },
+        config={"timeout_seconds": 86400, "max_retries": 0},
+        is_valid=True,
+        is_active=True,
+        version_number=1,
+    )
+    revision = root
+    for version_number in range(2, max(int(workflow_revision), 1) + 1):
+        revision = WorkflowTemplate.objects.create(
+            name=workflow_name,
+            description="",
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure=root.dag_structure,
+            config=root.config,
+            is_valid=True,
+            is_active=True,
+            parent_version=revision,
+            version_number=version_number,
+        )
+    return root, revision
+
+
+def _prepare_pool_runtime_bindings(
+    *,
+    tenant: Tenant,
+    pool: OrganizationPool,
+    bindings: list[dict[str, object]],
+    period_start: date,
+    actor: User | None = None,
+) -> tuple[list[dict[str, object]], Database]:
+    database = _attach_pool_target_database(
+        tenant=tenant,
+        pool=pool,
+        period_start=period_start,
+    )
+    decision = create_decision_table_revision(
+        contract=_build_document_policy_decision_payload(
+            decision_table_id=f"pool-api-doc-policy-{uuid4().hex[:8]}"
+        )
+    )
+    decision_ref = {
+        "decision_table_id": decision.decision_table_id,
+        "decision_key": decision.decision_key,
+        "decision_revision": decision.version_number,
+    }
+
+    hydrated_bindings: list[dict[str, object]] = []
+    for binding in bindings:
+        binding_decisions = binding.get("decisions")
+        workflow_payload = binding.get("workflow") if isinstance(binding.get("workflow"), dict) else {}
+        workflow_name = str(workflow_payload.get("workflow_name") or f"workflow-{uuid4().hex[:8]}")
+        workflow_revision_number = int(workflow_payload.get("workflow_revision") or 1)
+        root_workflow, revision_workflow = _create_pool_runtime_workflow_revision(
+            workflow_name=workflow_name,
+            direction=str(binding.get("selector", {}).get("direction") or "") if isinstance(binding.get("selector"), dict) else None,
+            workflow_revision=workflow_revision_number,
+        )
+        hydrated_bindings.append(
+            {
+                **binding,
+                "workflow": {
+                    **workflow_payload,
+                    "workflow_definition_key": str(root_workflow.id),
+                    "workflow_revision_id": str(revision_workflow.id),
+                    "workflow_revision": revision_workflow.version_number,
+                    "workflow_name": revision_workflow.name,
+                },
+                "decisions": (
+                    list(binding_decisions)
+                    if isinstance(binding_decisions, list) and binding_decisions
+                    else [decision_ref]
+                ),
+            }
+        )
+
+    pool.metadata = {
+        **(pool.metadata if isinstance(pool.metadata, dict) else {}),
+        "workflow_bindings": hydrated_bindings,
+    }
+    pool.save(update_fields=["metadata", "updated_at"])
+
+    if actor is not None:
+        _create_actor_infobase_mapping(
+            database=database,
+            user=actor,
+            username=f"actor-{actor.username}",
+        )
+
+    return hydrated_bindings, database
 
 
 def _build_metadata_catalog_payload() -> dict[str, object]:
@@ -2118,7 +2306,7 @@ def test_list_pool_topology_snapshots_returns_periods_with_counts(
 
 
 @pytest.mark.django_db
-def test_create_pool_run_rejects_ambiguous_workflow_bindings_fail_closed(
+def test_create_pool_run_rejects_ambiguous_selector_without_explicit_binding_id(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
@@ -2156,9 +2344,9 @@ def test_create_pool_run_rejects_ambiguous_workflow_bindings_fail_closed(
         status_code=400,
         code="POOL_WORKFLOW_BINDING_AMBIGUOUS",
     )
-    errors = payload.get("errors")
-    assert isinstance(errors, list) and len(errors) == 2
-    assert {item["binding_id"] for item in errors} == {
+    assert "Multiple active pool workflow bindings matched" in payload["detail"]
+    assert len(payload["errors"]) == 2
+    assert {item["binding_id"] for item in payload["errors"]} == {
         first_binding["binding_id"],
         second_binding["binding_id"],
     }
@@ -2166,7 +2354,7 @@ def test_create_pool_run_rejects_ambiguous_workflow_bindings_fail_closed(
 
 
 @pytest.mark.django_db
-def test_create_pool_run_rejects_when_no_workflow_binding_matches_selector(
+def test_create_pool_run_rejects_when_selector_does_not_resolve_binding(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
@@ -2197,15 +2385,30 @@ def test_create_pool_run_rejects_when_no_workflow_binding_matches_selector(
         status_code=400,
         code="POOL_WORKFLOW_BINDING_NOT_RESOLVED",
     )
-    errors = payload.get("errors")
-    assert isinstance(errors, list) and len(errors) == 1
-    assert errors[0]["binding_id"] == binding["binding_id"]
+    assert "No active pool workflow binding matched" in payload["detail"]
+    assert payload["errors"] == [
+        {
+            "binding_id": binding["binding_id"],
+            "pool_id": str(pool.id),
+            "workflow_definition_key": "top-down-only",
+            "workflow_revision": 2,
+            "status": "active",
+            "effective_from": "2026-01-01",
+            "effective_to": None,
+            "selector": {
+                "direction": PoolRunDirection.TOP_DOWN,
+                "mode": PoolRunMode.SAFE,
+                "tags": [],
+            },
+        }
+    ]
     assert not PoolRun.objects.filter(pool=pool).exists()
 
 
 @pytest.mark.django_db
 def test_create_pool_run_accepts_explicit_workflow_binding_id_when_selector_is_ambiguous(
     authenticated_client: APIClient,
+    user: User,
     pool: OrganizationPool,
 ) -> None:
     first_binding = _build_pool_workflow_binding_payload(
@@ -2222,8 +2425,14 @@ def test_create_pool_run_accepts_explicit_workflow_binding_id_when_selector_is_a
         direction=PoolRunDirection.BOTTOM_UP,
         mode=PoolRunMode.SAFE,
     )
-    pool.metadata = {"workflow_bindings": [first_binding, second_binding]}
-    pool.save(update_fields=["metadata", "updated_at"])
+    bindings, _ = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[first_binding, second_binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    first_binding = bindings[0]
 
     with patch(
         "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
@@ -2317,8 +2526,9 @@ def test_create_pool_run_rejects_legacy_source_hash_field_as_problem_details(
 
 
 @pytest.mark.django_db
-def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
+def test_create_pool_run_endpoint_resolves_single_binding_and_reuses_idempotency_key(
     authenticated_client: APIClient,
+    user: User,
     pool: OrganizationPool,
 ) -> None:
     binding = _build_pool_workflow_binding_payload(
@@ -2328,11 +2538,15 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
         direction=PoolRunDirection.BOTTOM_UP,
         mode=PoolRunMode.SAFE,
     )
-    pool.metadata = {"workflow_bindings": [binding]}
-    pool.save(update_fields=["metadata", "updated_at"])
+    binding = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )[0][0]
     payload = {
         "pool_id": str(pool.id),
-        "pool_workflow_binding_id": binding["binding_id"],
         "direction": PoolRunDirection.BOTTOM_UP,
         "period_start": "2026-01-01",
         "period_end": "2026-01-31",
@@ -2389,6 +2603,7 @@ def test_create_pool_run_endpoint_creates_and_reuses_idempotency_key(
 @pytest.mark.django_db
 def test_create_pool_run_endpoint_uses_binding_in_idempotency_key(
     authenticated_client: APIClient,
+    user: User,
     pool: OrganizationPool,
 ) -> None:
     first_binding = _build_pool_workflow_binding_payload(
@@ -2405,8 +2620,14 @@ def test_create_pool_run_endpoint_uses_binding_in_idempotency_key(
         direction=PoolRunDirection.BOTTOM_UP,
         mode=PoolRunMode.SAFE,
     )
-    pool.metadata = {"workflow_bindings": [first_binding, second_binding]}
-    pool.save(update_fields=["metadata", "updated_at"])
+    bindings, _ = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[first_binding, second_binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    first_binding, second_binding = bindings
 
     base_payload = {
         "pool_id": str(pool.id),
@@ -2440,10 +2661,26 @@ def test_create_pool_run_endpoint_uses_binding_in_idempotency_key(
 @pytest.mark.django_db
 def test_create_pool_run_endpoint_keeps_workflow_link_when_enqueue_fails(
     authenticated_client: APIClient,
+    user: User,
     pool: OrganizationPool,
 ) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    binding = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )[0][0]
     payload = {
         "pool_id": str(pool.id),
+        "pool_workflow_binding_id": binding["binding_id"],
         "direction": PoolRunDirection.BOTTOM_UP,
         "period_start": "2026-01-01",
         "period_end": "2026-01-31",
@@ -2477,8 +2714,24 @@ def test_create_pool_run_endpoint_keeps_workflow_link_when_enqueue_fails(
 @pytest.mark.django_db
 def test_create_pool_run_returns_problem_details_for_pool_runtime_fail_closed_error(
     authenticated_client: APIClient,
+    user: User,
     pool: OrganizationPool,
 ) -> None:
+    _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[
+            _build_pool_workflow_binding_payload(
+                pool=pool,
+                workflow_definition_key="services-publication",
+                workflow_revision=3,
+                direction=PoolRunDirection.BOTTOM_UP,
+                mode=PoolRunMode.SAFE,
+            )
+        ],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
     payload = {
         "pool_id": str(pool.id),
         "direction": PoolRunDirection.BOTTOM_UP,
@@ -2511,9 +2764,18 @@ def test_create_pool_run_returns_problem_details_for_missing_actor_mapping(
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
-    _attach_pool_target_database(
+    _prepare_pool_runtime_bindings(
         tenant=default_tenant,
         pool=pool,
+        bindings=[
+            _build_pool_workflow_binding_payload(
+                pool=pool,
+                workflow_definition_key="services-publication",
+                workflow_revision=3,
+                direction=PoolRunDirection.BOTTOM_UP,
+                mode=PoolRunMode.SAFE,
+            )
+        ],
         period_start=date(2026, 1, 1),
     )
     payload = {
@@ -2543,9 +2805,18 @@ def test_create_pool_run_returns_problem_details_for_ambiguous_actor_mapping(
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
-    database = _attach_pool_target_database(
+    _, database = _prepare_pool_runtime_bindings(
         tenant=default_tenant,
         pool=pool,
+        bindings=[
+            _build_pool_workflow_binding_payload(
+                pool=pool,
+                workflow_definition_key="services-publication",
+                workflow_revision=3,
+                direction=PoolRunDirection.BOTTOM_UP,
+                mode=PoolRunMode.SAFE,
+            )
+        ],
         period_start=date(2026, 1, 1),
     )
     InfobaseUserMapping.objects.create(
@@ -2589,18 +2860,26 @@ def test_create_pool_run_succeeds_when_actor_mapping_configured(
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
-    database = _attach_pool_target_database(
+    _, database = _prepare_pool_runtime_bindings(
         tenant=default_tenant,
         pool=pool,
+        bindings=[
+            _build_pool_workflow_binding_payload(
+                pool=pool,
+                workflow_definition_key="services-publication",
+                workflow_revision=3,
+                direction=PoolRunDirection.BOTTOM_UP,
+                mode=PoolRunMode.SAFE,
+            )
+        ],
         period_start=date(2026, 1, 1),
     )
-    InfobaseUserMapping.objects.create(
-        database=database,
-        user=user,
-        ib_username="actor-ok",
-        ib_password="actor-pass",
-        is_service=False,
-    )
+    if not InfobaseUserMapping.objects.filter(database=database, user=user, is_service=False).exists():
+        _create_actor_infobase_mapping(
+            database=database,
+            user=user,
+            username="actor-ok",
+        )
     payload = {
         "pool_id": str(pool.id),
         "direction": PoolRunDirection.BOTTOM_UP,
@@ -2623,8 +2902,24 @@ def test_create_pool_run_succeeds_when_actor_mapping_configured(
 @pytest.mark.django_db
 def test_create_pool_run_enqueues_to_workflow_stream_with_normal_priority(
     authenticated_client: APIClient,
+    user: User,
     pool: OrganizationPool,
 ) -> None:
+    _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[
+            _build_pool_workflow_binding_payload(
+                pool=pool,
+                workflow_definition_key="services-publication",
+                workflow_revision=3,
+                direction=PoolRunDirection.BOTTOM_UP,
+                mode=PoolRunMode.SAFE,
+            )
+        ],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
     payload = {
         "pool_id": str(pool.id),
         "direction": PoolRunDirection.BOTTOM_UP,
@@ -3824,6 +4119,10 @@ def test_get_pool_run_report_exposes_binding_lineage_and_runtime_projection(
             "compiled_targets_count": 3,
         },
     }
+    run.workflow_binding_snapshot = binding
+    run.runtime_projection_snapshot = projection
+    run.save(update_fields=["workflow_binding_snapshot", "runtime_projection_snapshot", "updated_at"])
+
     _attach_workflow_execution_to_run(
         run=run,
         status=WorkflowExecution.STATUS_PENDING,
@@ -3831,8 +4130,6 @@ def test_get_pool_run_report_exposes_binding_lineage_and_runtime_projection(
             "pool_run_id": str(run.id),
             "approval_state": "awaiting_approval",
             "publication_step_state": "not_enqueued",
-            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: binding,
-            POOL_RUNTIME_PROJECTION_CONTEXT_KEY: projection,
         },
     )
 
@@ -5620,6 +5917,7 @@ def test_list_pools_and_graph_endpoint(
 @pytest.mark.django_db
 def test_create_pool_run_with_schema_template_uses_workflow_runtime(
     authenticated_client: APIClient,
+    user: User,
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
@@ -5630,6 +5928,21 @@ def test_create_pool_run_with_schema_template_uses_workflow_runtime(
         format=PoolSchemaTemplateFormat.JSON,
         is_public=True,
         schema={"columns": {"inn": "inn", "amount": "amount"}},
+    )
+    _prepare_pool_runtime_bindings(
+        tenant=default_tenant,
+        pool=pool,
+        bindings=[
+            _build_pool_workflow_binding_payload(
+                pool=pool,
+                workflow_definition_key="services-publication",
+                workflow_revision=3,
+                direction=PoolRunDirection.BOTTOM_UP,
+                mode=PoolRunMode.UNSAFE,
+            )
+        ],
+        period_start=date(2026, 1, 1),
+        actor=user,
     )
 
     with patch(

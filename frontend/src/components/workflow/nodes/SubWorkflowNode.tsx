@@ -42,14 +42,16 @@ const SubWorkflowNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
   const { color, icon } = statusConfig[status]
 
   const subworkflowId = data.config?.subworkflow_id
+  const pinnedSubworkflowRef = data.config?.subworkflow_ref
   const inputMapping = data.config?.input_mapping || {}
   const outputMapping = data.config?.output_mapping || {}
   const subExecutionId = toStringValue(data.output?.sub_execution_id)
+  const workflowTargetId = pinnedSubworkflowRef?.workflow_revision_id || subworkflowId
 
   const handleOpenSubWorkflow = () => {
-    if (subworkflowId) {
+    if (workflowTargetId) {
       // Open sub-workflow in new tab/modal
-      window.open(`/workflows/${subworkflowId}`, '_blank')
+      window.open(`/workflows/${workflowTargetId}`, '_blank')
     }
   }
 
@@ -75,9 +77,9 @@ const SubWorkflowNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
             {icon}
           </Tag>
         }
-      >
+        >
         <div className="node-content">
-          {subworkflowId && (
+          {workflowTargetId && (
             <div className="node-field">
               <span className="field-label">Workflow:</span>
               <Tooltip title="Open sub-workflow">
@@ -87,11 +89,29 @@ const SubWorkflowNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
                   onClick={handleOpenSubWorkflow}
                   className="subworkflow-link"
                 >
-                  {subworkflowId.slice(0, 8)}{'\u2026'}
+                  {workflowTargetId.slice(0, 8)}{'\u2026'}
                   <ExportOutlined />
                 </Button>
               </Tooltip>
             </div>
+          )}
+
+          {pinnedSubworkflowRef?.workflow_revision_id && (
+            <Tooltip
+              title={
+                pinnedSubworkflowRef.workflow_definition_key
+                  ? `${pinnedSubworkflowRef.workflow_definition_key} · ${pinnedSubworkflowRef.workflow_revision_id}`
+                  : pinnedSubworkflowRef.workflow_revision_id
+              }
+            >
+              <div className="node-field">
+                <span className="field-label">Pinned:</span>
+                <Tag color="magenta">
+                  {pinnedSubworkflowRef.workflow_definition_key || 'subworkflow'}{' '}
+                  {pinnedSubworkflowRef.workflow_revision ? `r${pinnedSubworkflowRef.workflow_revision}` : ''}
+                </Tag>
+              </div>
+            </Tooltip>
           )}
 
           {Object.keys(inputMapping).length > 0 && (

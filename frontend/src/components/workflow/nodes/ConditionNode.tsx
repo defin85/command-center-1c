@@ -54,7 +54,13 @@ const ConditionNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
         }
       >
         <div className="node-content">
-          {data.config?.expression && (
+          {data.decisionRef ? (
+            <Tooltip title={`${data.decisionRef.decision_key} r${data.decisionRef.decision_revision}`}>
+              <div className="node-field expression">
+                <code>{`decision:${data.decisionRef.decision_key} r${data.decisionRef.decision_revision}`}</code>
+              </div>
+            </Tooltip>
+          ) : data.config?.expression && (
             <Tooltip title={data.config.expression}>
               <div className="node-field expression">
                 <code>{`${data.config.expression.slice(0, 30)}\u2026`}</code>

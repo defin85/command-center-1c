@@ -1087,6 +1087,8 @@ class PoolRun(models.Model):
     workflow_status = models.CharField(max_length=32, blank=True, default="", db_index=True)
     execution_backend = models.CharField(max_length=32, blank=True, default="legacy_pool_runtime", db_index=True)
     workflow_template_name = models.CharField(max_length=200, blank=True, default="")
+    workflow_binding_snapshot = models.JSONField(default=dict, blank=True)
+    runtime_projection_snapshot = models.JSONField(default=dict, blank=True)
     seed = models.BigIntegerField(null=True, blank=True)
     validation_summary = models.JSONField(default=dict, blank=True)
     publication_summary = models.JSONField(default=dict, blank=True)
