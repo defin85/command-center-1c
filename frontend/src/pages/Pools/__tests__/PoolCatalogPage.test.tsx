@@ -18,6 +18,7 @@ const mockListPoolTopologySnapshots = vi.fn()
 const mockSyncOrganizationsCatalog = vi.fn()
 const mockGetPoolODataMetadataCatalog = vi.fn()
 const mockRefreshPoolODataMetadataCatalog = vi.fn()
+const mockListPoolWorkflowBindings = vi.fn()
 const mockUpsertPoolWorkflowBinding = vi.fn()
 const mockDeletePoolWorkflowBinding = vi.fn()
 const mockListMasterDataParties = vi.fn()
@@ -59,6 +60,7 @@ vi.mock('../../../api/intercompanyPools', () => ({
   syncOrganizationsCatalog: (...args: unknown[]) => mockSyncOrganizationsCatalog(...args),
   getPoolODataMetadataCatalog: (...args: unknown[]) => mockGetPoolODataMetadataCatalog(...args),
   refreshPoolODataMetadataCatalog: (...args: unknown[]) => mockRefreshPoolODataMetadataCatalog(...args),
+  listPoolWorkflowBindings: (...args: unknown[]) => mockListPoolWorkflowBindings(...args),
   upsertPoolWorkflowBinding: (...args: unknown[]) => mockUpsertPoolWorkflowBinding(...args),
   deletePoolWorkflowBinding: (...args: unknown[]) => mockDeletePoolWorkflowBinding(...args),
   listMasterDataParties: (...args: unknown[]) => mockListMasterDataParties(...args),
@@ -188,6 +190,7 @@ describe('PoolCatalogPage', () => {
     mockSyncOrganizationsCatalog.mockReset()
     mockGetPoolODataMetadataCatalog.mockReset()
     mockRefreshPoolODataMetadataCatalog.mockReset()
+    mockListPoolWorkflowBindings.mockReset()
     mockUpsertPoolWorkflowBinding.mockReset()
     mockDeletePoolWorkflowBinding.mockReset()
     mockListMasterDataParties.mockReset()
@@ -309,6 +312,7 @@ describe('PoolCatalogPage', () => {
         },
       ],
     })
+    mockListPoolWorkflowBindings.mockResolvedValue([])
     mockUpsertPoolWorkflowBinding.mockImplementation(async ({ pool_id, workflow_binding }) => ({
       pool_id,
       workflow_binding: {
@@ -635,6 +639,23 @@ describe('PoolCatalogPage', () => {
         updated_at: '2026-01-01T00:00:00Z',
       },
     ])
+    mockListPoolWorkflowBindings.mockResolvedValueOnce([
+      buildPoolWorkflowBinding(),
+      buildPoolWorkflowBinding({
+        binding_id: 'binding-bottom-up',
+        workflow: {
+          workflow_definition_key: 'bottom-up-import',
+          workflow_revision_id: '22222222-2222-2222-2222-222222222222',
+          workflow_revision: 5,
+          workflow_name: 'bottom_up_import',
+        },
+        selector: {
+          direction: 'bottom_up',
+          mode: 'safe',
+          tags: ['cutover', 'monthly'],
+        },
+      }),
+    ])
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
@@ -643,6 +664,9 @@ describe('PoolCatalogPage', () => {
     await user.click(screen.getByTestId('pool-catalog-edit-pool'))
 
     expect(screen.queryByLabelText('Workflow bindings JSON')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(mockListPoolWorkflowBindings).toHaveBeenCalledWith('44444444-4444-4444-4444-444444444444')
+    })
     expect(screen.getByTestId('pool-catalog-workflow-binding-card-0')).toBeInTheDocument()
     expect(screen.getByTestId('pool-catalog-workflow-binding-card-1')).toBeInTheDocument()
     expect(screen.getByDisplayValue('services-publication')).toBeInTheDocument()
@@ -671,6 +695,7 @@ describe('PoolCatalogPage', () => {
         updated_at: '2026-01-01T00:00:00Z',
       },
     ])
+    mockListPoolWorkflowBindings.mockResolvedValueOnce([buildPoolWorkflowBinding()])
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
@@ -792,6 +817,36 @@ describe('PoolCatalogPage', () => {
       }),
     })
     expect(mockDeletePoolWorkflowBinding).not.toHaveBeenCalled()
+  }, 15000)
+
+  it('fails closed when first-class workflow bindings load fails', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizationPools.mockResolvedValueOnce([
+      {
+        id: '44444444-4444-4444-4444-444444444444',
+        code: 'pool-1',
+        name: 'Pool One',
+        description: 'Main pool',
+        is_active: true,
+        metadata: {},
+        workflow_bindings: [buildPoolWorkflowBinding()],
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ])
+    mockListPoolWorkflowBindings.mockRejectedValueOnce(new Error('binding read failed'))
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Pools')
+    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+
+    expect(await screen.findByText('binding read failed')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-save-pool')).toBeDisabled()
+    expect(screen.queryByDisplayValue('services-publication')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Workflow bindings JSON')).not.toBeInTheDocument()
   }, 15000)
 
   it('blocks save when structured workflow binding contains invalid parameter JSON', async () => {
