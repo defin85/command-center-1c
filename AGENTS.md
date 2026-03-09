@@ -22,8 +22,8 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 # Язык (важно)
 
-- Планы и спеки ведём на русском языке: OpenSpec (`openspec/specs/**`, `openspec/changes/**`) и описания задач/планов в процессе работы.
-- Общепринятые термины, названия сущностей, API/эндпоинты, ключи настроек и code identifiers можно оставлять на английском, но общий смысл должен быть понятен без перевода.
+- Планы, спеки и описания change ведём на русском языке.
+- Общепринятые термины, названия сущностей, API/эндпоинты, ключи настроек и code identifiers можно оставлять на английском.
 
 # Unified Workflow
 
@@ -31,186 +31,171 @@ We operate in a cycle: **OpenSpec (What) → Beads (How) → Code (Implementatio
 
 ## 1. Intent Formation
 
-The user initiates with:
-`/openspec-proposal "Add 2FA authentication"`
-
 OpenSpec creates a change folder (`openspec/changes/<change-id>/`) containing:
 
-- `proposal.md`: Business value and scope.
-- `tasks.md`: High-level task list.
-- `design.md`: Technical design (optional).
-- `specs/.../spec.md`: Requirements and acceptance criteria.
+- `proposal.md`: business value and scope
+- `tasks.md`: high-level task list
+- `design.md`: technical design (optional)
+- `specs/.../spec.md`: requirements and acceptance criteria
 
-**Agent Goal**: Edit these files until they represent a signable contract.
+**Agent Goal**: edit these files until they represent a signable contract.
 
-**DO NOT proceed to step 2 until you are explicitly told the keyword "Go!" in English.**
+**DO NOT proceed to step 2 until approval is explicit.**
+Explicit approval can be either:
+- the keyword `Go!` in English; or
+- a direct invocation of `/openspec-to-beads <change-id>`.
 
 ## 2. Task Transformation
 
-Once the change is approved, execute the agent command:
+Once the change is approved, execute:
 `/openspec-to-beads <change-id>`
 
 The agent must:
 
-1.  Read the change files.
-2.  Create a Beads Epic for the feature. Include a short description summarizing the intent and referencing the change folder (e.g., "See openspec/changes/<change-id>/").
-3.  Create Beads Tasks for each item in `tasks.md`. Include a brief description for each task to provide context (why this issue exists and what needs to be done).
-4.  Set dependencies (e.g., Infra blocks Backend blocks Frontend).
+1. Read the change files.
+2. Create a Beads Epic for the feature and reference `openspec/changes/<change-id>/`.
+3. Create Beads Tasks for each item in `tasks.md`.
+4. Set dependencies.
 
-Result: A **live task graph in `.beads/`**, not just text.
+Result: a **live task graph in `.beads/`**, not just text.
 
 ## 3. Execution
 
 Work loop:
 
-- `bd ready`: Check actionable tasks
-- `bd show <task-id>`: Get task context
-- Implement code
-- `bd close <task-id>`: Complete task
-- `bd vc status`: Check Beads VC state (Dolt)
-- `bd vc commit -m "..."`: Commit pending Beads changes when needed
+- `bd ready`
+- `bd show <task-id>`
+- implement code
+- `bd close <task-id>`
+- `bd vc status`
+- `bd vc commit -m "..."`
 
-**Rule**: For code changes, only work on tasks listed in `bd ready`.
-
-If the user requests a code change that is not tracked in Beads yet:
-
-- Create an ad-hoc issue with `bd create ...`
-- Make sure it becomes actionable
-- Continue implementation from `bd ready`
-
-For non-code requests (analysis, explanations, review without code edits, research), Beads tracking is recommended but not mandatory.
+**Rules:**
+- For code changes, only work on tasks listed in `bd ready`.
+- For non-code requests (analysis, review, research without code edits), Beads tracking is recommended but not mandatory.
+- Newly discovered work must be tracked as a separate issue with dependency `discovered-from:<parent-id>`.
 
 ## 4. Fixation
 
-When all tasks are complete, execute the agent commands:
+When all tasks are complete, execute:
 
-- `/openspec-apply <change-id>`: Verify code meets specs.
-- Then, when ready,
-- `/openspec-archive <change-id>`: Archive the change.
-
----
+- `/openspec-apply <change-id>`
+- `/openspec-archive <change-id>`
 
 ## Agent Mental Checklist
 
-1.  **Start**: Is there an active OpenSpec change?
-    - No? → Create one (`/openspec-proposal`).
-    - Yes? → Read `proposal.md` and `tasks.md`.
-2.  **Plan**: Are tasks tracked in Beads?
-    - No? → Generate graph (`/openspec-to-beads`).
-    - Yes? → Work from `bd ready`.
-3.  **Align**: Keep OpenSpec (Intent) ↔ Beads (Plan) ↔ Code (Reality) in sync.
-
----
+1. Is there an active OpenSpec change?
+   - No → create one
+   - Yes → read `proposal.md` and `tasks.md`
+2. Are tasks tracked in Beads?
+   - No → generate graph
+   - Yes → work from `bd ready`
+3. Keep OpenSpec (Intent) ↔ Beads (Plan) ↔ Code (Reality) in sync.
 
 ## OpenSpec Delivery Contract (Mandatory)
 
 - Before coding for an OpenSpec change, build an execution matrix from `spec.md` requirements/scenarios to target files and tests.
 - Every MUST/Requirement/Scenario must have automated evidence (`test`) or an explicitly approved exception from the user.
 - Statuses `partially implemented` or `not implemented` for mandatory requirements block task completion and hand-off.
-- For API surface changes, update all relevant layers together: backend view/urls, `contracts/orchestrator/src/**`, aggregated `contracts/orchestrator/openapi.yaml`, and frontend generated client/types when applicable.
-- Async requirements must include a real async boundary (queue/worker/workflow). Synchronous execution in request path does not satisfy async requirements.
-- Integration/source requirements must use real runtime integration paths. Metadata/mock paths are allowed only for tests or explicitly approved temporary modes.
-- If any mandatory requirement cannot be delivered now, stop and escalate with concrete blockers and options; do not silently ship a partial implementation.
+- If any mandatory requirement cannot be delivered now, stop and escalate with concrete blockers and options.
 - Final delivery report must include `Requirement -> Code -> Test` evidence with concrete file paths.
-
----
-
-## Landing the Plane (Session Completion)
-
-**When ending a work session with commits in this repository**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   - `git pull --rebase`
-   - `bd vc status`
-   - if there are pending Beads changes: `bd vc commit -m "..."`
-   - `git push`
-   - `git status` - MUST show "up to date with origin"
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-
-- Work is NOT complete until `git push` succeeds (for sessions with commits in this repository)
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-- If push is blocked by an external constraint (no access/permissions, remote outage, or explicit user restriction), report the blocker explicitly and stop
 
 ## Issue Tracking
 
 This project uses **bd (beads)** for issue tracking.
 Run `bd prime` for workflow context.
 
-**Quick reference:**
+**Rules:**
+- Use `bd` as the source of truth for code-change tracking.
+- Do not use markdown TODO lists as a parallel tracker.
+- Prefer `--json` in programmatic/agent flows.
+- Use `bd vc status` / `bd vc commit` for Beads VC.
+- `bd sync` is deprecated/no-op and must not be used as a sync step.
+- In repositories with `dolt_mode: "server"`, do not use `bd dolt pull/push`.
+- Check `bd ready` before starting code work.
 
-- `bd ready` - Find unblocked work
-- `bd create "Title" --type task --priority 2 --description "..."` - Create ad-hoc issue
-- `bd close <task-id>` - Complete work
-- `bd vc status` - Check Dolt VC status
-- `bd vc commit -m "..."` - Commit pending Beads changes (if any)
+## Search Playbook
 
-For full workflow details: `bd prime`
+Search order:
 
-### Beads Dolt Server Mode (текущий репозиторий)
+1. `mcp__claude-context__search_code`
+2. `ast-index search "<query>"` if the repository uses `ast-index` or semantic search is noisy
+3. `rg`
+4. `rg --files`
 
-Актуальный режим в этом репозитории: `dolt_mode: "server"` (`.beads/metadata.json`) + shared `beads-dolt.service`.
+Checklist:
 
-Ключевые правила:
+1. Formulate the query as `component + action + context`.
+2. First pass: `limit: 6-10`.
+3. Set `extensionFilter` immediately.
+4. If results are noisy, rephrase using concrete entities.
+5. Confirm facts in at least 2 sources: code + test/spec/README.
+6. Do not treat TODO/checklists/status files as proof of implementation.
 
-- `bd sync` — deprecated/no-op, не использовать как шаг синхронизации.
-- Базовая проверка окружения: `./debug/start-dolt.sh` и `bd doctor --server`.
-- Проверка сервиса: `systemctl --user status beads-dolt.service --no-pager`.
-- Для фиксации изменений использовать `bd vc status` / `bd vc commit`.
-- В этом репозитории **не использовать Dolt remote/store** и не выполнять `bd dolt pull/push`.
+## Indexing
 
-## Семантический поиск (claude-context / ast-index)
+- For manual reindexing, use `force=true`.
+- Use one canonical absolute repo path with trailing `/`.
+- Use the same path for `index/status/clear/search`.
+- If mixed path keys were used before, clear old keys once and continue only with the canonical path.
 
-При поиске по коду использовать следующий порядок:
+## Landing the Plane (Session Completion)
 
-1. `mcp__claude-context__search_code` (семантический поиск, основной путь)
-2. `ast-index search "<query>"` (второй вариант: локальный AST-поиск, если `claude-context` недоступен или даёт шум)
-3. `rg` (точечная верификация по найденным путям)
+**When ending a work session, work is NOT complete until `git push` succeeds.**
 
-Чек-лист для эффективного поиска:
+Mandatory workflow:
 
-1. Формулировать запрос как `объект + действие + контекст` (например: `action catalog fixed schema save payload`).
+1. File issues for remaining work
+2. Run quality gates (if code changed)
+3. Update issue status
+4. `git pull --rebase`
+5. `bd vc status`
+6. if needed: `bd vc commit -m "..."`
+7. `git push`
+8. `git status` must show “up to date with origin”
+9. Clean up and hand off
+
+**Critical rules:**
+- Never stop before push succeeds
+- Never leave work stranded locally
+- If push fails, resolve and retry until it succeeds
+- If push is blocked by an external constraint or explicit user restriction, report the blocker explicitly and stop
+
+## Project Overlay
+
+### Поиск по коду
+Использовать следующий порядок:
+
+1. `mcp__claude-context__search_code`
+2. `ast-index search "<query>"`
+3. `rg`
+
+### Чек-лист поиска
+1. Формулировать запрос как `объект + действие + контекст`.
 2. Первый проход делать с `limit: 6-10`.
-3. Сразу задавать `extensionFilter` под задачу:
+3. Сразу задавать `extensionFilter`:
    - backend: `.py`
    - frontend: `.ts`, `.tsx`
-4. Для `ast-index` перед первым поиском в репозитории выполнять `ast-index rebuild` из корня репо.
-5. Если в топе много шума, переформулировать запрос через конкретные сущности (`ActionCatalogEditorModal`, `get_action_catalog_editor_hints`, `executor.fixed`).
+4. Для `ast-index` перед первым поиском выполнять `ast-index rebuild` из корня репо.
+5. Если в топе много шума, переформулировать запрос через конкретные сущности.
 6. После семантического поиска подтверждать факт в коде через `rg`/чтение файлов.
 7. Проверять минимум 2-3 источника: код + тест + контракт/spec.
 8. Не считать checklist/status доказательством реализации без проверки исходников.
-9. Для API-контрактов в `contracts/**/*.yaml` сначала пробовать семпоиск, но при пустой/шумной выдаче сразу переходить к `rg` по endpoint/schema.
+9. Для API-контрактов в `contracts/**/*.yaml` при шуме сразу переходить к `rg`.
 
-## Индексация (уменьшение шума)
-
-При ручной переиндексации использовать `force=true`.
-Игнор-паттерны для индексации задаются централизованно в `.codex/config.toml`.
-
-Важно: для `claude-context` использовать один и тот же канонический абсолютный путь с завершающим `/`.
-
-- Рекомендованный корень в этом репозитории: `/home/egor/code/command-center-1c/`
-- Использовать этот путь одинаково во всех командах:
+### Индексация
+- Игнор-паттерны задаются централизованно в `.codex/config.toml`.
+- Канонический корень: `/home/egor/code/command-center-1c/`
+- Использовать его одинаково для:
   - `mcp__claude-context__index_codebase`
   - `mcp__claude-context__get_indexing_status`
   - `mcp__claude-context__clear_index`
   - `mcp__claude-context__search_code`
-- Не смешивать варианты с `/` и без `/`: инструмент может воспринимать их как разные индексные ключи.
 
-## Локальная отладка (autonomous-feedback-loop)
-
-Практические команды runtime-debugging собраны в `DEBUG.md`:
-- inventory: `./debug/runtime-inventory.sh`
-- probes: `./debug/probe.sh all`
-- restart+probe: `./debug/restart-runtime.sh <runtime>`
-- django eval: `./debug/eval-django.sh "<python code>"`
-- frontend eval: `./debug/eval-frontend.sh "<js expression>"`
+### Локальная отладка
+Практические runtime-команды собраны в `DEBUG.md`:
+- `./debug/runtime-inventory.sh`
+- `./debug/probe.sh all`
+- `./debug/restart-runtime.sh <runtime>`
+- `./debug/eval-django.sh "<python code>"`
+- `./debug/eval-frontend.sh "<js expression>"`
