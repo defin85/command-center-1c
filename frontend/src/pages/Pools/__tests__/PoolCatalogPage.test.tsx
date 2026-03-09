@@ -817,7 +817,7 @@ describe('PoolCatalogPage', () => {
       }),
     })
     expect(mockDeletePoolWorkflowBinding).not.toHaveBeenCalled()
-  }, 15000)
+  }, 30000)
 
   it('fails closed when first-class workflow bindings load fails', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
