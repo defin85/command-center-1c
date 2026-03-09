@@ -18814,10 +18814,6 @@ components:
           type: boolean
           default: true
         metadata: {}
-        workflow_bindings:
-          type: array
-          items:
-            $ref: '#/components/schemas/PoolWorkflowBinding'
       required:
         - code
         - name

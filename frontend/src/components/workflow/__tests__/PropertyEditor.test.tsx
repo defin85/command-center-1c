@@ -92,9 +92,7 @@ describe('PropertyEditor', () => {
       nodeData: {
         label: 'Invoice Mode',
         nodeType: 'condition',
-        config: {
-          expression: '{{ amount > 100 }}',
-        },
+        config: {},
       },
       availableDecisions: [
         {
@@ -129,7 +127,7 @@ describe('PropertyEditor', () => {
     expect(await screen.findByDisplayValue('{{ decisions.invoice_mode }}')).toBeDisabled()
   })
 
-  it('keeps legacy expression editor for compatibility workflows', async () => {
+  it('shows legacy condition editor as read-only compatibility surface', async () => {
     renderEditor({
       nodeId: 'legacy-decision-node',
       nodeData: {
@@ -141,8 +139,28 @@ describe('PropertyEditor', () => {
       },
     })
 
-    expect(await screen.findByDisplayValue('{{ amount > 100 }}')).toBeInTheDocument()
+    expect(await screen.findByDisplayValue('{{ amount > 100 }}')).toBeDisabled()
     expect(screen.getByText('Legacy condition mode')).toBeInTheDocument()
+    expect(screen.getByText('This construct remains visible for compatibility, but the default analyst surface no longer allows editing raw expressions.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+  })
+
+  it('renders runtime-only parallel nodes as read-only compatibility surface', async () => {
+    renderEditor({
+      nodeId: 'parallel-node',
+      nodeData: {
+        label: 'Parallel Fan-out',
+        nodeType: 'parallel',
+        config: {
+          parallel_nodes: ['step-a', 'step-b'],
+          wait_for: 'all',
+        },
+      },
+    })
+
+    expect(await screen.findByText('Runtime-only workflow construct')).toBeInTheDocument()
+    expect(screen.getByText('Parallel and loop nodes remain inspectable for compatibility, but default analyst authoring no longer edits them.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
   })
 
   it('pins workflow revision metadata for subworkflow nodes', async () => {

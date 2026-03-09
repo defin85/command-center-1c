@@ -21,6 +21,10 @@ from apps.templates.workflow.management_mode import (
     WORKFLOW_SYSTEM_MANAGED_READ_ONLY_REASON,
     is_system_managed_workflow,
 )
+from apps.templates.workflow.authoring_boundary import (
+    WORKFLOW_AUTHORING_BOUNDARY_VIOLATION_CODE,
+    collect_authoring_boundary_violations,
+)
 from apps.templates.workflow.serializers import (
     WorkflowTemplateDetailSerializer,
 )
@@ -111,6 +115,26 @@ def _system_managed_read_only_response() -> Response:
         status=409,
     )
 
+
+def _authoring_boundary_error(violations: list[dict[str, object]]) -> Response:
+    return Response(
+        {
+            "success": False,
+            "error": {
+                "code": WORKFLOW_AUTHORING_BOUNDARY_VIOLATION_CODE,
+                "message": (
+                    "Default workflow authoring accepts only analyst-facing constructs. "
+                    "Use pinned decision tables for gates; runtime-only nodes and edge-level "
+                    "conditions remain compatibility-only."
+                ),
+                "details": {
+                    "violations": violations,
+                },
+            },
+        },
+        status=400,
+    )
+
 @extend_schema(
     tags=['v2'],
     summary='Create workflow template',
@@ -175,6 +199,10 @@ def create_workflow(request):
                 'message': 'dag_structure is required'
             }
         }, status=400)
+
+    authoring_boundary_violations = collect_authoring_boundary_violations(dag_structure)
+    if authoring_boundary_violations:
+        return _authoring_boundary_error(authoring_boundary_violations)
 
     if _is_enforce_pinned_enabled(request):
         non_pinned_node_ids = _find_non_pinned_operation_nodes(dag_structure)
@@ -300,8 +328,13 @@ def update_workflow(request):
             }
         }, status=409)
 
+    dag_candidate = request.data.get('dag_structure', workflow.dag_structure)
+
+    authoring_boundary_violations = collect_authoring_boundary_violations(dag_candidate)
+    if authoring_boundary_violations:
+        return _authoring_boundary_error(authoring_boundary_violations)
+
     if _is_enforce_pinned_enabled(request):
-        dag_candidate = request.data.get('dag_structure', workflow.dag_structure)
         non_pinned_node_ids = _find_non_pinned_operation_nodes(dag_candidate)
         if non_pinned_node_ids:
             return _pinned_policy_error(non_pinned_node_ids)
@@ -683,6 +716,10 @@ def clone_workflow(request):
         return _permission_denied("You do not have permission to manage this workflow.")
     if is_system_managed_workflow(source_workflow):
         return _system_managed_read_only_response()
+
+    authoring_boundary_violations = collect_authoring_boundary_violations(source_workflow.dag_structure)
+    if authoring_boundary_violations:
+        return _authoring_boundary_error(authoring_boundary_violations)
 
     try:
         if new_name:

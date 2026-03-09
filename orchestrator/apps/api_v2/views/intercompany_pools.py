@@ -2409,12 +2409,26 @@ class OrganizationPoolUpsertRequestSerializer(serializers.Serializer):
     description = serializers.CharField(required=False, allow_blank=True, default="")
     is_active = serializers.BooleanField(required=False, default=True)
     metadata = serializers.JSONField(required=False, default=dict)
-    workflow_bindings = PoolWorkflowBindingInputSerializer(many=True, required=False)
 
     def validate_metadata(self, value):
         if not isinstance(value, dict):
             raise serializers.ValidationError("metadata must be an object")
+        if "workflow_bindings" in value:
+            raise serializers.ValidationError(
+                "workflow_bindings must be managed via /api/v2/pools/workflow-bindings/."
+            )
         return value
+
+    def validate(self, attrs):
+        if isinstance(self.initial_data, Mapping) and "workflow_bindings" in self.initial_data:
+            raise serializers.ValidationError(
+                {
+                    "workflow_bindings": [
+                        "workflow_bindings must be managed via /api/v2/pools/workflow-bindings/."
+                    ]
+                }
+            )
+        return attrs
 
 
 class OrganizationPoolUpsertResponseSerializer(serializers.Serializer):
@@ -3694,25 +3708,14 @@ def upsert_organization_pool(request):
     else:
         pool = OrganizationPool.objects.filter(tenant_id=tenant_id, code=data["code"]).first()
 
+    existing_metadata = pool.metadata if pool and isinstance(pool.metadata, dict) else {}
     created = pool is None
     description_value = data.get("description", pool.description if pool else "")
-    metadata_value = dict(data.get("metadata", pool.metadata if pool else {}) or {})
+    metadata_value = dict(data.get("metadata", existing_metadata) or {})
+    if "workflow_bindings" not in metadata_value and "workflow_bindings" in existing_metadata:
+        metadata_value["workflow_bindings"] = existing_metadata["workflow_bindings"]
     is_active_value = data.get("is_active", pool.is_active if pool else True)
     pool_uuid = pool.id if pool else uuid4()
-
-    if "workflow_bindings" in data:
-        try:
-            metadata_value["workflow_bindings"] = _normalize_pool_workflow_bindings_for_storage(
-                pool_id=str(pool_uuid),
-                workflow_bindings=data["workflow_bindings"],
-            )
-        except serializers.ValidationError as exc:
-            return _problem(
-                code="VALIDATION_ERROR",
-                title="Validation Error",
-                detail=str(exc.detail),
-                status_code=http_status.HTTP_400_BAD_REQUEST,
-            )
 
     try:
         if created:

@@ -1209,65 +1209,14 @@ def test_upsert_pool_metadata_creates_updates_and_enforces_tenant_boundary(
 
 
 @pytest.mark.django_db
-def test_upsert_pool_metadata_round_trips_workflow_bindings(
-    authenticated_client: APIClient,
-) -> None:
-    create_response = authenticated_client.post(
-        "/api/v2/pools/upsert/",
-        {
-            "code": "pool-bindings",
-            "name": "Pool Bindings",
-            "workflow_bindings": [
-                {
-                    "workflow": {
-                        "workflow_definition_key": "services-publication",
-                        "workflow_revision_id": "11111111-1111-1111-1111-111111111111",
-                        "workflow_revision": 3,
-                        "workflow_name": "services_publication",
-                    },
-                    "selector": {"direction": "top_down", "mode": "safe", "tags": ["baseline"]},
-                    "role_mapping": {"seller": "organization:stroygrupp"},
-                    "parameters": {"invoice_mode": "optional"},
-                    "effective_from": "2026-01-01",
-                    "status": "active",
-                }
-            ],
-        },
-        format="json",
-    )
-
-    assert create_response.status_code == 201
-    create_payload = create_response.json()
-    bindings = create_payload["pool"]["workflow_bindings"]
-    assert len(bindings) == 1
-    assert bindings[0]["pool_id"] == create_payload["pool"]["id"]
-    assert bindings[0]["workflow"]["workflow_definition_key"] == "services-publication"
-    assert bindings[0]["workflow"]["workflow_revision"] == 3
-    assert bindings[0]["selector"] == {
-        "direction": "top_down",
-        "mode": "safe",
-        "tags": ["baseline"],
-    }
-    assert bindings[0]["status"] == "active"
-    assert bindings[0]["binding_id"]
-
-    pools_response = authenticated_client.get("/api/v2/pools/")
-    assert pools_response.status_code == 200
-    listed_pool = next(
-        item for item in pools_response.json()["pools"] if item["id"] == create_payload["pool"]["id"]
-    )
-    assert listed_pool["workflow_bindings"][0]["workflow"]["workflow_name"] == "services_publication"
-
-
-@pytest.mark.django_db
-def test_upsert_pool_metadata_rejects_invalid_workflow_bindings(
+def test_upsert_pool_metadata_rejects_legacy_workflow_bindings_write_path(
     authenticated_client: APIClient,
 ) -> None:
     response = authenticated_client.post(
         "/api/v2/pools/upsert/",
         {
-            "code": "pool-invalid-bindings",
-            "name": "Pool Invalid Bindings",
+            "code": "pool-bindings",
+            "name": "Pool Bindings",
             "workflow_bindings": [
                 {
                     "workflow": {
@@ -1288,7 +1237,84 @@ def test_upsert_pool_metadata_rejects_invalid_workflow_bindings(
     assert response.status_code == 400
     payload = response.json()
     assert payload["code"] == "VALIDATION_ERROR"
-    assert "effective_to must be greater than or equal to effective_from" in payload["detail"]
+    assert "workflow_bindings" in payload["detail"]
+    assert "/api/v2/pools/workflow-bindings/" in payload["detail"]
+
+
+@pytest.mark.django_db
+def test_upsert_pool_metadata_rejects_workflow_bindings_nested_inside_metadata(
+    authenticated_client: APIClient,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/upsert/",
+        {
+            "code": "pool-bindings-metadata",
+            "name": "Pool Bindings Metadata",
+            "metadata": {
+                "workflow_bindings": [
+                    {
+                        "workflow": {
+                            "workflow_definition_key": "services-publication",
+                            "workflow_revision_id": "11111111-1111-1111-1111-111111111111",
+                            "workflow_revision": 3,
+                            "workflow_name": "services_publication",
+                        },
+                        "effective_from": "2026-01-01",
+                        "status": "active",
+                    }
+                ]
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["code"] == "VALIDATION_ERROR"
+    assert "metadata" in payload["detail"]
+    assert "/api/v2/pools/workflow-bindings/" in payload["detail"]
+
+
+@pytest.mark.django_db
+def test_upsert_pool_metadata_preserves_existing_workflow_bindings(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+    )
+    pool.metadata = {
+        "workflow_bindings": [binding],
+        "owner": "ops",
+    }
+    pool.save(update_fields=["metadata", "updated_at"])
+
+    response = authenticated_client.post(
+        "/api/v2/pools/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "code": pool.code,
+            "name": "Pool API",
+            "metadata": {
+                "owner": "finance",
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["pool"]["metadata"]["owner"] == "finance"
+    assert len(payload["pool"]["workflow_bindings"]) == 1
+    assert payload["pool"]["workflow_bindings"][0]["binding_id"] == binding["binding_id"]
+
+    pool.refresh_from_db()
+    assert pool.metadata["owner"] == "finance"
+    assert pool.metadata["workflow_bindings"][0]["binding_id"] == binding["binding_id"]
 
 
 @pytest.mark.django_db

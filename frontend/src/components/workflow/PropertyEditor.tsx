@@ -144,6 +144,21 @@ const formatExecutionContractList = (items: string[]): string => (
   items.length > 0 ? items.join(', ') : 'none'
 )
 
+const resolveCompatibilityReadOnlyReason = (nodeData: WorkflowNodeData): string | null => {
+  if (nodeData.nodeType === 'parallel' || nodeData.nodeType === 'loop') {
+    return 'Parallel and loop nodes remain inspectable for compatibility, but default analyst authoring no longer edits them.'
+  }
+  if (
+    nodeData.nodeType === 'condition'
+    && !nodeData.decisionRef
+    && typeof nodeData.config?.expression === 'string'
+    && nodeData.config.expression.trim()
+  ) {
+    return 'This construct remains visible for compatibility, but the default analyst surface no longer allows editing raw expressions.'
+  }
+  return null
+}
+
 const resolveRequiredInputTargets = (contract: OperationTemplateExecutionContract | undefined): string[] => {
   if (!contract) {
     return []
@@ -532,7 +547,7 @@ const ConditionForm = ({
           <Alert
             type="warning"
             message="Legacy condition mode"
-            description="Prefer a pinned decision table for default analyst authoring; raw expressions remain only for compatibility."
+            description="This construct remains visible for compatibility, but the default analyst surface no longer allows editing raw expressions."
             showIcon
             style={{ marginTop: 8 }}
           />
@@ -562,6 +577,13 @@ const ParallelForm = ({
   idPrefix: string
 }) => (
   <>
+    <Alert
+      type="warning"
+      showIcon
+      style={{ marginBottom: 12 }}
+      message="Runtime-only workflow construct"
+      description="Parallel and loop nodes remain inspectable for compatibility, but default analyst authoring no longer edits them."
+    />
     <Form.Item label="Parallel Nodes" htmlFor={`${idPrefix}-parallel-nodes`} help="Node IDs to execute in parallel">
       <Select
         id={`${idPrefix}-parallel-nodes`}
@@ -616,6 +638,13 @@ const LoopForm = ({
   idPrefix: string
 }) => (
   <>
+    <Alert
+      type="warning"
+      showIcon
+      style={{ marginBottom: 12 }}
+      message="Runtime-only workflow construct"
+      description="Parallel and loop nodes remain inspectable for compatibility, but default analyst authoring no longer edits them."
+    />
     <Form.Item label="Loop Mode" htmlFor={`${idPrefix}-loop-mode`} required>
       <Select
         id={`${idPrefix}-loop-mode`}
@@ -877,6 +906,8 @@ const PropertyEditor = ({
   }
 
   const nodeInfo = NODE_TYPE_INFO[localData.nodeType]
+  const compatibilityReadOnlyReason = resolveCompatibilityReadOnlyReason(localData)
+  const effectiveReadOnly = readOnly || compatibilityReadOnlyReason !== null
 
   const handleLabelChange = (label: string) => {
     setLocalData({ ...localData, label })
@@ -980,7 +1011,7 @@ const PropertyEditor = ({
             onChange={handleConfigChange}
             onIoChange={handleIoChange}
             templates={operationTemplates}
-            readOnly={readOnly}
+            readOnly={effectiveReadOnly}
             idPrefix={idPrefix}
           />
         )
@@ -992,7 +1023,7 @@ const PropertyEditor = ({
             onChange={handleConfigChange}
             onDecisionChange={handleDecisionChange}
             availableDecisions={availableDecisions}
-            readOnly={readOnly}
+            readOnly={effectiveReadOnly}
             idPrefix={idPrefix}
           />
         )
@@ -1001,7 +1032,7 @@ const PropertyEditor = ({
           <ParallelForm
             config={config}
             onChange={handleConfigChange}
-            readOnly={readOnly}
+            readOnly={effectiveReadOnly}
             idPrefix={idPrefix}
           />
         )
@@ -1010,7 +1041,7 @@ const PropertyEditor = ({
           <LoopForm
             config={config}
             onChange={handleConfigChange}
-            readOnly={readOnly}
+            readOnly={effectiveReadOnly}
             idPrefix={idPrefix}
           />
         )
@@ -1020,7 +1051,7 @@ const PropertyEditor = ({
             config={config}
             onChange={handleConfigChange}
             workflows={availableWorkflows}
-            readOnly={readOnly}
+            readOnly={effectiveReadOnly}
             idPrefix={idPrefix}
           />
         )
@@ -1046,7 +1077,7 @@ const PropertyEditor = ({
             id={`${idPrefix}-node-name`}
             value={localData.label}
             placeholder="Step name"
-            disabled={readOnly}
+            disabled={effectiveReadOnly}
             onChange={(e) => handleLabelChange(e.target.value)}
           />
         </Form.Item>
@@ -1056,7 +1087,7 @@ const PropertyEditor = ({
         {renderTypeForm()}
       </Form>
 
-      {!readOnly && (
+      {!effectiveReadOnly && (
         <>
           <Divider style={{ margin: '12px 0' }} />
           <Space>

@@ -17,10 +17,6 @@ properties:
     type: boolean
     default: true
   metadata: {}
-  workflow_bindings:
-    type: array
-    items:
-      $ref: ./PoolWorkflowBinding.yaml
 required:
   - code
   - name

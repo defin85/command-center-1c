@@ -476,7 +476,6 @@ export type UpsertOrganizationPoolPayload = {
   description?: string
   is_active?: boolean
   metadata?: Record<string, unknown>
-  workflow_bindings?: PoolWorkflowBinding[]
 }
 
 export type PoolTopologySnapshotNodeInput = {

@@ -104,6 +104,25 @@ const normalizeOptionalNumber = (value: unknown): number | undefined => {
   return Number.isNaN(parsed) ? undefined : parsed
 }
 
+const resolveApiErrorMessage = (error: unknown, fallback: string): string => {
+  if (!error || typeof error !== 'object') {
+    return fallback
+  }
+  const payload = (error as { response?: { data?: unknown } }).response?.data
+  if (!payload || typeof payload !== 'object') {
+    return fallback
+  }
+  const detail = (payload as { detail?: unknown }).detail
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail
+  }
+  const message = (payload as { error?: { message?: unknown } }).error?.message
+  if (typeof message === 'string' && message.trim()) {
+    return message
+  }
+  return fallback
+}
+
 const mapExecutionContract = (
   contract: OperationCatalogExposureExecutionContract | undefined
 ): OperationTemplateListItem['executionContract'] => {
@@ -541,8 +560,7 @@ const WorkflowDesigner = () => {
 
       setSaveModalVisible(false)
     } catch (error: unknown) {
-      const axiosError = error as { response?: { data?: { detail?: string } } }
-      message.error(axiosError.response?.data?.detail || 'Failed to save workflow')
+      message.error(resolveApiErrorMessage(error, 'Failed to save workflow'))
       setState((prev) => ({ ...prev, isSaving: false }))
     }
   }
@@ -581,8 +599,7 @@ const WorkflowDesigner = () => {
       if (error instanceof SyntaxError) {
         message.error('Invalid JSON input')
       } else {
-        const axiosError = error as { response?: { data?: { detail?: string } } }
-        message.error(axiosError.response?.data?.detail || 'Failed to execute workflow')
+        message.error(resolveApiErrorMessage(error, 'Failed to execute workflow'))
       }
     }
   }

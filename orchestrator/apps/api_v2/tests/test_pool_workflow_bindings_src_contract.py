@@ -62,3 +62,21 @@ def test_pool_workflow_bindings_preview_src_contract_uses_dedicated_request_sche
     assert content["application/json"]["schema"] == expected_schema
     assert content["application/x-www-form-urlencoded"]["schema"] == expected_schema
     assert content["multipart/form-data"]["schema"] == expected_schema
+
+
+def test_pool_upsert_src_contract_does_not_expose_workflow_bindings_write_field() -> None:
+    schema_path = (
+        Path(__file__).resolve().parents[4]
+        / "contracts"
+        / "orchestrator"
+        / "src"
+        / "components"
+        / "schemas"
+        / "OrganizationPoolUpsertRequest.yaml"
+    )
+    payload = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+
+    properties = payload.get("properties")
+    assert isinstance(properties, dict)
+    assert "workflow_bindings" not in properties

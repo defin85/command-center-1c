@@ -123,6 +123,17 @@ def test_generated_models_cover_graph_metadata_fields_from_contract() -> None:
         assert "metadata" in generated_fields, f"{schema_name}.metadata missing in generated {model_file}"
 
 
+def test_pool_upsert_generated_client_does_not_expose_workflow_bindings_write_field() -> None:
+    contract = _load_openapi_contract()
+    schema = _schema(contract, "OrganizationPoolUpsertRequest")
+    properties = schema.get("properties")
+    assert isinstance(properties, dict)
+    assert "workflow_bindings" not in properties
+
+    generated_fields = _generated_model_fields("organizationPoolUpsertRequest.ts")
+    assert "workflow_bindings" not in generated_fields
+
+
 def test_generated_confirm_publication_error_alias_uses_readiness_problem_details_model() -> None:
     generated_v2_path = _repo_root() / "frontend" / "src" / "api" / "generated" / "v2" / "v2.ts"
     content = generated_v2_path.read_text(encoding="utf-8")
