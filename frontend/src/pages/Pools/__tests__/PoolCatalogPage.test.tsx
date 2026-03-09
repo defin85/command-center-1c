@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 
-import type { Organization } from '../../../api/intercompanyPools'
+import type { Organization, PoolWorkflowBinding } from '../../../api/intercompanyPools'
 import { PoolCatalogPage } from '../PoolCatalogPage'
 
 const mockListOrganizations = vi.fn()
@@ -18,6 +18,8 @@ const mockListPoolTopologySnapshots = vi.fn()
 const mockSyncOrganizationsCatalog = vi.fn()
 const mockGetPoolODataMetadataCatalog = vi.fn()
 const mockRefreshPoolODataMetadataCatalog = vi.fn()
+const mockUpsertPoolWorkflowBinding = vi.fn()
+const mockDeletePoolWorkflowBinding = vi.fn()
 const mockListMasterDataParties = vi.fn()
 const mockListMasterDataItems = vi.fn()
 const mockListMasterDataContracts = vi.fn()
@@ -57,6 +59,8 @@ vi.mock('../../../api/intercompanyPools', () => ({
   syncOrganizationsCatalog: (...args: unknown[]) => mockSyncOrganizationsCatalog(...args),
   getPoolODataMetadataCatalog: (...args: unknown[]) => mockGetPoolODataMetadataCatalog(...args),
   refreshPoolODataMetadataCatalog: (...args: unknown[]) => mockRefreshPoolODataMetadataCatalog(...args),
+  upsertPoolWorkflowBinding: (...args: unknown[]) => mockUpsertPoolWorkflowBinding(...args),
+  deletePoolWorkflowBinding: (...args: unknown[]) => mockDeletePoolWorkflowBinding(...args),
   listMasterDataParties: (...args: unknown[]) => mockListMasterDataParties(...args),
   listMasterDataItems: (...args: unknown[]) => mockListMasterDataItems(...args),
   listMasterDataContracts: (...args: unknown[]) => mockListMasterDataContracts(...args),
@@ -88,6 +92,27 @@ const secondOrganization: Organization = {
 }
 
 let initialCatalogLoadPromise: Promise<void> | null = null
+
+function buildPoolWorkflowBinding(overrides: Partial<PoolWorkflowBinding> = {}): PoolWorkflowBinding {
+  return {
+    binding_id: 'binding-top-down',
+    workflow: {
+      workflow_definition_key: 'services-publication',
+      workflow_revision_id: '11111111-1111-1111-1111-111111111111',
+      workflow_revision: 3,
+      workflow_name: 'services_publication',
+    },
+    selector: {
+      direction: 'top_down',
+      mode: 'safe',
+      tags: ['baseline'],
+    },
+    effective_from: '2026-01-01',
+    effective_to: null,
+    status: 'active',
+    ...overrides,
+  }
+}
 
 async function waitForInitialCatalogLoad() {
   await waitFor(() => expect(mockListOrganizations).toHaveBeenCalled())
@@ -163,6 +188,8 @@ describe('PoolCatalogPage', () => {
     mockSyncOrganizationsCatalog.mockReset()
     mockGetPoolODataMetadataCatalog.mockReset()
     mockRefreshPoolODataMetadataCatalog.mockReset()
+    mockUpsertPoolWorkflowBinding.mockReset()
+    mockDeletePoolWorkflowBinding.mockReset()
     mockListMasterDataParties.mockReset()
     mockListMasterDataItems.mockReset()
     mockListMasterDataContracts.mockReset()
@@ -281,6 +308,19 @@ describe('PoolCatalogPage', () => {
           table_parts: [],
         },
       ],
+    })
+    mockUpsertPoolWorkflowBinding.mockImplementation(async ({ pool_id, workflow_binding }) => ({
+      pool_id,
+      workflow_binding: {
+        ...workflow_binding,
+        binding_id: workflow_binding.binding_id || 'generated-binding-id',
+      },
+      created: !workflow_binding.binding_id,
+    }))
+    mockDeletePoolWorkflowBinding.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      workflow_binding: buildPoolWorkflowBinding(),
+      deleted: true,
     })
     mockListMasterDataParties.mockResolvedValue({
       parties: [
@@ -563,7 +603,93 @@ describe('PoolCatalogPage', () => {
     )
   }, 15000)
 
-  it('submits workflow bindings from pool drawer as structured payload', async () => {
+  it('renders existing workflow bindings in structured editor without raw JSON authoring', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizationPools.mockResolvedValueOnce([
+      {
+        id: '44444444-4444-4444-4444-444444444444',
+        code: 'pool-1',
+        name: 'Pool One',
+        description: 'Main pool',
+        is_active: true,
+        metadata: {},
+        workflow_bindings: [
+          buildPoolWorkflowBinding(),
+          buildPoolWorkflowBinding({
+            binding_id: 'binding-bottom-up',
+            workflow: {
+              workflow_definition_key: 'bottom-up-import',
+              workflow_revision_id: '22222222-2222-2222-2222-222222222222',
+              workflow_revision: 5,
+              workflow_name: 'bottom_up_import',
+            },
+            selector: {
+              direction: 'bottom_up',
+              mode: 'safe',
+              tags: ['cutover', 'monthly'],
+            },
+          }),
+        ],
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ])
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Pools')
+    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+
+    expect(screen.queryByLabelText('Workflow bindings JSON')).not.toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-workflow-binding-card-0')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-workflow-binding-card-1')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('services-publication')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('bottom-up-import')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-workflow-binding-summary-0')).toHaveTextContent(
+      'direction=top_down'
+    )
+    expect(screen.getByTestId('pool-catalog-workflow-binding-summary-1')).toHaveTextContent(
+      'tags=cutover, monthly'
+    )
+  }, 15000)
+
+  it('removes deleted workflow bindings through first-class binding API', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizationPools.mockResolvedValueOnce([
+      {
+        id: '44444444-4444-4444-4444-444444444444',
+        code: 'pool-1',
+        name: 'Pool One',
+        description: 'Main pool',
+        is_active: true,
+        metadata: {},
+        workflow_bindings: [buildPoolWorkflowBinding()],
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ])
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Pools')
+    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await user.click(screen.getByTestId('pool-catalog-workflow-binding-remove-0'))
+    await user.click(screen.getByTestId('pool-catalog-save-pool'))
+
+    await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mockDeletePoolWorkflowBinding).toHaveBeenCalledTimes(1))
+    expect(mockDeletePoolWorkflowBinding).toHaveBeenCalledWith(
+      '44444444-4444-4444-4444-444444444444',
+      'binding-top-down'
+    )
+    expect(mockUpsertPoolWorkflowBinding).not.toHaveBeenCalled()
+  }, 15000)
+
+  it('submits workflow bindings from pool drawer via structured editor', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
@@ -572,26 +698,57 @@ describe('PoolCatalogPage', () => {
 
     await openWorkspaceTab(user, 'Pools')
     await user.click(screen.getByTestId('pool-catalog-edit-pool'))
-    fireEvent.change(screen.getByLabelText('Workflow bindings JSON'), {
-      target: {
-        value: JSON.stringify(
-          [
-            {
-              workflow: {
-                workflow_definition_key: 'services-publication',
-                workflow_revision_id: '11111111-1111-1111-1111-111111111111',
-                workflow_revision: 3,
-                workflow_name: 'services_publication',
-              },
-              selector: { direction: 'top_down', mode: 'safe', tags: ['baseline'] },
-              effective_from: '2026-01-01',
-              status: 'active',
-            },
-          ],
-          null,
-          2
-        ),
-      },
+    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-key-0'), {
+      target: { value: 'services-publication' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-revision-id-0'), {
+      target: { value: '11111111-1111-1111-1111-111111111111' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-revision-0'), {
+      target: { value: '3' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-name-0'), {
+      target: { value: 'services_publication' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-effective-from-0'), {
+      target: { value: '2026-01-01' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-effective-to-0'), {
+      target: { value: '2026-12-31' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-selector-direction-0'), {
+      target: { value: 'top_down' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-selector-mode-0'), {
+      target: { value: 'safe' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-selector-tags-0'), {
+      target: { value: 'baseline, monthly' },
+    })
+    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-decision-0'))
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-decision-id-0-0'), {
+      target: { value: 'decision-1' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-decision-key-0-0'), {
+      target: { value: 'route_documents' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-decision-revision-0-0'), {
+      target: { value: '4' },
+    })
+    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-role-0'))
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-role-source-0-0'), {
+      target: { value: 'owner' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-role-target-0-0'), {
+      target: { value: 'publisher' },
+    })
+    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-parameter-0'))
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-parameter-key-0-0'), {
+      target: { value: 'strategy' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-parameter-value-0-0'), {
+      target: { value: '"strict"' },
     })
     await user.click(screen.getByTestId('pool-catalog-save-pool'))
 
@@ -599,17 +756,83 @@ describe('PoolCatalogPage', () => {
     expect(mockUpsertOrganizationPool).toHaveBeenCalledWith(
       expect.objectContaining({
         pool_id: '44444444-4444-4444-4444-444444444444',
-        workflow_bindings: [
-          expect.objectContaining({
-            workflow: expect.objectContaining({
-              workflow_definition_key: 'services-publication',
-              workflow_revision: 3,
-            }),
-            status: 'active',
-          }),
-        ],
+        code: 'pool-1',
+        name: 'Pool One',
       })
     )
+    expect(mockUpsertOrganizationPool.mock.calls[0]?.[0]).not.toHaveProperty('workflow_bindings')
+    await waitFor(() => expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledTimes(1))
+    expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledWith({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      workflow_binding: expect.objectContaining({
+        workflow: expect.objectContaining({
+          workflow_definition_key: 'services-publication',
+          workflow_revision: 3,
+        }),
+        decisions: [
+          expect.objectContaining({
+            decision_table_id: 'decision-1',
+            decision_key: 'route_documents',
+            decision_revision: 4,
+          }),
+        ],
+        role_mapping: {
+          owner: 'publisher',
+        },
+        parameters: {
+          strategy: 'strict',
+        },
+        selector: {
+          direction: 'top_down',
+          mode: 'safe',
+          tags: ['baseline', 'monthly'],
+        },
+        effective_to: '2026-12-31',
+        status: 'draft',
+      }),
+    })
+    expect(mockDeletePoolWorkflowBinding).not.toHaveBeenCalled()
+  }, 15000)
+
+  it('blocks save when structured workflow binding contains invalid parameter JSON', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Pools')
+    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-key-0'), {
+      target: { value: 'services-publication' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-revision-id-0'), {
+      target: { value: '11111111-1111-1111-1111-111111111111' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-revision-0'), {
+      target: { value: '3' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-name-0'), {
+      target: { value: 'services_publication' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-effective-from-0'), {
+      target: { value: '2026-01-01' },
+    })
+    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-parameter-0'))
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-parameter-key-0-0'), {
+      target: { value: 'strategy' },
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-parameter-value-0-0'), {
+      target: { value: '{bad json}' },
+    })
+
+    await user.click(screen.getByTestId('pool-catalog-save-pool'))
+
+    expect(
+      await screen.findAllByText('Binding #1: parameters.strategy должен быть валидным JSON.')
+    ).toHaveLength(2)
+    expect(mockUpsertOrganizationPool).not.toHaveBeenCalled()
   }, 15000)
 
   it('deactivates selected pool via toggle action', async () => {

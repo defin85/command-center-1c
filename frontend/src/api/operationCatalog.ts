@@ -36,8 +36,55 @@ export type OperationCatalogExposure = {
   template_exposure_revision?: number
   executor_kind?: string
   executor_command_id?: string | null
+  execution_contract?: OperationCatalogExposureExecutionContract
   created_at?: string
   updated_at?: string
+}
+
+export type OperationCatalogExposureExecutionCapability = {
+  id?: string
+  label?: string
+  operation_type?: string
+  target_entity?: string
+  executor_kind?: string
+}
+
+export type OperationCatalogExposureExecutionInput = {
+  mode?: 'params' | 'input_context' | string
+  required_parameters?: string[]
+  optional_parameters?: string[]
+  parameter_schemas?: Record<string, Record<string, unknown>>
+}
+
+export type OperationCatalogExposureExecutionOutput = {
+  result_path?: string
+  supports_structured_mapping?: boolean
+}
+
+export type OperationCatalogExposureExecutionSideEffect = {
+  execution_mode?: 'sync' | 'async' | string
+  effect_kind?: string
+  summary?: string | null
+  timeout_seconds?: number | null
+  max_retries?: number | null
+}
+
+export type OperationCatalogExposureExecutionProvenance = {
+  surface?: string
+  alias?: string
+  exposure_id?: string
+  exposure_revision?: number
+  definition_id?: string
+  executor_command_id?: string | null
+}
+
+export type OperationCatalogExposureExecutionContract = {
+  contract_version?: string
+  capability?: OperationCatalogExposureExecutionCapability
+  input_contract?: OperationCatalogExposureExecutionInput
+  output_contract?: OperationCatalogExposureExecutionOutput
+  side_effect_profile?: OperationCatalogExposureExecutionSideEffect
+  binding_provenance?: OperationCatalogExposureExecutionProvenance
 }
 
 export type OperationCatalogDefinitionInput = {

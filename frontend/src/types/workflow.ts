@@ -154,6 +154,52 @@ export interface WorkflowTemplateUpdate {
 // Operation Template Types (for node configuration)
 // ============================================================================
 
+export interface OperationTemplateExecutionCapability {
+  id: string
+  label: string
+  operationType: string
+  targetEntity: string
+  executorKind: string
+}
+
+export interface OperationTemplateExecutionInput {
+  mode: string
+  requiredParameters: string[]
+  optionalParameters: string[]
+  parameterSchemas: Record<string, Record<string, unknown>>
+}
+
+export interface OperationTemplateExecutionOutput {
+  resultPath: string
+  supportsStructuredMapping: boolean
+}
+
+export interface OperationTemplateExecutionSideEffect {
+  executionMode: string
+  effectKind: string
+  summary?: string
+  timeoutSeconds?: number
+  maxRetries?: number
+}
+
+export interface OperationTemplateExecutionProvenance {
+  surface: string
+  alias: string
+  exposureId: string
+  exposureRevision?: number
+  definitionId: string
+  executorCommandId?: string
+}
+
+export interface OperationTemplateExecutionContract {
+  contractVersion: string
+  capability: OperationTemplateExecutionCapability
+  input: OperationTemplateExecutionInput
+  output: OperationTemplateExecutionOutput
+  sideEffect: OperationTemplateExecutionSideEffect
+  provenance: OperationTemplateExecutionProvenance
+}
+
 export interface OperationTemplateListItem {
   id: string
   name: string
@@ -161,6 +207,7 @@ export interface OperationTemplateListItem {
   description?: string
   exposure_id?: string
   exposure_revision?: number
+  executionContract?: OperationTemplateExecutionContract
 }
 
 export interface AvailableWorkflowRevision {

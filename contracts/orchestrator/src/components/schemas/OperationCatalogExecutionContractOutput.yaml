@@ -1,0 +1,6 @@
+type: object
+properties:
+  result_path:
+    type: string
+  supports_structured_mapping:
+    type: boolean

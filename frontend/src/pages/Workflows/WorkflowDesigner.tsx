@@ -49,7 +49,10 @@ import type {
 
 // Generated API
 import { getV2 } from '../../api/generated/v2/v2'
-import { listOperationCatalogExposures } from '../../api/operationCatalog'
+import {
+  listOperationCatalogExposures,
+  type OperationCatalogExposureExecutionContract,
+} from '../../api/operationCatalog'
 
 // Transform utilities for API <-> UI type conversion
 import {
@@ -80,6 +83,109 @@ interface WorkflowDesignerState {
 const initialDagStructure: DAGStructure = {
   nodes: [],
   edges: []
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+)
+
+const normalizeStringList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+const normalizeOptionalNumber = (value: unknown): number | undefined => {
+  const parsed = Number.parseInt(String(value ?? ''), 10)
+  return Number.isNaN(parsed) ? undefined : parsed
+}
+
+const mapExecutionContract = (
+  contract: OperationCatalogExposureExecutionContract | undefined
+): OperationTemplateListItem['executionContract'] => {
+  if (!contract) {
+    return undefined
+  }
+
+  const parameterSchemas = isRecord(contract.input_contract?.parameter_schemas)
+    ? contract.input_contract.parameter_schemas as Record<string, Record<string, unknown>>
+    : {}
+
+  return {
+    contractVersion: typeof contract.contract_version === 'string'
+      ? contract.contract_version
+      : '',
+    capability: {
+      id: typeof contract.capability?.id === 'string' ? contract.capability.id : '',
+      label: typeof contract.capability?.label === 'string' ? contract.capability.label : '',
+      operationType: typeof contract.capability?.operation_type === 'string'
+        ? contract.capability.operation_type
+        : '',
+      targetEntity: typeof contract.capability?.target_entity === 'string'
+        ? contract.capability.target_entity
+        : '',
+      executorKind: typeof contract.capability?.executor_kind === 'string'
+        ? contract.capability.executor_kind
+        : '',
+    },
+    input: {
+      mode: typeof contract.input_contract?.mode === 'string'
+        ? contract.input_contract.mode
+        : 'params',
+      requiredParameters: normalizeStringList(contract.input_contract?.required_parameters),
+      optionalParameters: normalizeStringList(contract.input_contract?.optional_parameters),
+      parameterSchemas,
+    },
+    output: {
+      resultPath: typeof contract.output_contract?.result_path === 'string'
+        ? contract.output_contract.result_path
+        : 'result',
+      supportsStructuredMapping: contract.output_contract?.supports_structured_mapping !== false,
+    },
+    sideEffect: {
+      executionMode: typeof contract.side_effect_profile?.execution_mode === 'string'
+        ? contract.side_effect_profile.execution_mode
+        : 'sync',
+      effectKind: typeof contract.side_effect_profile?.effect_kind === 'string'
+        ? contract.side_effect_profile.effect_kind
+        : 'opaque',
+      ...(typeof contract.side_effect_profile?.summary === 'string'
+        && contract.side_effect_profile.summary.trim()
+        ? { summary: contract.side_effect_profile.summary.trim() }
+        : {}),
+      ...(normalizeOptionalNumber(contract.side_effect_profile?.timeout_seconds) !== undefined
+        ? { timeoutSeconds: normalizeOptionalNumber(contract.side_effect_profile?.timeout_seconds) }
+        : {}),
+      ...(normalizeOptionalNumber(contract.side_effect_profile?.max_retries) !== undefined
+        ? { maxRetries: normalizeOptionalNumber(contract.side_effect_profile?.max_retries) }
+        : {}),
+    },
+    provenance: {
+      surface: typeof contract.binding_provenance?.surface === 'string'
+        ? contract.binding_provenance.surface
+        : '',
+      alias: typeof contract.binding_provenance?.alias === 'string'
+        ? contract.binding_provenance.alias
+        : '',
+      exposureId: typeof contract.binding_provenance?.exposure_id === 'string'
+        ? contract.binding_provenance.exposure_id
+        : '',
+      ...(normalizeOptionalNumber(contract.binding_provenance?.exposure_revision) !== undefined
+        ? { exposureRevision: normalizeOptionalNumber(contract.binding_provenance?.exposure_revision) }
+        : {}),
+      definitionId: typeof contract.binding_provenance?.definition_id === 'string'
+        ? contract.binding_provenance.definition_id
+        : '',
+      ...(typeof contract.binding_provenance?.executor_command_id === 'string'
+        && contract.binding_provenance.executor_command_id.trim()
+        ? { executorCommandId: contract.binding_provenance.executor_command_id.trim() }
+        : {}),
+    },
+  }
 }
 
 const WorkflowDesigner = () => {
@@ -242,6 +348,7 @@ const WorkflowDesigner = () => {
               operation_type: operationType,
               exposure_id: String(row.id ?? '') || undefined,
               exposure_revision: Number.isNaN(parsedRevision) ? undefined : parsedRevision,
+              executionContract: mapExecutionContract(row.execution_contract),
             }
           })
           .filter((row) => row.id && row.name)

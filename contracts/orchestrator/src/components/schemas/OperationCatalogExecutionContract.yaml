@@ -1,0 +1,14 @@
+type: object
+properties:
+  contract_version:
+    type: string
+  capability:
+    $ref: ./OperationCatalogExecutionContractCapability.yaml
+  input_contract:
+    $ref: ./OperationCatalogExecutionContractInput.yaml
+  output_contract:
+    $ref: ./OperationCatalogExecutionContractOutput.yaml
+  side_effect_profile:
+    $ref: ./OperationCatalogExecutionContractSideEffect.yaml
+  binding_provenance:
+    $ref: ./OperationCatalogExecutionContractProvenance.yaml

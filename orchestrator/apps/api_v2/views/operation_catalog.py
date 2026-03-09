@@ -264,6 +264,124 @@ def _generate_template_alias(name: str) -> str:
     return f"{base}-{suffix}"
 
 
+_WORKFLOW_TEMPLATE_EXECUTION_CONTRACT_VERSION = "workflow_template_execution_contract.v1"
+
+
+def _normalize_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[str] = []
+    for item in value:
+        text = str(item).strip()
+        if text:
+            normalized.append(text)
+    return normalized
+
+
+def _normalize_json_object(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _normalize_nonnegative_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _resolve_template_exposure_revision(exposure: OperationExposure) -> int:
+    try:
+        exposure_revision = int(getattr(exposure, "exposure_revision", 1) or 1)
+    except (TypeError, ValueError):
+        exposure_revision = 1
+    if exposure_revision < 1:
+        try:
+            exposure_revision = int(exposure.definition.contract_version or 1)
+        except (TypeError, ValueError):
+            exposure_revision = 1
+    return max(exposure_revision, 1)
+
+
+def _resolve_executor_command_id(payload: dict[str, Any], template_data: dict[str, Any]) -> str | None:
+    command_id = str(payload.get("command_id") or "").strip()
+    if not command_id:
+        command_id = str(template_data.get("command_id") or "").strip()
+    return command_id or None
+
+
+def _resolve_template_input_mode(payload: dict[str, Any], template_data: dict[str, Any]) -> str:
+    operation_type = str(payload.get("operation_type") or "").strip()
+    template_kind = str(template_data.get("kind") or "").strip()
+    if operation_type == "workflow" or template_kind == "workflow":
+        return "input_context"
+    if "input_context" in template_data and "params" not in template_data:
+        return "input_context"
+    return "params"
+
+
+def _build_template_execution_contract(
+    *,
+    exposure: OperationExposure,
+    payload: dict[str, Any],
+    template_data: dict[str, Any],
+    exposure_revision: int,
+    executor_command_id: str | None,
+) -> dict[str, Any]:
+    operation_type = str(payload.get("operation_type") or "").strip()
+    target_entity = str(payload.get("target_entity") or "").strip()
+    executor_kind = str(exposure.definition.executor_kind or operation_type or "").strip()
+    raw_output_contract = _normalize_json_object(template_data.get("output_contract"))
+    raw_side_effect_profile = _normalize_json_object(template_data.get("side_effect_profile"))
+    summary = raw_side_effect_profile.get("summary")
+
+    return {
+        "contract_version": _WORKFLOW_TEMPLATE_EXECUTION_CONTRACT_VERSION,
+        "capability": {
+            "id": str(exposure.capability or "").strip() or f"templates.{operation_type or 'operation'}",
+            "label": str(exposure.label or "").strip(),
+            "operation_type": operation_type,
+            "target_entity": target_entity,
+            "executor_kind": executor_kind,
+        },
+        "input_contract": {
+            "mode": _resolve_template_input_mode(payload, template_data),
+            "required_parameters": _normalize_string_list(template_data.get("required_parameters")),
+            "optional_parameters": _normalize_string_list(template_data.get("optional_parameters")),
+            "parameter_schemas": _normalize_json_object(template_data.get("parameter_schemas")),
+        },
+        "output_contract": {
+            "result_path": str(
+                raw_output_contract.get("result_path")
+                or raw_output_contract.get("result_root")
+                or "result"
+            ).strip() or "result",
+            "supports_structured_mapping": bool(
+                raw_output_contract.get("supports_structured_mapping", True)
+            ),
+        },
+        "side_effect_profile": {
+            "execution_mode": "async" if bool(template_data.get("is_async")) else "sync",
+            "effect_kind": str(
+                raw_side_effect_profile.get("kind")
+                or raw_side_effect_profile.get("effect_kind")
+                or "opaque"
+            ).strip() or "opaque",
+            "summary": str(summary).strip() if isinstance(summary, str) else None,
+            "timeout_seconds": _normalize_nonnegative_int(template_data.get("timeout_seconds")),
+            "max_retries": _normalize_nonnegative_int(template_data.get("max_retries")),
+        },
+        "binding_provenance": {
+            "surface": exposure.surface,
+            "alias": str(exposure.alias or "").strip(),
+            "exposure_id": str(exposure.id),
+            "exposure_revision": exposure_revision,
+            "definition_id": str(exposure.definition_id),
+            "executor_command_id": executor_command_id,
+        },
+    }
+
+
 def _serialize_definition(definition: OperationDefinition) -> dict[str, Any]:
     return {
         "id": str(definition.id),
@@ -300,21 +418,9 @@ def _serialize_exposure(exposure: OperationExposure) -> dict[str, Any]:
         "updated_at": exposure.updated_at,
     }
     if exposure.surface == OperationExposure.SURFACE_TEMPLATE:
-        template_data = payload.get("template_data") if isinstance(payload.get("template_data"), dict) else {}
-        command_id = str(payload.get("command_id") or "").strip()
-        if not command_id:
-            command_id = str(template_data.get("command_id") or "").strip()
-        try:
-            exposure_revision = int(getattr(exposure, "exposure_revision", 1) or 1)
-        except (TypeError, ValueError):
-            exposure_revision = 1
-        if exposure_revision < 1:
-            try:
-                exposure_revision = int(exposure.definition.contract_version or 1)
-            except (TypeError, ValueError):
-                exposure_revision = 1
-        if exposure_revision < 1:
-            exposure_revision = 1
+        template_data = _normalize_json_object(payload.get("template_data"))
+        exposure_revision = _resolve_template_exposure_revision(exposure)
+        executor_command_id = _resolve_executor_command_id(payload, template_data)
 
         data["operation_type"] = str(payload.get("operation_type") or "")
         data["target_entity"] = str(payload.get("target_entity") or "")
@@ -323,7 +429,14 @@ def _serialize_exposure(exposure: OperationExposure) -> dict[str, Any]:
         data["exposure_revision"] = exposure_revision
         data["template_exposure_revision"] = exposure_revision
         data["executor_kind"] = str(exposure.definition.executor_kind or "")
-        data["executor_command_id"] = command_id or None
+        data["executor_command_id"] = executor_command_id
+        data["execution_contract"] = _build_template_execution_contract(
+            exposure=exposure,
+            payload=payload,
+            template_data=template_data,
+            exposure_revision=exposure_revision,
+            executor_command_id=executor_command_id,
+        )
     return data
 
 
@@ -337,6 +450,52 @@ class OperationCatalogDefinitionSerializer(serializers.Serializer):
     status = serializers.CharField()
     created_at = serializers.DateTimeField(required=False)
     updated_at = serializers.DateTimeField(required=False)
+
+
+class OperationCatalogExecutionContractCapabilitySerializer(serializers.Serializer):
+    id = serializers.CharField(required=False, allow_blank=True)
+    label = serializers.CharField(required=False, allow_blank=True)
+    operation_type = serializers.CharField(required=False, allow_blank=True)
+    target_entity = serializers.CharField(required=False, allow_blank=True)
+    executor_kind = serializers.CharField(required=False, allow_blank=True)
+
+
+class OperationCatalogExecutionContractInputSerializer(serializers.Serializer):
+    mode = serializers.CharField(required=False, allow_blank=True)
+    required_parameters = serializers.ListField(child=serializers.CharField(), required=False)
+    optional_parameters = serializers.ListField(child=serializers.CharField(), required=False)
+    parameter_schemas = serializers.JSONField(required=False)
+
+
+class OperationCatalogExecutionContractOutputSerializer(serializers.Serializer):
+    result_path = serializers.CharField(required=False, allow_blank=True)
+    supports_structured_mapping = serializers.BooleanField(required=False)
+
+
+class OperationCatalogExecutionContractSideEffectSerializer(serializers.Serializer):
+    execution_mode = serializers.CharField(required=False, allow_blank=True)
+    effect_kind = serializers.CharField(required=False, allow_blank=True)
+    summary = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    timeout_seconds = serializers.IntegerField(required=False, allow_null=True, min_value=0)
+    max_retries = serializers.IntegerField(required=False, allow_null=True, min_value=0)
+
+
+class OperationCatalogExecutionContractProvenanceSerializer(serializers.Serializer):
+    surface = serializers.CharField(required=False, allow_blank=True)
+    alias = serializers.CharField(required=False, allow_blank=True)
+    exposure_id = serializers.UUIDField(required=False)
+    exposure_revision = serializers.IntegerField(required=False, min_value=1)
+    definition_id = serializers.UUIDField(required=False)
+    executor_command_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
+class OperationCatalogExecutionContractSerializer(serializers.Serializer):
+    contract_version = serializers.CharField(required=False, allow_blank=True)
+    capability = OperationCatalogExecutionContractCapabilitySerializer(required=False)
+    input_contract = OperationCatalogExecutionContractInputSerializer(required=False)
+    output_contract = OperationCatalogExecutionContractOutputSerializer(required=False)
+    side_effect_profile = OperationCatalogExecutionContractSideEffectSerializer(required=False)
+    binding_provenance = OperationCatalogExecutionContractProvenanceSerializer(required=False)
 
 
 class OperationCatalogExposureSerializer(serializers.Serializer):
@@ -363,6 +522,7 @@ class OperationCatalogExposureSerializer(serializers.Serializer):
     template_exposure_revision = serializers.IntegerField(required=False, min_value=1)
     executor_kind = serializers.CharField(required=False, allow_blank=True)
     executor_command_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    execution_contract = OperationCatalogExecutionContractSerializer(required=False)
     created_at = serializers.DateTimeField(required=False)
     updated_at = serializers.DateTimeField(required=False)
 

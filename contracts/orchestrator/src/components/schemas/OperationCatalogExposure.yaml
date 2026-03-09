@@ -55,6 +55,8 @@ properties:
   executor_command_id:
     type: string
     nullable: true
+  execution_contract:
+    $ref: ./OperationCatalogExecutionContract.yaml
   created_at:
     type: string
     format: date-time

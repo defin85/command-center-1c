@@ -1,0 +1,15 @@
+type: object
+properties:
+  mode:
+    type: string
+  required_parameters:
+    type: array
+    items:
+      type: string
+  optional_parameters:
+    type: array
+    items:
+      type: string
+  parameter_schemas:
+    type: object
+    additionalProperties: true

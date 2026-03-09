@@ -591,6 +591,69 @@ export async function upsertOrganizationPool(
   return response.data
 }
 
+export async function listPoolWorkflowBindings(
+  poolId: string
+): Promise<PoolWorkflowBinding[]> {
+  const response = await apiClient.get<{ pool_id: string; bindings: PoolWorkflowBinding[]; count: number }>(
+    '/api/v2/pools/workflow-bindings/',
+    {
+      params: { pool_id: poolId },
+      skipGlobalError: true,
+    }
+  )
+  return response.data.bindings ?? []
+}
+
+export async function getPoolWorkflowBinding(
+  poolId: string,
+  bindingId: string
+): Promise<PoolWorkflowBinding> {
+  const response = await apiClient.get<{ pool_id: string; workflow_binding: PoolWorkflowBinding }>(
+    `/api/v2/pools/workflow-bindings/${encodeURIComponent(bindingId)}/`,
+    {
+      params: { pool_id: poolId },
+      skipGlobalError: true,
+    }
+  )
+  return response.data.workflow_binding
+}
+
+export async function upsertPoolWorkflowBinding(
+  payload: {
+    pool_id: string
+    workflow_binding: PoolWorkflowBinding
+  }
+): Promise<{ pool_id: string; workflow_binding: PoolWorkflowBinding; created: boolean }> {
+  const response = await apiClient.post<{
+    pool_id: string
+    workflow_binding: PoolWorkflowBinding
+    created: boolean
+  }>(
+    '/api/v2/pools/workflow-bindings/upsert/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function deletePoolWorkflowBinding(
+  poolId: string,
+  bindingId: string
+): Promise<{ pool_id: string; workflow_binding: PoolWorkflowBinding; deleted: boolean }> {
+  const response = await apiClient.delete<{
+    pool_id: string
+    workflow_binding: PoolWorkflowBinding
+    deleted: boolean
+  }>(
+    `/api/v2/pools/workflow-bindings/${encodeURIComponent(bindingId)}/`,
+    {
+      params: { pool_id: poolId },
+      skipGlobalError: true,
+    }
+  )
+  return response.data
+}
+
 export async function listOrganizations(
   params: ListOrganizationsParams = {}
 ): Promise<Organization[]> {

@@ -190,7 +190,64 @@ describe('WorkflowDesigner', () => {
       ],
       count: 1,
     })
-    mockListOperationCatalogExposures.mockResolvedValue({ exposures: [] })
+    mockListOperationCatalogExposures.mockResolvedValue({
+      exposures: [
+        {
+          id: 'template-exposure-1',
+          definition_id: 'definition-1',
+          surface: 'template',
+          alias: 'tpl-sync-extension',
+          name: 'Sync Extension',
+          description: 'Syncs extension state',
+          is_active: true,
+          capability: 'extensions.sync',
+          status: 'published',
+          operation_type: 'designer_cli',
+          template_exposure_revision: 4,
+          execution_contract: {
+            contract_version: 'workflow_template_execution_contract.v1',
+            capability: {
+              id: 'extensions.sync',
+              label: 'Sync Extension',
+              operation_type: 'designer_cli',
+              target_entity: 'infobase',
+              executor_kind: 'designer_cli',
+            },
+            input_contract: {
+              mode: 'params',
+              required_parameters: ['database_id', 'extension_name'],
+              optional_parameters: ['timeout_seconds'],
+              parameter_schemas: {
+                database_id: { type: 'uuid', description: 'Database identifier', required: true },
+                extension_name: { type: 'string', description: 'Extension name', required: true },
+                timeout_seconds: { type: 'integer', description: 'Timeout', required: false },
+              },
+            },
+            output_contract: {
+              result_path: 'result',
+              supports_structured_mapping: true,
+            },
+            side_effect_profile: {
+              execution_mode: 'async',
+              effect_kind: 'mutating',
+              summary: 'Updates extension state in the target infobase.',
+              timeout_seconds: 900,
+              max_retries: 5,
+            },
+            binding_provenance: {
+              surface: 'template',
+              alias: 'tpl-sync-extension',
+              exposure_id: 'template-exposure-1',
+              exposure_revision: 4,
+              definition_id: 'definition-1',
+              executor_command_id: 'infobase.extension.sync',
+            },
+          },
+        },
+      ],
+      count: 1,
+      total: 1,
+    })
   })
 
   it('renders runtime projections as read-only diagnostics surface', async () => {
@@ -291,6 +348,28 @@ describe('WorkflowDesigner', () => {
             decisionKey: 'invoice_mode',
             decisionRevision: 2,
           },
+        ],
+        operationTemplates: [
+          expect.objectContaining({
+            id: 'tpl-sync-extension',
+            name: 'Sync Extension',
+            operation_type: 'designer_cli',
+            exposure_id: 'template-exposure-1',
+            exposure_revision: 4,
+            executionContract: expect.objectContaining({
+              input: expect.objectContaining({
+                mode: 'params',
+                requiredParameters: ['database_id', 'extension_name'],
+              }),
+              sideEffect: expect.objectContaining({
+                effectKind: 'mutating',
+                executionMode: 'async',
+              }),
+              provenance: expect.objectContaining({
+                alias: 'tpl-sync-extension',
+              }),
+            }),
+          }),
         ],
       })
     )

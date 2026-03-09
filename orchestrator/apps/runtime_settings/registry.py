@@ -78,7 +78,7 @@ RUNTIME_SETTINGS = {
     "workflows.authoring.phase": RuntimeSettingDefinition(
         key="workflows.authoring.phase",
         value_type="string",
-        default="workflow_centric_active",
+        default="workflow_centric_prerequisite",
         description=(
             "Controls workflow authoring rollout phase for analyst-facing pool modeling "
             "(legacy_technical_dag, workflow_centric_prerequisite, workflow_centric_active)."

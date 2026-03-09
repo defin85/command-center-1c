@@ -287,3 +287,143 @@ test('Workflow designer: template switch persists pinned operation_ref on save',
   expect(node?.operation_ref?.template_exposure_id).toBe('6b5a0b0f-6f4e-4a06-8f63-10c992bd0f8f')
   expect(node?.operation_ref?.template_exposure_revision).toBe(9)
 })
+
+test('Workflow designer: explicit template contract is shown and validates required mappings', async ({ page }) => {
+  await setupAuth(page, true)
+
+  const workflowId = '33333333-3333-3333-3333-333333333333'
+  const baseWorkflow = {
+    id: workflowId,
+    name: 'wf-template-contract',
+    description: '',
+    workflow_type: 'complex',
+    dag_structure: {
+      nodes: [
+        {
+          id: 'step1',
+          name: 'Step 1',
+          type: 'operation',
+          template_id: 'tpl-sync-extension',
+          operation_ref: {
+            alias: 'tpl-sync-extension',
+            binding_mode: 'alias_latest',
+          },
+          io: {
+            mode: 'implicit_legacy',
+            input_mapping: {
+              'params.database_id': 'workflow.input.database_id',
+            },
+            output_mapping: {},
+          },
+          config: { timeout_seconds: 300, max_retries: 0 },
+        },
+      ],
+      edges: [],
+    },
+    config: { timeout_seconds: 3600, max_retries: 0 },
+    is_valid: true,
+    is_active: true,
+    version_number: 1,
+    parent_version: null,
+    parent_version_name: null,
+    created_by: null,
+    created_by_username: null,
+    execution_count: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  }
+
+  await page.route('**/api/v2/**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const path = url.pathname
+    const method = request.method()
+
+    if (method === 'GET' && path === '/api/v2/system/me/') {
+      return fulfillJson(route, { id: 1, username: 'admin', is_staff: true })
+    }
+    if (method === 'GET' && path === '/api/v2/workflows/get-workflow/') {
+      return fulfillJson(route, { workflow: baseWorkflow, statistics: {}, executions: [] })
+    }
+    if (method === 'GET' && path === '/api/v2/operation-catalog/exposures/') {
+      return fulfillJson(route, {
+        exposures: [
+          {
+            id: 'template-exposure-1',
+            definition_id: 'definition-1',
+            surface: 'template',
+            alias: 'tpl-sync-extension',
+            name: 'Sync Extension',
+            description: 'Syncs extension state',
+            is_active: true,
+            capability: 'extensions.sync',
+            status: 'published',
+            operation_type: 'designer_cli',
+            template_exposure_revision: 4,
+            execution_contract: {
+              contract_version: 'workflow_template_execution_contract.v1',
+              capability: {
+                id: 'extensions.sync',
+                label: 'Sync Extension',
+                operation_type: 'designer_cli',
+                target_entity: 'infobase',
+                executor_kind: 'designer_cli',
+              },
+              input_contract: {
+                mode: 'params',
+                required_parameters: ['database_id', 'extension_name'],
+                optional_parameters: ['timeout_seconds'],
+                parameter_schemas: {
+                  database_id: { type: 'uuid', description: 'Database identifier', required: true },
+                  extension_name: { type: 'string', description: 'Extension name', required: true },
+                  timeout_seconds: { type: 'integer', description: 'Timeout', required: false },
+                },
+              },
+              output_contract: {
+                result_path: 'result',
+                supports_structured_mapping: true,
+              },
+              side_effect_profile: {
+                execution_mode: 'async',
+                effect_kind: 'mutating',
+                summary: 'Updates extension state in the target infobase.',
+                timeout_seconds: 900,
+                max_retries: 5,
+              },
+              binding_provenance: {
+                surface: 'template',
+                alias: 'tpl-sync-extension',
+                exposure_id: 'template-exposure-1',
+                exposure_revision: 4,
+                definition_id: 'definition-1',
+                executor_command_id: 'infobase.extension.sync',
+              },
+            },
+          },
+        ],
+        count: 1,
+        total: 1,
+      })
+    }
+
+    return fulfillJson(route, {}, 200)
+  })
+
+  await page.goto(`/workflows/${workflowId}`, { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByText('wf-template-contract', { exact: true })).toBeVisible()
+  await page.getByText('Step 1', { exact: true }).first().click()
+  await expect(page.getByText('Execution contract', { exact: true })).toBeVisible()
+  await expect(page.getByText('extensions.sync', { exact: true })).toBeVisible()
+  await expect(page.getByText('designer_cli -> infobase', { exact: true })).toBeVisible()
+  await expect(page.getByText('Updates extension state in the target infobase.', { exact: true })).toBeVisible()
+
+  await page
+    .locator('#workflow-step1-operation-io-mode')
+    .locator('xpath=ancestor::div[contains(@class,"ant-select")]')
+    .first()
+    .click()
+  await page.getByText('explicit_strict (mapped only)', { exact: true }).click()
+
+  await expect(page.getByText(/Missing required mappings: .*params\.extension_name/)).toBeVisible()
+})

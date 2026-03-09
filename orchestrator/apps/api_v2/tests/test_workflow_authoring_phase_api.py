@@ -59,14 +59,14 @@ def _create_workflow(
 
 
 @pytest.mark.django_db
-def test_list_workflows_returns_active_authoring_phase_by_default(staff_client):
+def test_list_workflows_returns_prerequisite_authoring_phase_by_default(staff_client):
     response = staff_client.get("/api/v2/workflows/list-workflows/")
 
     assert response.status_code == 200
     payload = response.json()
     phase = payload["authoring_phase"]
-    assert phase["phase"] == "workflow_centric_active"
-    assert phase["is_prerequisite_platform_phase"] is False
+    assert phase["phase"] == "workflow_centric_prerequisite"
+    assert phase["is_prerequisite_platform_phase"] is True
     assert phase["analyst_surface"] == "/workflows"
     assert phase["source"] == "default"
     assert phase["rollout_scope"] == ["pool_distribution", "pool_publication"]

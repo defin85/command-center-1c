@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp } from 'antd'
 
-import type { WorkflowNodeData } from '../../../types/workflow'
+import type { OperationTemplateListItem, WorkflowNodeData } from '../../../types/workflow'
 import PropertyEditor from '../PropertyEditor'
 
 vi.mock('../../code/LazyJsonCodeEditor', () => ({
@@ -17,6 +17,7 @@ const renderEditor = ({
   onNodeUpdate = vi.fn(),
   availableWorkflows = [],
   availableDecisions = [],
+  operationTemplates = [],
 }: {
   nodeId: string
   nodeData: WorkflowNodeData
@@ -35,6 +36,7 @@ const renderEditor = ({
     decisionKey: string
     decisionRevision: number
   }>
+  operationTemplates?: OperationTemplateListItem[]
 }) => {
   render(
     <AntApp>
@@ -43,6 +45,7 @@ const renderEditor = ({
         nodeData={nodeData}
         onNodeUpdate={onNodeUpdate as (nodeId: string, data: Partial<WorkflowNodeData>) => void}
         onNodeDelete={vi.fn()}
+        operationTemplates={operationTemplates}
         availableWorkflows={availableWorkflows}
         availableDecisions={availableDecisions}
       />
@@ -140,5 +143,78 @@ describe('PropertyEditor', () => {
         })
       )
     })
+  })
+
+  it('renders execution contract summary and validates required template inputs for operation nodes', async () => {
+    renderEditor({
+      nodeId: 'operation-node',
+      nodeData: {
+        label: 'Sync Extension',
+        nodeType: 'operation',
+        templateId: 'tpl-sync-extension',
+        io: {
+          mode: 'explicit_strict',
+          input_mapping: {
+            'params.database_id': 'workflow.input.database_id',
+          },
+          output_mapping: {},
+        },
+        config: {},
+      },
+      operationTemplates: [
+        {
+          id: 'tpl-sync-extension',
+          name: 'Sync Extension',
+          operation_type: 'designer_cli',
+          exposure_id: 'template-exposure-1',
+          exposure_revision: 4,
+          executionContract: {
+            contractVersion: 'workflow_template_execution_contract.v1',
+            capability: {
+              id: 'extensions.sync',
+              label: 'Sync Extension',
+              operationType: 'designer_cli',
+              targetEntity: 'infobase',
+              executorKind: 'designer_cli',
+            },
+            input: {
+              mode: 'params',
+              requiredParameters: ['database_id', 'extension_name'],
+              optionalParameters: ['timeout_seconds'],
+              parameterSchemas: {
+                database_id: { type: 'uuid', description: 'Database identifier', required: true },
+                extension_name: { type: 'string', description: 'Extension name', required: true },
+                timeout_seconds: { type: 'integer', description: 'Timeout', required: false },
+              },
+            },
+            output: {
+              resultPath: 'result',
+              supportsStructuredMapping: true,
+            },
+            sideEffect: {
+              executionMode: 'async',
+              effectKind: 'mutating',
+              summary: 'Updates extension state in the target infobase.',
+              timeoutSeconds: 900,
+              maxRetries: 5,
+            },
+            provenance: {
+              surface: 'template',
+              alias: 'tpl-sync-extension',
+              exposureId: 'template-exposure-1',
+              exposureRevision: 4,
+              definitionId: 'definition-1',
+              executorCommandId: 'infobase.extension.sync',
+            },
+          },
+        },
+      ],
+    })
+
+    expect(await screen.findByText('Execution contract')).toBeInTheDocument()
+    expect(screen.getByText('extensions.sync')).toBeInTheDocument()
+    expect(screen.getByText('designer_cli -> infobase')).toBeInTheDocument()
+    expect(screen.getByText('Updates extension state in the target infobase.')).toBeInTheDocument()
+    expect(screen.getByText('Missing required mappings: params.extension_name')).toBeInTheDocument()
   })
 })

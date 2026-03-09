@@ -30,6 +30,7 @@ import type {
   WorkflowNodeData,
   NodeConfig,
   OperationTemplateListItem,
+  OperationTemplateExecutionContract,
   AvailableWorkflowRevision,
   AvailableDecisionRevision,
   OperationRef,
@@ -139,6 +140,17 @@ const parseOperationIoMappingObject = (raw: string, mappingName: string): Record
   return record
 }
 
+const formatExecutionContractList = (items: string[]): string => (
+  items.length > 0 ? items.join(', ') : 'none'
+)
+
+const resolveRequiredInputTargets = (contract: OperationTemplateExecutionContract | undefined): string[] => {
+  if (!contract) {
+    return []
+  }
+  return contract.input.requiredParameters.map((parameter) => `${contract.input.mode}.${parameter}`)
+}
+
 // Form for Operation node
 const OperationForm = ({
   config,
@@ -175,6 +187,15 @@ const OperationForm = ({
   const [inputMappingError, setInputMappingError] = useState<string | null>(null)
   const [outputMappingError, setOutputMappingError] = useState<string | null>(null)
   const lastIdPrefixRef = useRef<string>(idPrefix)
+  const selectedTemplate = templateId
+    ? templates.find((template) => template.id === templateId)
+    : undefined
+  const executionContract = selectedTemplate?.executionContract
+  const requiredInputTargets = resolveRequiredInputTargets(executionContract)
+  const configuredInputTargets = new Set(Object.keys(normalizedIo.input_mapping || {}))
+  const missingRequiredMappings = normalizedIo.mode === 'explicit_strict'
+    ? requiredInputTargets.filter((targetPath) => !configuredInputTargets.has(targetPath))
+    : []
 
   useEffect(() => {
     if (lastIdPrefixRef.current === idPrefix) {
@@ -244,6 +265,35 @@ const OperationForm = ({
         />
       </Form.Item>
 
+      {executionContract && (
+        <Card size="small" title="Execution contract" style={{ marginBottom: 12 }}>
+          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            <Text strong>{executionContract.capability.id}</Text>
+            <Text type="secondary">
+              {`${executionContract.capability.executorKind} -> ${executionContract.capability.targetEntity}`}
+            </Text>
+            <Text>
+              {`Input (${executionContract.input.mode}): required ${formatExecutionContractList(executionContract.input.requiredParameters)}`}
+            </Text>
+            <Text>
+              {`Optional inputs: ${formatExecutionContractList(executionContract.input.optionalParameters)}`}
+            </Text>
+            <Text>
+              {`Output path: ${executionContract.output.resultPath}`}
+            </Text>
+            <Text>
+              {`Side effects: ${executionContract.sideEffect.effectKind} / ${executionContract.sideEffect.executionMode}`}
+            </Text>
+            {executionContract.sideEffect.summary && (
+              <Text>{executionContract.sideEffect.summary}</Text>
+            )}
+            <Text type="secondary">
+              {`Binding provenance: ${executionContract.provenance.alias} · r${executionContract.provenance.exposureRevision ?? '?'}`}
+            </Text>
+          </Space>
+        </Card>
+      )}
+
       <Form.Item label="Timeout (seconds)" htmlFor={`${idPrefix}-operation-timeout`}>
         <InputNumber
           id={`${idPrefix}-operation-timeout`}
@@ -301,6 +351,15 @@ const OperationForm = ({
 
       {normalizedIo.mode === 'explicit_strict' && (
         <>
+          {missingRequiredMappings.length > 0 && (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message={`Missing required mappings: ${missingRequiredMappings.join(', ')}`}
+              description="Selected template declares mandatory inputs that must be mapped explicitly on the workflow step."
+            />
+          )}
           <Alert
             type="info"
             showIcon

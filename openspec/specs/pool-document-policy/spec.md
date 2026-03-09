@@ -4,29 +4,22 @@
 TBD - created by archiving change add-02-pool-document-policy. Update Purpose after archive.
 ## Requirements
 ### Requirement: Document policy MUST быть декларативным и пользовательски управляемым в tenant scope
-Система ДОЛЖНА (SHALL) поддерживать versioned domain contract `document_policy.v1`, в котором пользователь описывает правила формирования документов на рёбрах пула без изменения backend кода.
+Система ДОЛЖНА (SHALL) поддерживать versioned domain contract `document_policy.v1` как concrete compiled runtime contract, используемый downstream publication/runtime слоями.
 
-Система ДОЛЖНА (SHALL) поддерживать хранение document-policy в topology edge metadata и использовать этот contract как source-of-truth для построения публикационного плана документов.
+После workflow-centric cutover analyst-facing source-of-truth для document rules ДОЛЖЕН (SHALL) формироваться через:
+- workflow definitions;
+- decision resources;
+- pool workflow bindings.
 
-Минимальный обязательный набор полей `document_policy.v1`:
-- `version = "document_policy.v1"`;
-- `chains[]` (ordered);
-- `chains[].chain_id`;
-- `chains[].documents[]` (ordered);
-- `chains[].documents[].document_id`;
-- `chains[].documents[].entity_name`;
-- `chains[].documents[].document_role`;
-- `chains[].documents[].field_mapping` (object);
-- `chains[].documents[].table_parts_mapping` (object);
-- `chains[].documents[].link_rules` (object);
-- `chains[].documents[].invoice_mode` (`optional|required`);
-- `chains[].documents[].link_to` (optional).
+Direct authoring `document_policy` на pool topology edges НЕ ДОЛЖЕН (SHALL NOT) оставаться primary путем моделирования для новых analyst-facing схем.
 
-#### Scenario: Оператор задаёт policy для ребра без backend hardcode
-- **GIVEN** оператор редактирует topology snapshot пула
-- **WHEN** для ребра задаётся `metadata.document_policy` с `version=document_policy.v1`
-- **THEN** backend принимает policy только при успешной schema validation
-- **AND** policy сохраняется как часть topology версии в tenant scope
+Система МОЖЕТ (MAY) сохранять compiled `document_policy.v1` в runtime projection, включая metadata/read-model структуры, если это нужно для compatibility, preview, audit и downstream compile.
+
+#### Scenario: Workflow binding компилируется в concrete document policy
+- **GIVEN** аналитик настроил workflow definition, decisions и pool binding
+- **WHEN** система строит effective runtime projection для запуска
+- **THEN** формируется concrete `document_policy.v1`
+- **AND** downstream runtime использует именно этот compiled contract, а не raw analyst authoring objects
 
 ### Requirement: Document policy mapping MUST поддерживать реквизиты и табличные части
 Система ДОЛЖНА (SHALL) поддерживать в policy явный mapping реквизитов документа (`field_mapping`) и табличных частей (`table_parts_mapping`).
@@ -145,4 +138,15 @@ Document policy MUST поддерживать декларативный complet
 - **WHEN** включён режим `minimal_documents_full_payload`
 - **THEN** compile path сохраняет обязательный документ в chain
 - **AND** попытка исключить его приводит к fail-closed ошибке compile
+
+### Requirement: Workflow-centric authoring MUST материализоваться в deterministic document policy до publication compile
+Система ДОЛЖНА (SHALL) материализовать workflow-centric authoring в deterministic concrete `document_policy.v1` до построения `document_plan_artifact.v1` и атомарного workflow compile.
+
+Система НЕ ДОЛЖНА (SHALL NOT) выполнять publication compile напрямую из raw workflow/decision authoring без промежуточного concrete policy contract.
+
+#### Scenario: Одинаковый binding и decisions дают одинаковый compiled document policy
+- **GIVEN** одинаковые workflow revision, decision revisions, binding parameters и pool context
+- **WHEN** система повторно компилирует effective document policy
+- **THEN** структура compiled `document_policy.v1` совпадает
+- **AND** downstream `document_plan_artifact` получает один и тот же source contract
 

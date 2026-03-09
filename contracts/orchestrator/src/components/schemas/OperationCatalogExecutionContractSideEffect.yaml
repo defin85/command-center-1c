@@ -1,0 +1,17 @@
+type: object
+properties:
+  execution_mode:
+    type: string
+  effect_kind:
+    type: string
+  summary:
+    type: string
+    nullable: true
+  timeout_seconds:
+    type: integer
+    nullable: true
+    minimum: 0
+  max_retries:
+    type: integer
+    nullable: true
+    minimum: 0

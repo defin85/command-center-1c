@@ -4607,6 +4607,199 @@ paths:
             type: string
             format: uuid
           description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+  /api/v2/pools/workflow-bindings/:
+    get:
+      operationId: v2_pools_workflow_bindings_list
+      summary: List workflow bindings for a pool
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: pool_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolWorkflowBindingListResponse'
+        '400':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+        '401':
+          description: Unauthorized
+        '404':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+  /api/v2/pools/workflow-bindings/upsert/:
+    post:
+      operationId: v2_pools_workflow_bindings_upsert
+      summary: Create or update a workflow binding for a pool
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolWorkflowBindingUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolWorkflowBindingUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolWorkflowBindingUpsertRequest'
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolWorkflowBindingUpsertResponse'
+        '201':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolWorkflowBindingUpsertResponse'
+        '400':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+        '401':
+          description: Unauthorized
+        '404':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+  /api/v2/pools/workflow-bindings/{binding_id}/:
+    get:
+      operationId: v2_pools_workflow_bindings_detail
+      summary: Get a workflow binding for a pool
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: binding_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: pool_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolWorkflowBindingDetailResponse'
+        '400':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+        '401':
+          description: Unauthorized
+        '404':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+    delete:
+      operationId: v2_pools_workflow_bindings_delete
+      summary: Delete a workflow binding for a pool
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: binding_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: pool_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolWorkflowBindingDeleteResponse'
+        '400':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+        '401':
+          description: Unauthorized
+        '404':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
   /api/v2/pools/workflow-bindings/preview/:
     post:
       operationId: v2_pools_workflow_bindings_preview
@@ -4620,13 +4813,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PoolRunCreateRequest'
+              $ref: '#/components/schemas/PoolWorkflowBindingPreviewRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/PoolRunCreateRequest'
+              $ref: '#/components/schemas/PoolWorkflowBindingPreviewRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/PoolRunCreateRequest'
+              $ref: '#/components/schemas/PoolWorkflowBindingPreviewRequest'
       responses:
         '200':
           description: ''
@@ -14262,6 +14455,94 @@ components:
       required:
         - definition
         - exposures
+    OperationCatalogExecutionContractCapability:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        operation_type:
+          type: string
+        target_entity:
+          type: string
+        executor_kind:
+          type: string
+    OperationCatalogExecutionContractInput:
+      type: object
+      properties:
+        mode:
+          type: string
+        required_parameters:
+          type: array
+          items:
+            type: string
+        optional_parameters:
+          type: array
+          items:
+            type: string
+        parameter_schemas:
+          type: object
+          additionalProperties: true
+    OperationCatalogExecutionContractOutput:
+      type: object
+      properties:
+        result_path:
+          type: string
+        supports_structured_mapping:
+          type: boolean
+    OperationCatalogExecutionContractSideEffect:
+      type: object
+      properties:
+        execution_mode:
+          type: string
+        effect_kind:
+          type: string
+        summary:
+          type: string
+          nullable: true
+        timeout_seconds:
+          type: integer
+          nullable: true
+          minimum: 0
+        max_retries:
+          type: integer
+          nullable: true
+          minimum: 0
+    OperationCatalogExecutionContractProvenance:
+      type: object
+      properties:
+        surface:
+          type: string
+        alias:
+          type: string
+        exposure_id:
+          type: string
+          format: uuid
+        exposure_revision:
+          type: integer
+          minimum: 1
+        definition_id:
+          type: string
+          format: uuid
+        executor_command_id:
+          type: string
+          nullable: true
+    OperationCatalogExecutionContract:
+      type: object
+      properties:
+        contract_version:
+          type: string
+        capability:
+          $ref: '#/components/schemas/OperationCatalogExecutionContractCapability'
+        input_contract:
+          $ref: '#/components/schemas/OperationCatalogExecutionContractInput'
+        output_contract:
+          $ref: '#/components/schemas/OperationCatalogExecutionContractOutput'
+        side_effect_profile:
+          $ref: '#/components/schemas/OperationCatalogExecutionContractSideEffect'
+        binding_provenance:
+          $ref: '#/components/schemas/OperationCatalogExecutionContractProvenance'
     OperationCatalogExposure:
       type: object
       properties:
@@ -14320,6 +14601,8 @@ components:
         executor_command_id:
           type: string
           nullable: true
+        execution_contract:
+          $ref: '#/components/schemas/OperationCatalogExecutionContract'
         created_at:
           type: string
           format: date-time
@@ -15887,6 +16170,124 @@ components:
       required:
         - count
         - pools
+    PoolWorkflowBindingListResponse:
+      type: object
+      properties:
+        pool_id:
+          type: string
+          format: uuid
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolWorkflowBinding'
+        count:
+          type: integer
+      required:
+        - pool_id
+        - bindings
+        - count
+    ProblemDetailsFieldErrors:
+      type: object
+      description: Field-level validation errors map.
+      additionalProperties:
+        oneOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+          - type: object
+            additionalProperties: {}
+    ProblemDetailsReferentialError:
+      type: object
+      description: Metadata referential validation error item.
+      properties:
+        code:
+          type: string
+        path:
+          type: string
+        detail:
+          type: string
+      required:
+        - code
+        - detail
+        - path
+    ProblemDetailsError:
+      type: object
+      properties:
+        type:
+          type: string
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        code:
+          type: string
+        errors:
+          description: Optional structured error details. For validation failures this is a field-errors map; for metadata referential validation this is an array of items with code/path/detail.
+          oneOf:
+            - $ref: '#/components/schemas/ProblemDetailsFieldErrors'
+            - type: array
+              items:
+                $ref: '#/components/schemas/ProblemDetailsReferentialError'
+      required:
+        - code
+        - detail
+        - status
+        - title
+        - type
+    PoolWorkflowBindingUpsertRequest:
+      type: object
+      properties:
+        pool_id:
+          type: string
+          format: uuid
+        workflow_binding:
+          $ref: '#/components/schemas/PoolWorkflowBinding'
+      required:
+        - pool_id
+        - workflow_binding
+    PoolWorkflowBindingUpsertResponse:
+      type: object
+      properties:
+        pool_id:
+          type: string
+          format: uuid
+        workflow_binding:
+          $ref: '#/components/schemas/PoolWorkflowBinding'
+        created:
+          type: boolean
+      required:
+        - pool_id
+        - workflow_binding
+        - created
+    PoolWorkflowBindingDetailResponse:
+      type: object
+      properties:
+        pool_id:
+          type: string
+          format: uuid
+        workflow_binding:
+          $ref: '#/components/schemas/PoolWorkflowBinding'
+      required:
+        - pool_id
+        - workflow_binding
+    PoolWorkflowBindingDeleteResponse:
+      type: object
+      properties:
+        pool_id:
+          type: string
+          format: uuid
+        workflow_binding:
+          $ref: '#/components/schemas/PoolWorkflowBinding'
+        deleted:
+          type: boolean
+      required:
+        - pool_id
+        - workflow_binding
+        - deleted
     PoolRunInputTopDown:
       type: object
       properties:
@@ -15913,7 +16314,7 @@ components:
             - source_payload
         - required:
             - source_artifact_id
-    PoolRunCreateRequest:
+    PoolWorkflowBindingPreviewRequest:
       type: object
       properties:
         pool_id:
@@ -15921,7 +16322,7 @@ components:
           format: uuid
         pool_workflow_binding_id:
           type: string
-          description: Explicit pool workflow binding identifier used to disambiguate create-run resolution.
+          description: Explicit pool workflow binding identifier used for preview.
         direction:
           enum:
             - top_down
@@ -15957,18 +16358,11 @@ components:
           type: string
           format: uuid
           nullable: true
-        seed:
-          type: integer
-          nullable: true
-        validation_summary: {}
-        diagnostics:
-          type: array
-          items: {}
       required:
+        - pool_id
         - pool_workflow_binding_id
         - direction
         - period_start
-        - pool_id
         - run_input
     PoolRuntimeProjection:
       type: object
@@ -16103,58 +16497,6 @@ components:
         - workflow_binding
         - compiled_document_policy
         - runtime_projection
-    ProblemDetailsFieldErrors:
-      type: object
-      description: Field-level validation errors map.
-      additionalProperties:
-        oneOf:
-          - type: string
-          - type: array
-            items:
-              type: string
-          - type: object
-            additionalProperties: {}
-    ProblemDetailsReferentialError:
-      type: object
-      description: Metadata referential validation error item.
-      properties:
-        code:
-          type: string
-        path:
-          type: string
-        detail:
-          type: string
-      required:
-        - code
-        - detail
-        - path
-    ProblemDetailsError:
-      type: object
-      properties:
-        type:
-          type: string
-          default: about:blank
-        title:
-          type: string
-        status:
-          type: integer
-        detail:
-          type: string
-        code:
-          type: string
-        errors:
-          description: Optional structured error details. For validation failures this is a field-errors map; for metadata referential validation this is an array of items with code/path/detail.
-          oneOf:
-            - $ref: '#/components/schemas/ProblemDetailsFieldErrors'
-            - type: array
-              items:
-                $ref: '#/components/schemas/ProblemDetailsReferentialError'
-      required:
-        - code
-        - detail
-        - status
-        - title
-        - type
     PoolMasterDataBinding:
       type: object
       properties:
@@ -18044,6 +18386,63 @@ components:
       required:
         - count
         - runs
+    PoolRunCreateRequest:
+      type: object
+      properties:
+        pool_id:
+          type: string
+          format: uuid
+        pool_workflow_binding_id:
+          type: string
+          description: Explicit pool workflow binding identifier used to disambiguate create-run resolution.
+        direction:
+          enum:
+            - top_down
+            - bottom_up
+          type: string
+          description: |-
+            * `top_down` - top_down
+            * `bottom_up` - bottom_up
+          x-spec-enum-id: d9ebd7a9e5097372
+        period_start:
+          type: string
+          format: date
+        period_end:
+          type: string
+          format: date
+          nullable: true
+        run_input:
+          oneOf:
+            - $ref: '#/components/schemas/PoolRunInputTopDown'
+            - $ref: '#/components/schemas/PoolRunInputBottomUp'
+          description: Direction-specific run input payload.
+        mode:
+          enum:
+            - safe
+            - unsafe
+          type: string
+          description: |-
+            * `safe` - safe
+            * `unsafe` - unsafe
+          x-spec-enum-id: 7203601382e63e68
+          default: safe
+        schema_template_id:
+          type: string
+          format: uuid
+          nullable: true
+        seed:
+          type: integer
+          nullable: true
+        validation_summary: {}
+        diagnostics:
+          type: array
+          items: {}
+      required:
+        - pool_workflow_binding_id
+        - direction
+        - period_start
+        - pool_id
+        - run_input
     PoolRunCreateResponse:
       type: object
       properties:

@@ -47,6 +47,16 @@
 - Legacy endpoint `GET /api/v2/ui/action-catalog/` сохраняется только как decommission-контракт (`404`, `NOT_FOUND`).
 - Подробности: [ACTION_CATALOG_GUIDE.md](./ACTION_CATALOG_GUIDE.md) и [MANUAL_OPERATIONS_GUIDE.md](./MANUAL_OPERATIONS_GUIDE.md).
 
+### Workflow-centric pools (`/workflows`, `/pools/catalog`, `/pools/runs`)
+- `/workflows` — analyst-facing scheme library.
+- `/workflows?surface=runtime_diagnostics` — diagnostics-only surface для system-managed runtime projections.
+- `/pools/catalog` — место, где оператор проверяет и редактирует workflow bindings для pool через structured editor.
+- Binding CRUD в SPA идёт через dedicated endpoints `/api/v2/pools/workflow-bindings/*`; raw JSON authoring для default path не используется.
+- `/pools/runs` — primary screen для create-run, inspect, retry и lineage.
+- Для rollout marker используй runtime override `workflows.authoring.phase`.
+- Для canary запускай preview binding, затем create-run с явным `pool_workflow_binding_id`, потом проверяй `Run Lineage / Operator Report`.
+- Подробный runbook: [observability/WORKFLOW_CENTRIC_POOLS_RUNBOOK.md](./observability/WORKFLOW_CENTRIC_POOLS_RUNBOOK.md)
+
 ### Pool Master Data (`/pools/master-data`)
 - Назначение: canonical-справочник для публикации в target infobase (Party, Item, Contract, TaxProfile) и их `ib_ref_key`-привязки в `Bindings`.
 

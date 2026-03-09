@@ -30,6 +30,7 @@ import { useDatabases } from '../../api/queries/databases'
 import { useMe } from '../../api/queries/me'
 import { useMyTenants } from '../../api/queries/tenants'
 import {
+  deletePoolWorkflowBinding,
   getOrganization,
   getPoolGraph,
   getPoolODataMetadataCatalog,
@@ -42,6 +43,7 @@ import {
   listOrganizations,
   refreshPoolODataMetadataCatalog,
   syncOrganizationsCatalog,
+  upsertPoolWorkflowBinding,
   upsertOrganizationPool,
   upsertOrganization,
   upsertPoolTopologySnapshot,
@@ -49,7 +51,6 @@ import {
   type OrganizationPool,
   type OrganizationPoolBinding,
   type OrganizationStatus,
-  type PoolWorkflowBinding,
   type PoolGraph,
   type PoolMasterContract,
   type PoolMasterItem,
@@ -57,17 +58,25 @@ import {
   type PoolMasterTaxProfile,
   type PoolODataMetadataCatalogDocument,
   type PoolODataMetadataCatalogResponse,
+  type PoolWorkflowBinding,
   type PoolTopologySnapshotPeriod,
   type PoolTopologySnapshotEdgeInput,
   type PoolTopologySnapshotNodeInput,
 } from '../../api/intercompanyPools'
+import { PoolWorkflowBindingsEditor } from './PoolWorkflowBindingsEditor'
+import {
+  buildWorkflowBindingsFromForm,
+  extractWorkflowBindingsFromPool,
+  summarizeWorkflowBindings,
+  workflowBindingsToFormValues,
+  type PoolWorkflowBindingFormValue,
+} from './poolWorkflowBindingsForm'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
 
 const SYNC_MAX_ROWS = 1000
 const MASTER_DATA_TOKEN_CATALOG_LIMIT = 200
-const DEFAULT_WORKFLOW_BINDINGS_JSON = JSON.stringify([], null, 2)
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const STATUS_OPTIONS: OrganizationStatus[] = ['active', 'inactive', 'archived']
 const LEGACY_EDGE_DOCUMENT_POLICY_COMPATIBILITY_MESSAGE = (
@@ -108,7 +117,7 @@ type PoolFormValues = {
   name: string
   description: string
   is_active: boolean
-  workflow_bindings_json?: string
+  workflow_bindings?: PoolWorkflowBindingFormValue[]
 }
 
 type TopologyNodeFormValue = {
@@ -204,6 +213,37 @@ const ORGANIZATION_FORM_FIELDS: Array<keyof OrganizationFormValues> = [
 type SyncPreflightResult = {
   rows: Array<Record<string, unknown>>
   errors: string[]
+}
+
+const syncPoolWorkflowBindings = async ({
+  poolId,
+  previousBindings,
+  nextBindings,
+}: {
+  poolId: string
+  previousBindings: PoolWorkflowBinding[]
+  nextBindings: PoolWorkflowBinding[]
+}) => {
+  const retainedBindingIds = new Set(
+    nextBindings
+      .map((binding) => String(binding.binding_id ?? '').trim())
+      .filter(Boolean)
+  )
+
+  for (const binding of nextBindings) {
+    await upsertPoolWorkflowBinding({
+      pool_id: poolId,
+      workflow_binding: binding,
+    })
+  }
+
+  for (const binding of previousBindings) {
+    const bindingId = String(binding.binding_id ?? '').trim()
+    if (!bindingId || retainedBindingIds.has(bindingId)) {
+      continue
+    }
+    await deletePoolWorkflowBinding(poolId, bindingId)
+  }
 }
 
 const formatDate = (value: string | null | undefined) => {
@@ -534,96 +574,6 @@ const normalizeMetadataObject = (rawMetadata: unknown): Record<string, unknown> 
     return {}
   }
   return { ...(rawMetadata as Record<string, unknown>) }
-}
-
-const normalizeWorkflowBindingsArray = (rawBindings: unknown): PoolWorkflowBinding[] => {
-  if (!Array.isArray(rawBindings)) {
-    return []
-  }
-  return rawBindings.filter((item) => item && typeof item === 'object' && !Array.isArray(item)) as PoolWorkflowBinding[]
-}
-
-const extractWorkflowBindingsFromPool = (pool: OrganizationPool | null | undefined): PoolWorkflowBinding[] => {
-  if (!pool) {
-    return []
-  }
-  if (Array.isArray(pool.workflow_bindings)) {
-    return normalizeWorkflowBindingsArray(pool.workflow_bindings)
-  }
-  return normalizeWorkflowBindingsArray(normalizeMetadataObject(pool.metadata).workflow_bindings)
-}
-
-const stringifyWorkflowBindingsForForm = (rawBindings: unknown): string => {
-  const bindings = normalizeWorkflowBindingsArray(rawBindings)
-  if (bindings.length === 0) {
-    return DEFAULT_WORKFLOW_BINDINGS_JSON
-  }
-  try {
-    return JSON.stringify(bindings, null, 2)
-  } catch {
-    return DEFAULT_WORKFLOW_BINDINGS_JSON
-  }
-}
-
-const parseWorkflowBindingsInput = (
-  value: string | undefined
-): { bindings: PoolWorkflowBinding[]; error: string | null } => {
-  const source = String(value ?? '').trim()
-  if (!source) {
-    return { bindings: [], error: null }
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(source)
-  } catch {
-    return {
-      bindings: [],
-      error: 'Workflow bindings JSON должен быть валидным JSON array.',
-    }
-  }
-
-  if (!Array.isArray(parsed)) {
-    return {
-      bindings: [],
-      error: 'Workflow bindings JSON должен быть JSON array.',
-    }
-  }
-
-  const invalidIndex = parsed.findIndex((item) => !item || typeof item !== 'object' || Array.isArray(item))
-  if (invalidIndex >= 0) {
-    return {
-      bindings: [],
-      error: `Workflow bindings JSON: элемент #${invalidIndex + 1} должен быть объектом.`,
-    }
-  }
-
-  return { bindings: parsed as PoolWorkflowBinding[], error: null }
-}
-
-const summarizeWorkflowBindings = (
-  pool: OrganizationPool
-): { primary: string; secondary: string | null } => {
-  const bindings = extractWorkflowBindingsFromPool(pool)
-  if (bindings.length === 0) {
-    return { primary: '0 bindings', secondary: null }
-  }
-
-  const activeCount = bindings.filter((binding) => binding.status === 'active').length
-  const firstBinding = bindings[0]
-  const workflowKey = String(
-    firstBinding?.workflow?.workflow_definition_key || firstBinding?.workflow?.workflow_name || ''
-  ).trim()
-
-  return {
-    primary: `${bindings.length} ${bindings.length === 1 ? 'binding' : 'bindings'}`,
-    secondary: [
-      workflowKey,
-      activeCount > 0 ? `${activeCount} active` : null,
-    ]
-      .filter((item): item is string => Boolean(item))
-      .join(' · ') || null,
-  }
 }
 
 const parseTopologyMetadata = (
@@ -2149,7 +2099,7 @@ export function PoolCatalogPage() {
         name: selectedPool.name,
         description: selectedPool.description || '',
         is_active: selectedPool.is_active,
-        workflow_bindings_json: stringifyWorkflowBindingsForForm(
+        workflow_bindings: workflowBindingsToFormValues(
           extractWorkflowBindingsFromPool(selectedPool)
         ),
       })
@@ -2160,7 +2110,7 @@ export function PoolCatalogPage() {
       name: '',
       description: '',
       is_active: true,
-      workflow_bindings_json: DEFAULT_WORKFLOW_BINDINGS_JSON,
+      workflow_bindings: [],
     })
   }, [isPoolDrawerOpen, poolDrawerMode, poolForm, selectedPool])
 
@@ -2170,9 +2120,9 @@ export function PoolCatalogPage() {
     setPoolSubmitError(null)
     try {
       const values = await poolForm.validateFields()
-      const parsedWorkflowBindings = parseWorkflowBindingsInput(values.workflow_bindings_json)
-      if (parsedWorkflowBindings.error) {
-        setPoolSubmitError(parsedWorkflowBindings.error)
+      const preparedBindings = buildWorkflowBindingsFromForm(values.workflow_bindings)
+      if (preparedBindings.errors.length > 0) {
+        setPoolSubmitError(preparedBindings.errors[0] ?? 'Workflow bindings form is invalid.')
         return
       }
       setIsPoolSaving(true)
@@ -2182,10 +2132,16 @@ export function PoolCatalogPage() {
         name: values.name.trim(),
         description: values.description.trim(),
         is_active: Boolean(values.is_active),
-        metadata: selectedPool?.metadata ?? {},
-        workflow_bindings: parsedWorkflowBindings.bindings,
+        metadata: poolDrawerMode === 'edit' ? selectedPool?.metadata ?? {} : {},
       })
       setSelectedPoolId(response.pool.id)
+      await syncPoolWorkflowBindings({
+        poolId: response.pool.id,
+        previousBindings: poolDrawerMode === 'edit' && selectedPool
+          ? extractWorkflowBindingsFromPool(selectedPool)
+          : [],
+        nextBindings: preparedBindings.bindings,
+      })
       message.success(response.created ? 'Пул создан.' : 'Пул обновлён.')
       setIsPoolDrawerOpen(false)
       await loadPools()
@@ -4342,16 +4298,8 @@ export function PoolCatalogPage() {
             <Form.Item name="is_active" label="Active" valuePropName="checked">
               <Switch />
             </Form.Item>
-            <Form.Item
-              name="workflow_bindings_json"
-              label="Workflow bindings JSON"
-              extra="JSON array of pool_workflow_binding.v1 contracts."
-            >
-              <TextArea
-                aria-label="Workflow bindings JSON"
-                autoSize={{ minRows: 8, maxRows: 18 }}
-                placeholder={DEFAULT_WORKFLOW_BINDINGS_JSON}
-              />
+            <Form.Item label="Workflow bindings" style={{ marginBottom: 0 }}>
+              <PoolWorkflowBindingsEditor disabled={mutatingDisabled || isPoolSaving} />
             </Form.Item>
           </Form>
         </Space>

@@ -358,7 +358,26 @@ def test_operation_catalog_template_surface_allows_non_staff_with_view_scope(tem
         description="",
         operation_type="designer_cli",
         target_entity="infobase",
-        template_data={"kind": "designer_cli", "driver": "cli", "command_id": "infobase.extension.list"},
+        template_data={
+            "kind": "designer_cli",
+            "driver": "cli",
+            "command_id": "infobase.extension.list",
+            "required_parameters": ["database_id", "extension_name"],
+            "optional_parameters": ["timeout_seconds"],
+            "parameter_schemas": {
+                "database_id": {"type": "uuid", "description": "Database identifier", "required": True},
+                "extension_name": {"type": "string", "description": "Extension name", "required": True},
+                "timeout_seconds": {"type": "integer", "description": "Timeout", "required": False},
+            },
+            "backend": "cli",
+            "is_async": True,
+            "timeout_seconds": 900,
+            "max_retries": 5,
+            "side_effect_profile": {
+                "kind": "mutating",
+                "summary": "Updates extension state in the target infobase.",
+            },
+        },
         is_active=True,
     )
     OperationExposurePermission.objects.update_or_create(
@@ -379,6 +398,57 @@ def test_operation_catalog_template_surface_allows_non_staff_with_view_scope(tem
     assert row["executor_command_id"] == "infobase.extension.list"
     assert row["system_managed"] is False
     assert row["domain"] == ""
+    assert row["execution_contract"] == {
+        "contract_version": "workflow_template_execution_contract.v1",
+        "capability": {
+            "id": "templates.designer_cli",
+            "label": "Template view",
+            "operation_type": "designer_cli",
+            "target_entity": "infobase",
+            "executor_kind": "designer_cli",
+        },
+        "input_contract": {
+            "mode": "params",
+            "required_parameters": ["database_id", "extension_name"],
+            "optional_parameters": ["timeout_seconds"],
+            "parameter_schemas": {
+                "database_id": {
+                    "type": "uuid",
+                    "description": "Database identifier",
+                    "required": True,
+                },
+                "extension_name": {
+                    "type": "string",
+                    "description": "Extension name",
+                    "required": True,
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Timeout",
+                    "required": False,
+                },
+            },
+        },
+        "output_contract": {
+            "result_path": "result",
+            "supports_structured_mapping": True,
+        },
+        "side_effect_profile": {
+            "execution_mode": "async",
+            "effect_kind": "mutating",
+            "summary": "Updates extension state in the target infobase.",
+            "timeout_seconds": 900,
+            "max_retries": 5,
+        },
+        "binding_provenance": {
+            "surface": "template",
+            "alias": "tpl-perm-view",
+            "exposure_id": str(exposure.id),
+            "exposure_revision": int(exposure.exposure_revision),
+            "definition_id": str(exposure.definition_id),
+            "executor_command_id": "infobase.extension.list",
+        },
+    }
 
     resp_default = template_manager_client.get("/api/v2/operation-catalog/exposures/")
     assert resp_default.status_code == 200

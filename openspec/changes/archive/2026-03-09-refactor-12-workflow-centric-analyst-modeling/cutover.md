@@ -27,8 +27,8 @@
 ## Go / No-Go Checklist
 Перед cutover tenant считается готовым только если одновременно выполнено всё ниже:
 
-1. `GET /api/v2/workflows/` возвращает authoring phase summary без unexpected deferred scope, а user-authored workflows остаются на `visibility_surface=workflow_library`.
-2. `GET /api/v2/workflows/?surface=runtime_diagnostics` показывает system-managed runtime projections отдельно и в read-only режиме.
+1. `GET /api/v2/workflows/list-workflows/` возвращает authoring phase summary без unexpected deferred scope, а user-authored workflows остаются на `visibility_surface=workflow_library`.
+2. `GET /api/v2/workflows/list-workflows/?surface=runtime_diagnostics` показывает system-managed runtime projections отдельно и в read-only режиме.
 3. Для каждого production `pool` есть ровно один expected active binding на каждый selector/effective scope; неоднозначные bindings устранены до cutover.
 4. Canary create-run проходит через `/api/v2/pools/runs/` с `pool_workflow_binding_id` и даёт lineage до workflow revision и decision snapshot.
 5. Оператор может пройти сценарий inspect/confirm/retry из `/pools/runs` без перехода в generic workflow catalog как primary экран.

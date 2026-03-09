@@ -36,6 +36,10 @@ async function setupApiMocks(page: Page, state: {
   myTenants?: AnyRecord
   organizations?: AnyRecord[]
   databases?: AnyRecord[]
+  pools?: AnyRecord[]
+  bindingUpsertCalls?: number
+  bindingDeleteCalls?: number
+  lastBindingPayload?: AnyRecord | null
 }) {
   const organizations: AnyRecord[] = [...(state.organizations ?? [
     {
@@ -57,6 +61,20 @@ async function setupApiMocks(page: Page, state: {
     { id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', name: 'db1' },
     { id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', name: 'db2' },
   ])]
+  const pools: AnyRecord[] = [...(state.pools ?? [
+    {
+      id: '99999999-9999-9999-9999-999999999999',
+      code: 'pool-main',
+      name: 'Main Pool',
+      is_active: true,
+      metadata: {},
+      workflow_bindings: [],
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+  ])]
+  state.bindingUpsertCalls = state.bindingUpsertCalls ?? 0
+  state.bindingDeleteCalls = state.bindingDeleteCalls ?? 0
+  state.lastBindingPayload = state.lastBindingPayload ?? null
 
   await page.route('**/api/v2/**', async (route) => {
     const request = route.request()
@@ -195,18 +213,77 @@ async function setupApiMocks(page: Page, state: {
 
     if (method === 'GET' && path === '/api/v2/pools/') {
       return fulfillJson(route, {
-        pools: [
-          {
-            id: '99999999-9999-9999-9999-999999999999',
-            code: 'pool-main',
-            name: 'Main Pool',
-            is_active: true,
-            metadata: {},
-            updated_at: '2026-01-01T00:00:00Z',
-          },
-        ],
-        count: 1,
+        pools,
+        count: pools.length,
       })
+    }
+
+    if (method === 'POST' && path === '/api/v2/pools/upsert/') {
+      const payload = request.postDataJSON() as AnyRecord
+      const poolId = String(payload.pool_id || '99999999-9999-9999-9999-999999999999')
+      const existingPool = pools.find((item) => String(item.id) === poolId)
+      const pool = existingPool ?? {
+        id: poolId,
+        metadata: {},
+        workflow_bindings: [],
+        updated_at: '2026-01-01T00:00:00Z',
+      }
+      pool.code = String(payload.code || '')
+      pool.name = String(payload.name || '')
+      pool.description = String(payload.description || '')
+      pool.is_active = payload.is_active !== false
+      pool.metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {}
+      pool.updated_at = '2026-01-01T00:00:00Z'
+      if (!existingPool) {
+        pools.push(pool)
+      }
+      return fulfillJson(route, { pool, created: !existingPool }, existingPool ? 200 : 201)
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/workflow-bindings/') {
+      const poolId = String(url.searchParams.get('pool_id') || '')
+      const pool = pools.find((item) => String(item.id) === poolId)
+      const bindings = Array.isArray(pool?.workflow_bindings) ? pool.workflow_bindings : []
+      return fulfillJson(route, { pool_id: poolId, bindings, count: bindings.length })
+    }
+
+    if (method === 'POST' && path === '/api/v2/pools/workflow-bindings/upsert/') {
+      const payload = request.postDataJSON() as AnyRecord
+      const poolId = String(payload.pool_id || '')
+      const pool = pools.find((item) => String(item.id) === poolId)
+      if (!pool) {
+        return fulfillJson(route, { type: 'about:blank', title: 'Pool Not Found', status: 404, detail: 'Pool not found.' }, 404)
+      }
+
+      const workflowBinding = payload.workflow_binding && typeof payload.workflow_binding === 'object'
+        ? { ...(payload.workflow_binding as AnyRecord) }
+        : {}
+      const bindingId = String(workflowBinding.binding_id || `binding-${state.bindingUpsertCalls! + 1}`)
+      workflowBinding.binding_id = bindingId
+      workflowBinding.pool_id = poolId
+      state.bindingUpsertCalls! += 1
+      state.lastBindingPayload = payload
+
+      const existingBindings = Array.isArray(pool.workflow_bindings) ? [...pool.workflow_bindings] : []
+      const nextBindings = existingBindings.filter((item) => String(item.binding_id || '') !== bindingId)
+      nextBindings.push(workflowBinding)
+      pool.workflow_bindings = nextBindings
+      pool.updated_at = '2026-01-01T00:00:00Z'
+      return fulfillJson(route, { pool_id: poolId, workflow_binding: workflowBinding, created: existingBindings.length === nextBindings.length - 1 }, 201)
+    }
+
+    if (method === 'DELETE' && path.startsWith('/api/v2/pools/workflow-bindings/')) {
+      const bindingId = path.split('/')[5] || ''
+      const poolId = String(url.searchParams.get('pool_id') || '')
+      const pool = pools.find((item) => String(item.id) === poolId)
+      if (!pool) {
+        return fulfillJson(route, { type: 'about:blank', title: 'Pool Not Found', status: 404, detail: 'Pool not found.' }, 404)
+      }
+      const existingBindings = Array.isArray(pool.workflow_bindings) ? [...pool.workflow_bindings] : []
+      const binding = existingBindings.find((item) => String(item.binding_id || '') === bindingId)
+      pool.workflow_bindings = existingBindings.filter((item) => String(item.binding_id || '') !== bindingId)
+      state.bindingDeleteCalls! += 1
+      return fulfillJson(route, { pool_id: poolId, workflow_binding: binding ?? { binding_id: bindingId }, deleted: true })
     }
 
     if (method === 'GET' && path.startsWith('/api/v2/pools/') && path.endsWith('/graph/')) {
@@ -281,4 +358,60 @@ test('Pool Catalog: non-staff can create, edit and sync organizations without ex
   await expect(page.getByText('Sync completed', { exact: true })).toBeVisible()
   await expect(page.getByText(/total_rows/i)).toBeVisible()
   await expect(page.getByText('Synced Org', { exact: true })).toBeVisible()
+})
+
+test('Pool Catalog: workflow bindings editor saves through first-class binding API', async ({ page }) => {
+  const state = {
+    me: { id: 1, username: 'user', is_staff: false },
+    myTenants: { active_tenant_id: 't1', tenants: [{ id: 't1', slug: 'default', name: 'Default' }] },
+    bindingUpsertCalls: 0,
+    bindingDeleteCalls: 0,
+    lastBindingPayload: null as AnyRecord | null,
+  }
+
+  await setupAuth(page, { activeTenantId: 't1' })
+  await setupApiMocks(page, state)
+
+  await page.goto('/pools/catalog', { waitUntil: 'domcontentloaded' })
+  await page.getByRole('tab', { name: 'Pools' }).click()
+  await page.getByTestId('pool-catalog-edit-pool').click()
+
+  await expect(page.getByTestId('pool-catalog-workflow-binding-add')).toBeVisible()
+  await expect(page.getByLabel('Workflow bindings JSON')).toHaveCount(0)
+
+  await page.getByTestId('pool-catalog-workflow-binding-add').click()
+  await page.getByTestId('pool-catalog-workflow-binding-workflow-key-0').fill('services-publication')
+  await page.getByTestId('pool-catalog-workflow-binding-workflow-revision-id-0').fill('11111111-1111-1111-1111-111111111111')
+  await page.getByTestId('pool-catalog-workflow-binding-workflow-revision-0').fill('3')
+  await page.getByTestId('pool-catalog-workflow-binding-workflow-name-0').fill('services_publication')
+  await page.getByTestId('pool-catalog-workflow-binding-effective-from-0').fill('2026-01-01')
+  await page.getByTestId('pool-catalog-workflow-binding-selector-direction-0').fill('top_down')
+  await page.getByTestId('pool-catalog-workflow-binding-selector-mode-0').fill('safe')
+  await page.getByTestId('pool-catalog-workflow-binding-selector-tags-0').fill('baseline, monthly')
+  await page.getByTestId('pool-catalog-workflow-binding-add-parameter-0').click()
+  await page.getByTestId('pool-catalog-workflow-binding-parameter-key-0-0').fill('strategy')
+  await page.getByTestId('pool-catalog-workflow-binding-parameter-value-0-0').fill('"strict"')
+  await page.getByTestId('pool-catalog-save-pool').click()
+
+  await expect.poll(() => state.bindingUpsertCalls).toBe(1)
+  await expect.poll(() => state.bindingDeleteCalls).toBe(0)
+  await expect.poll(() => state.lastBindingPayload).toMatchObject({
+    pool_id: '99999999-9999-9999-9999-999999999999',
+    workflow_binding: {
+      workflow: {
+        workflow_definition_key: 'services-publication',
+        workflow_revision: 3,
+        workflow_name: 'services_publication',
+      },
+      selector: {
+        direction: 'top_down',
+        mode: 'safe',
+        tags: ['baseline', 'monthly'],
+      },
+      parameters: {
+        strategy: 'strict',
+      },
+      effective_from: '2026-01-01',
+    },
+  })
 })
