@@ -428,6 +428,10 @@ const ConditionForm = ({
   const selectedDecisionValue = decisionRef
     ? `${decisionRef.decision_table_id}:${decisionRef.decision_revision}`
     : undefined
+  const legacyExpression = typeof config.expression === 'string'
+    ? config.expression.trim()
+    : ''
+  const hasLegacyExpression = !decisionRef && legacyExpression.length > 0
   const selectedDecision = decisionRef
     ? availableDecisions.find(
         (decision) => (
@@ -506,7 +510,7 @@ const ConditionForm = ({
             />
           </Form.Item>
         </>
-      ) : (
+      ) : hasLegacyExpression ? (
         <>
           <Form.Item
             label="Legacy Expression"
@@ -533,6 +537,13 @@ const ConditionForm = ({
             style={{ marginTop: 8 }}
           />
         </>
+      ) : (
+        <Alert
+          type="info"
+          showIcon
+          message="Select a pinned decision table to configure this gate."
+          description="Default analyst authoring uses fail-closed decision tables. Raw expressions are shown only for existing compatibility workflows."
+        />
       )}
     </>
   )
@@ -883,12 +894,27 @@ const PropertyEditor = ({
   }
 
   const handleDecisionChange = (decisionRef?: DecisionRef) => {
-    const nextConfig: NodeConfig = decisionRef
-      ? {
-          ...(localData.config || {}),
-          expression: `{{ decisions.${decisionRef.decision_key} }}`,
-        }
-      : { ...(localData.config || {}) }
+    const currentConfig = { ...(localData.config || {}) }
+    const currentCompiledExpression = localData.decisionRef
+      ? `{{ decisions.${localData.decisionRef.decision_key} }}`
+      : undefined
+    let nextConfig: NodeConfig
+
+    if (decisionRef) {
+      nextConfig = {
+        ...currentConfig,
+        expression: `{{ decisions.${decisionRef.decision_key} }}`,
+      }
+    } else if (
+      currentCompiledExpression
+      && currentConfig.expression === currentCompiledExpression
+    ) {
+      const { expression: _expression, ...restConfig } = currentConfig
+      nextConfig = restConfig
+    } else {
+      nextConfig = currentConfig
+    }
+
     setLocalData({ ...localData, decisionRef, config: nextConfig })
     onNodeUpdate(nodeId, { decisionRef, config: nextConfig })
   }

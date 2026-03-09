@@ -18394,7 +18394,7 @@ components:
           format: uuid
         pool_workflow_binding_id:
           type: string
-          description: Explicit pool workflow binding identifier used to disambiguate create-run resolution.
+          description: Explicit pool workflow binding identifier used to disambiguate create-run resolution when selector-based matching is ambiguous.
         direction:
           enum:
             - top_down
@@ -18438,7 +18438,6 @@ components:
           type: array
           items: {}
       required:
-        - pool_workflow_binding_id
         - direction
         - period_start
         - pool_id

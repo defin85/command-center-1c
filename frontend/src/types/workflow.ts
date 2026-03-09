@@ -397,10 +397,10 @@ export const NODE_TYPE_INFO: Record<NodeType, NodeTypeInfo> = {
   condition: {
     type: 'condition',
     label: 'Decision Gate',
-    description: 'Route the scheme through an explicit branch or decision point',
+    description: 'Route the scheme through a fail-closed decision table',
     icon: 'BranchesOutlined',
     color: '#faad14',
-    requiredFields: ['expression']
+    requiredFields: ['decision_ref']
   },
   parallel: {
     type: 'parallel',

@@ -176,10 +176,14 @@ def list_workflows(request):
         _execution_count=Count('executions')
     )
 
+    system_managed_filter = Q(
+        category=WorkflowCategory.SYSTEM,
+        is_template=False,
+    )
     if surface == WORKFLOW_VISIBILITY_SURFACE_RUNTIME_DIAGNOSTICS:
-        qs = qs.filter(category=WorkflowCategory.SYSTEM)
+        qs = qs.filter(system_managed_filter)
     else:
-        qs = qs.exclude(category=WorkflowCategory.SYSTEM)
+        qs = qs.exclude(system_managed_filter)
 
     if workflow_type:
         qs = qs.filter(workflow_type=workflow_type)

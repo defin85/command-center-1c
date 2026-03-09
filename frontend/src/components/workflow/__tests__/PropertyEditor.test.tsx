@@ -62,6 +62,30 @@ const openSelect = async (testId: string) => {
 }
 
 describe('PropertyEditor', () => {
+  it('keeps fresh decision gates on pinned-decision path by default', async () => {
+    renderEditor({
+      nodeId: 'fresh-decision-node',
+      nodeData: {
+        label: 'Fresh Decision',
+        nodeType: 'condition',
+        config: {},
+      },
+      availableDecisions: [
+        {
+          id: 'decision-version-1',
+          name: 'Invoice Mode',
+          decisionTableId: 'decision-table-1',
+          decisionKey: 'invoice_mode',
+          decisionRevision: 2,
+        },
+      ],
+    })
+
+    expect(await screen.findByText('Select a pinned decision table to configure this gate.')).toBeInTheDocument()
+    expect(screen.queryByTestId('workflow-fresh-decision-node-condition-expression')).not.toBeInTheDocument()
+    expect(screen.queryByText('Legacy condition mode')).not.toBeInTheDocument()
+  })
+
   it('pins decision_ref and synthesizes compatibility expression for condition nodes', async () => {
     const { onNodeUpdate } = renderEditor({
       nodeId: 'decision-node',
@@ -103,6 +127,22 @@ describe('PropertyEditor', () => {
     })
 
     expect(await screen.findByDisplayValue('{{ decisions.invoice_mode }}')).toBeDisabled()
+  })
+
+  it('keeps legacy expression editor for compatibility workflows', async () => {
+    renderEditor({
+      nodeId: 'legacy-decision-node',
+      nodeData: {
+        label: 'Legacy Decision',
+        nodeType: 'condition',
+        config: {
+          expression: '{{ amount > 100 }}',
+        },
+      },
+    })
+
+    expect(await screen.findByDisplayValue('{{ amount > 100 }}')).toBeInTheDocument()
+    expect(screen.getByText('Legacy condition mode')).toBeInTheDocument()
   })
 
   it('pins workflow revision metadata for subworkflow nodes', async () => {

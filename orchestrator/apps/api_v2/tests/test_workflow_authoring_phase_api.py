@@ -150,6 +150,39 @@ def test_list_workflows_separates_authored_and_runtime_diagnostic_surfaces(staff
 
 
 @pytest.mark.django_db
+def test_list_workflows_keeps_authored_system_templates_in_analyst_surface(staff_client):
+    _create_workflow(
+        name="Authored System Template",
+        category=WorkflowCategory.SYSTEM,
+        is_template=True,
+    )
+    _create_workflow(
+        name="Runtime Projection",
+        category=WorkflowCategory.SYSTEM,
+        is_template=False,
+    )
+
+    analyst_response = staff_client.get("/api/v2/workflows/list-workflows/")
+    runtime_response = staff_client.get(
+        "/api/v2/workflows/list-workflows/",
+        {"surface": "runtime_diagnostics"},
+    )
+
+    assert analyst_response.status_code == 200
+    analyst_workflows = analyst_response.json()["workflows"]
+    assert [item["name"] for item in analyst_workflows] == ["Authored System Template"]
+    assert analyst_workflows[0]["category"] == WorkflowCategory.SYSTEM
+    assert analyst_workflows[0]["management_mode"] == "user_authored"
+    assert analyst_workflows[0]["visibility_surface"] == "workflow_library"
+    assert analyst_workflows[0]["is_system_managed"] is False
+    assert analyst_workflows[0]["read_only_reason"] is None
+
+    assert runtime_response.status_code == 200
+    runtime_workflows = runtime_response.json()["workflows"]
+    assert [item["name"] for item in runtime_workflows] == ["Runtime Projection"]
+
+
+@pytest.mark.django_db
 def test_get_workflow_returns_management_metadata_for_runtime_projection(staff_client):
     workflow = _create_workflow(
         name="Runtime Projection",
