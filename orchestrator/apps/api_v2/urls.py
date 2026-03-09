@@ -132,9 +132,24 @@ urlpatterns = [
     path('pools/', intercompany_pools.list_organization_pools, name='pools-list'),
     path('pools/upsert/', intercompany_pools.upsert_organization_pool, name='pools-upsert'),
     path(
+        'pools/workflow-bindings/',
+        intercompany_pools.list_pool_workflow_bindings,
+        name='pools-workflow-bindings-list',
+    ),
+    path(
+        'pools/workflow-bindings/upsert/',
+        intercompany_pools.upsert_pool_workflow_binding,
+        name='pools-workflow-bindings-upsert',
+    ),
+    path(
         'pools/workflow-bindings/preview/',
         intercompany_pools.preview_pool_workflow_binding,
         name='pools-workflow-bindings-preview',
+    ),
+    path(
+        'pools/workflow-bindings/<str:binding_id>/',
+        intercompany_pools.pool_workflow_binding_detail,
+        name='pools-workflow-bindings-detail',
     ),
     path('pools/organizations/', intercompany_pools.list_organizations, name='pools-organizations-list'),
     path('pools/organizations/upsert/', intercompany_pools.upsert_organization, name='pools-organizations-upsert'),

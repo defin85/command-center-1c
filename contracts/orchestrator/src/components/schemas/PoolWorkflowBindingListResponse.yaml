@@ -1,0 +1,15 @@
+type: object
+properties:
+  pool_id:
+    type: string
+    format: uuid
+  bindings:
+    type: array
+    items:
+      $ref: ./PoolWorkflowBinding.yaml
+  count:
+    type: integer
+required:
+  - pool_id
+  - bindings
+  - count

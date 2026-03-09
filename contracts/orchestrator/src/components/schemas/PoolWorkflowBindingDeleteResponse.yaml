@@ -1,0 +1,13 @@
+type: object
+properties:
+  pool_id:
+    type: string
+    format: uuid
+  workflow_binding:
+    $ref: ./PoolWorkflowBinding.yaml
+  deleted:
+    type: boolean
+required:
+  - pool_id
+  - workflow_binding
+  - deleted

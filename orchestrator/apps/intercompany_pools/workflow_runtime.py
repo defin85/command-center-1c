@@ -127,7 +127,7 @@ def start_pool_run_workflow_execution(
         _validate_publication_auth_mapping_for_run(run=locked_run, requested_by=requested_by)
 
         sync_pool_runtime_template_registry()
-        schema_template = locked_run.schema_template or _get_or_create_default_schema_template(locked_run)
+        schema_template = resolve_pool_runtime_schema_template(run=locked_run)
         bundle = build_pool_workflow_binding_runtime_bundle(
             tenant=locked_run.tenant,
             pool=locked_run.pool,
@@ -333,7 +333,7 @@ def start_pool_run_retry_workflow_execution(
         ) + 1
 
         sync_pool_runtime_template_registry()
-        schema_template = locked_run.schema_template or _get_or_create_default_schema_template(locked_run)
+        schema_template = resolve_pool_runtime_schema_template(run=locked_run)
         sanitized_run_input = sanitize_run_input_for_runtime_contract(run_input=locked_run.run_input)
         retry_publication_payload = _build_retry_publication_payload(
             run=locked_run,
@@ -1572,6 +1572,18 @@ def _resolve_or_create_workflow_template(*, plan, requested_by: User | None) -> 
             return existing
         raise
     return template
+
+
+def resolve_pool_runtime_schema_template(
+    *,
+    run: PoolRun,
+    schema_template: PoolSchemaTemplate | None = None,
+) -> PoolSchemaTemplate:
+    if schema_template is not None:
+        return schema_template
+    if run.schema_template is not None:
+        return run.schema_template
+    return _get_or_create_default_schema_template(run)
 
 
 def _get_or_create_default_schema_template(run: PoolRun) -> PoolSchemaTemplate:

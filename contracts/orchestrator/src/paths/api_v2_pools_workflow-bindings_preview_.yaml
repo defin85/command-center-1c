@@ -10,13 +10,13 @@ post:
     content:
       application/json:
         schema:
-          $ref: ../components/schemas/PoolRunCreateRequest.yaml
+          $ref: ../components/schemas/PoolWorkflowBindingPreviewRequest.yaml
       application/x-www-form-urlencoded:
         schema:
-          $ref: ../components/schemas/PoolRunCreateRequest.yaml
+          $ref: ../components/schemas/PoolWorkflowBindingPreviewRequest.yaml
       multipart/form-data:
         schema:
-          $ref: ../components/schemas/PoolRunCreateRequest.yaml
+          $ref: ../components/schemas/PoolWorkflowBindingPreviewRequest.yaml
   responses:
     '200':
       description: ''

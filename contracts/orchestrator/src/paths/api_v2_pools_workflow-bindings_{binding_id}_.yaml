@@ -1,0 +1,100 @@
+get:
+  operationId: v2_pools_workflow_bindings_detail
+  summary: Get a workflow binding for a pool
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  parameters:
+    - name: binding_id
+      in: path
+      required: true
+      schema:
+        type: string
+    - name: pool_id
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  responses:
+    '200':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/PoolWorkflowBindingDetailResponse.yaml
+    '400':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+    '401':
+      description: Unauthorized
+    '404':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+delete:
+  operationId: v2_pools_workflow_bindings_delete
+  summary: Delete a workflow binding for a pool
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  parameters:
+    - name: binding_id
+      in: path
+      required: true
+      schema:
+        type: string
+    - name: pool_id
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  responses:
+    '200':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/PoolWorkflowBindingDeleteResponse.yaml
+    '400':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+    '401':
+      description: Unauthorized
+    '404':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml

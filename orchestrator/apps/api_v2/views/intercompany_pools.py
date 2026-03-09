@@ -81,6 +81,7 @@ from apps.intercompany_pools.binding_preview import build_pool_workflow_binding_
 from apps.intercompany_pools.runs import upsert_pool_run
 from apps.intercompany_pools.workflow_runtime import (
     POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY,
+    resolve_pool_runtime_schema_template,
     start_pool_run_retry_workflow_execution,
     start_pool_run_workflow_execution,
 )
@@ -88,6 +89,16 @@ from apps.intercompany_pools.workflow_authoring_contract import PoolWorkflowBind
 from apps.intercompany_pools.workflow_binding_resolution import (
     PoolWorkflowBindingResolutionError,
     resolve_pool_workflow_binding_for_run,
+)
+from apps.intercompany_pools.workflow_bindings_store import (
+    PoolWorkflowBindingNotFoundError,
+    PoolWorkflowBindingStoreError,
+    delete_pool_workflow_binding as delete_stored_pool_workflow_binding,
+    extract_pool_workflow_bindings as extract_stored_pool_workflow_bindings,
+    get_pool_workflow_binding as get_stored_pool_workflow_binding,
+    list_pool_workflow_bindings as list_stored_pool_workflow_bindings,
+    normalize_pool_workflow_bindings_for_storage as normalize_stored_pool_workflow_bindings_for_storage,
+    upsert_pool_workflow_binding as upsert_stored_pool_workflow_binding,
 )
 from apps.templates.workflow.models import WorkflowExecution
 from apps.runtime_settings.effective import get_effective_runtime_setting
@@ -1805,14 +1816,7 @@ def _serialize_schema_template(template: PoolSchemaTemplate) -> dict[str, Any]:
 
 
 def _extract_pool_workflow_bindings(metadata: dict[str, Any]) -> list[dict[str, Any]]:
-    raw = metadata.get("workflow_bindings")
-    if not isinstance(raw, list):
-        return []
-    bindings: list[dict[str, Any]] = []
-    for item in raw:
-        if isinstance(item, dict):
-            bindings.append(item)
-    return bindings
+    return extract_stored_pool_workflow_bindings(metadata)
 
 
 def _serialize_organization_pool(pool: OrganizationPool) -> dict[str, Any]:
@@ -1834,39 +1838,43 @@ def _normalize_pool_workflow_bindings_for_storage(
     pool_id: str,
     workflow_bindings: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    normalized_bindings: list[dict[str, Any]] = []
-    seen_binding_ids: set[str] = set()
+    try:
+        return normalize_stored_pool_workflow_bindings_for_storage(
+            pool_id=pool_id,
+            workflow_bindings=workflow_bindings,
+        )
+    except PoolWorkflowBindingStoreError as exc:
+        raise serializers.ValidationError({"workflow_bindings": [str(exc)]}) from exc
 
-    for index, binding in enumerate(workflow_bindings, start=1):
-        payload = dict(binding)
-        provided_pool_id = str(payload.get("pool_id") or "").strip()
-        if provided_pool_id and provided_pool_id != pool_id:
-            raise serializers.ValidationError(
-                {
-                    "workflow_bindings": [
-                        f"binding #{index}: pool_id must match enclosing pool id"
-                    ]
-                }
-            )
 
-        binding_id = str(payload.get("binding_id") or "").strip() or str(uuid4())
-        if binding_id in seen_binding_ids:
-            raise serializers.ValidationError(
-                {"workflow_bindings": [f"binding #{index}: binding_id must be unique"]}
-            )
-        seen_binding_ids.add(binding_id)
-
-        payload["binding_id"] = binding_id
-        payload["pool_id"] = pool_id
-
-        try:
-            contract = PoolWorkflowBindingContract(**payload)
-        except Exception as exc:
-            raise serializers.ValidationError({"workflow_bindings": [str(exc)]}) from exc
-
-        normalized_bindings.append(contract.model_dump(mode="json"))
-
+def _replace_pool_workflow_bindings(
+    *,
+    pool: OrganizationPool,
+    workflow_bindings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    metadata = dict(pool.metadata if isinstance(pool.metadata, dict) else {})
+    normalized_bindings = _normalize_pool_workflow_bindings_for_storage(
+        pool_id=str(pool.id),
+        workflow_bindings=workflow_bindings,
+    )
+    metadata["workflow_bindings"] = normalized_bindings
+    pool.metadata = metadata
+    pool.save(update_fields=["metadata", "updated_at"])
     return normalized_bindings
+
+
+def _get_pool_workflow_binding(
+    *,
+    pool: OrganizationPool,
+    binding_id: str,
+) -> dict[str, Any] | None:
+    normalized_binding_id = str(binding_id or "").strip()
+    if not normalized_binding_id:
+        return None
+    try:
+        return get_stored_pool_workflow_binding(pool=pool, binding_id=normalized_binding_id)
+    except PoolWorkflowBindingNotFoundError:
+        return None
 
 
 def _serialize_organization(organization: Organization) -> dict[str, Any]:
@@ -2362,6 +2370,38 @@ class PoolWorkflowBindingInputSerializer(serializers.Serializer):
     )
 
 
+class PoolWorkflowBindingScopeQuerySerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+
+
+class PoolWorkflowBindingListResponseSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    bindings = PoolWorkflowBindingInputSerializer(many=True)
+    count = serializers.IntegerField()
+
+
+class PoolWorkflowBindingDetailResponseSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    workflow_binding = PoolWorkflowBindingInputSerializer()
+
+
+class PoolWorkflowBindingUpsertRequestSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    workflow_binding = PoolWorkflowBindingInputSerializer()
+
+
+class PoolWorkflowBindingUpsertResponseSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    workflow_binding = PoolWorkflowBindingInputSerializer()
+    created = serializers.BooleanField()
+
+
+class PoolWorkflowBindingDeleteResponseSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    workflow_binding = PoolWorkflowBindingInputSerializer()
+    deleted = serializers.BooleanField()
+
+
 class OrganizationPoolUpsertRequestSerializer(serializers.Serializer):
     pool_id = serializers.UUIDField(required=False)
     code = serializers.SlugField(max_length=64)
@@ -2787,17 +2827,15 @@ def preview_pool_workflow_binding(request):
                 status_code=http_status.HTTP_404_NOT_FOUND,
             )
     else:
-        schema_template = PoolSchemaTemplate.objects.filter(
-            tenant_id=tenant_id,
-            is_active=True,
-        ).order_by("-is_public", "code").first()
-        if schema_template is None:
-            return _problem(
-                code="SCHEMA_TEMPLATE_NOT_FOUND",
-                title="Schema Template Not Found",
-                detail="Active schema template is required for binding preview.",
-                status_code=http_status.HTTP_404_NOT_FOUND,
-            )
+        preview_run = PoolRun(
+            tenant=pool.tenant,
+            pool=pool,
+            direction=data["direction"],
+            mode=data.get("mode", PoolRunMode.SAFE),
+            period_start=data["period_start"],
+            period_end=data.get("period_end"),
+        )
+        schema_template = resolve_pool_runtime_schema_template(run=preview_run)
 
     try:
         preview = build_pool_workflow_binding_preview(
@@ -2829,6 +2867,257 @@ def preview_pool_workflow_binding(request):
         )
 
     return Response(preview, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_workflow_bindings_list",
+    summary="List workflow bindings for a pool",
+    responses={
+        200: PoolWorkflowBindingListResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_pool_workflow_bindings(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _problem(
+            code="TENANT_CONTEXT_REQUIRED",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = PoolWorkflowBindingScopeQuerySerializer(data=request.query_params)
+    if not serializer.is_valid():
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    pool = OrganizationPool.objects.filter(
+        id=serializer.validated_data["pool_id"],
+        tenant_id=tenant_id,
+    ).first()
+    if pool is None:
+        return _problem(
+            code="POOL_NOT_FOUND",
+            title="Pool Not Found",
+            detail="Organization pool not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        bindings = list_stored_pool_workflow_bindings(pool=pool)
+    except PoolWorkflowBindingResolutionError as exc:
+        return _problem(
+            code=exc.code,
+            title="Pool Workflow Binding Resolution Failed",
+            detail=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=exc.errors,
+        )
+    return Response(
+        {
+            "pool_id": str(pool.id),
+            "bindings": bindings,
+            "count": len(bindings),
+        },
+        status=http_status.HTTP_200_OK,
+    )
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_workflow_bindings_upsert",
+    summary="Create or update a workflow binding for a pool",
+    request=PoolWorkflowBindingUpsertRequestSerializer,
+    responses={
+        200: PoolWorkflowBindingUpsertResponseSerializer,
+        201: PoolWorkflowBindingUpsertResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upsert_pool_workflow_binding(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _problem(
+            code="TENANT_CONTEXT_REQUIRED",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = PoolWorkflowBindingUpsertRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = serializer.validated_data
+    pool = OrganizationPool.objects.filter(id=data["pool_id"], tenant_id=tenant_id).first()
+    if pool is None:
+        return _problem(
+            code="POOL_NOT_FOUND",
+            title="Pool Not Found",
+            detail="Organization pool not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        workflow_binding, created = upsert_stored_pool_workflow_binding(
+            pool=pool,
+            workflow_binding=dict(data["workflow_binding"]),
+        )
+    except PoolWorkflowBindingStoreError as exc:
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+    except PoolWorkflowBindingResolutionError as exc:
+        return _problem(
+            code=exc.code,
+            title="Pool Workflow Binding Resolution Failed",
+            detail=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=exc.errors,
+        )
+
+    response_status = http_status.HTTP_201_CREATED if created else http_status.HTTP_200_OK
+    return Response(
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": workflow_binding,
+            "created": created,
+        },
+        status=response_status,
+    )
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_workflow_bindings_detail",
+    summary="Get a workflow binding for a pool",
+    responses={
+        200: PoolWorkflowBindingDetailResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+    methods=["GET"],
+)
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_workflow_bindings_delete",
+    summary="Delete a workflow binding for a pool",
+    responses={
+        200: PoolWorkflowBindingDeleteResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+    methods=["DELETE"],
+)
+@api_view(["GET", "DELETE"])
+@permission_classes([IsAuthenticated])
+def pool_workflow_binding_detail(request, binding_id: str):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _problem(
+            code="TENANT_CONTEXT_REQUIRED",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = PoolWorkflowBindingScopeQuerySerializer(data=request.query_params)
+    if not serializer.is_valid():
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    pool = OrganizationPool.objects.filter(
+        id=serializer.validated_data["pool_id"],
+        tenant_id=tenant_id,
+    ).first()
+    if pool is None:
+        return _problem(
+            code="POOL_NOT_FOUND",
+            title="Pool Not Found",
+            detail="Organization pool not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        binding = get_stored_pool_workflow_binding(pool=pool, binding_id=binding_id)
+    except PoolWorkflowBindingResolutionError as exc:
+        return _problem(
+            code=exc.code,
+            title="Pool Workflow Binding Resolution Failed",
+            detail=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=exc.errors,
+        )
+    except PoolWorkflowBindingNotFoundError:
+        return _problem(
+            code="POOL_WORKFLOW_BINDING_NOT_FOUND",
+            title="Pool Workflow Binding Not Found",
+            detail="Workflow binding not found for the specified pool.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        return Response(
+            {
+                "pool_id": str(pool.id),
+                "workflow_binding": binding,
+            },
+            status=http_status.HTTP_200_OK,
+        )
+
+    try:
+        deleted_binding = delete_stored_pool_workflow_binding(pool=pool, binding_id=binding_id)
+    except PoolWorkflowBindingResolutionError as exc:
+        return _problem(
+            code=exc.code,
+            title="Pool Workflow Binding Resolution Failed",
+            detail=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=exc.errors,
+        )
+    except PoolWorkflowBindingNotFoundError:
+        return _problem(
+            code="POOL_WORKFLOW_BINDING_NOT_FOUND",
+            title="Pool Workflow Binding Not Found",
+            detail="Workflow binding not found for the specified pool.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+    return Response(
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": deleted_binding,
+            "deleted": True,
+        },
+        status=http_status.HTTP_200_OK,
+    )
 
 
 @extend_schema(

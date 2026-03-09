@@ -1,0 +1,57 @@
+post:
+  operationId: v2_pools_workflow_bindings_upsert
+  summary: Create or update a workflow binding for a pool
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/PoolWorkflowBindingUpsertRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/PoolWorkflowBindingUpsertRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/PoolWorkflowBindingUpsertRequest.yaml
+  responses:
+    '200':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/PoolWorkflowBindingUpsertResponse.yaml
+    '201':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/PoolWorkflowBindingUpsertResponse.yaml
+    '400':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+    '401':
+      description: Unauthorized
+    '404':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml

@@ -30,7 +30,7 @@ def resolve_pool_workflow_binding_for_run(
     mode: str,
     period_start: date,
 ) -> PoolWorkflowBindingContract | None:
-    bindings = _parse_pool_workflow_bindings(raw_bindings)
+    bindings = parse_pool_workflow_bindings(raw_bindings)
     if not bindings:
         return None
 
@@ -86,7 +86,7 @@ def resolve_pool_workflow_binding_for_run(
     )
 
 
-def _parse_pool_workflow_bindings(raw_bindings: Iterable[Any]) -> list[PoolWorkflowBindingContract]:
+def parse_pool_workflow_bindings(raw_bindings: Iterable[Any]) -> list[PoolWorkflowBindingContract]:
     bindings: list[PoolWorkflowBindingContract] = []
     errors: list[dict[str, Any]] = []
     for index, raw_binding in enumerate(raw_bindings, start=1):
@@ -163,5 +163,6 @@ __all__ = [
     "ERROR_CODE_POOL_WORKFLOW_BINDING_NOT_FOUND",
     "ERROR_CODE_POOL_WORKFLOW_BINDING_NOT_RESOLVED",
     "PoolWorkflowBindingResolutionError",
+    "parse_pool_workflow_bindings",
     "resolve_pool_workflow_binding_for_run",
 ]

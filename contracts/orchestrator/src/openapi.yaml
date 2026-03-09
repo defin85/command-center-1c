@@ -194,6 +194,12 @@ paths:
     $ref: paths/api_v2_operations_stream-unsubscribe_.yaml
   /api/v2/pools/:
     $ref: paths/api_v2_pools_.yaml
+  /api/v2/pools/workflow-bindings/:
+    $ref: paths/api_v2_pools_workflow-bindings_.yaml
+  /api/v2/pools/workflow-bindings/upsert/:
+    $ref: paths/api_v2_pools_workflow-bindings_upsert_.yaml
+  /api/v2/pools/workflow-bindings/{binding_id}/:
+    $ref: paths/api_v2_pools_workflow-bindings_{binding_id}_.yaml
   /api/v2/pools/workflow-bindings/preview/:
     $ref: paths/api_v2_pools_workflow-bindings_preview_.yaml
   /api/v2/pools/master-data/bindings/:
