@@ -63,6 +63,8 @@ import {
   type PoolTopologySnapshotEdgeInput,
   type PoolTopologySnapshotNodeInput,
 } from '../../api/intercompanyPools'
+import { getV2 } from '../../api/generated/v2/v2'
+import type { AvailableDecisionRevision } from '../../types/workflow'
 import { PoolWorkflowBindingsEditor } from './PoolWorkflowBindingsEditor'
 import {
   buildWorkflowBindingsFromForm,
@@ -71,7 +73,7 @@ import {
   workflowBindingsToFormValues,
   type PoolWorkflowBindingFormValue,
 } from './poolWorkflowBindingsForm'
-import { syncPoolWorkflowBindings } from './poolWorkflowBindingsSync'
+import { hasWorkflowBindingChanges, syncPoolWorkflowBindings } from './poolWorkflowBindingsSync'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -1389,6 +1391,7 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
 
 export function PoolCatalogPage() {
   const { message } = AntApp.useApp()
+  const api = useMemo(() => getV2(), [])
   const meQuery = useMe()
   const hasAuthToken = Boolean(localStorage.getItem('auth_token'))
   const myTenantsQuery = useMyTenants({ enabled: hasAuthToken })
@@ -1433,6 +1436,9 @@ export function PoolCatalogPage() {
   const [isPoolSaving, setIsPoolSaving] = useState(false)
   const [isPoolBindingsLoading, setIsPoolBindingsLoading] = useState(false)
   const [poolBindingsLoadError, setPoolBindingsLoadError] = useState<string | null>(null)
+  const [availableDecisions, setAvailableDecisions] = useState<AvailableDecisionRevision[]>([])
+  const [isPoolDecisionsLoading, setIsPoolDecisionsLoading] = useState(false)
+  const [poolDecisionsLoadError, setPoolDecisionsLoadError] = useState<string | null>(null)
   const [topologyPreflightErrors, setTopologyPreflightErrors] = useState<string[]>([])
   const [topologySubmitError, setTopologySubmitError] = useState<string | null>(null)
   const [isTopologySaving, setIsTopologySaving] = useState(false)
@@ -2175,7 +2181,59 @@ export function PoolCatalogPage() {
     setIsPoolDrawerOpen(false)
     setPoolSubmitError(null)
     setPoolBindingsLoadError(null)
+    setPoolDecisionsLoadError(null)
   }, [isPoolBindingsLoading, isPoolSaving])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!isPoolDrawerOpen) {
+      setAvailableDecisions([])
+      setIsPoolDecisionsLoading(false)
+      setPoolDecisionsLoadError(null)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setIsPoolDecisionsLoading(true)
+    setPoolDecisionsLoadError(null)
+    void api.getDecisionsCollection()
+      .then((response) => {
+        if (cancelled) {
+          return
+        }
+        const nextDecisions = (response.decisions ?? [])
+          .filter((decision) => decision.is_active !== false)
+          .map((decision) => ({
+            id: decision.id,
+            name: decision.name,
+            decisionTableId: decision.decision_table_id,
+            decisionKey: decision.decision_key,
+            decisionRevision: decision.decision_revision,
+          }))
+          .sort((left, right) => (
+            left.name.localeCompare(right.name) || left.decisionRevision - right.decisionRevision
+          ))
+        setAvailableDecisions(nextDecisions)
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return
+        }
+        const resolved = resolveApiError(err, 'Не удалось загрузить decision revisions из /decisions.')
+        setAvailableDecisions([])
+        setPoolDecisionsLoadError(resolved.message)
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsPoolDecisionsLoading(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [api, isPoolDrawerOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -2244,6 +2302,9 @@ export function PoolCatalogPage() {
         setPoolSubmitError(preparedBindings.errors[0] ?? 'Workflow bindings form is invalid.')
         return
       }
+      const previousBindings = poolDrawerMode === 'edit' && selectedPool
+        ? extractWorkflowBindingsFromPool(selectedPool)
+        : []
       setIsPoolSaving(true)
       const response = await upsertOrganizationPool({
         pool_id: poolDrawerMode === 'edit' ? selectedPool?.id : undefined,
@@ -2254,13 +2315,16 @@ export function PoolCatalogPage() {
         metadata: poolDrawerMode === 'edit' ? selectedPool?.metadata ?? {} : {},
       })
       setSelectedPoolId(response.pool.id)
-      await syncPoolWorkflowBindings({
-        poolId: response.pool.id,
-        previousBindings: poolDrawerMode === 'edit' && selectedPool
-          ? extractWorkflowBindingsFromPool(selectedPool)
-          : [],
+      if (hasWorkflowBindingChanges({
+        previousBindings,
         nextBindings: preparedBindings.bindings,
-      })
+      })) {
+        await syncPoolWorkflowBindings({
+          poolId: response.pool.id,
+          previousBindings,
+          nextBindings: preparedBindings.bindings,
+        })
+      }
       message.success(response.created ? 'Пул создан.' : 'Пул обновлён.')
       setIsPoolDrawerOpen(false)
       await loadPools()
@@ -4498,7 +4562,12 @@ export function PoolCatalogPage() {
               <Switch />
             </Form.Item>
             <Form.Item label="Workflow bindings" style={{ marginBottom: 0 }}>
-              <PoolWorkflowBindingsEditor disabled={mutatingDisabled || isPoolSaving || isPoolBindingsLoading} />
+              <PoolWorkflowBindingsEditor
+                availableDecisions={availableDecisions}
+                decisionsLoading={isPoolDecisionsLoading}
+                decisionsLoadError={poolDecisionsLoadError}
+                disabled={mutatingDisabled || isPoolSaving || isPoolBindingsLoading}
+              />
             </Form.Item>
           </Form>
         </Space>

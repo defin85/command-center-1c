@@ -29,6 +29,7 @@ from apps.intercompany_pools.models import (
     PoolEdgeVersion,
     PoolNodeVersion,
     PoolODataMetadataCatalogSnapshot,
+    PoolODataMetadataCatalogScopeResolution,
     PoolODataMetadataCatalogSnapshotSource,
     PoolPublicationAttempt,
     PoolPublicationAttemptStatus,
@@ -586,7 +587,7 @@ def _create_current_metadata_catalog_snapshot(
         or database.id
         or ""
     ).strip()
-    return PoolODataMetadataCatalogSnapshot.objects.create(
+    snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
         tenant=tenant,
         database=database,
         config_name=config_name,
@@ -598,6 +599,16 @@ def _create_current_metadata_catalog_snapshot(
         source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
         is_current=True,
     )
+    PoolODataMetadataCatalogScopeResolution.objects.create(
+        tenant=tenant,
+        database=database,
+        snapshot=snapshot,
+        config_name=config_name,
+        config_version=str(database.version or "").strip(),
+        extensions_fingerprint=extensions_fingerprint,
+        confirmed_at=snapshot.fetched_at,
+    )
+    return snapshot
 
 
 @pytest.fixture
@@ -955,7 +966,7 @@ def test_get_pool_odata_metadata_catalog_returns_current_snapshot(
     assert payload["config_name"] == snapshot.config_name
     assert payload["extensions_fingerprint"] == snapshot.extensions_fingerprint
     assert payload["metadata_hash"] == snapshot.metadata_hash
-    assert payload["resolution_mode"] == "legacy_database_scope"
+    assert payload["resolution_mode"] == "database_scope"
     assert payload["is_shared_snapshot"] is False
     assert payload["provenance_database_id"] == str(database.id)
     assert payload["provenance_confirmed_at"] == snapshot.fetched_at.isoformat().replace("+00:00", "Z")
@@ -1195,7 +1206,7 @@ def test_refresh_pool_odata_metadata_catalog_returns_serialized_snapshot(
     assert payload["config_name"] == snapshot.config_name
     assert payload["extensions_fingerprint"] == snapshot.extensions_fingerprint
     assert payload["metadata_hash"] == snapshot.metadata_hash
-    assert payload["resolution_mode"] == "legacy_database_scope"
+    assert payload["resolution_mode"] == "database_scope"
     assert payload["is_shared_snapshot"] is False
     assert payload["provenance_database_id"] == str(database.id)
     assert payload["provenance_confirmed_at"] == snapshot.fetched_at.isoformat().replace("+00:00", "Z")

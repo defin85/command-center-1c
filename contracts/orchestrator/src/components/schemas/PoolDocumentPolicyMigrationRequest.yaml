@@ -1,0 +1,13 @@
+type: object
+properties:
+  edge_version_id:
+    type: string
+    format: uuid
+  decision_table_id:
+    type: string
+  name:
+    type: string
+  description:
+    type: string
+required:
+  - edge_version_id

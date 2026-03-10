@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 from apps.databases.models import Database, InfobaseUserMapping
 from apps.intercompany_pools.models import (
     PoolODataMetadataCatalogSnapshot,
+    PoolODataMetadataCatalogScopeResolution,
     PoolODataMetadataCatalogSnapshotSource,
 )
 from apps.tenancy.models import Tenant
@@ -63,7 +64,7 @@ def _create_current_metadata_catalog_snapshot(
     payload: dict[str, object] | None = None,
     metadata_hash: str = "a" * 64,
 ) -> PoolODataMetadataCatalogSnapshot:
-    return PoolODataMetadataCatalogSnapshot.objects.create(
+    snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
         tenant=tenant,
         database=database,
         config_name=str(database.base_name or database.name or database.id),
@@ -95,6 +96,16 @@ def _create_current_metadata_catalog_snapshot(
         source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
         is_current=True,
     )
+    PoolODataMetadataCatalogScopeResolution.objects.create(
+        tenant=tenant,
+        database=database,
+        snapshot=snapshot,
+        config_name=str(database.base_name or database.name or database.id),
+        config_version=str(database.version or ""),
+        extensions_fingerprint="",
+        confirmed_at=snapshot.fetched_at,
+    )
+    return snapshot
 
 
 def _build_decision_payload(
@@ -423,4 +434,4 @@ def test_decision_tables_api_list_returns_metadata_context_for_builder(
     payload = response.json()
     assert payload["metadata_context"]["database_id"] == str(database.id)
     assert payload["metadata_context"]["snapshot_id"] == str(snapshot.id)
-    assert payload["metadata_context"]["resolution_mode"] == "legacy_database_scope"
+    assert payload["metadata_context"]["resolution_mode"] == "database_scope"

@@ -127,6 +127,39 @@ describe('PropertyEditor', () => {
     expect(await screen.findByDisplayValue('{{ decisions.invoice_mode }}')).toBeDisabled()
   })
 
+  it('keeps inactive pinned decision refs visible for existing condition nodes', async () => {
+    renderEditor({
+      nodeId: 'decision-node',
+      nodeData: {
+        label: 'Legacy Invoice Mode',
+        nodeType: 'condition',
+        config: {},
+        decisionRef: {
+          decision_table_id: 'decision-table-1',
+          decision_key: 'invoice_mode',
+          decision_revision: 1,
+        },
+      },
+      availableDecisions: [
+        {
+          id: 'decision-version-2',
+          name: 'Invoice Mode',
+          decisionTableId: 'decision-table-1',
+          decisionKey: 'invoice_mode',
+          decisionRevision: 2,
+        },
+      ],
+    })
+
+    expect(await screen.findByDisplayValue('{{ decisions.invoice_mode }}')).toBeDisabled()
+
+    await openSelect('workflow-decision-node-condition-decision')
+    expect(
+      await screen.findAllByText('decision-table-1 (invoice_mode) · r1 [inactive]')
+    ).not.toHaveLength(0)
+    expect(screen.getByText('Invoice Mode (invoice_mode) · r2')).toBeInTheDocument()
+  })
+
   it('shows legacy condition editor as read-only compatibility surface', async () => {
     renderEditor({
       nodeId: 'legacy-decision-node',

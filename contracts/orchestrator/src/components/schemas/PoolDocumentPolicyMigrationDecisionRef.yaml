@@ -1,0 +1,14 @@
+type: object
+properties:
+  decision_id:
+    type: string
+    format: uuid
+  decision_table_id:
+    type: string
+  decision_revision:
+    type: integer
+    minimum: 1
+required:
+  - decision_id
+  - decision_table_id
+  - decision_revision

@@ -258,6 +258,8 @@ paths:
     $ref: paths/api_v2_pools_{pool_id}_topology-snapshot_upsert_.yaml
   /api/v2/pools/{pool_id}/topology-snapshots/:
     $ref: paths/api_v2_pools_{pool_id}_topology-snapshots_.yaml
+  /api/v2/pools/{pool_id}/document-policy-migrations/:
+    $ref: paths/api_v2_pools_{pool_id}_document-policy-migrations_.yaml
   /api/v2/pools/odata-metadata/catalog/:
     $ref: paths/api_v2_pools_odata-metadata_catalog_.yaml
   /api/v2/pools/odata-metadata/catalog/refresh/:

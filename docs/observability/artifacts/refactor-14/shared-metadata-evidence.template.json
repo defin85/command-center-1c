@@ -1,0 +1,23 @@
+{
+  "template_version": "workflow_centric_shared_metadata_evidence.template.v1",
+  "note": "Template/example only. Replace placeholders with real cutover evidence.",
+  "configuration_profile": {
+    "config_name": "<config_name>",
+    "config_version": "<config_version>",
+    "extensions_fingerprint": "<extensions_fingerprint>"
+  },
+  "representative_database": {
+    "database_id": "<database_id>",
+    "database_name": "<database_name>"
+  },
+  "snapshot": {
+    "snapshot_id": "<snapshot_id>",
+    "resolution_mode": "shared_scope",
+    "metadata_hash": "<metadata_hash>",
+    "provenance_database_id": "<provenance_database_id>"
+  },
+  "evidence_refs": [
+    "<refresh-response-json>",
+    "<api-screenshot-or-log-ref>"
+  ]
+}

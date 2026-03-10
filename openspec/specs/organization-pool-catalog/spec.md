@@ -273,44 +273,37 @@ Problem payload ДОЛЖЕН (SHALL) содержать поля `type`, `title`
 - **AND** UI может построить интерактивные селекторы без ручного ввода имён полей
 
 ### Requirement: Metadata catalog retrieval MUST использовать persisted snapshot в БД и Redis только как ускоритель
-Система ДОЛЖНА (SHALL) хранить нормализованный metadata catalog в persisted snapshot в БД как source-of-truth для выбранной ИБ.
+Система ДОЛЖНА (SHALL) хранить нормализованный metadata catalog как canonical persisted snapshot, пригодный для reuse между несколькими ИБ в рамках одной tenant-scoped configuration signature, а не как database-local current snapshot по `database_id` alone.
 
-Система ДОЛЖНА (SHALL) поддерживать:
-- version markers для snapshot: `config_name`, `config_version`, `metadata_hash` (или эквивалент);
-- явный признак текущей версии snapshot (`is_current` или эквивалент);
-- инвариант «ровно один current snapshot per scope (tenant + database + config markers)»;
-- атомарное переключение `is_current` в refresh-path;
-- сериализацию конкурентного refresh через lock (single-writer per scope);
-- Redis read-through cache как ускоритель чтения (не источник истины);
-- cache TTL для Redis-слоя;
-- явный операторский refresh;
-- прозрачный индикатор источника (`redis`, `db`, `live_refresh`) в ответе API.
+Canonical metadata snapshot scope ДОЛЖЕН (SHALL) включать:
+- `config_name`;
+- `config_version`;
+- `extensions_fingerprint` или эквивалентный marker extensions/applicability state;
+- `metadata_hash` или эквивалентный fingerprint опубликованной OData metadata surface.
 
-Система НЕ ДОЛЖНА (SHALL NOT) скрывать состояние каталога: ответ ДОЛЖЕН (SHALL) включать `fetched_at`, `catalog_version`, `config_name`, `config_version` и `metadata_hash` (или эквивалентные маркеры версии).
+Canonical snapshot identity НЕ ДОЛЖНА (SHALL NOT) включать `database_id` после cutover. Конкретная ИБ ДОЛЖНА (SHALL) использоваться только как live refresh/probe source и provenance anchor для shared snapshot.
 
-#### Scenario: Повторный запрос каталога обслуживается из Redis-ускорителя
-- **GIVEN** каталог метаданных ИБ уже загружен и TTL ещё не истёк
-- **WHEN** UI повторно запрашивает metadata catalog
-- **THEN** backend возвращает версию current snapshot через Redis-слой
-- **AND** response явно указывает, что источник данных — `redis`
+Read/refresh path МОЖЕТ (MAY) стартовать от выбранной ИБ, но:
+- конкретная ИБ ДОЛЖНА (SHALL) использоваться только как auth/probe source и provenance anchor;
+- identical normalized metadata payload ДОЛЖЕН (SHALL) переиспользовать один canonical snapshot across compatible infobases;
+- система НЕ ДОЛЖНА (SHALL NOT) считать одинаковый `config_version` достаточным условием reuse, если published OData metadata surface различается.
 
-#### Scenario: При недоступности Redis чтение продолжается из БД snapshot
-- **GIVEN** Redis временно недоступен или cache key отсутствует
-- **WHEN** UI запрашивает metadata catalog
-- **THEN** backend читает current snapshot из БД
-- **AND** response явно указывает, что источник данных — `db`
+Ответ metadata catalog API ДОЛЖЕН (SHALL) возвращать resolved snapshot scope/version markers, provenance о последней ИБ, подтвердившей snapshot, и указывать, что snapshot shared/reused на configuration scope, если это применимо.
 
-#### Scenario: Оператор принудительно обновляет каталог после изменений в 1С
-- **GIVEN** структура метаданных в 1С изменилась
-- **WHEN** оператор инициирует refresh metadata catalog
-- **THEN** backend повторно читает `$metadata` из OData endpoint и сохраняет/обновляет snapshot в БД
-- **AND** в ответе возвращается обновлённый `catalog_version` и актуальные version markers
+#### Scenario: Две ИБ с одинаковой конфигурацией переиспользуют один canonical metadata snapshot
+- **GIVEN** в tenant есть две ИБ с одинаковыми `config_name`, `config_version`, `extensions_fingerprint`
+- **AND** normalized OData metadata payload у них совпадает
+- **WHEN** оператор запрашивает metadata catalog для второй ИБ после refresh первой
+- **THEN** backend возвращает тот же canonical snapshot
+- **AND** response показывает configuration-scoped version markers вместо database-local uniqueness
+- **AND** provenance указывает, какая ИБ последней подтвердила shared snapshot
 
-#### Scenario: Конкурентные refresh-запросы сериализуются через lock
-- **GIVEN** один refresh metadata catalog уже выполняется для выбранной ИБ/scope
-- **WHEN** второй refresh приходит до освобождения lock
-- **THEN** backend не выполняет второй параллельный refresh
-- **AND** возвращает детерминированный fail-closed код занятости lock
+#### Scenario: Одинаковая версия конфигурации, но разная OData surface не переиспользует snapshot молча
+- **GIVEN** две ИБ показывают одинаковый `config_version`
+- **AND** состав опубликованных через OData metadata objects различается
+- **WHEN** backend refresh'ит metadata catalog для второй ИБ
+- **THEN** система создаёт или резолвит другой canonical snapshot
+- **AND** reuse первого snapshot не выполняется silently
 
 ### Requirement: Metadata catalog auth MUST использовать mapping-only credentials path
 Система ДОЛЖНА (SHALL) резолвить credentials для metadata catalog read/refresh только через `InfobaseUserMapping`.
@@ -336,44 +329,44 @@ Problem payload ДОЛЖЕН (SHALL) содержать поля `type`, `title`
 - **AND** response не содержит секретов credentials
 
 ### Requirement: Topology editor UI MUST поддерживать интерактивное создание Document policy и Edge metadata
-Система ДОЛЖНА (SHALL) предоставлять в `/pools/catalog` builder-режим, в котором оператор выбирает документы, реквизиты и табличные части из metadata catalog и формирует:
-- `edge.metadata.document_policy`;
-- произвольные поля `edge.metadata`.
+Система ДОЛЖНА (SHALL) предоставлять в `/pools/catalog` topology editor для structural `node.metadata` / `edge.metadata` и explicit compatibility path для legacy `edge.metadata.document_policy`.
 
-Система ДОЛЖНА (SHALL) поддерживать минимум:
-- добавление/удаление chain и документов внутри chain;
-- выбор `entity_name` из каталога;
-- настройку `field_mapping` и `table_parts_mapping` из доступных metadata-полей;
-- настройку link-полей (`link_to`, `link_rules`) между документами цепочки.
+После поставки replacement decision-resource authoring UI topology editor НЕ ДОЛЖЕН (SHALL NOT) оставаться primary surface для net-new `document_policy` authoring.
 
-#### Scenario: Оператор собирает цепочку документов без ручного ввода JSON-ключей
-- **GIVEN** metadata catalog успешно загружен
-- **WHEN** оператор в builder-режиме добавляет документы и заполняет mappings через UI
-- **THEN** UI формирует валидный JSON `document_policy.v1`
-- **AND** сохраняемый snapshot содержит собранный `edge.metadata.document_policy`
+Для legacy edge `document_policy` UI ДОЛЖЕН (SHALL):
+- показывать existing policy read-only по умолчанию;
+- требовать явное compatibility/migration действие для открытия legacy editor;
+- предоставлять migration/import action в decision resource + selected binding refs;
+- показывать migration provenance и целевые refs после успешного импорта.
+
+#### Scenario: Оператор мигрирует legacy edge policy в decision resource и binding refs
+- **GIVEN** topology edge содержит legacy `document_policy`
+- **AND** для пула существует workflow-centric binding
+- **WHEN** оператор запускает explicit migration action из `/pools/catalog`
+- **THEN** UI создаёт/import'ит decision resource revision и pin-ит resulting decision ref в выбранный binding
+- **AND** topology editor показывает migration outcome вместо продолжения direct edge authoring как primary path
+
+#### Scenario: Новый topology edge не навязывает direct document_policy authoring
+- **GIVEN** оператор добавляет новый edge в topology editor
+- **WHEN** UI рендерит controls для edge metadata
+- **THEN** structural metadata остаётся доступной
+- **AND** primary guidance направляет автора на route `/decisions` для net-new `document_policy`
 
 ### Requirement: UI MUST сохранять raw JSON fallback и round-trip совместимость metadata
-Система ДОЛЖНА (SHALL) поддерживать переключение между builder-режимом и raw JSON редактированием для `Document policy` и `Edge metadata`.
+Система ДОЛЖНА (SHALL) сохранять round-trip совместимость legacy `edge.metadata` и migration payload при explicit compatibility/migration path.
 
-Система ДОЛЖНА (SHALL) формировать канонический JSON в builder-режиме и использовать его как source для сохранения topology payload.
+Система НЕ ДОЛЖНА (SHALL NOT) терять:
+- пользовательские/неизвестные keys `edge.metadata`;
+- legacy `document_policy`, пока migration не подтверждена;
+- provenance связи между legacy edge и resulting decision resource revision.
 
-Система ДОЛЖНА (SHALL) сохранять round-trip совместимость:
-- пользовательские/неизвестные ключи metadata не теряются;
-- переключение режимов не разрушает корректный JSON.
+Raw JSON fallback МОЖЕТ (MAY) использоваться в explicit compatibility или decision-resource editor, но НЕ ДОЛЖЕН (SHALL NOT) оставаться default topology authoring mode для новых workflow-centric схем.
 
-Система ДОЛЖНА (SHALL) блокировать сохранение при невалидном JSON и показывать operator-friendly ошибку с указанием проблемного участка.
-
-#### Scenario: Переключение builder/raw не теряет нестандартные metadata ключи
-- **GIVEN** оператор добавил в `edge.metadata` кастомный ключ, не описанный builder-формой
-- **WHEN** оператор переключается между builder и raw JSON режимами
-- **THEN** кастомный ключ сохраняется без потери
-- **AND** итоговый snapshot содержит исходные пользовательские поля
-
-#### Scenario: Builder сохраняет канонический JSON без потери unknown keys
-- **GIVEN** оператор редактирует `document_policy` в builder-режиме и ранее добавил unknown ключи через raw JSON
-- **WHEN** выполняется сохранение topology snapshot
-- **THEN** backend получает канонизированный `document_policy.v1` от builder
-- **AND** unknown ключи `edge.metadata` сохраняются в итоговом payload без потерь
+#### Scenario: Migration path сохраняет unknown metadata keys и provenance
+- **GIVEN** legacy edge содержит `document_policy` и дополнительные unknown metadata keys
+- **WHEN** оператор выполняет migration/import
+- **THEN** unknown keys `edge.metadata` сохраняются без потери
+- **AND** UI/backend фиксируют provenance `edge -> decision revision -> binding ref`
 
 ### Requirement: Topology mutating validation MUST проверять соответствие policy актуальному metadata catalog
 Система ДОЛЖНА (SHALL) при сохранении topology snapshot валидировать, что ссылки в `document_policy` указывают на существующие элементы current metadata snapshot выбранной ИБ/конфигурации:
@@ -434,4 +427,35 @@ Problem payload ДОЛЖЕН (SHALL) содержать поля `type`, `title`
 - **WHEN** выполняется backfill `Organization -> Party`
 - **THEN** binding не создаётся автоматически
 - **AND** организация добавляется в remediation-list для ручного исправления
+
+### Requirement: Pool catalog workflow bindings MUST использовать isolated binding workspace и canonical CRUD
+Система ДОЛЖНА (SHALL) управлять workflow bindings на `/pools/catalog` через dedicated binding workspace и dedicated binding endpoints, backed by the same canonical store, который использует runtime resolution.
+
+Pool upsert contract НЕ ДОЛЖЕН (SHALL NOT) нести canonical binding payload и НЕ ДОЛЖЕН (SHALL NOT) переписывать binding state как side effect редактирования базовых полей пула.
+
+Binding read path ДОЛЖЕН (SHALL) возвращать server-managed `revision`, а binding edit/delete flows в `/pools/catalog` ДОЛЖНЫ (SHALL) использовать этот `revision` для conflict-safe update/delete.
+
+UI ДОЛЖЕН (SHALL) разделять:
+- mutating операции над базовыми полями `pool`;
+- mutating операции над `pool_workflow_binding`.
+
+#### Scenario: Сохранение базовых полей пула не переписывает workflow bindings
+- **GIVEN** оператор редактирует `code` или `name` пула в `/pools/catalog`
+- **AND** у пула уже есть active workflow bindings
+- **WHEN** оператор сохраняет только базовые поля пула
+- **THEN** UI использует pool upsert path без canonical binding payload
+- **AND** существующие workflow bindings не теряются и не переписываются
+
+#### Scenario: Binding editor использует тот же canonical CRUD, что и runtime
+- **GIVEN** оператор добавляет или удаляет workflow binding в `/pools/catalog`
+- **WHEN** изменение сохраняется
+- **THEN** UI обращается к dedicated binding CRUD endpoint'ам
+- **AND** следующий create-run/read-model видит это же изменение без дополнительного metadata sync шага
+
+#### Scenario: Stale binding revision в catalog editor возвращает conflict без потери формы
+- **GIVEN** оператор редактирует workflow binding в `/pools/catalog`
+- **AND** другой оператор уже сохранил новую `revision`
+- **WHEN** первый оператор пытается отправить устаревшее состояние
+- **THEN** backend возвращает machine-readable conflict по `revision`
+- **AND** UI сохраняет введённые данные для повторной попытки
 

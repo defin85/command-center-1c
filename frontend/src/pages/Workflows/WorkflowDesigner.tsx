@@ -314,6 +314,7 @@ const WorkflowDesigner = () => {
           ))
 
         const availableDecisions = (decisionResponse.decisions ?? [])
+          .filter((decision) => decision.is_active !== false)
           .map((decision) => ({
             id: decision.id,
             name: decision.name,

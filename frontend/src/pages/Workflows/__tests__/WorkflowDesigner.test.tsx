@@ -187,8 +187,25 @@ describe('WorkflowDesigner', () => {
           created_at: '2026-03-08T12:00:00Z',
           updated_at: '2026-03-08T12:00:00Z',
         },
+        {
+          id: 'decision-version-1',
+          decision_table_id: 'decision-root',
+          decision_key: 'invoice_mode',
+          decision_revision: 1,
+          name: 'Invoice Mode (inactive)',
+          description: 'legacy',
+          inputs: [],
+          outputs: [],
+          rules: [],
+          hit_policy: 'first_match',
+          validation_mode: 'fail_closed',
+          is_active: false,
+          parent_version: null,
+          created_at: '2026-03-07T12:00:00Z',
+          updated_at: '2026-03-07T12:00:00Z',
+        },
       ],
-      count: 1,
+      count: 2,
     })
     mockListOperationCatalogExposures.mockResolvedValue({
       exposures: [

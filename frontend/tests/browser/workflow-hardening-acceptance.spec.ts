@@ -106,6 +106,10 @@ type AcceptanceState = {
   workflowBindingsByPoolId: Record<string, AnyRecord[]>
   migrationCalls: number
   lastMigrationPayload: AnyRecord | null
+  previewCalls: number
+  lastPreviewPayload: AnyRecord | null
+  createRunCalls: number
+  lastCreateRunPayload: AnyRecord | null
   runs: AnyRecord[]
   runReportsByRunId: Record<string, AnyRecord>
 }
@@ -474,6 +478,10 @@ function createAcceptanceState(): AcceptanceState {
     },
     migrationCalls: 0,
     lastMigrationPayload: null,
+    previewCalls: 0,
+    lastPreviewPayload: null,
+    createRunCalls: 0,
+    lastCreateRunPayload: null,
     runs: [publishedRun],
     runReportsByRunId: {
       [String(publishedRun.id)]: {
@@ -721,6 +729,62 @@ async function setupApiMocks(page: Page, state: AcceptanceState) {
       return fulfillJson(route, { pool_id: poolId, bindings, count: bindings.length })
     }
 
+    if (method === 'POST' && path === '/api/v2/pools/workflow-bindings/preview/') {
+      const payload = (request.postDataJSON() as AnyRecord | null) ?? {}
+      state.previewCalls += 1
+      state.lastPreviewPayload = deepClone(payload)
+      const poolId = String(payload.pool_id || POOL_ID)
+      const binding = deepClone((state.workflowBindingsByPoolId[poolId] ?? [])[0] ?? {})
+      return fulfillJson(route, {
+        workflow_binding: binding,
+        compiled_document_policy: {
+          source_mode: 'decision_tables',
+          policy_refs: ['services-publication-policy:r1'],
+        },
+        runtime_projection: {
+          version: 'pool_runtime_projection.v1',
+          run_id: 'preview-run',
+          pool_id: poolId,
+          direction: String(payload.direction || 'top_down'),
+          mode: String(payload.mode || 'safe'),
+          workflow_definition: {
+            plan_key: 'plan-services-v7',
+            template_version: 'workflow-template:7',
+            workflow_template_name: 'compiled-services-publication',
+            workflow_type: 'sequential',
+          },
+          workflow_binding: {
+            binding_mode: 'pool_workflow_binding',
+            binding_id: binding.binding_id,
+            pool_id: binding.pool_id,
+            workflow_definition_key: binding.workflow?.workflow_definition_key,
+            workflow_revision_id: binding.workflow?.workflow_revision_id,
+            workflow_revision: binding.workflow?.workflow_revision,
+            workflow_name: binding.workflow?.workflow_name,
+            decision_refs: binding.decisions ?? [],
+            selector: binding.selector ?? {},
+            status: binding.status ?? 'active',
+          },
+          document_policy_projection: {
+            source_mode: 'decision_tables',
+            policy_refs: [{ policy_id: 'services-publication-policy:r1' }],
+            policy_refs_count: 1,
+            targets_count: 1,
+          },
+          artifacts: {
+            document_plan_artifact_version: 'document-plan:v7',
+            topology_version_ref: 'topology:v7',
+            distribution_artifact_ref: { id: 'distribution:v7' },
+          },
+          compile_summary: {
+            steps_count: 5,
+            atomic_publication_steps_count: 3,
+            compiled_targets_count: 1,
+          },
+        },
+      })
+    }
+
     const migrationMatch = path.match(/^\/api\/v2\/pools\/([^/]+)\/document-policy-migrations\/$/)
     if (method === 'POST' && migrationMatch) {
       const poolId = migrationMatch[1]
@@ -773,6 +837,34 @@ async function setupApiMocks(page: Page, state: AcceptanceState) {
         ? state.runs.filter((item) => String(item.pool_id) === poolId)
         : state.runs
       return fulfillJson(route, { runs, count: runs.length })
+    }
+
+    if (method === 'POST' && path === '/api/v2/pools/runs/') {
+      const payload = (request.postDataJSON() as AnyRecord | null) ?? {}
+      state.createRunCalls += 1
+      state.lastCreateRunPayload = deepClone(payload)
+      const poolId = String(payload.pool_id || POOL_ID)
+      const binding = deepClone((state.workflowBindingsByPoolId[poolId] ?? [])[0] ?? {})
+      const run = {
+        ...buildPublishedRun(),
+        id: `run-created-${state.createRunCalls}`,
+        pool_id: poolId,
+        direction: String(payload.direction || 'top_down'),
+        mode: String(payload.mode || 'safe'),
+        run_input: deepClone((payload.run_input as AnyRecord | null) ?? { starting_amount: '150.00' }),
+        idempotency_key: `idem-created-${state.createRunCalls}`,
+        workflow_binding: binding,
+      }
+      state.runs = [run, ...state.runs]
+      state.runReportsByRunId[String(run.id)] = {
+        run,
+        publication_attempts: [],
+        validation_summary: run.validation_summary,
+        publication_summary: run.publication_summary,
+        diagnostics: run.diagnostics,
+        attempts_by_status: {},
+      }
+      return fulfillJson(route, { run, created: true }, 201)
     }
 
     const runReportMatch = path.match(/^\/api\/v2\/pools\/runs\/([^/]+)\/report\/$/)
@@ -882,6 +974,51 @@ test('Workflow hardening: /pools/runs shipped flow shows pinned decision lineage
   await expect(page.getByTestId('pool-runs-verification-status')).toHaveText('status: passed')
   await expect(page.getByText('Published documents verified')).toBeVisible()
   await expect(page.getByText('document_policy r2')).toBeVisible()
+  await expect(page.getByTestId('pool-runs-provenance-workflow-id')).toContainText('workflow-run-1')
+  await expect(page.getByRole('link', { name: 'Open Workflow Diagnostics' })).toHaveAttribute('href', '/workflows/executions/workflow-execution-1')
+})
+
+test('Workflow hardening: operator canary covers preview, create-run and inspect on the default path', async ({ page }) => {
+  const state = createAcceptanceState()
+  state.pools = state.pools.map((pool) => (
+    String(pool.id) === POOL_ID
+      ? {
+        ...pool,
+        workflow_bindings: deepClone(state.workflowBindingsByPoolId[POOL_ID] ?? []),
+      }
+      : pool
+  ))
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/pools/runs', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Pool Runs' })).toBeVisible()
+  await page.getByRole('tab', { name: 'Create' }).click()
+  await expect(page.getByTestId('pool-runs-create-workflow-binding')).toContainText('services_publication')
+
+  await page.getByTestId('pool-runs-create-preview').click()
+
+  await expect.poll(() => state.previewCalls).toBe(1)
+  await expect.poll(() => String(state.lastPreviewPayload?.pool_workflow_binding_id || '')).toBe(BINDING_ID)
+  await expect.poll(() => String(state.lastPreviewPayload?.direction || '')).toBe('top_down')
+  await expect.poll(() => String(state.lastPreviewPayload?.mode || '')).toBe('safe')
+
+  await expect(page.getByTestId('pool-runs-binding-preview')).toBeVisible()
+  await expect(page.getByText('decision_tables', { exact: true })).toBeVisible()
+  await expect(page.getByText('compiled targets: 1')).toBeVisible()
+  await expect(page.getByText('services-publication-policy:r1')).toBeVisible()
+
+  await page.getByTestId('pool-runs-create-submit').click()
+
+  await expect.poll(() => state.createRunCalls).toBe(1)
+  await expect.poll(() => String(state.lastCreateRunPayload?.pool_workflow_binding_id || '')).toBe(BINDING_ID)
+  await expect.poll(() => String(state.lastCreateRunPayload?.direction || '')).toBe('top_down')
+
+  await page.getByRole('tab', { name: 'Inspect' }).click()
+  await expect(page.getByTestId('pool-runs-lineage-binding-id')).toContainText(BINDING_ID)
+  await expect(page.getByText('document_policy r1')).toBeVisible()
   await expect(page.getByTestId('pool-runs-provenance-workflow-id')).toContainText('workflow-run-1')
   await expect(page.getByRole('link', { name: 'Open Workflow Diagnostics' })).toHaveAttribute('href', '/workflows/executions/workflow-execution-1')
 })

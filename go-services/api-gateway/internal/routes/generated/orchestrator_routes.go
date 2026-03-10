@@ -137,6 +137,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "GET", Path: "/pools/:pool_id/graph/", OperationID: "v2_pools_graph_get"},
 	{Method: "POST", Path: "/pools/:pool_id/topology-snapshot/upsert/", OperationID: "v2_pools_topology_snapshot_upsert"},
 	{Method: "GET", Path: "/pools/:pool_id/topology-snapshots/", OperationID: "v2_pools_topology_snapshots_list"},
+	{Method: "POST", Path: "/pools/:pool_id/document-policy-migrations/", OperationID: "v2_pools_document_policy_migrate"},
 	{Method: "GET", Path: "/pools/odata-metadata/catalog/", OperationID: "v2_pools_odata_metadata_catalog_get"},
 	{Method: "POST", Path: "/pools/odata-metadata/catalog/refresh/", OperationID: "v2_pools_odata_metadata_catalog_refresh"},
 	{Method: "GET", Path: "/pools/organizations/", OperationID: "v2_pools_organizations_list"},

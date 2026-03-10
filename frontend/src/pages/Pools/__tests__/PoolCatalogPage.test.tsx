@@ -7,6 +7,7 @@ import { App as AntApp } from 'antd'
 import type { Organization, PoolWorkflowBinding } from '../../../api/intercompanyPools'
 import { PoolCatalogPage } from '../PoolCatalogPage'
 
+const mockGetDecisionsCollection = vi.fn()
 const mockListOrganizations = vi.fn()
 const mockGetOrganization = vi.fn()
 const mockListOrganizationPools = vi.fn()
@@ -36,6 +37,12 @@ vi.mock('reactflow', () => ({
   Background: () => null,
   Controls: () => null,
   MiniMap: () => null,
+}))
+
+vi.mock('../../../api/generated/v2/v2', () => ({
+  getV2: () => ({
+    getDecisionsCollection: (...args: unknown[]) => mockGetDecisionsCollection(...args),
+  }),
 }))
 
 vi.mock('../../../api/queries/me', () => ({
@@ -72,9 +79,13 @@ vi.mock('../../../api/intercompanyPools', () => ({
   listMasterDataTaxProfiles: (...args: unknown[]) => mockListMasterDataTaxProfiles(...args),
 }))
 
-vi.mock('../poolWorkflowBindingsSync', () => ({
-  syncPoolWorkflowBindings: (...args: unknown[]) => mockSyncPoolWorkflowBindings(...args),
-}))
+vi.mock('../poolWorkflowBindingsSync', async () => {
+  const actual = await vi.importActual<typeof import('../poolWorkflowBindingsSync')>('../poolWorkflowBindingsSync')
+  return {
+    ...actual,
+    syncPoolWorkflowBindings: (...args: unknown[]) => mockSyncPoolWorkflowBindings(...args),
+  }
+})
 
 const baseOrganization: Organization = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -189,6 +200,7 @@ describe('PoolCatalogPage', () => {
 
     mockListOrganizations.mockReset()
     mockGetOrganization.mockReset()
+    mockGetDecisionsCollection.mockReset()
     mockListOrganizationPools.mockReset()
     mockGetPoolGraph.mockReset()
     mockUpsertOrganization.mockReset()
@@ -323,6 +335,19 @@ describe('PoolCatalogPage', () => {
       ],
     })
     mockListPoolWorkflowBindings.mockResolvedValue([])
+    mockGetDecisionsCollection.mockResolvedValue({
+      decisions: [
+        {
+          id: 'decision-version-4',
+          decision_table_id: 'decision-1',
+          decision_key: 'route_documents',
+          decision_revision: 4,
+          name: 'Route Documents',
+          is_active: true,
+        },
+      ],
+      count: 1,
+    })
     mockUpsertPoolWorkflowBinding.mockImplementation(async ({ pool_id, workflow_binding }) => ({
       pool_id,
       workflow_binding: {
@@ -788,7 +813,7 @@ describe('PoolCatalogPage', () => {
     expect(mockUpsertPoolWorkflowBinding).not.toHaveBeenCalled()
   }, 15000)
 
-  it('preserves revision when saving existing workflow bindings', async () => {
+  it('does not sync workflow bindings when saving only pool fields', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
@@ -818,14 +843,8 @@ describe('PoolCatalogPage', () => {
     await user.click(screen.getByTestId('pool-catalog-save-pool'))
 
     await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledTimes(1))
-    expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledWith({
-      pool_id: '44444444-4444-4444-4444-444444444444',
-      workflow_binding: expect.objectContaining({
-        binding_id: 'binding-existing',
-        revision: 3,
-      }),
-    })
+    expect(mockSyncPoolWorkflowBindings).not.toHaveBeenCalled()
+    expect(mockUpsertPoolWorkflowBinding).not.toHaveBeenCalled()
   }, 15000)
 
   it('shows stale binding revision conflict without clearing edited workflow binding form', async () => {
@@ -940,15 +959,8 @@ describe('PoolCatalogPage', () => {
       target: { value: 'baseline, monthly' },
     })
     await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-decision-0'))
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-decision-id-0-0'), {
-      target: { value: 'decision-1' },
-    })
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-decision-key-0-0'), {
-      target: { value: 'route_documents' },
-    })
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-decision-revision-0-0'), {
-      target: { value: '4' },
-    })
+    openSelectByTestId('pool-catalog-workflow-binding-decision-select-0-0')
+    await selectDropdownOption('Route Documents (route_documents) · r4')
     await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-role-0'))
     fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-role-source-0-0'), {
       target: { value: 'owner' },
@@ -1005,6 +1017,101 @@ describe('PoolCatalogPage', () => {
       }),
     })
     expect(mockDeletePoolWorkflowBinding).not.toHaveBeenCalled()
+  }, 30000)
+
+  it('uses active /decisions revisions in pool binding editor and hides inactive revisions by default', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockGetDecisionsCollection.mockResolvedValueOnce({
+      decisions: [
+        {
+          id: 'decision-version-4',
+          decision_table_id: 'decision-1',
+          decision_key: 'route_documents',
+          decision_revision: 4,
+          name: 'Route Documents',
+          is_active: true,
+        },
+        {
+          id: 'decision-version-3',
+          decision_table_id: 'decision-legacy',
+          decision_key: 'legacy_route',
+          decision_revision: 3,
+          name: 'Legacy Route',
+          is_active: false,
+        },
+      ],
+      count: 2,
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Pools')
+    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
+    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-decision-0'))
+
+    openSelectByTestId('pool-catalog-workflow-binding-decision-select-0-0')
+    expect(await screen.findByText('Route Documents (route_documents) · r4')).toBeInTheDocument()
+    expect(screen.queryByText('Legacy Route (legacy_route) · r3')).not.toBeInTheDocument()
+  }, 30000)
+
+  it('keeps inactive pinned decision refs visible for existing workflow bindings', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    const existingBinding = buildPoolWorkflowBinding({
+      decisions: [
+        {
+          decision_table_id: 'decision-legacy',
+          decision_key: 'legacy_route',
+          decision_revision: 3,
+        },
+      ],
+    })
+    mockListOrganizationPools.mockResolvedValueOnce([
+      {
+        id: '44444444-4444-4444-4444-444444444444',
+        code: 'pool-1',
+        name: 'Pool One',
+        description: 'Main pool',
+        is_active: true,
+        metadata: {},
+        workflow_bindings: [existingBinding],
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ])
+    mockListPoolWorkflowBindings.mockResolvedValueOnce([existingBinding])
+    mockGetDecisionsCollection.mockResolvedValueOnce({
+      decisions: [
+        {
+          id: 'decision-version-4',
+          decision_table_id: 'decision-1',
+          decision_key: 'route_documents',
+          decision_revision: 4,
+          name: 'Route Documents',
+          is_active: true,
+        },
+      ],
+      count: 1,
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Pools')
+    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-workflow-binding-decision-select-0-0')).toBeInTheDocument()
+    })
+
+    openSelectByTestId('pool-catalog-workflow-binding-decision-select-0-0')
+    expect(
+      await screen.findAllByText('decision-legacy (legacy_route) · r3 [inactive]')
+    ).not.toHaveLength(0)
+    expect(screen.getByText('Route Documents (route_documents) · r4')).toBeInTheDocument()
   }, 30000)
 
   it('fails closed when first-class workflow bindings load fails', async () => {

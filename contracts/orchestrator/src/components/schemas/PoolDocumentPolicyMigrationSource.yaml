@@ -1,0 +1,57 @@
+type: object
+properties:
+  kind:
+    type: string
+  source_path:
+    type: string
+  pool_id:
+    type: string
+    format: uuid
+  pool_code:
+    type: string
+  edge_version_id:
+    type: string
+    format: uuid
+  parent_node_version_id:
+    type: string
+    format: uuid
+  child_node_version_id:
+    type: string
+    format: uuid
+  parent_organization_id:
+    type: string
+    format: uuid
+  child_organization_id:
+    type: string
+    format: uuid
+  parent_organization_name:
+    type: string
+  child_organization_name:
+    type: string
+  child_database_id:
+    type: string
+    format: uuid
+  effective_from:
+    type: string
+    format: date
+  effective_to:
+    type: string
+    format: date
+    nullable: true
+  legacy_policy_hash:
+    type: string
+required:
+  - kind
+  - source_path
+  - pool_id
+  - pool_code
+  - edge_version_id
+  - parent_node_version_id
+  - child_node_version_id
+  - parent_organization_id
+  - child_organization_id
+  - parent_organization_name
+  - child_organization_name
+  - child_database_id
+  - effective_from
+  - legacy_policy_hash

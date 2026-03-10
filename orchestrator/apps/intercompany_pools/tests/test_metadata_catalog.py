@@ -540,6 +540,11 @@ def test_read_snapshot_falls_back_to_db_when_cache_miss(default_tenant: Tenant, 
     assert source == "db"
     assert resolved.id == snapshot.id
     assert write_calls["count"] == 1
+    resolution = PoolODataMetadataCatalogScopeResolution.objects.get(
+        tenant=default_tenant,
+        database=database,
+    )
+    assert resolution.snapshot_id == snapshot.id
 
 
 @pytest.mark.django_db
@@ -560,6 +565,15 @@ def test_read_snapshot_returns_redis_hit_without_db_lookup(
         payload=_catalog_payload(suffix="redis"),
         source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
         is_current=True,
+    )
+    PoolODataMetadataCatalogScopeResolution.objects.create(
+        tenant=default_tenant,
+        database=database,
+        snapshot=snapshot,
+        config_name=database.name,
+        config_version="",
+        extensions_fingerprint="",
+        confirmed_at=snapshot.fetched_at,
     )
 
     class _RedisClient:
@@ -616,6 +630,86 @@ def test_read_snapshot_returns_redis_hit_without_db_lookup(
     assert source == "redis"
     assert resolved.id == snapshot.id
     assert db_lookup_calls["count"] == 0
+
+
+@pytest.mark.django_db
+def test_read_snapshot_adopts_database_scope_resolution_on_redis_hit(
+    default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"meta-redis-adopt-db-{uuid4().hex[:8]}")
+    _create_service_infobase_mapping(database=database)
+    snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
+        tenant=default_tenant,
+        database=database,
+        config_name=database.name,
+        config_version="",
+        extensions_fingerprint="",
+        metadata_hash="ba" * 32,
+        catalog_version="v1:redis-adopt",
+        payload=_catalog_payload(suffix="redis-adopt"),
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+        is_current=True,
+    )
+
+    class _RedisClient:
+        def __init__(self) -> None:
+            self._value = json.dumps(
+                {
+                    "scope": {
+                        "tenant_id": str(default_tenant.id),
+                        "database_id": str(database.id),
+                        "config_name": database.name,
+                        "config_version": "",
+                        "extensions_fingerprint": "",
+                    },
+                    "snapshot": {
+                        "id": str(snapshot.id),
+                        "tenant_id": str(default_tenant.id),
+                        "database_id": str(database.id),
+                        "config_name": database.name,
+                        "config_version": "",
+                        "extensions_fingerprint": "",
+                        "metadata_hash": snapshot.metadata_hash,
+                        "catalog_version": snapshot.catalog_version,
+                        "payload": snapshot.payload,
+                        "source": snapshot.source,
+                        "fetched_at": snapshot.fetched_at.isoformat(),
+                        "is_current": True,
+                    },
+                },
+                ensure_ascii=False,
+            )
+
+        def get(self, _key: str) -> str:
+            return self._value
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._get_redis_client", lambda: _RedisClient())
+
+    resolved, source = read_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=database,
+        requested_by_username="meta-user",
+        allow_cold_bootstrap=False,
+    )
+    resolution = PoolODataMetadataCatalogScopeResolution.objects.get(
+        tenant=default_tenant,
+        database=database,
+    )
+    described = describe_metadata_catalog_snapshot_resolution(
+        tenant_id=str(default_tenant.id),
+        database=database,
+        snapshot=resolved,
+    )
+
+    assert source == "db"
+    assert resolved.id == snapshot.id
+    assert resolution.snapshot_id == snapshot.id
+    assert described.resolution_mode == "database_scope"
+    assert described.is_shared_snapshot is False
 
 
 @pytest.mark.django_db

@@ -1,5 +1,5 @@
 ## MODIFIED Requirements
-### Requirement: Metadata catalog retrieval MUST использовать shared configuration-scoped snapshot registry
+### Requirement: Metadata catalog retrieval MUST использовать persisted snapshot в БД и Redis только как ускоритель
 Система ДОЛЖНА (SHALL) хранить нормализованный metadata catalog как canonical persisted snapshot, пригодный для reuse между несколькими ИБ в рамках одной tenant-scoped configuration signature, а не как database-local current snapshot по `database_id` alone.
 
 Canonical metadata snapshot scope ДОЛЖЕН (SHALL) включать:
@@ -32,7 +32,7 @@ Read/refresh path МОЖЕТ (MAY) стартовать от выбранной 
 - **THEN** система создаёт или резолвит другой canonical snapshot
 - **AND** reuse первого snapshot не выполняется silently
 
-### Requirement: Topology editor UI MUST поддерживать structural metadata и explicit legacy document_policy migration path
+### Requirement: Topology editor UI MUST поддерживать интерактивное создание Document policy и Edge metadata
 Система ДОЛЖНА (SHALL) предоставлять в `/pools/catalog` topology editor для structural `node.metadata` / `edge.metadata` и explicit compatibility path для legacy `edge.metadata.document_policy`.
 
 После поставки replacement decision-resource authoring UI topology editor НЕ ДОЛЖЕН (SHALL NOT) оставаться primary surface для net-new `document_policy` authoring.
@@ -56,7 +56,7 @@ Read/refresh path МОЖЕТ (MAY) стартовать от выбранной 
 - **THEN** structural metadata остаётся доступной
 - **AND** primary guidance направляет автора на route `/decisions` для net-new `document_policy`
 
-### Requirement: Legacy policy compatibility UI MUST сохранять round-trip metadata без потери миграционного контекста
+### Requirement: UI MUST сохранять raw JSON fallback и round-trip совместимость metadata
 Система ДОЛЖНА (SHALL) сохранять round-trip совместимость legacy `edge.metadata` и migration payload при explicit compatibility/migration path.
 
 Система НЕ ДОЛЖНА (SHALL NOT) терять:

@@ -26,6 +26,10 @@
    - UI: `/pools/catalog` -> `Import to /decisions`
    - API: `POST /api/v2/pools/{pool_id}/document-policy-migrations/`
 4. Только после этого включать tenant-scoped rollout marker `workflows.authoring.phase=workflow_centric_active`.
+5. Evidence capture во время cutover вести по checked-in templates:
+   - `docs/observability/artifacts/refactor-14/shared-metadata-evidence.template.json`
+   - `docs/observability/artifacts/refactor-14/legacy-document-policy-migration-evidence.template.json`
+   - `docs/observability/artifacts/refactor-14/operator-canary-evidence.template.json`
 
 ### Breaking / migration notes
 

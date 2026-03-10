@@ -10,6 +10,7 @@ from rest_framework import serializers
 from apps.api_v2.serializers.common import ExecutionPlanSerializer
 from apps.api_v2.views import decisions as decisions_view
 from apps.api_v2.views import intercompany_pools as pools_view
+from apps.api_v2.views import pool_document_policy_migrations as migration_view
 
 
 def _load_openapi_contract() -> dict[str, Any]:
@@ -400,6 +401,52 @@ def test_pool_metadata_catalog_paths_and_schemas_are_in_contract() -> None:
     assert isinstance(request_properties, dict)
     runtime_request_fields = set(pools_view.PoolODataMetadataCatalogRefreshRequestSerializer().fields.keys())
     assert runtime_request_fields.issubset(set(request_properties.keys()))
+
+
+def test_document_policy_migration_path_and_schemas_are_in_contract() -> None:
+    contract = _load_openapi_contract()
+    paths = contract.get("paths")
+    assert isinstance(paths, dict)
+
+    path = "/api/v2/pools/{pool_id}/document-policy-migrations/"
+    path_item = paths.get(path)
+    assert isinstance(path_item, dict), f"path missing: {path}"
+    post = path_item.get("post")
+    assert isinstance(post, dict), f"post missing: {path}"
+    assert post.get("operationId") == "v2_pools_document_policy_migrate"
+
+    request_body = post.get("requestBody")
+    assert isinstance(request_body, dict)
+    request_ref = request_body["content"]["application/json"]["schema"]["$ref"]
+    assert request_ref == "#/components/schemas/PoolDocumentPolicyMigrationRequest"
+
+    responses = post.get("responses")
+    assert isinstance(responses, dict)
+    assert {"200", "201", "400", "401", "404"}.issubset(set(responses.keys()))
+    ok_ref = responses["200"]["content"]["application/json"]["schema"]["$ref"]
+    created_ref = responses["201"]["content"]["application/json"]["schema"]["$ref"]
+    assert ok_ref == "#/components/schemas/PoolDocumentPolicyMigrationResponse"
+    assert created_ref == "#/components/schemas/PoolDocumentPolicyMigrationResponse"
+    assert (
+        responses["400"]["content"]["application/problem+json"]["schema"]["$ref"]
+        == "#/components/schemas/ProblemDetailsError"
+    )
+
+    request_schema = _schema(contract, "PoolDocumentPolicyMigrationRequest")
+    request_properties = request_schema.get("properties")
+    assert isinstance(request_properties, dict)
+    runtime_request_fields = set(
+        migration_view.PoolDocumentPolicyMigrationRequestSerializer().fields.keys()
+    )
+    assert runtime_request_fields.issubset(set(request_properties.keys()))
+
+    response_schema = _schema(contract, "PoolDocumentPolicyMigrationResponse")
+    response_properties = response_schema.get("properties")
+    assert isinstance(response_properties, dict)
+    runtime_response_fields = set(
+        migration_view.PoolDocumentPolicyMigrationResponseSerializer().fields.keys()
+    )
+    assert runtime_response_fields.issubset(set(response_properties.keys()))
 
 
 def test_decision_table_schema_includes_metadata_context_and_compatibility_fields() -> None:

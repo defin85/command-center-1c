@@ -1,4 +1,5 @@
 import { Alert, Button, Card, Col, Form, Input, Row, Select, Space, Typography } from 'antd'
+import type { AvailableDecisionRevision } from '../../types/workflow'
 
 import {
   createEmptyWorkflowBindingFormValue,
@@ -11,6 +12,9 @@ const { Text } = Typography
 const { TextArea } = Input
 
 type PoolWorkflowBindingsEditorProps = {
+  availableDecisions?: AvailableDecisionRevision[]
+  decisionsLoading?: boolean
+  decisionsLoadError?: string | null
   disabled?: boolean
 }
 
@@ -21,6 +25,9 @@ const STATUS_OPTIONS = [
 ]
 
 export function PoolWorkflowBindingsEditor({
+  availableDecisions = [],
+  decisionsLoading = false,
+  decisionsLoadError = null,
   disabled = false,
 }: PoolWorkflowBindingsEditorProps) {
   return (
@@ -31,6 +38,14 @@ export function PoolWorkflowBindingsEditor({
         message="Workflow bindings are edited as first-class records"
         description="Каждый binding pin-ит workflow revision, selector, effective period и optional decision/parameter context для default pool path."
       />
+      {decisionsLoadError ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={decisionsLoadError}
+          description="Decision refs selector читает active revisions из /decisions. Existing pinned refs останутся видимыми, но новые значения без этого каталога выбрать нельзя."
+        />
+      ) : null}
       <Form.List name="workflow_bindings">
         {(fields, { add, remove }) => (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -39,7 +54,7 @@ export function PoolWorkflowBindingsEditor({
             ) : null}
             {fields.map((field) => (
               <Form.Item key={field.key} noStyle shouldUpdate>
-                {({ getFieldValue }) => {
+                {({ getFieldValue, setFieldValue }) => {
                   const binding = getFieldValue(['workflow_bindings', field.name]) as PoolWorkflowBindingFormValue | undefined
                   return (
                     <Card
@@ -192,43 +207,109 @@ export function PoolWorkflowBindingsEditor({
                                 {decisionFields.length === 0 ? (
                                   <Text type="secondary">No pinned decisions.</Text>
                                 ) : null}
-                                {decisionFields.map((decisionField) => (
-                                  <Row key={decisionField.key} gutter={8}>
-                                    <Col span={10}>
-                                      <Form.Item name={[decisionField.name, 'decision_table_id']}>
-                                        <Input
-                                          placeholder="decision_table_id"
-                                          disabled={disabled}
-                                          data-testid={(
-                                            `pool-catalog-workflow-binding-decision-id-${field.name}-${decisionField.name}`
-                                          )}
-                                        />
-                                      </Form.Item>
-                                    </Col>
-                                    <Col span={8}>
-                                      <Form.Item name={[decisionField.name, 'decision_key']}>
-                                        <Input
-                                          placeholder="decision_key"
-                                          disabled={disabled}
-                                          data-testid={(
-                                            `pool-catalog-workflow-binding-decision-key-${field.name}-${decisionField.name}`
-                                          )}
-                                        />
-                                      </Form.Item>
-                                    </Col>
-                                    <Col span={4}>
-                                      <Form.Item name={[decisionField.name, 'decision_revision']}>
-                                        <Input
-                                          type="number"
-                                          min={1}
-                                          placeholder="1"
-                                          disabled={disabled}
-                                          data-testid={(
-                                            `pool-catalog-workflow-binding-decision-revision-${field.name}-${decisionField.name}`
-                                          )}
-                                        />
-                                      </Form.Item>
-                                    </Col>
+                                {decisionFields.map((decisionField) => {
+                                  const decisionTableId = String(
+                                    getFieldValue([
+                                      'workflow_bindings',
+                                      field.name,
+                                      'decisions',
+                                      decisionField.name,
+                                      'decision_table_id',
+                                    ]) ?? ''
+                                  ).trim()
+                                  const decisionKey = String(
+                                    getFieldValue([
+                                      'workflow_bindings',
+                                      field.name,
+                                      'decisions',
+                                      decisionField.name,
+                                      'decision_key',
+                                    ]) ?? ''
+                                  ).trim()
+                                  const decisionRevisionRaw = String(
+                                    getFieldValue([
+                                      'workflow_bindings',
+                                      field.name,
+                                      'decisions',
+                                      decisionField.name,
+                                      'decision_revision',
+                                    ]) ?? ''
+                                  ).trim()
+                                  const selectedDecisionValue = (
+                                    decisionTableId && decisionRevisionRaw
+                                      ? `${decisionTableId}:${decisionRevisionRaw}`
+                                      : undefined
+                                  )
+                                  const decisionOptions = availableDecisions.map((decision) => ({
+                                    value: `${decision.decisionTableId}:${decision.decisionRevision}`,
+                                    label: `${decision.name} (${decision.decisionKey}) · r${decision.decisionRevision}`,
+                                    decisionTableId: decision.decisionTableId,
+                                    decisionKey: decision.decisionKey,
+                                    decisionRevision: decision.decisionRevision,
+                                  }))
+                                  if (
+                                    decisionTableId
+                                    && decisionKey
+                                    && decisionRevisionRaw
+                                    && !decisionOptions.some((option) => option.value === selectedDecisionValue)
+                                  ) {
+                                    decisionOptions.unshift({
+                                      value: selectedDecisionValue ?? '',
+                                      label: `${decisionTableId} (${decisionKey}) · r${decisionRevisionRaw} [inactive]`,
+                                      decisionTableId,
+                                      decisionKey,
+                                      decisionRevision: Number(decisionRevisionRaw),
+                                    })
+                                  }
+                                  return (
+                                    <Row key={decisionField.key} gutter={8}>
+                                      <Col span={22}>
+                                        <Form.Item
+                                          label={decisionField.name === 0 ? 'Pinned decision revision' : undefined}
+                                          help={decisionField.name === 0 ? 'Select active revision from /decisions.' : undefined}
+                                        >
+                                          <Select
+                                            showSearch
+                                            allowClear
+                                            optionFilterProp="label"
+                                            disabled={disabled}
+                                            loading={decisionsLoading}
+                                            placeholder="Select decision revision from /decisions"
+                                            value={selectedDecisionValue}
+                                            data-testid={(
+                                              `pool-catalog-workflow-binding-decision-select-${field.name}-${decisionField.name}`
+                                            )}
+                                            options={decisionOptions.map((option) => ({
+                                              value: option.value,
+                                              label: option.label,
+                                            }))}
+                                            onChange={(value) => {
+                                              const selected = decisionOptions.find((option) => option.value === value)
+                                              setFieldValue(
+                                                ['workflow_bindings', field.name, 'decisions', decisionField.name, 'decision_table_id'],
+                                                selected?.decisionTableId ?? ''
+                                              )
+                                              setFieldValue(
+                                                ['workflow_bindings', field.name, 'decisions', decisionField.name, 'decision_key'],
+                                                selected?.decisionKey ?? ''
+                                              )
+                                              setFieldValue(
+                                                ['workflow_bindings', field.name, 'decisions', decisionField.name, 'decision_revision'],
+                                                selected?.decisionRevision ?? null
+                                              )
+                                            }}
+                                          />
+                                          <Form.Item name={[decisionField.name, 'decision_table_id']} hidden>
+                                            <Input />
+                                          </Form.Item>
+                                          <Form.Item name={[decisionField.name, 'decision_key']} hidden>
+                                            <Input />
+                                          </Form.Item>
+                                          <Form.Item name={[decisionField.name, 'decision_revision']} hidden>
+                                            <Input />
+                                          </Form.Item>
+                                        </Form.Item>
+                                      </Col>
                                     <Col span={2}>
                                       <Button
                                         danger
@@ -242,7 +323,8 @@ export function PoolWorkflowBindingsEditor({
                                       </Button>
                                     </Col>
                                   </Row>
-                                ))}
+                                  )
+                                })}
                                 <Button
                                   onClick={() => decisionActions.add({ decision_table_id: '', decision_key: '', decision_revision: null })}
                                   disabled={disabled}

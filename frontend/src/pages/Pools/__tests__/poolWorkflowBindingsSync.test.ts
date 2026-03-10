@@ -40,7 +40,7 @@ describe('syncPoolWorkflowBindings', () => {
     mockDeletePoolWorkflowBinding.mockResolvedValue(undefined)
   })
 
-  it('passes revision to delete API for removed bindings', async () => {
+  it('passes revision to delete API for removed bindings and skips unchanged retained bindings', async () => {
     const retainedBinding = buildBinding()
     const removedBinding = buildBinding({
       binding_id: 'binding-removed',
@@ -53,17 +53,36 @@ describe('syncPoolWorkflowBindings', () => {
       nextBindings: [retainedBinding],
     })
 
-    expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledTimes(1)
-    expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledWith({
-      pool_id: '44444444-4444-4444-4444-444444444444',
-      workflow_binding: retainedBinding,
-    })
+    expect(mockUpsertPoolWorkflowBinding).not.toHaveBeenCalled()
     expect(mockDeletePoolWorkflowBinding).toHaveBeenCalledTimes(1)
     expect(mockDeletePoolWorkflowBinding).toHaveBeenCalledWith(
       '44444444-4444-4444-4444-444444444444',
       'binding-removed',
       7
     )
+  })
+
+  it('upserts only changed bindings', async () => {
+    const previousBinding = buildBinding()
+    const changedBinding = buildBinding({
+      workflow: {
+        ...previousBinding.workflow,
+        workflow_name: 'services_publication_v2',
+      },
+    })
+
+    await syncPoolWorkflowBindings({
+      poolId: '44444444-4444-4444-4444-444444444444',
+      previousBindings: [previousBinding],
+      nextBindings: [changedBinding],
+    })
+
+    expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledTimes(1)
+    expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledWith({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      workflow_binding: changedBinding,
+    })
+    expect(mockDeletePoolWorkflowBinding).not.toHaveBeenCalled()
   })
 
   it('fails closed when removed binding has no revision', async () => {

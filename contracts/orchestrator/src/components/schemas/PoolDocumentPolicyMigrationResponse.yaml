@@ -1,0 +1,12 @@
+type: object
+properties:
+  decision:
+    $ref: ./DecisionTable.yaml
+  metadata_context:
+    $ref: ./PoolODataMetadataCatalogResponse.yaml
+  migration:
+    $ref: ./PoolDocumentPolicyMigrationReport.yaml
+required:
+  - decision
+  - metadata_context
+  - migration

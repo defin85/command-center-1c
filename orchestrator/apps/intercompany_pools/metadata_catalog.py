@@ -68,7 +68,6 @@ class MetadataCatalogSnapshotResolution:
 
 
 RESOLUTION_MODE_DATABASE_SCOPE = "database_scope"
-RESOLUTION_MODE_LEGACY_DATABASE_SCOPE = "legacy_database_scope"
 RESOLUTION_MODE_SHARED_SCOPE = "shared_scope"
 
 
@@ -130,9 +129,21 @@ def read_metadata_catalog_snapshot(
     scope = resolve_metadata_catalog_scope(tenant_id=tenant_id, database=database)
     cached_snapshot = _read_snapshot_from_cache(scope=scope)
     if cached_snapshot is not None:
-        return cached_snapshot, SOURCE_REDIS
+        current_resolution = _get_scope_resolution(scope=scope)
+        if current_resolution is not None:
+            current_snapshot = current_resolution.snapshot
+            if current_snapshot.id == cached_snapshot.id:
+                return cached_snapshot, SOURCE_REDIS
+            _write_snapshot_to_cache(scope=scope, snapshot=current_snapshot)
+            return current_snapshot, SOURCE_DB
 
-    current_snapshot = _get_current_snapshot(scope=scope)
+        resolved_cached_snapshot = _get_current_snapshot(scope=scope, database=database)
+        if resolved_cached_snapshot is not None:
+            if resolved_cached_snapshot.id != cached_snapshot.id:
+                _write_snapshot_to_cache(scope=scope, snapshot=resolved_cached_snapshot)
+            return resolved_cached_snapshot, SOURCE_DB
+
+    current_snapshot = _get_current_snapshot(scope=scope, database=database)
     if current_snapshot is not None:
         _write_snapshot_to_cache(scope=scope, snapshot=current_snapshot)
         return current_snapshot, SOURCE_DB
@@ -253,7 +264,7 @@ def get_current_snapshot_for_database_scope(
     database: Database,
 ) -> PoolODataMetadataCatalogSnapshot | None:
     scope = resolve_metadata_catalog_scope(tenant_id=tenant_id, database=database)
-    return _get_current_snapshot(scope=scope)
+    return _get_current_snapshot(scope=scope, database=database)
 
 
 def describe_metadata_catalog_snapshot_resolution(
@@ -273,12 +284,6 @@ def describe_metadata_catalog_snapshot_resolution(
     )
     if database_resolution is not None:
         resolution_mode = RESOLUTION_MODE_DATABASE_SCOPE
-    elif PoolODataMetadataCatalogSnapshot.objects.filter(
-        id=snapshot.id,
-        **_legacy_database_scope_filters(scope),
-        is_current=True,
-    ).exists():
-        resolution_mode = RESOLUTION_MODE_LEGACY_DATABASE_SCOPE
     else:
         resolution_mode = RESOLUTION_MODE_SHARED_SCOPE
 
@@ -563,16 +568,6 @@ def normalize_catalog_payload(*, payload: dict[str, Any]) -> dict[str, Any]:
     return {"documents": normalized_documents}
 
 
-def _legacy_database_scope_filters(scope: MetadataCatalogScope) -> dict[str, str]:
-    return {
-        "tenant_id": scope.tenant_id,
-        "database_id": scope.database_id,
-        "config_name": scope.config_name,
-        "config_version": scope.config_version,
-        "extensions_fingerprint": scope.extensions_fingerprint,
-    }
-
-
 def _shared_scope_filters(scope: MetadataCatalogScope) -> dict[str, str]:
     return {
         "tenant_id": scope.tenant_id,
@@ -592,21 +587,14 @@ def _resolution_filters(scope: MetadataCatalogScope) -> dict[str, str]:
     }
 
 
-def _get_current_snapshot(*, scope: MetadataCatalogScope) -> PoolODataMetadataCatalogSnapshot | None:
+def _get_current_snapshot(
+    *,
+    scope: MetadataCatalogScope,
+    database: Database | None = None,
+) -> PoolODataMetadataCatalogSnapshot | None:
     resolution = _get_scope_resolution(scope=scope)
     if resolution is not None:
         return resolution.snapshot
-
-    legacy_snapshot = (
-        PoolODataMetadataCatalogSnapshot.objects.filter(
-            **_legacy_database_scope_filters(scope),
-            is_current=True,
-        )
-        .order_by("-fetched_at", "-created_at")
-        .first()
-    )
-    if legacy_snapshot is not None:
-        return legacy_snapshot
 
     shared_candidates = list(
         PoolODataMetadataCatalogSnapshot.objects.filter(
@@ -615,9 +603,38 @@ def _get_current_snapshot(*, scope: MetadataCatalogScope) -> PoolODataMetadataCa
         )
         .order_by("-fetched_at", "-created_at")[:2]
     )
-    if len(shared_candidates) == 1:
-        return shared_candidates[0]
-    return None
+    if len(shared_candidates) != 1:
+        return None
+
+    snapshot = shared_candidates[0]
+    if database is None:
+        return snapshot
+    return _adopt_scope_resolution_for_snapshot(
+        scope=scope,
+        database=database,
+        snapshot=snapshot,
+    )
+
+
+def _adopt_scope_resolution_for_snapshot(
+    *,
+    scope: MetadataCatalogScope,
+    database: Database,
+    snapshot: PoolODataMetadataCatalogSnapshot,
+) -> PoolODataMetadataCatalogSnapshot:
+    with transaction.atomic():
+        existing = _get_scope_resolution(scope=scope, for_update=True)
+        if existing is not None:
+            return existing.snapshot
+        _upsert_scope_resolution(
+            scope=scope,
+            database=database,
+            snapshot=snapshot,
+            confirmed_at=snapshot.fetched_at,
+            existing=None,
+        )
+        _sync_snapshot_current_marker(snapshot=snapshot)
+    return snapshot
 
 
 def _build_catalog_version(*, scope: MetadataCatalogScope, metadata_hash: str) -> str:

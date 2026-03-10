@@ -1,0 +1,27 @@
+{
+  "template_version": "workflow_centric_operator_canary_evidence.template.v1",
+  "note": "Template/example only. Replace placeholders with real canary evidence.",
+  "preview": {
+    "pool_workflow_binding_id": "<pool_workflow_binding_id>",
+    "workflow_revision": "<workflow_revision>",
+    "decision_refs": [
+      "<decision_ref>"
+    ],
+    "compile_summary": "<compile_summary>"
+  },
+  "create_run": {
+    "run_id": "<run_id>",
+    "pool_workflow_binding_id": "<pool_workflow_binding_id>",
+    "workflow_execution_id": "<workflow_execution_id>"
+  },
+  "inspect": {
+    "decision_snapshot": "<decision_snapshot>",
+    "runtime_projection": "<runtime_projection>",
+    "workflow_diagnostics_url": "<workflow_diagnostics_url>"
+  },
+  "evidence_refs": [
+    "<preview-response-json>",
+    "<create-run-response-json>",
+    "<inspect-screenshot>"
+  ]
+}

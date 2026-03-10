@@ -455,6 +455,16 @@ const ConditionForm = ({
         )
       )
     : undefined
+  const decisionOptions = availableDecisions.map((decision) => ({
+    value: `${decision.decisionTableId}:${decision.decisionRevision}`,
+    label: `${decision.name} (${decision.decisionKey}) · r${decision.decisionRevision}`,
+  }))
+  if (decisionRef && !selectedDecision) {
+    decisionOptions.unshift({
+      value: `${decisionRef.decision_table_id}:${decisionRef.decision_revision}`,
+      label: `${decisionRef.decision_table_id} (${decisionRef.decision_key}) · r${decisionRef.decision_revision} [inactive]`,
+    })
+  }
   const compiledExpression = decisionRef
     ? `{{ decisions.${decisionRef.decision_key} }}`
     : ''
@@ -491,10 +501,7 @@ const ConditionForm = ({
                 }
               : undefined)
           }}
-          options={availableDecisions.map((decision) => ({
-            value: `${decision.decisionTableId}:${decision.decisionRevision}`,
-            label: `${decision.name} (${decision.decisionKey}) · r${decision.decisionRevision}`,
-          }))}
+          options={decisionOptions}
         />
       </Form.Item>
 

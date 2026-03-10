@@ -50,6 +50,19 @@ def test_generated_v2_has_safe_command_operations_from_openapi() -> None:
     assert "url: `/api/v2/pools/runs/${runId}/abort-publication/`" in content
 
 
+def test_generated_v2_has_document_policy_migration_operation_from_openapi() -> None:
+    contract = _load_openapi_contract()
+    paths = contract.get("paths")
+    assert isinstance(paths, dict)
+    assert "/api/v2/pools/{pool_id}/document-policy-migrations/" in paths
+
+    generated_v2_path = _repo_root() / "frontend" / "src" / "api" / "generated" / "v2" / "v2.ts"
+    content = generated_v2_path.read_text(encoding="utf-8")
+
+    assert "postPoolsDocumentPolicyMigrate" in content
+    assert "url: `/api/v2/pools/${poolId}/document-policy-migrations/`" in content
+
+
 def test_generated_models_cover_contract_pool_runs_schemas() -> None:
     contract = _load_openapi_contract()
 
@@ -124,6 +137,44 @@ def test_generated_models_cover_shared_metadata_and_decision_surfaces() -> None:
             f"{schema_name} fields missing in generated model {model_file}: "
             f"{sorted(set(properties.keys()) - generated_fields)}"
         )
+
+
+def test_generated_models_cover_document_policy_migration_schemas() -> None:
+    contract = _load_openapi_contract()
+
+    checks = {
+        "PoolDocumentPolicyMigrationRequest": "poolDocumentPolicyMigrationRequest.ts",
+        "PoolDocumentPolicyMigrationResponse": "poolDocumentPolicyMigrationResponse.ts",
+        "PoolDocumentPolicyMigrationReport": "poolDocumentPolicyMigrationReport.ts",
+        "PoolDocumentPolicyMigrationSource": "poolDocumentPolicyMigrationSource.ts",
+        "PoolDocumentPolicyMigrationDecisionRef": "poolDocumentPolicyMigrationDecisionRef.ts",
+    }
+
+    for schema_name, model_file in checks.items():
+        schema = _schema(contract, schema_name)
+        properties = schema.get("properties")
+        assert isinstance(properties, dict)
+        generated_fields = _generated_model_fields(model_file)
+        assert set(properties.keys()).issubset(generated_fields), (
+            f"{schema_name} fields missing in generated model {model_file}: "
+            f"{sorted(set(properties.keys()) - generated_fields)}"
+        )
+
+
+def test_generated_gateway_routes_include_document_policy_migration_path() -> None:
+    routes_path = (
+        _repo_root()
+        / "go-services"
+        / "api-gateway"
+        / "internal"
+        / "routes"
+        / "generated"
+        / "orchestrator_routes.go"
+    )
+    content = routes_path.read_text(encoding="utf-8")
+
+    assert 'Path: "/pools/:pool_id/document-policy-migrations/"' in content
+    assert 'OperationID: "v2_pools_document_policy_migrate"' in content
 
 
 def test_generated_retry_chain_attempt_kind_enum_matches_contract() -> None:

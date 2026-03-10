@@ -66,6 +66,8 @@ cd orchestrator && ./venv/bin/python manage.py backfill_pool_workflow_bindings -
    - `provenance_database_id`
 3. Если expected shared profile возвращает `resolution_mode=shared_scope`, reuse считается валидным.
 4. Если refresh даёт новый `snapshot_id` при том же `config_version`, трактовать это как допустимый divergence только после проверки фактического `metadata_hash`/published metadata surface.
+5. Для фиксации evidence используй checked-in template:
+   - `docs/observability/artifacts/refactor-14/shared-metadata-evidence.template.json`
 
 ## Stage 3: Legacy document_policy migration
 
@@ -80,6 +82,8 @@ cd orchestrator && ./venv/bin/python manage.py backfill_pool_workflow_bindings -
    - `Updated bindings`
    - metadata context (`snapshot_id`, `resolution_mode`, `metadata_hash`)
 4. Если ответ вернул `binding_update_required=true`, не переходить к tenant cutover, пока binding refs не закреплены явно.
+5. Для фиксации evidence используй checked-in template:
+   - `docs/observability/artifacts/refactor-14/legacy-document-policy-migration-evidence.template.json`
 
 ## Stage 4: Tenant-scoped cutover
 
@@ -96,6 +100,8 @@ cd orchestrator && ./venv/bin/python manage.py backfill_pool_workflow_bindings -
    - `/pools/runs` показывает pinned decision refs и workflow diagnostics link.
 4. Выполнить pilot canary run и inspect.
    Следующий run должен стартовать только через явный `pool_workflow_binding_id`.
+   Для фиксации preview/create-run/inspect evidence используй:
+   - `docs/observability/artifacts/refactor-14/operator-canary-evidence.template.json`
 5. После green pilot расширять rollout батчами tenant-ов.
 
 ## Rollback window

@@ -1,0 +1,26 @@
+{
+  "template_version": "workflow_centric_policy_migration_evidence.template.v1",
+  "note": "Template/example only. Replace placeholders with real migration evidence.",
+  "pool": {
+    "pool_id": "<pool_id>",
+    "pool_code": "<pool_code>",
+    "edge_version_id": "<edge_version_id>"
+  },
+  "decision_ref": {
+    "decision_table_id": "<decision_table_id>",
+    "decision_revision": "<decision_revision>"
+  },
+  "updated_bindings": [
+    "<binding_key_or_id>"
+  ],
+  "metadata_context": {
+    "snapshot_id": "<snapshot_id>",
+    "resolution_mode": "<resolution_mode>",
+    "metadata_hash": "<metadata_hash>"
+  },
+  "binding_update_required": false,
+  "evidence_refs": [
+    "<migration-response-json>",
+    "<catalog-ui-screenshot>"
+  ]
+}

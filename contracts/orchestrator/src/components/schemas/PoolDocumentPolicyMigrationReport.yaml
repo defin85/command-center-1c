@@ -1,0 +1,18 @@
+type: object
+properties:
+  created:
+    type: boolean
+  reused_existing_revision:
+    type: boolean
+  binding_update_required:
+    type: boolean
+  source:
+    $ref: ./PoolDocumentPolicyMigrationSource.yaml
+  decision_ref:
+    $ref: ./PoolDocumentPolicyMigrationDecisionRef.yaml
+required:
+  - created
+  - reused_existing_revision
+  - binding_update_required
+  - source
+  - decision_ref
