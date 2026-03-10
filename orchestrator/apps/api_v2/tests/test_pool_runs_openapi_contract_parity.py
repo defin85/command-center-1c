@@ -8,6 +8,7 @@ import yaml
 from rest_framework import serializers
 
 from apps.api_v2.serializers.common import ExecutionPlanSerializer
+from apps.api_v2.views import decisions as decisions_view
 from apps.api_v2.views import intercompany_pools as pools_view
 
 
@@ -341,6 +342,32 @@ def test_pool_metadata_catalog_paths_and_schemas_are_in_contract() -> None:
     assert isinstance(request_properties, dict)
     runtime_request_fields = set(pools_view.PoolODataMetadataCatalogRefreshRequestSerializer().fields.keys())
     assert runtime_request_fields.issubset(set(request_properties.keys()))
+
+
+def test_decision_table_schema_includes_metadata_context_and_compatibility_fields() -> None:
+    contract = _load_openapi_contract()
+    decision_schema = _schema(contract, "DecisionTable")
+    decision_properties = decision_schema.get("properties")
+    assert isinstance(decision_properties, dict)
+
+    runtime_decision_fields = set(decisions_view.DecisionTableReadSerializer().fields.keys())
+    assert runtime_decision_fields.issubset(set(decision_properties.keys()))
+
+    metadata_context_schema = _schema(contract, "DecisionRevisionMetadataContext")
+    metadata_context_properties = metadata_context_schema.get("properties")
+    assert isinstance(metadata_context_properties, dict)
+    runtime_metadata_context_fields = set(
+        decisions_view.DecisionRevisionMetadataContextSerializer().fields.keys()
+    )
+    assert runtime_metadata_context_fields.issubset(set(metadata_context_properties.keys()))
+
+    compatibility_schema = _schema(contract, "DecisionMetadataCompatibility")
+    compatibility_properties = compatibility_schema.get("properties")
+    assert isinstance(compatibility_properties, dict)
+    runtime_compatibility_fields = set(
+        decisions_view.DecisionMetadataCompatibilitySerializer().fields.keys()
+    )
+    assert runtime_compatibility_fields.issubset(set(compatibility_properties.keys()))
 
 
 def test_problem_details_error_schema_supports_field_and_referential_error_shapes() -> None:

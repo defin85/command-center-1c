@@ -1,0 +1,22 @@
+type: object
+properties:
+  database_id:
+    type: string
+  snapshot_id:
+    type: string
+  config_name:
+    type: string
+  config_version:
+    type: string
+  extensions_fingerprint:
+    type: string
+  metadata_hash:
+    type: string
+  resolution_mode:
+    type: string
+  is_shared_snapshot:
+    type: boolean
+  provenance_database_id:
+    type: string
+  provenance_confirmed_at:
+    type: string

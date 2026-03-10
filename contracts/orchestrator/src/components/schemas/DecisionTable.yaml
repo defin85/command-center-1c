@@ -37,6 +37,12 @@ properties:
     type: string
     format: uuid
     nullable: true
+  metadata_context:
+    $ref: ./DecisionRevisionMetadataContext.yaml
+    nullable: true
+  metadata_compatibility:
+    $ref: ./DecisionMetadataCompatibility.yaml
+    nullable: true
   created_at:
     type: string
     format: date-time

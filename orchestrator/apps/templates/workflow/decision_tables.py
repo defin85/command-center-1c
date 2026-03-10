@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Mapping
 
+from apps.intercompany_pools.document_policy_contract import DOCUMENT_POLICY_METADATA_KEY
 from apps.templates.workflow.authoring_contract import (
     DecisionTableContract,
     DecisionTableRef,
@@ -9,6 +11,12 @@ from apps.templates.workflow.authoring_contract import (
     DecisionHitPolicy,
 )
 from apps.templates.workflow.models import DecisionTable
+
+METADATA_COMPATIBILITY_COMPATIBLE = "compatible"
+METADATA_COMPATIBILITY_INCOMPATIBLE = "incompatible"
+METADATA_COMPATIBILITY_REASON_METADATA_SURFACE_DIVERGED = "metadata_surface_diverged"
+METADATA_COMPATIBILITY_REASON_CONFIGURATION_SCOPE_MISMATCH = "configuration_scope_mismatch"
+METADATA_COMPATIBILITY_REASON_MISSING_METADATA_CONTEXT = "missing_metadata_context"
 
 
 def build_decision_table_contract(*, decision_table: DecisionTable) -> DecisionTableContract:
@@ -33,6 +41,97 @@ def build_decision_table_ref(*, decision_table: DecisionTable) -> DecisionTableR
         decision_key=decision_table.decision_key,
         decision_revision=decision_table.version_number,
     )
+
+
+def build_decision_table_metadata_context(
+    *,
+    metadata_context: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(metadata_context, Mapping):
+        return None
+
+    normalized: dict[str, Any] = {}
+    for key in (
+        "database_id",
+        "snapshot_id",
+        "config_name",
+        "config_version",
+        "extensions_fingerprint",
+        "metadata_hash",
+        "resolution_mode",
+        "provenance_database_id",
+    ):
+        value = str(metadata_context.get(key) or "").strip()
+        if value:
+            normalized[key] = value
+
+    if "is_shared_snapshot" in metadata_context:
+        normalized["is_shared_snapshot"] = bool(metadata_context.get("is_shared_snapshot"))
+
+    provenance_confirmed_at = metadata_context.get("provenance_confirmed_at")
+    if isinstance(provenance_confirmed_at, datetime):
+        normalized["provenance_confirmed_at"] = provenance_confirmed_at.isoformat()
+    else:
+        normalized_token = str(provenance_confirmed_at or "").strip()
+        if normalized_token:
+            normalized["provenance_confirmed_at"] = normalized_token
+
+    return normalized or None
+
+
+def assess_decision_table_metadata_compatibility(
+    *,
+    decision_table: DecisionTable,
+    metadata_context: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    if decision_table.decision_key != DOCUMENT_POLICY_METADATA_KEY:
+        return None
+
+    current_context = build_decision_table_metadata_context(metadata_context=metadata_context)
+    if current_context is None:
+        return None
+
+    stored_context = build_decision_table_metadata_context(
+        metadata_context=decision_table.metadata_context
+        if isinstance(decision_table.metadata_context, Mapping)
+        else None
+    )
+    if stored_context is None:
+        return {
+            "status": METADATA_COMPATIBILITY_INCOMPATIBLE,
+            "reason": METADATA_COMPATIBILITY_REASON_MISSING_METADATA_CONTEXT,
+            "is_compatible": False,
+        }
+
+    scope_tuple = (
+        str(stored_context.get("config_name") or ""),
+        str(stored_context.get("config_version") or ""),
+        str(stored_context.get("extensions_fingerprint") or ""),
+    )
+    current_scope_tuple = (
+        str(current_context.get("config_name") or ""),
+        str(current_context.get("config_version") or ""),
+        str(current_context.get("extensions_fingerprint") or ""),
+    )
+    if scope_tuple != current_scope_tuple:
+        return {
+            "status": METADATA_COMPATIBILITY_INCOMPATIBLE,
+            "reason": METADATA_COMPATIBILITY_REASON_CONFIGURATION_SCOPE_MISMATCH,
+            "is_compatible": False,
+        }
+
+    if str(stored_context.get("metadata_hash") or "") != str(current_context.get("metadata_hash") or ""):
+        return {
+            "status": METADATA_COMPATIBILITY_INCOMPATIBLE,
+            "reason": METADATA_COMPATIBILITY_REASON_METADATA_SURFACE_DIVERGED,
+            "is_compatible": False,
+        }
+
+    return {
+        "status": METADATA_COMPATIBILITY_COMPATIBLE,
+        "reason": None,
+        "is_compatible": True,
+    }
 
 
 def create_decision_table_revision(
@@ -86,6 +185,12 @@ def create_decision_table_revision(
         inputs=[field.model_dump(mode="json") for field in parsed.inputs],
         outputs=[field.model_dump(mode="json") for field in parsed.outputs],
         rules=[rule.model_dump(mode="json") for rule in parsed.rules],
+        metadata_context=build_decision_table_metadata_context(
+            metadata_context=payload.get("metadata_context")
+            if isinstance(payload.get("metadata_context"), Mapping)
+            else None
+        )
+        or {},
         hit_policy=parsed.hit_policy.value,
         validation_mode=parsed.validation_mode.value,
         is_active=bool(payload.get("is_active", True)),
@@ -163,7 +268,9 @@ def _rule_matches(*, conditions: Mapping[str, Any], inputs: Mapping[str, Any]) -
 
 
 __all__ = [
+    "assess_decision_table_metadata_compatibility",
     "build_decision_table_contract",
+    "build_decision_table_metadata_context",
     "build_decision_table_ref",
     "create_decision_table_revision",
     "evaluate_decision_table",

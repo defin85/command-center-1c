@@ -61,6 +61,7 @@ def _create_current_metadata_catalog_snapshot(
     tenant: Tenant,
     database: Database,
     payload: dict[str, object] | None = None,
+    metadata_hash: str = "a" * 64,
 ) -> PoolODataMetadataCatalogSnapshot:
     return PoolODataMetadataCatalogSnapshot.objects.create(
         tenant=tenant,
@@ -68,7 +69,7 @@ def _create_current_metadata_catalog_snapshot(
         config_name=str(database.base_name or database.name or database.id),
         config_version=str(database.version or ""),
         extensions_fingerprint="",
-        metadata_hash="a" * 64,
+        metadata_hash=metadata_hash,
         catalog_version=f"v1:{uuid.uuid4().hex[:16]}",
         payload=payload
         or {
@@ -96,10 +97,34 @@ def _create_current_metadata_catalog_snapshot(
     )
 
 
-def _build_decision_payload(*, decision_table_id: str | None = None) -> dict[str, object]:
+def _build_decision_payload(
+    *,
+    decision_table_id: str | None = None,
+    decision_key: str = "document_policy",
+) -> dict[str, object]:
+    if decision_key != "document_policy":
+        return {
+            "decision_table_id": decision_table_id or f"decision-{uuid.uuid4().hex[:8]}",
+            "decision_key": decision_key,
+            "name": "Generic Decision",
+            "inputs": [
+                {"name": "direction", "value_type": "string", "required": True},
+            ],
+            "outputs": [
+                {"name": decision_key, "value_type": "string", "required": True},
+            ],
+            "rules": [
+                {
+                    "rule_id": "default",
+                    "priority": 0,
+                    "conditions": {"direction": "bottom_up"},
+                    "outputs": {decision_key: "route-a"},
+                }
+            ],
+        }
     return {
         "decision_table_id": decision_table_id or f"decision-{uuid.uuid4().hex[:8]}",
-        "decision_key": "document_policy",
+        "decision_key": decision_key,
         "name": "Document Policy Decision",
         "inputs": [
             {"name": "direction", "value_type": "string", "required": True},
@@ -155,15 +180,17 @@ def _build_decision_payload(*, decision_table_id: str | None = None) -> dict[str
 def test_decision_tables_api_create_list_and_detail_round_trip(staff_client: APIClient) -> None:
     create_response = staff_client.post(
         "/api/v2/decisions/",
-        data=_build_decision_payload(),
+        data=_build_decision_payload(decision_key="route_policy"),
         format="json",
     )
 
     assert create_response.status_code == 201
     created = create_response.json()["decision"]
     assert created["decision_revision"] == 1
-    assert created["decision_key"] == "document_policy"
-    assert created["outputs"][0]["name"] == "document_policy"
+    assert created["decision_key"] == "route_policy"
+    assert created["outputs"][0]["name"] == "route_policy"
+    assert created["metadata_context"] is None
+    assert created["metadata_compatibility"] is None
 
     list_response = staff_client.get("/api/v2/decisions/")
     assert list_response.status_code == 200
@@ -175,14 +202,17 @@ def test_decision_tables_api_create_list_and_detail_round_trip(staff_client: API
     detailed = detail_response.json()["decision"]
     assert detailed["id"] == created["id"]
     assert detailed["decision_table_id"] == created["decision_table_id"]
-    assert detailed["rules"][0]["outputs"]["document_policy"]["version"] == "document_policy.v1"
+    assert detailed["rules"][0]["outputs"]["route_policy"] == "route-a"
 
 
 @pytest.mark.django_db
 def test_decision_tables_api_can_create_new_revision_from_parent(staff_client: APIClient) -> None:
     first_response = staff_client.post(
         "/api/v2/decisions/",
-        data=_build_decision_payload(decision_table_id="services-publication-policy"),
+        data=_build_decision_payload(
+            decision_table_id="services-publication-policy",
+            decision_key="route_policy",
+        ),
         format="json",
     )
     assert first_response.status_code == 201
@@ -191,7 +221,10 @@ def test_decision_tables_api_can_create_new_revision_from_parent(staff_client: A
     second_response = staff_client.post(
         "/api/v2/decisions/",
         data={
-            **_build_decision_payload(decision_table_id="services-publication-policy"),
+            **_build_decision_payload(
+                decision_table_id="services-publication-policy",
+                decision_key="route_policy",
+            ),
             "parent_version_id": first["id"],
             "name": "Document Policy Decision v2",
         },
@@ -238,6 +271,9 @@ def test_decision_tables_api_create_uses_shared_metadata_snapshot_context(
     assert response.status_code == 201
     payload = response.json()
     assert payload["decision"]["decision_key"] == "document_policy"
+    assert payload["decision"]["metadata_context"]["snapshot_id"] == str(snapshot.id)
+    assert payload["decision"]["metadata_context"]["metadata_hash"] == snapshot.metadata_hash
+    assert payload["decision"]["metadata_compatibility"]["is_compatible"] is True
     assert payload["metadata_context"]["database_id"] == str(second_database.id)
     assert payload["metadata_context"]["snapshot_id"] == str(snapshot.id)
     assert payload["metadata_context"]["resolution_mode"] == "shared_scope"
@@ -278,6 +314,90 @@ def test_decision_tables_api_rejects_invalid_document_policy_metadata_refs(
     payload = response.json()
     assert payload["success"] is False
     assert payload["error"]["code"] == "POOL_METADATA_REFERENCE_INVALID"
+
+
+@pytest.mark.django_db
+def test_decision_tables_api_rejects_document_policy_create_without_database_context(
+    staff_client: APIClient,
+) -> None:
+    response = staff_client.post(
+        "/api/v2/decisions/",
+        data=_build_decision_payload(),
+        format="json",
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "POOL_METADATA_CONTEXT_REQUIRED"
+
+
+@pytest.mark.django_db
+def test_decision_tables_api_reports_diverged_metadata_surface_as_incompatible(
+    staff_client: APIClient,
+) -> None:
+    tenant = Tenant.objects.create(slug=f"decision-meta-diverged-{uuid.uuid4().hex[:8]}", name="Decision Meta Diverged")
+    first_database = _create_database(
+        tenant=tenant,
+        name=f"decision-diverged-a-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    second_database = _create_database(
+        tenant=tenant,
+        name=f"decision-diverged-b-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    _create_service_infobase_mapping(database=first_database)
+    _create_service_infobase_mapping(database=second_database)
+    created_snapshot = _create_current_metadata_catalog_snapshot(
+        tenant=tenant,
+        database=first_database,
+        metadata_hash="a" * 64,
+    )
+    _create_current_metadata_catalog_snapshot(
+        tenant=tenant,
+        database=second_database,
+        payload={
+            "documents": [
+                {
+                    "entity_name": "Document_Transfer",
+                    "display_name": "Transfer",
+                    "fields": [
+                        {"name": "TransferAmount", "type": "Edm.Decimal", "nullable": False},
+                    ],
+                    "table_parts": [],
+                }
+            ]
+        },
+        metadata_hash="b" * 64,
+    )
+
+    create_response = staff_client.post(
+        "/api/v2/decisions/",
+        data={
+            **_build_decision_payload(decision_table_id="shared-policy"),
+            "database_id": str(first_database.id),
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+    assert create_response.status_code == 201
+    created = create_response.json()["decision"]
+    assert created["metadata_context"]["snapshot_id"] == str(created_snapshot.id)
+
+    detail_response = staff_client.get(
+        f"/api/v2/decisions/{created['id']}/?database_id={second_database.id}",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    compatibility = detail_payload["decision"]["metadata_compatibility"]
+    assert compatibility["is_compatible"] is False
+    assert compatibility["status"] == "incompatible"
+    assert compatibility["reason"] == "metadata_surface_diverged"
 
 
 @pytest.mark.django_db

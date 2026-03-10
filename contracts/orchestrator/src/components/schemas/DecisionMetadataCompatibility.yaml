@@ -1,0 +1,12 @@
+type: object
+properties:
+  status:
+    type: string
+  reason:
+    type: string
+    nullable: true
+  is_compatible:
+    type: boolean
+required:
+  - status
+  - is_compatible

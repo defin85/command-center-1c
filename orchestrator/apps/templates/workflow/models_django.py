@@ -60,6 +60,11 @@ class DecisionTable(models.Model):
     inputs = models.JSONField(default=list, blank=True)
     outputs = models.JSONField(default=list, blank=True)
     rules = models.JSONField(default=list, blank=True)
+    metadata_context = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Immutable metadata snapshot provenance for metadata-aware decisions.",
+    )
     hit_policy = models.CharField(max_length=32, default="first_match")
     validation_mode = models.CharField(max_length=32, default="fail_closed")
     is_active = models.BooleanField(default=True)
