@@ -688,7 +688,7 @@ const WorkflowDesigner = () => {
           showIcon
           type="info"
           message="Workflow scheme library"
-          description="This editor authors reusable workflow definitions for pools. Templates stay atomic, pool bindings decide where the scheme is active, and runtime projections are compiled into diagnostics-only artifacts."
+          description="Author analyst-facing workflow composition in /workflows. Use /templates for atomic operations, /decisions for versioned decision resources, and treat runtime projections as diagnostics-only artifacts."
           style={{ margin: '16px 16px 0' }}
         />
       )}

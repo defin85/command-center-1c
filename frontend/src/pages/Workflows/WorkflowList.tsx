@@ -314,6 +314,10 @@ const WorkflowList = () => {
             <Space direction="vertical" size={4}>
               <span>{authoringPhase.description}</span>
               <span>{`Primary analyst surface: ${authoringPhase.analyst_surface}`}</span>
+              <span>
+                Compose analyst-authored schemes in /workflows. Use /templates for atomic
+                operations and /decisions for versioned decision resources.
+              </span>
               <Space wrap size={[8, 8]}>
                 {authoringPhase.rollout_scope.map((scope) => (
                   <Tag key={scope} color="blue">
