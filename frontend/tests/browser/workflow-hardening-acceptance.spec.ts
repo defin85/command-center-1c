@@ -1,0 +1,887 @@
+import { expect, test, type Page, type Route } from '@playwright/test'
+
+type AnyRecord = Record<string, unknown>
+
+declare global {
+  interface Window {
+    __CC1C_ENV__?: Record<string, string>
+  }
+}
+
+const TENANT_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+const POOL_ID = '90000000-0000-4000-8000-000000000777'
+const BINDING_ID = 'binding-top-down'
+const NOW = '2026-03-10T12:00:00Z'
+
+const BASE_METADATA_CONTEXT = {
+  database_id: '10101010-1010-1010-1010-101010101010',
+  snapshot_id: 'snapshot-shared-services',
+  source: 'db',
+  fetched_at: NOW,
+  catalog_version: 'v1:shared-services',
+  config_name: 'shared-profile',
+  config_version: '8.3.24',
+  extensions_fingerprint: '',
+  metadata_hash: 'a'.repeat(64),
+  resolution_mode: 'shared_scope',
+  is_shared_snapshot: true,
+  provenance_database_id: '20202020-2020-2020-2020-202020202020',
+  provenance_confirmed_at: NOW,
+  documents: [],
+}
+
+const BASE_DECISION = {
+  id: 'decision-version-2',
+  decision_table_id: 'services-publication-policy',
+  decision_key: 'document_policy',
+  decision_revision: 2,
+  name: 'Services publication policy',
+  description: 'Publishes service documents',
+  inputs: [],
+  outputs: [],
+  rules: [
+    {
+      rule_id: 'default',
+      priority: 0,
+      conditions: {},
+      outputs: {
+        document_policy: {
+          version: 'document_policy.v1',
+          chains: [
+            {
+              chain_id: 'sale_chain',
+              documents: [
+                {
+                  document_id: 'sale',
+                  entity_name: 'Document_Sales',
+                  document_role: 'sale',
+                  field_mapping: {
+                    Amount: 'allocation.amount',
+                  },
+                  table_parts_mapping: {},
+                  link_rules: {},
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  ],
+  hit_policy: 'first_match',
+  validation_mode: 'fail_closed',
+  is_active: true,
+  parent_version: 'decision-version-1',
+  metadata_context: {
+    snapshot_id: 'snapshot-shared-services',
+    config_name: 'shared-profile',
+    config_version: '8.3.24',
+    extensions_fingerprint: '',
+    metadata_hash: 'a'.repeat(64),
+    resolution_mode: 'shared_scope',
+    is_shared_snapshot: true,
+    provenance_database_id: '20202020-2020-2020-2020-202020202020',
+    provenance_confirmed_at: NOW,
+  },
+  metadata_compatibility: {
+    status: 'compatible',
+    reason: null,
+    is_compatible: true,
+  },
+  created_at: NOW,
+  updated_at: NOW,
+}
+
+type AcceptanceState = {
+  databases: AnyRecord[]
+  decisions: AnyRecord[]
+  decisionWrites: AnyRecord[]
+  metadataContext: AnyRecord
+  templateExposures: AnyRecord[]
+  poolRuntimeRegistry: AnyRecord
+  organizations: AnyRecord[]
+  pools: AnyRecord[]
+  graphsByPoolId: Record<string, AnyRecord>
+  topologySnapshotsByPoolId: Record<string, AnyRecord>
+  workflowBindingsByPoolId: Record<string, AnyRecord[]>
+  migrationCalls: number
+  lastMigrationPayload: AnyRecord | null
+  runs: AnyRecord[]
+  runReportsByRunId: Record<string, AnyRecord>
+}
+
+const deepClone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+
+const buildPublishedRun = () => ({
+  id: 'run-published-1',
+  tenant_id: TENANT_ID,
+  pool_id: POOL_ID,
+  schema_template_id: null,
+  mode: 'safe',
+  direction: 'top_down',
+  status: 'published',
+  status_reason: null,
+  period_start: '2026-03-01',
+  period_end: null,
+  run_input: { starting_amount: '150.00' },
+  input_contract_version: 'run_input_v1',
+  idempotency_key: 'idem-published-1',
+  workflow_execution_id: 'workflow-execution-1',
+  workflow_status: 'completed',
+  root_operation_id: 'root-operation-1',
+  execution_consumer: 'pools',
+  lane: 'workflows',
+  approval_state: 'approved',
+  publication_step_state: 'completed',
+  readiness_blockers: [],
+  readiness_checklist: {
+    status: 'ready',
+    checks: [
+      {
+        code: 'master_data_coverage',
+        status: 'ready',
+        blocker_codes: [],
+        blockers: [],
+      },
+      {
+        code: 'organization_party_bindings',
+        status: 'ready',
+        blocker_codes: [],
+        blockers: [],
+      },
+      {
+        code: 'policy_completeness',
+        status: 'ready',
+        blocker_codes: [],
+        blockers: [],
+      },
+      {
+        code: 'odata_verify_readiness',
+        status: 'ready',
+        blocker_codes: [],
+        blockers: [],
+      },
+    ],
+  },
+  verification_status: 'passed',
+  verification_summary: {
+    checked_targets: 1,
+    verified_documents: 2,
+    mismatches_count: 0,
+    mismatches: [],
+  },
+  terminal_reason: null,
+  execution_backend: 'workflow_core',
+  provenance: {
+    workflow_run_id: 'workflow-run-1',
+    workflow_status: 'completed',
+    execution_backend: 'workflow_core',
+    root_operation_id: 'root-operation-1',
+    execution_consumer: 'pools',
+    lane: 'workflows',
+    retry_chain: [
+      {
+        workflow_run_id: 'workflow-run-1',
+        parent_workflow_run_id: null,
+        attempt_number: 1,
+        attempt_kind: 'initial',
+        status: 'completed',
+      },
+    ],
+  },
+  workflow_binding: {
+    binding_id: BINDING_ID,
+    pool_id: POOL_ID,
+    workflow: {
+      workflow_definition_key: 'services-publication',
+      workflow_revision_id: 'workflow-revision-7',
+      workflow_revision: 7,
+      workflow_name: 'services_publication',
+    },
+    selector: {
+      direction: 'top_down',
+      mode: 'safe',
+      tags: [],
+    },
+    decisions: [
+      {
+        decision_table_id: 'services-publication-policy',
+        decision_key: 'document_policy',
+        decision_revision: 2,
+      },
+    ],
+    effective_from: '2026-03-01',
+    effective_to: null,
+    status: 'active',
+    revision: 3,
+  },
+  runtime_projection: {
+    version: 'pool_runtime_projection.v1',
+    run_id: 'run-published-1',
+    pool_id: POOL_ID,
+    direction: 'top_down',
+    mode: 'safe',
+    workflow_definition: {
+      plan_key: 'plan-services-v7',
+      template_version: 'workflow-template:7',
+      workflow_template_name: 'compiled-services-publication',
+      workflow_type: 'sequential',
+    },
+    workflow_binding: {
+      binding_mode: 'pool_workflow_binding',
+      binding_id: BINDING_ID,
+      pool_id: POOL_ID,
+      workflow_definition_key: 'services-publication',
+      workflow_revision_id: 'workflow-revision-7',
+      workflow_revision: 7,
+      workflow_name: 'services_publication',
+      decision_refs: [
+        {
+          decision_table_id: 'services-publication-policy',
+          decision_key: 'document_policy',
+          decision_revision: 2,
+        },
+      ],
+      selector: {
+        direction: 'top_down',
+        mode: 'safe',
+        tags: [],
+      },
+      status: 'active',
+    },
+    document_policy_projection: {
+      source_mode: 'decision_tables',
+      policy_refs: [{ policy_id: 'services-publication-policy:r2' }],
+      policy_refs_count: 1,
+      targets_count: 1,
+    },
+    artifacts: {
+      document_plan_artifact_version: 'document-plan:v7',
+      topology_version_ref: 'topology:v7',
+      distribution_artifact_ref: { id: 'distribution:v7' },
+    },
+    compile_summary: {
+      steps_count: 5,
+      atomic_publication_steps_count: 3,
+      compiled_targets_count: 1,
+    },
+  },
+  workflow_template_name: 'pool-template-v1',
+  seed: null,
+  validation_summary: { rows: 1 },
+  publication_summary: { total_targets: 1 },
+  diagnostics: [{ step: 'distribution_calculation', status: 'ok' }],
+  last_error: '',
+  created_at: NOW,
+  updated_at: NOW,
+  validated_at: NOW,
+  publication_confirmed_at: NOW,
+  publishing_started_at: NOW,
+  completed_at: NOW,
+})
+
+function createAcceptanceState(): AcceptanceState {
+  const publishedRun = buildPublishedRun()
+  return {
+    databases: [
+      {
+        id: '10101010-1010-1010-1010-101010101010',
+        name: 'Target DB',
+        base_name: 'shared-profile',
+        version: '8.3.24',
+      },
+      {
+        id: '20202020-2020-2020-2020-202020202020',
+        name: 'Shared provenance DB',
+        base_name: 'shared-profile',
+        version: '8.3.24',
+      },
+    ],
+    decisions: [deepClone(BASE_DECISION)],
+    decisionWrites: [],
+    metadataContext: deepClone(BASE_METADATA_CONTEXT),
+    templateExposures: [
+      {
+        id: 'exposure-workflow-template',
+        definition_id: 'definition-workflow-template',
+        surface: 'template',
+        alias: 'workflow-template-compat',
+        name: 'Workflow Compatibility Template',
+        description: 'Compatibility wrapper for a workflow executor',
+        is_active: true,
+        capability: 'workflow.compatibility',
+        status: 'published',
+        operation_type: 'workflow',
+        target_entity: 'workflow',
+        template_data: {
+          workflow_id: 'workflow-template-v3',
+        },
+        executor_kind: 'workflow',
+        executor_command_id: null,
+        template_exposure_id: 'template-exposure-1',
+        template_exposure_revision: 4,
+        created_at: NOW,
+        updated_at: NOW,
+      },
+    ],
+    poolRuntimeRegistry: {
+      contract_version: 'pool_runtime.v1',
+      entries: [],
+      count: 0,
+    },
+    organizations: [
+      {
+        id: '11111111-1111-1111-1111-111111111111',
+        tenant_id: TENANT_ID,
+        database_id: '10101010-1010-1010-1010-101010101010',
+        name: 'Org One',
+        full_name: 'Org One LLC',
+        inn: '730000000001',
+        kpp: '123456789',
+        status: 'active',
+        external_ref: '',
+        metadata: {},
+        created_at: NOW,
+        updated_at: NOW,
+      },
+      {
+        id: '22222222-2222-2222-2222-222222222222',
+        tenant_id: TENANT_ID,
+        database_id: '20202020-2020-2020-2020-202020202020',
+        name: 'Org Two',
+        full_name: 'Org Two LLC',
+        inn: '730000000002',
+        kpp: '123456789',
+        status: 'active',
+        external_ref: '',
+        metadata: {},
+        created_at: NOW,
+        updated_at: NOW,
+      },
+    ],
+    pools: [
+      {
+        id: POOL_ID,
+        code: 'pool-hardening',
+        name: 'Workflow Hardening Pool',
+        description: 'Pool for workflow hardening browser acceptance',
+        is_active: true,
+        metadata: {},
+        updated_at: NOW,
+      },
+    ],
+    graphsByPoolId: {
+      [POOL_ID]: {
+        pool_id: POOL_ID,
+        date: '2026-03-01',
+        version: 'v1:topology-hardening',
+        nodes: [
+          {
+            node_version_id: 'node-v1',
+            organization_id: '11111111-1111-1111-1111-111111111111',
+            inn: '730000000001',
+            name: 'Org One',
+            is_root: true,
+            metadata: {},
+          },
+          {
+            node_version_id: 'node-v2',
+            organization_id: '22222222-2222-2222-2222-222222222222',
+            inn: '730000000002',
+            name: 'Org Two',
+            is_root: false,
+            metadata: {},
+          },
+        ],
+        edges: [
+          {
+            edge_version_id: 'edge-v1',
+            parent_node_version_id: 'node-v1',
+            child_node_version_id: 'node-v2',
+            weight: '1',
+            min_amount: null,
+            max_amount: null,
+            metadata: {
+              document_policy: {
+                version: 'document_policy.v1',
+                chains: [
+                  {
+                    chain_id: 'sale_chain',
+                    documents: [
+                      {
+                        document_id: 'sale',
+                        entity_name: 'Document_Sales',
+                        document_role: 'sale',
+                        field_mapping: {
+                          Amount: 'allocation.amount',
+                        },
+                        table_parts_mapping: {},
+                        link_rules: {},
+                      },
+                    ],
+                  },
+                ],
+              },
+              legacy_source: 'edge.metadata.document_policy',
+            },
+          },
+        ],
+      },
+    },
+    topologySnapshotsByPoolId: {
+      [POOL_ID]: {
+        pool_id: POOL_ID,
+        count: 1,
+        snapshots: [
+          {
+            effective_from: '2026-03-01',
+            effective_to: null,
+            nodes_count: 2,
+            edges_count: 1,
+          },
+        ],
+      },
+    },
+    workflowBindingsByPoolId: {
+      [POOL_ID]: [
+        {
+          binding_id: BINDING_ID,
+          pool_id: POOL_ID,
+          workflow: {
+            workflow_definition_key: 'services-publication',
+            workflow_revision_id: 'workflow-revision-7',
+            workflow_revision: 7,
+            workflow_name: 'services_publication',
+          },
+          selector: {
+            direction: 'top_down',
+            mode: 'safe',
+            tags: [],
+          },
+          decisions: [
+            {
+              decision_table_id: 'services-publication-policy',
+              decision_key: 'document_policy',
+              decision_revision: 1,
+            },
+          ],
+          effective_from: '2026-03-01',
+          effective_to: null,
+          status: 'active',
+          revision: 3,
+        },
+      ],
+    },
+    migrationCalls: 0,
+    lastMigrationPayload: null,
+    runs: [publishedRun],
+    runReportsByRunId: {
+      [String(publishedRun.id)]: {
+        run: publishedRun,
+        publication_attempts: [
+          {
+            id: 'publication-attempt-1',
+            run_id: publishedRun.id,
+            target_database_id: '20202020-2020-2020-2020-202020202020',
+            attempt_number: 1,
+            attempt_timestamp: NOW,
+            status: 'success',
+            entity_name: 'Document_Sales',
+            documents_count: 2,
+            publication_identity_strategy: 'guid',
+            external_document_identity: 'ref-1',
+            posted: true,
+            domain_error_code: '',
+            domain_error_message: '',
+          },
+        ],
+        validation_summary: publishedRun.validation_summary,
+        publication_summary: publishedRun.publication_summary,
+        diagnostics: publishedRun.diagnostics,
+        attempts_by_status: { success: 1 },
+      },
+    },
+  }
+}
+
+function createDecisionFromWrite(state: AcceptanceState, payload: AnyRecord) {
+  const decisionTableId = String(payload.decision_table_id || 'document-policy').trim()
+  const latestRevision = state.decisions.reduce((max, item) => {
+    if (String(item.decision_table_id || '') !== decisionTableId) return max
+    const revision = Number(item.decision_revision || 0)
+    return Number.isFinite(revision) ? Math.max(max, revision) : max
+  }, 0)
+
+  const decision = {
+    id: `decision-version-${state.decisions.length + 1}`,
+    decision_table_id: decisionTableId,
+    decision_key: String(payload.decision_key || 'document_policy'),
+    decision_revision: latestRevision + 1,
+    name: String(payload.name || decisionTableId),
+    description: String(payload.description || ''),
+    inputs: [],
+    outputs: [],
+    rules: Array.isArray(payload.rules) ? deepClone(payload.rules) : [],
+    hit_policy: 'first_match',
+    validation_mode: 'fail_closed',
+    is_active: payload.is_active !== false,
+    parent_version: typeof payload.parent_version_id === 'string' && payload.parent_version_id.trim()
+      ? payload.parent_version_id
+      : null,
+    metadata_context: deepClone(state.metadataContext),
+    metadata_compatibility: {
+      status: 'compatible',
+      reason: null,
+      is_compatible: true,
+    },
+    created_at: NOW,
+    updated_at: NOW,
+  }
+
+  state.decisions = [decision, ...state.decisions]
+  return decision
+}
+
+async function fulfillJson(route: Route, data: unknown, status = 200) {
+  await route.fulfill({
+    status,
+    contentType: 'application/json',
+    body: JSON.stringify(data),
+    headers: { 'cache-control': 'no-store' },
+  })
+}
+
+async function setupAuth(page: Page) {
+  await page.addInitScript((tenantId: string) => {
+    window.__CC1C_ENV__ = {
+      VITE_BASE_HOST: '127.0.0.1',
+      VITE_API_URL: 'http://127.0.0.1:15173',
+      VITE_WS_HOST: '127.0.0.1:15173',
+    }
+    localStorage.setItem('auth_token', 'test-token')
+    localStorage.setItem('active_tenant_id', tenantId)
+  }, TENANT_ID)
+}
+
+async function setupApiMocks(page: Page, state: AcceptanceState) {
+  await page.route('**/api/v2/**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const path = url.pathname
+    const method = request.method()
+
+    if (method === 'GET' && path === '/api/v2/system/me/') {
+      return fulfillJson(route, { id: 1, username: 'browser-user', is_staff: false })
+    }
+
+    if (method === 'GET' && path === '/api/v2/rbac/get-effective-access/') {
+      return fulfillJson(route, { clusters: [], databases: [] })
+    }
+
+    if (method === 'GET' && path === '/api/v2/rbac/list-roles/') {
+      return fulfillJson(route, { roles: [], count: 0, total: 0 })
+    }
+
+    if (method === 'GET' && path === '/api/v2/rbac/list-capabilities/') {
+      return fulfillJson(route, { capabilities: [] })
+    }
+
+    if (method === 'GET' && path === '/api/v2/settings/command-schemas/audit/') {
+      return fulfillJson(route, { items: [], count: 0, total: 0 })
+    }
+
+    if (method === 'GET' && path === '/api/v2/tenants/list-my-tenants/') {
+      return fulfillJson(route, {
+        active_tenant_id: TENANT_ID,
+        tenants: [{ id: TENANT_ID, slug: 'default', name: 'Default', role: 'owner' }],
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/databases/list-databases/') {
+      return fulfillJson(route, {
+        databases: state.databases,
+        count: state.databases.length,
+        total: state.databases.length,
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/decisions/') {
+      return fulfillJson(route, {
+        decisions: state.decisions,
+        count: state.decisions.length,
+        metadata_context: state.metadataContext,
+      })
+    }
+
+    const decisionDetailMatch = path.match(/^\/api\/v2\/decisions\/([^/]+)\/$/)
+    if (method === 'GET' && decisionDetailMatch) {
+      const decisionId = decisionDetailMatch[1]
+      const decision = state.decisions.find((item) => String(item.id) === decisionId)
+      if (!decision) {
+        return fulfillJson(route, { detail: 'Decision not found' }, 404)
+      }
+      return fulfillJson(route, {
+        decision,
+        metadata_context: state.metadataContext,
+      })
+    }
+
+    if (method === 'POST' && path === '/api/v2/decisions/') {
+      const payload = (request.postDataJSON() as AnyRecord | null) ?? {}
+      state.decisionWrites.push(deepClone(payload))
+      const decision = createDecisionFromWrite(state, payload)
+      return fulfillJson(route, {
+        decision,
+        metadata_context: state.metadataContext,
+      }, 201)
+    }
+
+    if (method === 'GET' && path === '/api/v2/operation-catalog/exposures/') {
+      return fulfillJson(route, {
+        exposures: state.templateExposures,
+        count: state.templateExposures.length,
+        total: state.templateExposures.length,
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/templates/pool-runtime-registry/') {
+      return fulfillJson(route, state.poolRuntimeRegistry)
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/organizations/') {
+      return fulfillJson(route, {
+        organizations: state.organizations,
+        count: state.organizations.length,
+      })
+    }
+
+    const organizationDetailMatch = path.match(/^\/api\/v2\/pools\/organizations\/([^/]+)\/$/)
+    if (method === 'GET' && organizationDetailMatch) {
+      const organization = state.organizations.find((item) => String(item.id) === organizationDetailMatch[1])
+      if (!organization) {
+        return fulfillJson(route, { detail: 'Organization not found' }, 404)
+      }
+      return fulfillJson(route, { organization, pool_bindings: [] })
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/') {
+      return fulfillJson(route, {
+        pools: state.pools,
+        count: state.pools.length,
+      })
+    }
+
+    const graphMatch = path.match(/^\/api\/v2\/pools\/([^/]+)\/graph\/$/)
+    if (method === 'GET' && graphMatch) {
+      const poolId = graphMatch[1]
+      const graph = state.graphsByPoolId[poolId]
+      if (!graph) {
+        return fulfillJson(route, { detail: 'Graph not found' }, 404)
+      }
+      return fulfillJson(route, graph)
+    }
+
+    const topologySnapshotsMatch = path.match(/^\/api\/v2\/pools\/([^/]+)\/topology-snapshots\/$/)
+    if (method === 'GET' && topologySnapshotsMatch) {
+      const poolId = topologySnapshotsMatch[1]
+      return fulfillJson(route, state.topologySnapshotsByPoolId[poolId] ?? {
+        pool_id: poolId,
+        count: 0,
+        snapshots: [],
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/odata-metadata/catalog/') {
+      return fulfillJson(route, state.metadataContext)
+    }
+
+    if (method === 'POST' && path === '/api/v2/pools/odata-metadata/catalog/refresh/') {
+      return fulfillJson(route, state.metadataContext)
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/master-data/parties/') {
+      return fulfillJson(route, { parties: [], meta: { limit: 100, offset: 0, total: 0 } })
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/master-data/items/') {
+      return fulfillJson(route, { items: [], meta: { limit: 100, offset: 0, total: 0 } })
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/master-data/contracts/') {
+      return fulfillJson(route, { contracts: [], meta: { limit: 100, offset: 0, total: 0 } })
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/master-data/tax-profiles/') {
+      return fulfillJson(route, { tax_profiles: [], meta: { limit: 100, offset: 0, total: 0 } })
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/workflow-bindings/') {
+      const poolId = String(url.searchParams.get('pool_id') || '')
+      const bindings = state.workflowBindingsByPoolId[poolId] ?? []
+      return fulfillJson(route, { pool_id: poolId, bindings, count: bindings.length })
+    }
+
+    const migrationMatch = path.match(/^\/api\/v2\/pools\/([^/]+)\/document-policy-migrations\/$/)
+    if (method === 'POST' && migrationMatch) {
+      const poolId = migrationMatch[1]
+      const payload = (request.postDataJSON() as AnyRecord | null) ?? {}
+      state.migrationCalls += 1
+      state.lastMigrationPayload = deepClone(payload)
+
+      const migratedDecision = deepClone(BASE_DECISION)
+      const bindings = state.workflowBindingsByPoolId[poolId] ?? []
+      state.workflowBindingsByPoolId[poolId] = bindings.map((binding) => ({
+        ...binding,
+        decisions: [
+          {
+            decision_table_id: migratedDecision.decision_table_id,
+            decision_key: migratedDecision.decision_key,
+            decision_revision: migratedDecision.decision_revision,
+          },
+        ],
+      }))
+
+      return fulfillJson(route, {
+        decision: migratedDecision,
+        metadata_context: state.metadataContext,
+        migration: {
+          created: true,
+          reused_existing_revision: false,
+          binding_update_required: false,
+          source: {
+            source_path: 'edge.metadata.document_policy',
+            pool_id: poolId,
+            pool_code: 'pool-hardening',
+            edge_version_id: String(payload.edge_version_id || 'edge-v1'),
+          },
+          decision_ref: {
+            decision_id: migratedDecision.id,
+            decision_table_id: migratedDecision.decision_table_id,
+            decision_revision: migratedDecision.decision_revision,
+          },
+        },
+      }, 201)
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/schema-templates/') {
+      return fulfillJson(route, { templates: [], count: 0 })
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/runs/') {
+      const poolId = String(url.searchParams.get('pool_id') || '')
+      const runs = poolId
+        ? state.runs.filter((item) => String(item.pool_id) === poolId)
+        : state.runs
+      return fulfillJson(route, { runs, count: runs.length })
+    }
+
+    const runReportMatch = path.match(/^\/api\/v2\/pools\/runs\/([^/]+)\/report\/$/)
+    if (method === 'GET' && runReportMatch) {
+      const runId = runReportMatch[1]
+      const report = state.runReportsByRunId[runId]
+      if (!report) {
+        return fulfillJson(route, { detail: 'Run report not found' }, 404)
+      }
+      return fulfillJson(route, report)
+    }
+
+    return fulfillJson(route, {}, 200)
+  })
+}
+
+test('Workflow hardening: /decisions shows shared metadata provenance and decision lifecycle actions', async ({ page }) => {
+  const state = createAcceptanceState()
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/decisions', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Decision Policy Library' })).toBeVisible()
+  await expect(page.getByText('/decisions is the primary surface for document_policy authoring.')).toBeVisible()
+  await expect(page.getByText('shared-profile').first()).toBeVisible()
+  await expect(page.getByText('shared_scope').first()).toBeVisible()
+  await expect(page.getByText('20202020-2020-2020-2020-202020202020').first()).toBeVisible()
+  await expect(page.getByText('Services publication policy').first()).toBeVisible()
+
+  await page.getByRole('button', { name: 'New policy' }).click()
+  await page.getByLabel('Decision table ID').fill('browser-policy')
+  await page.getByLabel('Decision name').fill('Browser decision policy')
+  await page.getByRole('button', { name: 'Add chain' }).click()
+  await page.getByLabel('Chain 1 ID').fill('sale_chain')
+  await page.getByRole('button', { name: 'Add document to chain 1' }).click()
+  await page.getByLabel('Chain 1 document 1 ID').fill('sale')
+  await page.getByLabel('Chain 1 document 1 entity').fill('Document_Sales')
+  await page.getByLabel('Chain 1 document 1 role').fill('sale')
+  await page.getByRole('button', { name: 'Save decision' }).click()
+
+  await expect.poll(() => state.decisionWrites.length).toBe(1)
+  await expect.poll(() => String(state.decisionWrites[0]?.decision_table_id || '')).toBe('browser-policy')
+  await expect(page.getByText('Browser decision policy')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Revise selected decision' }).click()
+  await page.getByLabel('Decision name').fill('Services publication policy v3')
+  await page.getByRole('button', { name: 'Save decision' }).click()
+
+  await expect.poll(() => state.decisionWrites.length).toBe(2)
+  await expect.poll(() => String(state.decisionWrites[1]?.parent_version_id || '')).toBe('decision-version-2')
+  await expect.poll(() => String(state.decisionWrites[1]?.name || '')).toBe('Services publication policy v3')
+
+  await page.getByRole('button', { name: 'Deactivate selected decision' }).click()
+
+  await expect.poll(() => state.decisionWrites.length).toBe(3)
+  await expect.poll(() => Boolean(state.decisionWrites[2]?.is_active)).toBe(false)
+})
+
+test('Workflow hardening: /templates and /pools/catalog expose compatibility guidance and legacy migration outcome', async ({ page }) => {
+  const state = createAcceptanceState()
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/templates', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Operation Templates' })).toBeVisible()
+  await expect(page.getByText('Atomic operations only')).toBeVisible()
+  await expect(page.getByText('Use /workflows to model analyst-facing schemes. workflow executor templates remain available here only as a compatibility/integration path.')).toBeVisible()
+  await expect(page.getByText('Workflow Compatibility Template')).toBeVisible()
+  await expect(page.getByTestId('templates-executor-kind-compatibility-tag')).toHaveText('compatibility')
+
+  await page.goto('/pools/catalog', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Pool Catalog' })).toBeVisible()
+  await page.getByRole('tab', { name: 'Topology Editor' }).click()
+  await expect(page.getByText('Topology snapshots by date')).toBeVisible()
+  await page.getByText('Advanced edge metadata / legacy document policy').first().click()
+
+  await expect(page.getByText('Legacy edge document_policy compatibility')).toBeVisible()
+  await expect(page.getByTestId('pool-catalog-topology-edge-policy-readonly-0')).toBeDisabled()
+  await expect(page.getByTestId('pool-catalog-topology-edge-open-legacy-policy-editor-0')).toBeVisible()
+  await expect(page.getByTestId('pool-catalog-topology-edge-migrate-legacy-policy-0')).toBeVisible()
+
+  await page.getByTestId('pool-catalog-topology-edge-migrate-legacy-policy-0').click()
+
+  await expect.poll(() => state.migrationCalls).toBe(1)
+  await expect.poll(() => String(state.lastMigrationPayload?.edge_version_id || '')).toBe('edge-v1')
+  await expect(page.getByText('Imported to /decisions')).toBeVisible()
+  await expect(page.getByText('Source: edge.metadata.document_policy (edge-v1)')).toBeVisible()
+  await expect(page.getByText('Decision ref: services-publication-policy r2')).toBeVisible()
+  await expect(page.getByText('Updated bindings: services_publication')).toBeVisible()
+})
+
+test('Workflow hardening: /pools/runs shipped flow shows pinned decision lineage and verification outcome', async ({ page }) => {
+  const state = createAcceptanceState()
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/pools/runs', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Pool Runs' })).toBeVisible()
+  await page.getByRole('tab', { name: 'Inspect' }).click()
+  await expect(page.getByTestId('pool-runs-verification-status')).toHaveText('status: passed')
+  await expect(page.getByText('Published documents verified')).toBeVisible()
+  await expect(page.getByText('document_policy r2')).toBeVisible()
+  await expect(page.getByTestId('pool-runs-provenance-workflow-id')).toContainText('workflow-run-1')
+  await expect(page.getByRole('link', { name: 'Open Workflow Diagnostics' })).toHaveAttribute('href', '/workflows/executions/workflow-execution-1')
+})
