@@ -64,6 +64,7 @@ class SubWorkflowHandler(BaseNodeHandler):
             NodeExecutionResult with mapped outputs or error
         """
         start_time = time.time()
+        binding_failure_recorded = False
 
         # Create step result for audit
         step_result = await sync_to_async(
@@ -81,10 +82,14 @@ class SubWorkflowHandler(BaseNodeHandler):
                 raise ValueError(f"SubWorkflow node {node.id} missing subworkflow_config")
 
             subworkflow_config = node.subworkflow_config
-            subworkflow_id = subworkflow_config.subworkflow_id
             input_mapping = subworkflow_config.input_mapping
             output_mapping = subworkflow_config.output_mapping
             max_depth = min(subworkflow_config.max_depth, self.MAX_DEPTH_HARD_LIMIT)
+            subworkflow_template = await sync_to_async(
+                self._resolve_subworkflow_template,
+                thread_sensitive=True,
+            )(subworkflow_config)
+            subworkflow_id = str(subworkflow_template.id)
 
             logger.info(
                 f"Executing subworkflow node {node.id}",
@@ -102,19 +107,38 @@ class SubWorkflowHandler(BaseNodeHandler):
                     f"Subworkflow recursion depth exceeded: {current_depth} >= {max_depth}"
                 )
 
-            # 3. Get subworkflow template
-            try:
-                subworkflow_template = await sync_to_async(
-                    WorkflowTemplate.objects.get,
-                    thread_sensitive=True
-                )(id=subworkflow_id)
-            except WorkflowTemplate.DoesNotExist:
-                raise ValueError(f"Subworkflow template not found: {subworkflow_id}")
-
             if not subworkflow_template.is_valid or not subworkflow_template.is_active:
-                raise ValueError(
+                validation_error = (
                     f"Subworkflow template {subworkflow_id} is not valid or not active"
                 )
+                await sync_to_async(
+                    self._record_subworkflow_binding_provenance,
+                    thread_sensitive=True,
+                )(
+                    execution,
+                    self._build_subworkflow_binding_entry(
+                        node=node,
+                        subworkflow_config=subworkflow_config,
+                        subworkflow_template=subworkflow_template,
+                        status="failed",
+                        error=validation_error,
+                    ),
+                )
+                binding_failure_recorded = True
+                raise ValueError(validation_error)
+
+            await sync_to_async(
+                self._record_subworkflow_binding_provenance,
+                thread_sensitive=True,
+            )(
+                execution,
+                self._build_subworkflow_binding_entry(
+                    node=node,
+                    subworkflow_config=subworkflow_config,
+                    subworkflow_template=subworkflow_template,
+                    status="applied",
+                ),
+            )
 
             # 4. Map input context
             subworkflow_context = self._map_context(
@@ -205,6 +229,19 @@ class SubWorkflowHandler(BaseNodeHandler):
             return result
 
         except Exception as exc:
+            if node.subworkflow_config and not binding_failure_recorded:
+                await sync_to_async(
+                    self._record_subworkflow_binding_provenance,
+                    thread_sensitive=True,
+                )(
+                    execution,
+                    self._build_subworkflow_binding_entry(
+                        node=node,
+                        subworkflow_config=node.subworkflow_config,
+                        status="failed",
+                        error=str(exc),
+                    ),
+                )
             error_msg = f"Failed to execute subworkflow node: {str(exc)}"
             logger.error(
                 error_msg,
@@ -270,6 +307,136 @@ class SubWorkflowHandler(BaseNodeHandler):
                 # Continue with other mappings instead of failing
 
         return mapped_context
+
+    def _build_subworkflow_binding_entry(
+        self,
+        *,
+        node: WorkflowNode,
+        subworkflow_config,
+        status: str,
+        subworkflow_template: WorkflowTemplate | None = None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        subworkflow_ref = getattr(subworkflow_config, "subworkflow_ref", None)
+        binding_mode = str(getattr(subworkflow_ref, "binding_mode", "") or "").strip() or "direct_runtime_id"
+        compatibility_subworkflow_id = str(
+            getattr(subworkflow_config, "subworkflow_id", "") or ""
+        ).strip()
+        workflow_definition_key = str(
+            getattr(subworkflow_ref, "workflow_definition_key", "") or ""
+        ).strip()
+        workflow_revision_id = str(getattr(subworkflow_ref, "workflow_revision_id", "") or "").strip()
+        workflow_revision = getattr(subworkflow_ref, "workflow_revision", None)
+
+        if workflow_definition_key and workflow_revision is not None:
+            source_ref = f"subworkflow_ref:{workflow_definition_key}@{workflow_revision}"
+        elif workflow_revision_id:
+            source_ref = f"workflow_template:{workflow_revision_id}"
+        elif compatibility_subworkflow_id:
+            source_ref = f"workflow_template:{compatibility_subworkflow_id}"
+        else:
+            source_ref = "workflow_template:unresolved"
+
+        provenance: dict[str, Any] = {
+            "node_id": node.id,
+            "node_name": node.name,
+            "binding_mode": binding_mode,
+        }
+        if compatibility_subworkflow_id:
+            provenance["compatibility_subworkflow_id"] = compatibility_subworkflow_id
+        if workflow_definition_key:
+            provenance["workflow_definition_key"] = workflow_definition_key
+        if workflow_revision_id:
+            provenance["workflow_revision_id"] = workflow_revision_id
+        if workflow_revision is not None:
+            provenance["workflow_revision"] = workflow_revision
+        if subworkflow_template is not None:
+            provenance["resolved_template_id"] = str(subworkflow_template.id)
+            provenance["resolved_template_name"] = subworkflow_template.name
+            provenance["resolved_template_version"] = int(subworkflow_template.version_number)
+            provenance["resolved_workflow_definition_key"] = str(
+                subworkflow_template.parent_version_id or subworkflow_template.id
+            )
+        if error:
+            provenance["error"] = error
+
+        entry = {
+            "target_ref": f"workflow.subworkflow.{node.id}",
+            "source_ref": source_ref,
+            "resolve_at": "runtime",
+            "sensitive": False,
+            "status": status,
+            "binding_mode": binding_mode,
+            "provenance": provenance,
+        }
+        if error:
+            entry["reason"] = error
+        return entry
+
+    def _record_subworkflow_binding_provenance(
+        self,
+        execution: WorkflowExecution,
+        entry: dict[str, Any],
+    ) -> None:
+        bindings = list(execution.bindings) if isinstance(getattr(execution, "bindings", None), list) else []
+        if bindings and bindings[-1] == entry:
+            return
+        bindings.append(entry)
+        execution.bindings = bindings
+        execution.save(update_fields=["bindings"])
+
+    def _resolve_subworkflow_template(self, subworkflow_config) -> WorkflowTemplate:
+        subworkflow_ref = getattr(subworkflow_config, "subworkflow_ref", None)
+        if (
+            subworkflow_ref is not None
+            and str(getattr(subworkflow_ref, "binding_mode", "") or "").strip() == "pinned_revision"
+        ):
+            compatibility_subworkflow_id = str(
+                getattr(subworkflow_config, "subworkflow_id", "") or ""
+            ).strip()
+            workflow_revision_id = str(getattr(subworkflow_ref, "workflow_revision_id", "") or "").strip()
+            if not workflow_revision_id:
+                raise ValueError("Pinned subworkflow binding requires workflow_revision_id")
+            if compatibility_subworkflow_id and compatibility_subworkflow_id != workflow_revision_id:
+                raise ValueError(
+                    "Pinned subworkflow conflict: "
+                    f"subworkflow_id {compatibility_subworkflow_id} does not match "
+                    f"workflow_revision_id {workflow_revision_id}"
+                )
+
+            try:
+                template = WorkflowTemplate.objects.select_related("parent_version").get(
+                    id=workflow_revision_id
+                )
+            except WorkflowTemplate.DoesNotExist as exc:
+                raise ValueError(
+                    f"Pinned subworkflow template not found: {workflow_revision_id}"
+                ) from exc
+
+            workflow_definition_key = str(
+                getattr(subworkflow_ref, "workflow_definition_key", "") or ""
+            ).strip()
+            actual_definition_key = str(template.parent_version_id or template.id)
+            if workflow_definition_key and actual_definition_key != workflow_definition_key:
+                raise ValueError(
+                    "Pinned subworkflow definition mismatch: "
+                    f"expected {workflow_definition_key}, got {actual_definition_key}"
+                )
+
+            expected_revision = getattr(subworkflow_ref, "workflow_revision", None)
+            if expected_revision is not None and int(template.version_number) != int(expected_revision):
+                raise ValueError(
+                    "Pinned subworkflow revision mismatch: "
+                    f"expected {expected_revision}, got {template.version_number}"
+                )
+
+            return template
+
+        subworkflow_id = str(getattr(subworkflow_config, "subworkflow_id", "") or "").strip()
+        try:
+            return WorkflowTemplate.objects.get(id=subworkflow_id)
+        except WorkflowTemplate.DoesNotExist as exc:
+            raise ValueError(f"Subworkflow template not found: {subworkflow_id}") from exc
 
     def _resolve_path(self, context: Dict[str, Any], path: str) -> Any:
         """

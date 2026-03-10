@@ -8,10 +8,12 @@ Tests cover:
 - Error handling and edge cases
 """
 
-import pytest
 import asyncio
 from concurrent.futures import Future
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
+from uuid import uuid4
+
+import pytest
 
 from apps.templates.workflow.handlers import (
     NodeExecutionMode,
@@ -27,6 +29,9 @@ from apps.templates.workflow.models import (
     ParallelConfig,
     LoopConfig,
     SubWorkflowConfig,
+    SubWorkflowRef,
+    WorkflowTemplate,
+    WorkflowType,
 )
 
 
@@ -302,6 +307,7 @@ class TestSubWorkflowHandler:
 
         execution = Mock(spec=WorkflowExecution)
         execution.id = "exec-123"
+        execution.bindings = []
 
         # Use valid UUID for subworkflow_id
         node = WorkflowNode(
@@ -327,6 +333,448 @@ class TestSubWorkflowHandler:
                 assert result.success is False
                 # Week 8: Should fail due to WorkflowTemplate not found (valid behavior)
                 assert ("not found" in result.error.lower() or "not available" in result.error.lower())
+
+    def test_resolve_subworkflow_template_uses_matching_pinned_subworkflow_metadata(self, db):
+        """Pinned subworkflow_ref resolves the pinned revision when metadata is consistent."""
+        handler = SubWorkflowHandler()
+
+        root = WorkflowTemplate.objects.create(
+            name=f"approval-root-{uuid4().hex[:8]}",
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure={
+                "nodes": [
+                    {
+                        "id": "noop",
+                        "name": "Noop",
+                        "type": "operation",
+                        "template_id": "noop.template",
+                    }
+                ],
+                "edges": [],
+            },
+            config={},
+            is_valid=True,
+            is_active=True,
+            version_number=1,
+        )
+        pinned_revision = WorkflowTemplate.objects.create(
+            name=root.name,
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure=root.dag_structure,
+            config=root.config,
+            is_valid=True,
+            is_active=True,
+            parent_version=root,
+            version_number=7,
+        )
+        latest_revision = WorkflowTemplate.objects.create(
+            name=root.name,
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure=root.dag_structure,
+            config=root.config,
+            is_valid=True,
+            is_active=True,
+            parent_version=root,
+            version_number=8,
+        )
+
+        subworkflow_config = SubWorkflowConfig.model_construct(
+            subworkflow_id=str(pinned_revision.id),
+            subworkflow_ref=SubWorkflowRef.model_construct(
+                binding_mode="pinned_revision",
+                workflow_definition_key=str(root.id),
+                workflow_revision_id=str(pinned_revision.id),
+                workflow_revision=7,
+            ),
+            input_mapping={},
+            output_mapping={},
+            max_depth=10,
+        )
+
+        resolved = handler._resolve_subworkflow_template(subworkflow_config)
+
+        assert str(resolved.id) == str(pinned_revision.id)
+
+    def test_execute_uses_resolved_pinned_subworkflow_revision(self, db):
+        """Runtime execution must pass resolver-selected pinned revision into WorkflowEngine."""
+        handler = SubWorkflowHandler()
+        execution = Mock(spec=WorkflowExecution)
+        execution.id = "exec-123"
+        execution.bindings = []
+
+        root = WorkflowTemplate.objects.create(
+            name=f"approval-exec-root-{uuid4().hex[:8]}",
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure={
+                "nodes": [
+                    {
+                        "id": "noop",
+                        "name": "Noop",
+                        "type": "operation",
+                        "template_id": "noop.template",
+                    }
+                ],
+                "edges": [],
+            },
+            config={},
+            is_valid=True,
+            is_active=True,
+            version_number=1,
+        )
+        pinned_revision = WorkflowTemplate.objects.create(
+            name=root.name,
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure=root.dag_structure,
+            config=root.config,
+            is_valid=True,
+            is_active=True,
+            parent_version=root,
+            version_number=7,
+        )
+
+        node = WorkflowNode.model_construct(
+            id="subworkflow_1",
+            name="SubWorkflow Node",
+            type="subworkflow",
+            subworkflow_config=SubWorkflowConfig.model_construct(
+                subworkflow_id=str(pinned_revision.id),
+                subworkflow_ref=SubWorkflowRef.model_construct(
+                    binding_mode="pinned_revision",
+                    workflow_definition_key=str(root.id),
+                    workflow_revision_id=str(pinned_revision.id),
+                    workflow_revision=7,
+                ),
+                input_mapping={},
+                output_mapping={},
+                max_depth=10,
+            ),
+        )
+
+        captured_template_ids: list[str] = []
+        nested_execution = Mock(spec=WorkflowExecution)
+        nested_execution.final_result = {"approval": {"status": "ok"}}
+
+        with patch.object(handler, "_create_step_result") as mock_create:
+            with patch.object(handler, "_update_step_result"):
+                mock_create.return_value = Mock(spec=WorkflowStepResult)
+                with patch("apps.templates.workflow.engine.WorkflowEngine") as mock_engine_cls:
+                    mock_engine = mock_engine_cls.return_value
+                    with patch.object(
+                        handler,
+                        "_resolve_subworkflow_template",
+                        return_value=pinned_revision,
+                    ) as mock_resolve:
+
+                        async def _execute_workflow(template, input_context):
+                            captured_template_ids.append(str(template.id))
+                            return nested_execution
+
+                        mock_engine.execute_workflow = AsyncMock(side_effect=_execute_workflow)
+
+                        result = asyncio.run(handler.execute(node, {}, execution))
+
+        assert result.success is True
+        mock_resolve.assert_called_once_with(node.subworkflow_config)
+        assert captured_template_ids == [str(pinned_revision.id)]
+
+    def test_execute_records_pinned_subworkflow_provenance_in_execution_bindings(self, db):
+        """Successful pinned subworkflow execution must persist immutable provenance on parent execution."""
+        handler = SubWorkflowHandler()
+        execution = Mock(spec=WorkflowExecution)
+        execution.id = "exec-123"
+        execution.bindings = []
+
+        root = WorkflowTemplate.objects.create(
+            name=f"approval-provenance-root-{uuid4().hex[:8]}",
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure={
+                "nodes": [
+                    {
+                        "id": "noop",
+                        "name": "Noop",
+                        "type": "operation",
+                        "template_id": "noop.template",
+                    }
+                ],
+                "edges": [],
+            },
+            config={},
+            is_valid=True,
+            is_active=True,
+            version_number=1,
+        )
+        pinned_revision = WorkflowTemplate.objects.create(
+            name=root.name,
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure=root.dag_structure,
+            config=root.config,
+            is_valid=True,
+            is_active=True,
+            parent_version=root,
+            version_number=7,
+        )
+
+        node = WorkflowNode.model_construct(
+            id="subworkflow_1",
+            name="SubWorkflow Node",
+            type="subworkflow",
+            subworkflow_config=SubWorkflowConfig.model_construct(
+                subworkflow_id=str(pinned_revision.id),
+                subworkflow_ref=SubWorkflowRef.model_construct(
+                    binding_mode="pinned_revision",
+                    workflow_definition_key=str(root.id),
+                    workflow_revision_id=str(pinned_revision.id),
+                    workflow_revision=7,
+                ),
+                input_mapping={},
+                output_mapping={},
+                max_depth=10,
+            ),
+        )
+        nested_execution = Mock(spec=WorkflowExecution)
+        nested_execution.final_result = {"approval": {"status": "ok"}}
+
+        with patch.object(handler, "_create_step_result") as mock_create:
+            with patch.object(handler, "_update_step_result"):
+                mock_create.return_value = Mock(spec=WorkflowStepResult)
+                with patch("apps.templates.workflow.engine.WorkflowEngine") as mock_engine_cls:
+                    mock_engine_cls.return_value.execute_workflow = AsyncMock(
+                        return_value=nested_execution
+                    )
+                    with patch.object(
+                        handler,
+                        "_resolve_subworkflow_template",
+                        return_value=pinned_revision,
+                    ):
+
+                        result = asyncio.run(handler.execute(node, {}, execution))
+
+        assert result.success is True
+        assert len(execution.bindings) == 1
+        binding = execution.bindings[0]
+        assert binding["target_ref"] == "workflow.subworkflow.subworkflow_1"
+        assert binding["source_ref"] == f"subworkflow_ref:{root.id}@7"
+        assert binding["status"] == "applied"
+        assert binding["binding_mode"] == "pinned_revision"
+        assert binding["provenance"]["workflow_revision_id"] == str(pinned_revision.id)
+        assert binding["provenance"]["resolved_template_id"] == str(pinned_revision.id)
+        assert binding["provenance"]["resolved_template_version"] == 7
+        execution.save.assert_called_with(update_fields=["bindings"])
+
+    def test_execute_records_failed_pinned_subworkflow_provenance_for_conflict(self, db):
+        """Conflicting pinned metadata must surface as failed provenance in parent execution diagnostics."""
+        handler = SubWorkflowHandler()
+        execution = Mock(spec=WorkflowExecution)
+        execution.id = "exec-123"
+        execution.bindings = []
+
+        root = WorkflowTemplate.objects.create(
+            name=f"approval-failed-provenance-root-{uuid4().hex[:8]}",
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure={
+                "nodes": [
+                    {
+                        "id": "noop",
+                        "name": "Noop",
+                        "type": "operation",
+                        "template_id": "noop.template",
+                    }
+                ],
+                "edges": [],
+            },
+            config={},
+            is_valid=True,
+            is_active=True,
+            version_number=1,
+        )
+        pinned_revision = WorkflowTemplate.objects.create(
+            name=root.name,
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure=root.dag_structure,
+            config=root.config,
+            is_valid=True,
+            is_active=True,
+            parent_version=root,
+            version_number=7,
+        )
+        conflicting_revision = WorkflowTemplate.objects.create(
+            name=root.name,
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure=root.dag_structure,
+            config=root.config,
+            is_valid=True,
+            is_active=True,
+            parent_version=root,
+            version_number=8,
+        )
+
+        node = WorkflowNode.model_construct(
+            id="subworkflow_1",
+            name="SubWorkflow Node",
+            type="subworkflow",
+            subworkflow_config=SubWorkflowConfig.model_construct(
+                subworkflow_id=str(conflicting_revision.id),
+                subworkflow_ref=SubWorkflowRef.model_construct(
+                    binding_mode="pinned_revision",
+                    workflow_definition_key=str(root.id),
+                    workflow_revision_id=str(pinned_revision.id),
+                    workflow_revision=7,
+                ),
+                input_mapping={},
+                output_mapping={},
+                max_depth=10,
+            ),
+        )
+
+        with patch.object(handler, "_create_step_result") as mock_create:
+            with patch.object(handler, "_update_step_result"):
+                mock_create.return_value = Mock(spec=WorkflowStepResult)
+
+                result = asyncio.run(handler.execute(node, {}, execution))
+
+        assert result.success is False
+        assert "Pinned subworkflow conflict" in (result.error or "")
+        assert len(execution.bindings) == 1
+        binding = execution.bindings[0]
+        assert binding["target_ref"] == "workflow.subworkflow.subworkflow_1"
+        assert binding["source_ref"] == f"subworkflow_ref:{root.id}@7"
+        assert binding["status"] == "failed"
+        assert binding["binding_mode"] == "pinned_revision"
+        assert "Pinned subworkflow conflict" in binding["reason"]
+        assert binding["provenance"]["compatibility_subworkflow_id"] == str(conflicting_revision.id)
+        assert binding["provenance"]["workflow_revision_id"] == str(pinned_revision.id)
+        execution.save.assert_called_with(update_fields=["bindings"])
+
+    def test_resolve_subworkflow_template_rejects_conflicting_pinned_metadata(self, db):
+        """Conflicting compatibility and pinned metadata must fail closed."""
+        handler = SubWorkflowHandler()
+
+        root = WorkflowTemplate.objects.create(
+            name=f"approval-conflict-root-{uuid4().hex[:8]}",
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure={
+                "nodes": [
+                    {
+                        "id": "noop",
+                        "name": "Noop",
+                        "type": "operation",
+                        "template_id": "noop.template",
+                    }
+                ],
+                "edges": [],
+            },
+            config={},
+            is_valid=True,
+            is_active=True,
+            version_number=1,
+        )
+        pinned_revision = WorkflowTemplate.objects.create(
+            name=root.name,
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure=root.dag_structure,
+            config=root.config,
+            is_valid=True,
+            is_active=True,
+            parent_version=root,
+            version_number=7,
+        )
+        conflicting_revision = WorkflowTemplate.objects.create(
+            name=root.name,
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure=root.dag_structure,
+            config=root.config,
+            is_valid=True,
+            is_active=True,
+            parent_version=root,
+            version_number=8,
+        )
+
+        subworkflow_config = SubWorkflowConfig.model_construct(
+            subworkflow_id=str(conflicting_revision.id),
+            subworkflow_ref=SubWorkflowRef.model_construct(
+                binding_mode="pinned_revision",
+                workflow_definition_key=str(root.id),
+                workflow_revision_id=str(pinned_revision.id),
+                workflow_revision=7,
+            ),
+            input_mapping={},
+            output_mapping={},
+            max_depth=10,
+        )
+
+        with pytest.raises(ValueError, match="Pinned subworkflow conflict"):
+            handler._resolve_subworkflow_template(subworkflow_config)
+
+    def test_resolve_subworkflow_template_rejects_drifted_pinned_revision(self, db):
+        """Pinned subworkflow revision drift must fail closed."""
+        handler = SubWorkflowHandler()
+
+        root = WorkflowTemplate.objects.create(
+            name=f"approval-drift-root-{uuid4().hex[:8]}",
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure={
+                "nodes": [
+                    {
+                        "id": "noop",
+                        "name": "Noop",
+                        "type": "operation",
+                        "template_id": "noop.template",
+                    }
+                ],
+                "edges": [],
+            },
+            config={},
+            is_valid=True,
+            is_active=True,
+            version_number=1,
+        )
+        pinned_revision = WorkflowTemplate.objects.create(
+            name=root.name,
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure=root.dag_structure,
+            config=root.config,
+            is_valid=True,
+            is_active=True,
+            parent_version=root,
+            version_number=7,
+        )
+
+        subworkflow_config = SubWorkflowConfig.model_construct(
+            subworkflow_id=str(pinned_revision.id),
+            subworkflow_ref=SubWorkflowRef.model_construct(
+                binding_mode="pinned_revision",
+                workflow_definition_key=str(root.id),
+                workflow_revision_id=str(pinned_revision.id),
+                workflow_revision=8,
+            ),
+            input_mapping={},
+            output_mapping={},
+            max_depth=10,
+        )
+
+        with pytest.raises(ValueError, match="Pinned subworkflow revision mismatch"):
+            handler._resolve_subworkflow_template(subworkflow_config)
+
+    def test_resolve_subworkflow_template_rejects_missing_pinned_revision(self, db):
+        """Missing pinned subworkflow revision must fail closed."""
+        handler = SubWorkflowHandler()
+
+        missing_revision_id = str(uuid4())
+        subworkflow_config = SubWorkflowConfig.model_construct(
+            subworkflow_id=missing_revision_id,
+            subworkflow_ref=SubWorkflowRef.model_construct(
+                binding_mode="pinned_revision",
+                workflow_definition_key=str(uuid4()),
+                workflow_revision_id=missing_revision_id,
+                workflow_revision=7,
+            ),
+            input_mapping={},
+            output_mapping={},
+            max_depth=10,
+        )
+
+        with pytest.raises(ValueError, match="Pinned subworkflow template not found"):
+            handler._resolve_subworkflow_template(subworkflow_config)
 
     def test_missing_subworkflow_config(self, db):
         """Test error when subworkflow_config is missing (Pydantic validation)."""
