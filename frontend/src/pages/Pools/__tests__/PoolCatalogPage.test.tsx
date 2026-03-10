@@ -98,6 +98,7 @@ let initialCatalogLoadPromise: Promise<void> | null = null
 function buildPoolWorkflowBinding(overrides: Partial<PoolWorkflowBinding> = {}): PoolWorkflowBinding {
   return {
     binding_id: 'binding-top-down',
+    revision: 1,
     workflow: {
       workflow_definition_key: 'services-publication',
       workflow_revision_id: '11111111-1111-1111-1111-111111111111',
@@ -709,9 +710,50 @@ describe('PoolCatalogPage', () => {
     await waitFor(() => expect(mockDeletePoolWorkflowBinding).toHaveBeenCalledTimes(1))
     expect(mockDeletePoolWorkflowBinding).toHaveBeenCalledWith(
       '44444444-4444-4444-4444-444444444444',
-      'binding-top-down'
+      'binding-top-down',
+      1
     )
     expect(mockUpsertPoolWorkflowBinding).not.toHaveBeenCalled()
+  }, 15000)
+
+  it('preserves revision when saving existing workflow bindings', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    const existingBinding = buildPoolWorkflowBinding({
+      binding_id: 'binding-existing',
+      revision: 3,
+    })
+    mockListOrganizationPools.mockResolvedValueOnce([
+      {
+        id: '44444444-4444-4444-4444-444444444444',
+        code: 'pool-1',
+        name: 'Pool One',
+        description: 'Main pool',
+        is_active: true,
+        metadata: {},
+        workflow_bindings: [existingBinding],
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ])
+    mockListPoolWorkflowBindings.mockResolvedValueOnce([existingBinding])
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Pools')
+    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await user.click(screen.getByTestId('pool-catalog-save-pool'))
+
+    await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledTimes(1))
+    expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledWith({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      workflow_binding: expect.objectContaining({
+        binding_id: 'binding-existing',
+        revision: 3,
+      }),
+    })
   }, 15000)
 
   it('submits workflow bindings from pool drawer via structured editor', async () => {

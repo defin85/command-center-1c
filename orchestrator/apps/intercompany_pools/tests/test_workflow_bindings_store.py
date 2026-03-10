@@ -8,6 +8,9 @@ from django.core.exceptions import ValidationError
 from apps.intercompany_pools.models import OrganizationPool, PoolWorkflowBinding
 from apps.intercompany_pools.workflow_bindings_store import (
     PoolWorkflowBindingNotFoundError,
+    PoolWorkflowBindingRevisionConflictError,
+    PoolWorkflowBindingStoreError,
+    delete_canonical_pool_workflow_binding,
     get_canonical_pool_workflow_binding,
     list_canonical_pool_workflow_bindings,
     upsert_canonical_pool_workflow_binding,
@@ -78,6 +81,7 @@ def test_upsert_canonical_pool_workflow_binding_persists_required_fields() -> No
     assert record.revision == 1
     assert record.created_by == "architect"
     assert record.updated_by == "architect"
+    assert saved_binding["revision"] == 1
 
     listed = list_canonical_pool_workflow_bindings(pool=pool)
     assert listed == [saved_binding]
@@ -96,6 +100,115 @@ def test_get_canonical_pool_workflow_binding_raises_for_missing_record() -> None
 
     with pytest.raises(PoolWorkflowBindingNotFoundError):
         get_canonical_pool_workflow_binding(pool=pool, binding_id="missing-binding")
+
+
+@pytest.mark.django_db
+def test_upsert_canonical_pool_workflow_binding_requires_matching_revision_for_update() -> None:
+    tenant = Tenant.objects.create(slug=f"binding-store-revision-{uuid4().hex[:8]}", name="Revision Tenant")
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code=f"pool-{uuid4().hex[:6]}",
+        name="Revision Pool",
+    )
+    created_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=_build_binding_payload(pool=pool),
+        actor_username="creator",
+    )
+
+    updated_binding, created = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding={
+            **created_binding,
+            "revision": created_binding["revision"],
+            "status": "inactive",
+        },
+        actor_username="editor",
+    )
+
+    assert created is False
+    assert updated_binding["revision"] == 2
+    assert updated_binding["status"] == "inactive"
+    record = PoolWorkflowBinding.objects.get(binding_id=created_binding["binding_id"])
+    assert record.revision == 2
+    assert record.updated_by == "editor"
+
+
+@pytest.mark.django_db
+def test_upsert_canonical_pool_workflow_binding_raises_conflict_for_stale_revision() -> None:
+    tenant = Tenant.objects.create(slug=f"binding-store-conflict-{uuid4().hex[:8]}", name="Conflict Tenant")
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code=f"pool-{uuid4().hex[:6]}",
+        name="Conflict Pool",
+    )
+    created_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=_build_binding_payload(pool=pool),
+        actor_username="creator",
+    )
+    upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding={
+            **created_binding,
+            "revision": created_binding["revision"],
+            "status": "inactive",
+        },
+        actor_username="editor",
+    )
+
+    with pytest.raises(PoolWorkflowBindingRevisionConflictError) as exc_info:
+        upsert_canonical_pool_workflow_binding(
+            pool=pool,
+            workflow_binding={
+                **created_binding,
+                "revision": created_binding["revision"],
+                "status": "draft",
+            },
+            actor_username="stale-editor",
+        )
+
+    assert exc_info.value.binding_id == created_binding["binding_id"]
+    assert exc_info.value.expected_revision == 1
+    assert exc_info.value.actual_revision == 2
+
+
+@pytest.mark.django_db
+def test_delete_canonical_pool_workflow_binding_requires_matching_revision() -> None:
+    tenant = Tenant.objects.create(slug=f"binding-store-delete-{uuid4().hex[:8]}", name="Delete Tenant")
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code=f"pool-{uuid4().hex[:6]}",
+        name="Delete Pool",
+    )
+    created_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=_build_binding_payload(pool=pool),
+        actor_username="creator",
+    )
+
+    with pytest.raises(PoolWorkflowBindingStoreError, match="revision is required"):
+        delete_canonical_pool_workflow_binding(pool=pool, binding_id=created_binding["binding_id"])
+
+    with pytest.raises(PoolWorkflowBindingRevisionConflictError) as exc_info:
+        delete_canonical_pool_workflow_binding(
+            pool=pool,
+            binding_id=created_binding["binding_id"],
+            revision=created_binding["revision"] + 1,
+        )
+
+    assert exc_info.value.expected_revision == 2
+    assert exc_info.value.actual_revision == 1
+
+    deleted_binding = delete_canonical_pool_workflow_binding(
+        pool=pool,
+        binding_id=created_binding["binding_id"],
+        revision=created_binding["revision"],
+    )
+
+    assert deleted_binding["binding_id"] == created_binding["binding_id"]
+    assert deleted_binding["revision"] == 1
+    assert list_canonical_pool_workflow_bindings(pool=pool) == []
 
 
 @pytest.mark.django_db

@@ -30,6 +30,7 @@ export type PoolWorkflowBindingFormValue = {
   contract_version?: string
   binding_id?: string
   pool_id?: string
+  revision?: number | string | null
   workflow_definition_key?: string
   workflow_revision_id?: string
   workflow_revision?: number | string | null
@@ -151,6 +152,7 @@ export const getWorkflowBindingCardSummary = (
 
 export const createEmptyWorkflowBindingFormValue = (): PoolWorkflowBindingFormValue => ({
   binding_id: '',
+  revision: null,
   workflow_definition_key: '',
   workflow_revision_id: '',
   workflow_revision: null,
@@ -187,6 +189,7 @@ export const workflowBindingsToFormValues = (
     contract_version: binding.contract_version,
     binding_id: binding.binding_id ?? '',
     pool_id: binding.pool_id ?? '',
+    revision: binding.revision ?? null,
     workflow_definition_key: binding.workflow.workflow_definition_key,
     workflow_revision_id: binding.workflow.workflow_revision_id,
     workflow_revision: binding.workflow.workflow_revision,
@@ -348,9 +351,11 @@ export const buildWorkflowBindingsFromForm = (
     const workflowDefinitionKey = String(binding?.workflow_definition_key ?? '').trim()
     const workflowRevisionId = String(binding?.workflow_revision_id ?? '').trim()
     const workflowRevisionRaw = String(binding?.workflow_revision ?? '').trim()
+    const revisionRaw = String(binding?.revision ?? '').trim()
     const workflowName = String(binding?.workflow_name ?? '').trim()
     const effectiveFrom = String(binding?.effective_from ?? '').trim()
     const effectiveTo = String(binding?.effective_to ?? '').trim()
+    const bindingId = String(binding?.binding_id ?? '').trim()
 
     if (!workflowDefinitionKey) {
       errors.push(`${bindingLabel}: workflow_definition_key обязателен.`)
@@ -367,6 +372,9 @@ export const buildWorkflowBindingsFromForm = (
     if (!effectiveFrom) {
       errors.push(`${bindingLabel}: effective_from обязателен.`)
     }
+    if (bindingId && !revisionRaw) {
+      errors.push(`${bindingLabel}: revision обязателен для обновления существующего binding.`)
+    }
     if (effectiveTo && effectiveFrom && effectiveTo < effectiveFrom) {
       errors.push(`${bindingLabel}: effective_to не может быть раньше effective_from.`)
     }
@@ -374,6 +382,10 @@ export const buildWorkflowBindingsFromForm = (
     const workflowRevision = Number(workflowRevisionRaw)
     if (workflowRevisionRaw && (!Number.isInteger(workflowRevision) || workflowRevision <= 0)) {
       errors.push(`${bindingLabel}: workflow_revision должен быть положительным integer.`)
+    }
+    const revision = Number(revisionRaw)
+    if (revisionRaw && (!Number.isInteger(revision) || revision <= 0)) {
+      errors.push(`${bindingLabel}: revision должен быть положительным integer.`)
     }
 
     const decisions = buildDecisions(binding?.decisions, bindingLabel, errors)
@@ -407,6 +419,7 @@ export const buildWorkflowBindingsFromForm = (
       ...(String(binding?.pool_id ?? '').trim()
         ? { pool_id: String(binding?.pool_id).trim() }
         : {}),
+      ...(revisionRaw ? { revision } : {}),
       workflow: {
         workflow_definition_key: workflowDefinitionKey,
         workflow_revision_id: workflowRevisionId,

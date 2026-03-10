@@ -30,7 +30,6 @@ import { useDatabases } from '../../api/queries/databases'
 import { useMe } from '../../api/queries/me'
 import { useMyTenants } from '../../api/queries/tenants'
 import {
-  deletePoolWorkflowBinding,
   getOrganization,
   getPoolGraph,
   getPoolODataMetadataCatalog,
@@ -44,7 +43,6 @@ import {
   listOrganizations,
   refreshPoolODataMetadataCatalog,
   syncOrganizationsCatalog,
-  upsertPoolWorkflowBinding,
   upsertOrganizationPool,
   upsertOrganization,
   upsertPoolTopologySnapshot,
@@ -59,7 +57,6 @@ import {
   type PoolMasterTaxProfile,
   type PoolODataMetadataCatalogDocument,
   type PoolODataMetadataCatalogResponse,
-  type PoolWorkflowBinding,
   type PoolTopologySnapshotPeriod,
   type PoolTopologySnapshotEdgeInput,
   type PoolTopologySnapshotNodeInput,
@@ -72,6 +69,7 @@ import {
   workflowBindingsToFormValues,
   type PoolWorkflowBindingFormValue,
 } from './poolWorkflowBindingsForm'
+import { syncPoolWorkflowBindings } from './poolWorkflowBindingsSync'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -214,37 +212,6 @@ const ORGANIZATION_FORM_FIELDS: Array<keyof OrganizationFormValues> = [
 type SyncPreflightResult = {
   rows: Array<Record<string, unknown>>
   errors: string[]
-}
-
-const syncPoolWorkflowBindings = async ({
-  poolId,
-  previousBindings,
-  nextBindings,
-}: {
-  poolId: string
-  previousBindings: PoolWorkflowBinding[]
-  nextBindings: PoolWorkflowBinding[]
-}) => {
-  const retainedBindingIds = new Set(
-    nextBindings
-      .map((binding) => String(binding.binding_id ?? '').trim())
-      .filter(Boolean)
-  )
-
-  for (const binding of nextBindings) {
-    await upsertPoolWorkflowBinding({
-      pool_id: poolId,
-      workflow_binding: binding,
-    })
-  }
-
-  for (const binding of previousBindings) {
-    const bindingId = String(binding.binding_id ?? '').trim()
-    if (!bindingId || retainedBindingIds.has(bindingId)) {
-      continue
-    }
-    await deletePoolWorkflowBinding(poolId, bindingId)
-  }
 }
 
 const formatDate = (value: string | null | undefined) => {

@@ -259,28 +259,35 @@ async function setupApiMocks(page: Page, state: {
         ? { ...(payload.workflow_binding as AnyRecord) }
         : {}
       const bindingId = String(workflowBinding.binding_id || `binding-${state.bindingUpsertCalls! + 1}`)
+      const existingBindings = Array.isArray(pool.workflow_bindings) ? [...pool.workflow_bindings] : []
+      const existingBinding = existingBindings.find((item) => String(item.binding_id || '') === bindingId)
+      const nextRevision = existingBinding ? Number(existingBinding.revision || 1) + 1 : 1
       workflowBinding.binding_id = bindingId
       workflowBinding.pool_id = poolId
+      workflowBinding.revision = nextRevision
       state.bindingUpsertCalls! += 1
       state.lastBindingPayload = payload
 
-      const existingBindings = Array.isArray(pool.workflow_bindings) ? [...pool.workflow_bindings] : []
       const nextBindings = existingBindings.filter((item) => String(item.binding_id || '') !== bindingId)
       nextBindings.push(workflowBinding)
       pool.workflow_bindings = nextBindings
       pool.updated_at = '2026-01-01T00:00:00Z'
-      return fulfillJson(route, { pool_id: poolId, workflow_binding: workflowBinding, created: existingBindings.length === nextBindings.length - 1 }, 201)
+      return fulfillJson(route, { pool_id: poolId, workflow_binding: workflowBinding, created: existingBinding == null }, existingBinding == null ? 201 : 200)
     }
 
     if (method === 'DELETE' && path.startsWith('/api/v2/pools/workflow-bindings/')) {
       const bindingId = path.split('/')[5] || ''
       const poolId = String(url.searchParams.get('pool_id') || '')
+      const revision = Number(url.searchParams.get('revision') || '')
       const pool = pools.find((item) => String(item.id) === poolId)
       if (!pool) {
         return fulfillJson(route, { type: 'about:blank', title: 'Pool Not Found', status: 404, detail: 'Pool not found.' }, 404)
       }
       const existingBindings = Array.isArray(pool.workflow_bindings) ? [...pool.workflow_bindings] : []
       const binding = existingBindings.find((item) => String(item.binding_id || '') === bindingId)
+      if (!Number.isInteger(revision) || revision <= 0) {
+        return fulfillJson(route, { type: 'about:blank', title: 'Validation Error', status: 400, detail: 'revision is required.' }, 400)
+      }
       pool.workflow_bindings = existingBindings.filter((item) => String(item.binding_id || '') !== bindingId)
       state.bindingDeleteCalls! += 1
       return fulfillJson(route, { pool_id: poolId, workflow_binding: binding ?? { binding_id: bindingId }, deleted: true })

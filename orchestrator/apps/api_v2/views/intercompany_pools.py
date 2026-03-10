@@ -94,6 +94,7 @@ from apps.intercompany_pools.workflow_binding_resolution import (
 )
 from apps.intercompany_pools.workflow_bindings_store import (
     PoolWorkflowBindingNotFoundError,
+    PoolWorkflowBindingRevisionConflictError,
     PoolWorkflowBindingStoreError,
     delete_pool_workflow_binding as delete_stored_pool_workflow_binding,
     get_pool_workflow_binding as get_stored_pool_workflow_binding,
@@ -267,6 +268,26 @@ def _safe_command_conflict_payload(*, run_id: UUID, conflict_reason: str | None)
         "retryable": retryable,
         "run_id": str(run_id),
     }
+
+
+def _binding_revision_conflict_problem(exc: PoolWorkflowBindingRevisionConflictError) -> Response:
+    return _problem(
+        code="POOL_WORKFLOW_BINDING_REVISION_CONFLICT",
+        title="Pool Workflow Binding Revision Conflict",
+        detail=(
+            "Workflow binding was changed by another session. "
+            "Reload binding data and retry with the latest revision."
+        ),
+        status_code=http_status.HTTP_409_CONFLICT,
+        errors=[
+            {
+                "binding_id": exc.binding_id,
+                "expected_revision": exc.expected_revision,
+                "actual_revision": exc.actual_revision,
+                "operation": exc.operation,
+            }
+        ],
+    )
 
 
 def _resolve_tenant_id(request) -> str | None:
@@ -2299,6 +2320,7 @@ class PoolWorkflowBindingSelectorInputSerializer(serializers.Serializer):
 class PoolWorkflowBindingInputSerializer(serializers.Serializer):
     binding_id = serializers.CharField(required=False, allow_blank=False)
     pool_id = serializers.UUIDField(required=False)
+    revision = serializers.IntegerField(min_value=1, required=False)
     workflow = WorkflowDefinitionRefInputSerializer()
     decisions = DecisionTableRefInputSerializer(many=True, required=False, default=list)
     parameters = serializers.JSONField(required=False, default=dict)
@@ -2319,6 +2341,11 @@ class PoolWorkflowBindingInputSerializer(serializers.Serializer):
 
 class PoolWorkflowBindingScopeQuerySerializer(serializers.Serializer):
     pool_id = serializers.UUIDField()
+
+
+class PoolWorkflowBindingDeleteQuerySerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    revision = serializers.IntegerField(min_value=1)
 
 
 class PoolWorkflowBindingListResponseSerializer(serializers.Serializer):
@@ -2857,7 +2884,12 @@ def list_pool_workflow_bindings(request):
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    serializer = PoolWorkflowBindingScopeQuerySerializer(data=request.query_params)
+    serializer_class = (
+        PoolWorkflowBindingDeleteQuerySerializer
+        if request.method == "DELETE"
+        else PoolWorkflowBindingScopeQuerySerializer
+    )
+    serializer = serializer_class(data=request.query_params)
     if not serializer.is_valid():
         return _problem(
             code="VALIDATION_ERROR",
@@ -2952,6 +2984,8 @@ def upsert_pool_workflow_binding(request):
                 else ""
             ),
         )
+    except PoolWorkflowBindingRevisionConflictError as exc:
+        return _binding_revision_conflict_problem(exc)
     except PoolWorkflowBindingStoreError as exc:
         return _problem(
             code="VALIDATION_ERROR",
@@ -3015,7 +3049,12 @@ def pool_workflow_binding_detail(request, binding_id: str):
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    serializer = PoolWorkflowBindingScopeQuerySerializer(data=request.query_params)
+    serializer_class = (
+        PoolWorkflowBindingDeleteQuerySerializer
+        if request.method == "DELETE"
+        else PoolWorkflowBindingScopeQuerySerializer
+    )
+    serializer = serializer_class(data=request.query_params)
     if not serializer.is_valid():
         return _problem(
             code="VALIDATION_ERROR",
@@ -3064,7 +3103,13 @@ def pool_workflow_binding_detail(request, binding_id: str):
         )
 
     try:
-        deleted_binding = delete_stored_pool_workflow_binding(pool=pool, binding_id=binding_id)
+        deleted_binding = delete_stored_pool_workflow_binding(
+            pool=pool,
+            binding_id=binding_id,
+            revision=serializer.validated_data["revision"],
+        )
+    except PoolWorkflowBindingRevisionConflictError as exc:
+        return _binding_revision_conflict_problem(exc)
     except PoolWorkflowBindingResolutionError as exc:
         return _problem(
             code=exc.code,

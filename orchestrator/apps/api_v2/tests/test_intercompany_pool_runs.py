@@ -1458,6 +1458,8 @@ def test_pool_workflow_bindings_list_exposes_multiple_pinned_bindings(
         first_binding["binding_id"],
         second_binding["binding_id"],
     ]
+    assert payload["bindings"][0]["revision"] == 1
+    assert payload["bindings"][1]["revision"] == 1
     assert payload["bindings"][0]["workflow"]["workflow_revision"] == 3
     assert payload["bindings"][1]["workflow"]["workflow_revision"] == 5
 
@@ -1492,6 +1494,7 @@ def test_pool_workflow_binding_upsert_creates_and_updates_first_class_binding(
     binding_id = created_payload["workflow_binding"]["binding_id"]
     assert binding_id
     assert created_payload["workflow_binding"]["pool_id"] == str(pool.id)
+    assert created_payload["workflow_binding"]["revision"] == 1
     assert created_payload["workflow_binding"]["workflow"]["workflow_definition_key"] == "services-publication"
 
     update_response = authenticated_client.post(
@@ -1500,6 +1503,7 @@ def test_pool_workflow_binding_upsert_creates_and_updates_first_class_binding(
             "pool_id": str(pool.id),
             "workflow_binding": {
                 "binding_id": binding_id,
+                "revision": created_payload["workflow_binding"]["revision"],
                 "workflow": {
                     "workflow_definition_key": "services-publication",
                     "workflow_revision_id": "11111111-1111-1111-1111-111111111111",
@@ -1519,6 +1523,7 @@ def test_pool_workflow_binding_upsert_creates_and_updates_first_class_binding(
     updated_payload = update_response.json()
     assert updated_payload["created"] is False
     assert updated_payload["workflow_binding"]["binding_id"] == binding_id
+    assert updated_payload["workflow_binding"]["revision"] == 2
     assert updated_payload["workflow_binding"]["workflow"]["workflow_revision"] == 4
     assert updated_payload["workflow_binding"]["effective_to"] == "2026-12-31"
     assert updated_payload["workflow_binding"]["status"] == "inactive"
@@ -1527,7 +1532,102 @@ def test_pool_workflow_binding_upsert_creates_and_updates_first_class_binding(
     bindings = list_pool_workflow_bindings(pool=pool)
     assert len(bindings) == 1
     assert bindings[0]["binding_id"] == binding_id
+    assert bindings[0]["revision"] == 2
     assert bindings[0]["selector"]["tags"] == ["baseline", "monthly"]
+
+
+@pytest.mark.django_db
+def test_pool_workflow_binding_upsert_requires_revision_for_update(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+    )
+    upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=binding,
+        actor_username="pool-update-revision-test",
+    )
+
+    response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": {
+                **binding,
+                "status": "inactive",
+            },
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="VALIDATION_ERROR",
+    )
+    assert "revision is required" in payload["detail"]
+
+
+@pytest.mark.django_db
+def test_pool_workflow_binding_upsert_returns_conflict_for_stale_revision(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+    )
+    created_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=binding,
+        actor_username="pool-update-stale-test",
+    )
+    upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding={
+            **created_binding,
+            "revision": created_binding["revision"],
+            "status": "inactive",
+        },
+        actor_username="pool-update-winner-test",
+    )
+
+    response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": {
+                **created_binding,
+                "revision": created_binding["revision"],
+                "status": "draft",
+            },
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=409,
+        code="POOL_WORKFLOW_BINDING_REVISION_CONFLICT",
+    )
+    assert "latest revision" in payload["detail"]
+    assert payload["errors"] == [
+        {
+            "binding_id": binding["binding_id"],
+            "expected_revision": 1,
+            "actual_revision": 2,
+            "operation": "update",
+        }
+    ]
 
 
 @pytest.mark.django_db
@@ -1547,18 +1647,97 @@ def test_pool_workflow_binding_delete_removes_binding_from_pool(
         workflow_binding=binding,
         actor_username="pool-delete-test",
     )
+    stored_binding = list_pool_workflow_bindings(pool=pool)[0]
 
     response = authenticated_client.delete(
-        f"/api/v2/pools/workflow-bindings/{binding['binding_id']}/?pool_id={pool.id}"
+        f"/api/v2/pools/workflow-bindings/{binding['binding_id']}/?pool_id={pool.id}&revision={stored_binding['revision']}"
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["deleted"] is True
     assert payload["workflow_binding"]["binding_id"] == binding["binding_id"]
+    assert payload["workflow_binding"]["revision"] == 1
 
     pool.refresh_from_db()
     assert list_pool_workflow_bindings(pool=pool) == []
+
+
+@pytest.mark.django_db
+def test_pool_workflow_binding_delete_requires_revision_query_param(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+    )
+    upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=binding,
+        actor_username="pool-delete-missing-revision-test",
+    )
+
+    response = authenticated_client.delete(
+        f"/api/v2/pools/workflow-bindings/{binding['binding_id']}/?pool_id={pool.id}"
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="VALIDATION_ERROR",
+    )
+    assert "revision" in payload["detail"]
+
+
+@pytest.mark.django_db
+def test_pool_workflow_binding_delete_returns_conflict_for_stale_revision(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+    )
+    created_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=binding,
+        actor_username="pool-delete-stale-test",
+    )
+    updated_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding={
+            **created_binding,
+            "revision": created_binding["revision"],
+            "status": "inactive",
+        },
+        actor_username="pool-delete-winner-test",
+    )
+
+    response = authenticated_client.delete(
+        f"/api/v2/pools/workflow-bindings/{binding['binding_id']}/?pool_id={pool.id}&revision={created_binding['revision']}"
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=409,
+        code="POOL_WORKFLOW_BINDING_REVISION_CONFLICT",
+    )
+    assert "latest revision" in payload["detail"]
+    assert payload["errors"] == [
+        {
+            "binding_id": binding["binding_id"],
+            "expected_revision": 1,
+            "actual_revision": updated_binding["revision"],
+            "operation": "delete",
+        }
+    ]
 
 
 @pytest.mark.django_db
@@ -1587,6 +1766,7 @@ def test_pool_workflow_binding_detail_reads_first_class_binding(
     payload = response.json()
     assert payload["workflow_binding"]["binding_id"] == binding["binding_id"]
     assert payload["workflow_binding"]["pool_id"] == str(pool.id)
+    assert payload["workflow_binding"]["revision"] == 1
     assert payload["workflow_binding"]["workflow"]["workflow_revision"] == 3
 
 

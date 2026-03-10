@@ -54,6 +54,7 @@ export type PoolWorkflowBinding = {
   contract_version?: string
   binding_id?: string
   pool_id?: string
+  revision?: number
   workflow: WorkflowDefinitionRef
   decisions?: DecisionTableRef[]
   parameters?: Record<string, unknown>
@@ -637,7 +638,8 @@ export async function upsertPoolWorkflowBinding(
 
 export async function deletePoolWorkflowBinding(
   poolId: string,
-  bindingId: string
+  bindingId: string,
+  revision: number
 ): Promise<{ pool_id: string; workflow_binding: PoolWorkflowBinding; deleted: boolean }> {
   const response = await apiClient.delete<{
     pool_id: string
@@ -646,7 +648,7 @@ export async function deletePoolWorkflowBinding(
   }>(
     `/api/v2/pools/workflow-bindings/${encodeURIComponent(bindingId)}/`,
     {
-      params: { pool_id: poolId },
+      params: { pool_id: poolId, revision },
       skipGlobalError: true,
     }
   )
