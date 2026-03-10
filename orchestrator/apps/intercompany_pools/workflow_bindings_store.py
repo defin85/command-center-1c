@@ -5,7 +5,6 @@ from uuid import uuid4
 
 from apps.intercompany_pools.models import OrganizationPool, PoolWorkflowBinding
 from apps.intercompany_pools.workflow_authoring_contract import PoolWorkflowBindingContract
-from apps.intercompany_pools.workflow_binding_resolution import parse_pool_workflow_bindings
 
 
 class PoolWorkflowBindingStoreError(ValueError):
@@ -93,6 +92,15 @@ def upsert_canonical_pool_workflow_binding(
     return _serialize_canonical_record(existing), False
 
 
+def delete_canonical_pool_workflow_binding(*, pool: OrganizationPool, binding_id: str) -> dict[str, Any]:
+    record = PoolWorkflowBinding.objects.filter(pool=pool, binding_id=binding_id).first()
+    if record is None:
+        raise PoolWorkflowBindingNotFoundError(binding_id=binding_id)
+    serialized = _serialize_canonical_record(record)
+    record.delete()
+    return serialized
+
+
 def extract_pool_workflow_bindings(metadata: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(metadata, dict):
         return []
@@ -139,97 +147,28 @@ def normalize_pool_workflow_bindings_for_storage(
 
 
 def list_pool_workflow_bindings(*, pool: OrganizationPool) -> list[dict[str, Any]]:
-    metadata = pool.metadata if isinstance(pool.metadata, dict) else {}
-    bindings = parse_pool_workflow_bindings(extract_pool_workflow_bindings(metadata))
-    return [binding.model_dump(mode="json") for binding in bindings]
+    return list_canonical_pool_workflow_bindings(pool=pool)
 
 
 def get_pool_workflow_binding(*, pool: OrganizationPool, binding_id: str) -> dict[str, Any]:
-    for binding in list_pool_workflow_bindings(pool=pool):
-        if str(binding.get("binding_id") or "").strip() == binding_id:
-            return binding
-    raise PoolWorkflowBindingNotFoundError(binding_id=binding_id)
+    return get_canonical_pool_workflow_binding(pool=pool, binding_id=binding_id)
 
 
 def upsert_pool_workflow_binding(
     *,
     pool: OrganizationPool,
     workflow_binding: dict[str, Any],
+    actor_username: str = "",
 ) -> tuple[dict[str, Any], bool]:
-    metadata = dict(pool.metadata) if isinstance(pool.metadata, dict) else {}
-    existing_bindings = extract_pool_workflow_bindings(metadata)
-    normalized_payload = dict(workflow_binding)
-    binding_id = str(normalized_payload.get("binding_id") or "").strip() or str(uuid4())
-    normalized_payload["binding_id"] = binding_id
-    normalized_payload["pool_id"] = str(pool.id)
-
-    stored_bindings: list[dict[str, Any]] = []
-    replaced = False
-    for current in existing_bindings:
-        current_binding_id = str(current.get("binding_id") or "").strip()
-        if current_binding_id == binding_id:
-            stored_bindings.append(normalized_payload)
-            replaced = True
-            continue
-        stored_bindings.append(dict(current))
-    if not replaced:
-        stored_bindings.append(normalized_payload)
-
-    normalized_bindings = normalize_pool_workflow_bindings_for_storage(
-        pool_id=str(pool.id),
-        workflow_bindings=stored_bindings,
+    return upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=workflow_binding,
+        actor_username=actor_username,
     )
-    metadata = _with_stored_workflow_bindings(metadata=metadata, bindings=normalized_bindings)
-    pool.metadata = metadata
-    pool.save(update_fields=["metadata", "updated_at"])
-
-    created = not replaced
-    saved_binding = next(
-        binding
-        for binding in normalized_bindings
-        if str(binding.get("binding_id") or "").strip() == binding_id
-    )
-    return saved_binding, created
 
 
 def delete_pool_workflow_binding(*, pool: OrganizationPool, binding_id: str) -> dict[str, Any]:
-    metadata = dict(pool.metadata) if isinstance(pool.metadata, dict) else {}
-    existing_bindings = extract_pool_workflow_bindings(metadata)
-    stored_bindings: list[dict[str, Any]] = []
-    removed_binding: dict[str, Any] | None = None
-
-    for current in existing_bindings:
-        current_binding_id = str(current.get("binding_id") or "").strip()
-        if current_binding_id == binding_id:
-            removed_binding = dict(current)
-            continue
-        stored_bindings.append(dict(current))
-
-    if removed_binding is None:
-        raise PoolWorkflowBindingNotFoundError(binding_id=binding_id)
-
-    normalized_bindings = normalize_pool_workflow_bindings_for_storage(
-        pool_id=str(pool.id),
-        workflow_bindings=stored_bindings,
-    )
-    metadata = _with_stored_workflow_bindings(metadata=metadata, bindings=normalized_bindings)
-    pool.metadata = metadata
-    pool.save(update_fields=["metadata", "updated_at"])
-    return PoolWorkflowBindingContract(**removed_binding).model_dump(mode="json")
-
-
-def _with_stored_workflow_bindings(
-    *,
-    metadata: dict[str, Any],
-    bindings: list[dict[str, Any]],
-) -> dict[str, Any]:
-    updated_metadata = dict(metadata)
-    if bindings:
-        updated_metadata["workflow_bindings"] = bindings
-    else:
-        updated_metadata["workflow_bindings"] = []
-    return updated_metadata
-
+    return delete_canonical_pool_workflow_binding(pool=pool, binding_id=binding_id)
 
 def _serialize_canonical_record(record: PoolWorkflowBinding) -> dict[str, Any]:
     contract = PoolWorkflowBindingContract(
@@ -260,6 +199,7 @@ def _serialize_canonical_record(record: PoolWorkflowBinding) -> dict[str, Any]:
 __all__ = [
     "PoolWorkflowBindingNotFoundError",
     "PoolWorkflowBindingStoreError",
+    "delete_canonical_pool_workflow_binding",
     "delete_pool_workflow_binding",
     "extract_pool_workflow_bindings",
     "get_canonical_pool_workflow_binding",

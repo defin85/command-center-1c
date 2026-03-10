@@ -39,6 +39,10 @@ from apps.intercompany_pools.models import (
     PoolSchemaTemplateFormat,
 )
 from apps.intercompany_pools.runtime_projection_contract import POOL_RUNTIME_PROJECTION_CONTEXT_KEY
+from apps.intercompany_pools.workflow_bindings_store import (
+    list_pool_workflow_bindings,
+    upsert_canonical_pool_workflow_binding,
+)
 from apps.intercompany_pools.workflow_runtime import POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY
 from apps.operations.services import EnqueueResult
 from apps.runtime_settings.models import RuntimeSetting
@@ -482,11 +486,18 @@ def _prepare_pool_runtime_bindings(
             }
         )
 
-    pool.metadata = {
-        **(pool.metadata if isinstance(pool.metadata, dict) else {}),
-        "workflow_bindings": hydrated_bindings,
-    }
+    metadata = dict(pool.metadata) if isinstance(pool.metadata, dict) else {}
+    metadata.pop("workflow_bindings", None)
+    pool.metadata = metadata
     pool.save(update_fields=["metadata", "updated_at"])
+
+    actor_username = actor.username if actor is not None else "pool-runtime-bindings-test"
+    for binding in hydrated_bindings:
+        upsert_canonical_pool_workflow_binding(
+            pool=pool,
+            workflow_binding=binding,
+            actor_username=actor_username,
+        )
 
     if actor is not None:
         _create_actor_infobase_mapping(
@@ -496,6 +507,35 @@ def _prepare_pool_runtime_bindings(
         )
 
     return hydrated_bindings, database
+
+
+def _prepare_single_pool_runtime_binding(
+    *,
+    tenant: Tenant,
+    pool: OrganizationPool,
+    workflow_definition_key: str,
+    workflow_revision: int,
+    direction: str | None,
+    mode: str | None,
+    period_start: date,
+    actor: User | None = None,
+) -> tuple[dict[str, object], Database]:
+    bindings, database = _prepare_pool_runtime_bindings(
+        tenant=tenant,
+        pool=pool,
+        bindings=[
+            _build_pool_workflow_binding_payload(
+                pool=pool,
+                workflow_definition_key=workflow_definition_key,
+                workflow_revision=workflow_revision,
+                direction=direction,
+                mode=mode,
+            )
+        ],
+        period_start=period_start,
+        actor=actor,
+    )
+    return bindings[0], database
 
 
 def _build_metadata_catalog_payload() -> dict[str, object]:
@@ -1346,10 +1386,12 @@ def test_upsert_pool_metadata_preserves_existing_workflow_bindings(
         direction=PoolRunDirection.TOP_DOWN,
         mode=PoolRunMode.SAFE,
     )
-    pool.metadata = {
-        "workflow_bindings": [binding],
-        "owner": "ops",
-    }
+    upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=binding,
+        actor_username="pool-upsert-test",
+    )
+    pool.metadata = {"owner": "ops"}
     pool.save(update_fields=["metadata", "updated_at"])
 
     response = authenticated_client.post(
@@ -1373,7 +1415,7 @@ def test_upsert_pool_metadata_preserves_existing_workflow_bindings(
 
     pool.refresh_from_db()
     assert pool.metadata["owner"] == "finance"
-    assert pool.metadata["workflow_bindings"][0]["binding_id"] == binding["binding_id"]
+    assert "workflow_bindings" not in pool.metadata
 
 
 @pytest.mark.django_db
@@ -1395,8 +1437,16 @@ def test_pool_workflow_bindings_list_exposes_multiple_pinned_bindings(
         direction=PoolRunDirection.BOTTOM_UP,
         mode=PoolRunMode.SAFE,
     )
-    pool.metadata = {"workflow_bindings": [first_binding, second_binding]}
-    pool.save(update_fields=["metadata", "updated_at"])
+    upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=first_binding,
+        actor_username="pool-list-test",
+    )
+    upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=second_binding,
+        actor_username="pool-list-test",
+    )
 
     response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
 
@@ -1474,7 +1524,7 @@ def test_pool_workflow_binding_upsert_creates_and_updates_first_class_binding(
     assert updated_payload["workflow_binding"]["status"] == "inactive"
 
     pool.refresh_from_db()
-    bindings = pool.metadata["workflow_bindings"]
+    bindings = list_pool_workflow_bindings(pool=pool)
     assert len(bindings) == 1
     assert bindings[0]["binding_id"] == binding_id
     assert bindings[0]["selector"]["tags"] == ["baseline", "monthly"]
@@ -1492,8 +1542,11 @@ def test_pool_workflow_binding_delete_removes_binding_from_pool(
         direction=PoolRunDirection.TOP_DOWN,
         mode=PoolRunMode.SAFE,
     )
-    pool.metadata = {"workflow_bindings": [binding]}
-    pool.save(update_fields=["metadata", "updated_at"])
+    upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=binding,
+        actor_username="pool-delete-test",
+    )
 
     response = authenticated_client.delete(
         f"/api/v2/pools/workflow-bindings/{binding['binding_id']}/?pool_id={pool.id}"
@@ -1505,7 +1558,7 @@ def test_pool_workflow_binding_delete_removes_binding_from_pool(
     assert payload["workflow_binding"]["binding_id"] == binding["binding_id"]
 
     pool.refresh_from_db()
-    assert pool.metadata["workflow_bindings"] == []
+    assert list_pool_workflow_bindings(pool=pool) == []
 
 
 @pytest.mark.django_db
@@ -1520,8 +1573,11 @@ def test_pool_workflow_binding_detail_reads_first_class_binding(
         direction=PoolRunDirection.TOP_DOWN,
         mode=PoolRunMode.SAFE,
     )
-    pool.metadata = {"workflow_bindings": [binding]}
-    pool.save(update_fields=["metadata", "updated_at"])
+    upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=binding,
+        actor_username="pool-detail-test",
+    )
 
     response = authenticated_client.get(
         f"/api/v2/pools/workflow-bindings/{binding['binding_id']}/?pool_id={pool.id}"
@@ -1535,7 +1591,7 @@ def test_pool_workflow_binding_detail_reads_first_class_binding(
 
 
 @pytest.mark.django_db
-def test_pool_workflow_bindings_list_fails_closed_for_invalid_stored_binding(
+def test_pool_workflow_bindings_list_ignores_invalid_legacy_metadata_after_cutover(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
@@ -1560,13 +1616,10 @@ def test_pool_workflow_bindings_list_fails_closed_for_invalid_stored_binding(
 
     response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
 
-    payload = _assert_problem_details_response(
-        response,
-        status_code=400,
-        code="POOL_WORKFLOW_BINDING_INVALID",
-    )
-    assert "invalid and cannot be resolved" in payload["detail"]
-    assert payload["errors"][0]["binding_id"] == "broken-binding"
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 0
+    assert payload["bindings"] == []
 
 
 @pytest.mark.django_db
@@ -2806,8 +2859,16 @@ def test_create_pool_run_rejects_ambiguous_selector_without_explicit_binding_id(
         direction=PoolRunDirection.BOTTOM_UP,
         mode=PoolRunMode.SAFE,
     )
-    pool.metadata = {"workflow_bindings": [first_binding, second_binding]}
-    pool.save(update_fields=["metadata", "updated_at"])
+    upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=first_binding,
+        actor_username="pool-run-ambiguous-test",
+    )
+    upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=second_binding,
+        actor_username="pool-run-ambiguous-test",
+    )
 
     response = authenticated_client.post(
         "/api/v2/pools/runs/",
@@ -2847,8 +2908,11 @@ def test_create_pool_run_rejects_when_selector_does_not_resolve_binding(
         direction=PoolRunDirection.TOP_DOWN,
         mode=PoolRunMode.SAFE,
     )
-    pool.metadata = {"workflow_bindings": [binding]}
-    pool.save(update_fields=["metadata", "updated_at"])
+    upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=binding,
+        actor_username="pool-run-selector-test",
+    )
 
     response = authenticated_client.post(
         "/api/v2/pools/runs/",
@@ -3690,9 +3754,13 @@ def test_top_down_pool_run_read_model_projects_publication_attempts_and_verifica
     user: User,
     pool: OrganizationPool,
 ) -> None:
-    database = _attach_pool_target_database(
+    _, database = _prepare_single_pool_runtime_binding(
         tenant=default_tenant,
         pool=pool,
+        workflow_definition_key="top-down-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.UNSAFE,
         period_start=date(2026, 1, 1),
     )
     InfobaseUserMapping.objects.create(
@@ -3932,9 +4000,13 @@ def test_top_down_pool_run_read_model_projects_failed_verification_after_interna
     user: User,
     pool: OrganizationPool,
 ) -> None:
-    database = _attach_pool_target_database(
+    _, database = _prepare_single_pool_runtime_binding(
         tenant=default_tenant,
         pool=pool,
+        workflow_definition_key="top-down-publication-failed-verify",
+        workflow_revision=4,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.UNSAFE,
         period_start=date(2026, 1, 1),
     )
     InfobaseUserMapping.objects.create(
@@ -5742,12 +5814,25 @@ def test_retry_pool_run_failed_endpoint_returns_accepted_workflow_reference_and_
     pool: OrganizationPool,
 ) -> None:
     run = _create_validated_run(tenant=default_tenant, pool=pool)
+    binding, _ = _prepare_single_pool_runtime_binding(
+        tenant=default_tenant,
+        pool=pool,
+        workflow_definition_key="retry-publication",
+        workflow_revision=3,
+        direction=run.direction,
+        mode=run.mode,
+        period_start=run.period_start,
+        actor=user,
+    )
     db_one = _create_database(tenant=default_tenant, name="pool-api-retry-db-one")
     db_two = _create_database(tenant=default_tenant, name="pool-api-retry-db-two")
     initial_execution = _attach_workflow_execution_to_run(
         run=run,
         status=WorkflowExecution.STATUS_COMPLETED,
-        input_context={"pool_run_id": str(run.id)},
+        input_context={
+            "pool_run_id": str(run.id),
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: binding,
+        },
     )
     PoolPublicationAttempt.objects.create(
         run=run,
@@ -5839,9 +5924,20 @@ def test_retry_pool_run_failed_endpoint_returns_accepted_workflow_reference_and_
 def test_retry_pool_run_failed_endpoint_builds_subset_from_persisted_document_plan_artifact(
     authenticated_client: APIClient,
     default_tenant: Tenant,
+    user: User,
     pool: OrganizationPool,
 ) -> None:
     run = _create_validated_run(tenant=default_tenant, pool=pool)
+    binding, _ = _prepare_single_pool_runtime_binding(
+        tenant=default_tenant,
+        pool=pool,
+        workflow_definition_key="retry-publication-artifact",
+        workflow_revision=3,
+        direction=run.direction,
+        mode=run.mode,
+        period_start=run.period_start,
+        actor=user,
+    )
     db_success = _create_database(tenant=default_tenant, name="pool-api-retry-success-db")
     db_failed = _create_database(tenant=default_tenant, name="pool-api-retry-failed-db")
     initial_execution = _attach_workflow_execution_to_run(
@@ -5849,6 +5945,7 @@ def test_retry_pool_run_failed_endpoint_builds_subset_from_persisted_document_pl
         status=WorkflowExecution.STATUS_COMPLETED,
         input_context={
             "pool_run_id": str(run.id),
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: binding,
             "pool_runtime_document_plan_artifact": {
                 "version": "document_plan_artifact.v1",
                 "run_id": str(run.id),
@@ -6036,7 +6133,7 @@ def test_retry_pool_run_failed_endpoint_builds_subset_from_persisted_document_pl
                         "field_mapping": {},
                         "table_parts_mapping": {},
                         "link_rules": {},
-                        "payload": {"Amount": "20.00"},
+                        "payload": {},
                         "link_to": "doc-sale",
                         "resolved_link_refs": {"doc-sale": "sale-doc-ref"},
                     }
@@ -6050,14 +6147,28 @@ def test_retry_pool_run_failed_endpoint_builds_subset_from_persisted_document_pl
 def test_retry_pool_run_failed_endpoint_replays_idempotency_key_without_duplicate_enqueue(
     authenticated_client: APIClient,
     default_tenant: Tenant,
+    user: User,
     pool: OrganizationPool,
 ) -> None:
     run = _create_validated_run(tenant=default_tenant, pool=pool)
+    binding, _ = _prepare_single_pool_runtime_binding(
+        tenant=default_tenant,
+        pool=pool,
+        workflow_definition_key="retry-publication-replay",
+        workflow_revision=3,
+        direction=run.direction,
+        mode=run.mode,
+        period_start=run.period_start,
+        actor=user,
+    )
     failed_db = _create_database(tenant=default_tenant, name="pool-api-retry-replay-failed-db")
     _attach_workflow_execution_to_run(
         run=run,
         status=WorkflowExecution.STATUS_COMPLETED,
-        input_context={"pool_run_id": str(run.id)},
+        input_context={
+            "pool_run_id": str(run.id),
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: binding,
+        },
     )
     PoolPublicationAttempt.objects.create(
         run=run,
@@ -6119,14 +6230,28 @@ def test_retry_pool_run_failed_endpoint_replays_idempotency_key_without_duplicat
 def test_retry_pool_run_failed_endpoint_reused_key_with_different_payload_returns_conflict(
     authenticated_client: APIClient,
     default_tenant: Tenant,
+    user: User,
     pool: OrganizationPool,
 ) -> None:
     run = _create_validated_run(tenant=default_tenant, pool=pool)
+    binding, _ = _prepare_single_pool_runtime_binding(
+        tenant=default_tenant,
+        pool=pool,
+        workflow_definition_key="retry-publication-reuse",
+        workflow_revision=3,
+        direction=run.direction,
+        mode=run.mode,
+        period_start=run.period_start,
+        actor=user,
+    )
     failed_db = _create_database(tenant=default_tenant, name="pool-api-retry-reuse-failed-db")
     _attach_workflow_execution_to_run(
         run=run,
         status=WorkflowExecution.STATUS_COMPLETED,
-        input_context={"pool_run_id": str(run.id)},
+        input_context={
+            "pool_run_id": str(run.id),
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: binding,
+        },
     )
     PoolPublicationAttempt.objects.create(
         run=run,

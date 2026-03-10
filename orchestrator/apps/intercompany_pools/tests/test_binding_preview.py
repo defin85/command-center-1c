@@ -18,6 +18,7 @@ from apps.intercompany_pools.models import (
     PoolSchemaTemplateFormat,
 )
 from apps.intercompany_pools.binding_preview import build_pool_workflow_binding_preview
+from apps.intercompany_pools.workflow_bindings_store import upsert_canonical_pool_workflow_binding
 from apps.templates.workflow.decision_tables import create_decision_table_revision
 from apps.templates.workflow.models import WorkflowTemplate, WorkflowType
 from apps.tenancy.models import Tenant
@@ -195,8 +196,11 @@ def test_build_pool_workflow_binding_preview_returns_compiled_projection_and_dec
         "effective_from": "2026-01-01",
         "status": "active",
     }
-    pool.metadata = {"workflow_bindings": [binding]}
-    pool.save(update_fields=["metadata", "updated_at"])
+    upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=binding,
+        actor_username="binding-preview-test",
+    )
 
     preview = build_pool_workflow_binding_preview(
         tenant=tenant,

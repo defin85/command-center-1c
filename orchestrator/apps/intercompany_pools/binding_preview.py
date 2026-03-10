@@ -19,6 +19,7 @@ from .runtime_projection_contract import build_pool_runtime_projection_v1
 from .runtime_template_registry import sync_pool_runtime_template_registry
 from .workflow_authoring_contract import PoolWorkflowBindingContract
 from .workflow_binding_resolution import resolve_pool_workflow_binding_for_run
+from .workflow_bindings_store import list_pool_workflow_bindings
 from .workflow_compiler import PoolWorkflowRunContext, compile_pool_execution_plan
 
 
@@ -247,7 +248,7 @@ def _resolve_runtime_workflow_binding(
         return explicit_binding
 
     resolved_binding = resolve_pool_workflow_binding_for_run(
-        raw_bindings=_extract_pool_workflow_bindings(pool.metadata if isinstance(pool.metadata, dict) else {}),
+        raw_bindings=list_pool_workflow_bindings(pool=pool),
         requested_binding_id=requested_binding_id,
         direction=direction,
         mode=mode,
@@ -286,14 +287,6 @@ def _build_decision_inputs(
         }
     )
     return inputs
-
-
-def _extract_pool_workflow_bindings(metadata: dict[str, Any]) -> list[dict[str, Any]]:
-    raw = metadata.get("workflow_bindings")
-    if not isinstance(raw, list):
-        return []
-    return [item for item in raw if isinstance(item, dict)]
-
 
 __all__ = [
     "build_pool_workflow_binding_preview",

@@ -96,10 +96,8 @@ from apps.intercompany_pools.workflow_bindings_store import (
     PoolWorkflowBindingNotFoundError,
     PoolWorkflowBindingStoreError,
     delete_pool_workflow_binding as delete_stored_pool_workflow_binding,
-    extract_pool_workflow_bindings as extract_stored_pool_workflow_bindings,
     get_pool_workflow_binding as get_stored_pool_workflow_binding,
     list_pool_workflow_bindings as list_stored_pool_workflow_bindings,
-    normalize_pool_workflow_bindings_for_storage as normalize_stored_pool_workflow_bindings_for_storage,
     upsert_pool_workflow_binding as upsert_stored_pool_workflow_binding,
 )
 from apps.templates.workflow.models import WorkflowExecution
@@ -1811,12 +1809,9 @@ def _serialize_schema_template(template: PoolSchemaTemplate) -> dict[str, Any]:
     }
 
 
-def _extract_pool_workflow_bindings(metadata: dict[str, Any]) -> list[dict[str, Any]]:
-    return extract_stored_pool_workflow_bindings(metadata)
-
-
 def _serialize_organization_pool(pool: OrganizationPool) -> dict[str, Any]:
-    metadata = pool.metadata if isinstance(pool.metadata, dict) else {}
+    metadata = dict(pool.metadata) if isinstance(pool.metadata, dict) else {}
+    metadata.pop("workflow_bindings", None)
     return {
         "id": str(pool.id),
         "code": pool.code,
@@ -1824,53 +1819,9 @@ def _serialize_organization_pool(pool: OrganizationPool) -> dict[str, Any]:
         "description": pool.description,
         "is_active": pool.is_active,
         "metadata": metadata,
-        "workflow_bindings": _extract_pool_workflow_bindings(metadata),
+        "workflow_bindings": list_stored_pool_workflow_bindings(pool=pool),
         "updated_at": pool.updated_at,
     }
-
-
-def _normalize_pool_workflow_bindings_for_storage(
-    *,
-    pool_id: str,
-    workflow_bindings: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    try:
-        return normalize_stored_pool_workflow_bindings_for_storage(
-            pool_id=pool_id,
-            workflow_bindings=workflow_bindings,
-        )
-    except PoolWorkflowBindingStoreError as exc:
-        raise serializers.ValidationError({"workflow_bindings": [str(exc)]}) from exc
-
-
-def _replace_pool_workflow_bindings(
-    *,
-    pool: OrganizationPool,
-    workflow_bindings: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    metadata = dict(pool.metadata if isinstance(pool.metadata, dict) else {})
-    normalized_bindings = _normalize_pool_workflow_bindings_for_storage(
-        pool_id=str(pool.id),
-        workflow_bindings=workflow_bindings,
-    )
-    metadata["workflow_bindings"] = normalized_bindings
-    pool.metadata = metadata
-    pool.save(update_fields=["metadata", "updated_at"])
-    return normalized_bindings
-
-
-def _get_pool_workflow_binding(
-    *,
-    pool: OrganizationPool,
-    binding_id: str,
-) -> dict[str, Any] | None:
-    normalized_binding_id = str(binding_id or "").strip()
-    if not normalized_binding_id:
-        return None
-    try:
-        return get_stored_pool_workflow_binding(pool=pool, binding_id=normalized_binding_id)
-    except PoolWorkflowBindingNotFoundError:
-        return None
 
 
 def _serialize_organization(organization: Organization) -> dict[str, Any]:
@@ -2682,9 +2633,7 @@ def create_pool_run(request):
 
     try:
         resolved_workflow_binding = resolve_pool_workflow_binding_for_run(
-            raw_bindings=_extract_pool_workflow_bindings(
-                pool.metadata if isinstance(pool.metadata, dict) else {}
-            ),
+            raw_bindings=list_stored_pool_workflow_bindings(pool=pool),
             requested_binding_id=str(data.get("pool_workflow_binding_id") or "").strip() or None,
             direction=data["direction"],
             mode=data.get("mode", PoolRunMode.SAFE),
@@ -2997,6 +2946,11 @@ def upsert_pool_workflow_binding(request):
         workflow_binding, created = upsert_stored_pool_workflow_binding(
             pool=pool,
             workflow_binding=dict(data["workflow_binding"]),
+            actor_username=(
+                request.user.username
+                if request.user and request.user.is_authenticated
+                else ""
+            ),
         )
     except PoolWorkflowBindingStoreError as exc:
         return _problem(
@@ -3734,8 +3688,7 @@ def upsert_organization_pool(request):
     created = pool is None
     description_value = data.get("description", pool.description if pool else "")
     metadata_value = dict(data.get("metadata", existing_metadata) or {})
-    if "workflow_bindings" not in metadata_value and "workflow_bindings" in existing_metadata:
-        metadata_value["workflow_bindings"] = existing_metadata["workflow_bindings"]
+    metadata_value.pop("workflow_bindings", None)
     is_active_value = data.get("is_active", pool.is_active if pool else True)
     pool_uuid = pool.id if pool else uuid4()
 

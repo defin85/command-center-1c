@@ -39,6 +39,10 @@ from apps.intercompany_pools.models import (
 from apps.intercompany_pools.pool_domain_steps import execute_pool_runtime_step
 from apps.intercompany_pools.runs import build_pool_run_idempotency_key
 from apps.intercompany_pools.workflow_authoring_contract import PoolWorkflowBindingContract
+from apps.intercompany_pools.workflow_bindings_store import (
+    list_pool_workflow_bindings,
+    upsert_canonical_pool_workflow_binding,
+)
 from apps.intercompany_pools.workflow_runtime import (
     POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY,
     start_pool_run_retry_workflow_execution,
@@ -307,12 +311,9 @@ def _create_runtime_workflow_template(
 
 
 def _ensure_runtime_test_workflow_binding(*, run: PoolRun) -> dict[str, object]:
-    metadata = run.pool.metadata if isinstance(run.pool.metadata, dict) else {}
-    raw_bindings = metadata.get("workflow_bindings")
-    if isinstance(raw_bindings, list):
-        for raw_binding in raw_bindings:
-            if isinstance(raw_binding, dict):
-                return raw_binding
+    existing_bindings = list_pool_workflow_bindings(pool=run.pool)
+    if existing_bindings:
+        return existing_bindings[0]
 
     _attach_pool_target_database(
         tenant=run.tenant,
@@ -349,11 +350,15 @@ def _ensure_runtime_test_workflow_binding(*, run: PoolRun) -> dict[str, object]:
         "effective_from": run.period_start.isoformat(),
         "status": "active",
     }
-    run.pool.metadata = {
-        **metadata,
-        "workflow_bindings": [binding],
-    }
+    metadata = dict(run.pool.metadata) if isinstance(run.pool.metadata, dict) else {}
+    metadata.pop("workflow_bindings", None)
+    run.pool.metadata = metadata
     run.pool.save(update_fields=["metadata", "updated_at"])
+    upsert_canonical_pool_workflow_binding(
+        pool=run.pool,
+        workflow_binding=binding,
+        actor_username="pool-runtime-test",
+    )
     return binding
 
 
