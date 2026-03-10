@@ -427,3 +427,131 @@ test('Workflow designer: explicit template contract is shown and validates requi
 
   await expect(page.getByText(/Missing required mappings: .*params\.extension_name/)).toBeVisible()
 })
+
+test('Workflow designer: subworkflow selector persists pinned subworkflow revision on save', async ({ page }) => {
+  await setupAuth(page, true)
+
+  const workflowId = '44444444-4444-4444-4444-444444444444'
+  const baseWorkflow = {
+    id: workflowId,
+    name: 'wf-subworkflow-pin',
+    description: '',
+    workflow_type: 'complex',
+    dag_structure: {
+      nodes: [
+        {
+          id: 'step1',
+          name: 'Step 1',
+          type: 'subworkflow',
+          config: {},
+        },
+      ],
+      edges: [],
+    },
+    config: { timeout_seconds: 3600, max_retries: 0 },
+    is_valid: true,
+    is_active: true,
+    version_number: 1,
+    parent_version: null,
+    parent_version_name: null,
+    created_by: null,
+    created_by_username: null,
+    execution_count: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  }
+
+  let lastUpdatePayload: Record<string, unknown> | null = null
+
+  await page.route('**/api/v2/**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const path = url.pathname
+    const method = request.method()
+
+    if (method === 'GET' && path === '/api/v2/system/me/') {
+      return fulfillJson(route, { id: 1, username: 'admin', is_staff: true })
+    }
+    if (method === 'GET' && path === '/api/v2/workflows/get-workflow/') {
+      return fulfillJson(route, { workflow: baseWorkflow, statistics: {}, executions: [] })
+    }
+    if (method === 'GET' && path === '/api/v2/workflows/list-workflows/') {
+      return fulfillJson(route, {
+        workflows: [
+          {
+            id: workflowId,
+            name: 'wf-subworkflow-pin',
+            version_number: 1,
+            parent_version: null,
+            is_system_managed: false,
+          },
+          {
+            id: 'workflow-revision-7',
+            name: 'Services Publication',
+            version_number: 7,
+            parent_version: 'workflow-root-1',
+            is_system_managed: false,
+          },
+        ],
+        count: 2,
+        total: 2,
+      })
+    }
+    if (method === 'GET' && path === '/api/v2/decisions/') {
+      return fulfillJson(route, { decisions: [], count: 0 })
+    }
+    if (method === 'POST' && path === '/api/v2/workflows/update-workflow/') {
+      lastUpdatePayload = request.postDataJSON() as Record<string, unknown>
+      const dag = (lastUpdatePayload?.dag_structure ?? baseWorkflow.dag_structure) as Record<string, unknown>
+      return fulfillJson(route, {
+        workflow: {
+          ...baseWorkflow,
+          dag_structure: dag,
+          updated_at: '2026-01-01T00:00:01Z',
+        },
+        updated_fields: ['dag_structure'],
+        message: 'Workflow updated successfully',
+      })
+    }
+
+    return fulfillJson(route, {}, 200)
+  })
+
+  await page.goto(`/workflows/${workflowId}`, { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByText('wf-subworkflow-pin', { exact: true })).toBeVisible()
+  await page.getByText('Step 1', { exact: true }).first().click()
+  await expect(page.getByText('Analyst-facing subworkflow calls pin an explicit workflow revision by default.')).toBeVisible()
+
+  await page
+    .locator('#workflow-step1-subworkflow')
+    .locator('xpath=ancestor::div[contains(@class,"ant-select")]')
+    .first()
+    .click()
+  await page.getByText('Services Publication · r7', { exact: true }).click()
+
+  await page.locator('.designer-header button').filter({ hasText: 'Save' }).first().click()
+  await expect.poll(() => lastUpdatePayload).not.toBeNull()
+
+  const dagStructure = lastUpdatePayload?.dag_structure as {
+    nodes?: Array<{
+      subworkflow_config?: {
+        subworkflow_id?: string
+        subworkflow_ref?: {
+          binding_mode?: string
+          workflow_definition_key?: string
+          workflow_revision_id?: string
+          workflow_revision?: number
+        }
+      }
+    }>
+  }
+  const node = dagStructure.nodes?.[0]
+  expect(node?.subworkflow_config?.subworkflow_id).toBe('workflow-revision-7')
+  expect(node?.subworkflow_config?.subworkflow_ref).toEqual({
+    binding_mode: 'pinned_revision',
+    workflow_definition_key: 'workflow-root-1',
+    workflow_revision_id: 'workflow-revision-7',
+    workflow_revision: 7,
+  })
+})

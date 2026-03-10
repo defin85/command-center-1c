@@ -26,8 +26,8 @@ Tenant-scoped live cutover evidence belongs in the `*.template.json` files in th
   Code: `orchestrator/apps/api_v2/views/pool_document_policy_migrations.py`
   Tests: `orchestrator/apps/api_v2/tests/test_intercompany_pool_runs.py`
 - Pinned subworkflow execution stays on the pinned revision and fails closed on drift/mismatch.
-  Code: `orchestrator/apps/templates/workflow/handlers/subworkflow.py`
-  Tests: `orchestrator/apps/templates/workflow/tests/test_handlers_advanced.py`
+  Code: `orchestrator/apps/templates/workflow/schema.py`, `orchestrator/apps/templates/workflow/handlers/factory.py`, `orchestrator/apps/templates/workflow/handlers/subworkflow.py`
+  Tests: `orchestrator/apps/templates/workflow/tests/test_handlers_advanced.py`, `orchestrator/apps/api_v2/tests/test_workflows_binding_policy.py`, `frontend/src/components/workflow/__tests__/PropertyEditor.test.tsx`, `frontend/tests/browser/workflow-io-editor.spec.ts`
 - `/templates` stays a compatibility catalog while `/workflows` remains the primary analyst authoring surface.
   Code: `frontend/src/pages/Templates/TemplatesPage.tsx`, `frontend/src/pages/Workflows/WorkflowDesigner.tsx`
   Tests: `frontend/tests/browser/workflow-hardening-acceptance.spec.ts`, `orchestrator/apps/api_v2/tests/test_workflow_authoring_phase_api.py`

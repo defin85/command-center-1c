@@ -104,6 +104,7 @@ cd orchestrator && ./venv/bin/python manage.py backfill_pool_workflow_bindings -
    - Payload: `{"value":"workflow_centric_active","status":"published"}`
 3. Проверить surfaces:
    - `/workflows` показывает analyst composition guidance;
+   - reusable subprocess nodes в `/workflows` сохраняют pinned subworkflow revision и не теряют `subworkflow_ref(binding_mode="pinned_revision")`;
    - `/templates` показывает compatibility marker;
    - `/decisions` показывает metadata provenance;
    - `/pools/catalog` импортирует legacy policy без direct edge authoring как primary path;
@@ -135,6 +136,7 @@ Rollback window остаётся открытым до завершения pilo
 
 - bindings читаются только через canonical CRUD/read-model;
 - pilot tenant использует `/decisions` как primary policy surface;
+- reusable subprocess path подтверждает pinned subworkflow fail-closed behaviour на checked-in shipped path;
 - shared metadata snapshot evidence собран по каждой configuration profile;
 - legacy document_policy migration outcome зафиксирован для всех pilot pools;
 - rollback window либо закрыт после успешного first scale-out batch, либо остаётся открытым с documented follow-up.

@@ -18,6 +18,7 @@ def test_workflow_centric_runbook_documents_hardening_surfaces() -> None:
     assert "POST /api/v2/pools/odata-metadata/catalog/refresh/" in runbook
     assert "POST /api/v2/pools/<pool_id>/document-policy-migrations/" in runbook
     assert "shared configuration-scoped snapshot" in runbook
+    assert "pinned subworkflow" in runbook
 
 
 def test_workflow_centric_hardening_cutover_notes_cover_backfill_and_rollback_window() -> None:
@@ -33,6 +34,7 @@ def test_workflow_centric_hardening_cutover_notes_cover_backfill_and_rollback_wi
     assert "POST /api/v2/pools/<pool_id>/document-policy-migrations/" in cutover
     assert "Следующий run должен стартовать только через явный `pool_workflow_binding_id`." in cutover
     assert "Rollback window" in cutover
+    assert "pinned subworkflow" in cutover
 
 
 def test_workflow_centric_hardening_release_note_documents_operator_changes() -> None:
@@ -47,6 +49,7 @@ def test_workflow_centric_hardening_release_note_documents_operator_changes() ->
     assert "shared configuration-scoped metadata snapshots" in release_note
     assert "POST /api/v2/pools/{pool_id}/document-policy-migrations/" in release_note
     assert "legacy edge document_policy editor" in release_note
+    assert "pinned subworkflow" in release_note
 
 
 def test_workflow_centric_docs_reference_checked_in_evidence_templates() -> None:
@@ -91,6 +94,9 @@ def test_workflow_centric_repository_acceptance_evidence_describes_default_shipp
     assert "/api/v2/pools/workflow-bindings/preview/" in repository_evidence
     assert "/decisions" in repository_evidence
     assert "frontend/src/pages/Pools/__tests__/PoolRunsPage.test.tsx" in repository_evidence
+    assert "orchestrator/apps/api_v2/tests/test_workflows_binding_policy.py" in repository_evidence
+    assert "frontend/src/components/workflow/__tests__/PropertyEditor.test.tsx" in repository_evidence
+    assert "frontend/tests/browser/workflow-io-editor.spec.ts" in repository_evidence
 
 
 def test_workflow_centric_evidence_templates_are_marked_as_examples_only() -> None:

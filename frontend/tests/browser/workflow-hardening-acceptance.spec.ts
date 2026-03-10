@@ -942,6 +942,11 @@ test('Workflow hardening: /templates and /pools/catalog expose compatibility gui
   await page.goto('/pools/catalog', { waitUntil: 'domcontentloaded' })
 
   await expect(page.getByRole('heading', { name: 'Pool Catalog' })).toBeVisible()
+  await page.getByRole('tab', { name: 'Bindings' }).click()
+  await expect(page.getByText('Workflow bindings workspace')).toBeVisible()
+  await expect(page.getByText('Workflow bindings are managed separately from pool fields')).toBeVisible()
+  await expect(page.getByTestId('pool-catalog-save-bindings')).toBeVisible()
+  await expect(page.getByTestId('pool-catalog-workflow-binding-workflow-key-0')).toHaveValue('services-publication')
   await page.getByRole('tab', { name: 'Topology Editor' }).click()
   await expect(page.getByText('Topology snapshots by date')).toBeVisible()
   await page.getByText('Advanced edge metadata / legacy document policy').first().click()

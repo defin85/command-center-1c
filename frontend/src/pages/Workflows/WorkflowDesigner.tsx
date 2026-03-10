@@ -12,7 +12,7 @@
  * Legacy adapter (api/adapters/workflows) is no longer used here.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   App,
@@ -232,6 +232,7 @@ const WorkflowDesigner = () => {
   const [saveModalVisible, setSaveModalVisible] = useState(false)
   const [executeModalVisible, setExecuteModalVisible] = useState(false)
   const [executeInput, setExecuteInput] = useState('{}')
+  const dagStructureRef = useRef<DAGStructure>(initialDagStructure)
   const isSystemManagedProjection = state.template?.is_system_managed === true
   const isRuntimeDiagnosticsSurface =
     searchParams.get('surface') === 'runtime_diagnostics' || isSystemManagedProjection
@@ -250,6 +251,7 @@ const WorkflowDesigner = () => {
         // Use generated API directly with transform
         const response = await api.getWorkflowsGetWorkflow({ workflow_id: templateId })
         const template = convertTemplateToLegacy(response.workflow)
+        dagStructureRef.current = template.dag_structure
         setState((prev) => ({
           ...prev,
           template,
@@ -387,6 +389,7 @@ const WorkflowDesigner = () => {
 
   // Handle DAG change
   const handleDagChange = useCallback((dag: DAGStructure) => {
+    dagStructureRef.current = dag
     setState((prev) => ({
       ...prev,
       dagStructure: dag,
@@ -421,13 +424,15 @@ const WorkflowDesigner = () => {
         }
         return node
       })
+      const nextDagStructure = {
+        ...prev.dagStructure,
+        nodes: updatedNodes
+      }
+      dagStructureRef.current = nextDagStructure
 
       return {
         ...prev,
-        dagStructure: {
-          ...prev.dagStructure,
-          nodes: updatedNodes
-        },
+        dagStructure: nextDagStructure,
         isModified: true,
         validationResult: null
       }
@@ -441,13 +446,15 @@ const WorkflowDesigner = () => {
       const updatedEdges = prev.dagStructure.edges.filter(
         (e) => e.from !== nodeId && e.to !== nodeId
       )
+      const nextDagStructure = {
+        nodes: updatedNodes,
+        edges: updatedEdges
+      }
+      dagStructureRef.current = nextDagStructure
 
       return {
         ...prev,
-        dagStructure: {
-          nodes: updatedNodes,
-          edges: updatedEdges
-        },
+        dagStructure: nextDagStructure,
         selectedNodeId: null,
         isModified: true,
         validationResult: null
@@ -523,7 +530,7 @@ const WorkflowDesigner = () => {
 
       // Convert DAG to generated format for API
       // Use type assertion because generated type uses { [key: string]: unknown }
-      const dagStructureForApi = convertDAGToGenerated(state.dagStructure) as unknown as { [key: string]: unknown }
+      const dagStructureForApi = convertDAGToGenerated(dagStructureRef.current) as unknown as { [key: string]: unknown }
 
       let savedTemplate: WorkflowTemplate
 

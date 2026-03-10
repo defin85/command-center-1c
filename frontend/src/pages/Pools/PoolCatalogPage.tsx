@@ -62,18 +62,18 @@ import {
   type PoolTopologySnapshotPeriod,
   type PoolTopologySnapshotEdgeInput,
   type PoolTopologySnapshotNodeInput,
+  type PoolWorkflowBinding,
 } from '../../api/intercompanyPools'
 import { getV2 } from '../../api/generated/v2/v2'
 import type { AvailableDecisionRevision } from '../../types/workflow'
 import { PoolWorkflowBindingsEditor } from './PoolWorkflowBindingsEditor'
 import {
   buildWorkflowBindingsFromForm,
-  extractWorkflowBindingsFromPool,
   summarizeWorkflowBindings,
   workflowBindingsToFormValues,
   type PoolWorkflowBindingFormValue,
 } from './poolWorkflowBindingsForm'
-import { hasWorkflowBindingChanges, syncPoolWorkflowBindings } from './poolWorkflowBindingsSync'
+import { syncPoolWorkflowBindings } from './poolWorkflowBindingsSync'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -121,6 +121,9 @@ type PoolFormValues = {
   name: string
   description: string
   is_active: boolean
+}
+
+type PoolBindingsFormValues = {
   workflow_bindings?: PoolWorkflowBindingFormValue[]
 }
 
@@ -1403,6 +1406,7 @@ export function PoolCatalogPage() {
 
   const [organizationForm] = Form.useForm<OrganizationFormValues>()
   const [poolForm] = Form.useForm<PoolFormValues>()
+  const [poolBindingsForm] = Form.useForm<PoolBindingsFormValues>()
   const [topologyForm] = Form.useForm<TopologyFormValues>()
 
   const [organizations, setOrganizations] = useState<Organization[]>([])
@@ -1435,7 +1439,10 @@ export function PoolCatalogPage() {
   const [poolSubmitError, setPoolSubmitError] = useState<string | null>(null)
   const [isPoolSaving, setIsPoolSaving] = useState(false)
   const [isPoolBindingsLoading, setIsPoolBindingsLoading] = useState(false)
+  const [isPoolBindingsSaving, setIsPoolBindingsSaving] = useState(false)
   const [poolBindingsLoadError, setPoolBindingsLoadError] = useState<string | null>(null)
+  const [poolBindingsSubmitError, setPoolBindingsSubmitError] = useState<string | null>(null)
+  const [loadedPoolBindings, setLoadedPoolBindings] = useState<PoolWorkflowBinding[]>([])
   const [availableDecisions, setAvailableDecisions] = useState<AvailableDecisionRevision[]>([])
   const [isPoolDecisionsLoading, setIsPoolDecisionsLoading] = useState(false)
   const [poolDecisionsLoadError, setPoolDecisionsLoadError] = useState<string | null>(null)
@@ -1447,7 +1454,7 @@ export function PoolCatalogPage() {
   const [syncErrors, setSyncErrors] = useState<string[]>([])
   const [syncResult, setSyncResult] = useState<{ stats: { created: number; updated: number; skipped: number }; total_rows: number } | null>(null)
   const [isSyncSubmitting, setIsSyncSubmitting] = useState(false)
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'organizations' | 'pools' | 'topology' | 'graph'>('organizations')
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'organizations' | 'pools' | 'bindings' | 'topology' | 'graph'>('organizations')
   const [metadataCatalogByDatabase, setMetadataCatalogByDatabase] = useState<Record<string, PoolODataMetadataCatalogResponse>>({})
   const [metadataCatalogLoadingByDatabase, setMetadataCatalogLoadingByDatabase] = useState<Record<string, boolean>>({})
   const [metadataCatalogErrorByDatabase, setMetadataCatalogErrorByDatabase] = useState<Record<string, string>>({})
@@ -2164,7 +2171,6 @@ export function PoolCatalogPage() {
     if (mutatingDisabled) return
     setPoolDrawerMode('create')
     setPoolSubmitError(null)
-    setPoolBindingsLoadError(null)
     setIsPoolDrawerOpen(true)
   }, [mutatingDisabled])
 
@@ -2172,21 +2178,19 @@ export function PoolCatalogPage() {
     if (mutatingDisabled || !selectedPool) return
     setPoolDrawerMode('edit')
     setPoolSubmitError(null)
-    setPoolBindingsLoadError(null)
     setIsPoolDrawerOpen(true)
   }, [mutatingDisabled, selectedPool])
 
   const closePoolDrawer = useCallback(() => {
-    if (isPoolSaving || isPoolBindingsLoading) return
+    if (isPoolSaving) return
     setIsPoolDrawerOpen(false)
     setPoolSubmitError(null)
-    setPoolBindingsLoadError(null)
     setPoolDecisionsLoadError(null)
-  }, [isPoolBindingsLoading, isPoolSaving])
+  }, [isPoolSaving])
 
   useEffect(() => {
     let cancelled = false
-    if (!isPoolDrawerOpen) {
+    if (activeWorkspaceTab !== 'bindings' || !selectedPool) {
       setAvailableDecisions([])
       setIsPoolDecisionsLoading(false)
       setPoolDecisionsLoadError(null)
@@ -2233,7 +2237,27 @@ export function PoolCatalogPage() {
     return () => {
       cancelled = true
     }
-  }, [api, isPoolDrawerOpen])
+  }, [activeWorkspaceTab, api, selectedPool])
+
+  const reloadBindingsWorkspace = useCallback(async (pool: OrganizationPool) => {
+    setIsPoolBindingsLoading(true)
+    setPoolBindingsLoadError(null)
+    setPoolBindingsSubmitError(null)
+    try {
+      const bindings = await listPoolWorkflowBindings(pool.id)
+      setLoadedPoolBindings(bindings)
+      poolBindingsForm.setFieldsValue({
+        workflow_bindings: workflowBindingsToFormValues(bindings),
+      })
+    } catch (err) {
+      const resolved = resolveApiError(err, 'Не удалось загрузить workflow bindings.')
+      setLoadedPoolBindings([])
+      setPoolBindingsLoadError(resolved.message)
+      poolBindingsForm.setFieldsValue({ workflow_bindings: [] })
+    } finally {
+      setIsPoolBindingsLoading(false)
+    }
+  }, [poolBindingsForm])
 
   useEffect(() => {
     let cancelled = false
@@ -2242,69 +2266,46 @@ export function PoolCatalogPage() {
     }
     poolForm.resetFields()
     if (poolDrawerMode === 'edit' && selectedPool) {
-      setPoolBindingsLoadError(null)
       poolForm.setFieldsValue({
         code: selectedPool.code,
         name: selectedPool.name,
         description: selectedPool.description || '',
         is_active: selectedPool.is_active,
-        workflow_bindings: [],
       })
-      setIsPoolBindingsLoading(true)
-      void listPoolWorkflowBindings(selectedPool.id)
-        .then((bindings) => {
-          if (cancelled) {
-            return
-          }
-          poolForm.setFieldsValue({
-            workflow_bindings: workflowBindingsToFormValues(bindings),
-          })
-        })
-        .catch((err) => {
-          if (cancelled) {
-            return
-          }
-          const resolved = resolveApiError(err, 'Не удалось загрузить workflow bindings.')
-          setPoolBindingsLoadError(resolved.message)
-          poolForm.setFieldsValue({ workflow_bindings: [] })
-        })
-        .finally(() => {
-          if (!cancelled) {
-            setIsPoolBindingsLoading(false)
-          }
-        })
       return () => {
         cancelled = true
       }
     }
-    setIsPoolBindingsLoading(false)
-    setPoolBindingsLoadError(null)
     poolForm.setFieldsValue({
       code: '',
       name: '',
       description: '',
       is_active: true,
-      workflow_bindings: [],
     })
     return () => {
       cancelled = true
     }
   }, [isPoolDrawerOpen, poolDrawerMode, poolForm, selectedPool])
 
+  useEffect(() => {
+    if (activeWorkspaceTab !== 'bindings' || !selectedPool) {
+      setLoadedPoolBindings([])
+      setIsPoolBindingsLoading(false)
+      setPoolBindingsLoadError(null)
+      setPoolBindingsSubmitError(null)
+      poolBindingsForm.setFieldsValue({ workflow_bindings: [] })
+      return
+    }
+
+    void reloadBindingsWorkspace(selectedPool)
+  }, [activeWorkspaceTab, poolBindingsForm, reloadBindingsWorkspace, selectedPool])
+
   const submitPool = useCallback(async () => {
-    if (mutatingDisabled || isPoolBindingsLoading || poolBindingsLoadError) return
+    if (mutatingDisabled) return
     if (poolDrawerMode === 'edit' && !selectedPool) return
     setPoolSubmitError(null)
     try {
       const values = await poolForm.validateFields()
-      const preparedBindings = buildWorkflowBindingsFromForm(values.workflow_bindings)
-      if (preparedBindings.errors.length > 0) {
-        setPoolSubmitError(preparedBindings.errors[0] ?? 'Workflow bindings form is invalid.')
-        return
-      }
-      const previousBindings = poolDrawerMode === 'edit' && selectedPool
-        ? extractWorkflowBindingsFromPool(selectedPool)
-        : []
       setIsPoolSaving(true)
       const response = await upsertOrganizationPool({
         pool_id: poolDrawerMode === 'edit' ? selectedPool?.id : undefined,
@@ -2315,16 +2316,6 @@ export function PoolCatalogPage() {
         metadata: poolDrawerMode === 'edit' ? selectedPool?.metadata ?? {} : {},
       })
       setSelectedPoolId(response.pool.id)
-      if (hasWorkflowBindingChanges({
-        previousBindings,
-        nextBindings: preparedBindings.bindings,
-      })) {
-        await syncPoolWorkflowBindings({
-          poolId: response.pool.id,
-          previousBindings,
-          nextBindings: preparedBindings.bindings,
-        })
-      }
       message.success(response.created ? 'Пул создан.' : 'Пул обновлён.')
       setIsPoolDrawerOpen(false)
       await loadPools()
@@ -2347,7 +2338,53 @@ export function PoolCatalogPage() {
     } finally {
       setIsPoolSaving(false)
     }
-  }, [isPoolBindingsLoading, loadGraph, loadPools, message, mutatingDisabled, poolBindingsLoadError, poolDrawerMode, poolForm, selectedPool])
+  }, [loadGraph, loadPools, message, mutatingDisabled, poolDrawerMode, poolForm, selectedPool])
+
+  const submitPoolBindings = useCallback(async () => {
+    if (mutatingDisabled || isPoolBindingsLoading || isPoolBindingsSaving || !selectedPool) return
+    setPoolBindingsSubmitError(null)
+    try {
+      const values = await poolBindingsForm.validateFields()
+      const preparedBindings = buildWorkflowBindingsFromForm(values.workflow_bindings)
+      if (preparedBindings.errors.length > 0) {
+        setPoolBindingsSubmitError(preparedBindings.errors[0] ?? 'Workflow bindings form is invalid.')
+        return
+      }
+      setIsPoolBindingsSaving(true)
+      await syncPoolWorkflowBindings({
+        poolId: selectedPool.id,
+        previousBindings: loadedPoolBindings,
+        nextBindings: preparedBindings.bindings,
+      })
+      await reloadBindingsWorkspace(selectedPool)
+      message.success('Workflow bindings updated.')
+      await loadPools()
+      await loadOrganizationDetail()
+    } catch (err) {
+      if (
+        err
+        && typeof err === 'object'
+        && Array.isArray((err as { errorFields?: unknown }).errorFields)
+      ) {
+        return
+      }
+      const resolved = resolveApiError(err, 'Не удалось сохранить workflow bindings.')
+      setPoolBindingsSubmitError(resolved.message)
+    } finally {
+      setIsPoolBindingsSaving(false)
+    }
+  }, [
+    isPoolBindingsLoading,
+    isPoolBindingsSaving,
+    loadOrganizationDetail,
+    loadPools,
+    loadedPoolBindings,
+    message,
+    mutatingDisabled,
+    poolBindingsForm,
+    reloadBindingsWorkspace,
+    selectedPool,
+  ])
 
   const toggleSelectedPoolActive = useCallback(async () => {
     if (mutatingDisabled || !selectedPool) return
@@ -2616,7 +2653,7 @@ export function PoolCatalogPage() {
 
         <Tabs
           activeKey={activeWorkspaceTab}
-          onChange={(key) => setActiveWorkspaceTab(key as 'organizations' | 'pools' | 'topology' | 'graph')}
+          onChange={(key) => setActiveWorkspaceTab(key as 'organizations' | 'pools' | 'bindings' | 'topology' | 'graph')}
           data-testid="pool-catalog-workspace-tabs"
           items={[
             {
@@ -2816,6 +2853,118 @@ export function PoolCatalogPage() {
                         onClick: () => setSelectedPoolId(record.id),
                       })}
                     />
+                  </Space>
+                </Card>
+              ),
+            },
+            {
+              key: 'bindings',
+              label: 'Bindings',
+              forceRender: true,
+              children: (
+                <Card title="Workflow bindings workspace" loading={loadingPools}>
+                  <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                    {mutatingDisabled && (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        message="Mutating actions are disabled"
+                        description="Staff users must select a tenant (X-CC1C-Tenant-ID) to run mutating actions."
+                      />
+                    )}
+                    <Alert
+                      type="info"
+                      showIcon
+                      message="Workflow bindings are managed separately from pool fields"
+                      description="Use the Pools tab to create or edit pool code/name/status. Save bindings here through first-class binding CRUD only."
+                    />
+                    <Space size="small" wrap>
+                      <Select
+                        value={selectedPoolId ?? undefined}
+                        style={{ width: 320 }}
+                        placeholder="Select pool"
+                        options={pools.map((pool) => ({
+                          value: pool.id,
+                          label: `${pool.code} - ${pool.name}`,
+                        }))}
+                        onChange={(value) => setSelectedPoolId(value)}
+                      />
+                      <Button
+                        onClick={() => {
+                          if (selectedPool) {
+                            setActiveWorkspaceTab('pools')
+                            openEditPoolDrawer()
+                          }
+                        }}
+                        disabled={mutatingDisabled || !selectedPool}
+                      >
+                        Edit pool fields
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          if (selectedPool) {
+                            void loadPools()
+                            void loadOrganizationDetail()
+                          }
+                        }}
+                        disabled={!selectedPool || isPoolBindingsSaving}
+                        loading={loadingPools}
+                      >
+                        Refresh pools
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          if (selectedPool) {
+                            void reloadBindingsWorkspace(selectedPool)
+                          }
+                        }}
+                        disabled={!selectedPool || isPoolBindingsSaving}
+                        loading={isPoolBindingsLoading}
+                        data-testid="pool-catalog-refresh-bindings"
+                      >
+                        Refresh bindings
+                      </Button>
+                      <Button
+                        type="primary"
+                        onClick={() => { void submitPoolBindings() }}
+                        loading={isPoolBindingsSaving}
+                        disabled={(
+                          mutatingDisabled
+                          || !selectedPool
+                          || isPoolBindingsLoading
+                          || isPoolBindingsSaving
+                          || Boolean(poolBindingsLoadError)
+                        )}
+                        data-testid="pool-catalog-save-bindings"
+                      >
+                        Save bindings
+                      </Button>
+                    </Space>
+
+                    {poolBindingsSubmitError && <Alert type="error" message={poolBindingsSubmitError} showIcon />}
+                    {poolBindingsLoadError && <Alert type="error" message={poolBindingsLoadError} showIcon />}
+                    {isPoolBindingsLoading && (
+                      <Alert type="info" message="Loading workflow bindings..." showIcon />
+                    )}
+
+                    {!selectedPool ? (
+                      <Text type="secondary">Выберите пул, чтобы управлять workflow bindings.</Text>
+                    ) : (
+                      <Form form={poolBindingsForm} layout="vertical">
+                        <Descriptions size="small" column={1} bordered style={{ marginBottom: 16 }}>
+                          <Descriptions.Item label="Pool">{`${selectedPool.code} - ${selectedPool.name}`}</Descriptions.Item>
+                          <Descriptions.Item label="Status">
+                            {selectedPool.is_active ? <Tag color="success">active</Tag> : <Tag color="default">inactive</Tag>}
+                          </Descriptions.Item>
+                        </Descriptions>
+                        <PoolWorkflowBindingsEditor
+                          availableDecisions={availableDecisions}
+                          decisionsLoading={isPoolDecisionsLoading}
+                          decisionsLoadError={poolDecisionsLoadError}
+                          disabled={mutatingDisabled || isPoolBindingsSaving || isPoolBindingsLoading}
+                        />
+                      </Form>
+                    )}
                   </Space>
                 </Card>
               ),
@@ -4513,14 +4662,13 @@ export function PoolCatalogPage() {
         destroyOnHidden
         extra={(
           <Space>
-            <Button onClick={closePoolDrawer} disabled={isPoolSaving || isPoolBindingsLoading}>
+            <Button onClick={closePoolDrawer} disabled={isPoolSaving}>
               Cancel
             </Button>
             <Button
               type="primary"
               onClick={() => { void submitPool() }}
               loading={isPoolSaving}
-              disabled={isPoolBindingsLoading || Boolean(poolBindingsLoadError)}
               data-testid="pool-catalog-save-pool"
             >
               Save
@@ -4530,10 +4678,12 @@ export function PoolCatalogPage() {
       >
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           {poolSubmitError && <Alert type="error" message={poolSubmitError} showIcon />}
-          {poolBindingsLoadError && <Alert type="error" message={poolBindingsLoadError} showIcon />}
-          {isPoolBindingsLoading && (
-            <Alert type="info" message="Loading workflow bindings..." showIcon />
-          )}
+          <Alert
+            type="info"
+            showIcon
+            message="Pool fields only"
+            description="Workflow bindings moved to the Bindings workspace and are saved there through first-class binding CRUD."
+          />
           <Form form={poolForm} layout="vertical">
             <Form.Item
               name="code"
@@ -4560,14 +4710,6 @@ export function PoolCatalogPage() {
             </Form.Item>
             <Form.Item name="is_active" label="Active" valuePropName="checked">
               <Switch />
-            </Form.Item>
-            <Form.Item label="Workflow bindings" style={{ marginBottom: 0 }}>
-              <PoolWorkflowBindingsEditor
-                availableDecisions={availableDecisions}
-                decisionsLoading={isPoolDecisionsLoading}
-                decisionsLoadError={poolDecisionsLoadError}
-                disabled={mutatingDisabled || isPoolSaving || isPoolBindingsLoading}
-              />
             </Form.Item>
           </Form>
         </Space>

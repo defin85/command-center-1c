@@ -169,11 +169,18 @@ async function selectDropdownOption(label: string | RegExp) {
   fireEvent.click(option as Element)
 }
 
-async function openWorkspaceTab(user: ReturnType<typeof userEvent.setup>, tabLabel: 'Pools' | 'Topology Editor') {
+async function openWorkspaceTab(
+  user: ReturnType<typeof userEvent.setup>,
+  tabLabel: 'Pools' | 'Bindings' | 'Topology Editor'
+) {
   await initialCatalogLoadPromise
   await user.click(screen.getByRole('tab', { name: tabLabel }))
   if (tabLabel === 'Pools') {
     await screen.findByText('Pools management')
+    return
+  }
+  if (tabLabel === 'Bindings') {
+    await screen.findByText('Workflow bindings workspace')
     return
   }
   await screen.findByText('Topology snapshots by date')
@@ -705,7 +712,7 @@ describe('PoolCatalogPage', () => {
     )
   }, 15000)
 
-  it('renders existing workflow bindings in structured editor without raw JSON authoring', async () => {
+  it('renders existing workflow bindings in isolated workspace and keeps pool drawer focused on pool fields', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
@@ -758,13 +765,13 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
-    await openWorkspaceTab(user, 'Pools')
-    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await openWorkspaceTab(user, 'Bindings')
 
     expect(screen.queryByLabelText('Workflow bindings JSON')).not.toBeInTheDocument()
     await waitFor(() => {
       expect(mockListPoolWorkflowBindings).toHaveBeenCalledWith('44444444-4444-4444-4444-444444444444')
     })
+    expect(screen.getByText('Workflow bindings workspace')).toBeInTheDocument()
     expect(screen.getByTestId('pool-catalog-workflow-binding-card-0')).toBeInTheDocument()
     expect(screen.getByTestId('pool-catalog-workflow-binding-card-1')).toBeInTheDocument()
     expect(screen.getByDisplayValue('services-publication')).toBeInTheDocument()
@@ -775,6 +782,12 @@ describe('PoolCatalogPage', () => {
     expect(screen.getByTestId('pool-catalog-workflow-binding-summary-1')).toHaveTextContent(
       'tags=cutover, monthly'
     )
+
+    await openWorkspaceTab(user, 'Pools')
+    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Edit pool' })
+    expect(within(dialog).queryByTestId('pool-catalog-workflow-binding-card-0')).not.toBeInTheDocument()
   }, 15000)
 
   it('removes deleted workflow bindings through first-class binding API', async () => {
@@ -798,12 +811,11 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
-    await openWorkspaceTab(user, 'Pools')
-    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await openWorkspaceTab(user, 'Bindings')
     await user.click(screen.getByTestId('pool-catalog-workflow-binding-remove-0'))
-    await user.click(screen.getByTestId('pool-catalog-save-pool'))
+    await user.click(screen.getByTestId('pool-catalog-save-bindings'))
 
-    await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
+    expect(mockUpsertOrganizationPool).not.toHaveBeenCalled()
     await waitFor(() => expect(mockDeletePoolWorkflowBinding).toHaveBeenCalledTimes(1))
     expect(mockDeletePoolWorkflowBinding).toHaveBeenCalledWith(
       '44444444-4444-4444-4444-444444444444',
@@ -883,8 +895,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
-    await openWorkspaceTab(user, 'Pools')
-    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await openWorkspaceTab(user, 'Bindings')
     await waitFor(() => {
       expect(mockListPoolWorkflowBindings).toHaveBeenCalledWith('44444444-4444-4444-4444-444444444444')
     })
@@ -892,15 +903,15 @@ describe('PoolCatalogPage', () => {
       expect(screen.getByTestId('pool-catalog-workflow-binding-workflow-name-0')).toHaveValue('services_publication')
     })
     await waitFor(() => {
-      expect(screen.getByTestId('pool-catalog-save-pool')).toBeEnabled()
+      expect(screen.getByTestId('pool-catalog-save-bindings')).toBeEnabled()
     })
     fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-name-0'), {
       target: { value: 'services_publication_conflicted' },
     })
 
-    await user.click(screen.getByTestId('pool-catalog-save-pool'))
+    await user.click(screen.getByTestId('pool-catalog-save-bindings'))
 
-    await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1), { timeout: 2000 })
+    expect(mockUpsertOrganizationPool).not.toHaveBeenCalled()
     await waitFor(() => expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledTimes(1), { timeout: 2000 })
     expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledWith({
       poolId: '44444444-4444-4444-4444-444444444444',
@@ -918,18 +929,17 @@ describe('PoolCatalogPage', () => {
     expect(
       screen.getByTestId('pool-catalog-workflow-binding-workflow-name-0')
     ).toHaveValue('services_publication_conflicted')
-    expect(screen.getByRole('dialog', { name: 'Edit pool' })).toBeInTheDocument()
+    expect(screen.getByText('Workflow bindings workspace')).toBeInTheDocument()
   }, 30000)
 
-  it('submits workflow bindings from pool drawer via structured editor', async () => {
+  it('submits workflow bindings from isolated workspace via structured editor', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
-    await openWorkspaceTab(user, 'Pools')
-    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await openWorkspaceTab(user, 'Bindings')
     await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
     fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-key-0'), {
       target: { value: 'services-publication' },
@@ -975,17 +985,9 @@ describe('PoolCatalogPage', () => {
     fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-parameter-value-0-0'), {
       target: { value: '"strict"' },
     })
-    await user.click(screen.getByTestId('pool-catalog-save-pool'))
+    await user.click(screen.getByTestId('pool-catalog-save-bindings'))
 
-    await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
-    expect(mockUpsertOrganizationPool).toHaveBeenCalledWith(
-      expect.objectContaining({
-        pool_id: '44444444-4444-4444-4444-444444444444',
-        code: 'pool-1',
-        name: 'Pool One',
-      })
-    )
-    expect(mockUpsertOrganizationPool.mock.calls[0]?.[0]).not.toHaveProperty('workflow_bindings')
+    expect(mockUpsertOrganizationPool).not.toHaveBeenCalled()
     await waitFor(() => expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledTimes(1))
     expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledWith({
       pool_id: '44444444-4444-4444-4444-444444444444',
@@ -1048,8 +1050,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
-    await openWorkspaceTab(user, 'Pools')
-    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await openWorkspaceTab(user, 'Bindings')
     await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
     await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-decision-0'))
 
@@ -1101,8 +1102,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
-    await openWorkspaceTab(user, 'Pools')
-    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await openWorkspaceTab(user, 'Bindings')
     await waitFor(() => {
       expect(screen.getByTestId('pool-catalog-workflow-binding-decision-select-0-0')).toBeInTheDocument()
     })
@@ -1135,11 +1135,10 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
-    await openWorkspaceTab(user, 'Pools')
-    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await openWorkspaceTab(user, 'Bindings')
 
     expect(await screen.findByText('binding read failed')).toBeInTheDocument()
-    expect(screen.getByTestId('pool-catalog-save-pool')).toBeDisabled()
+    expect(screen.getByTestId('pool-catalog-save-bindings')).toBeDisabled()
     expect(screen.queryByDisplayValue('services-publication')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Workflow bindings JSON')).not.toBeInTheDocument()
   }, 15000)
@@ -1151,8 +1150,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
-    await openWorkspaceTab(user, 'Pools')
-    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await openWorkspaceTab(user, 'Bindings')
     await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
     fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-key-0'), {
       target: { value: 'services-publication' },
@@ -1177,7 +1175,7 @@ describe('PoolCatalogPage', () => {
       target: { value: '{bad json}' },
     })
 
-    await user.click(screen.getByTestId('pool-catalog-save-pool'))
+    await user.click(screen.getByTestId('pool-catalog-save-bindings'))
 
     expect(
       await screen.findAllByText('Binding #1: parameters.strategy должен быть валидным JSON.')

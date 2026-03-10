@@ -14,6 +14,7 @@
 - Decision authoring/import и migration path теперь опираются на shared configuration-scoped metadata snapshots:
   - в UI/API видны `snapshot_id`, `resolution_mode`, `metadata_hash`, `is_shared_snapshot`, `provenance_database_id`;
   - одинаковый `config_version` сам по себе больше не считается достаточным условием reuse.
+- Reusable subworkflow calls закреплены на pinned subworkflow revision: runtime использует `subworkflow_ref(binding_mode="pinned_revision")` и отклоняет drift/mismatch fail-closed вместо silent fallback на latest revision.
 - `/workflows` закреплён как composition surface, а `/pools/runs` как operator lifecycle/read-model surface для create/inspect/confirm/retry.
 
 ### Operator actions before tenant cutover
