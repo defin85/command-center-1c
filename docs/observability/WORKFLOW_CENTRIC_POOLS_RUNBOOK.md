@@ -177,5 +177,5 @@ Rollback выполняется без переписывания historical run
 - [OPERATORS_SPA_GUIDE.md](../OPERATORS_SPA_GUIDE.md)
 - [2026-02-15-pools-run-input-breaking-change.md](../release-notes/2026-02-15-pools-run-input-breaking-change.md)
 - [2026-03-10-workflow-centric-hardening-cutover.md](../release-notes/2026-03-10-workflow-centric-hardening-cutover.md)
-- [refactor-14 cutover.md](/home/egor/code/command-center-1c/openspec/changes/refactor-14-workflow-centric-hardening/cutover.md)
+- [2026-03-10-refactor-14-workflow-centric-hardening/cutover.md](/home/egor/code/command-center-1c/openspec/changes/2026-03-10-refactor-14-workflow-centric-hardening/cutover.md)
 - [refactor-12 cutover.md](/home/egor/code/command-center-1c/openspec/changes/archive/2026-03-09-refactor-12-workflow-centric-analyst-modeling/cutover.md)

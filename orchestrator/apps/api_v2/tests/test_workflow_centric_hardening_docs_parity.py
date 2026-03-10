@@ -24,7 +24,7 @@ def test_workflow_centric_hardening_cutover_notes_cover_backfill_and_rollback_wi
     cutover = _read_repo_doc(
         "openspec",
         "changes",
-        "refactor-14-workflow-centric-hardening",
+        "2026-03-10-refactor-14-workflow-centric-hardening",
         "cutover.md",
     )
 
@@ -54,7 +54,7 @@ def test_workflow_centric_docs_reference_checked_in_evidence_templates() -> None
     cutover = _read_repo_doc(
         "openspec",
         "changes",
-        "refactor-14-workflow-centric-hardening",
+        "2026-03-10-refactor-14-workflow-centric-hardening",
         "cutover.md",
     )
     release_note = _read_repo_doc(
