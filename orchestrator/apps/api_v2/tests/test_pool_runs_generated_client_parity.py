@@ -84,6 +84,48 @@ def test_generated_pool_run_create_request_requires_binding_field() -> None:
     assert re.search(r"pool_workflow_binding_id: string;", content)
 
 
+def test_generated_pool_workflow_binding_revision_contract_is_present() -> None:
+    model_path = _repo_root() / "frontend" / "src" / "api" / "generated" / "model" / "poolWorkflowBinding.ts"
+    content = model_path.read_text(encoding="utf-8")
+
+    assert re.search(r"revision\?: number;", content)
+
+
+def test_generated_pool_workflow_binding_delete_params_require_revision() -> None:
+    model_path = (
+        _repo_root()
+        / "frontend"
+        / "src"
+        / "api"
+        / "generated"
+        / "model"
+        / "delPoolsWorkflowBindingsDeleteParams.ts"
+    )
+    content = model_path.read_text(encoding="utf-8")
+
+    assert re.search(r"revision: number;", content)
+
+
+def test_generated_models_cover_shared_metadata_and_decision_surfaces() -> None:
+    contract = _load_openapi_contract()
+
+    checks = {
+        "DecisionTable": "decisionTable.ts",
+        "PoolODataMetadataCatalogResponse": "poolODataMetadataCatalogResponse.ts",
+        "PoolWorkflowBinding": "poolWorkflowBinding.ts",
+    }
+
+    for schema_name, model_file in checks.items():
+        schema = _schema(contract, schema_name)
+        properties = schema.get("properties")
+        assert isinstance(properties, dict)
+        generated_fields = _generated_model_fields(model_file)
+        assert set(properties.keys()).issubset(generated_fields), (
+            f"{schema_name} fields missing in generated model {model_file}: "
+            f"{sorted(set(properties.keys()) - generated_fields)}"
+        )
+
+
 def test_generated_retry_chain_attempt_kind_enum_matches_contract() -> None:
     contract = _load_openapi_contract()
     retry_chain_schema = _schema(contract, "PoolRunRetryChainAttempt")

@@ -67,6 +67,12 @@ delete:
       schema:
         type: string
         format: uuid
+    - name: revision
+      in: query
+      required: true
+      schema:
+        type: integer
+        minimum: 1
     - name: X-CC1C-Tenant-ID
       in: header
       required: false
@@ -93,6 +99,12 @@ delete:
     '401':
       description: Unauthorized
     '404':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+    '409':
       description: ''
       content:
         application/problem+json:

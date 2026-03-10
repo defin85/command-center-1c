@@ -55,3 +55,9 @@ post:
         application/problem+json:
           schema:
             $ref: ../components/schemas/ProblemDetailsError.yaml
+    '409':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml

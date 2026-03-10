@@ -173,6 +173,65 @@ def test_pool_run_create_request_requires_binding_matches_runtime_serializer() -
     assert runtime_field.allow_blank is False
 
 
+def test_pool_workflow_binding_schema_includes_revision_matches_runtime_serializer() -> None:
+    contract = _load_openapi_contract()
+    binding_schema = _schema(contract, "PoolWorkflowBinding")
+    properties = binding_schema.get("properties")
+    assert isinstance(properties, dict)
+
+    revision_schema = properties.get("revision")
+    assert isinstance(revision_schema, dict)
+    assert revision_schema.get("type") == "integer"
+    assert revision_schema.get("minimum") == 1
+
+    runtime_field = pools_view.PoolWorkflowBindingInputSerializer().fields.get("revision")
+    assert isinstance(runtime_field, serializers.IntegerField)
+    assert runtime_field.required is False
+    assert runtime_field.min_value == 1
+
+
+def test_pool_workflow_binding_mutating_paths_expose_revision_conflict_contract() -> None:
+    contract = _load_openapi_contract()
+    paths = contract.get("paths")
+    assert isinstance(paths, dict)
+
+    upsert_path = paths.get("/api/v2/pools/workflow-bindings/upsert/")
+    assert isinstance(upsert_path, dict)
+    upsert_post = upsert_path.get("post")
+    assert isinstance(upsert_post, dict)
+    upsert_responses = upsert_post.get("responses")
+    assert isinstance(upsert_responses, dict)
+    assert (
+        upsert_responses["409"]["content"]["application/problem+json"]["schema"]["$ref"]
+        == "#/components/schemas/ProblemDetailsError"
+    )
+
+    detail_path = paths.get("/api/v2/pools/workflow-bindings/{binding_id}/")
+    assert isinstance(detail_path, dict)
+    delete = detail_path.get("delete")
+    assert isinstance(delete, dict)
+    parameters = delete.get("parameters")
+    assert isinstance(parameters, list)
+
+    revision_parameter = next(
+        (parameter for parameter in parameters if parameter.get("name") == "revision"),
+        None,
+    )
+    assert isinstance(revision_parameter, dict)
+    assert revision_parameter.get("in") == "query"
+    assert revision_parameter.get("required") is True
+    assert revision_parameter.get("schema") == {"type": "integer", "minimum": 1}
+    assert (
+        delete.get("responses", {})["409"]["content"]["application/problem+json"]["schema"]["$ref"]
+        == "#/components/schemas/ProblemDetailsError"
+    )
+
+    runtime_delete_field = pools_view.PoolWorkflowBindingDeleteQuerySerializer().fields.get("revision")
+    assert isinstance(runtime_delete_field, serializers.IntegerField)
+    assert runtime_delete_field.required is True
+    assert runtime_delete_field.min_value == 1
+
+
 def test_safe_command_payload_schemas_cover_runtime_serializer_fields() -> None:
     contract = _load_openapi_contract()
 
@@ -359,6 +418,7 @@ def test_decision_table_schema_includes_metadata_context_and_compatibility_field
         decisions_view.DecisionRevisionMetadataContextSerializer().fields.keys()
     )
     assert runtime_metadata_context_fields.issubset(set(metadata_context_properties.keys()))
+
 
     compatibility_schema = _schema(contract, "DecisionMetadataCompatibility")
     compatibility_properties = compatibility_schema.get("properties")

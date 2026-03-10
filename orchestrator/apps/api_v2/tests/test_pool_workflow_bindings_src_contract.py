@@ -29,6 +29,21 @@ def _load_src_path_item(filename: str) -> dict[str, Any]:
     return payload
 
 
+def _load_src_schema(filename: str) -> dict[str, Any]:
+    schema_path = (
+        Path(__file__).resolve().parents[4]
+        / "contracts"
+        / "orchestrator"
+        / "src"
+        / "components"
+        / "schemas"
+        / filename
+    )
+    payload = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    return payload
+
+
 def test_pool_workflow_bindings_first_class_paths_are_tracked_in_src_contract() -> None:
     contract = _load_src_openapi_contract()
     paths = contract.get("paths")
@@ -64,18 +79,58 @@ def test_pool_workflow_bindings_preview_src_contract_uses_dedicated_request_sche
     assert content["multipart/form-data"]["schema"] == expected_schema
 
 
-def test_pool_upsert_src_contract_does_not_expose_workflow_bindings_write_field() -> None:
-    schema_path = (
-        Path(__file__).resolve().parents[4]
-        / "contracts"
-        / "orchestrator"
-        / "src"
-        / "components"
-        / "schemas"
-        / "OrganizationPoolUpsertRequest.yaml"
+def test_pool_workflow_binding_src_schema_includes_optional_revision_field() -> None:
+    payload = _load_src_schema("PoolWorkflowBinding.yaml")
+
+    properties = payload.get("properties")
+    assert isinstance(properties, dict)
+    assert properties.get("revision") == {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Server-managed optimistic concurrency revision for update/delete operations.",
+    }
+
+
+def test_pool_workflow_bindings_mutating_src_contract_requires_revision_conflict_semantics() -> None:
+    upsert_path = _load_src_path_item("api_v2_pools_workflow-bindings_upsert_.yaml")
+    upsert_post = upsert_path.get("post")
+    assert isinstance(upsert_post, dict)
+
+    upsert_responses = upsert_post.get("responses")
+    assert isinstance(upsert_responses, dict)
+    assert upsert_responses["409"]["content"]["application/problem+json"]["schema"] == {
+        "$ref": "../components/schemas/ProblemDetailsError.yaml"
+    }
+
+    detail_path = _load_src_path_item("api_v2_pools_workflow-bindings_{binding_id}_.yaml")
+    detail_delete = detail_path.get("delete")
+    assert isinstance(detail_delete, dict)
+
+    parameters = detail_delete.get("parameters")
+    assert isinstance(parameters, list)
+    revision_parameter = next(
+        (parameter for parameter in parameters if parameter.get("name") == "revision"),
+        None,
     )
-    payload = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
-    assert isinstance(payload, dict)
+    assert revision_parameter == {
+        "name": "revision",
+        "in": "query",
+        "required": True,
+        "schema": {
+            "type": "integer",
+            "minimum": 1,
+        },
+    }
+
+    delete_responses = detail_delete.get("responses")
+    assert isinstance(delete_responses, dict)
+    assert delete_responses["409"]["content"]["application/problem+json"]["schema"] == {
+        "$ref": "../components/schemas/ProblemDetailsError.yaml"
+    }
+
+
+def test_pool_upsert_src_contract_does_not_expose_workflow_bindings_write_field() -> None:
+    payload = _load_src_schema("OrganizationPoolUpsertRequest.yaml")
 
     properties = payload.get("properties")
     assert isinstance(properties, dict)

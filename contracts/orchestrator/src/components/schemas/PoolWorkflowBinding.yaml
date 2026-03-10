@@ -11,6 +11,10 @@ properties:
     type: string
     format: uuid
     description: Enclosing organization pool identifier.
+  revision:
+    type: integer
+    minimum: 1
+    description: Server-managed optimistic concurrency revision for update/delete operations.
   workflow:
     $ref: ./WorkflowDefinitionRef.yaml
   decisions:
