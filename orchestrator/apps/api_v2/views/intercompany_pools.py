@@ -2033,7 +2033,7 @@ class PoolRunAuditEventSerializer(serializers.Serializer):
 
 class PoolRunCreateRequestSerializer(serializers.Serializer):
     pool_id = serializers.UUIDField()
-    pool_workflow_binding_id = serializers.CharField(required=False, allow_blank=False)
+    pool_workflow_binding_id = serializers.CharField(required=True, allow_blank=False)
     direction = serializers.ChoiceField(choices=PoolRunDirection.values)
     period_start = serializers.DateField()
     period_end = serializers.DateField(required=False, allow_null=True)
@@ -2641,6 +2641,13 @@ def create_pool_run(request):
 
     serializer = PoolRunCreateRequestSerializer(data=request.data or {})
     if not serializer.is_valid():
+        if "pool_workflow_binding_id" in serializer.errors:
+            return _problem(
+                code="POOL_WORKFLOW_BINDING_REQUIRED",
+                title="Pool Workflow Binding Required",
+                detail="pool_workflow_binding_id is required.",
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+            )
         return _problem(
             code="VALIDATION_ERROR",
             title="Validation Error",

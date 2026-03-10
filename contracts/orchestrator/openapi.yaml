@@ -14290,6 +14290,42 @@ components:
       required:
         - rule_id
         - outputs
+    DecisionRevisionMetadataContext:
+      type: object
+      properties:
+        database_id:
+          type: string
+        snapshot_id:
+          type: string
+        config_name:
+          type: string
+        config_version:
+          type: string
+        extensions_fingerprint:
+          type: string
+        metadata_hash:
+          type: string
+        resolution_mode:
+          type: string
+        is_shared_snapshot:
+          type: boolean
+        provenance_database_id:
+          type: string
+        provenance_confirmed_at:
+          type: string
+    DecisionMetadataCompatibility:
+      type: object
+      properties:
+        status:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        is_compatible:
+          type: boolean
+      required:
+        - status
+        - is_compatible
     DecisionTable:
       type: object
       description: Versioned DMN-lite decision table resource.
@@ -14331,12 +14367,10 @@ components:
           format: uuid
           nullable: true
         metadata_context:
-          allOf:
-            - $ref: '#/components/schemas/DecisionRevisionMetadataContext'
+          $ref: '#/components/schemas/DecisionRevisionMetadataContext'
           nullable: true
         metadata_compatibility:
-          allOf:
-            - $ref: '#/components/schemas/DecisionMetadataCompatibility'
+          $ref: '#/components/schemas/DecisionMetadataCompatibility'
           nullable: true
         created_at:
           type: string
@@ -14358,12 +14392,64 @@ components:
         - is_active
         - created_at
         - updated_at
-    DecisionRevisionMetadataContext:
+    PoolODataMetadataCatalogField:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        nullable:
+          type: boolean
+      required:
+        - name
+        - nullable
+        - type
+    PoolODataMetadataCatalogTablePart:
+      type: object
+      properties:
+        name:
+          type: string
+        row_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolODataMetadataCatalogField'
+      required:
+        - name
+        - row_fields
+    PoolODataMetadataCatalogDocument:
+      type: object
+      properties:
+        entity_name:
+          type: string
+        display_name:
+          type: string
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolODataMetadataCatalogField'
+        table_parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolODataMetadataCatalogTablePart'
+      required:
+        - display_name
+        - entity_name
+        - fields
+        - table_parts
+    PoolODataMetadataCatalogResponse:
       type: object
       properties:
         database_id:
           type: string
         snapshot_id:
+          type: string
+        source:
+          type: string
+        fetched_at:
+          type: string
+          format: date-time
+        catalog_version:
           type: string
         config_name:
           type: string
@@ -14381,19 +14467,26 @@ components:
           type: string
         provenance_confirmed_at:
           type: string
-    DecisionMetadataCompatibility:
-      type: object
-      properties:
-        status:
-          type: string
-        reason:
-          type: string
-          nullable: true
-        is_compatible:
-          type: boolean
+          format: date-time
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolODataMetadataCatalogDocument'
       required:
-        - status
-        - is_compatible
+        - catalog_version
+        - config_name
+        - config_version
+        - database_id
+        - documents
+        - extensions_fingerprint
+        - fetched_at
+        - is_shared_snapshot
+        - metadata_hash
+        - provenance_confirmed_at
+        - provenance_database_id
+        - resolution_mode
+        - snapshot_id
+        - source
     DecisionTableListResponse:
       type: object
       properties:
@@ -17861,101 +17954,6 @@ components:
         - pool_id
         - count
         - snapshots
-    PoolODataMetadataCatalogField:
-      type: object
-      properties:
-        name:
-          type: string
-        type:
-          type: string
-        nullable:
-          type: boolean
-      required:
-        - name
-        - nullable
-        - type
-    PoolODataMetadataCatalogTablePart:
-      type: object
-      properties:
-        name:
-          type: string
-        row_fields:
-          type: array
-          items:
-            $ref: '#/components/schemas/PoolODataMetadataCatalogField'
-      required:
-        - name
-        - row_fields
-    PoolODataMetadataCatalogDocument:
-      type: object
-      properties:
-        entity_name:
-          type: string
-        display_name:
-          type: string
-        fields:
-          type: array
-          items:
-            $ref: '#/components/schemas/PoolODataMetadataCatalogField'
-        table_parts:
-          type: array
-          items:
-            $ref: '#/components/schemas/PoolODataMetadataCatalogTablePart'
-      required:
-        - display_name
-        - entity_name
-        - fields
-        - table_parts
-    PoolODataMetadataCatalogResponse:
-      type: object
-      properties:
-        database_id:
-          type: string
-        snapshot_id:
-          type: string
-        source:
-          type: string
-        fetched_at:
-          type: string
-          format: date-time
-        catalog_version:
-          type: string
-        config_name:
-          type: string
-        config_version:
-          type: string
-        extensions_fingerprint:
-          type: string
-        metadata_hash:
-          type: string
-        resolution_mode:
-          type: string
-        is_shared_snapshot:
-          type: boolean
-        provenance_database_id:
-          type: string
-        provenance_confirmed_at:
-          type: string
-          format: date-time
-        documents:
-          type: array
-          items:
-            $ref: '#/components/schemas/PoolODataMetadataCatalogDocument'
-      required:
-        - catalog_version
-        - config_name
-        - config_version
-        - database_id
-        - documents
-        - extensions_fingerprint
-        - fetched_at
-        - is_shared_snapshot
-        - metadata_hash
-        - provenance_confirmed_at
-        - provenance_database_id
-        - resolution_mode
-        - snapshot_id
-        - source
     PoolODataMetadataCatalogRefreshRequest:
       type: object
       properties:
@@ -18474,7 +18472,7 @@ components:
           format: uuid
         pool_workflow_binding_id:
           type: string
-          description: Explicit pool workflow binding identifier used to disambiguate create-run resolution when selector-based matching is ambiguous.
+          description: Explicit pool workflow binding identifier required for create-run resolution on the public runtime boundary.
         direction:
           enum:
             - top_down
@@ -18521,6 +18519,7 @@ components:
         - direction
         - period_start
         - pool_id
+        - pool_workflow_binding_id
         - run_input
     PoolRunCreateResponse:
       type: object

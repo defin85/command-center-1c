@@ -156,7 +156,7 @@ def test_pool_run_schema_covers_runtime_serializer_fields() -> None:
     assert readiness_checklist == {"$ref": "#/components/schemas/PoolRunReadinessChecklist"}
 
 
-def test_pool_run_create_request_optional_binding_matches_runtime_serializer() -> None:
+def test_pool_run_create_request_requires_binding_matches_runtime_serializer() -> None:
     contract = _load_openapi_contract()
     request_schema = _schema(contract, "PoolRunCreateRequest")
     properties = request_schema.get("properties")
@@ -165,12 +165,11 @@ def test_pool_run_create_request_optional_binding_matches_runtime_serializer() -
 
     required = request_schema.get("required")
     assert isinstance(required, list)
-    assert "pool_workflow_binding_id" not in required
-    assert {"pool_id", "direction", "period_start", "run_input"}.issubset(set(required))
+    assert {"pool_id", "pool_workflow_binding_id", "direction", "period_start", "run_input"}.issubset(set(required))
 
     runtime_field = pools_view.PoolRunCreateRequestSerializer().fields.get("pool_workflow_binding_id")
     assert isinstance(runtime_field, serializers.CharField)
-    assert runtime_field.required is False
+    assert runtime_field.required is True
     assert runtime_field.allow_blank is False
 
 

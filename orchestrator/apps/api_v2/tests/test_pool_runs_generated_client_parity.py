@@ -77,11 +77,11 @@ def test_generated_models_cover_contract_pool_runs_schemas() -> None:
         )
 
 
-def test_generated_pool_run_create_request_keeps_binding_optional_when_contract_allows_resolution() -> None:
+def test_generated_pool_run_create_request_requires_binding_field() -> None:
     model_path = _repo_root() / "frontend" / "src" / "api" / "generated" / "model" / "poolRunCreateRequest.ts"
     content = model_path.read_text(encoding="utf-8")
 
-    assert re.search(r"pool_workflow_binding_id\?: string;", content)
+    assert re.search(r"pool_workflow_binding_id: string;", content)
 
 
 def test_generated_retry_chain_attempt_kind_enum_matches_contract() -> None:

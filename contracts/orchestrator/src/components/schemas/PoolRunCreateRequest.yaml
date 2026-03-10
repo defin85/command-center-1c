@@ -5,7 +5,7 @@ properties:
     format: uuid
   pool_workflow_binding_id:
     type: string
-    description: Explicit pool workflow binding identifier used to disambiguate create-run resolution when selector-based matching is ambiguous.
+    description: Explicit pool workflow binding identifier required for create-run resolution on the public runtime boundary.
   direction:
     enum:
       - top_down
@@ -52,4 +52,5 @@ required:
   - direction
   - period_start
   - pool_id
+  - pool_workflow_binding_id
   - run_input

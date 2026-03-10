@@ -3021,7 +3021,7 @@ def test_list_pool_topology_snapshots_returns_periods_with_counts(
 
 
 @pytest.mark.django_db
-def test_create_pool_run_rejects_ambiguous_selector_without_explicit_binding_id(
+def test_create_pool_run_rejects_missing_binding_reference_when_selector_is_ambiguous(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
@@ -3065,19 +3065,15 @@ def test_create_pool_run_rejects_ambiguous_selector_without_explicit_binding_id(
     payload = _assert_problem_details_response(
         response,
         status_code=400,
-        code="POOL_WORKFLOW_BINDING_AMBIGUOUS",
+        code="POOL_WORKFLOW_BINDING_REQUIRED",
     )
-    assert "Multiple active pool workflow bindings matched" in payload["detail"]
-    assert len(payload["errors"]) == 2
-    assert {item["binding_id"] for item in payload["errors"]} == {
-        first_binding["binding_id"],
-        second_binding["binding_id"],
-    }
+    assert payload["detail"] == "pool_workflow_binding_id is required."
+    assert payload.get("errors", []) == []
     assert not PoolRun.objects.filter(pool=pool).exists()
 
 
 @pytest.mark.django_db
-def test_create_pool_run_rejects_when_selector_does_not_resolve_binding(
+def test_create_pool_run_rejects_missing_binding_reference_even_with_single_candidate(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
@@ -3109,25 +3105,10 @@ def test_create_pool_run_rejects_when_selector_does_not_resolve_binding(
     payload = _assert_problem_details_response(
         response,
         status_code=400,
-        code="POOL_WORKFLOW_BINDING_NOT_RESOLVED",
+        code="POOL_WORKFLOW_BINDING_REQUIRED",
     )
-    assert "No active pool workflow binding matched" in payload["detail"]
-    assert payload["errors"] == [
-        {
-            "binding_id": binding["binding_id"],
-            "pool_id": str(pool.id),
-            "workflow_definition_key": "top-down-only",
-            "workflow_revision": 2,
-            "status": "active",
-            "effective_from": "2026-01-01",
-            "effective_to": None,
-            "selector": {
-                "direction": PoolRunDirection.TOP_DOWN,
-                "mode": PoolRunMode.SAFE,
-                "tags": [],
-            },
-        }
-    ]
+    assert payload["detail"] == "pool_workflow_binding_id is required."
+    assert payload.get("errors", []) == []
     assert not PoolRun.objects.filter(pool=pool).exists()
 
 
@@ -3199,6 +3180,7 @@ def test_create_pool_run_rejects_top_down_without_starting_amount(
         "/api/v2/pools/runs/",
         {
             "pool_id": str(pool.id),
+            "pool_workflow_binding_id": "binding-required-top-down",
             "direction": PoolRunDirection.TOP_DOWN,
             "period_start": "2026-01-01",
             "run_input": {},
@@ -3219,6 +3201,7 @@ def test_create_pool_run_rejects_bottom_up_without_source_input(
         "/api/v2/pools/runs/",
         {
             "pool_id": str(pool.id),
+            "pool_workflow_binding_id": "binding-required-bottom-up",
             "direction": PoolRunDirection.BOTTOM_UP,
             "period_start": "2026-01-01",
             "run_input": {},
@@ -3239,6 +3222,7 @@ def test_create_pool_run_rejects_legacy_source_hash_field_as_problem_details(
         "/api/v2/pools/runs/",
         {
             "pool_id": str(pool.id),
+            "pool_workflow_binding_id": "binding-required-source-hash",
             "direction": PoolRunDirection.BOTTOM_UP,
             "period_start": "2026-01-01",
             "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
@@ -3252,7 +3236,7 @@ def test_create_pool_run_rejects_legacy_source_hash_field_as_problem_details(
 
 
 @pytest.mark.django_db
-def test_create_pool_run_endpoint_resolves_single_binding_and_reuses_idempotency_key(
+def test_create_pool_run_endpoint_requires_explicit_binding_and_reuses_idempotency_key(
     authenticated_client: APIClient,
     user: User,
     pool: OrganizationPool,
@@ -3273,6 +3257,7 @@ def test_create_pool_run_endpoint_resolves_single_binding_and_reuses_idempotency
     )[0][0]
     payload = {
         "pool_id": str(pool.id),
+        "pool_workflow_binding_id": binding["binding_id"],
         "direction": PoolRunDirection.BOTTOM_UP,
         "period_start": "2026-01-01",
         "period_end": "2026-01-31",
@@ -3443,7 +3428,7 @@ def test_create_pool_run_returns_problem_details_for_pool_runtime_fail_closed_er
     user: User,
     pool: OrganizationPool,
 ) -> None:
-    _prepare_pool_runtime_bindings(
+    bindings, _ = _prepare_pool_runtime_bindings(
         tenant=pool.tenant,
         pool=pool,
         bindings=[
@@ -3458,8 +3443,10 @@ def test_create_pool_run_returns_problem_details_for_pool_runtime_fail_closed_er
         period_start=date(2026, 1, 1),
         actor=user,
     )
+    binding = bindings[0]
     payload = {
         "pool_id": str(pool.id),
+        "pool_workflow_binding_id": binding["binding_id"],
         "direction": PoolRunDirection.BOTTOM_UP,
         "period_start": "2026-01-01",
         "period_end": "2026-01-31",
@@ -3490,7 +3477,7 @@ def test_create_pool_run_returns_problem_details_for_missing_actor_mapping(
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
-    _prepare_pool_runtime_bindings(
+    bindings, _ = _prepare_pool_runtime_bindings(
         tenant=default_tenant,
         pool=pool,
         bindings=[
@@ -3504,8 +3491,10 @@ def test_create_pool_run_returns_problem_details_for_missing_actor_mapping(
         ],
         period_start=date(2026, 1, 1),
     )
+    binding = bindings[0]
     payload = {
         "pool_id": str(pool.id),
+        "pool_workflow_binding_id": binding["binding_id"],
         "direction": PoolRunDirection.BOTTOM_UP,
         "period_start": "2026-01-01",
         "period_end": "2026-01-31",
@@ -3577,13 +3566,38 @@ def test_preview_pool_workflow_binding_uses_managed_default_schema_template_on_d
 
 
 @pytest.mark.django_db
+def test_preview_pool_workflow_binding_rejects_missing_binding_reference(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/preview/",
+        {
+            "pool_id": str(pool.id),
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_WORKFLOW_BINDING_REQUIRED",
+    )
+    assert payload["detail"] == "pool_workflow_binding_id is required."
+
+
+@pytest.mark.django_db
 def test_create_pool_run_returns_problem_details_for_ambiguous_actor_mapping(
     authenticated_client: APIClient,
     user: User,
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
-    _, database = _prepare_pool_runtime_bindings(
+    bindings, database = _prepare_pool_runtime_bindings(
         tenant=default_tenant,
         pool=pool,
         bindings=[
@@ -3611,8 +3625,10 @@ def test_create_pool_run_returns_problem_details_for_ambiguous_actor_mapping(
         ib_password="pass-2",
         is_service=False,
     )
+    binding = bindings[0]
     payload = {
         "pool_id": str(pool.id),
+        "pool_workflow_binding_id": binding["binding_id"],
         "direction": PoolRunDirection.BOTTOM_UP,
         "period_start": "2026-01-01",
         "period_end": "2026-01-31",
@@ -3638,7 +3654,7 @@ def test_create_pool_run_succeeds_when_actor_mapping_configured(
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
-    _, database = _prepare_pool_runtime_bindings(
+    bindings, database = _prepare_pool_runtime_bindings(
         tenant=default_tenant,
         pool=pool,
         bindings=[
@@ -3658,8 +3674,10 @@ def test_create_pool_run_succeeds_when_actor_mapping_configured(
             user=user,
             username="actor-ok",
         )
+    binding = bindings[0]
     payload = {
         "pool_id": str(pool.id),
+        "pool_workflow_binding_id": binding["binding_id"],
         "direction": PoolRunDirection.BOTTOM_UP,
         "period_start": "2026-01-01",
         "period_end": "2026-01-31",
@@ -3683,7 +3701,7 @@ def test_create_pool_run_enqueues_to_workflow_stream_with_normal_priority(
     user: User,
     pool: OrganizationPool,
 ) -> None:
-    _prepare_pool_runtime_bindings(
+    bindings, _ = _prepare_pool_runtime_bindings(
         tenant=pool.tenant,
         pool=pool,
         bindings=[
@@ -3698,8 +3716,10 @@ def test_create_pool_run_enqueues_to_workflow_stream_with_normal_priority(
         period_start=date(2026, 1, 1),
         actor=user,
     )
+    binding = bindings[0]
     payload = {
         "pool_id": str(pool.id),
+        "pool_workflow_binding_id": binding["binding_id"],
         "direction": PoolRunDirection.BOTTOM_UP,
         "period_start": "2026-01-01",
         "run_input": {"source_payload": [{"inn": "730000000001", "amount": "30.00"}]},
@@ -6768,7 +6788,7 @@ def test_create_pool_run_with_schema_template_uses_workflow_runtime(
         is_public=True,
         schema={"columns": {"inn": "inn", "amount": "amount"}},
     )
-    _prepare_pool_runtime_bindings(
+    bindings, _ = _prepare_pool_runtime_bindings(
         tenant=default_tenant,
         pool=pool,
         bindings=[
@@ -6783,6 +6803,7 @@ def test_create_pool_run_with_schema_template_uses_workflow_runtime(
         period_start=date(2026, 1, 1),
         actor=user,
     )
+    binding = bindings[0]
 
     with patch(
         "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
@@ -6792,6 +6813,7 @@ def test_create_pool_run_with_schema_template_uses_workflow_runtime(
             "/api/v2/pools/runs/",
             {
                 "pool_id": str(pool.id),
+                "pool_workflow_binding_id": binding["binding_id"],
                 "direction": PoolRunDirection.BOTTOM_UP,
                 "period_start": "2026-01-01",
                 "period_end": "2026-01-31",
