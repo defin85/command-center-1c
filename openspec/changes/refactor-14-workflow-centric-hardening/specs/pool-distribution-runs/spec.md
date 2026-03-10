@@ -15,6 +15,8 @@ Public operator-facing `POST /api/v2/pools/runs/` и `POST /api/v2/pools/workflo
 
 Selector-based matching МОЖЕТ (MAY) использоваться только для UI prefill/assistive hint до submit и НЕ ДОЛЖЕН (SHALL NOT) заменять explicit binding reference на public request boundary.
 
+Preview/create-run path ДОЛЖЕН (SHALL) резолвить binding только из canonical binding store и сохранять binding lineage snapshot на `PoolRun`/execution в момент запуска.
+
 #### Scenario: Top-down run запускается из UI с выбранным binding и стартовой суммой
 - **GIVEN** оператор выбрал pool, binding и направление `top_down`
 - **WHEN** оператор вводит стартовую сумму и отправляет форму запуска
@@ -26,3 +28,10 @@ Selector-based matching МОЖЕТ (MAY) использоваться тольк
 - **WHEN** внешний клиент отправляет `POST /api/v2/pools/runs/` без `pool_workflow_binding_id`
 - **THEN** система возвращает fail-closed validation/problem-details ошибку
 - **AND** runtime не пытается silently выбрать binding по selector вместо клиента
+
+#### Scenario: Run сохраняет binding lineage snapshot из canonical store
+- **GIVEN** оператор запускает run с explicit `pool_workflow_binding_id`
+- **AND** canonical binding store возвращает pinned workflow revision, `decisions`, `parameters` и `role_mapping`
+- **WHEN** create-run успешно создаёт execution
+- **THEN** `PoolRun`/execution сохраняет lineage snapshot выбранного binding
+- **AND** последующий inspect использует этот snapshot как deterministic provenance
