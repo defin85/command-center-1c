@@ -9,7 +9,6 @@ from apps.intercompany_pools.workflow_authoring_contract import PoolWorkflowBind
 ERROR_CODE_POOL_WORKFLOW_BINDING_INVALID = "POOL_WORKFLOW_BINDING_INVALID"
 ERROR_CODE_POOL_WORKFLOW_BINDING_NOT_FOUND = "POOL_WORKFLOW_BINDING_NOT_FOUND"
 ERROR_CODE_POOL_WORKFLOW_BINDING_NOT_RESOLVED = "POOL_WORKFLOW_BINDING_NOT_RESOLVED"
-ERROR_CODE_POOL_WORKFLOW_BINDING_AMBIGUOUS = "POOL_WORKFLOW_BINDING_AMBIGUOUS"
 
 
 @dataclass(slots=True)
@@ -32,6 +31,10 @@ def resolve_pool_workflow_binding_for_run(
 ) -> PoolWorkflowBindingContract | None:
     bindings = parse_pool_workflow_bindings(raw_bindings)
     if not bindings:
+        return None
+
+    # Selector matching is assistive-only and must not auto-resolve a runtime binding.
+    if not requested_binding_id:
         return None
 
     if requested_binding_id:
@@ -61,29 +64,7 @@ def resolve_pool_workflow_binding_for_run(
                 errors=[_serialize_binding_diagnostic(selected)],
             )
         return selected
-
-    matched = [
-        binding
-        for binding in bindings
-        if _is_binding_active_for_period(binding=binding, period_start=period_start)
-        and _selector_matches(binding=binding, direction=direction, mode=mode, allow_tagged_binding=False)
-    ]
-    if len(matched) == 1:
-        return matched[0]
-    if not matched:
-        raise PoolWorkflowBindingResolutionError(
-            code=ERROR_CODE_POOL_WORKFLOW_BINDING_NOT_RESOLVED,
-            detail=(
-                "No active pool workflow binding matched the requested direction/mode "
-                "for the selected period."
-            ),
-            errors=[_serialize_binding_diagnostic(binding) for binding in bindings],
-        )
-    raise PoolWorkflowBindingResolutionError(
-        code=ERROR_CODE_POOL_WORKFLOW_BINDING_AMBIGUOUS,
-        detail="Multiple active pool workflow bindings matched the requested direction/mode.",
-        errors=[_serialize_binding_diagnostic(binding) for binding in matched],
-    )
+    return None
 
 
 def parse_pool_workflow_bindings(raw_bindings: Iterable[Any]) -> list[PoolWorkflowBindingContract]:
@@ -158,7 +139,6 @@ def _serialize_binding_diagnostic(binding: PoolWorkflowBindingContract) -> dict[
 
 
 __all__ = [
-    "ERROR_CODE_POOL_WORKFLOW_BINDING_AMBIGUOUS",
     "ERROR_CODE_POOL_WORKFLOW_BINDING_INVALID",
     "ERROR_CODE_POOL_WORKFLOW_BINDING_NOT_FOUND",
     "ERROR_CODE_POOL_WORKFLOW_BINDING_NOT_RESOLVED",
