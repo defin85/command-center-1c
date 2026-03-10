@@ -79,6 +79,35 @@ def build_decision_table_metadata_context(
     return normalized or None
 
 
+def build_decision_table_source_provenance(
+    *,
+    source_provenance: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(source_provenance, Mapping):
+        return None
+
+    normalized: dict[str, Any] = {}
+    for key in (
+        "kind",
+        "source_path",
+        "pool_id",
+        "edge_version_id",
+        "parent_node_version_id",
+        "child_node_version_id",
+        "parent_organization_id",
+        "child_organization_id",
+        "child_database_id",
+        "effective_from",
+        "effective_to",
+        "legacy_policy_hash",
+    ):
+        value = str(source_provenance.get(key) or "").strip()
+        if value:
+            normalized[key] = value
+
+    return normalized or None
+
+
 def assess_decision_table_metadata_compatibility(
     *,
     decision_table: DecisionTable,
@@ -186,8 +215,14 @@ def create_decision_table_revision(
         outputs=[field.model_dump(mode="json") for field in parsed.outputs],
         rules=[rule.model_dump(mode="json") for rule in parsed.rules],
         metadata_context=build_decision_table_metadata_context(
-            metadata_context=payload.get("metadata_context")
-            if isinstance(payload.get("metadata_context"), Mapping)
+        metadata_context=payload.get("metadata_context")
+        if isinstance(payload.get("metadata_context"), Mapping)
+        else None
+        )
+        or {},
+        source_provenance=build_decision_table_source_provenance(
+            source_provenance=payload.get("source_provenance")
+            if isinstance(payload.get("source_provenance"), Mapping)
             else None
         )
         or {},
@@ -271,6 +306,7 @@ __all__ = [
     "assess_decision_table_metadata_compatibility",
     "build_decision_table_contract",
     "build_decision_table_metadata_context",
+    "build_decision_table_source_provenance",
     "build_decision_table_ref",
     "create_decision_table_revision",
     "evaluate_decision_table",

@@ -65,6 +65,11 @@ class DecisionTable(models.Model):
         blank=True,
         help_text="Immutable metadata snapshot provenance for metadata-aware decisions.",
     )
+    source_provenance = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Immutable source provenance for imported or migrated decision revisions.",
+    )
     hit_policy = models.CharField(max_length=32, default="first_match")
     validation_mode = models.CharField(max_length=32, default="fail_closed")
     is_active = models.BooleanField(default=True)

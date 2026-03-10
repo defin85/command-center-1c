@@ -16,6 +16,7 @@ from apps.intercompany_pools.metadata_catalog import (
     ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS,
     MetadataCatalogError,
 )
+from apps.intercompany_pools.document_policy_contract import resolve_document_policy_from_edge_metadata
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationStatus,
@@ -42,7 +43,7 @@ from apps.intercompany_pools.workflow_runtime import POOL_RUNTIME_WORKFLOW_BINDI
 from apps.operations.services import EnqueueResult
 from apps.runtime_settings.models import RuntimeSetting
 from apps.templates.workflow.decision_tables import create_decision_table_revision
-from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate, WorkflowType
+from apps.templates.workflow.models import DecisionTable, WorkflowExecution, WorkflowTemplate, WorkflowType
 from apps.tenancy.models import Tenant, TenantMember
 
 
@@ -2286,6 +2287,210 @@ def test_get_pool_graph_returns_node_and_edge_metadata_including_document_policy
     documents = edge_metadata["document_policy"]["chains"][0]["documents"]
     assert documents[0]["invoice_mode"] == "required"
     assert documents[1]["invoice_mode"] == "optional"
+
+
+@pytest.mark.django_db
+def test_migrate_pool_edge_document_policy_materializes_decision_revision_with_provenance(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    leaf_db = _create_database(
+        tenant=default_tenant,
+        name=f"migration-leaf-db-{uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    snapshot = _create_current_metadata_catalog_snapshot(
+        tenant=default_tenant,
+        database=leaf_db,
+    )
+    _create_service_infobase_mapping(database=leaf_db)
+    root_org = Organization.objects.create(
+        tenant=default_tenant,
+        name="Migration Root",
+        inn="741100000061",
+    )
+    leaf_org = Organization.objects.create(
+        tenant=default_tenant,
+        database=leaf_db,
+        name="Migration Leaf",
+        inn="741100000062",
+    )
+    root_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=root_org,
+        effective_from=date(2026, 1, 1),
+        is_root=True,
+    )
+    leaf_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=leaf_org,
+        effective_from=date(2026, 1, 1),
+        is_root=False,
+    )
+    policy = _build_document_policy_payload()
+    normalized_policy = resolve_document_policy_from_edge_metadata(
+        metadata={"document_policy": policy}
+    )
+    assert normalized_policy is not None
+    edge = PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=root_node,
+        child_node=leaf_node,
+        effective_from=date(2026, 1, 1),
+        metadata={"document_policy": policy},
+    )
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/document-policy-migrations/",
+        {"edge_version_id": str(edge.id)},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    decision_payload = payload["decision"]
+    migration = payload["migration"]
+    assert decision_payload["decision_key"] == "document_policy"
+    assert decision_payload["decision_revision"] == 1
+    assert decision_payload["rules"][0]["outputs"]["document_policy"] == normalized_policy
+    assert migration["created"] is True
+    assert migration["binding_update_required"] is True
+    assert migration["source"]["pool_id"] == str(pool.id)
+    assert migration["source"]["edge_version_id"] == str(edge.id)
+    assert migration["source"]["source_path"] == "edge.metadata.document_policy"
+    assert migration["decision_ref"]["decision_table_id"] == decision_payload["decision_table_id"]
+    assert migration["decision_ref"]["decision_revision"] == decision_payload["decision_revision"]
+
+    decision = DecisionTable.objects.get(id=decision_payload["id"])
+    assert decision.metadata_context["snapshot_id"] == str(snapshot.id)
+    assert decision.source_provenance["kind"] == "legacy_edge_document_policy"
+    assert decision.source_provenance["edge_version_id"] == str(edge.id)
+    assert decision.source_provenance["parent_organization_id"] == str(root_org.id)
+    assert decision.source_provenance["child_organization_id"] == str(leaf_org.id)
+    assert decision.source_provenance["child_database_id"] == str(leaf_db.id)
+
+
+@pytest.mark.django_db
+def test_migrate_pool_edge_document_policy_reuses_existing_revision_for_same_edge(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    leaf_db = _create_database(
+        tenant=default_tenant,
+        name=f"migration-reuse-db-{uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    _create_current_metadata_catalog_snapshot(
+        tenant=default_tenant,
+        database=leaf_db,
+    )
+    _create_service_infobase_mapping(database=leaf_db)
+    root_org = Organization.objects.create(
+        tenant=default_tenant,
+        name="Migration Reuse Root",
+        inn="741100000063",
+    )
+    leaf_org = Organization.objects.create(
+        tenant=default_tenant,
+        database=leaf_db,
+        name="Migration Reuse Leaf",
+        inn="741100000064",
+    )
+    root_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=root_org,
+        effective_from=date(2026, 1, 1),
+        is_root=True,
+    )
+    leaf_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=leaf_org,
+        effective_from=date(2026, 1, 1),
+        is_root=False,
+    )
+    edge = PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=root_node,
+        child_node=leaf_node,
+        effective_from=date(2026, 1, 1),
+        metadata={"document_policy": _build_document_policy_payload()},
+    )
+
+    first_response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/document-policy-migrations/",
+        {"edge_version_id": str(edge.id)},
+        format="json",
+    )
+    assert first_response.status_code == 201
+    first_payload = first_response.json()
+
+    second_response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/document-policy-migrations/",
+        {"edge_version_id": str(edge.id)},
+        format="json",
+    )
+
+    assert second_response.status_code == 200
+    second_payload = second_response.json()
+    assert second_payload["migration"]["created"] is False
+    assert second_payload["migration"]["reused_existing_revision"] is True
+    assert second_payload["decision"]["id"] == first_payload["decision"]["id"]
+    assert second_payload["decision"]["decision_revision"] == first_payload["decision"]["decision_revision"]
+    assert DecisionTable.objects.filter(decision_key="document_policy").count() == 1
+
+
+@pytest.mark.django_db
+def test_migrate_pool_edge_document_policy_rejects_edge_without_policy(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    root_org = Organization.objects.create(
+        tenant=default_tenant,
+        name="Migration No Policy Root",
+        inn="741100000065",
+    )
+    leaf_org = Organization.objects.create(
+        tenant=default_tenant,
+        name="Migration No Policy Leaf",
+        inn="741100000066",
+    )
+    root_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=root_org,
+        effective_from=date(2026, 1, 1),
+        is_root=True,
+    )
+    leaf_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=leaf_org,
+        effective_from=date(2026, 1, 1),
+        is_root=False,
+    )
+    edge = PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=root_node,
+        child_node=leaf_node,
+        effective_from=date(2026, 1, 1),
+        metadata={"edge_tag": "legacy-only"},
+    )
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/document-policy-migrations/",
+        {"edge_version_id": str(edge.id)},
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_DOCUMENT_POLICY_NOT_FOUND",
+    )
+    assert "edge.metadata.document_policy" in str(payload["detail"])
 
 
 @pytest.mark.django_db

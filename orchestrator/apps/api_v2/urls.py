@@ -35,6 +35,7 @@ from .views import (
     driver_catalogs,
     operation_catalog,
     decisions,
+    pool_document_policy_migrations,
     intercompany_pools,
     intercompany_pools_master_data,
     intercompany_pools_master_data_bootstrap,
@@ -301,6 +302,11 @@ urlpatterns = [
         name='pools-topology-snapshots-list',
     ),
     path('pools/<uuid:pool_id>/graph/', intercompany_pools.get_pool_graph, name='pools-graph'),
+    path(
+        'pools/<uuid:pool_id>/document-policy-migrations/',
+        pool_document_policy_migrations.migrate_pool_edge_document_policy,
+        name='pools-document-policy-migrations',
+    ),
     path('pools/runs/', intercompany_pools.create_pool_run, name='pools-run-create'),
     path('pools/runs/<uuid:run_id>/', intercompany_pools.get_pool_run, name='pools-run-get'),
     path(
