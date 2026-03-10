@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+CHANGE_ID = "add-refactor-14-workflow-centric-hardening"
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
@@ -25,7 +27,7 @@ def test_workflow_centric_hardening_cutover_notes_cover_backfill_and_rollback_wi
     cutover = _read_repo_doc(
         "openspec",
         "changes",
-        "2026-03-10-refactor-14-workflow-centric-hardening",
+        CHANGE_ID,
         "cutover.md",
     )
 
@@ -57,7 +59,7 @@ def test_workflow_centric_docs_reference_checked_in_evidence_templates() -> None
     cutover = _read_repo_doc(
         "openspec",
         "changes",
-        "2026-03-10-refactor-14-workflow-centric-hardening",
+        CHANGE_ID,
         "cutover.md",
     )
     release_note = _read_repo_doc(
@@ -78,6 +80,12 @@ def test_workflow_centric_docs_reference_checked_in_evidence_templates() -> None
         assert path in cutover
         assert path in release_note
         assert _repo_root().joinpath(path).exists()
+
+
+def test_workflow_centric_tasks_validate_active_change_id() -> None:
+    tasks = _read_repo_doc("openspec", "changes", CHANGE_ID, "tasks.md")
+
+    assert f"openspec validate {CHANGE_ID} --strict --no-interactive" in tasks
 
 
 def test_workflow_centric_repository_acceptance_evidence_describes_default_shipped_path() -> None:

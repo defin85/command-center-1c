@@ -44,4 +44,4 @@
 - [x] 7.2 Добавить backend integration coverage для shared metadata snapshot reuse across infobases, backfill database-local snapshots в shared registry, fail-closed divergence при разном published metadata surface, migration path `edge.metadata.document_policy -> decision resource + binding refs`, explicit binding requirement, stale revision conflicts, отсутствия metadata runtime read после cutover и pinned subworkflow runtime.
 - [x] 7.3 Добавить frontend/browser acceptance coverage для `/decisions` с shared metadata snapshots, decision table lifecycle UI, metadata snapshot provenance/compatibility markers, decision authoring/import flow, `/templates`, `/pools/catalog` и `/pools/runs` shipped flow.
 - [x] 7.4 Обновить operator-facing runbook/release notes/cutover notes под новый hardened contract, включая shared metadata snapshots, backfill, tenant-scoped cutover, decision-resource migration и rollback window.
-- [x] 7.5 Провести `openspec validate 2026-03-10-refactor-14-workflow-centric-hardening --strict --no-interactive`.
+- [x] 7.5 Провести `openspec validate add-refactor-14-workflow-centric-hardening --strict --no-interactive`.

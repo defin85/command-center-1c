@@ -53,4 +53,4 @@
 ### Canonical references
 
 - Runbook: [WORKFLOW_CENTRIC_POOLS_RUNBOOK.md](../observability/WORKFLOW_CENTRIC_POOLS_RUNBOOK.md)
-- Cutover notes: [2026-03-10-refactor-14-workflow-centric-hardening/cutover.md](/home/egor/code/command-center-1c/openspec/changes/2026-03-10-refactor-14-workflow-centric-hardening/cutover.md)
+- Cutover notes: [add-refactor-14-workflow-centric-hardening/cutover.md](/home/egor/code/command-center-1c/openspec/changes/add-refactor-14-workflow-centric-hardening/cutover.md)

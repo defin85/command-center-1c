@@ -106,6 +106,9 @@ type AcceptanceState = {
   workflowBindingsByPoolId: Record<string, AnyRecord[]>
   migrationCalls: number
   lastMigrationPayload: AnyRecord | null
+  bindingUpsertCalls: number
+  bindingConflictOnce: boolean
+  lastBindingPayload: AnyRecord | null
   previewCalls: number
   lastPreviewPayload: AnyRecord | null
   createRunCalls: number
@@ -478,6 +481,9 @@ function createAcceptanceState(): AcceptanceState {
     },
     migrationCalls: 0,
     lastMigrationPayload: null,
+    bindingUpsertCalls: 0,
+    bindingConflictOnce: false,
+    lastBindingPayload: null,
     previewCalls: 0,
     lastPreviewPayload: null,
     createRunCalls: 0,
@@ -729,6 +735,72 @@ async function setupApiMocks(page: Page, state: AcceptanceState) {
       return fulfillJson(route, { pool_id: poolId, bindings, count: bindings.length })
     }
 
+    if (method === 'POST' && path === '/api/v2/pools/workflow-bindings/upsert/') {
+      const payload = (request.postDataJSON() as AnyRecord | null) ?? {}
+      const poolId = String(payload.pool_id || POOL_ID)
+      const nextBinding = deepClone((payload.workflow_binding as AnyRecord | null) ?? {})
+      state.bindingUpsertCalls += 1
+      state.lastBindingPayload = deepClone(payload)
+
+      if (state.bindingConflictOnce) {
+        state.bindingConflictOnce = false
+        return fulfillJson(route, {
+          type: 'about:blank',
+          title: 'Workflow Binding Revision Conflict',
+          status: 409,
+          detail: 'Workflow binding was updated by another operator. Reload bindings and retry.',
+          code: 'POOL_WORKFLOW_BINDING_REVISION_CONFLICT',
+        }, 409)
+      }
+
+      const existingBindings = state.workflowBindingsByPoolId[poolId] ?? []
+      const bindingId = String(nextBinding.binding_id || `binding-${existingBindings.length + 1}`).trim()
+      const existingIndex = existingBindings.findIndex((item) => String(item.binding_id || '') === bindingId)
+      const existingBinding = existingIndex >= 0 ? existingBindings[existingIndex] : null
+      const workflow = typeof nextBinding.workflow === 'object' && nextBinding.workflow !== null
+        ? nextBinding.workflow as AnyRecord
+        : {}
+      const selector = typeof nextBinding.selector === 'object' && nextBinding.selector !== null
+        ? nextBinding.selector as AnyRecord
+        : {}
+      const normalizedBinding = {
+        contract_version: String(nextBinding.contract_version || 'pool_workflow_binding.v1'),
+        binding_id: bindingId,
+        pool_id: poolId,
+        workflow: {
+          workflow_definition_key: String(workflow.workflow_definition_key || ''),
+          workflow_revision_id: String(workflow.workflow_revision_id || ''),
+          workflow_revision: Number(workflow.workflow_revision || 0),
+          workflow_name: String(workflow.workflow_name || ''),
+        },
+        selector: {
+          direction: String(selector.direction || ''),
+          mode: String(selector.mode || ''),
+          tags: Array.isArray(selector.tags) ? selector.tags : [],
+        },
+        decisions: Array.isArray(nextBinding.decisions) ? deepClone(nextBinding.decisions) : [],
+        parameters: typeof nextBinding.parameters === 'object' && nextBinding.parameters !== null ? deepClone(nextBinding.parameters) : {},
+        role_mapping: typeof nextBinding.role_mapping === 'object' && nextBinding.role_mapping !== null ? deepClone(nextBinding.role_mapping) : {},
+        effective_from: String(nextBinding.effective_from || ''),
+        effective_to: nextBinding.effective_to ?? null,
+        status: String(nextBinding.status || 'draft'),
+        revision: existingBinding ? Number(existingBinding.revision || 0) + 1 : 1,
+      }
+
+      if (existingIndex >= 0) {
+        existingBindings.splice(existingIndex, 1, normalizedBinding)
+      } else {
+        existingBindings.push(normalizedBinding)
+      }
+      state.workflowBindingsByPoolId[poolId] = existingBindings
+
+      return fulfillJson(route, {
+        pool_id: poolId,
+        workflow_binding: normalizedBinding,
+        created: existingBinding === null,
+      }, existingBinding ? 200 : 201)
+    }
+
     if (method === 'POST' && path === '/api/v2/pools/workflow-bindings/preview/') {
       const payload = (request.postDataJSON() as AnyRecord | null) ?? {}
       state.previewCalls += 1
@@ -964,6 +1036,68 @@ test('Workflow hardening: /templates and /pools/catalog expose compatibility gui
   await expect(page.getByText('Source: edge.metadata.document_policy (edge-v1)')).toBeVisible()
   await expect(page.getByText('Decision ref: services-publication-policy r2')).toBeVisible()
   await expect(page.getByText('Updated bindings: services_publication')).toBeVisible()
+})
+
+test('Workflow hardening: /pools/catalog preserves edited binding fields on stale revision conflict', async ({ page }) => {
+  const state = createAcceptanceState()
+  state.bindingConflictOnce = true
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/pools/catalog', { waitUntil: 'domcontentloaded' })
+
+  await page.getByRole('tab', { name: 'Bindings' }).click()
+  const workflowNameField = page.getByTestId('pool-catalog-workflow-binding-workflow-name-0')
+
+  await expect(workflowNameField).toHaveValue('services_publication')
+
+  await workflowNameField.fill('services_publication_conflicted')
+  await page.getByTestId('pool-catalog-save-bindings').click()
+
+  await expect.poll(() => state.bindingUpsertCalls).toBe(1)
+  await expect(page.getByText('Workflow binding уже был изменён другим оператором. Обновите bindings и повторите сохранение.')).toBeVisible()
+  await expect(workflowNameField).toHaveValue('services_publication_conflicted')
+})
+
+test('Workflow hardening: /pools/runs blocks submit when no workflow binding is selected', async ({ page }) => {
+  const state = createAcceptanceState()
+  state.workflowBindingsByPoolId[POOL_ID] = [
+    deepClone(state.workflowBindingsByPoolId[POOL_ID][0]),
+    {
+      ...deepClone(state.workflowBindingsByPoolId[POOL_ID][0]),
+      binding_id: 'binding-top-down-secondary',
+      workflow: {
+        workflow_definition_key: 'services-publication-alt',
+        workflow_revision_id: 'workflow-revision-9',
+        workflow_revision: 9,
+        workflow_name: 'services_publication_alt',
+      },
+      revision: 1,
+    },
+  ]
+  state.pools = state.pools.map((pool) => (
+    String(pool.id) === POOL_ID
+      ? {
+        ...pool,
+        workflow_bindings: deepClone(state.workflowBindingsByPoolId[POOL_ID]),
+      }
+      : pool
+  ))
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/pools/runs', { waitUntil: 'domcontentloaded' })
+
+  await page.getByRole('tab', { name: 'Create' }).click()
+  await expect(page.getByTestId('pool-runs-create-preview')).toBeDisabled()
+
+  await page.getByTestId('pool-runs-create-submit').click()
+
+  await expect.poll(() => state.previewCalls).toBe(0)
+  await expect.poll(() => state.createRunCalls).toBe(0)
+  await expect(page.getByText('workflow binding required')).toBeVisible()
 })
 
 test('Workflow hardening: /pools/runs shipped flow shows pinned decision lineage and verification outcome', async ({ page }) => {
