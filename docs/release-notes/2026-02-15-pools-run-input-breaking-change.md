@@ -3,14 +3,17 @@
 ## Что изменилось
 
 - `POST /api/v2/pools/runs/` больше **не принимает** поле `source_hash`.
+- `POST /api/v2/pools/runs/` и `POST /api/v2/pools/workflow-bindings/preview/` без `pool_workflow_binding_id` отклоняются fail-closed, даже если по selector есть ровно один кандидат.
 - Create-run контракт использует `run_input` как source-of-truth для входных данных.
 - Create-run контракт использует `pool_workflow_binding_id` как pinned binding reference для workflow-centric запуска.
+- Selector matching допустим только для UI prefill/assistive hint до submit.
 - Idempotency для create-run теперь считается по:
   - `pool_id`
   - `pool_workflow_binding_id`
   - `period_start`/`period_end`
   - `direction`
   - `canonicalized(run_input)`
+- Смена `pool_workflow_binding_id` создаёт новый idempotency fingerprint.
 - Read-контракт run:
   - поле `source_hash` удалено из публичного payload;
   - добавлены `run_input` (`object | null`) и `input_contract_version` (`run_input_v1 | legacy_pre_run_input`).
@@ -21,9 +24,11 @@
 ## Миграция интеграций (обязательно)
 
 1. Уберите `source_hash` из payload create-run.
-2. Передавайте `pool_workflow_binding_id` и direction-specific `run_input`.
-3. Обновите обработку ошибок create-run/topology mutating на `application/problem+json` (`type`, `title`, `status`, `detail`, `code`).
-4. Для topology update всегда делайте round-trip:
+2. Передавайте `pool_workflow_binding_id` и direction-specific `run_input` и для `POST /api/v2/pools/workflow-bindings/preview/`, и для `POST /api/v2/pools/runs/`.
+3. Не рассчитывайте на server-side selector fallback: если binding не выбран, API вернёт `POOL_WORKFLOW_BINDING_REQUIRED` в `application/problem+json`.
+4. Для идемпотентного retry повторяйте тот же `pool_workflow_binding_id`; смена binding id/revision создаёт новый run fingerprint.
+5. Обновите обработку ошибок create-run/topology mutating на `application/problem+json` (`type`, `title`, `status`, `detail`, `code`).
+6. Для topology update всегда делайте round-trip:
    - сначала read (`graph`) и берите `version`;
    - затем upsert с тем же `version`.
 
