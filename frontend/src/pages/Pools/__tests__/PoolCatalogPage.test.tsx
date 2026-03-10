@@ -21,6 +21,7 @@ const mockRefreshPoolODataMetadataCatalog = vi.fn()
 const mockListPoolWorkflowBindings = vi.fn()
 const mockUpsertPoolWorkflowBinding = vi.fn()
 const mockDeletePoolWorkflowBinding = vi.fn()
+const mockMigratePoolEdgeDocumentPolicy = vi.fn()
 const mockListMasterDataParties = vi.fn()
 const mockListMasterDataItems = vi.fn()
 const mockListMasterDataContracts = vi.fn()
@@ -64,6 +65,7 @@ vi.mock('../../../api/intercompanyPools', () => ({
   listPoolWorkflowBindings: (...args: unknown[]) => mockListPoolWorkflowBindings(...args),
   upsertPoolWorkflowBinding: (...args: unknown[]) => mockUpsertPoolWorkflowBinding(...args),
   deletePoolWorkflowBinding: (...args: unknown[]) => mockDeletePoolWorkflowBinding(...args),
+  migratePoolEdgeDocumentPolicy: (...args: unknown[]) => mockMigratePoolEdgeDocumentPolicy(...args),
   listMasterDataParties: (...args: unknown[]) => mockListMasterDataParties(...args),
   listMasterDataItems: (...args: unknown[]) => mockListMasterDataItems(...args),
   listMasterDataContracts: (...args: unknown[]) => mockListMasterDataContracts(...args),
@@ -199,6 +201,7 @@ describe('PoolCatalogPage', () => {
     mockListPoolWorkflowBindings.mockReset()
     mockUpsertPoolWorkflowBinding.mockReset()
     mockDeletePoolWorkflowBinding.mockReset()
+    mockMigratePoolEdgeDocumentPolicy.mockReset()
     mockListMasterDataParties.mockReset()
     mockListMasterDataItems.mockReset()
     mockListMasterDataContracts.mockReset()
@@ -332,6 +335,35 @@ describe('PoolCatalogPage', () => {
       pool_id: '44444444-4444-4444-4444-444444444444',
       workflow_binding: buildPoolWorkflowBinding(),
       deleted: true,
+    })
+    mockMigratePoolEdgeDocumentPolicy.mockResolvedValue({
+      decision: {
+        id: 'decision-version-2',
+        decision_table_id: 'services-publication-policy',
+        decision_key: 'document_policy',
+        decision_revision: 2,
+        name: 'Services publication policy',
+      },
+      metadata_context: {
+        snapshot_id: 'snapshot-1',
+        config_name: 'shared-profile',
+        config_version: '8.3.24',
+      },
+      migration: {
+        created: true,
+        reused_existing_revision: false,
+        binding_update_required: false,
+        source: {
+          pool_id: '44444444-4444-4444-4444-444444444444',
+          edge_version_id: 'edge-v1',
+          source_path: 'edge.metadata.document_policy',
+        },
+        decision_ref: {
+          decision_id: 'decision-version-2',
+          decision_table_id: 'services-publication-policy',
+          decision_revision: 2,
+        },
+      },
     })
     mockSyncPoolWorkflowBindings.mockImplementation(async ({
       poolId,
@@ -1240,6 +1272,95 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByTestId('pool-catalog-topology-edge-open-legacy-policy-editor-0')).toBeInTheDocument()
     expect(await screen.findByTestId('pool-catalog-topology-edge-policy-readonly-0')).toBeDisabled()
     expect(screen.queryByTestId('pool-catalog-topology-edge-policy-mode-0')).not.toBeInTheDocument()
+  }, 15000)
+
+  it('imports legacy edge document_policy into /decisions and shows binding migration outcome', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            document_policy: {
+              version: 'document_policy.v1',
+              chains: [
+                {
+                  chain_id: 'sale_chain',
+                  documents: [
+                    {
+                      document_id: 'sale',
+                      entity_name: 'Document_Sales',
+                      document_role: 'sale',
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    })
+    mockListPoolWorkflowBindings.mockResolvedValueOnce([
+      buildPoolWorkflowBinding({
+        decisions: [
+          {
+            decision_table_id: 'services-publication-policy',
+            decision_key: 'document_policy',
+            decision_revision: 2,
+          },
+        ],
+      }),
+    ])
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+    await expandFirstEdgeAdvanced(user)
+    await user.click(screen.getByTestId('pool-catalog-topology-edge-migrate-legacy-policy-0'))
+
+    await waitFor(() => {
+      expect(mockMigratePoolEdgeDocumentPolicy).toHaveBeenCalledWith(
+        '44444444-4444-4444-4444-444444444444',
+        expect.objectContaining({
+          edge_version_id: 'edge-v1',
+        })
+      )
+    })
+
+    expect(await screen.findByText('Imported to /decisions')).toBeInTheDocument()
+    expect(screen.getByText('Source: edge.metadata.document_policy (edge-v1)')).toBeInTheDocument()
+    expect(screen.getByText('Decision ref: services-publication-policy r2')).toBeInTheDocument()
+    expect(screen.getByText('Updated bindings: services_publication')).toBeInTheDocument()
   }, 15000)
 
   it('blocks topology save when edge document_policy JSON is invalid', async () => {

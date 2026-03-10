@@ -32,6 +32,7 @@ import { useMyTenants } from '../../api/queries/tenants'
 import {
   getOrganization,
   getPoolGraph,
+  migratePoolEdgeDocumentPolicy,
   getPoolODataMetadataCatalog,
   listPoolWorkflowBindings,
   listMasterDataContracts,
@@ -55,6 +56,7 @@ import {
   type PoolMasterItem,
   type PoolMasterParty,
   type PoolMasterTaxProfile,
+  type PoolDocumentPolicyMigrationResponse,
   type PoolODataMetadataCatalogDocument,
   type PoolODataMetadataCatalogResponse,
   type PoolTopologySnapshotPeriod,
@@ -127,6 +129,7 @@ type TopologyNodeFormValue = {
 }
 
 type TopologyEdgeFormValue = {
+  edge_version_id?: string
   parent_organization_id?: string
   child_organization_id?: string
   weight?: number
@@ -451,6 +454,18 @@ const resolveApiError = (
     message: fallbackFromError || fallbackMessage,
     fieldErrors: {},
   }
+}
+
+const describePoolWorkflowBinding = (binding: PoolWorkflowBinding): string => {
+  const workflowName = String(binding.workflow?.workflow_name ?? '').trim()
+  if (workflowName) {
+    return workflowName
+  }
+  const bindingId = String(binding.binding_id ?? '').trim()
+  if (bindingId) {
+    return bindingId
+  }
+  return 'binding'
 }
 
 const parseSyncPayload = (input: string): SyncPreflightResult => {
@@ -1437,6 +1452,12 @@ export function PoolCatalogPage() {
   const [loadingMasterDataTokenCatalog, setLoadingMasterDataTokenCatalog] = useState(false)
   const [masterDataTokenCatalogError, setMasterDataTokenCatalogError] = useState<string | null>(null)
   const [legacyEdgePolicyEditorOpenByKey, setLegacyEdgePolicyEditorOpenByKey] = useState<Record<string, boolean>>({})
+  const [legacyEdgePolicyMigrationByEdgeId, setLegacyEdgePolicyMigrationByEdgeId] = useState<Record<string, {
+    response: PoolDocumentPolicyMigrationResponse
+    updatedBindings: PoolWorkflowBinding[]
+  }>>({})
+  const [legacyEdgePolicyMigrationLoadingByEdgeId, setLegacyEdgePolicyMigrationLoadingByEdgeId] = useState<Record<string, boolean>>({})
+  const [legacyEdgePolicyMigrationErrorByEdgeId, setLegacyEdgePolicyMigrationErrorByEdgeId] = useState<Record<string, string>>({})
   const watchedEdges = Form.useWatch('edges', topologyForm)
 
   const selectedOrganization = useMemo(
@@ -1797,6 +1818,91 @@ export function PoolCatalogPage() {
     topologyForm.setFieldValue(['edges', edgeIndex, 'edge_metadata_mode'], 'raw')
   }, [message, topologyForm])
 
+  const handleMigrateLegacyEdgePolicy = useCallback(async (
+    edgeIndex: number,
+    legacyEditorKey: string
+  ) => {
+    if (mutatingDisabled || !selectedPoolId) {
+      return
+    }
+
+    const edgeVersionId = String(
+      topologyForm.getFieldValue(['edges', edgeIndex, 'edge_version_id']) ?? ''
+    ).trim()
+    const legacyPolicyJson = String(
+      topologyForm.getFieldValue(['edges', edgeIndex, 'document_policy_json']) ?? ''
+    ).trim()
+
+    if (!edgeVersionId) {
+      message.info('Migration is available only for persisted legacy topology edges.')
+      return
+    }
+    if (!legacyPolicyJson) {
+      message.info('Legacy document_policy was not found on this topology edge.')
+      return
+    }
+
+    setLegacyEdgePolicyMigrationLoadingByEdgeId((current) => ({
+      ...current,
+      [edgeVersionId]: true,
+    }))
+    setLegacyEdgePolicyMigrationErrorByEdgeId((current) => {
+      const next = { ...current }
+      delete next[edgeVersionId]
+      return next
+    })
+
+    try {
+      const response = await migratePoolEdgeDocumentPolicy(selectedPoolId, {
+        edge_version_id: edgeVersionId,
+      })
+      const decisionRef = response.migration.decision_ref
+      let updatedBindings: PoolWorkflowBinding[] = []
+      try {
+        const bindings = await listPoolWorkflowBindings(selectedPoolId)
+        updatedBindings = bindings.filter((binding) => (
+          Array.isArray(binding.decisions)
+          && binding.decisions.some((decision) => (
+            decision.decision_table_id === decisionRef.decision_table_id
+            && decision.decision_revision === decisionRef.decision_revision
+          ))
+        ))
+      } catch {
+        message.warning('Legacy policy imported, but workflow bindings could not be reloaded.')
+      }
+
+      setLegacyEdgePolicyMigrationByEdgeId((current) => ({
+        ...current,
+        [edgeVersionId]: { response, updatedBindings },
+      }))
+      setLegacyEdgePolicyEditorOpenByKey((current) => ({
+        ...current,
+        [legacyEditorKey]: false,
+      }))
+      message.success(
+        response.migration.binding_update_required
+          ? 'Legacy policy imported into /decisions. Pin the new decision ref in workflow bindings.'
+          : 'Legacy policy imported into /decisions and matching workflow bindings were updated.'
+      )
+    } catch (err) {
+      const resolved = resolveApiError(
+        err,
+        'Не удалось импортировать legacy edge document_policy.',
+        { includeProblemDetail: true, includeProblemItems: true }
+      )
+      setLegacyEdgePolicyMigrationErrorByEdgeId((current) => ({
+        ...current,
+        [edgeVersionId]: resolved.message,
+      }))
+      message.error(resolved.message)
+    } finally {
+      setLegacyEdgePolicyMigrationLoadingByEdgeId((current) => ({
+        ...current,
+        [edgeVersionId]: false,
+      }))
+    }
+  }, [message, mutatingDisabled, selectedPoolId, topologyForm])
+
   useEffect(() => {
     void loadOrganizations()
   }, [loadOrganizations])
@@ -1873,6 +1979,9 @@ export function PoolCatalogPage() {
     setTopologyPreflightErrors([])
     setTopologySubmitError(null)
     setLegacyEdgePolicyEditorOpenByKey({})
+    setLegacyEdgePolicyMigrationByEdgeId({})
+    setLegacyEdgePolicyMigrationLoadingByEdgeId({})
+    setLegacyEdgePolicyMigrationErrorByEdgeId({})
     if (activeWorkspaceTab !== 'topology' || !selectedPool) return
     topologyForm.setFieldsValue({
       effective_from: new Date().toISOString().slice(0, 10),
@@ -1885,6 +1994,9 @@ export function PoolCatalogPage() {
   useEffect(() => {
     if (activeWorkspaceTab !== 'topology' || !selectedPool || !selectedPoolId || !graph) return
     setLegacyEdgePolicyEditorOpenByKey({})
+    setLegacyEdgePolicyMigrationByEdgeId({})
+    setLegacyEdgePolicyMigrationLoadingByEdgeId({})
+    setLegacyEdgePolicyMigrationErrorByEdgeId({})
     const organizationByNodeVersion = new Map(
       graph.nodes.map((node) => [node.node_version_id, node.organization_id])
     )
@@ -1906,6 +2018,7 @@ export function PoolCatalogPage() {
       const metadataWithoutPolicy = { ...metadata }
       delete metadataWithoutPolicy.document_policy
       return {
+        edge_version_id: edge.edge_version_id,
         parent_organization_id: organizationByNodeVersion.get(edge.parent_node_version_id),
         child_organization_id: organizationByNodeVersion.get(edge.child_node_version_id),
         weight: Number.isFinite(weight) ? weight : undefined,
@@ -2927,31 +3040,105 @@ export function PoolCatalogPage() {
                                                 const legacyPolicyJson = String(
                                                   getFieldValue(['edges', field.name, 'document_policy_json']) ?? ''
                                                 ).trim()
+                                                const edgeVersionId = String(
+                                                  getFieldValue(['edges', field.name, 'edge_version_id']) ?? ''
+                                                ).trim()
                                                 const legacyEditorOpen = Boolean(
                                                   legacyEdgePolicyEditorOpenByKey[legacyEditorKey]
                                                 )
+                                                const migrationOutcome = edgeVersionId
+                                                  ? legacyEdgePolicyMigrationByEdgeId[edgeVersionId]
+                                                  : undefined
+                                                const migrationLoading = edgeVersionId
+                                                  ? Boolean(legacyEdgePolicyMigrationLoadingByEdgeId[edgeVersionId])
+                                                  : false
+                                                const migrationError = edgeVersionId
+                                                  ? legacyEdgePolicyMigrationErrorByEdgeId[edgeVersionId]
+                                                  : ''
+                                                const updatedBindingLabels = migrationOutcome
+                                                  ? Array.from(new Set(
+                                                    migrationOutcome.updatedBindings.map(describePoolWorkflowBinding)
+                                                  )).filter(Boolean)
+                                                  : []
+                                                const hasPersistedLegacyPolicy = Boolean(edgeVersionId && legacyPolicyJson)
                                                 return (
                                                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
                                                     <Alert
                                                       type={legacyEditorOpen ? 'warning' : 'info'}
                                                       showIcon
                                                       message="Legacy edge document_policy compatibility"
-                                                      description={LEGACY_EDGE_DOCUMENT_POLICY_COMPATIBILITY_MESSAGE}
-                                                      action={legacyEditorOpen ? undefined : (
-                                                        <Button
-                                                          size="small"
-                                                          onClick={() => {
-                                                            setLegacyEdgePolicyEditorOpenByKey((current) => ({
-                                                              ...current,
-                                                              [legacyEditorKey]: true,
-                                                            }))
-                                                          }}
-                                                          data-testid={`pool-catalog-topology-edge-open-legacy-policy-editor-${field.name}`}
-                                                        >
-                                                          Open legacy editor
-                                                        </Button>
+                                                      description={(
+                                                        <Space direction="vertical" size={4}>
+                                                          <span>
+                                                            Use /decisions for net-new document_policy authoring and
+                                                            pin resulting decision refs in pool workflow bindings.
+                                                          </span>
+                                                          <span>{LEGACY_EDGE_DOCUMENT_POLICY_COMPATIBILITY_MESSAGE}</span>
+                                                        </Space>
                                                       )}
+                                                      action={hasPersistedLegacyPolicy ? (
+                                                        <Space size={4}>
+                                                          {!legacyEditorOpen ? (
+                                                            <Button
+                                                              size="small"
+                                                              onClick={() => {
+                                                                setLegacyEdgePolicyEditorOpenByKey((current) => ({
+                                                                  ...current,
+                                                                  [legacyEditorKey]: true,
+                                                                }))
+                                                              }}
+                                                              data-testid={`pool-catalog-topology-edge-open-legacy-policy-editor-${field.name}`}
+                                                            >
+                                                              Open legacy editor
+                                                            </Button>
+                                                          ) : null}
+                                                          <Button
+                                                            size="small"
+                                                            type="primary"
+                                                            ghost
+                                                            loading={migrationLoading}
+                                                            onClick={() => {
+                                                              void handleMigrateLegacyEdgePolicy(field.name, legacyEditorKey)
+                                                            }}
+                                                            data-testid={`pool-catalog-topology-edge-migrate-legacy-policy-${field.name}`}
+                                                          >
+                                                            Import to /decisions
+                                                          </Button>
+                                                        </Space>
+                                                      ) : undefined}
                                                     />
+                                                    {migrationError ? (
+                                                      <Alert
+                                                        type="error"
+                                                        showIcon
+                                                        message="Legacy policy import failed"
+                                                        description={migrationError}
+                                                      />
+                                                    ) : null}
+                                                    {migrationOutcome ? (
+                                                      <Alert
+                                                        type={migrationOutcome.response.migration.binding_update_required ? 'warning' : 'success'}
+                                                        showIcon
+                                                        message="Imported to /decisions"
+                                                        description={(
+                                                          <Space direction="vertical" size={4}>
+                                                            <span>
+                                                              {`Source: ${migrationOutcome.response.migration.source.source_path} (${migrationOutcome.response.migration.source.edge_version_id})`}
+                                                            </span>
+                                                            <span>
+                                                              {`Decision ref: ${migrationOutcome.response.migration.decision_ref.decision_table_id} r${migrationOutcome.response.migration.decision_ref.decision_revision}`}
+                                                            </span>
+                                                            {updatedBindingLabels.length > 0 ? (
+                                                              <span>{`Updated bindings: ${updatedBindingLabels.join(', ')}`}</span>
+                                                            ) : migrationOutcome.response.migration.binding_update_required ? (
+                                                              <span>Updated bindings: manual binding pin required</span>
+                                                            ) : (
+                                                              <span>Affected workflow bindings were updated automatically.</span>
+                                                            )}
+                                                          </Space>
+                                                        )}
+                                                      />
+                                                    ) : null}
                                                     {legacyPolicyJson && !legacyEditorOpen ? (
                                                       <Form.Item
                                                         name={[field.name, 'document_policy_json']}
@@ -4083,6 +4270,7 @@ export function PoolCatalogPage() {
                               ))}
                               <Button
                                 onClick={() => add({
+                                  edge_version_id: undefined,
                                   weight: 1,
                                   min_amount: null,
                                   max_amount: null,

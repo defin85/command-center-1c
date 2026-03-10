@@ -424,6 +424,70 @@ export type PoolTopologySnapshotList = {
   snapshots: PoolTopologySnapshotPeriod[]
 }
 
+export type PoolDocumentPolicyMigrationDecisionRef = {
+  decision_id: string
+  decision_table_id: string
+  decision_revision: number
+}
+
+export type PoolDocumentPolicyMigrationSource = {
+  kind?: string
+  source_path: string
+  pool_id: string
+  pool_code?: string
+  edge_version_id: string
+  parent_node_version_id?: string
+  child_node_version_id?: string
+  parent_organization_id?: string
+  child_organization_id?: string
+  parent_organization_name?: string
+  child_organization_name?: string
+  child_database_id?: string
+  effective_from?: string
+  effective_to?: string | null
+  legacy_policy_hash?: string
+}
+
+export type PoolDocumentPolicyMigrationReport = {
+  created: boolean
+  reused_existing_revision: boolean
+  binding_update_required: boolean
+  source: PoolDocumentPolicyMigrationSource
+  decision_ref: PoolDocumentPolicyMigrationDecisionRef
+}
+
+export type PoolDocumentPolicyMigrationDecision = {
+  id: string
+  decision_table_id: string
+  decision_key: string
+  decision_revision: number
+  name: string
+  description?: string
+  inputs?: unknown[]
+  outputs?: unknown[]
+  rules?: unknown[]
+  hit_policy?: string
+  validation_mode?: string
+  is_active?: boolean
+  parent_version?: string | null
+  metadata_context?: Record<string, unknown> | null
+  created_at?: string
+  updated_at?: string
+}
+
+export type PoolDocumentPolicyMigrationPayload = {
+  edge_version_id: string
+  decision_table_id?: string
+  name?: string
+  description?: string
+}
+
+export type PoolDocumentPolicyMigrationResponse = {
+  decision: PoolDocumentPolicyMigrationDecision
+  metadata_context: Record<string, unknown>
+  migration: PoolDocumentPolicyMigrationReport
+}
+
 export type ListPoolSchemaTemplatesParams = {
   format?: PoolSchemaTemplateFormat
   isPublic?: boolean
@@ -746,6 +810,18 @@ export async function upsertPoolTopologySnapshot(
     edges_count: number
   }>(
     `/api/v2/pools/${poolId}/topology-snapshot/upsert/`,
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function migratePoolEdgeDocumentPolicy(
+  poolId: string,
+  payload: PoolDocumentPolicyMigrationPayload
+): Promise<PoolDocumentPolicyMigrationResponse> {
+  const response = await apiClient.post<PoolDocumentPolicyMigrationResponse>(
+    `/api/v2/pools/${poolId}/document-policy-migrations/`,
     payload,
     { skipGlobalError: true }
   )
