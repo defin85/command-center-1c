@@ -321,7 +321,7 @@ describe('WorkflowDesigner', () => {
 
     expect(screen.getByText('Workflow scheme library')).toBeInTheDocument()
     expect(
-      screen.getByText('This editor authors reusable workflow definitions for pools. Templates stay atomic, pool bindings decide where the scheme is active, and runtime projections are compiled into diagnostics-only artifacts.')
+      screen.getByText('Author analyst-facing workflow composition in /workflows. Use /templates for atomic operations, /decisions for versioned decision resources, and treat runtime projections as diagnostics-only artifacts.')
     ).toBeInTheDocument()
     expect(screen.getByTestId('node-palette')).toBeInTheDocument()
     expect(screen.getByTestId('workflow-canvas')).toHaveTextContent('design')

@@ -483,9 +483,7 @@ export const buildDocumentPolicyDecisionPayload = (
   }
 
   const parentVersionId = trimString(input.parent_version_id)
-  if (parentVersionId) {
-    payload.parent_version_id = parentVersionId
-  }
+  payload.parent_version_id = parentVersionId || undefined
 
   return payload
 }

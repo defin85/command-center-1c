@@ -86,6 +86,9 @@ describe('WorkflowList', () => {
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /New Scheme/ })).toBeInTheDocument()
     expect(screen.getByText('Primary analyst surface: /workflows')).toBeInTheDocument()
+    expect(
+      screen.getByText('Compose analyst-authored schemes in /workflows. Use /templates for atomic operations and /decisions for versioned decision resources.')
+    ).toBeInTheDocument()
     expect(screen.getByText('pool_distribution')).toBeInTheDocument()
     expect(screen.getByText('pool_publication')).toBeInTheDocument()
     expect(screen.getByText('Deferred: extensions.*')).toBeInTheDocument()

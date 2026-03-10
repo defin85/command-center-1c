@@ -22,6 +22,7 @@ const WorkflowList = lazy(() => import('./pages/Workflows/WorkflowList'))
 const WorkflowDesigner = lazy(() => import('./pages/Workflows/WorkflowDesigner'))
 const WorkflowMonitor = lazy(() => import('./pages/Workflows/WorkflowMonitor'))
 const WorkflowExecutions = lazy(() => import('./pages/Workflows/WorkflowExecutions'))
+const DecisionsPage = lazy(() => import('./pages/Decisions/DecisionsPage').then((m) => ({ default: m.DecisionsPage })))
 const ServiceMeshPage = lazy(() => import('./pages/ServiceMesh/ServiceMeshPage'))
 const loadRBACPage = () => import('./pages/RBAC/RBACPage').then((m) => ({ default: m.RBACPage }))
 const RBACPage = lazy(loadRBACPage)
@@ -303,6 +304,13 @@ function App() {
                     <ProtectedRoute authToken={authToken}>
                       <MainLayout>
                         <LazyBoundary><TemplatesPage /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/decisions" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><DecisionsPage /></LazyBoundary>
                       </MainLayout>
                     </ProtectedRoute>
                   } />
