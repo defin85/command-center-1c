@@ -2653,43 +2653,47 @@ def test_migrate_pool_edge_document_policy_updates_canonical_binding_runtime_pat
         assert updated_binding["revision"] == initial_binding["revision"] + 1
         assert updated_binding["decisions"] == [migrated_decision_ref]
 
-    preview_response = authenticated_client.post(
-        "/api/v2/pools/workflow-bindings/preview/",
-        {
-            "pool_id": str(pool.id),
-            "pool_workflow_binding_id": bindings[0]["binding_id"],
-            "direction": PoolRunDirection.BOTTOM_UP,
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
-            "mode": PoolRunMode.SAFE,
-        },
-        format="json",
-    )
-
-    assert preview_response.status_code == 200, preview_response.json()
-    preview_payload = preview_response.json()
-    assert preview_payload["workflow_binding"]["decisions"] == [migrated_decision_ref]
-    assert preview_payload["compiled_document_policy"]["chains"][0]["chain_id"] == "migrated_sale_chain"
-    assert preview_payload["runtime_projection"]["decision_refs"] == [migrated_decision_ref]
-
     with patch(
-        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
-        return_value=EnqueueResult(success=True, operation_id="migration-runtime-op", status="queued"),
+        "apps.intercompany_pools.metadata_catalog.read_metadata_catalog_snapshot",
+        side_effect=AssertionError("post-cutover runtime must not reread metadata snapshots"),
     ):
-        create_response = authenticated_client.post(
-            "/api/v2/pools/runs/",
+        preview_response = authenticated_client.post(
+            "/api/v2/pools/workflow-bindings/preview/",
             {
                 "pool_id": str(pool.id),
-                "pool_workflow_binding_id": bindings[1]["binding_id"],
+                "pool_workflow_binding_id": bindings[0]["binding_id"],
                 "direction": PoolRunDirection.BOTTOM_UP,
                 "period_start": "2026-01-01",
                 "period_end": "2026-01-31",
-                "run_input": {"source_payload": [{"inn": "730000000001", "amount": "50.00"}]},
-                "mode": PoolRunMode.UNSAFE,
+                "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+                "mode": PoolRunMode.SAFE,
             },
             format="json",
         )
+
+        assert preview_response.status_code == 200, preview_response.json()
+        preview_payload = preview_response.json()
+        assert preview_payload["workflow_binding"]["decisions"] == [migrated_decision_ref]
+        assert preview_payload["compiled_document_policy"]["chains"][0]["chain_id"] == "migrated_sale_chain"
+        assert preview_payload["runtime_projection"]["decision_refs"] == [migrated_decision_ref]
+
+        with patch(
+            "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+            return_value=EnqueueResult(success=True, operation_id="migration-runtime-op", status="queued"),
+        ):
+            create_response = authenticated_client.post(
+                "/api/v2/pools/runs/",
+                {
+                    "pool_id": str(pool.id),
+                    "pool_workflow_binding_id": bindings[1]["binding_id"],
+                    "direction": PoolRunDirection.BOTTOM_UP,
+                    "period_start": "2026-01-01",
+                    "period_end": "2026-01-31",
+                    "run_input": {"source_payload": [{"inn": "730000000001", "amount": "50.00"}]},
+                    "mode": PoolRunMode.UNSAFE,
+                },
+                format="json",
+            )
 
     assert create_response.status_code == 201, create_response.json()
     create_payload = create_response.json()
