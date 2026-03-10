@@ -590,6 +590,55 @@ describe('PoolRunsPage', () => {
     expect(await screen.findByText('top_down starting_amount must be greater than 0.')).toBeInTheDocument()
   }, 15000)
 
+  it('maps missing binding create-run error to workflow binding field and localized message', async () => {
+    const user = userEvent.setup()
+    mockCreatePoolRun.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Pool Workflow Binding Required',
+          status: 400,
+          detail: 'pool_workflow_binding_id is required.',
+          code: 'POOL_WORKFLOW_BINDING_REQUIRED',
+        },
+      },
+    })
+
+    renderPage()
+
+    await openRunsStage(user, 'Create')
+    const submitButton = await screen.findByTestId('pool-runs-create-submit')
+    await user.click(submitButton)
+
+    await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
+    expect(await screen.findAllByText('Перед продолжением выберите workflow binding.')).toHaveLength(2)
+    expect(screen.queryByText('pool_workflow_binding_id is required.')).not.toBeInTheDocument()
+  }, 15000)
+
+  it('maps missing binding preview error to workflow binding field and localized message', async () => {
+    const user = userEvent.setup()
+    mockPreviewPoolWorkflowBinding.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Pool Workflow Binding Required',
+          status: 400,
+          detail: 'pool_workflow_binding_id is required.',
+          code: 'POOL_WORKFLOW_BINDING_REQUIRED',
+        },
+      },
+    })
+
+    renderPage()
+
+    await openRunsStage(user, 'Create')
+    await user.click(await screen.findByTestId('pool-runs-create-preview'))
+
+    await waitFor(() => expect(mockPreviewPoolWorkflowBinding).toHaveBeenCalledTimes(1))
+    expect(await screen.findAllByText('Перед продолжением выберите workflow binding.')).toHaveLength(2)
+    expect(screen.queryByText('pool_workflow_binding_id is required.')).not.toBeInTheDocument()
+  }, 15000)
+
   it.each([
     [
       'ODATA_MAPPING_NOT_CONFIGURED',

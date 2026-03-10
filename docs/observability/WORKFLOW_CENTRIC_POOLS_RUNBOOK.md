@@ -79,7 +79,14 @@ Marker влияет на phase summary и rollout communication. Он не пе�
    - compiled runtime projection;
    - secondary link `Open Workflow Diagnostics`.
 
-## Checked-in evidence templates
+## Checked-in repository acceptance evidence
+
+- Default shipped path proof:
+  - `docs/observability/artifacts/refactor-14/repository-acceptance-evidence.md`
+
+Repository acceptance evidence is the canonical checked-in proof path for shipped behavior inside git.
+
+## Checked-in operator evidence templates
 
 - Shared metadata snapshot evidence template:
   - `docs/observability/artifacts/refactor-14/shared-metadata-evidence.template.json`
@@ -88,7 +95,7 @@ Marker влияет на phase summary и rollout communication. Он не пе�
 - Operator canary evidence template:
   - `docs/observability/artifacts/refactor-14/operator-canary-evidence.template.json`
 
-Templates are examples/placeholders only. They are meant to capture real cutover evidence and must not be committed as production rollout proof without replacing placeholders.
+Templates are examples/placeholders only. They are meant to capture tenant-scoped live cutover evidence and must not be committed as production rollout proof without replacing placeholders.
 
 ## Canary checklist
 

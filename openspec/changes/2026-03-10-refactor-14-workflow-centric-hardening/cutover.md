@@ -6,6 +6,16 @@ Change: `refactor-14-workflow-centric-hardening`
 
 - Operator runbook: `docs/observability/WORKFLOW_CENTRIC_POOLS_RUNBOOK.md`
 - Release notes: `docs/release-notes/2026-03-10-workflow-centric-hardening-cutover.md`
+- Repository acceptance evidence: `docs/observability/artifacts/refactor-14/repository-acceptance-evidence.md`
+
+## Checked-in evidence sources
+
+- Repository acceptance evidence proves the shipped default path inside git:
+  - `docs/observability/artifacts/refactor-14/repository-acceptance-evidence.md`
+- Tenant-scoped live cutover capture uses checked-in templates/examples:
+  - `docs/observability/artifacts/refactor-14/shared-metadata-evidence.template.json`
+  - `docs/observability/artifacts/refactor-14/legacy-document-policy-migration-evidence.template.json`
+  - `docs/observability/artifacts/refactor-14/operator-canary-evidence.template.json`
 
 ## Goal
 

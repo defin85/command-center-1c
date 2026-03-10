@@ -120,6 +120,7 @@ const CREATE_RUN_PROBLEM_CODE_MESSAGES: Record<string, string> = {
   VALIDATION_ERROR: 'Проверьте корректность параметров запуска.',
   TENANT_CONTEXT_REQUIRED: 'Для запуска run требуется активный tenant context.',
   POOL_NOT_FOUND: 'Пул не найден в текущем tenant context.',
+  POOL_WORKFLOW_BINDING_REQUIRED: 'Перед продолжением выберите workflow binding.',
   POOL_WORKFLOW_BINDING_NOT_FOUND: 'Выбранный workflow binding не найден для текущего пула.',
   POOL_WORKFLOW_BINDING_NOT_RESOLVED: 'Для выбранного pool не найден подходящий активный workflow binding.',
   POOL_WORKFLOW_BINDING_AMBIGUOUS: 'Найдено несколько подходящих workflow bindings. Нужен явный выбор binding.',
@@ -1189,7 +1190,8 @@ export function PoolRunsPage() {
           }
         }
         if (
-          problem.code === 'POOL_WORKFLOW_BINDING_NOT_FOUND'
+          problem.code === 'POOL_WORKFLOW_BINDING_REQUIRED'
+          || problem.code === 'POOL_WORKFLOW_BINDING_NOT_FOUND'
           || problem.code === 'POOL_WORKFLOW_BINDING_NOT_RESOLVED'
           || problem.code === 'POOL_WORKFLOW_BINDING_AMBIGUOUS'
           || problem.code === 'POOL_WORKFLOW_BINDING_INVALID'
@@ -1269,7 +1271,8 @@ export function PoolRunsPage() {
           }
         }
         if (
-          problem.code === 'POOL_WORKFLOW_BINDING_NOT_FOUND'
+          problem.code === 'POOL_WORKFLOW_BINDING_REQUIRED'
+          || problem.code === 'POOL_WORKFLOW_BINDING_NOT_FOUND'
           || problem.code === 'POOL_WORKFLOW_BINDING_NOT_RESOLVED'
           || problem.code === 'POOL_WORKFLOW_BINDING_AMBIGUOUS'
           || problem.code === 'POOL_WORKFLOW_BINDING_INVALID'

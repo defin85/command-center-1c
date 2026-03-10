@@ -64,6 +64,7 @@ def test_workflow_centric_docs_reference_checked_in_evidence_templates() -> None
     )
 
     expected_paths = [
+        "docs/observability/artifacts/refactor-14/repository-acceptance-evidence.md",
         "docs/observability/artifacts/refactor-14/shared-metadata-evidence.template.json",
         "docs/observability/artifacts/refactor-14/legacy-document-policy-migration-evidence.template.json",
         "docs/observability/artifacts/refactor-14/operator-canary-evidence.template.json",
@@ -74,6 +75,22 @@ def test_workflow_centric_docs_reference_checked_in_evidence_templates() -> None
         assert path in cutover
         assert path in release_note
         assert _repo_root().joinpath(path).exists()
+
+
+def test_workflow_centric_repository_acceptance_evidence_describes_default_shipped_path() -> None:
+    repository_evidence = _read_repo_doc(
+        "docs",
+        "observability",
+        "artifacts",
+        "refactor-14",
+        "repository-acceptance-evidence.md",
+    )
+
+    assert "checked-in repository acceptance evidence" in repository_evidence
+    assert "/api/v2/pools/runs/" in repository_evidence
+    assert "/api/v2/pools/workflow-bindings/preview/" in repository_evidence
+    assert "/decisions" in repository_evidence
+    assert "frontend/src/pages/Pools/__tests__/PoolRunsPage.test.tsx" in repository_evidence
 
 
 def test_workflow_centric_evidence_templates_are_marked_as_examples_only() -> None:
