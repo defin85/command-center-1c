@@ -16,6 +16,10 @@ from apps.intercompany_pools.metadata_catalog import (
     ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS,
     MetadataCatalogError,
 )
+from apps.intercompany_pools.document_plan_artifact_contract import (
+    POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY,
+    POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY,
+)
 from apps.intercompany_pools.document_policy_contract import resolve_document_policy_from_edge_metadata
 from apps.intercompany_pools.models import (
     Organization,
@@ -2523,8 +2527,9 @@ def test_get_pool_graph_returns_node_and_edge_metadata_including_document_policy
 
 
 @pytest.mark.django_db
-def test_migrate_pool_edge_document_policy_materializes_decision_revision_with_provenance(
+def test_migrate_pool_edge_document_policy_updates_canonical_binding_runtime_path(
     authenticated_client: APIClient,
+    user: User,
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
@@ -2539,22 +2544,48 @@ def test_migrate_pool_edge_document_policy_materializes_decision_revision_with_p
         database=leaf_db,
     )
     _create_service_infobase_mapping(database=leaf_db)
-    root_org = Organization.objects.create(
-        tenant=default_tenant,
-        name="Migration Root",
-        inn="741100000061",
+    _create_actor_infobase_mapping(
+        database=leaf_db,
+        user=user,
+        username="migration-leaf-actor",
     )
+    bindings, _ = _prepare_pool_runtime_bindings(
+        tenant=default_tenant,
+        pool=pool,
+        bindings=[
+            _build_pool_workflow_binding_payload(
+                pool=pool,
+                workflow_definition_key="services-publication-safe",
+                workflow_revision=3,
+                direction=PoolRunDirection.BOTTOM_UP,
+                mode=PoolRunMode.SAFE,
+            ),
+            _build_pool_workflow_binding_payload(
+                pool=pool,
+                workflow_definition_key="services-publication-unsafe",
+                workflow_revision=4,
+                direction=PoolRunDirection.BOTTOM_UP,
+                mode=PoolRunMode.UNSAFE,
+            ),
+        ],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    initial_bindings_by_id = {
+        str(binding["binding_id"]): binding
+        for binding in list_pool_workflow_bindings(pool=pool)
+    }
+    root_node = PoolNodeVersion.objects.get(
+        pool=pool,
+        effective_from=date(2026, 1, 1),
+        is_root=True,
+    )
+    root_org = root_node.organization
     leaf_org = Organization.objects.create(
         tenant=default_tenant,
         database=leaf_db,
         name="Migration Leaf",
         inn="741100000062",
-    )
-    root_node = PoolNodeVersion.objects.create(
-        pool=pool,
-        organization=root_org,
-        effective_from=date(2026, 1, 1),
-        is_root=True,
     )
     leaf_node = PoolNodeVersion.objects.create(
         pool=pool,
@@ -2563,6 +2594,7 @@ def test_migrate_pool_edge_document_policy_materializes_decision_revision_with_p
         is_root=False,
     )
     policy = _build_document_policy_payload()
+    policy["chains"][0]["chain_id"] = "migrated_sale_chain"
     normalized_policy = resolve_document_policy_from_edge_metadata(
         metadata={"document_policy": policy}
     )
@@ -2589,7 +2621,7 @@ def test_migrate_pool_edge_document_policy_materializes_decision_revision_with_p
     assert decision_payload["decision_revision"] == 1
     assert decision_payload["rules"][0]["outputs"]["document_policy"] == normalized_policy
     assert migration["created"] is True
-    assert migration["binding_update_required"] is True
+    assert migration["binding_update_required"] is False
     assert migration["source"]["pool_id"] == str(pool.id)
     assert migration["source"]["edge_version_id"] == str(edge.id)
     assert migration["source"]["source_path"] == "edge.metadata.document_policy"
@@ -2603,6 +2635,81 @@ def test_migrate_pool_edge_document_policy_materializes_decision_revision_with_p
     assert decision.source_provenance["parent_organization_id"] == str(root_org.id)
     assert decision.source_provenance["child_organization_id"] == str(leaf_org.id)
     assert decision.source_provenance["child_database_id"] == str(leaf_db.id)
+
+    migrated_decision_ref = {
+        "decision_table_id": decision_payload["decision_table_id"],
+        "decision_key": decision_payload["decision_key"],
+        "decision_revision": decision_payload["decision_revision"],
+    }
+    updated_bindings_by_id = {
+        str(binding["binding_id"]): binding
+        for binding in list_pool_workflow_bindings(pool=pool)
+    }
+    assert set(updated_bindings_by_id) == {str(binding["binding_id"]) for binding in bindings}
+    for binding in bindings:
+        binding_id = str(binding["binding_id"])
+        initial_binding = initial_bindings_by_id[binding_id]
+        updated_binding = updated_bindings_by_id[binding_id]
+        assert updated_binding["revision"] == initial_binding["revision"] + 1
+        assert updated_binding["decisions"] == [migrated_decision_ref]
+
+    preview_response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/preview/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": bindings[0]["binding_id"],
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    assert preview_response.status_code == 200, preview_response.json()
+    preview_payload = preview_response.json()
+    assert preview_payload["workflow_binding"]["decisions"] == [migrated_decision_ref]
+    assert preview_payload["compiled_document_policy"]["chains"][0]["chain_id"] == "migrated_sale_chain"
+    assert preview_payload["runtime_projection"]["decision_refs"] == [migrated_decision_ref]
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="migration-runtime-op", status="queued"),
+    ):
+        create_response = authenticated_client.post(
+            "/api/v2/pools/runs/",
+            {
+                "pool_id": str(pool.id),
+                "pool_workflow_binding_id": bindings[1]["binding_id"],
+                "direction": PoolRunDirection.BOTTOM_UP,
+                "period_start": "2026-01-01",
+                "period_end": "2026-01-31",
+                "run_input": {"source_payload": [{"inn": "730000000001", "amount": "50.00"}]},
+                "mode": PoolRunMode.UNSAFE,
+            },
+            format="json",
+        )
+
+    assert create_response.status_code == 201, create_response.json()
+    create_payload = create_response.json()
+    workflow_execution = WorkflowExecution.objects.get(id=create_payload["run"]["workflow_execution_id"])
+    assert workflow_execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)["binding_id"] == (
+        bindings[1]["binding_id"]
+    )
+    assert workflow_execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)["decisions"] == [
+        migrated_decision_ref
+    ]
+    assert workflow_execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["decision_refs"] == [
+        migrated_decision_ref
+    ]
+    assert workflow_execution.input_context.get(
+        POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY
+    )["chains"][0]["chain_id"] == "migrated_sale_chain"
+    assert workflow_execution.input_context.get(POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY) == (
+        "workflow_binding.decision_table:"
+        f"{decision_payload['decision_table_id']}:v{decision_payload['decision_revision']}"
+    )
 
 
 @pytest.mark.django_db
