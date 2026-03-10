@@ -179,6 +179,10 @@ const isSystemManagedPoolRuntimeTemplate = (template: TemplateRow): boolean => (
   && normalizeText(template.domain).toLowerCase() === 'pool_runtime'
 )
 
+const isWorkflowExecutorTemplate = (template: Pick<TemplateRow, 'executor_kind'>): boolean => (
+  normalizeText(template.executor_kind).toLowerCase() === 'workflow'
+)
+
 function OperationTemplateListShell({
   canManageTemplate,
   canManageAnyTemplate,
@@ -303,8 +307,20 @@ function OperationTemplateListShell({
       title: 'Executor Kind',
       dataIndex: 'executor_kind',
       key: 'executor_kind',
-      width: 140,
-      render: (value: string | undefined) => renderCellText(value, { maxWidth: 130 }),
+      width: 220,
+      render: (value: string | undefined, record) => {
+        if (!isWorkflowExecutorTemplate(record)) {
+          return renderCellText(value, { maxWidth: 130 })
+        }
+        return (
+          <Space size={6} wrap>
+            <Tag color="orange" data-testid="templates-executor-kind-compatibility-tag">
+              compatibility
+            </Tag>
+            {renderCellText(value, { code: true, maxWidth: 110 })}
+          </Space>
+        )
+      },
     },
     {
       title: 'Command ID',
