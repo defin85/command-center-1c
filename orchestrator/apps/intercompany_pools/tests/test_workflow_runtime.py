@@ -605,6 +605,73 @@ def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_bindi
 
 
 @pytest.mark.django_db
+def test_start_pool_run_workflow_execution_reloads_binding_snapshot_from_canonical_store() -> None:
+    run = _create_pool_run(mode=PoolRunMode.SAFE)
+    stale_binding = _ensure_runtime_test_workflow_binding(run=run)
+    canonical_binding = list_pool_workflow_bindings(pool=run.pool)[0]
+
+    updated_decision_payload = _build_document_policy_decision_payload(
+        decision_table_id=f"runtime-doc-policy-updated-{uuid4().hex[:8]}"
+    )
+    updated_decision_payload["rules"][0]["outputs"]["document_policy"]["chains"][0][
+        "chain_id"
+    ] = "canonical_lineage_chain"
+    updated_decision = create_decision_table_revision(contract=updated_decision_payload)
+    updated_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=run.pool,
+        workflow_binding={
+            **canonical_binding,
+            "revision": canonical_binding["revision"],
+            "decisions": [
+                {
+                    "decision_table_id": updated_decision.decision_table_id,
+                    "decision_key": updated_decision.decision_key,
+                    "decision_revision": updated_decision.version_number,
+                }
+            ],
+        },
+        actor_username="pool-runtime-test",
+    )
+    expected_binding = PoolWorkflowBindingContract(**updated_binding).model_dump(mode="json")
+    stale_normalized_binding = PoolWorkflowBindingContract(**stale_binding).model_dump(mode="json")
+    assert stale_normalized_binding["decisions"] != expected_binding["decisions"]
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-binding-canonical",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        result = _start_runtime_workflow_execution(run=run, workflow_binding=stale_binding)
+
+    execution = WorkflowExecution.objects.get(id=result.execution_id)
+    persisted_binding = execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)
+    runtime_projection = execution.input_context.get(POOL_RUNTIME_PROJECTION_CONTEXT_KEY)
+    compiled_document_policy = execution.input_context.get(
+        POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY
+    )
+
+    assert persisted_binding == expected_binding
+    assert persisted_binding != stale_normalized_binding
+    assert isinstance(compiled_document_policy, dict)
+    assert compiled_document_policy["chains"][0]["chain_id"] == "canonical_lineage_chain"
+    assert execution.input_context.get(POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY) == (
+        "workflow_binding.decision_table:"
+        f"{updated_decision.decision_table_id}:v{updated_decision.version_number}"
+    )
+    assert runtime_projection["workflow_binding"]["binding_id"] == stale_binding["binding_id"]
+    assert runtime_projection["decision_refs"] == expected_binding["decisions"]
+
+    persisted_run = PoolRun.objects.get(id=run.id)
+    assert persisted_run.workflow_binding_snapshot == expected_binding
+    assert persisted_run.runtime_projection_snapshot == runtime_projection
+
+
+@pytest.mark.django_db
 def test_start_pool_run_workflow_execution_uses_atomic_publication_nodes_when_document_plan_artifact_is_available() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
     artifact = _build_document_plan_artifact_for_compile()

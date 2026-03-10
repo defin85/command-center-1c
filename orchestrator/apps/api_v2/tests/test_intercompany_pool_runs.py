@@ -3276,6 +3276,9 @@ def test_create_pool_run_accepts_explicit_workflow_binding_id_when_selector_is_a
     assert execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["workflow_binding"]["binding_id"] == (
         first_binding["binding_id"]
     )
+    run = PoolRun.objects.get(id=run_id)
+    assert run.workflow_binding_snapshot["binding_id"] == first_binding["binding_id"]
+    assert run.runtime_projection_snapshot["workflow_binding"]["binding_id"] == first_binding["binding_id"]
 
 
 @pytest.mark.django_db

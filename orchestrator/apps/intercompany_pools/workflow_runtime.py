@@ -107,6 +107,7 @@ def start_pool_run_workflow_execution(
         raise ValueError(
             f"{POOL_WORKFLOW_BINDING_REQUIRED}: pool_workflow_binding_id is required for workflow runtime start"
         )
+    requested_binding_id = str(normalized_workflow_binding["binding_id"]).strip()
 
     with transaction.atomic():
         locked_run = (
@@ -131,8 +132,8 @@ def start_pool_run_workflow_execution(
         bundle = build_pool_workflow_binding_runtime_bundle(
             tenant=locked_run.tenant,
             pool=locked_run.pool,
-            pool_workflow_binding_id=str(normalized_workflow_binding["binding_id"]),
-            workflow_binding=normalized_workflow_binding,
+            pool_workflow_binding_id=requested_binding_id,
+            workflow_binding=None,
             direction=locked_run.direction,
             mode=locked_run.mode,
             period_start=locked_run.period_start,
@@ -141,6 +142,7 @@ def start_pool_run_workflow_execution(
             schema_template=schema_template,
             run=locked_run,
         )
+        resolved_workflow_binding = bundle["workflow_binding"]
         sanitized_run_input = bundle["run_input"]
         document_plan_artifact = bundle["document_plan_artifact"]
         decision_outputs = bundle["decision_outputs"]
@@ -190,7 +192,7 @@ def start_pool_run_workflow_execution(
                 master_data_snapshot_ref=master_data_snapshot_ref,
                 master_data_binding_artifact_ref=master_data_binding_artifact_ref,
                 runtime_projection=runtime_projection,
-                workflow_binding=normalized_workflow_binding,
+                workflow_binding=resolved_workflow_binding,
                 decision_outputs=decision_outputs,
                 compiled_document_policy=bundle["compiled_document_policy"],
                 document_policy_source=bundle["document_policy_source"],
@@ -220,7 +222,7 @@ def start_pool_run_workflow_execution(
         locked_run.workflow_status = execution.status
         locked_run.execution_backend = "workflow_core"
         locked_run.workflow_template_name = workflow_template.name
-        locked_run.workflow_binding_snapshot = normalized_workflow_binding
+        locked_run.workflow_binding_snapshot = resolved_workflow_binding
         locked_run.runtime_projection_snapshot = runtime_projection
         save_fields.update({"workflow_binding_snapshot", "runtime_projection_snapshot"})
 
