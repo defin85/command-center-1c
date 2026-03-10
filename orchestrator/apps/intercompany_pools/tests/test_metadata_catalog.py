@@ -1,11 +1,14 @@
 from __future__ import annotations
+
+import importlib
 import json
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import User
-from django.db import DatabaseError
+from django.apps import apps as django_apps
+from django.db import DatabaseError, connection
 
 from apps.databases.models import Database, InfobaseUserMapping
 from apps.intercompany_pools.metadata_catalog import (
@@ -24,6 +27,7 @@ from apps.intercompany_pools.metadata_catalog import (
 )
 from apps.intercompany_pools.models import (
     PoolODataMetadataCatalogSnapshot,
+    PoolODataMetadataCatalogScopeResolution,
     PoolODataMetadataCatalogSnapshotSource,
 )
 from apps.tenancy.models import Tenant, TenantMember
@@ -266,6 +270,97 @@ def test_read_snapshot_preserves_database_specific_resolution_when_profile_has_m
     assert source_second == "db"
     assert resolved_first.id == first_snapshot.id
     assert resolved_second.id == second_snapshot.id
+
+
+@pytest.mark.django_db
+def test_migration_backfills_legacy_database_current_snapshots_into_scope_resolution_registry(
+    default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared_name = "shared-profile-backfill"
+    shared_version = "8.3.26"
+    first_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-backfill-db-{uuid4().hex[:8]}",
+        base_name=shared_name,
+        version=shared_version,
+    )
+    second_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-backfill-db-{uuid4().hex[:8]}",
+        base_name=shared_name,
+        version=shared_version,
+    )
+    _create_service_infobase_mapping(database=first_database)
+    _create_service_infobase_mapping(database=second_database)
+
+    first_snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
+        tenant=default_tenant,
+        database=first_database,
+        config_name=shared_name,
+        config_version=shared_version,
+        extensions_fingerprint="",
+        metadata_hash="a" * 64,
+        catalog_version=f"v1:{uuid4().hex[:16]}",
+        payload=_catalog_payload(suffix="backfill-a"),
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+        is_current=True,
+    )
+    second_snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
+        tenant=default_tenant,
+        database=second_database,
+        config_name=shared_name,
+        config_version=shared_version,
+        extensions_fingerprint="",
+        metadata_hash="b" * 64,
+        catalog_version=f"v1:{uuid4().hex[:16]}",
+        payload=_catalog_payload(suffix="backfill-b"),
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+        is_current=True,
+    )
+    assert PoolODataMetadataCatalogScopeResolution.objects.count() == 0
+
+    migration = importlib.import_module(
+        "apps.intercompany_pools.migrations.0024_poolodatametadatacatalogscoperesolution_and_more"
+    )
+    migration._backfill_scope_resolutions_and_deduplicate_snapshots(
+        django_apps,
+        SimpleNamespace(connection=connection),
+    )
+
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._get_redis_client", lambda: None)
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._write_snapshot_to_cache", lambda **_: None)
+
+    resolved_first, source_first = read_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=first_database,
+        requested_by_username="meta-user",
+        allow_cold_bootstrap=False,
+    )
+    resolved_second, source_second = read_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=second_database,
+        requested_by_username="meta-user",
+        allow_cold_bootstrap=False,
+    )
+    first_resolution = describe_metadata_catalog_snapshot_resolution(
+        tenant_id=str(default_tenant.id),
+        database=first_database,
+        snapshot=resolved_first,
+    )
+    second_resolution = describe_metadata_catalog_snapshot_resolution(
+        tenant_id=str(default_tenant.id),
+        database=second_database,
+        snapshot=resolved_second,
+    )
+
+    assert source_first == "db"
+    assert source_second == "db"
+    assert resolved_first.id == first_snapshot.id
+    assert resolved_second.id == second_snapshot.id
+    assert first_resolution.resolution_mode == "database_scope"
+    assert second_resolution.resolution_mode == "database_scope"
+    assert PoolODataMetadataCatalogScopeResolution.objects.filter(tenant=default_tenant).count() == 2
 
 
 @pytest.mark.django_db

@@ -3190,9 +3190,9 @@ def test_create_pool_run_rejects_missing_binding_reference_even_with_single_cand
 ) -> None:
     binding = _build_pool_workflow_binding_payload(
         pool=pool,
-        workflow_definition_key="top-down-only",
+        workflow_definition_key="bottom-up-only",
         workflow_revision=2,
-        direction=PoolRunDirection.TOP_DOWN,
+        direction=PoolRunDirection.BOTTOM_UP,
         mode=PoolRunMode.SAFE,
     )
     upsert_canonical_pool_workflow_binding(
@@ -3200,6 +3200,7 @@ def test_create_pool_run_rejects_missing_binding_reference_even_with_single_cand
         workflow_binding=binding,
         actor_username="pool-run-selector-test",
     )
+    assert len(list_pool_workflow_bindings(pool=pool)) == 1
 
     response = authenticated_client.post(
         "/api/v2/pools/runs/",
@@ -3219,6 +3220,45 @@ def test_create_pool_run_rejects_missing_binding_reference_even_with_single_cand
         code="POOL_WORKFLOW_BINDING_REQUIRED",
     )
     assert payload["detail"] == "pool_workflow_binding_id is required."
+    assert payload.get("errors", []) == []
+    assert not PoolRun.objects.filter(pool=pool).exists()
+
+
+@pytest.mark.django_db
+def test_create_pool_run_does_not_fallback_to_legacy_metadata_workflow_bindings(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    legacy_binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="legacy-only-binding",
+        workflow_revision=2,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    pool.metadata = {"workflow_bindings": [legacy_binding]}
+    pool.save(update_fields=["metadata", "updated_at"])
+    assert list_pool_workflow_bindings(pool=pool) == []
+
+    response = authenticated_client.post(
+        "/api/v2/pools/runs/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": legacy_binding["binding_id"],
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_WORKFLOW_BINDING_NOT_RESOLVED",
+    )
+    assert payload["detail"] == "No pool workflow bindings are configured for this pool."
     assert payload.get("errors", []) == []
     assert not PoolRun.objects.filter(pool=pool).exists()
 
