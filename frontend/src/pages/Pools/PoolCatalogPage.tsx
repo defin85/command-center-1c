@@ -99,6 +99,7 @@ const API_ERROR_MESSAGE_MAP: Record<string, string> = {
   POOL_METADATA_REFERENCE_INVALID: 'Document policy содержит ссылки на отсутствующие metadata поля.',
   POOL_METADATA_SNAPSHOT_UNAVAILABLE: 'Metadata snapshot недоступен для выбранной базы.',
   POOL_METADATA_REFRESH_IN_PROGRESS: 'Metadata refresh уже выполняется для этой базы.',
+  POOL_WORKFLOW_BINDING_REVISION_CONFLICT: 'Workflow binding уже был изменён другим оператором. Обновите bindings и повторите сохранение.',
 }
 
 type OrganizationFormValues = {

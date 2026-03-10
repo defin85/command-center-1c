@@ -28,6 +28,7 @@ const mockListMasterDataTaxProfiles = vi.fn()
 const mockUseMe = vi.fn()
 const mockUseDatabases = vi.fn()
 const mockUseMyTenants = vi.fn()
+const mockSyncPoolWorkflowBindings = vi.fn()
 
 vi.mock('reactflow', () => ({
   default: ({ children }: { children?: ReactNode }) => <div data-testid="mock-reactflow">{children}</div>,
@@ -67,6 +68,10 @@ vi.mock('../../../api/intercompanyPools', () => ({
   listMasterDataItems: (...args: unknown[]) => mockListMasterDataItems(...args),
   listMasterDataContracts: (...args: unknown[]) => mockListMasterDataContracts(...args),
   listMasterDataTaxProfiles: (...args: unknown[]) => mockListMasterDataTaxProfiles(...args),
+}))
+
+vi.mock('../poolWorkflowBindingsSync', () => ({
+  syncPoolWorkflowBindings: (...args: unknown[]) => mockSyncPoolWorkflowBindings(...args),
 }))
 
 const baseOrganization: Organization = {
@@ -201,6 +206,7 @@ describe('PoolCatalogPage', () => {
     mockUseMe.mockReset()
     mockUseDatabases.mockReset()
     mockUseMyTenants.mockReset()
+    mockSyncPoolWorkflowBindings.mockReset()
 
     mockUseMe.mockReturnValue({ data: { is_staff: false } })
     mockUseMyTenants.mockReturnValue({
@@ -326,6 +332,40 @@ describe('PoolCatalogPage', () => {
       pool_id: '44444444-4444-4444-4444-444444444444',
       workflow_binding: buildPoolWorkflowBinding(),
       deleted: true,
+    })
+    mockSyncPoolWorkflowBindings.mockImplementation(async ({
+      poolId,
+      previousBindings,
+      nextBindings,
+    }: {
+      poolId: string
+      previousBindings: PoolWorkflowBinding[]
+      nextBindings: PoolWorkflowBinding[]
+    }) => {
+      const retainedBindingIds = new Set(
+        nextBindings
+          .map((binding) => String(binding.binding_id ?? '').trim())
+          .filter(Boolean)
+      )
+
+      for (const binding of nextBindings) {
+        await mockUpsertPoolWorkflowBinding({
+          pool_id: poolId,
+          workflow_binding: binding,
+        })
+      }
+
+      for (const binding of previousBindings) {
+        const bindingId = String(binding.binding_id ?? '').trim()
+        const revision = Number(binding.revision)
+        if (!bindingId || retainedBindingIds.has(bindingId)) {
+          continue
+        }
+        if (!Number.isInteger(revision) || revision <= 0) {
+          throw new Error(`Binding ${bindingId} is missing revision and cannot be deleted safely.`)
+        }
+        await mockDeletePoolWorkflowBinding(poolId, bindingId, revision)
+      }
     })
     mockListMasterDataParties.mockResolvedValue({
       parties: [
@@ -755,6 +795,80 @@ describe('PoolCatalogPage', () => {
       }),
     })
   }, 15000)
+
+  it('shows stale binding revision conflict without clearing edited workflow binding form', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    const existingBinding = buildPoolWorkflowBinding({
+      binding_id: 'binding-existing',
+      revision: 3,
+    })
+    mockListOrganizationPools.mockResolvedValueOnce([
+      {
+        id: '44444444-4444-4444-4444-444444444444',
+        code: 'pool-1',
+        name: 'Pool One',
+        description: 'Main pool',
+        is_active: true,
+        metadata: {},
+        workflow_bindings: [existingBinding],
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ])
+    mockListPoolWorkflowBindings.mockResolvedValueOnce([existingBinding])
+    mockSyncPoolWorkflowBindings.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Workflow Binding Revision Conflict',
+          status: 409,
+          detail: 'Workflow binding was updated by another operator. Reload bindings and retry.',
+          code: 'POOL_WORKFLOW_BINDING_REVISION_CONFLICT',
+        },
+      },
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Pools')
+    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await waitFor(() => {
+      expect(mockListPoolWorkflowBindings).toHaveBeenCalledWith('44444444-4444-4444-4444-444444444444')
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-workflow-binding-workflow-name-0')).toHaveValue('services_publication')
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-save-pool')).toBeEnabled()
+    })
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-name-0'), {
+      target: { value: 'services_publication_conflicted' },
+    })
+
+    await user.click(screen.getByTestId('pool-catalog-save-pool'))
+
+    await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1), { timeout: 2000 })
+    await waitFor(() => expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledTimes(1), { timeout: 2000 })
+    expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledWith({
+      poolId: '44444444-4444-4444-4444-444444444444',
+      previousBindings: [existingBinding],
+      nextBindings: [
+        expect.objectContaining({
+          binding_id: 'binding-existing',
+          revision: 3,
+          workflow: expect.objectContaining({
+            workflow_name: 'services_publication_conflicted',
+          }),
+        }),
+      ],
+    })
+    expect(
+      screen.getByTestId('pool-catalog-workflow-binding-workflow-name-0')
+    ).toHaveValue('services_publication_conflicted')
+    expect(screen.getByRole('dialog', { name: 'Edit pool' })).toBeInTheDocument()
+  }, 30000)
 
   it('submits workflow bindings from pool drawer via structured editor', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
