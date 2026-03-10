@@ -3310,6 +3310,12 @@ paths:
     get:
       operationId: v2_decisions_collection
       summary: List decision tables
+      parameters:
+        - in: query
+          name: database_id
+          schema:
+            type: string
+          required: false
       tags:
         - v2
       security:
@@ -3378,6 +3384,11 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: database_id
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         '200':
           description: ''
@@ -14348,6 +14359,8 @@ components:
             $ref: '#/components/schemas/DecisionTable'
         count:
           type: integer
+        metadata_context:
+          $ref: '#/components/schemas/PoolODataMetadataCatalogResponse'
       required:
         - decisions
         - count
@@ -14355,6 +14368,8 @@ components:
       type: object
       description: Create a new decision table revision.
       properties:
+        database_id:
+          type: string
         decision_table_id:
           type: string
         decision_key:
@@ -14396,6 +14411,8 @@ components:
       properties:
         decision:
           $ref: '#/components/schemas/DecisionTable'
+        metadata_context:
+          $ref: '#/components/schemas/PoolODataMetadataCatalogResponse'
       required:
         - decision
     OperationCatalogDefinition:
@@ -17850,6 +17867,8 @@ components:
       properties:
         database_id:
           type: string
+        snapshot_id:
+          type: string
         source:
           type: string
         fetched_at:
@@ -17861,8 +17880,19 @@ components:
           type: string
         config_version:
           type: string
+        extensions_fingerprint:
+          type: string
         metadata_hash:
           type: string
+        resolution_mode:
+          type: string
+        is_shared_snapshot:
+          type: boolean
+        provenance_database_id:
+          type: string
+        provenance_confirmed_at:
+          type: string
+          format: date-time
         documents:
           type: array
           items:
@@ -17873,8 +17903,14 @@ components:
         - config_version
         - database_id
         - documents
+        - extensions_fingerprint
         - fetched_at
+        - is_shared_snapshot
         - metadata_hash
+        - provenance_confirmed_at
+        - provenance_database_id
+        - resolution_mode
+        - snapshot_id
         - source
     PoolODataMetadataCatalogRefreshRequest:
       type: object

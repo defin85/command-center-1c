@@ -12,11 +12,14 @@ from apps.intercompany_pools.metadata_catalog import (
     ERROR_CODE_POOL_METADATA_FETCH_FAILED,
     ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS,
     ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
+    describe_metadata_catalog_snapshot_resolution,
     MetadataCatalogError,
+    _read_snapshot_from_cache,
     _fetch_live_catalog_payload,
     _resolve_metadata_mapping_credentials,
     read_metadata_catalog_snapshot,
     refresh_metadata_catalog_snapshot,
+    resolve_metadata_catalog_scope,
     validate_document_policy_references,
 )
 from apps.intercompany_pools.models import (
@@ -26,14 +29,22 @@ from apps.intercompany_pools.models import (
 from apps.tenancy.models import Tenant, TenantMember
 
 
-def _create_database(*, tenant: Tenant, name: str) -> Database:
+def _create_database(
+    *,
+    tenant: Tenant,
+    name: str,
+    base_name: str | None = None,
+    version: str = "",
+) -> Database:
     return Database.objects.create(
         tenant=tenant,
         name=name,
         host="localhost",
+        base_name=base_name or name,
         odata_url="http://localhost/odata/standard.odata",
         username="legacy-user",
         password="legacy-pass",
+        version=version,
     )
 
 
@@ -116,6 +127,145 @@ def test_refresh_snapshot_switches_current_version_atomically(default_tenant: Te
         database=database,
         is_current=False,
     ).count() == 1
+
+
+@pytest.mark.django_db
+def test_read_snapshot_reuses_shared_current_snapshot_for_same_configuration_profile(
+    default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+    first_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-shared-db-{uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    second_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-shared-db-{uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    _create_service_infobase_mapping(database=first_database)
+    _create_service_infobase_mapping(database=second_database)
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.metadata_catalog._fetch_live_catalog_payload",
+        lambda **_: _catalog_payload(suffix="shared"),
+    )
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._write_snapshot_to_cache", lambda **_: None)
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._get_redis_client", lambda: None)
+
+    refreshed = refresh_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=first_database,
+        requested_by_username="meta-user",
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+    )
+
+    resolved, source = read_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=second_database,
+        requested_by_username="meta-user",
+        allow_cold_bootstrap=False,
+    )
+
+    assert source == "db"
+    assert resolved.id == refreshed.id
+    assert (
+        PoolODataMetadataCatalogSnapshot.objects.filter(
+            tenant=default_tenant,
+            config_name="shared-profile",
+            config_version="8.3.24",
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.django_db
+def test_read_snapshot_preserves_database_specific_resolution_when_profile_has_multiple_variants(
+    default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared_name = "shared-profile-diverged"
+    shared_version = "8.3.25"
+    first_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-diverged-db-{uuid4().hex[:8]}",
+        base_name=shared_name,
+        version=shared_version,
+    )
+    second_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-diverged-db-{uuid4().hex[:8]}",
+        base_name=shared_name,
+        version=shared_version,
+    )
+    third_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-diverged-db-{uuid4().hex[:8]}",
+        base_name=shared_name,
+        version=shared_version,
+    )
+    _create_service_infobase_mapping(database=first_database)
+    _create_service_infobase_mapping(database=second_database)
+    _create_service_infobase_mapping(database=third_database)
+
+    payload_by_database = {
+        first_database.id: _catalog_payload(suffix="variant-a"),
+        second_database.id: _catalog_payload(suffix="variant-b"),
+        third_database.id: _catalog_payload(suffix="variant-a"),
+    }
+
+    def _fetch_payload(*, database: Database, **_: object) -> dict[str, object]:
+        return payload_by_database[database.id]
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.metadata_catalog._fetch_live_catalog_payload",
+        _fetch_payload,
+    )
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._write_snapshot_to_cache", lambda **_: None)
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._get_redis_client", lambda: None)
+
+    first_snapshot = refresh_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=first_database,
+        requested_by_username="meta-user",
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+    )
+    second_snapshot = refresh_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=second_database,
+        requested_by_username="meta-user",
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+    )
+    third_snapshot = refresh_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=third_database,
+        requested_by_username="meta-user",
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+    )
+
+    assert first_snapshot.id != second_snapshot.id
+    assert third_snapshot.id == first_snapshot.id
+
+    resolved_first, source_first = read_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=first_database,
+        requested_by_username="meta-user",
+        allow_cold_bootstrap=False,
+    )
+    resolved_second, source_second = read_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=second_database,
+        requested_by_username="meta-user",
+        allow_cold_bootstrap=False,
+    )
+
+    assert source_first == "db"
+    assert source_second == "db"
+    assert resolved_first.id == first_snapshot.id
+    assert resolved_second.id == second_snapshot.id
 
 
 @pytest.mark.django_db
@@ -371,6 +521,89 @@ def test_read_snapshot_returns_redis_hit_without_db_lookup(
     assert source == "redis"
     assert resolved.id == snapshot.id
     assert db_lookup_calls["count"] == 0
+
+
+@pytest.mark.django_db
+def test_read_shared_snapshot_from_redis_preserves_provenance_database(
+    default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-redis-shared-a-{uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    second_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-redis-shared-b-{uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
+        tenant=default_tenant,
+        database=first_database,
+        config_name="shared-profile",
+        config_version="8.3.24",
+        extensions_fingerprint="",
+        metadata_hash="b" * 64,
+        catalog_version="v1:redis-shared",
+        payload=_catalog_payload(suffix="redis-shared"),
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+        is_current=True,
+    )
+
+    class _RedisClient:
+        def __init__(self) -> None:
+            self._value = json.dumps(
+                {
+                    "scope": {
+                        "tenant_id": str(default_tenant.id),
+                        "database_id": str(second_database.id),
+                        "config_name": "shared-profile",
+                        "config_version": "8.3.24",
+                        "extensions_fingerprint": "",
+                    },
+                    "snapshot": {
+                        "id": str(snapshot.id),
+                        "tenant_id": str(default_tenant.id),
+                        "database_id": str(first_database.id),
+                        "config_name": "shared-profile",
+                        "config_version": "8.3.24",
+                        "extensions_fingerprint": "",
+                        "metadata_hash": snapshot.metadata_hash,
+                        "catalog_version": snapshot.catalog_version,
+                        "payload": snapshot.payload,
+                        "source": snapshot.source,
+                        "fetched_at": snapshot.fetched_at.isoformat(),
+                        "is_current": True,
+                    },
+                },
+                ensure_ascii=False,
+            )
+
+        def get(self, _key: str) -> str:
+            return self._value
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._get_redis_client", lambda: _RedisClient())
+    scope = resolve_metadata_catalog_scope(tenant_id=str(default_tenant.id), database=second_database)
+    resolved = _read_snapshot_from_cache(scope=scope)
+    resolution = describe_metadata_catalog_snapshot_resolution(
+        tenant_id=str(default_tenant.id),
+        database=second_database,
+        snapshot=resolved,
+    )
+
+    assert resolved is not None
+    assert resolved.id == snapshot.id
+    assert resolved.database_id == first_database.id
+    assert resolution.resolution_mode == "shared_scope"
+    assert resolution.is_shared_snapshot is True
+    assert resolution.provenance_database_id == str(first_database.id)
+    assert resolution.provenance_confirmed_at == snapshot.fetched_at
 
 
 @pytest.mark.django_db

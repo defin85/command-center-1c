@@ -26,6 +26,7 @@ from apps.databases.models import Database, DatabaseExtensionsSnapshot, Infobase
 
 from .models import (
     PoolODataMetadataCatalogSnapshot,
+    PoolODataMetadataCatalogScopeResolution,
     PoolODataMetadataCatalogSnapshotSource,
 )
 from .publication_auth_mapping import (
@@ -56,6 +57,19 @@ class MetadataCatalogScope:
     config_name: str
     config_version: str
     extensions_fingerprint: str
+
+
+@dataclass(frozen=True)
+class MetadataCatalogSnapshotResolution:
+    resolution_mode: str
+    is_shared_snapshot: bool
+    provenance_database_id: str
+    provenance_confirmed_at: datetime | None
+
+
+RESOLUTION_MODE_DATABASE_SCOPE = "database_scope"
+RESOLUTION_MODE_LEGACY_DATABASE_SCOPE = "legacy_database_scope"
+RESOLUTION_MODE_SHARED_SCOPE = "shared_scope"
 
 
 class MetadataCatalogError(Exception):
@@ -175,20 +189,16 @@ def refresh_metadata_catalog_snapshot(
             metadata_hash = hashlib.sha256(_canonical_json_bytes(catalog_payload)).hexdigest()
             catalog_version = _build_catalog_version(scope=scope, metadata_hash=metadata_hash)
             now = timezone.now()
-
-            scope_filters = _scope_filters(scope=scope)
-            current_qs = PoolODataMetadataCatalogSnapshot.objects.select_for_update().filter(
-                **scope_filters,
-                is_current=True,
-            )
+            previous_resolution = _get_scope_resolution(scope=scope, for_update=True)
+            previous_snapshot = previous_resolution.snapshot if previous_resolution is not None else None
             existing_version = (
                 PoolODataMetadataCatalogSnapshot.objects.select_for_update()
-                .filter(**scope_filters, catalog_version=catalog_version)
+                .filter(**_shared_scope_filters(scope), catalog_version=catalog_version)
                 .first()
             )
 
             if existing_version is not None:
-                current_qs.exclude(id=existing_version.id).update(is_current=False, updated_at=now)
+                existing_version.database = database
                 existing_version.metadata_hash = metadata_hash
                 existing_version.payload = catalog_payload
                 existing_version.source = source
@@ -196,6 +206,7 @@ def refresh_metadata_catalog_snapshot(
                 existing_version.is_current = True
                 existing_version.save(
                     update_fields=[
+                        "database",
                         "metadata_hash",
                         "payload",
                         "source",
@@ -206,7 +217,6 @@ def refresh_metadata_catalog_snapshot(
                 )
                 snapshot = existing_version
             else:
-                current_qs.update(is_current=False, updated_at=now)
                 snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
                     tenant_id=scope.tenant_id,
                     database=database,
@@ -220,6 +230,16 @@ def refresh_metadata_catalog_snapshot(
                     fetched_at=now,
                     is_current=True,
                 )
+            _upsert_scope_resolution(
+                scope=scope,
+                database=database,
+                snapshot=snapshot,
+                confirmed_at=now,
+                existing=previous_resolution,
+            )
+            _sync_snapshot_current_marker(snapshot=snapshot)
+            if previous_snapshot is not None and previous_snapshot.id != snapshot.id:
+                _sync_snapshot_current_marker(snapshot=previous_snapshot)
     except MetadataCatalogError:
         raise
 
@@ -234,6 +254,87 @@ def get_current_snapshot_for_database_scope(
 ) -> PoolODataMetadataCatalogSnapshot | None:
     scope = resolve_metadata_catalog_scope(tenant_id=tenant_id, database=database)
     return _get_current_snapshot(scope=scope)
+
+
+def describe_metadata_catalog_snapshot_resolution(
+    *,
+    tenant_id: str,
+    database: Database,
+    snapshot: PoolODataMetadataCatalogSnapshot,
+) -> MetadataCatalogSnapshotResolution:
+    scope = resolve_metadata_catalog_scope(tenant_id=tenant_id, database=database)
+    database_resolution = (
+        PoolODataMetadataCatalogScopeResolution.objects.filter(
+            **_resolution_filters(scope),
+            snapshot_id=snapshot.id,
+        )
+        .order_by("-confirmed_at", "-updated_at", "-created_at")
+        .first()
+    )
+    if database_resolution is not None:
+        resolution_mode = RESOLUTION_MODE_DATABASE_SCOPE
+    elif PoolODataMetadataCatalogSnapshot.objects.filter(
+        id=snapshot.id,
+        **_legacy_database_scope_filters(scope),
+        is_current=True,
+    ).exists():
+        resolution_mode = RESOLUTION_MODE_LEGACY_DATABASE_SCOPE
+    else:
+        resolution_mode = RESOLUTION_MODE_SHARED_SCOPE
+
+    latest_resolution = (
+        PoolODataMetadataCatalogScopeResolution.objects.filter(snapshot_id=snapshot.id)
+        .order_by("-confirmed_at", "-updated_at", "-created_at")
+        .first()
+    )
+    if latest_resolution is not None:
+        provenance_database_id = str(latest_resolution.database_id)
+        provenance_confirmed_at = latest_resolution.confirmed_at
+    else:
+        provenance_database_id = str(snapshot.database_id)
+        provenance_confirmed_at = snapshot.fetched_at
+
+    is_shared_snapshot = (
+        provenance_database_id != str(database.id)
+        or PoolODataMetadataCatalogScopeResolution.objects.filter(snapshot_id=snapshot.id)
+        .exclude(database_id=database.id)
+        .exists()
+    )
+    return MetadataCatalogSnapshotResolution(
+        resolution_mode=resolution_mode,
+        is_shared_snapshot=is_shared_snapshot,
+        provenance_database_id=provenance_database_id,
+        provenance_confirmed_at=provenance_confirmed_at,
+    )
+
+
+def build_metadata_catalog_api_payload(
+    *,
+    database: Database,
+    snapshot: PoolODataMetadataCatalogSnapshot,
+    source: str,
+    resolution: MetadataCatalogSnapshotResolution,
+) -> dict[str, Any]:
+    payload = normalize_catalog_payload(
+        payload=snapshot.payload if isinstance(snapshot.payload, dict) else {}
+    )
+    documents = payload.get("documents") if isinstance(payload.get("documents"), list) else []
+    return {
+        "database_id": str(database.id),
+        "snapshot_id": str(snapshot.id),
+        "source": str(source or snapshot.source or ""),
+        "fetched_at": snapshot.fetched_at,
+        "catalog_version": snapshot.catalog_version,
+        "config_name": snapshot.config_name,
+        "config_version": snapshot.config_version,
+        "extensions_fingerprint": snapshot.extensions_fingerprint,
+        "metadata_hash": snapshot.metadata_hash,
+        "resolution_mode": resolution.resolution_mode,
+        "is_shared_snapshot": resolution.is_shared_snapshot,
+        "provenance_database_id": resolution.provenance_database_id,
+        "provenance_confirmed_at": resolution.provenance_confirmed_at,
+        "documents": documents,
+    }
 
 
 def validate_document_policy_references(
@@ -462,7 +563,26 @@ def normalize_catalog_payload(*, payload: dict[str, Any]) -> dict[str, Any]:
     return {"documents": normalized_documents}
 
 
-def _scope_filters(scope: MetadataCatalogScope) -> dict[str, str]:
+def _legacy_database_scope_filters(scope: MetadataCatalogScope) -> dict[str, str]:
+    return {
+        "tenant_id": scope.tenant_id,
+        "database_id": scope.database_id,
+        "config_name": scope.config_name,
+        "config_version": scope.config_version,
+        "extensions_fingerprint": scope.extensions_fingerprint,
+    }
+
+
+def _shared_scope_filters(scope: MetadataCatalogScope) -> dict[str, str]:
+    return {
+        "tenant_id": scope.tenant_id,
+        "config_name": scope.config_name,
+        "config_version": scope.config_version,
+        "extensions_fingerprint": scope.extensions_fingerprint,
+    }
+
+
+def _resolution_filters(scope: MetadataCatalogScope) -> dict[str, str]:
     return {
         "tenant_id": scope.tenant_id,
         "database_id": scope.database_id,
@@ -473,11 +593,31 @@ def _scope_filters(scope: MetadataCatalogScope) -> dict[str, str]:
 
 
 def _get_current_snapshot(*, scope: MetadataCatalogScope) -> PoolODataMetadataCatalogSnapshot | None:
-    return (
-        PoolODataMetadataCatalogSnapshot.objects.filter(**_scope_filters(scope), is_current=True)
+    resolution = _get_scope_resolution(scope=scope)
+    if resolution is not None:
+        return resolution.snapshot
+
+    legacy_snapshot = (
+        PoolODataMetadataCatalogSnapshot.objects.filter(
+            **_legacy_database_scope_filters(scope),
+            is_current=True,
+        )
         .order_by("-fetched_at", "-created_at")
         .first()
     )
+    if legacy_snapshot is not None:
+        return legacy_snapshot
+
+    shared_candidates = list(
+        PoolODataMetadataCatalogSnapshot.objects.filter(
+            **_shared_scope_filters(scope),
+            is_current=True,
+        )
+        .order_by("-fetched_at", "-created_at")[:2]
+    )
+    if len(shared_candidates) == 1:
+        return shared_candidates[0]
+    return None
 
 
 def _build_catalog_version(*, scope: MetadataCatalogScope, metadata_hash: str) -> str:
@@ -485,7 +625,6 @@ def _build_catalog_version(*, scope: MetadataCatalogScope, metadata_hash: str) -
         [
             "v1",
             scope.tenant_id,
-            scope.database_id,
             scope.config_name,
             scope.config_version,
             scope.extensions_fingerprint,
@@ -493,6 +632,51 @@ def _build_catalog_version(*, scope: MetadataCatalogScope, metadata_hash: str) -
         ]
     )
     return f"v1:{hashlib.sha256(fingerprint.encode('utf-8')).hexdigest()[:16]}"
+
+
+def _get_scope_resolution(
+    *,
+    scope: MetadataCatalogScope,
+    for_update: bool = False,
+) -> PoolODataMetadataCatalogScopeResolution | None:
+    queryset = PoolODataMetadataCatalogScopeResolution.objects.select_related("snapshot")
+    if for_update:
+        queryset = queryset.select_for_update()
+    return queryset.filter(**_resolution_filters(scope)).first()
+
+
+def _upsert_scope_resolution(
+    *,
+    scope: MetadataCatalogScope,
+    database: Database,
+    snapshot: PoolODataMetadataCatalogSnapshot,
+    confirmed_at: datetime,
+    existing: PoolODataMetadataCatalogScopeResolution | None,
+) -> PoolODataMetadataCatalogScopeResolution:
+    if existing is None:
+        return PoolODataMetadataCatalogScopeResolution.objects.create(
+            tenant_id=scope.tenant_id,
+            database=database,
+            snapshot=snapshot,
+            config_name=scope.config_name,
+            config_version=scope.config_version,
+            extensions_fingerprint=scope.extensions_fingerprint,
+            confirmed_at=confirmed_at,
+        )
+
+    existing.database = database
+    existing.snapshot = snapshot
+    existing.confirmed_at = confirmed_at
+    existing.save(update_fields=["database", "snapshot", "confirmed_at", "updated_at"])
+    return existing
+
+
+def _sync_snapshot_current_marker(*, snapshot: PoolODataMetadataCatalogSnapshot) -> None:
+    should_be_current = PoolODataMetadataCatalogScopeResolution.objects.filter(snapshot=snapshot).exists()
+    if snapshot.is_current == should_be_current:
+        return
+    snapshot.is_current = should_be_current
+    snapshot.save(update_fields=["is_current", "updated_at"])
 
 
 def _resolve_metadata_mapping_credentials(
@@ -1103,19 +1287,24 @@ def _read_snapshot_from_cache(*, scope: MetadataCatalogScope) -> PoolODataMetada
         return None
     if not isinstance(parsed, Mapping):
         return None
+    cached_scope_raw = parsed.get("scope")
+    if not isinstance(cached_scope_raw, Mapping):
+        return None
     snapshot_raw = parsed.get("snapshot")
     if not isinstance(snapshot_raw, Mapping):
         return None
 
+    if str(cached_scope_raw.get("tenant_id") or "") != scope.tenant_id:
+        return None
+    if str(cached_scope_raw.get("database_id") or "") != scope.database_id:
+        return None
+    if str(cached_scope_raw.get("config_name") or "") != scope.config_name:
+        return None
+    if str(cached_scope_raw.get("config_version") or "") != scope.config_version:
+        return None
+    if str(cached_scope_raw.get("extensions_fingerprint") or "") != scope.extensions_fingerprint:
+        return None
     if str(snapshot_raw.get("tenant_id") or "") != scope.tenant_id:
-        return None
-    if str(snapshot_raw.get("database_id") or "") != scope.database_id:
-        return None
-    if str(snapshot_raw.get("config_name") or "") != scope.config_name:
-        return None
-    if str(snapshot_raw.get("config_version") or "") != scope.config_version:
-        return None
-    if str(snapshot_raw.get("extensions_fingerprint") or "") != scope.extensions_fingerprint:
         return None
 
     snapshot_id = str(snapshot_raw.get("id") or "").strip()
@@ -1128,7 +1317,7 @@ def _read_snapshot_from_cache(*, scope: MetadataCatalogScope) -> PoolODataMetada
     return PoolODataMetadataCatalogSnapshot(
         id=snapshot_uuid,
         tenant_id=scope.tenant_id,
-        database_id=scope.database_id,
+        database_id=str(snapshot_raw.get("database_id") or "").strip() or scope.database_id,
         config_name=scope.config_name,
         config_version=scope.config_version,
         extensions_fingerprint=scope.extensions_fingerprint,

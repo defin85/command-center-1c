@@ -10,6 +10,19 @@ from rest_framework.response import Response
 
 from apps.core import permission_codes as perms
 from apps.api_v2.serializers.common import ErrorResponseSerializer
+from apps.api_v2.views.databases.common import _resolve_tenant_id as _resolve_default_tenant_id
+from apps.databases.models import Database
+from apps.intercompany_pools.document_policy_contract import (
+    DOCUMENT_POLICY_METADATA_KEY,
+    validate_document_policy_v1,
+)
+from apps.intercompany_pools.metadata_catalog import (
+    MetadataCatalogError,
+    build_metadata_catalog_api_payload,
+    describe_metadata_catalog_snapshot_resolution,
+    read_metadata_catalog_snapshot,
+    validate_document_policy_references,
+)
 from apps.templates.workflow.decision_tables import (
     build_decision_table_contract,
     create_decision_table_revision,
@@ -31,6 +44,7 @@ class DecisionRuleSerializer(serializers.Serializer):
 
 
 class DecisionTableWriteSerializer(serializers.Serializer):
+    database_id = serializers.CharField(required=False)
     decision_table_id = serializers.CharField(required=False)
     decision_key = serializers.CharField(required=False)
     name = serializers.CharField()
@@ -42,6 +56,27 @@ class DecisionTableWriteSerializer(serializers.Serializer):
     validation_mode = serializers.CharField(required=False, default="fail_closed")
     is_active = serializers.BooleanField(required=False, default=True)
     parent_version_id = serializers.UUIDField(required=False)
+
+
+class DecisionTableContextQuerySerializer(serializers.Serializer):
+    database_id = serializers.CharField(required=False)
+
+
+class DecisionMetadataContextSerializer(serializers.Serializer):
+    database_id = serializers.CharField()
+    snapshot_id = serializers.CharField()
+    source = serializers.CharField()
+    fetched_at = serializers.DateTimeField()
+    catalog_version = serializers.CharField()
+    config_name = serializers.CharField()
+    config_version = serializers.CharField()
+    extensions_fingerprint = serializers.CharField()
+    metadata_hash = serializers.CharField()
+    resolution_mode = serializers.CharField()
+    is_shared_snapshot = serializers.BooleanField()
+    provenance_database_id = serializers.CharField()
+    provenance_confirmed_at = serializers.DateTimeField()
+    documents = serializers.JSONField()
 
 
 class DecisionTableReadSerializer(serializers.Serializer):
@@ -65,10 +100,12 @@ class DecisionTableReadSerializer(serializers.Serializer):
 class DecisionTableListResponseSerializer(serializers.Serializer):
     decisions = DecisionTableReadSerializer(many=True)
     count = serializers.IntegerField()
+    metadata_context = DecisionMetadataContextSerializer(required=False)
 
 
 class DecisionTableDetailResponseSerializer(serializers.Serializer):
     decision = DecisionTableReadSerializer()
+    metadata_context = DecisionMetadataContextSerializer(required=False)
 
 
 def _permission_denied() -> Response:
@@ -82,6 +119,30 @@ def _permission_denied() -> Response:
         },
         status=403,
     )
+
+
+def _error(*, code: str, message: str, status: int) -> Response:
+    return Response(
+        {
+            "success": False,
+            "error": {
+                "code": code,
+                "message": message,
+            },
+        },
+        status=status,
+    )
+
+
+def _resolve_tenant_id(request) -> str | None:
+    header_value = str(
+        request.headers.get("X-CC1C-Tenant-ID")
+        or request.META.get("HTTP_X_CC1C_TENANT_ID")
+        or ""
+    ).strip()
+    if header_value:
+        return header_value
+    return _resolve_default_tenant_id(request)
 
 
 def _serialize_decision_table(decision_table: DecisionTable) -> dict[str, Any]:
@@ -105,6 +166,86 @@ def _serialize_decision_table(decision_table: DecisionTable) -> dict[str, Any]:
     }
 
 
+def _resolve_metadata_context(
+    *,
+    request,
+    database_id: str | None,
+) -> tuple[dict[str, Any] | None, Any | None, Response | None]:
+    normalized_database_id = str(database_id or "").strip()
+    if not normalized_database_id:
+        return None, None, None
+
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return None, None, _error(
+            code="TENANT_CONTEXT_REQUIRED",
+            message="X-CC1C-Tenant-ID is required.",
+            status=400,
+        )
+
+    database = Database.objects.filter(id=normalized_database_id, tenant_id=tenant_id).first()
+    if database is None:
+        return None, None, _error(
+            code="DATABASE_NOT_FOUND",
+            message="Database not found in current tenant context.",
+            status=404,
+        )
+
+    try:
+        snapshot, source = read_metadata_catalog_snapshot(
+            tenant_id=tenant_id,
+            database=database,
+            requested_by_username=str(getattr(request.user, "username", "") or "").strip(),
+            allow_cold_bootstrap=True,
+        )
+    except MetadataCatalogError as exc:
+        return None, None, _error(code=exc.code, message=exc.detail, status=exc.status_code)
+
+    resolution = describe_metadata_catalog_snapshot_resolution(
+        tenant_id=tenant_id,
+        database=database,
+        snapshot=snapshot,
+    )
+    payload = build_metadata_catalog_api_payload(
+        database=database,
+        snapshot=snapshot,
+        source=source,
+        resolution=resolution,
+    )
+    return payload, snapshot, None
+
+
+def _normalize_document_policy_payload(
+    *,
+    payload: dict[str, Any],
+    snapshot,
+) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    if str(payload.get("decision_key") or "").strip() != DOCUMENT_POLICY_METADATA_KEY or snapshot is None:
+        return payload, []
+
+    normalized_payload = dict(payload)
+    normalized_rules: list[dict[str, Any]] = []
+    referential_errors: list[dict[str, str]] = []
+    for rule_index, raw_rule in enumerate(list(payload.get("rules") or [])):
+        rule = dict(raw_rule)
+        outputs = dict(rule.get("outputs") or {})
+        normalized_policy = validate_document_policy_v1(
+            policy=outputs.get(DOCUMENT_POLICY_METADATA_KEY)
+        )
+        referential_errors.extend(
+            validate_document_policy_references(
+                policy=normalized_policy,
+                snapshot=snapshot,
+                path_prefix=f"rules[{rule_index}].outputs.{DOCUMENT_POLICY_METADATA_KEY}",
+            )
+        )
+        outputs[DOCUMENT_POLICY_METADATA_KEY] = normalized_policy
+        rule["outputs"] = outputs
+        normalized_rules.append(rule)
+    normalized_payload["rules"] = normalized_rules
+    return normalized_payload, referential_errors
+
+
 @extend_schema(
     tags=["v2"],
     operation_id="v2_decisions_collection",
@@ -121,6 +262,24 @@ def _serialize_decision_table(decision_table: DecisionTable) -> dict[str, Any]:
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def decisions_collection(request):
+    metadata_context_serializer = (
+        DecisionTableContextQuerySerializer(data=request.query_params)
+        if request.method == "GET"
+        else DecisionTableContextQuerySerializer(data=request.data or {})
+    )
+    if not metadata_context_serializer.is_valid():
+        return _error(
+            code="VALIDATION_ERROR",
+            message=str(metadata_context_serializer.errors),
+            status=400,
+        )
+    metadata_context, snapshot, metadata_error = _resolve_metadata_context(
+        request=request,
+        database_id=metadata_context_serializer.validated_data.get("database_id"),
+    )
+    if metadata_error is not None:
+        return metadata_error
+
     if request.method == "GET":
         decisions = list(
             DecisionTable.objects.select_related("parent_version")
@@ -130,6 +289,8 @@ def decisions_collection(request):
             "decisions": [_serialize_decision_table(item) for item in decisions],
             "count": len(decisions),
         }
+        if metadata_context is not None:
+            payload["metadata_context"] = metadata_context
         return Response(payload, status=200)
 
     if not request.user.has_perm(perms.PERM_TEMPLATES_MANAGE_WORKFLOW_TEMPLATE):
@@ -149,23 +310,34 @@ def decisions_collection(request):
         )
 
     try:
+        normalized_payload = dict(serializer.validated_data)
+        normalized_payload.pop("database_id", None)
+        normalized_payload, referential_errors = _normalize_document_policy_payload(
+            payload=normalized_payload,
+            snapshot=snapshot,
+        )
+        if referential_errors:
+            first_error = referential_errors[0]
+            return _error(
+                code=str(first_error.get("code") or "VALIDATION_ERROR"),
+                message=str(first_error.get("detail") or "Document policy references are invalid."),
+                status=400,
+            )
         decision = create_decision_table_revision(
-            contract=serializer.validated_data,
+            contract=normalized_payload,
             created_by=request.user,
         )
     except ValueError as exc:
-        return Response(
-            {
-                "success": False,
-                "error": {
-                    "code": "CREATE_ERROR",
-                    "message": str(exc),
-                },
-            },
+        return _error(
+            code="CREATE_ERROR",
+            message=str(exc),
             status=400,
         )
 
-    return Response({"decision": _serialize_decision_table(decision)}, status=201)
+    payload = {"decision": _serialize_decision_table(decision)}
+    if metadata_context is not None:
+        payload["metadata_context"] = metadata_context
+    return Response(payload, status=201)
 
 
 @extend_schema(
@@ -181,6 +353,20 @@ def decisions_collection(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def decision_detail(request, decision_id):
+    context_serializer = DecisionTableContextQuerySerializer(data=request.query_params)
+    if not context_serializer.is_valid():
+        return _error(
+            code="VALIDATION_ERROR",
+            message=str(context_serializer.errors),
+            status=400,
+        )
+    metadata_context, _snapshot, metadata_error = _resolve_metadata_context(
+        request=request,
+        database_id=context_serializer.validated_data.get("database_id"),
+    )
+    if metadata_error is not None:
+        return metadata_error
+
     decision = (
         DecisionTable.objects.select_related("parent_version")
         .filter(id=decision_id)
@@ -197,4 +383,7 @@ def decision_detail(request, decision_id):
             },
             status=404,
         )
-    return Response({"decision": _serialize_decision_table(decision)}, status=200)
+    payload = {"decision": _serialize_decision_table(decision)}
+    if metadata_context is not None:
+        payload["metadata_context"] = metadata_context
+    return Response(payload, status=200)

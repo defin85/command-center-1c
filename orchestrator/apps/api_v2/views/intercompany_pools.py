@@ -44,6 +44,8 @@ from apps.intercompany_pools.metadata_catalog import (
     ERROR_CODE_POOL_METADATA_REFERENCE_INVALID,
     ERROR_CODE_POOL_METADATA_SNAPSHOT_UNAVAILABLE,
     MetadataCatalogError,
+    build_metadata_catalog_api_payload,
+    describe_metadata_catalog_snapshot_resolution,
     get_current_snapshot_for_database_scope,
     normalize_catalog_payload,
     read_metadata_catalog_snapshot,
@@ -477,23 +479,17 @@ def _load_pool_graph_state(
 
 def _serialize_metadata_catalog_snapshot(
     *,
+    database: Database,
     snapshot: PoolODataMetadataCatalogSnapshot,
     source: str,
+    resolution,
 ) -> dict[str, Any]:
-    payload = normalize_catalog_payload(
-        payload=snapshot.payload if isinstance(snapshot.payload, dict) else {}
+    return build_metadata_catalog_api_payload(
+        database=database,
+        snapshot=snapshot,
+        source=source,
+        resolution=resolution,
     )
-    documents = payload.get("documents") if isinstance(payload.get("documents"), list) else []
-    return {
-        "database_id": str(snapshot.database_id),
-        "source": str(source or snapshot.source or ""),
-        "fetched_at": snapshot.fetched_at,
-        "catalog_version": snapshot.catalog_version,
-        "config_name": snapshot.config_name,
-        "config_version": snapshot.config_version,
-        "metadata_hash": snapshot.metadata_hash,
-        "documents": documents,
-    }
 
 
 def _resolve_topology_document_policy_referential_errors(
@@ -2554,12 +2550,18 @@ class PoolODataMetadataCatalogDocumentSerializer(serializers.Serializer):
 
 class PoolODataMetadataCatalogResponseSerializer(serializers.Serializer):
     database_id = serializers.CharField()
+    snapshot_id = serializers.CharField()
     source = serializers.CharField()
     fetched_at = serializers.DateTimeField()
     catalog_version = serializers.CharField()
     config_name = serializers.CharField()
     config_version = serializers.CharField()
+    extensions_fingerprint = serializers.CharField()
     metadata_hash = serializers.CharField()
+    resolution_mode = serializers.CharField()
+    is_shared_snapshot = serializers.BooleanField()
+    provenance_database_id = serializers.CharField()
+    provenance_confirmed_at = serializers.DateTimeField()
     documents = PoolODataMetadataCatalogDocumentSerializer(many=True)
 
 
@@ -3554,8 +3556,18 @@ def get_pool_odata_metadata_catalog(request):
             errors=exc.errors or None,
         )
 
+    resolution = describe_metadata_catalog_snapshot_resolution(
+        tenant_id=tenant_id,
+        database=database,
+        snapshot=snapshot,
+    )
     return Response(
-        _serialize_metadata_catalog_snapshot(snapshot=snapshot, source=source),
+        _serialize_metadata_catalog_snapshot(
+            database=database,
+            snapshot=snapshot,
+            source=source,
+            resolution=resolution,
+        ),
         status=http_status.HTTP_200_OK,
     )
 
@@ -3620,8 +3632,18 @@ def refresh_pool_odata_metadata_catalog(request):
             errors=exc.errors or None,
         )
 
+    resolution = describe_metadata_catalog_snapshot_resolution(
+        tenant_id=tenant_id,
+        database=database,
+        snapshot=snapshot,
+    )
     return Response(
-        _serialize_metadata_catalog_snapshot(snapshot=snapshot, source="live_refresh"),
+        _serialize_metadata_catalog_snapshot(
+            database=database,
+            snapshot=snapshot,
+            source="live_refresh",
+            resolution=resolution,
+        ),
         status=http_status.HTTP_200_OK,
     )
 

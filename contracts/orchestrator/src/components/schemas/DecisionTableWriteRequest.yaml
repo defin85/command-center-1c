@@ -1,6 +1,8 @@
 type: object
 description: Create a new decision table revision.
 properties:
+  database_id:
+    type: string
   decision_table_id:
     type: string
   decision_key:

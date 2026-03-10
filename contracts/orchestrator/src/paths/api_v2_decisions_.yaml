@@ -1,6 +1,12 @@
 get:
   operationId: v2_decisions_collection
   summary: List decision tables
+  parameters:
+    - in: query
+      name: database_id
+      schema:
+        type: string
+      required: false
   tags:
     - v2
   security:

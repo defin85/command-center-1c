@@ -2,6 +2,8 @@ type: object
 properties:
   database_id:
     type: string
+  snapshot_id:
+    type: string
   source:
     type: string
   fetched_at:
@@ -13,8 +15,19 @@ properties:
     type: string
   config_version:
     type: string
+  extensions_fingerprint:
+    type: string
   metadata_hash:
     type: string
+  resolution_mode:
+    type: string
+  is_shared_snapshot:
+    type: boolean
+  provenance_database_id:
+    type: string
+  provenance_confirmed_at:
+    type: string
+    format: date-time
   documents:
     type: array
     items:
@@ -25,6 +38,12 @@ required:
   - config_version
   - database_id
   - documents
+  - extensions_fingerprint
   - fetched_at
+  - is_shared_snapshot
   - metadata_hash
+  - provenance_confirmed_at
+  - provenance_database_id
+  - resolution_mode
+  - snapshot_id
   - source

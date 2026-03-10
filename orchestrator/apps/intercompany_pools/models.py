@@ -896,6 +896,90 @@ class OrganizationPool(models.Model):
         validate_pool_graph_for_date(self, target_date or timezone.localdate())
 
 
+class PoolWorkflowBinding(models.Model):
+    binding_id = models.CharField(primary_key=True, max_length=128, serialize=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_workflow_bindings",
+    )
+    pool = models.ForeignKey(
+        "intercompany_pools.OrganizationPool",
+        on_delete=models.CASCADE,
+        related_name="workflow_bindings",
+    )
+    contract_version = models.CharField(max_length=64, default="pool_workflow_binding.v1")
+    status = models.CharField(
+        max_length=16,
+        choices=[
+            ("draft", "Draft"),
+            ("active", "Active"),
+            ("inactive", "Inactive"),
+        ],
+        default="draft",
+        db_index=True,
+    )
+    effective_from = models.DateField(db_index=True)
+    effective_to = models.DateField(null=True, blank=True, db_index=True)
+    direction = models.CharField(max_length=32, blank=True, default="", db_index=True)
+    mode = models.CharField(max_length=32, blank=True, default="", db_index=True)
+    selector_tags = models.JSONField(default=list, blank=True)
+    workflow_definition_key = models.CharField(max_length=255, db_index=True)
+    workflow_revision_id = models.CharField(max_length=255)
+    workflow_revision = models.PositiveIntegerField(db_index=True)
+    workflow_name = models.CharField(max_length=255)
+    decisions = models.JSONField(default=list, blank=True)
+    parameters = models.JSONField(default=dict, blank=True)
+    role_mapping = models.JSONField(default=dict, blank=True)
+    revision = models.PositiveIntegerField(default=1)
+    created_by = models.CharField(max_length=255, blank=True, default="")
+    updated_by = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_workflow_bindings"
+        indexes = [
+            models.Index(fields=["tenant", "pool", "status"]),
+            models.Index(fields=["tenant", "pool", "direction", "mode", "status"]),
+            models.Index(fields=["tenant", "workflow_definition_key", "workflow_revision"]),
+            models.Index(fields=["pool", "-updated_at"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(binding_id=""),
+                name="chk_pool_workflow_binding_binding_id_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(workflow_definition_key=""),
+                name="chk_pool_workflow_binding_definition_key_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(workflow_revision_id=""),
+                name="chk_pool_workflow_binding_revision_id_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(workflow_name=""),
+                name="chk_pool_workflow_binding_workflow_name_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=Q(effective_to__isnull=True) | Q(effective_to__gte=F("effective_from")),
+                name="chk_pool_workflow_binding_effective_range",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.pool_id and self.tenant_id and self.pool.tenant_id != self.tenant_id:
+            raise ValidationError({"pool": "Workflow binding pool must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.pool_id}:{self.binding_id}:{self.workflow_definition_key}:r{self.workflow_revision}"
+
+
 class PoolODataMetadataCatalogSnapshotSource(models.TextChoices):
     LIVE_REFRESH = "live_refresh", "Live Refresh"
     COLD_BOOTSTRAP = "cold_bootstrap", "Cold Bootstrap"
@@ -958,24 +1042,12 @@ class PoolODataMetadataCatalogSnapshot(models.Model):
             models.UniqueConstraint(
                 fields=[
                     "tenant",
-                    "database",
                     "config_name",
                     "config_version",
                     "extensions_fingerprint",
                     "catalog_version",
                 ],
-                name="uniq_pool_meta_catalog_snapshot_scope_version",
-            ),
-            models.UniqueConstraint(
-                fields=[
-                    "tenant",
-                    "database",
-                    "config_name",
-                    "config_version",
-                    "extensions_fingerprint",
-                ],
-                condition=Q(is_current=True),
-                name="uniq_pool_meta_catalog_snapshot_scope_current",
+                name="uniq_pool_meta_catalog_snapshot_shared_version",
             ),
         ]
 
@@ -984,6 +1056,58 @@ class PoolODataMetadataCatalogSnapshot(models.Model):
             f"{self.tenant_id}:{self.database_id}:{self.config_name}:{self.config_version}:"
             f"{self.catalog_version} ({'current' if self.is_current else 'historical'})"
         )
+
+
+class PoolODataMetadataCatalogScopeResolution(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_odata_metadata_catalog_scope_resolutions",
+    )
+    database = models.ForeignKey(
+        "databases.Database",
+        on_delete=models.CASCADE,
+        related_name="pool_odata_metadata_catalog_scope_resolutions",
+    )
+    snapshot = models.ForeignKey(
+        "intercompany_pools.PoolODataMetadataCatalogSnapshot",
+        on_delete=models.CASCADE,
+        related_name="scope_resolutions",
+    )
+    config_name = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    config_version = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    extensions_fingerprint = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    confirmed_at = models.DateTimeField(default=timezone.now, db_index=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_odata_metadata_catalog_scope_resolutions"
+        indexes = [
+            models.Index(fields=["tenant", "database"]),
+            models.Index(
+                fields=[
+                    "tenant",
+                    "config_name",
+                    "config_version",
+                    "extensions_fingerprint",
+                ]
+            ),
+            models.Index(fields=["snapshot", "-confirmed_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "tenant",
+                    "database",
+                    "config_name",
+                    "config_version",
+                    "extensions_fingerprint",
+                ],
+                name="uniq_pool_meta_catalog_scope_resolution",
+            ),
+        ]
 
 
 class PoolSchemaTemplateFormat(models.TextChoices):

@@ -2,5 +2,7 @@ type: object
 properties:
   decision:
     $ref: ./DecisionTable.yaml
+  metadata_context:
+    $ref: ./PoolODataMetadataCatalogResponse.yaml
 required:
   - decision

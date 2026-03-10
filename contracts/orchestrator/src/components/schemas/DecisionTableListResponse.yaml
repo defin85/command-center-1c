@@ -6,6 +6,8 @@ properties:
       $ref: ./DecisionTable.yaml
   count:
     type: integer
+  metadata_context:
+    $ref: ./PoolODataMetadataCatalogResponse.yaml
 required:
   - decisions
   - count

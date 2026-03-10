@@ -6,6 +6,13 @@ import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
+from apps.databases.models import Database, InfobaseUserMapping
+from apps.intercompany_pools.models import (
+    PoolODataMetadataCatalogSnapshot,
+    PoolODataMetadataCatalogSnapshotSource,
+)
+from apps.tenancy.models import Tenant
+
 
 @pytest.fixture
 def staff_client(db):
@@ -18,6 +25,75 @@ def staff_client(db):
     client = APIClient()
     client.force_authenticate(user=user)
     return client
+
+
+def _create_database(
+    *,
+    tenant: Tenant,
+    name: str,
+    base_name: str | None = None,
+    version: str = "",
+) -> Database:
+    return Database.objects.create(
+        tenant=tenant,
+        name=name,
+        base_name=base_name or name,
+        host="localhost",
+        odata_url="http://localhost/odata/standard.odata",
+        username="admin",
+        password="secret",
+        version=version,
+    )
+
+
+def _create_service_infobase_mapping(*, database: Database) -> None:
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=None,
+        ib_username="svc-user",
+        ib_password="svc-pass",
+        is_service=True,
+    )
+
+
+def _create_current_metadata_catalog_snapshot(
+    *,
+    tenant: Tenant,
+    database: Database,
+    payload: dict[str, object] | None = None,
+) -> PoolODataMetadataCatalogSnapshot:
+    return PoolODataMetadataCatalogSnapshot.objects.create(
+        tenant=tenant,
+        database=database,
+        config_name=str(database.base_name or database.name or database.id),
+        config_version=str(database.version or ""),
+        extensions_fingerprint="",
+        metadata_hash="a" * 64,
+        catalog_version=f"v1:{uuid.uuid4().hex[:16]}",
+        payload=payload
+        or {
+            "documents": [
+                {
+                    "entity_name": "Document_Sales",
+                    "display_name": "Sales",
+                    "fields": [
+                        {"name": "Amount", "type": "Edm.Decimal", "nullable": False},
+                    ],
+                    "table_parts": [],
+                },
+                {
+                    "entity_name": "Document_Invoice",
+                    "display_name": "Invoice",
+                    "fields": [
+                        {"name": "BaseDocument", "type": "Edm.String", "nullable": False},
+                    ],
+                    "table_parts": [],
+                },
+            ]
+        },
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+        is_current=True,
+    )
 
 
 def _build_decision_payload(*, decision_table_id: str | None = None) -> dict[str, object]:
@@ -127,3 +203,104 @@ def test_decision_tables_api_can_create_new_revision_from_parent(staff_client: A
     assert second["decision_table_id"] == first["decision_table_id"]
     assert second["decision_revision"] == 2
     assert second["parent_version"] == first["id"]
+
+
+@pytest.mark.django_db
+def test_decision_tables_api_create_uses_shared_metadata_snapshot_context(
+    staff_client: APIClient,
+) -> None:
+    tenant = Tenant.objects.create(slug=f"decision-meta-{uuid.uuid4().hex[:8]}", name="Decision Meta")
+    first_database = _create_database(
+        tenant=tenant,
+        name=f"decision-db-a-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    second_database = _create_database(
+        tenant=tenant,
+        name=f"decision-db-b-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    _create_service_infobase_mapping(database=second_database)
+    snapshot = _create_current_metadata_catalog_snapshot(tenant=tenant, database=first_database)
+
+    response = staff_client.post(
+        "/api/v2/decisions/",
+        data={
+            **_build_decision_payload(),
+            "database_id": str(second_database.id),
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["decision"]["decision_key"] == "document_policy"
+    assert payload["metadata_context"]["database_id"] == str(second_database.id)
+    assert payload["metadata_context"]["snapshot_id"] == str(snapshot.id)
+    assert payload["metadata_context"]["resolution_mode"] == "shared_scope"
+    assert payload["metadata_context"]["is_shared_snapshot"] is True
+    assert payload["metadata_context"]["provenance_database_id"] == str(first_database.id)
+
+
+@pytest.mark.django_db
+def test_decision_tables_api_rejects_invalid_document_policy_metadata_refs(
+    staff_client: APIClient,
+) -> None:
+    tenant = Tenant.objects.create(slug=f"decision-meta-invalid-{uuid.uuid4().hex[:8]}", name="Decision Meta Invalid")
+    database = _create_database(
+        tenant=tenant,
+        name=f"decision-invalid-db-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    _create_service_infobase_mapping(database=database)
+    _create_current_metadata_catalog_snapshot(tenant=tenant, database=database)
+
+    invalid_payload = _build_decision_payload()
+    invalid_payload["rules"][0]["outputs"]["document_policy"]["chains"][0]["documents"][0]["field_mapping"] = {
+        "UnknownField": "allocation.amount"
+    }
+
+    response = staff_client.post(
+        "/api/v2/decisions/",
+        data={
+            **invalid_payload,
+            "database_id": str(database.id),
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "POOL_METADATA_REFERENCE_INVALID"
+
+
+@pytest.mark.django_db
+def test_decision_tables_api_list_returns_metadata_context_for_builder(
+    staff_client: APIClient,
+) -> None:
+    tenant = Tenant.objects.create(slug=f"decision-meta-list-{uuid.uuid4().hex[:8]}", name="Decision Meta List")
+    database = _create_database(
+        tenant=tenant,
+        name=f"decision-list-db-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    _create_service_infobase_mapping(database=database)
+    snapshot = _create_current_metadata_catalog_snapshot(tenant=tenant, database=database)
+
+    response = staff_client.get(
+        f"/api/v2/decisions/?database_id={database.id}",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["metadata_context"]["database_id"] == str(database.id)
+    assert payload["metadata_context"]["snapshot_id"] == str(snapshot.id)
+    assert payload["metadata_context"]["resolution_mode"] == "legacy_database_scope"

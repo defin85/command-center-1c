@@ -123,14 +123,22 @@ def _attach_workflow_execution_to_run(
     return execution
 
 
-def _create_database(*, tenant: Tenant, name: str) -> Database:
+def _create_database(
+    *,
+    tenant: Tenant,
+    name: str,
+    base_name: str | None = None,
+    version: str = "",
+) -> Database:
     return Database.objects.create(
         tenant=tenant,
         name=name,
+        base_name=base_name or name,
         host="localhost",
         odata_url="http://localhost/odata/standard.odata",
         username="admin",
         password="secret",
+        version=version,
     )
 
 
@@ -524,6 +532,7 @@ def _create_current_metadata_catalog_snapshot(
     tenant: Tenant,
     database: Database,
     payload: dict[str, object] | None = None,
+    extensions_fingerprint: str = "",
 ) -> PoolODataMetadataCatalogSnapshot:
     config_name = str(
         database.base_name
@@ -537,7 +546,7 @@ def _create_current_metadata_catalog_snapshot(
         database=database,
         config_name=config_name,
         config_version=str(database.version or "").strip(),
-        extensions_fingerprint="",
+        extensions_fingerprint=extensions_fingerprint,
         metadata_hash="a" * 64,
         catalog_version=f"v1:{uuid4().hex[:16]}",
         payload=payload or _build_metadata_catalog_payload(),
@@ -896,13 +905,56 @@ def test_get_pool_odata_metadata_catalog_returns_current_snapshot(
     assert response.status_code == 200
     payload = response.json()
     assert payload["database_id"] == str(database.id)
+    assert payload["snapshot_id"] == str(snapshot.id)
     assert payload["catalog_version"] == snapshot.catalog_version
     assert payload["config_name"] == snapshot.config_name
+    assert payload["extensions_fingerprint"] == snapshot.extensions_fingerprint
     assert payload["metadata_hash"] == snapshot.metadata_hash
+    assert payload["resolution_mode"] == "legacy_database_scope"
+    assert payload["is_shared_snapshot"] is False
+    assert payload["provenance_database_id"] == str(database.id)
+    assert payload["provenance_confirmed_at"] == snapshot.fetched_at.isoformat().replace("+00:00", "Z")
     assert payload["source"] in {"db", "redis"}
     assert isinstance(payload["documents"], list)
     entity_names = {str(item.get("entity_name") or "") for item in payload["documents"]}
     assert "Document_Sales" in entity_names
+
+
+@pytest.mark.django_db
+def test_get_pool_odata_metadata_catalog_reports_shared_snapshot_provenance(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    first_database = _create_database(
+        tenant=default_tenant,
+        name=f"metadata-shared-a-{uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    second_database = _create_database(
+        tenant=default_tenant,
+        name=f"metadata-shared-b-{uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    _create_service_infobase_mapping(database=second_database)
+    snapshot = _create_current_metadata_catalog_snapshot(
+        tenant=default_tenant,
+        database=first_database,
+    )
+
+    response = authenticated_client.get(f"/api/v2/pools/odata-metadata/catalog/?database_id={second_database.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["database_id"] == str(second_database.id)
+    assert payload["snapshot_id"] == str(snapshot.id)
+    assert payload["config_name"] == "shared-profile"
+    assert payload["config_version"] == "8.3.24"
+    assert payload["resolution_mode"] == "shared_scope"
+    assert payload["is_shared_snapshot"] is True
+    assert payload["provenance_database_id"] == str(first_database.id)
+    assert payload["provenance_confirmed_at"] == snapshot.fetched_at.isoformat().replace("+00:00", "Z")
 
 
 @pytest.mark.django_db
@@ -1092,10 +1144,16 @@ def test_refresh_pool_odata_metadata_catalog_returns_serialized_snapshot(
     assert response.status_code == 200
     payload = response.json()
     assert payload["database_id"] == str(database.id)
+    assert payload["snapshot_id"] == str(snapshot.id)
     assert payload["source"] == "live_refresh"
     assert payload["catalog_version"] == snapshot.catalog_version
     assert payload["config_name"] == snapshot.config_name
+    assert payload["extensions_fingerprint"] == snapshot.extensions_fingerprint
     assert payload["metadata_hash"] == snapshot.metadata_hash
+    assert payload["resolution_mode"] == "legacy_database_scope"
+    assert payload["is_shared_snapshot"] is False
+    assert payload["provenance_database_id"] == str(database.id)
+    assert payload["provenance_confirmed_at"] == snapshot.fetched_at.isoformat().replace("+00:00", "Z")
 
     refresh_snapshot.assert_called_once()
     kwargs = refresh_snapshot.call_args.kwargs
