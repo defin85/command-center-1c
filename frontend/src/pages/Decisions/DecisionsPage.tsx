@@ -44,6 +44,10 @@ import {
   type DocumentPolicyBuilderChainFormValue,
 } from './documentPolicyBuilder'
 import {
+  resolveDecisionSnapshotFilter,
+  type DecisionSnapshotFilterMode,
+} from './decisionSnapshotFilter'
+import {
   DecisionEditorPanel,
   type DecisionEditorMode,
   type DecisionEditorState,
@@ -213,6 +217,10 @@ const renderCompatibilityTag = (compatibility?: DecisionMetadataCompatibility | 
   return <Tag color={color}>{compatibility.status}</Tag>
 }
 
+const formatShortHash = (value: string): string => (
+  value.length > 16 ? `${value.slice(0, 8)}...${value.slice(-8)}` : value
+)
+
 const buildChainsFromDraft = (draft: DecisionEditorState): DocumentPolicyBuilderChainFormValue[] => {
   if (draft.activeTab === 'raw') {
     const parsed = JSON.parse(draft.rawJson || '{}')
@@ -257,6 +265,7 @@ export function DecisionsPage() {
   const [reloadTick, setReloadTick] = useState(0)
   const [listReadFallbackUsed, setListReadFallbackUsed] = useState(false)
   const [detailReadFallbackUsed, setDetailReadFallbackUsed] = useState(false)
+  const [snapshotFilterMode, setSnapshotFilterMode] = useState<DecisionSnapshotFilterMode>('matching_snapshot')
 
   useEffect(() => {
     if (selectedDatabaseId || databases.length === 0) return
@@ -449,9 +458,48 @@ export function DecisionsPage() {
     }
   }, [selectedDecision])
 
+  const decisionSnapshotFilter = useMemo(
+    () => resolveDecisionSnapshotFilter({
+      decisions,
+      metadataContext,
+      fallbackUsed: listReadFallbackUsed,
+      mode: snapshotFilterMode,
+    }),
+    [decisions, listReadFallbackUsed, metadataContext, snapshotFilterMode],
+  )
+
+  const visibleDecisions = decisionSnapshotFilter.visibleDecisions
+  const hiddenDecisionCount = decisionSnapshotFilter.hiddenCount
+  const decisionListTitle = decisionSnapshotFilter.canFilterBySnapshot
+    ? `Decision revisions (${visibleDecisions.length} of ${decisions.length})`
+    : `Decision revisions (${decisions.length})`
+  const snapshotFilterMessage = decisionSnapshotFilter.canFilterBySnapshot
+    ? (
+      snapshotFilterMode === 'all'
+        ? (
+          hiddenDecisionCount > 0
+            ? `Showing all ${decisions.length} revisions for diagnostics. ${hiddenDecisionCount} ${hiddenDecisionCount === 1 ? 'revision does' : 'revisions do'} not match the selected metadata snapshot.`
+            : `Showing all ${decisions.length} revisions for diagnostics. All revisions match the selected metadata snapshot.`
+        )
+        : `Showing ${visibleDecisions.length} of ${decisions.length} revisions matching the selected metadata snapshot.`
+    )
+    : null
+
   const metadataContextWarning = selectedDatabaseId && (listReadFallbackUsed || detailReadFallbackUsed)
     ? METADATA_CONTEXT_FALLBACK_MESSAGE
     : null
+
+  useEffect(() => {
+    if (listLoading) {
+      return
+    }
+
+    setSelectedDecisionId((current) => (
+      current && visibleDecisions.some((decision) => decision.id === current)
+        ? current
+        : visibleDecisions[0]?.id ?? null
+    ))
+  }, [listLoading, visibleDecisions])
 
   const openEditor = (_mode: DecisionEditorMode, draft: DecisionEditorState) => {
     setEditorDraft(draft)
@@ -752,16 +800,44 @@ export function DecisionsPage() {
           alignItems: 'start',
         }}
       >
-        <Card title={`Decision revisions (${decisions.length})`}>
+        <Card title={decisionListTitle}>
+          {snapshotFilterMessage ? (
+            <Alert
+              type={snapshotFilterMode === 'all' ? 'info' : hiddenDecisionCount > 0 ? 'info' : 'success'}
+              showIcon
+              message={snapshotFilterMessage}
+              description={(
+                <Space wrap size={[8, 8]}>
+                  <Text type="secondary">Selected hash</Text>
+                  <Tag>{formatShortHash(decisionSnapshotFilter.selectedMetadataHash)}</Tag>
+                  {(hiddenDecisionCount > 0 || snapshotFilterMode === 'all') ? (
+                    <Button
+                      type="link"
+                      onClick={() => setSnapshotFilterMode((current) => (
+                        current === 'matching_snapshot' ? 'all' : 'matching_snapshot'
+                      ))}
+                    >
+                      {snapshotFilterMode === 'all' ? 'Show matching snapshot only' : 'Show all revisions'}
+                    </Button>
+                  ) : null}
+                </Space>
+              )}
+              style={{ marginBottom: 16 }}
+            />
+          ) : null}
           {listLoading ? (
             <div style={{ display: 'flex', justifyContent: 'center', padding: '32px 0' }}>
               <Spin />
             </div>
-          ) : decisions.length === 0 ? (
-            <Empty description="No decision revisions yet" />
+          ) : visibleDecisions.length === 0 ? (
+            <Empty
+              description={decisionSnapshotFilter.canFilterBySnapshot
+                ? 'No decision revisions match the selected metadata snapshot'
+                : 'No decision revisions yet'}
+            />
           ) : (
             <List
-              dataSource={decisions}
+              dataSource={visibleDecisions}
               renderItem={(decision) => (
                 <List.Item
                   style={{

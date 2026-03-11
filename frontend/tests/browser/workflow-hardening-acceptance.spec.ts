@@ -92,6 +92,23 @@ const BASE_DECISION = {
   updated_at: NOW,
 }
 
+const INCOMPATIBLE_DECISION = {
+  ...BASE_DECISION,
+  id: 'decision-version-3',
+  decision_table_id: 'transfer-publication-policy',
+  decision_revision: 1,
+  name: 'Transfer publication policy',
+  metadata_context: {
+    ...BASE_DECISION.metadata_context,
+    metadata_hash: 'b'.repeat(64),
+  },
+  metadata_compatibility: {
+    status: 'incompatible',
+    reason: 'metadata_surface_diverged',
+    is_compatible: false,
+  },
+}
+
 type AcceptanceState = {
   databases: AnyRecord[]
   decisions: AnyRecord[]
@@ -304,7 +321,7 @@ function createAcceptanceState(): AcceptanceState {
         version: '8.3.24',
       },
     ],
-    decisions: [deepClone(BASE_DECISION)],
+    decisions: [deepClone(BASE_DECISION), deepClone(INCOMPATIBLE_DECISION)],
     decisionWrites: [],
     metadataContext: deepClone(BASE_METADATA_CONTEXT),
     templateExposures: [
@@ -967,8 +984,19 @@ test('Workflow hardening: /decisions shows shared metadata provenance, canonical
   await expect(page.getByText('shared_scope').first()).toBeVisible()
   await expect(page.getByText('20202020-2020-2020-2020-202020202020').first()).toBeVisible()
   await expect(page.getByText('Services publication policy').first()).toBeVisible()
+  await expect(page.getByText('Showing 1 of 2 revisions matching the selected metadata snapshot.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Show all revisions' })).toBeVisible()
+  await expect(page.getByText('Transfer publication policy')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Import legacy edge' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Import raw JSON' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Show all revisions' }).click()
+  await expect(page.getByText('Showing all 2 revisions for diagnostics. 1 revision does not match the selected metadata snapshot.')).toBeVisible()
+  await expect(page.getByText('Transfer publication policy')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Show matching snapshot only' }).click()
+  await expect(page.getByText('Showing 1 of 2 revisions matching the selected metadata snapshot.')).toBeVisible()
+  await expect(page.getByText('Transfer publication policy')).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Import legacy edge' }).click()
   await expect(page.getByText('Import legacy edge policy')).toBeVisible()

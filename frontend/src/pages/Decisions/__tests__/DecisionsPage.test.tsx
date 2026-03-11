@@ -421,8 +421,9 @@ describe('DecisionsPage', () => {
       )
     })
     expect(mockPostDecisionsCollection).not.toHaveBeenCalled()
-    const importAlert = await screen.findByRole('alert')
-    expect(within(importAlert).getByText('Imported to /decisions')).toBeInTheDocument()
+    const importAlert = (await screen.findByText('Imported to /decisions')).closest('[role="alert"]')
+    expect(importAlert).toBeTruthy()
+    expect(within(importAlert as HTMLElement).getByText('Imported to /decisions')).toBeInTheDocument()
     expect(screen.getByText('Source: edge.metadata.document_policy (edge-v1)')).toBeInTheDocument()
     expect(screen.getByText('Decision ref: policy-imported r4')).toBeInTheDocument()
     expect(screen.getByText('Affected workflow bindings were updated automatically.')).toBeInTheDocument()
@@ -483,6 +484,53 @@ describe('DecisionsPage', () => {
       )
     })
   }, 10000)
+
+  it('filters document_policy revisions by matching metadata snapshot and allows revealing all revisions', async () => {
+    const user = userEvent.setup()
+    const incompatibleDecision = {
+      ...defaultDecision,
+      id: 'decision-version-3',
+      decision_table_id: 'transfer-publication-policy',
+      decision_revision: 1,
+      name: 'Transfer publication policy',
+      metadata_context: {
+        ...defaultDecision.metadata_context,
+        metadata_hash: 'b'.repeat(64),
+      },
+      metadata_compatibility: {
+        status: 'incompatible',
+        reason: 'metadata_surface_diverged',
+        is_compatible: false,
+      },
+    }
+
+    mockGetDecisionsCollection.mockResolvedValue({
+      decisions: [defaultDecision, incompatibleDecision],
+      count: 2,
+      metadata_context: defaultMetadataContext,
+    })
+    mockGetDecisionsDetail.mockImplementation(async (decisionId: string) => ({
+      decision: decisionId === incompatibleDecision.id ? incompatibleDecision : defaultDecision,
+      metadata_context: defaultMetadataContext,
+    }))
+
+    renderPage()
+
+    expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
+    expect(screen.getByText('Showing 1 of 2 revisions matching the selected metadata snapshot.')).toBeInTheDocument()
+    expect(screen.getAllByText('services-publication-policy').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Transfer publication policy')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Show all revisions' }))
+
+    expect(await screen.findByText('Showing all 2 revisions for diagnostics. 1 revision does not match the selected metadata snapshot.')).toBeInTheDocument()
+    expect(screen.getByText('Transfer publication policy')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Show matching snapshot only' }))
+
+    expect(await screen.findByText('Showing 1 of 2 revisions matching the selected metadata snapshot.')).toBeInTheDocument()
+    expect(screen.queryByText('Transfer publication policy')).not.toBeInTheDocument()
+  })
 
   it('falls back to unscoped list and detail loading when database metadata context is unavailable', async () => {
     mockGetDecisionsCollection.mockReset()
