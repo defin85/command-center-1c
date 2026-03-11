@@ -599,6 +599,76 @@ describe('DecisionsPage', () => {
     expect(screen.queryByText('Transfer publication policy')).not.toBeInTheDocument()
   })
 
+  it('resets diagnostics mode back to matching snapshot when the selected database changes', async () => {
+    const user = userEvent.setup()
+    const incompatibleDecision = {
+      ...defaultDecision,
+      id: 'decision-version-3',
+      decision_table_id: 'transfer-publication-policy',
+      decision_revision: 1,
+      name: 'Transfer publication policy',
+      metadata_context: {
+        ...defaultDecision.metadata_context,
+        metadata_hash: 'b'.repeat(64),
+      },
+      metadata_compatibility: {
+        status: 'incompatible',
+        reason: 'metadata_surface_diverged',
+        is_compatible: false,
+      },
+    }
+
+    mockUseDatabases.mockReturnValue({
+      data: {
+        databases: [
+          {
+            id: 'db-2',
+            name: 'Target DB',
+            base_name: 'shared-profile',
+            version: '8.3.24',
+          },
+          {
+            id: 'db-3',
+            name: 'Sibling DB',
+            base_name: 'shared-profile',
+            version: '8.3.24',
+          },
+        ],
+      },
+      isLoading: false,
+    })
+
+    mockGetDecisionsCollection.mockReset()
+    mockGetDecisionsDetail.mockReset()
+    mockGetDecisionsCollection.mockResolvedValue({
+      decisions: [defaultDecision, incompatibleDecision],
+      count: 2,
+      metadata_context: defaultMetadataContext,
+    })
+    mockGetDecisionsDetail.mockImplementation(async (decisionId: string) => ({
+      decision: decisionId === incompatibleDecision.id ? incompatibleDecision : defaultDecision,
+      metadata_context: defaultMetadataContext,
+    }))
+
+    renderPage()
+
+    expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show all revisions' }))
+
+    expect(await screen.findByText('Showing all 2 revisions for diagnostics. 1 revision does not match the selected metadata snapshot.')).toBeInTheDocument()
+    expect(screen.getByText('Transfer publication policy')).toBeInTheDocument()
+
+    openSelect('decisions-database-select')
+    await selectDropdownOption('Sibling DB (shared-profile)')
+
+    expect(await screen.findByText('Showing 1 of 2 revisions matching the selected metadata snapshot.')).toBeInTheDocument()
+    expect(screen.queryByText('Transfer publication policy')).not.toBeInTheDocument()
+    expect(mockGetDecisionsCollection).toHaveBeenCalledWith(
+      { database_id: 'db-3' },
+      { skipGlobalError: true },
+    )
+  })
+
   it('falls back to unscoped list and detail loading when database metadata context is unavailable', async () => {
     mockGetDecisionsCollection.mockReset()
     mockGetDecisionsDetail.mockReset()

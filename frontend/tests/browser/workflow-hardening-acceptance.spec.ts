@@ -1000,9 +1000,11 @@ test('Workflow hardening: /decisions shows shared metadata provenance, canonical
   await expect(page.getByText('Showing all 2 revisions for diagnostics. 1 revision does not match the selected metadata snapshot.')).toBeVisible()
   await expect(page.getByText('Transfer publication policy')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Show matching snapshot only' }).click()
+  await page.getByTestId('decisions-database-select').click()
+  await page.getByText('Shared provenance DB (shared-profile)').click()
   await expect(page.getByText('Showing 1 of 2 revisions matching the selected metadata snapshot.')).toBeVisible()
   await expect(page.getByText('Transfer publication policy')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Show matching snapshot only' })).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Import legacy edge' }).click()
   await expect(page.getByText('Import legacy edge policy')).toBeVisible()

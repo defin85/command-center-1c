@@ -492,6 +492,10 @@ export function DecisionsPage() {
     : null
 
   useEffect(() => {
+    setSnapshotFilterMode('matching_snapshot')
+  }, [effectiveSelectedDatabaseId])
+
+  useEffect(() => {
     if (listLoading) {
       return
     }
