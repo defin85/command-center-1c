@@ -134,6 +134,25 @@ describe('documentPolicyBuilder', () => {
     ).toEqual(basePolicy)
   })
 
+  it('allows reading legacy document_policy rules with non-default rule_id when explicitly requested', () => {
+    expect(
+      extractDocumentPolicyOutput(
+        {
+          decision_key: 'document_policy',
+          rules: [
+            {
+              rule_id: 'legacy_rule',
+              outputs: {
+                document_policy: basePolicy,
+              },
+            },
+          ],
+        },
+        { allowNonDefaultRuleId: true }
+      )
+    ).toEqual(basePolicy)
+  })
+
   it.each([
     {
       name: 'missing chain_id',

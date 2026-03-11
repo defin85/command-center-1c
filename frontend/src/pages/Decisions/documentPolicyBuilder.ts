@@ -53,6 +53,10 @@ export type DocumentPolicyOutput = {
   chains: DocumentPolicyChainOutput[]
 }
 
+export type ExtractDocumentPolicyOutputOptions = {
+  allowNonDefaultRuleId?: boolean
+}
+
 export type BuildDocumentPolicyDecisionPayloadInput = {
   database_id?: string
   decision_table_id?: string
@@ -80,6 +84,44 @@ const asObject = (value: unknown): Record<string, unknown> | null => (
 )
 
 const trimString = (value: unknown): string => String(value ?? '').trim()
+
+const getDocumentPolicyRule = (decisionLike: unknown): Record<string, unknown> | null => {
+  const root = asObject(decisionLike)
+  if (!root) return null
+
+  const decisionCandidate = root.decision !== undefined && root.rules === undefined
+    ? asObject(root.decision)
+    : root
+  if (!decisionCandidate) return null
+
+  const decisionKey = trimString(decisionCandidate.decision_key)
+  if (decisionKey && decisionKey !== DOCUMENT_POLICY_DECISION_KEY) {
+    throw new DocumentPolicyBuilderValidationError([
+      `decision_key должен быть "${DOCUMENT_POLICY_DECISION_KEY}".`,
+    ])
+  }
+
+  const rulesRaw = decisionCandidate.rules
+  if (rulesRaw === undefined) return null
+  if (!Array.isArray(rulesRaw) || rulesRaw.length === 0) {
+    throw new DocumentPolicyBuilderValidationError([
+      'decision.rules должен содержать single default rule output.',
+    ])
+  }
+
+  const policyRules = rulesRaw.filter((rule) => {
+    const ruleObject = asObject(rule)
+    const outputs = asObject(ruleObject?.outputs)
+    return outputs?.document_policy !== undefined
+  })
+  if (policyRules.length !== 1) {
+    throw new DocumentPolicyBuilderValidationError([
+      'decision.rules должен содержать ровно один rule с outputs.document_policy.',
+    ])
+  }
+
+  return asObject(policyRules[0])
+}
 
 const sortRecordByKey = (value: Record<string, string>): Record<string, string> => (
   Object.fromEntries(
@@ -261,51 +303,22 @@ const validateDocumentPolicyOutput = (policy: unknown, contextLabel: string): Do
   }
 }
 
-export const extractDocumentPolicyOutput = (decisionLike: unknown): DocumentPolicyOutput | null => {
-  const root = asObject(decisionLike)
-  if (!root) return null
+export const extractDocumentPolicyOutput = (
+  decisionLike: unknown,
+  options: ExtractDocumentPolicyOutputOptions = {}
+): DocumentPolicyOutput | null => {
+  const defaultRule = getDocumentPolicyRule(decisionLike)
+  if (!defaultRule) return null
 
-  const decisionCandidate = root.decision !== undefined && root.rules === undefined
-    ? asObject(root.decision)
-    : root
-  if (!decisionCandidate) return null
-
-  const decisionKey = trimString(decisionCandidate.decision_key)
-  if (decisionKey && decisionKey !== DOCUMENT_POLICY_DECISION_KEY) {
-    throw new DocumentPolicyBuilderValidationError([
-      `decision_key должен быть "${DOCUMENT_POLICY_DECISION_KEY}".`,
-    ])
-  }
-
-  const rulesRaw = decisionCandidate.rules
-  if (rulesRaw === undefined) return null
-  if (!Array.isArray(rulesRaw) || rulesRaw.length === 0) {
-    throw new DocumentPolicyBuilderValidationError([
-      'decision.rules должен содержать single default rule output.',
-    ])
-  }
-
-  const policyRules = rulesRaw.filter((rule) => {
-    const ruleObject = asObject(rule)
-    const outputs = asObject(ruleObject?.outputs)
-    return outputs?.document_policy !== undefined
-  })
-  if (policyRules.length !== 1) {
-    throw new DocumentPolicyBuilderValidationError([
-      'decision.rules должен содержать ровно один rule с outputs.document_policy.',
-    ])
-  }
-
-  const defaultRule = asObject(policyRules[0])
-  const ruleId = trimString(defaultRule?.rule_id)
-  if (ruleId && ruleId !== DEFAULT_DECISION_RULE_ID) {
+  const ruleId = trimString(defaultRule.rule_id)
+  if (!options.allowNonDefaultRuleId && ruleId && ruleId !== DEFAULT_DECISION_RULE_ID) {
     throw new DocumentPolicyBuilderValidationError([
       `rule_id должен быть "${DEFAULT_DECISION_RULE_ID}".`,
     ])
   }
 
   return validateDocumentPolicyOutput(
-    asObject(defaultRule?.outputs)?.document_policy,
+    asObject(defaultRule.outputs)?.document_policy,
     'decision.rules[0].outputs.document_policy'
   )
 }

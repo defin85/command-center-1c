@@ -56,30 +56,107 @@ const { Title, Text } = Typography
 const api = getV2()
 
 type MetadataContextLike = PoolODataMetadataCatalogResponse | DecisionRevisionMetadataContext | null | undefined
+type DecisionReadResponse = Awaited<ReturnType<typeof api.getDecisionsCollection>>
+type DecisionDetailReadResponse = Awaited<ReturnType<typeof api.getDecisionsDetail>>
 
 const formatJson = (value: unknown): string => JSON.stringify(value, null, 2)
 
-const toErrorMessage = (error: unknown, fallback: string): string => {
+const getApiErrorInfo = (error: unknown) => {
   const candidate = error as {
     message?: string
     response?: {
+      status?: number
       data?: {
-        error?: { message?: string }
+        error?: { code?: string; message?: string }
         detail?: string
       }
     }
   } | null
 
-  if (typeof candidate?.response?.data?.error?.message === 'string' && candidate.response.data.error.message.trim()) {
-    return candidate.response.data.error.message
+  return {
+    code: typeof candidate?.response?.data?.error?.code === 'string'
+      ? candidate.response.data.error.code.trim()
+      : '',
+    message: typeof candidate?.response?.data?.error?.message === 'string'
+      ? candidate.response.data.error.message
+      : (
+        typeof candidate?.response?.data?.detail === 'string'
+          ? candidate.response.data.detail
+          : (
+            typeof candidate?.message === 'string'
+              ? candidate.message
+              : ''
+          )
+      ),
+    status: typeof candidate?.response?.status === 'number' ? candidate.response.status : null,
   }
-  if (typeof candidate?.response?.data?.detail === 'string' && candidate.response.data.detail.trim()) {
-    return candidate.response.data.detail
-  }
-  if (typeof candidate?.message === 'string' && candidate.message.trim()) {
-    return candidate.message
+}
+
+const toErrorMessage = (error: unknown, fallback: string): string => {
+  const apiError = getApiErrorInfo(error)
+  if (apiError.message.trim()) {
+    return apiError.message.trim()
   }
   return fallback
+}
+
+const METADATA_CONTEXT_FALLBACK_CODES = new Set([
+  'ODATA_MAPPING_AMBIGUOUS',
+  'ODATA_MAPPING_NOT_CONFIGURED',
+  'POOL_METADATA_SNAPSHOT_UNAVAILABLE',
+  'POOL_METADATA_REFRESH_IN_PROGRESS',
+  'POOL_METADATA_FETCH_FAILED',
+  'POOL_METADATA_PARSE_FAILED',
+])
+
+const METADATA_CONTEXT_FALLBACK_MESSAGE = 'Metadata context is unavailable for the selected database. Showing global decision revisions without database-specific compatibility context.'
+
+const shouldFallbackToUnscopedDecisionRead = (error: unknown): boolean => {
+  const { code, status } = getApiErrorInfo(error)
+  if (METADATA_CONTEXT_FALLBACK_CODES.has(code)) {
+    return true
+  }
+  return Boolean(status && status >= 500 && status < 600 && code.startsWith('POOL_METADATA_'))
+}
+
+const loadDecisionsCollection = async (
+  databaseId: string | undefined
+): Promise<{ response: DecisionReadResponse; usedFallback: boolean }> => {
+  try {
+    const response = await api.getDecisionsCollection(
+      databaseId ? { database_id: databaseId } : {},
+      {},
+    )
+    return { response, usedFallback: false }
+  } catch (error) {
+    if (!databaseId || !shouldFallbackToUnscopedDecisionRead(error)) {
+      throw error
+    }
+
+    const response = await api.getDecisionsCollection({}, {})
+    return { response, usedFallback: true }
+  }
+}
+
+const loadDecisionDetail = async (
+  decisionId: string,
+  databaseId: string | undefined
+): Promise<{ response: DecisionDetailReadResponse; usedFallback: boolean }> => {
+  try {
+    const response = await api.getDecisionsDetail(
+      decisionId,
+      databaseId ? { database_id: databaseId } : {},
+      {},
+    )
+    return { response, usedFallback: false }
+  } catch (error) {
+    if (!databaseId || !shouldFallbackToUnscopedDecisionRead(error)) {
+      throw error
+    }
+
+    const response = await api.getDecisionsDetail(decisionId, {}, {})
+    return { response, usedFallback: true }
+  }
 }
 
 const buildEmptyDraft = (mode: DecisionEditorMode, activeTab: DecisionEditorTab): DecisionEditorState => ({
@@ -102,7 +179,7 @@ const buildEmptyLegacyImportDraft = (poolId = ''): DecisionLegacyImportState => 
 })
 
 const buildDraftFromDecision = (decision: DecisionTable): DecisionEditorState => {
-  const policy = extractDocumentPolicyOutput(decision)
+  const policy = extractDocumentPolicyOutput(decision, { allowNonDefaultRuleId: true })
   const chains = documentPolicyToBuilderChains(policy)
   return {
     mode: 'revise',
@@ -178,6 +255,8 @@ export function DecisionsPage() {
   const [legacyImportResult, setLegacyImportResult] = useState<PoolDocumentPolicyMigrationResponse | null>(null)
   const [saving, setSaving] = useState(false)
   const [reloadTick, setReloadTick] = useState(0)
+  const [listReadFallbackUsed, setListReadFallbackUsed] = useState(false)
+  const [detailReadFallbackUsed, setDetailReadFallbackUsed] = useState(false)
 
   useEffect(() => {
     if (selectedDatabaseId || databases.length === 0) return
@@ -218,17 +297,16 @@ export function DecisionsPage() {
     const load = async () => {
       setListLoading(true)
       setListError(null)
+      setListReadFallbackUsed(false)
 
       try {
-        const response = await api.getDecisionsCollection(
-          selectedDatabaseId ? { database_id: selectedDatabaseId } : {},
-          {},
-        )
+        const { response, usedFallback } = await loadDecisionsCollection(selectedDatabaseId)
         if (cancelled) return
 
         const items = response.decisions ?? []
         setDecisions(items)
         setMetadataContext(response.metadata_context ?? null)
+        setListReadFallbackUsed(usedFallback)
         setSelectedDecisionId((current) => (
           current && items.some((item) => item.id === current)
             ? current
@@ -254,10 +332,15 @@ export function DecisionsPage() {
   }, [reloadTick, selectedDatabaseId])
 
   useEffect(() => {
+    if (listLoading) {
+      return
+    }
+
     if (!selectedDecisionId) {
       setSelectedDecision(null)
       setDetailContext(null)
       setDetailError(null)
+      setDetailReadFallbackUsed(false)
       return
     }
 
@@ -266,16 +349,15 @@ export function DecisionsPage() {
     const load = async () => {
       setDetailLoading(true)
       setDetailError(null)
+      setDetailReadFallbackUsed(false)
 
       try {
-        const response = await api.getDecisionsDetail(
-          selectedDecisionId,
-          selectedDatabaseId ? { database_id: selectedDatabaseId } : {},
-          {},
-        )
+        const effectiveDatabaseId = listReadFallbackUsed ? undefined : selectedDatabaseId
+        const { response, usedFallback } = await loadDecisionDetail(selectedDecisionId, effectiveDatabaseId)
         if (cancelled) return
         setSelectedDecision(response.decision)
         setDetailContext(response.metadata_context ?? null)
+        setDetailReadFallbackUsed(usedFallback)
       } catch (error) {
         if (cancelled) return
         setDetailError(toErrorMessage(error, 'Failed to load decision detail.'))
@@ -292,7 +374,7 @@ export function DecisionsPage() {
     return () => {
       cancelled = true
     }
-  }, [selectedDatabaseId, selectedDecisionId])
+  }, [listLoading, listReadFallbackUsed, selectedDatabaseId, selectedDecisionId])
 
   useEffect(() => {
     if (!legacyImportDraft || legacyImportDraft.poolId || pools.length === 0) return
@@ -361,11 +443,15 @@ export function DecisionsPage() {
   const selectedPolicy = useMemo(() => {
     if (!selectedDecision) return null
     try {
-      return extractDocumentPolicyOutput(selectedDecision)
+      return extractDocumentPolicyOutput(selectedDecision, { allowNonDefaultRuleId: true })
     } catch {
       return null
     }
   }, [selectedDecision])
+
+  const metadataContextWarning = selectedDatabaseId && (listReadFallbackUsed || detailReadFallbackUsed)
+    ? METADATA_CONTEXT_FALLBACK_MESSAGE
+    : null
 
   const openEditor = (_mode: DecisionEditorMode, draft: DecisionEditorState) => {
     setEditorDraft(draft)
@@ -398,6 +484,20 @@ export function DecisionsPage() {
 
   const openRawImport = () => {
     openEditor('import', buildEmptyDraft('import', 'raw'))
+  }
+
+  const handleOpenSelectedDecisionForEdit = () => {
+    if (!selectedDecision) return
+
+    try {
+      openEditor('revise', buildDraftFromDecision(selectedDecision))
+    } catch (error) {
+      setEditorDraft(null)
+      setEditorError(toErrorMessage(error, 'Selected decision cannot be opened in the editor.'))
+      setLegacyImportDraft(null)
+      setLegacyImportGraph(null)
+      setLegacyImportError(null)
+    }
   }
 
   const handleEditorTabChange = (nextTab: DecisionEditorTab) => {
@@ -461,7 +561,7 @@ export function DecisionsPage() {
     setEditorError(null)
 
     try {
-      const policy = extractDocumentPolicyOutput(selectedDecision)
+      const policy = extractDocumentPolicyOutput(selectedDecision, { allowNonDefaultRuleId: true })
       const payload = buildDocumentPolicyDecisionPayload({
         database_id: selectedDatabaseId,
         decision_table_id: selectedDecision.decision_table_id,
@@ -596,7 +696,7 @@ export function DecisionsPage() {
               </Button>
               <Button
                 icon={<EditOutlined />}
-                onClick={() => selectedDecision && openEditor('revise', buildDraftFromDecision(selectedDecision))}
+                onClick={handleOpenSelectedDecisionForEdit}
                 disabled={!selectedDecision || saving}
                 aria-label="Edit selected decision"
               >
@@ -635,6 +735,10 @@ export function DecisionsPage() {
               children: item.value,
             }))}
           />
+
+          {metadataContextWarning ? (
+            <Alert type="warning" showIcon message={metadataContextWarning} />
+          ) : null}
         </Space>
       </Card>
 

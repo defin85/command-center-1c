@@ -188,6 +188,21 @@ const defaultPoolGraph = {
   ],
 }
 
+function makeApiError(message: string, code = 'POOL_METADATA_FETCH_FAILED', status = 400) {
+  return {
+    message,
+    response: {
+      status,
+      data: {
+        error: {
+          code,
+          message,
+        },
+      },
+    },
+  }
+}
+
 function openSelect(testId: string) {
   const select = screen.getByTestId(testId)
   const trigger = select.querySelector('.ant-select-selector') as HTMLElement | null
@@ -468,6 +483,78 @@ describe('DecisionsPage', () => {
       )
     })
   }, 10000)
+
+  it('falls back to unscoped list and detail loading when database metadata context is unavailable', async () => {
+    mockGetDecisionsCollection.mockReset()
+    mockGetDecisionsDetail.mockReset()
+    mockGetDecisionsCollection
+      .mockResolvedValueOnce({
+        decisions: [],
+        count: 0,
+      })
+      .mockRejectedValueOnce(makeApiError('Metadata context is unavailable for the selected database.'))
+      .mockResolvedValueOnce({
+        decisions: [defaultDecision],
+        count: 1,
+      })
+    mockGetDecisionsDetail.mockResolvedValue({
+      decision: defaultDecision,
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(mockGetDecisionsCollection).toHaveBeenCalledWith({ database_id: 'db-2' }, {})
+      expect(mockGetDecisionsCollection.mock.calls.filter(([query]) => JSON.stringify(query) === '{}').length).toBe(2)
+    })
+
+    await waitFor(() => {
+      expect(mockGetDecisionsDetail).toHaveBeenCalledWith('decision-version-2', {}, {})
+    })
+
+    expect(await screen.findByText(
+      'Metadata context is unavailable for the selected database. Showing global decision revisions without database-specific compatibility context.'
+    )).toBeInTheDocument()
+    expect(screen.queryByText('Failed to load decision table revisions.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Failed to load decision detail.')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Services publication policy').length).toBeGreaterThan(0)
+  })
+
+  it('keeps legacy non-default rule_id decisions editable in builder mode', async () => {
+    const user = userEvent.setup()
+    const legacyRuleDecision = {
+      ...defaultDecision,
+      rules: [
+        {
+          ...defaultDecision.rules[0],
+          rule_id: 'legacy_rule',
+        },
+      ],
+    }
+
+    mockGetDecisionsCollection.mockResolvedValue({
+      decisions: [legacyRuleDecision],
+      count: 1,
+      metadata_context: defaultMetadataContext,
+    })
+    mockGetDecisionsDetail.mockResolvedValue({
+      decision: legacyRuleDecision,
+      metadata_context: defaultMetadataContext,
+    })
+
+    renderPage()
+
+    await screen.findByText('Decision Policy Library')
+    await user.click(screen.getByRole('button', { name: 'Edit selected decision' }))
+
+    expect(await screen.findByRole('heading', { name: 'Edit selected decision' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Decision table ID')).toHaveValue('services-publication-policy')
+    expect(screen.getByLabelText('Chain 1 ID')).toHaveValue('sale_chain')
+    expect(screen.getByLabelText('Chain 1 document 1 entity')).toHaveValue('Document_Sales')
+    expect(screen.getByRole('tab', { name: 'Builder' })).toHaveAttribute('aria-selected', 'true')
+  })
 
   it('supports raw JSON compatibility import and deactivate flows through decision revisions', async () => {
     const user = userEvent.setup()
