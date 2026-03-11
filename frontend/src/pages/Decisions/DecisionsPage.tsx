@@ -62,6 +62,7 @@ const api = getV2()
 type MetadataContextLike = PoolODataMetadataCatalogResponse | DecisionRevisionMetadataContext | null | undefined
 type DecisionReadResponse = Awaited<ReturnType<typeof api.getDecisionsCollection>>
 type DecisionDetailReadResponse = Awaited<ReturnType<typeof api.getDecisionsDetail>>
+const DECISIONS_API_OPTIONS = { skipGlobalError: true } as const
 
 const formatJson = (value: unknown): string => JSON.stringify(value, null, 2)
 
@@ -129,7 +130,7 @@ const loadDecisionsCollection = async (
   try {
     const response = await api.getDecisionsCollection(
       databaseId ? { database_id: databaseId } : {},
-      {},
+      DECISIONS_API_OPTIONS,
     )
     return { response, usedFallback: false }
   } catch (error) {
@@ -137,7 +138,7 @@ const loadDecisionsCollection = async (
       throw error
     }
 
-    const response = await api.getDecisionsCollection({}, {})
+    const response = await api.getDecisionsCollection({}, DECISIONS_API_OPTIONS)
     return { response, usedFallback: true }
   }
 }
@@ -150,7 +151,7 @@ const loadDecisionDetail = async (
     const response = await api.getDecisionsDetail(
       decisionId,
       databaseId ? { database_id: databaseId } : {},
-      {},
+      DECISIONS_API_OPTIONS,
     )
     return { response, usedFallback: false }
   } catch (error) {
@@ -158,7 +159,7 @@ const loadDecisionDetail = async (
       throw error
     }
 
-    const response = await api.getDecisionsDetail(decisionId, {}, {})
+    const response = await api.getDecisionsDetail(decisionId, {}, DECISIONS_API_OPTIONS)
     return { response, usedFallback: true }
   }
 }
@@ -591,7 +592,7 @@ export function DecisionsPage() {
         is_active: editorDraft.isActive,
       })
 
-      await api.postDecisionsCollection(payload, {})
+      await api.postDecisionsCollection(payload, DECISIONS_API_OPTIONS)
       message.success(editorDraft.mode === 'revise' ? 'Decision revision created' : 'Decision saved')
       setEditorDraft(null)
       setReloadTick((value) => value + 1)
@@ -620,7 +621,7 @@ export function DecisionsPage() {
         is_active: false,
       })
 
-      await api.postDecisionsCollection(payload, {})
+      await api.postDecisionsCollection(payload, DECISIONS_API_OPTIONS)
       message.warning('Decision deactivated')
       setReloadTick((value) => value + 1)
     } catch (error) {

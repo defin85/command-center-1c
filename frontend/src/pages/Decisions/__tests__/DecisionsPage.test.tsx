@@ -381,7 +381,7 @@ describe('DecisionsPage', () => {
             }),
           ],
         }),
-        expect.anything(),
+        { skipGlobalError: true },
       )
     })
   }, 15000)
@@ -480,7 +480,7 @@ describe('DecisionsPage', () => {
             }),
           ]),
         }),
-        expect.anything(),
+        { skipGlobalError: true },
       )
     })
   }, 10000)
@@ -554,12 +554,23 @@ describe('DecisionsPage', () => {
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
 
     await waitFor(() => {
-      expect(mockGetDecisionsCollection).toHaveBeenCalledWith({ database_id: 'db-2' }, {})
-      expect(mockGetDecisionsCollection.mock.calls.filter(([query]) => JSON.stringify(query) === '{}').length).toBe(2)
+      expect(mockGetDecisionsCollection).toHaveBeenCalledWith(
+        { database_id: 'db-2' },
+        { skipGlobalError: true },
+      )
+      expect(
+        mockGetDecisionsCollection.mock.calls.filter(
+          ([query, options]) => JSON.stringify(query) === '{}' && JSON.stringify(options) === JSON.stringify({ skipGlobalError: true })
+        ).length
+      ).toBe(2)
     })
 
     await waitFor(() => {
-      expect(mockGetDecisionsDetail).toHaveBeenCalledWith('decision-version-2', {}, {})
+      expect(mockGetDecisionsDetail).toHaveBeenCalledWith(
+        'decision-version-2',
+        {},
+        { skipGlobalError: true },
+      )
     })
 
     expect(await screen.findByText(
@@ -628,7 +639,7 @@ describe('DecisionsPage', () => {
           name: 'Imported policy',
           parent_version_id: undefined,
         }),
-        expect.anything(),
+        { skipGlobalError: true },
       )
     })
 
@@ -642,7 +653,7 @@ describe('DecisionsPage', () => {
           parent_version_id: 'decision-version-2',
           is_active: false,
         }),
-        expect.anything(),
+        { skipGlobalError: true },
       )
     })
   }, 10000)
