@@ -2318,6 +2318,7 @@ class PoolWorkflowBindingSelectorInputSerializer(serializers.Serializer):
 
 
 class PoolWorkflowBindingInputSerializer(serializers.Serializer):
+    contract_version = serializers.CharField(required=False, allow_blank=False, default="pool_workflow_binding.v1")
     binding_id = serializers.CharField(required=False, allow_blank=False)
     pool_id = serializers.UUIDField(required=False)
     revision = serializers.IntegerField(min_value=1, required=False)
@@ -2339,6 +2340,17 @@ class PoolWorkflowBindingInputSerializer(serializers.Serializer):
     )
 
 
+class PoolWorkflowBindingReadSerializer(PoolWorkflowBindingInputSerializer):
+    contract_version = serializers.CharField(required=True, allow_blank=False)
+    binding_id = serializers.CharField(required=True, allow_blank=False)
+    pool_id = serializers.UUIDField(required=True)
+    revision = serializers.IntegerField(min_value=1, required=True)
+    status = serializers.ChoiceField(
+        choices=["draft", "active", "inactive"],
+        required=True,
+    )
+
+
 class PoolWorkflowBindingScopeQuerySerializer(serializers.Serializer):
     pool_id = serializers.UUIDField()
 
@@ -2350,13 +2362,13 @@ class PoolWorkflowBindingDeleteQuerySerializer(serializers.Serializer):
 
 class PoolWorkflowBindingListResponseSerializer(serializers.Serializer):
     pool_id = serializers.UUIDField()
-    bindings = PoolWorkflowBindingInputSerializer(many=True)
+    bindings = PoolWorkflowBindingReadSerializer(many=True)
     count = serializers.IntegerField()
 
 
 class PoolWorkflowBindingDetailResponseSerializer(serializers.Serializer):
     pool_id = serializers.UUIDField()
-    workflow_binding = PoolWorkflowBindingInputSerializer()
+    workflow_binding = PoolWorkflowBindingReadSerializer()
 
 
 class PoolWorkflowBindingUpsertRequestSerializer(serializers.Serializer):
@@ -2366,13 +2378,13 @@ class PoolWorkflowBindingUpsertRequestSerializer(serializers.Serializer):
 
 class PoolWorkflowBindingUpsertResponseSerializer(serializers.Serializer):
     pool_id = serializers.UUIDField()
-    workflow_binding = PoolWorkflowBindingInputSerializer()
+    workflow_binding = PoolWorkflowBindingReadSerializer()
     created = serializers.BooleanField()
 
 
 class PoolWorkflowBindingDeleteResponseSerializer(serializers.Serializer):
     pool_id = serializers.UUIDField()
-    workflow_binding = PoolWorkflowBindingInputSerializer()
+    workflow_binding = PoolWorkflowBindingReadSerializer()
     deleted = serializers.BooleanField()
 
 

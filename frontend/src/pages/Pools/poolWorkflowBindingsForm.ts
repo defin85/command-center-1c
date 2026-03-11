@@ -1,6 +1,7 @@
 import type {
   OrganizationPool,
   PoolWorkflowBinding,
+  PoolWorkflowBindingInput,
   PoolWorkflowBindingStatus,
 } from '../../api/intercompanyPools'
 
@@ -341,10 +342,10 @@ const buildParameters = (
 
 export const buildWorkflowBindingsFromForm = (
   rawBindings: PoolWorkflowBindingFormValue[] | undefined
-): { bindings: PoolWorkflowBinding[]; errors: string[] } => {
+): { bindings: PoolWorkflowBindingInput[]; errors: string[] } => {
   const bindings = Array.isArray(rawBindings) ? rawBindings : []
   const errors: string[] = []
-  const normalized: PoolWorkflowBinding[] = []
+  const normalized: PoolWorkflowBindingInput[] = []
 
   bindings.forEach((binding, index) => {
     const bindingLabel = `Binding #${index + 1}`

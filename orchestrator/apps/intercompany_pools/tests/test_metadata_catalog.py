@@ -134,10 +134,10 @@ def test_refresh_snapshot_switches_current_version_atomically(default_tenant: Te
 
 
 @pytest.mark.django_db
-def test_read_snapshot_reuses_shared_current_snapshot_for_same_configuration_profile(
+def test_read_snapshot_requires_database_confirmation_before_shared_reuse(
     default_tenant: Tenant,
     monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
+) -> None:
     first_database = _create_database(
         tenant=default_tenant,
         name=f"meta-shared-db-{uuid4().hex[:8]}",
@@ -167,15 +167,20 @@ def test_read_snapshot_reuses_shared_current_snapshot_for_same_configuration_pro
         source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
     )
 
-    resolved, source = read_metadata_catalog_snapshot(
-        tenant_id=str(default_tenant.id),
-        database=second_database,
-        requested_by_username="meta-user",
-        allow_cold_bootstrap=False,
-    )
+    with pytest.raises(MetadataCatalogError) as exc_info:
+        read_metadata_catalog_snapshot(
+            tenant_id=str(default_tenant.id),
+            database=second_database,
+            requested_by_username="meta-user",
+            allow_cold_bootstrap=False,
+        )
 
-    assert source == "db"
-    assert resolved.id == refreshed.id
+    assert refreshed.id is not None
+    assert exc_info.value.code == "POOL_METADATA_SNAPSHOT_UNAVAILABLE"
+    assert not PoolODataMetadataCatalogScopeResolution.objects.filter(
+        tenant=default_tenant,
+        database=second_database,
+    ).exists()
     assert (
         PoolODataMetadataCatalogSnapshot.objects.filter(
             tenant=default_tenant,
@@ -184,6 +189,63 @@ def test_read_snapshot_reuses_shared_current_snapshot_for_same_configuration_pro
         ).count()
         == 1
     )
+
+
+@pytest.mark.django_db
+def test_read_snapshot_cold_bootstrap_confirms_shared_snapshot_before_reuse(
+    default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-shared-db-{uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    second_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-shared-db-{uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    _create_service_infobase_mapping(database=first_database)
+    _create_service_infobase_mapping(database=second_database)
+
+    fetch_calls: list[str] = []
+
+    def _fetch_payload(*, database: Database, **_: object) -> dict[str, object]:
+        fetch_calls.append(str(database.id))
+        return _catalog_payload(suffix="shared")
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.metadata_catalog._fetch_live_catalog_payload",
+        _fetch_payload,
+    )
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._write_snapshot_to_cache", lambda **_: None)
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._get_redis_client", lambda: None)
+
+    refreshed = refresh_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=first_database,
+        requested_by_username="meta-user",
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+    )
+
+    resolved, source = read_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=second_database,
+        requested_by_username="meta-user",
+        allow_cold_bootstrap=True,
+    )
+
+    assert source == "live_refresh"
+    assert resolved.id == refreshed.id
+    assert fetch_calls == [str(first_database.id), str(second_database.id)]
+    resolution = PoolODataMetadataCatalogScopeResolution.objects.get(
+        tenant=default_tenant,
+        database=second_database,
+    )
+    assert resolution.snapshot_id == refreshed.id
 
 
 @pytest.mark.django_db

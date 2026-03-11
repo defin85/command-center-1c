@@ -9,6 +9,7 @@
 - Legacy edge document_policy editor в `/pools/catalog` переведён в compatibility mode:
   - existing payload показывается read-only по умолчанию;
   - import идёт через явное действие в `/decisions`;
+  - `Import raw JSON` внутри `/decisions` остаётся explicit compatibility-only fallback;
   - deterministic API path: `POST /api/v2/pools/{pool_id}/document-policy-migrations/`.
 - Для avoid-regression parity: legacy edge document_policy editor больше не считается primary net-new authoring path.
 - Decision authoring/import и migration path теперь опираются на shared configuration-scoped metadata snapshots:
@@ -24,7 +25,9 @@
 2. Прогреть shared metadata snapshots на representative infobase каждой configuration profile:
    - `POST /api/v2/pools/odata-metadata/catalog/refresh/`
 3. Для pool-ов с legacy edge policies выполнить import в `/decisions`:
-   - UI: `/pools/catalog` -> `Import to /decisions`
+   - UI: `/decisions` -> `Import legacy edge`
+   - explicit compatibility-only fallback: `/decisions` -> `Import raw JSON`
+   - Compatibility UI shortcut: `/pools/catalog` -> `Import to /decisions`
    - API: `POST /api/v2/pools/{pool_id}/document-policy-migrations/`
 4. Только после этого включать tenant-scoped rollout marker `workflows.authoring.phase=workflow_centric_active`.
 5. Для checked-in proof shipped default path использовать:

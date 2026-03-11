@@ -273,20 +273,6 @@ def describe_metadata_catalog_snapshot_resolution(
     database: Database,
     snapshot: PoolODataMetadataCatalogSnapshot,
 ) -> MetadataCatalogSnapshotResolution:
-    scope = resolve_metadata_catalog_scope(tenant_id=tenant_id, database=database)
-    database_resolution = (
-        PoolODataMetadataCatalogScopeResolution.objects.filter(
-            **_resolution_filters(scope),
-            snapshot_id=snapshot.id,
-        )
-        .order_by("-confirmed_at", "-updated_at", "-created_at")
-        .first()
-    )
-    if database_resolution is not None:
-        resolution_mode = RESOLUTION_MODE_DATABASE_SCOPE
-    else:
-        resolution_mode = RESOLUTION_MODE_SHARED_SCOPE
-
     latest_resolution = (
         PoolODataMetadataCatalogScopeResolution.objects.filter(snapshot_id=snapshot.id)
         .order_by("-confirmed_at", "-updated_at", "-created_at")
@@ -304,6 +290,9 @@ def describe_metadata_catalog_snapshot_resolution(
         or PoolODataMetadataCatalogScopeResolution.objects.filter(snapshot_id=snapshot.id)
         .exclude(database_id=database.id)
         .exists()
+    )
+    resolution_mode = (
+        RESOLUTION_MODE_SHARED_SCOPE if is_shared_snapshot else RESOLUTION_MODE_DATABASE_SCOPE
     )
     return MetadataCatalogSnapshotResolution(
         resolution_mode=resolution_mode,
@@ -609,6 +598,11 @@ def _get_current_snapshot(
     snapshot = shared_candidates[0]
     if database is None:
         return snapshot
+    if snapshot.database_id != database.id:
+        # Another infobase may share the same configuration profile while publishing a
+        # different OData surface. Reuse across databases requires an explicit
+        # database-specific confirmation via live refresh, not silent adoption on first read.
+        return None
     return _adopt_scope_resolution_for_snapshot(
         scope=scope,
         database=database,

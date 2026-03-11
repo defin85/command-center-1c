@@ -67,7 +67,9 @@ Backend migration path ДОЛЖЕН:
 
 Frontend replacement path ДОЛЖЕН:
 - предоставить first-class decision-resource lifecycle surface на route `/decisions` для `document_policy.v1`, включая `list/detail/create/revise/archive-deactivate`;
-- позволять импорт legacy edge policy в decision resource и pin resulting decision revision в binding без ручного API-клиента;
+- позволять canonical import legacy edge policy через `/decisions` в decision resource и pin resulting decision revision в binding без ручного API-клиента;
+- оставлять `Import raw JSON` внутри `/decisions` только как explicit compatibility fallback, а не как primary legacy-edge migration path;
+- оставлять `/pools/catalog` только как explicit compatibility shortcut/handoff к тому же migration contract, а не как primary import surface;
 - убрать raw edge policy editing из default net-new authoring path после поставки replacement UI.
 
 `/workflows` остаётся primary composition surface и использует `/templates` как catalog atomic operations и `/decisions` как catalog/version lifecycle decision resources. `/workflows` НЕ ДОЛЖЕН (SHALL NOT) подменять собой полноценный CRUD decision resources.

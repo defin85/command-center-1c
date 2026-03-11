@@ -79,8 +79,8 @@ def test_pool_workflow_bindings_preview_src_contract_uses_dedicated_request_sche
     assert content["multipart/form-data"]["schema"] == expected_schema
 
 
-def test_pool_workflow_binding_src_schema_includes_optional_revision_field() -> None:
-    payload = _load_src_schema("PoolWorkflowBinding.yaml")
+def test_pool_workflow_binding_input_src_schema_includes_optional_revision_field() -> None:
+    payload = _load_src_schema("PoolWorkflowBindingInput.yaml")
 
     properties = payload.get("properties")
     assert isinstance(properties, dict)
@@ -89,6 +89,16 @@ def test_pool_workflow_binding_src_schema_includes_optional_revision_field() -> 
         "minimum": 1,
         "description": "Server-managed optimistic concurrency revision for update/delete operations.",
     }
+
+
+def test_pool_workflow_binding_read_src_schema_requires_server_managed_fields() -> None:
+    payload = _load_src_schema("PoolWorkflowBindingRead.yaml")
+
+    required = payload.get("required")
+    assert isinstance(required, list)
+    assert {"binding_id", "pool_id", "revision", "workflow", "effective_from", "status"}.issubset(
+        set(required)
+    )
 
 
 def test_pool_workflow_bindings_mutating_src_contract_requires_revision_conflict_semantics() -> None:

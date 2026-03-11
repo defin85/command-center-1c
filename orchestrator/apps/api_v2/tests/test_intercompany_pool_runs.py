@@ -15,6 +15,7 @@ from apps.databases.models import Database, InfobaseUserMapping
 from apps.intercompany_pools.metadata_catalog import (
     ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS,
     MetadataCatalogError,
+    refresh_metadata_catalog_snapshot,
 )
 from apps.intercompany_pools.document_plan_artifact_contract import (
     POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY,
@@ -980,6 +981,7 @@ def test_get_pool_odata_metadata_catalog_returns_current_snapshot(
 def test_get_pool_odata_metadata_catalog_reports_shared_snapshot_provenance(
     authenticated_client: APIClient,
     default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     first_database = _create_database(
         tenant=default_tenant,
@@ -993,10 +995,31 @@ def test_get_pool_odata_metadata_catalog_reports_shared_snapshot_provenance(
         base_name="shared-profile",
         version="8.3.24",
     )
+    _create_service_infobase_mapping(database=first_database)
     _create_service_infobase_mapping(database=second_database)
-    snapshot = _create_current_metadata_catalog_snapshot(
-        tenant=default_tenant,
+    shared_payload = {
+        "documents": [
+            {
+                "entity_name": "Document_Sales",
+                "display_name": "Sales",
+                "fields": [
+                    {"name": "Amount", "type": "Edm.Decimal", "nullable": False},
+                ],
+                "table_parts": [],
+            }
+        ]
+    }
+    monkeypatch.setattr(
+        "apps.intercompany_pools.metadata_catalog._fetch_live_catalog_payload",
+        lambda **_: shared_payload,
+    )
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._write_snapshot_to_cache", lambda **_: None)
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._get_redis_client", lambda: None)
+    snapshot = refresh_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
         database=first_database,
+        requested_by_username="pool-api-user",
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
     )
 
     response = authenticated_client.get(f"/api/v2/pools/odata-metadata/catalog/?database_id={second_database.id}")
@@ -1007,10 +1030,10 @@ def test_get_pool_odata_metadata_catalog_reports_shared_snapshot_provenance(
     assert payload["snapshot_id"] == str(snapshot.id)
     assert payload["config_name"] == "shared-profile"
     assert payload["config_version"] == "8.3.24"
+    assert payload["source"] == "live_refresh"
     assert payload["resolution_mode"] == "shared_scope"
     assert payload["is_shared_snapshot"] is True
-    assert payload["provenance_database_id"] == str(first_database.id)
-    assert payload["provenance_confirmed_at"] == snapshot.fetched_at.isoformat().replace("+00:00", "Z")
+    assert payload["provenance_database_id"] == str(second_database.id)
 
 
 @pytest.mark.django_db

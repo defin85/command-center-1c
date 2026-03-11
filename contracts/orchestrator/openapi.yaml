@@ -16320,9 +16320,9 @@ components:
           description: Optional tag matchers required by the binding.
           items:
             type: string
-    PoolWorkflowBinding:
+    PoolWorkflowBindingRead:
       type: object
-      description: Workflow binding assigned to an organization pool.
+      description: Workflow binding read-model assigned to an organization pool.
       properties:
         contract_version:
           type: string
@@ -16372,8 +16372,12 @@ components:
             - inactive
           description: Binding lifecycle status.
       required:
+        - binding_id
+        - pool_id
+        - revision
         - workflow
         - effective_from
+        - status
     OrganizationPool:
       type: object
       properties:
@@ -16392,7 +16396,7 @@ components:
         workflow_bindings:
           type: array
           items:
-            $ref: '#/components/schemas/PoolWorkflowBinding'
+            $ref: '#/components/schemas/PoolWorkflowBindingRead'
         updated_at:
           type: string
           format: date-time
@@ -16422,7 +16426,7 @@ components:
         bindings:
           type: array
           items:
-            $ref: '#/components/schemas/PoolWorkflowBinding'
+            $ref: '#/components/schemas/PoolWorkflowBindingRead'
         count:
           type: integer
       required:
@@ -16481,6 +16485,60 @@ components:
         - status
         - title
         - type
+    PoolWorkflowBindingInput:
+      type: object
+      description: Workflow binding payload accepted by the canonical upsert endpoint.
+      properties:
+        contract_version:
+          type: string
+          description: Pool workflow binding contract version.
+        binding_id:
+          type: string
+          description: Stable binding identifier within the pool.
+        pool_id:
+          type: string
+          format: uuid
+          description: Enclosing organization pool identifier.
+        revision:
+          type: integer
+          minimum: 1
+          description: Server-managed optimistic concurrency revision for update/delete operations.
+        workflow:
+          $ref: '#/components/schemas/WorkflowDefinitionRef'
+        decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DecisionTableRef'
+        parameters:
+          type: object
+          additionalProperties: true
+          description: Arbitrary workflow parameter overrides for this binding.
+        role_mapping:
+          type: object
+          additionalProperties:
+            type: string
+          description: Mapping from workflow roles to concrete pool-scoped targets.
+        selector:
+          $ref: '#/components/schemas/PoolWorkflowBindingSelector'
+        effective_from:
+          type: string
+          format: date
+          description: Binding effective start date.
+        effective_to:
+          type: string
+          format: date
+          nullable: true
+          description: Binding effective end date, inclusive.
+        status:
+          type: string
+          enum:
+            - draft
+            - active
+            - inactive
+          description: Binding lifecycle status.
+      required:
+        - workflow
+        - effective_from
     PoolWorkflowBindingUpsertRequest:
       type: object
       properties:
@@ -16488,7 +16546,7 @@ components:
           type: string
           format: uuid
         workflow_binding:
-          $ref: '#/components/schemas/PoolWorkflowBinding'
+          $ref: '#/components/schemas/PoolWorkflowBindingInput'
       required:
         - pool_id
         - workflow_binding
@@ -16499,7 +16557,7 @@ components:
           type: string
           format: uuid
         workflow_binding:
-          $ref: '#/components/schemas/PoolWorkflowBinding'
+          $ref: '#/components/schemas/PoolWorkflowBindingRead'
         created:
           type: boolean
       required:
@@ -16513,7 +16571,7 @@ components:
           type: string
           format: uuid
         workflow_binding:
-          $ref: '#/components/schemas/PoolWorkflowBinding'
+          $ref: '#/components/schemas/PoolWorkflowBindingRead'
       required:
         - pool_id
         - workflow_binding
@@ -16524,7 +16582,7 @@ components:
           type: string
           format: uuid
         workflow_binding:
-          $ref: '#/components/schemas/PoolWorkflowBinding'
+          $ref: '#/components/schemas/PoolWorkflowBindingRead'
         deleted:
           type: boolean
       required:
@@ -16730,7 +16788,7 @@ components:
       description: Preview of effective binding lineage and compiled runtime projection before run start.
       properties:
         workflow_binding:
-          $ref: '#/components/schemas/PoolWorkflowBinding'
+          $ref: '#/components/schemas/PoolWorkflowBindingRead'
         compiled_document_policy:
           type: object
           additionalProperties: true
@@ -18613,7 +18671,7 @@ components:
         provenance:
           $ref: '#/components/schemas/PoolRunProvenance'
         workflow_binding:
-          $ref: '#/components/schemas/PoolWorkflowBinding'
+          $ref: '#/components/schemas/PoolWorkflowBindingRead'
           nullable: true
         runtime_projection:
           $ref: '#/components/schemas/PoolRuntimeProjection'

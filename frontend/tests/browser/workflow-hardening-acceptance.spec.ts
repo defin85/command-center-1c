@@ -953,7 +953,7 @@ async function setupApiMocks(page: Page, state: AcceptanceState) {
   })
 }
 
-test('Workflow hardening: /decisions shows shared metadata provenance and decision lifecycle actions', async ({ page }) => {
+test('Workflow hardening: /decisions shows shared metadata provenance, canonical legacy import, and decision lifecycle actions', async ({ page }) => {
   const state = createAcceptanceState()
 
   await setupAuth(page)
@@ -967,6 +967,25 @@ test('Workflow hardening: /decisions shows shared metadata provenance and decisi
   await expect(page.getByText('shared_scope').first()).toBeVisible()
   await expect(page.getByText('20202020-2020-2020-2020-202020202020').first()).toBeVisible()
   await expect(page.getByText('Services publication policy').first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Import legacy edge' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Import raw JSON' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Import legacy edge' }).click()
+  await expect(page.getByText('Import legacy edge policy')).toBeVisible()
+  await page.getByLabel('Decision table ID').fill('browser-imported-policy')
+  await page.getByLabel('Decision name').fill('Browser imported policy')
+  await page.getByLabel('Decision description').fill('Imported from browser legacy edge')
+  await page.getByRole('button', { name: 'Import to /decisions' }).click()
+
+  await expect.poll(() => state.migrationCalls).toBe(1)
+  await expect.poll(() => String(state.lastMigrationPayload?.edge_version_id || '')).toBe('edge-v1')
+  await expect.poll(() => String(state.lastMigrationPayload?.decision_table_id || '')).toBe('browser-imported-policy')
+  await expect.poll(() => String(state.lastMigrationPayload?.name || '')).toBe('Browser imported policy')
+  await expect.poll(() => String(state.lastMigrationPayload?.description || '')).toBe('Imported from browser legacy edge')
+  await expect(page.getByText('Imported to /decisions')).toBeVisible()
+  await expect(page.getByText('Source: edge.metadata.document_policy (edge-v1)')).toBeVisible()
+  await expect(page.getByText('Decision ref: services-publication-policy r2')).toBeVisible()
+  await expect(page.getByText('Affected workflow bindings were updated automatically.')).toBeVisible()
 
   await page.getByRole('button', { name: 'New policy' }).click()
   await page.getByLabel('Decision table ID').fill('browser-policy')

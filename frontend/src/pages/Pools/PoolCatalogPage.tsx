@@ -2260,9 +2260,7 @@ export function PoolCatalogPage() {
   }, [poolBindingsForm])
 
   useEffect(() => {
-    let cancelled = false
     if (!isPoolDrawerOpen) return () => {
-      cancelled = true
     }
     poolForm.resetFields()
     if (poolDrawerMode === 'edit' && selectedPool) {
@@ -2272,9 +2270,7 @@ export function PoolCatalogPage() {
         description: selectedPool.description || '',
         is_active: selectedPool.is_active,
       })
-      return () => {
-        cancelled = true
-      }
+      return
     }
     poolForm.setFieldsValue({
       code: '',
@@ -2282,9 +2278,6 @@ export function PoolCatalogPage() {
       description: '',
       is_active: true,
     })
-    return () => {
-      cancelled = true
-    }
   }, [isPoolDrawerOpen, poolDrawerMode, poolForm, selectedPool])
 
   useEffect(() => {

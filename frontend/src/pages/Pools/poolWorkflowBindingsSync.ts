@@ -2,6 +2,7 @@ import {
   deletePoolWorkflowBinding,
   upsertPoolWorkflowBinding,
   type PoolWorkflowBinding,
+  type PoolWorkflowBindingInput,
 } from '../../api/intercompanyPools'
 
 type NormalizedDecisionRef = {
@@ -10,7 +11,7 @@ type NormalizedDecisionRef = {
   decision_revision: number
 }
 
-const normalizeBindingForComparison = (binding: PoolWorkflowBinding) => ({
+const normalizeBindingForComparison = (binding: PoolWorkflowBinding | PoolWorkflowBindingInput) => ({
   contract_version: String(binding.contract_version ?? '').trim() || 'pool_workflow_binding.v1',
   binding_id: String(binding.binding_id ?? '').trim(),
   status: String(binding.status ?? '').trim(),
@@ -39,18 +40,21 @@ const normalizeBindingForComparison = (binding: PoolWorkflowBinding) => ({
       || left.decision_revision - right.decision_revision
     )),
   parameters: Object.fromEntries(
-    Object.entries(binding.parameters ?? {})
-      .map(([key, value]) => [String(key).trim(), value])
+    (Object.entries(binding.parameters ?? {}) as Array<[string, unknown]>)
+      .map(([key, value]): [string, unknown] => [String(key).trim(), value])
       .sort(([left], [right]) => left.localeCompare(right))
   ),
   role_mapping: Object.fromEntries(
-    Object.entries(binding.role_mapping ?? {})
-      .map(([key, value]) => [String(key).trim(), String(value ?? '').trim()])
+    (Object.entries(binding.role_mapping ?? {}) as Array<[string, string]>)
+      .map(([key, value]): [string, string] => [String(key).trim(), String(value ?? '').trim()])
       .sort(([left], [right]) => left.localeCompare(right))
   ),
 })
 
-const areBindingsEquivalent = (left: PoolWorkflowBinding, right: PoolWorkflowBinding) => (
+const areBindingsEquivalent = (
+  left: PoolWorkflowBinding,
+  right: PoolWorkflowBinding | PoolWorkflowBindingInput,
+) => (
   JSON.stringify(normalizeBindingForComparison(left)) === JSON.stringify(normalizeBindingForComparison(right))
 )
 
@@ -59,7 +63,7 @@ export function hasWorkflowBindingChanges({
   nextBindings,
 }: {
   previousBindings: PoolWorkflowBinding[]
-  nextBindings: PoolWorkflowBinding[]
+  nextBindings: PoolWorkflowBindingInput[]
 }) {
   if (previousBindings.length !== nextBindings.length) {
     return true
@@ -92,7 +96,7 @@ export async function syncPoolWorkflowBindings({
 }: {
   poolId: string
   previousBindings: PoolWorkflowBinding[]
-  nextBindings: PoolWorkflowBinding[]
+  nextBindings: PoolWorkflowBindingInput[]
 }) {
   const retainedBindingIds = new Set(
     nextBindings

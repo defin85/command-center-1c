@@ -17,6 +17,9 @@ def test_workflow_centric_runbook_documents_hardening_surfaces() -> None:
     runbook = _read_repo_doc("docs", "observability", "WORKFLOW_CENTRIC_POOLS_RUNBOOK.md")
 
     assert "Decision lifecycle / migration: `/decisions`" in runbook
+    assert "UI: `/decisions` -> `Import legacy edge`" in runbook
+    assert "Import raw JSON" in runbook
+    assert "compatibility shortcut: `/pools/catalog` -> `Import to /decisions`" in runbook
     assert "POST /api/v2/pools/odata-metadata/catalog/refresh/" in runbook
     assert "POST /api/v2/pools/<pool_id>/document-policy-migrations/" in runbook
     assert "shared configuration-scoped snapshot" in runbook
@@ -32,6 +35,9 @@ def test_workflow_centric_hardening_cutover_notes_cover_backfill_and_rollback_wi
     )
 
     assert "backfill_pool_workflow_bindings --dry-run --json" in cutover
+    assert "/decisions` -> `Import legacy edge`" in cutover
+    assert "Import raw JSON" in cutover
+    assert "compatibility shortcut: `/pools/catalog` -> `Import to /decisions`" in cutover
     assert "POST /api/v2/pools/odata-metadata/catalog/refresh/" in cutover
     assert "POST /api/v2/pools/<pool_id>/document-policy-migrations/" in cutover
     assert "Следующий run должен стартовать только через явный `pool_workflow_binding_id`." in cutover
@@ -47,6 +53,9 @@ def test_workflow_centric_hardening_release_note_documents_operator_changes() ->
     )
 
     assert "/decisions становится primary surface" in release_note
+    assert "UI: `/decisions` -> `Import legacy edge`" in release_note
+    assert "Import raw JSON" in release_note
+    assert "Compatibility UI shortcut: `/pools/catalog` -> `Import to /decisions`" in release_note
     assert "workflow executor templates remain available here only as a compatibility/integration path" in release_note
     assert "shared configuration-scoped metadata snapshots" in release_note
     assert "POST /api/v2/pools/{pool_id}/document-policy-migrations/" in release_note

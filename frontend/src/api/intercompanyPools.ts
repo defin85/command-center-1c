@@ -50,11 +50,8 @@ export type PoolWorkflowBindingSelector = {
 
 export type PoolWorkflowBindingStatus = 'draft' | 'active' | 'inactive'
 
-export type PoolWorkflowBinding = {
+type PoolWorkflowBindingBase = {
   contract_version?: string
-  binding_id?: string
-  pool_id?: string
-  revision?: number
   workflow: WorkflowDefinitionRef
   decisions?: DecisionTableRef[]
   parameters?: Record<string, unknown>
@@ -62,6 +59,19 @@ export type PoolWorkflowBinding = {
   selector?: PoolWorkflowBindingSelector
   effective_from: string
   effective_to?: string | null
+}
+
+export type PoolWorkflowBinding = PoolWorkflowBindingBase & {
+  binding_id: string
+  pool_id: string
+  revision: number
+  status: PoolWorkflowBindingStatus
+}
+
+export type PoolWorkflowBindingInput = PoolWorkflowBindingBase & {
+  binding_id?: string
+  pool_id?: string
+  revision?: number
   status?: PoolWorkflowBindingStatus
 }
 
@@ -297,7 +307,7 @@ export type PoolRun = {
   terminal_reason: string | null
   execution_backend: string | null
   provenance: PoolRunProvenance
-  workflow_binding?: PoolWorkflowBinding | null
+  workflow_binding?: PoolWorkflowBinding
   runtime_projection?: PoolRunRuntimeProjection | null
   workflow_template_name: string | null
   seed: number | null
@@ -685,7 +695,7 @@ export async function getPoolWorkflowBinding(
 export async function upsertPoolWorkflowBinding(
   payload: {
     pool_id: string
-    workflow_binding: PoolWorkflowBinding
+    workflow_binding: PoolWorkflowBindingInput
   }
 ): Promise<{ pool_id: string; workflow_binding: PoolWorkflowBinding; created: boolean }> {
   const response = await apiClient.post<{

@@ -98,10 +98,23 @@ def test_generated_pool_run_create_request_requires_binding_field() -> None:
 
 
 def test_generated_pool_workflow_binding_revision_contract_is_present() -> None:
-    model_path = _repo_root() / "frontend" / "src" / "api" / "generated" / "model" / "poolWorkflowBinding.ts"
+    model_path = _repo_root() / "frontend" / "src" / "api" / "generated" / "model" / "poolWorkflowBindingRead.ts"
     content = model_path.read_text(encoding="utf-8")
 
+    assert re.search(r"binding_id: string;", content)
+    assert re.search(r"pool_id: string;", content)
+    assert re.search(r"revision: number;", content)
+    assert re.search(r"status: PoolWorkflowBindingReadStatus;", content)
+
+
+def test_generated_pool_workflow_binding_input_keeps_mutating_fields_optional() -> None:
+    model_path = _repo_root() / "frontend" / "src" / "api" / "generated" / "model" / "poolWorkflowBindingInput.ts"
+    content = model_path.read_text(encoding="utf-8")
+
+    assert re.search(r"binding_id\?: string;", content)
+    assert re.search(r"pool_id\?: string;", content)
     assert re.search(r"revision\?: number;", content)
+    assert re.search(r"status\?: PoolWorkflowBindingInputStatus;", content)
 
 
 def test_generated_pool_workflow_binding_delete_params_require_revision() -> None:
@@ -125,7 +138,8 @@ def test_generated_models_cover_shared_metadata_and_decision_surfaces() -> None:
     checks = {
         "DecisionTable": "decisionTable.ts",
         "PoolODataMetadataCatalogResponse": "poolODataMetadataCatalogResponse.ts",
-        "PoolWorkflowBinding": "poolWorkflowBinding.ts",
+        "PoolWorkflowBindingInput": "poolWorkflowBindingInput.ts",
+        "PoolWorkflowBindingRead": "poolWorkflowBindingRead.ts",
     }
 
     for schema_name, model_file in checks.items():

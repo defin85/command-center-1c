@@ -193,6 +193,7 @@ function buildWorkflowBinding(overrides: Record<string, unknown> = {}) {
   return {
     binding_id: 'binding-top-down',
     pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    revision: 3,
     workflow: {
       workflow_definition_key: 'services-publication',
       workflow_revision_id: '77777777-7777-7777-7777-777777777777',
@@ -428,6 +429,7 @@ describe('PoolRunsPage', () => {
       workflow_binding: {
         binding_id: 'binding-top-down',
         pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        revision: 7,
         workflow: {
           workflow_definition_key: 'services-publication',
           workflow_revision_id: '77777777-7777-7777-7777-777777777777',

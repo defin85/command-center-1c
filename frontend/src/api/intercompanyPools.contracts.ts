@@ -10,6 +10,7 @@ import type {
   PoolRunSafeCommandResponse,
   PoolSchemaTemplate,
   PoolWorkflowBinding,
+  PoolWorkflowBindingInput,
   PoolWorkflowBindingSelector,
   RetryPoolRunPayload,
   UpsertOrganizationPoolPayload,
@@ -27,7 +28,8 @@ import type { PoolRunRetryRequest as GeneratedPoolRunRetryRequest } from './gene
 import type { PoolRunSafeCommandConflict as GeneratedPoolRunSafeCommandConflict } from './generated/model/poolRunSafeCommandConflict'
 import type { PoolRunSafeCommandResponse as GeneratedPoolRunSafeCommandResponse } from './generated/model/poolRunSafeCommandResponse'
 import type { PoolSchemaTemplate as GeneratedPoolSchemaTemplate } from './generated/model/poolSchemaTemplate'
-import type { PoolWorkflowBinding as GeneratedPoolWorkflowBinding } from './generated/model/poolWorkflowBinding'
+import type { PoolWorkflowBindingInput as GeneratedPoolWorkflowBindingInput } from './generated/model/poolWorkflowBindingInput'
+import type { PoolWorkflowBindingRead as GeneratedPoolWorkflowBinding } from './generated/model/poolWorkflowBindingRead'
 import type { PoolWorkflowBindingSelector as GeneratedPoolWorkflowBindingSelector } from './generated/model/poolWorkflowBindingSelector'
 import type { WorkflowDefinitionRef as GeneratedWorkflowDefinitionRef } from './generated/model/workflowDefinitionRef'
 
@@ -37,6 +39,7 @@ export type WorkflowDefinitionRefContract = AssertAssignable<WorkflowDefinitionR
 export type DecisionTableRefContract = AssertAssignable<DecisionTableRef, GeneratedDecisionTableRef>
 export type PoolWorkflowBindingSelectorContract = AssertAssignable<PoolWorkflowBindingSelector, GeneratedPoolWorkflowBindingSelector>
 export type PoolWorkflowBindingContract = AssertAssignable<PoolWorkflowBinding, GeneratedPoolWorkflowBinding>
+export type PoolWorkflowBindingInputContract = AssertAssignable<PoolWorkflowBindingInput, GeneratedPoolWorkflowBindingInput>
 export type OrganizationPoolContract = AssertAssignable<OrganizationPool, GeneratedOrganizationPool>
 export type PoolSchemaTemplateContract = AssertAssignable<PoolSchemaTemplate, GeneratedPoolSchemaTemplate>
 export type PoolRunContract = AssertAssignable<PoolRun, GeneratedPoolRun>

@@ -7,6 +7,7 @@ from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
 from apps.databases.models import Database, InfobaseUserMapping
+from apps.intercompany_pools.metadata_catalog import refresh_metadata_catalog_snapshot
 from apps.intercompany_pools.models import (
     PoolODataMetadataCatalogSnapshot,
     PoolODataMetadataCatalogScopeResolution,
@@ -252,6 +253,7 @@ def test_decision_tables_api_can_create_new_revision_from_parent(staff_client: A
 @pytest.mark.django_db
 def test_decision_tables_api_create_uses_shared_metadata_snapshot_context(
     staff_client: APIClient,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     tenant = Tenant.objects.create(slug=f"decision-meta-{uuid.uuid4().hex[:8]}", name="Decision Meta")
     first_database = _create_database(
@@ -266,8 +268,40 @@ def test_decision_tables_api_create_uses_shared_metadata_snapshot_context(
         base_name="shared-profile",
         version="8.3.24",
     )
+    _create_service_infobase_mapping(database=first_database)
     _create_service_infobase_mapping(database=second_database)
-    snapshot = _create_current_metadata_catalog_snapshot(tenant=tenant, database=first_database)
+    shared_payload = {
+        "documents": [
+            {
+                "entity_name": "Document_Sales",
+                "display_name": "Sales",
+                "fields": [
+                    {"name": "Amount", "type": "Edm.Decimal", "nullable": False},
+                ],
+                "table_parts": [],
+            },
+            {
+                "entity_name": "Document_Invoice",
+                "display_name": "Invoice",
+                "fields": [
+                    {"name": "BaseDocument", "type": "Edm.String", "nullable": False},
+                ],
+                "table_parts": [],
+            },
+        ]
+    }
+    monkeypatch.setattr(
+        "apps.intercompany_pools.metadata_catalog._fetch_live_catalog_payload",
+        lambda **_: shared_payload,
+    )
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._write_snapshot_to_cache", lambda **_: None)
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._get_redis_client", lambda: None)
+    snapshot = refresh_metadata_catalog_snapshot(
+        tenant_id=str(tenant.id),
+        database=first_database,
+        requested_by_username=str(getattr(staff_client.handler._force_user, "username", "") or ""),
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+    )
 
     response = staff_client.post(
         "/api/v2/decisions/",
@@ -287,9 +321,10 @@ def test_decision_tables_api_create_uses_shared_metadata_snapshot_context(
     assert payload["decision"]["metadata_compatibility"]["is_compatible"] is True
     assert payload["metadata_context"]["database_id"] == str(second_database.id)
     assert payload["metadata_context"]["snapshot_id"] == str(snapshot.id)
+    assert payload["metadata_context"]["source"] == "live_refresh"
     assert payload["metadata_context"]["resolution_mode"] == "shared_scope"
     assert payload["metadata_context"]["is_shared_snapshot"] is True
-    assert payload["metadata_context"]["provenance_database_id"] == str(first_database.id)
+    assert payload["metadata_context"]["provenance_database_id"] == str(second_database.id)
 
 
 @pytest.mark.django_db

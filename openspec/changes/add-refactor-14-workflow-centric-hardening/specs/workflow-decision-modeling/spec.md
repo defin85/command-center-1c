@@ -51,6 +51,8 @@ Frontend surface ДОЛЖЕН (SHALL):
 - **GIVEN** в topology edge существует legacy `document_policy`
 - **WHEN** аналитик или оператор запускает import/migration action на `/decisions`
 - **THEN** система создаёт или обновляет versioned decision resource с эквивалентным `document_policy` output
+- **AND** canonical UI path использует action `Import legacy edge`
+- **AND** action `Import raw JSON` остаётся explicit compatibility-only fallback, а не primary edge-migration path
 - **AND** UI возвращает resulting `decision_table_id` и `decision_revision` для pin в workflow/binding
 
 #### Scenario: Workflow и binding editor используют список decision revisions

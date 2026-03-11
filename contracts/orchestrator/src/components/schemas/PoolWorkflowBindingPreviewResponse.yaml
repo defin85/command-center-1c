@@ -2,7 +2,7 @@ type: object
 description: Preview of effective binding lineage and compiled runtime projection before run start.
 properties:
   workflow_binding:
-    $ref: ./PoolWorkflowBinding.yaml
+    $ref: ./PoolWorkflowBindingRead.yaml
   compiled_document_policy:
     type: object
     additionalProperties: true

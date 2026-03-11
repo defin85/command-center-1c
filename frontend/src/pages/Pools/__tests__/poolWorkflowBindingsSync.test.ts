@@ -14,6 +14,7 @@ vi.mock('../../../api/intercompanyPools', () => ({
 function buildBinding(overrides: Partial<PoolWorkflowBinding> = {}): PoolWorkflowBinding {
   return {
     binding_id: 'binding-existing',
+    pool_id: 'pool-1',
     revision: 3,
     workflow: {
       workflow_definition_key: 'services-publication',

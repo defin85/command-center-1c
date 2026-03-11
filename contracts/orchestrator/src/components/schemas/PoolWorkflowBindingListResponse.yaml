@@ -6,7 +6,7 @@ properties:
   bindings:
     type: array
     items:
-      $ref: ./PoolWorkflowBinding.yaml
+      $ref: ./PoolWorkflowBindingRead.yaml
   count:
     type: integer
 required:

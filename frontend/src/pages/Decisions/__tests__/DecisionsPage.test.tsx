@@ -7,6 +7,9 @@ import userEvent from '@testing-library/user-event'
 const mockGetDecisionsCollection = vi.fn()
 const mockGetDecisionsDetail = vi.fn()
 const mockPostDecisionsCollection = vi.fn()
+const mockListOrganizationPools = vi.fn()
+const mockGetPoolGraph = vi.fn()
+const mockMigratePoolEdgeDocumentPolicy = vi.fn()
 const mockUseDatabases = vi.fn()
 
 vi.mock('../../../api/generated/v2/v2', () => ({
@@ -19,6 +22,12 @@ vi.mock('../../../api/generated/v2/v2', () => ({
 
 vi.mock('../../../api/queries/databases', () => ({
   useDatabases: (...args: unknown[]) => mockUseDatabases(...args),
+}))
+
+vi.mock('../../../api/intercompanyPools', () => ({
+  listOrganizationPools: (...args: unknown[]) => mockListOrganizationPools(...args),
+  getPoolGraph: (...args: unknown[]) => mockGetPoolGraph(...args),
+  migratePoolEdgeDocumentPolicy: (...args: unknown[]) => mockMigratePoolEdgeDocumentPolicy(...args),
 }))
 
 vi.mock('../../../components/code/LazyJsonCodeEditor', () => ({
@@ -120,6 +129,81 @@ const defaultDecision = {
   updated_at: '2026-03-10T12:00:00Z',
 }
 
+const defaultPool = {
+  id: 'pool-1',
+  code: 'pool-hardening',
+  name: 'Workflow Pool',
+  description: 'Workflow-centric pool',
+  is_active: true,
+  metadata: {},
+  updated_at: '2026-03-10T12:00:00Z',
+}
+
+const defaultPoolGraph = {
+  pool_id: defaultPool.id,
+  date: '2026-03-10',
+  version: 'topology:v1',
+  nodes: [
+    {
+      node_version_id: 'node-root',
+      organization_id: 'org-root',
+      inn: '730000000001',
+      name: 'Root Org',
+      is_root: true,
+      metadata: {},
+    },
+    {
+      node_version_id: 'node-target',
+      organization_id: 'org-target',
+      inn: '730000000002',
+      name: 'Target Org',
+      is_root: false,
+      metadata: {},
+    },
+  ],
+  edges: [
+    {
+      edge_version_id: 'edge-v1',
+      parent_node_version_id: 'node-root',
+      child_node_version_id: 'node-target',
+      weight: '1.0',
+      min_amount: null,
+      max_amount: null,
+      metadata: {
+        document_policy: {
+          version: 'document_policy.v1',
+          chains: [],
+        },
+      },
+    },
+    {
+      edge_version_id: 'edge-without-policy',
+      parent_node_version_id: 'node-root',
+      child_node_version_id: 'node-target',
+      weight: '1.0',
+      min_amount: null,
+      max_amount: null,
+      metadata: {},
+    },
+  ],
+}
+
+function openSelect(testId: string) {
+  const select = screen.getByTestId(testId)
+  const trigger = select.querySelector('.ant-select-selector') as HTMLElement | null
+  fireEvent.mouseDown(trigger ?? select)
+}
+
+async function selectDropdownOption(label: string | RegExp) {
+  const matcher = typeof label === 'string' ? label : (content: string) => label.test(content)
+  const matches = await screen.findAllByText(matcher)
+  const option = [...matches]
+    .reverse()
+    .find((node) => node.closest('.ant-select-item-option'))
+  expect(option).toBeTruthy()
+  fireEvent.click(option as Element)
+}
+
 const { DecisionsPage } = await import('../DecisionsPage')
 
 function renderPage(path = '/decisions') {
@@ -144,6 +228,9 @@ describe('DecisionsPage', () => {
     mockGetDecisionsCollection.mockReset()
     mockGetDecisionsDetail.mockReset()
     mockPostDecisionsCollection.mockReset()
+    mockListOrganizationPools.mockReset()
+    mockGetPoolGraph.mockReset()
+    mockMigratePoolEdgeDocumentPolicy.mockReset()
     mockUseDatabases.mockReset()
 
     mockUseDatabases.mockReturnValue({
@@ -177,6 +264,33 @@ describe('DecisionsPage', () => {
         parent_version: defaultDecision.id,
       },
       metadata_context: defaultMetadataContext,
+    })
+    mockListOrganizationPools.mockResolvedValue([defaultPool])
+    mockGetPoolGraph.mockResolvedValue(defaultPoolGraph)
+    mockMigratePoolEdgeDocumentPolicy.mockResolvedValue({
+      decision: {
+        ...defaultDecision,
+        id: 'decision-version-imported',
+        decision_revision: 4,
+        name: 'Imported policy',
+      },
+      metadata_context: defaultMetadataContext,
+      migration: {
+        created: true,
+        reused_existing_revision: false,
+        binding_update_required: false,
+        source: {
+          source_path: 'edge.metadata.document_policy',
+          pool_id: defaultPool.id,
+          pool_code: defaultPool.code,
+          edge_version_id: 'edge-v1',
+        },
+        decision_ref: {
+          decision_id: 'decision-version-imported',
+          decision_table_id: 'policy-imported',
+          decision_revision: 4,
+        },
+      },
     })
   })
 
@@ -250,15 +364,56 @@ describe('DecisionsPage', () => {
         expect.anything(),
       )
     })
-  }, 10000)
+  }, 15000)
 
-  it('supports raw import, revise and deactivate flows through decision revisions', async () => {
+  it('imports a legacy edge policy through the pool migration API on /decisions', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Decision Policy Library')
+    await user.click(screen.getByRole('button', { name: 'Import legacy edge' }))
+
+    expect(await screen.findByText('Import legacy edge policy')).toBeInTheDocument()
+    await waitFor(() => expect(mockListOrganizationPools).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mockGetPoolGraph).toHaveBeenCalledWith(defaultPool.id))
+
+    openSelect('decision-legacy-import-pool-select')
+    await selectDropdownOption('Workflow Pool (pool-hardening)')
+
+    openSelect('decision-legacy-import-edge-select')
+    await selectDropdownOption(/Root Org -> Target Org \(edge-v1\)/)
+
+    fireEvent.change(screen.getByLabelText('Decision table ID'), { target: { value: 'policy-imported' } })
+    fireEvent.change(screen.getByLabelText('Decision name'), { target: { value: 'Imported policy' } })
+    fireEvent.change(screen.getByLabelText('Decision description'), { target: { value: 'Imported from legacy edge' } })
+
+    await user.click(screen.getByRole('button', { name: 'Import to /decisions' }))
+
+    await waitFor(() => {
+      expect(mockMigratePoolEdgeDocumentPolicy).toHaveBeenCalledWith(
+        defaultPool.id,
+        {
+          edge_version_id: 'edge-v1',
+          decision_table_id: 'policy-imported',
+          name: 'Imported policy',
+          description: 'Imported from legacy edge',
+        },
+      )
+    })
+    expect(mockPostDecisionsCollection).not.toHaveBeenCalled()
+    expect(await screen.findByText('Imported to /decisions')).toBeInTheDocument()
+    expect(screen.getByText('Source: edge.metadata.document_policy (edge-v1)')).toBeInTheDocument()
+    expect(screen.getByText('Decision ref: policy-imported r4')).toBeInTheDocument()
+    expect(screen.getByText('Affected workflow bindings were updated automatically.')).toBeInTheDocument()
+  }, 20000)
+
+  it('supports raw JSON compatibility import, revise and deactivate flows through decision revisions', async () => {
     const user = userEvent.setup()
     renderPage()
 
     await screen.findByText('Decision Policy Library')
 
-    await user.click(screen.getByRole('button', { name: 'Import legacy policy' }))
+    await user.click(screen.getByRole('button', { name: 'Import raw JSON' }))
     fireEvent.change(screen.getByLabelText('Decision table ID'), { target: { value: 'policy-imported' } })
     fireEvent.change(screen.getByLabelText('Decision name'), { target: { value: 'Imported policy' } })
     await user.click(screen.getByRole('tab', { name: 'Raw JSON' }))

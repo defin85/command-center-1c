@@ -1,4 +1,4 @@
-import type { DecisionTableWriteRequest } from '../../api/generated/v2/v2'
+import type { DecisionTableWriteRequest } from '../../api/generated/model/decisionTableWriteRequest'
 
 export const DOCUMENT_POLICY_VERSION = 'document_policy.v1'
 export const DOCUMENT_POLICY_DECISION_KEY = 'document_policy'

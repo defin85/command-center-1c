@@ -174,11 +174,14 @@ def test_pool_run_create_request_requires_binding_matches_runtime_serializer() -
     assert runtime_field.allow_blank is False
 
 
-def test_pool_workflow_binding_schema_includes_revision_matches_runtime_serializer() -> None:
+def test_pool_workflow_binding_write_schema_keeps_server_managed_fields_optional_for_create_requests() -> None:
     contract = _load_openapi_contract()
-    binding_schema = _schema(contract, "PoolWorkflowBinding")
+    binding_schema = _schema(contract, "PoolWorkflowBindingInput")
     properties = binding_schema.get("properties")
     assert isinstance(properties, dict)
+    required = binding_schema.get("required")
+    assert isinstance(required, list)
+    assert set(required) == {"workflow", "effective_from"}
 
     revision_schema = properties.get("revision")
     assert isinstance(revision_schema, dict)
@@ -190,6 +193,41 @@ def test_pool_workflow_binding_schema_includes_revision_matches_runtime_serializ
     assert runtime_field.required is False
     assert runtime_field.min_value == 1
 
+    binding_id_field = pools_view.PoolWorkflowBindingInputSerializer().fields.get("binding_id")
+    assert isinstance(binding_id_field, serializers.CharField)
+    assert binding_id_field.required is False
+
+    pool_id_field = pools_view.PoolWorkflowBindingInputSerializer().fields.get("pool_id")
+    assert isinstance(pool_id_field, serializers.UUIDField)
+    assert pool_id_field.required is False
+
+    status_field = pools_view.PoolWorkflowBindingInputSerializer().fields.get("status")
+    assert isinstance(status_field, serializers.ChoiceField)
+    assert status_field.required is False
+
+
+def test_pool_workflow_binding_read_schema_requires_server_managed_fields() -> None:
+    contract = _load_openapi_contract()
+    binding_schema = _schema(contract, "PoolWorkflowBindingRead")
+    properties = binding_schema.get("properties")
+    assert isinstance(properties, dict)
+    required = binding_schema.get("required", [])
+    assert isinstance(required, list)
+    assert {"binding_id", "pool_id", "revision", "workflow", "effective_from", "status"}.issubset(
+        set(required)
+    )
+
+    revision_schema = properties.get("revision")
+    assert isinstance(revision_schema, dict)
+    assert revision_schema.get("type") == "integer"
+    assert revision_schema.get("minimum") == 1
+
+    runtime_fields = pools_view.PoolWorkflowBindingReadSerializer().fields
+    assert runtime_fields["binding_id"].required is True
+    assert runtime_fields["pool_id"].required is True
+    assert runtime_fields["revision"].required is True
+    assert runtime_fields["status"].required is True
+
 
 def test_pool_workflow_binding_mutating_paths_expose_revision_conflict_contract() -> None:
     contract = _load_openapi_contract()
@@ -200,6 +238,14 @@ def test_pool_workflow_binding_mutating_paths_expose_revision_conflict_contract(
     assert isinstance(upsert_path, dict)
     upsert_post = upsert_path.get("post")
     assert isinstance(upsert_post, dict)
+    request_schema = (
+        upsert_post["requestBody"]["content"]["application/json"]["schema"]
+    )
+    assert request_schema["$ref"] == "#/components/schemas/PoolWorkflowBindingUpsertRequest"
+    upsert_request_schema = _schema(contract, "PoolWorkflowBindingUpsertRequest")
+    request_properties = upsert_request_schema.get("properties")
+    assert isinstance(request_properties, dict)
+    assert request_properties["workflow_binding"]["$ref"] == "#/components/schemas/PoolWorkflowBindingInput"
     upsert_responses = upsert_post.get("responses")
     assert isinstance(upsert_responses, dict)
     assert (

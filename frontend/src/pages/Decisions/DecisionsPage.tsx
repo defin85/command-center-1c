@@ -22,8 +22,20 @@ import type {
   DecisionTable,
   PoolODataMetadataCatalogResponse,
 } from '../../api/generated/model'
+import {
+  getPoolGraph,
+  listOrganizationPools,
+  migratePoolEdgeDocumentPolicy,
+  type OrganizationPool,
+  type PoolGraph,
+  type PoolDocumentPolicyMigrationResponse,
+} from '../../api/intercompanyPools'
 import { useDatabases } from '../../api/queries/databases'
 import { LazyJsonCodeEditor } from '../../components/code/LazyJsonCodeEditor'
+import {
+  DecisionLegacyImportPanel,
+  type DecisionLegacyImportState,
+} from './DecisionLegacyImportPanel'
 import {
   buildDocumentPolicyDecisionPayload,
   buildDocumentPolicyFromBuilder,
@@ -80,6 +92,14 @@ const buildEmptyDraft = (mode: DecisionEditorMode, activeTab: DecisionEditorTab)
   isActive: true,
 })
 
+const buildEmptyLegacyImportDraft = (poolId = ''): DecisionLegacyImportState => ({
+  poolId,
+  edgeVersionId: '',
+  decisionTableId: '',
+  name: '',
+  description: '',
+})
+
 const buildDraftFromDecision = (decision: DecisionTable): DecisionEditorState => {
   const policy = extractDocumentPolicyOutput(decision)
   const chains = documentPolicyToBuilderChains(policy)
@@ -123,6 +143,10 @@ const buildChainsFromDraft = (draft: DecisionEditorState): DocumentPolicyBuilder
   return draft.chains
 }
 
+const hasLegacyDocumentPolicy = (metadata: Record<string, unknown> | null | undefined): boolean => (
+  Boolean(metadata && typeof metadata === 'object' && metadata.document_policy !== undefined && metadata.document_policy !== null)
+)
+
 export function DecisionsPage() {
   const { message } = App.useApp()
   const databasesQuery = useDatabases({ filters: { limit: 500, offset: 0 } })
@@ -141,8 +165,16 @@ export function DecisionsPage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const [pools, setPools] = useState<OrganizationPool[]>([])
+  const [poolsLoading, setPoolsLoading] = useState(false)
+  const [poolsError, setPoolsError] = useState<string | null>(null)
   const [editorDraft, setEditorDraft] = useState<DecisionEditorState | null>(null)
   const [editorError, setEditorError] = useState<string | null>(null)
+  const [legacyImportDraft, setLegacyImportDraft] = useState<DecisionLegacyImportState | null>(null)
+  const [legacyImportGraph, setLegacyImportGraph] = useState<PoolGraph | null>(null)
+  const [legacyImportGraphLoading, setLegacyImportGraphLoading] = useState(false)
+  const [legacyImportError, setLegacyImportError] = useState<string | null>(null)
+  const [legacyImportResult, setLegacyImportResult] = useState<PoolDocumentPolicyMigrationResponse | null>(null)
   const [saving, setSaving] = useState(false)
   const [reloadTick, setReloadTick] = useState(0)
 
@@ -150,6 +182,34 @@ export function DecisionsPage() {
     if (selectedDatabaseId || databases.length === 0) return
     setSelectedDatabaseId(databases[0].id)
   }, [databases, selectedDatabaseId])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const load = async () => {
+      setPoolsLoading(true)
+      setPoolsError(null)
+
+      try {
+        const items = await listOrganizationPools()
+        if (cancelled) return
+        setPools(items)
+      } catch (error) {
+        if (cancelled) return
+        setPools([])
+        setPoolsError(toErrorMessage(error, 'Failed to load pools for legacy import.'))
+      } finally {
+        if (!cancelled) {
+          setPoolsLoading(false)
+        }
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -233,6 +293,70 @@ export function DecisionsPage() {
     }
   }, [selectedDatabaseId, selectedDecisionId])
 
+  useEffect(() => {
+    if (!legacyImportDraft || legacyImportDraft.poolId || pools.length === 0) return
+    setLegacyImportDraft((current) => (
+      current ? { ...current, poolId: pools[0].id } : current
+    ))
+  }, [legacyImportDraft, pools])
+
+  useEffect(() => {
+    if (!legacyImportDraft?.poolId) {
+      setLegacyImportGraph(null)
+      return
+    }
+
+    let cancelled = false
+
+    const load = async () => {
+      setLegacyImportGraphLoading(true)
+      setLegacyImportError(null)
+
+      try {
+        const graph = await getPoolGraph(legacyImportDraft.poolId)
+        if (cancelled) return
+        setLegacyImportGraph(graph)
+      } catch (error) {
+        if (cancelled) return
+        setLegacyImportGraph(null)
+        setLegacyImportError(toErrorMessage(error, 'Failed to load pool topology for legacy import.'))
+      } finally {
+        if (!cancelled) {
+          setLegacyImportGraphLoading(false)
+        }
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [legacyImportDraft?.poolId])
+
+  useEffect(() => {
+    if (!legacyImportDraft) return
+
+    const legacyEdgeIds = legacyImportGraph?.edges
+      .filter((edge) => hasLegacyDocumentPolicy(edge.metadata))
+      .map((edge) => edge.edge_version_id) ?? []
+
+    if (legacyEdgeIds.length === 0) {
+      if (!legacyImportDraft.edgeVersionId) return
+      setLegacyImportDraft((current) => (
+        current ? { ...current, edgeVersionId: '' } : current
+      ))
+      return
+    }
+
+    if (legacyImportDraft.edgeVersionId && legacyEdgeIds.includes(legacyImportDraft.edgeVersionId)) {
+      return
+    }
+
+    setLegacyImportDraft((current) => (
+      current ? { ...current, edgeVersionId: legacyEdgeIds[0] } : current
+    ))
+  }, [legacyImportDraft, legacyImportGraph])
+
   const selectedPolicy = useMemo(() => {
     if (!selectedDecision) return null
     try {
@@ -245,12 +369,34 @@ export function DecisionsPage() {
   const openEditor = (_mode: DecisionEditorMode, draft: DecisionEditorState) => {
     setEditorDraft(draft)
     setEditorError(null)
+    setLegacyImportDraft(null)
+    setLegacyImportGraph(null)
+    setLegacyImportError(null)
   }
 
   const closeEditor = () => {
     if (saving) return
     setEditorDraft(null)
     setEditorError(null)
+  }
+
+  const openLegacyImport = () => {
+    setEditorDraft(null)
+    setEditorError(null)
+    setLegacyImportDraft(buildEmptyLegacyImportDraft(pools[0]?.id ?? ''))
+    setLegacyImportGraph(null)
+    setLegacyImportError(poolsError)
+  }
+
+  const closeLegacyImport = () => {
+    if (saving) return
+    setLegacyImportDraft(null)
+    setLegacyImportGraph(null)
+    setLegacyImportError(null)
+  }
+
+  const openRawImport = () => {
+    openEditor('import', buildEmptyDraft('import', 'raw'))
   }
 
   const handleEditorTabChange = (nextTab: DecisionEditorTab) => {
@@ -335,6 +481,54 @@ export function DecisionsPage() {
     }
   }
 
+  const handleImportLegacyEdge = async () => {
+    if (!legacyImportDraft) return
+
+    const poolId = legacyImportDraft.poolId.trim()
+    const edgeVersionId = legacyImportDraft.edgeVersionId.trim()
+
+    if (!poolId) {
+      setLegacyImportError('Select a pool for legacy import.')
+      return
+    }
+    if (!edgeVersionId) {
+      setLegacyImportError('Select a topology edge with legacy document_policy metadata.')
+      return
+    }
+
+    setSaving(true)
+    setLegacyImportError(null)
+
+    try {
+      const payload = {
+        edge_version_id: edgeVersionId,
+        ...(legacyImportDraft.decisionTableId.trim()
+          ? { decision_table_id: legacyImportDraft.decisionTableId.trim() }
+          : {}),
+        ...(legacyImportDraft.name.trim() ? { name: legacyImportDraft.name.trim() } : {}),
+        ...(legacyImportDraft.description.trim()
+          ? { description: legacyImportDraft.description.trim() }
+          : {}),
+      }
+
+      const response = await migratePoolEdgeDocumentPolicy(poolId, payload)
+      setLegacyImportResult(response)
+      setSelectedDecisionId(response.decision.id || null)
+      setLegacyImportDraft(null)
+      setLegacyImportGraph(null)
+      message.success(
+        response.migration.binding_update_required
+          ? 'Legacy policy imported to /decisions. Pin the resulting decision ref where needed.'
+          : 'Legacy policy imported to /decisions.',
+      )
+      setReloadTick((value) => value + 1)
+    } catch (error) {
+      setLegacyImportError(toErrorMessage(error, 'Failed to import legacy document policy.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <Space direction="vertical" size={4}>
@@ -344,6 +538,31 @@ export function DecisionsPage() {
 
       {editorError && !editorDraft ? (
         <Alert type="error" showIcon message={editorError} />
+      ) : null}
+
+      {legacyImportResult ? (
+        <Alert
+          closable
+          showIcon
+          type={legacyImportResult.migration.binding_update_required ? 'warning' : 'success'}
+          message="Imported to /decisions"
+          description={(
+            <Space direction="vertical" size={4}>
+              <span>
+                {`Source: ${legacyImportResult.migration.source.source_path} (${legacyImportResult.migration.source.edge_version_id})`}
+              </span>
+              <span>
+                {`Decision ref: ${legacyImportResult.migration.decision_ref.decision_table_id} r${legacyImportResult.migration.decision_ref.decision_revision}`}
+              </span>
+              {legacyImportResult.migration.binding_update_required ? (
+                <span>Updated bindings: manual binding pin required</span>
+              ) : (
+                <span>Affected workflow bindings were updated automatically.</span>
+              )}
+            </Space>
+          )}
+          onClose={() => setLegacyImportResult(null)}
+        />
       ) : null}
 
       <Card>
@@ -361,11 +580,18 @@ export function DecisionsPage() {
               </Button>
               <Button
                 icon={<ImportOutlined />}
+                onClick={openLegacyImport}
+                disabled={saving}
+                aria-label="Import legacy edge"
+              >
+                Import legacy edge
+              </Button>
+              <Button
                 onClick={() => openEditor('import', buildEmptyDraft('import', 'raw'))}
                 disabled={saving}
-                aria-label="Import legacy policy"
+                aria-label="Import raw JSON"
               >
-                Import legacy policy
+                Import raw JSON
               </Button>
               <Button
                 icon={<EditOutlined />}
@@ -535,6 +761,25 @@ export function DecisionsPage() {
           )}
         </Card>
       </div>
+
+      {legacyImportDraft ? (
+        <DecisionLegacyImportPanel
+          value={legacyImportDraft}
+          pools={pools}
+          poolsLoading={poolsLoading}
+          graph={legacyImportGraph}
+          graphLoading={legacyImportGraphLoading}
+          error={legacyImportError}
+          saving={saving}
+          onCancel={closeLegacyImport}
+          onOpenRawImport={openRawImport}
+          onChange={(nextValue) => {
+            setLegacyImportDraft(nextValue)
+            setLegacyImportError(null)
+          }}
+          onImport={() => void handleImportLegacyEdge()}
+        />
+      ) : null}
 
       {editorDraft ? (
         <DecisionEditorPanel

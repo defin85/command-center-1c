@@ -116,6 +116,7 @@ let initialCatalogLoadPromise: Promise<void> | null = null
 function buildPoolWorkflowBinding(overrides: Partial<PoolWorkflowBinding> = {}): PoolWorkflowBinding {
   return {
     binding_id: 'binding-top-down',
+    pool_id: 'pool-1',
     revision: 1,
     workflow: {
       workflow_definition_key: 'services-publication',

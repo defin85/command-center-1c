@@ -98,7 +98,7 @@ properties:
   provenance:
     $ref: ./PoolRunProvenance.yaml
   workflow_binding:
-    $ref: ./PoolWorkflowBinding.yaml
+    $ref: ./PoolWorkflowBindingRead.yaml
     nullable: true
   runtime_projection:
     $ref: ./PoolRuntimeProjection.yaml

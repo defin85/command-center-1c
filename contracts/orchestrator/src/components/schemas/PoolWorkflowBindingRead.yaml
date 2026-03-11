@@ -1,5 +1,5 @@
 type: object
-description: Deprecated alias for the workflow binding input payload. Use PoolWorkflowBindingInput.yaml in mutating contracts.
+description: Workflow binding read-model assigned to an organization pool.
 properties:
   contract_version:
     type: string
@@ -49,5 +49,9 @@ properties:
       - inactive
     description: Binding lifecycle status.
 required:
+  - binding_id
+  - pool_id
+  - revision
   - workflow
   - effective_from
+  - status

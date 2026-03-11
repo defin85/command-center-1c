@@ -35,8 +35,8 @@ const PANEL_COPY: Record<DecisionEditorMode, { title: string; subtitle: string }
     subtitle: 'Create a new versioned decision resource for document_policy authoring.',
   },
   import: {
-    title: 'Import legacy policy',
-    subtitle: 'Materialize a legacy document_policy payload into the decision-resource lifecycle.',
+    title: 'Import raw policy JSON',
+    subtitle: 'Compatibility path for pasting an already validated document_policy payload.',
   },
   revise: {
     title: 'Revise selected decision',

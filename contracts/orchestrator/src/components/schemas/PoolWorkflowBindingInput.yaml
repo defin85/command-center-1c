@@ -1,5 +1,5 @@
 type: object
-description: Deprecated alias for the workflow binding input payload. Use PoolWorkflowBindingInput.yaml in mutating contracts.
+description: Workflow binding payload accepted by the canonical upsert endpoint.
 properties:
   contract_version:
     type: string

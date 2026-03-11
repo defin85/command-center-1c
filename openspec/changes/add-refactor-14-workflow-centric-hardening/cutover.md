@@ -84,7 +84,9 @@ cd orchestrator && ./venv/bin/python manage.py backfill_pool_workflow_bindings -
 Для каждого pool/edge, где legacy `edge.metadata.document_policy` ещё нужен в runtime path:
 
 1. Предпочтительный operator path:
-   - `/pools/catalog` -> `Topology Editor` -> `Import to /decisions`
+   - `/decisions` -> `Import legacy edge`
+   - explicit compatibility-only fallback: `/decisions` -> `Import raw JSON`
+   - compatibility shortcut: `/pools/catalog` -> `Import to /decisions`
 2. Deterministic API path:
    - `POST /api/v2/pools/<pool_id>/document-policy-migrations/`
 3. Зафиксировать outcome:
@@ -107,7 +109,9 @@ cd orchestrator && ./venv/bin/python manage.py backfill_pool_workflow_bindings -
    - reusable subprocess nodes в `/workflows` сохраняют pinned subworkflow revision и не теряют `subworkflow_ref(binding_mode="pinned_revision")`;
    - `/templates` показывает compatibility marker;
    - `/decisions` показывает metadata provenance;
-   - `/pools/catalog` импортирует legacy policy без direct edge authoring как primary path;
+   - `/decisions` остаётся canonical legacy import surface;
+   - `/decisions` -> `Import raw JSON` остаётся explicit compatibility-only fallback;
+   - `/pools/catalog` даёт только compatibility shortcut/handoff для legacy policy migration;
    - `/pools/runs` показывает pinned decision refs и workflow diagnostics link.
 4. Выполнить pilot canary run и inspect.
    Следующий run должен стартовать только через явный `pool_workflow_binding_id`.
