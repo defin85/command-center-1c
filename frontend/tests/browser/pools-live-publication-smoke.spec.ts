@@ -13,6 +13,8 @@ const LIVE_POOL_LABEL = process.env.CC1C_POOLS_LIVE_POOL_LABEL
 const LIVE_PERIOD_START = process.env.CC1C_POOLS_LIVE_PERIOD_START ?? new Date().toISOString().slice(0, 10)
 const LIVE_STARTING_AMOUNT = process.env.CC1C_POOLS_LIVE_STARTING_AMOUNT ?? '12956834.00'
 const LIVE_PERIOD_ATTEMPTS = Number.parseInt(process.env.CC1C_POOLS_LIVE_PERIOD_ATTEMPTS ?? '14', 10)
+const REPORT_RETRYABLE_HTTP_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504])
+const REPORT_POLL_INTERVALS_MS = [2_000, 5_000, 10_000, 15_000]
 
 type CreateRunResponse = {
   run: {
@@ -117,13 +119,25 @@ test.describe('Pools live publication smoke', () => {
       return await response.json() as CreateRunResponse
     }
 
-    const fetchRunReport = async (runId: string): Promise<PoolRunReportResponse> => {
+    const fetchRunReport = async (
+      runId: string,
+      options: { allowRetryableFailure?: boolean } = {},
+    ): Promise<PoolRunReportResponse | null> => {
       const response = await request.get(`/api/v2/pools/runs/${runId}/report/`, {
         headers: {
           Authorization: `Bearer ${authPayload.access}`,
         },
       })
-      expect(response.ok()).toBeTruthy()
+      if (!response.ok()) {
+        if (options.allowRetryableFailure && REPORT_RETRYABLE_HTTP_STATUSES.has(response.status())) {
+          return null
+        }
+        const responseBody = await response.text().catch(() => '')
+        throw new Error(
+          `Failed to fetch pool run report for ${runId}: HTTP ${response.status()}`
+          + (responseBody ? ` ${responseBody.slice(0, 400)}` : ''),
+        )
+      }
       return await response.json() as PoolRunReportResponse
     }
 
@@ -178,10 +192,11 @@ test.describe('Pools live publication smoke', () => {
     expect(selectedRunId).not.toBe('')
 
     await expect.poll(async () => {
-      const report = await fetchRunReport(selectedRunId)
-      return report.run?.verification_status ?? 'missing'
+      const report = await fetchRunReport(selectedRunId, { allowRetryableFailure: true })
+      return report?.run?.verification_status ?? 'pending'
     }, {
       timeout: 180_000,
+      intervals: REPORT_POLL_INTERVALS_MS,
     }).toBe('passed')
 
     await selectRunInUi(selectedRunId)
@@ -193,6 +208,9 @@ test.describe('Pools live publication smoke', () => {
     await expect(page.getByText(/mismatches:\s*0/i)).toBeVisible()
 
     const reportPayload = await fetchRunReport(selectedRunId)
+    if (!reportPayload) {
+      throw new Error(`Report payload for ${selectedRunId} is unexpectedly empty after verification passed.`)
+    }
     expect(reportPayload.run?.id).toBe(selectedRunId)
     expect(reportPayload.run?.mode).toBe('safe')
     expect(reportPayload.run?.approval_state).toBe('approved')
