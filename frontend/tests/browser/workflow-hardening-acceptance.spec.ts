@@ -112,6 +112,7 @@ const INCOMPATIBLE_DECISION = {
 type AcceptanceState = {
   databases: AnyRecord[]
   decisions: AnyRecord[]
+  decisionListQueries: string[]
   decisionWrites: AnyRecord[]
   metadataContext: AnyRecord
   templateExposures: AnyRecord[]
@@ -322,6 +323,7 @@ function createAcceptanceState(): AcceptanceState {
       },
     ],
     decisions: [deepClone(BASE_DECISION), deepClone(INCOMPATIBLE_DECISION)],
+    decisionListQueries: [],
     decisionWrites: [],
     metadataContext: deepClone(BASE_METADATA_CONTEXT),
     templateExposures: [
@@ -637,23 +639,26 @@ async function setupApiMocks(page: Page, state: AcceptanceState) {
     }
 
     if (method === 'GET' && path === '/api/v2/decisions/') {
+      const databaseId = url.searchParams.get('database_id') || ''
+      state.decisionListQueries.push(databaseId)
       return fulfillJson(route, {
         decisions: state.decisions,
         count: state.decisions.length,
-        metadata_context: state.metadataContext,
+        ...(databaseId ? { metadata_context: state.metadataContext } : {}),
       })
     }
 
     const decisionDetailMatch = path.match(/^\/api\/v2\/decisions\/([^/]+)\/$/)
     if (method === 'GET' && decisionDetailMatch) {
       const decisionId = decisionDetailMatch[1]
+      const databaseId = url.searchParams.get('database_id') || ''
       const decision = state.decisions.find((item) => String(item.id) === decisionId)
       if (!decision) {
         return fulfillJson(route, { detail: 'Decision not found' }, 404)
       }
       return fulfillJson(route, {
         decision,
-        metadata_context: state.metadataContext,
+        ...(databaseId ? { metadata_context: state.metadataContext } : {}),
       })
     }
 
@@ -989,6 +994,7 @@ test('Workflow hardening: /decisions shows shared metadata provenance, canonical
   await expect(page.getByText('Transfer publication policy')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Import legacy edge' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Import raw JSON' })).toBeVisible()
+  await expect.poll(() => state.decisionListQueries.at(-1)).toBe('10101010-1010-1010-1010-101010101010')
 
   await page.getByRole('button', { name: 'Show all revisions' }).click()
   await expect(page.getByText('Showing all 2 revisions for diagnostics. 1 revision does not match the selected metadata snapshot.')).toBeVisible()
@@ -1042,6 +1048,11 @@ test('Workflow hardening: /decisions shows shared metadata provenance, canonical
 
   await expect.poll(() => state.decisionWrites.length).toBe(3)
   await expect.poll(() => Boolean(state.decisionWrites[2]?.is_active)).toBe(false)
+
+  await page.getByTestId('decisions-database-select').hover()
+  await page.locator('[data-testid=\"decisions-database-select\"] .ant-select-clear').click()
+  await expect.poll(() => state.decisionListQueries.at(-1)).toBe('')
+  await expect(page.getByText('Select database')).toBeVisible()
 })
 
 test('Workflow hardening: /templates and /pools/catalog expose compatibility guidance and legacy migration outcome', async ({ page }) => {

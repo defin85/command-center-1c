@@ -242,7 +242,7 @@ export function DecisionsPage() {
     () => databasesQuery.data?.databases ?? [],
     [databasesQuery.data?.databases],
   )
-  const [selectedDatabaseId, setSelectedDatabaseId] = useState<string | undefined>(undefined)
+  const [selectedDatabaseId, setSelectedDatabaseId] = useState<string | null | undefined>(undefined)
   const [decisions, setDecisions] = useState<DecisionTable[]>([])
   const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(null)
   const [selectedDecision, setSelectedDecision] = useState<DecisionTable | null>(null)
@@ -267,9 +267,10 @@ export function DecisionsPage() {
   const [listReadFallbackUsed, setListReadFallbackUsed] = useState(false)
   const [detailReadFallbackUsed, setDetailReadFallbackUsed] = useState(false)
   const [snapshotFilterMode, setSnapshotFilterMode] = useState<DecisionSnapshotFilterMode>('matching_snapshot')
+  const effectiveSelectedDatabaseId = selectedDatabaseId ?? undefined
 
   useEffect(() => {
-    if (selectedDatabaseId || databases.length === 0) return
+    if (selectedDatabaseId !== undefined || databases.length === 0) return
     setSelectedDatabaseId(databases[0].id)
   }, [databases, selectedDatabaseId])
 
@@ -310,7 +311,7 @@ export function DecisionsPage() {
       setListReadFallbackUsed(false)
 
       try {
-        const { response, usedFallback } = await loadDecisionsCollection(selectedDatabaseId)
+        const { response, usedFallback } = await loadDecisionsCollection(effectiveSelectedDatabaseId)
         if (cancelled) return
 
         const items = response.decisions ?? []
@@ -339,7 +340,7 @@ export function DecisionsPage() {
     return () => {
       cancelled = true
     }
-  }, [reloadTick, selectedDatabaseId])
+  }, [effectiveSelectedDatabaseId, reloadTick])
 
   useEffect(() => {
     if (listLoading) {
@@ -362,8 +363,8 @@ export function DecisionsPage() {
       setDetailReadFallbackUsed(false)
 
       try {
-        const effectiveDatabaseId = listReadFallbackUsed ? undefined : selectedDatabaseId
-        const { response, usedFallback } = await loadDecisionDetail(selectedDecisionId, effectiveDatabaseId)
+        const detailDatabaseId = listReadFallbackUsed ? undefined : effectiveSelectedDatabaseId
+        const { response, usedFallback } = await loadDecisionDetail(selectedDecisionId, detailDatabaseId)
         if (cancelled) return
         setSelectedDecision(response.decision)
         setDetailContext(response.metadata_context ?? null)
@@ -384,7 +385,7 @@ export function DecisionsPage() {
     return () => {
       cancelled = true
     }
-  }, [listLoading, listReadFallbackUsed, selectedDatabaseId, selectedDecisionId])
+  }, [effectiveSelectedDatabaseId, listLoading, listReadFallbackUsed, selectedDecisionId])
 
   useEffect(() => {
     if (!legacyImportDraft || legacyImportDraft.poolId || pools.length === 0) return
@@ -486,7 +487,7 @@ export function DecisionsPage() {
     )
     : null
 
-  const metadataContextWarning = selectedDatabaseId && (listReadFallbackUsed || detailReadFallbackUsed)
+  const metadataContextWarning = effectiveSelectedDatabaseId && (listReadFallbackUsed || detailReadFallbackUsed)
     ? METADATA_CONTEXT_FALLBACK_MESSAGE
     : null
 
@@ -583,7 +584,7 @@ export function DecisionsPage() {
 
     try {
       const payload = buildDocumentPolicyDecisionPayload({
-        database_id: selectedDatabaseId,
+        database_id: effectiveSelectedDatabaseId,
         decision_table_id: editorDraft.decisionTableId,
         name: editorDraft.name,
         description: editorDraft.description,
@@ -612,7 +613,7 @@ export function DecisionsPage() {
     try {
       const policy = extractDocumentPolicyOutput(selectedDecision, { allowNonDefaultRuleId: true })
       const payload = buildDocumentPolicyDecisionPayload({
-        database_id: selectedDatabaseId,
+        database_id: effectiveSelectedDatabaseId,
         decision_table_id: selectedDecision.decision_table_id,
         name: selectedDecision.name,
         description: selectedDecision.description ?? '',
@@ -763,14 +764,16 @@ export function DecisionsPage() {
             </Space>
 
             <Select
+              allowClear
+              data-testid="decisions-database-select"
               placeholder="Select database"
-              value={selectedDatabaseId}
+              value={effectiveSelectedDatabaseId}
               style={{ minWidth: 260 }}
               options={databases.map((database) => ({
                 value: database.id,
                 label: `${database.name} (${database.base_name ?? database.version ?? database.id})`,
               }))}
-              onChange={(nextValue) => setSelectedDatabaseId(nextValue)}
+              onChange={(nextValue) => setSelectedDatabaseId(nextValue ?? null)}
               loading={databasesQuery.isLoading}
             />
           </Space>

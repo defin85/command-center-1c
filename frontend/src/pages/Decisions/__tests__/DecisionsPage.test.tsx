@@ -209,6 +209,15 @@ function openSelect(testId: string) {
   fireEvent.mouseDown(trigger ?? select)
 }
 
+function clearSelect(testId: string) {
+  const select = screen.getByTestId(testId)
+  fireEvent.mouseEnter(select)
+  const clearButton = select.querySelector('.ant-select-clear') as HTMLElement | null
+  expect(clearButton).toBeTruthy()
+  fireEvent.mouseDown(clearButton as HTMLElement)
+  fireEvent.click(clearButton as HTMLElement)
+}
+
 async function selectDropdownOption(label: string | RegExp) {
   const matcher = typeof label === 'string' ? label : (content: string) => label.test(content)
   const matches = await screen.findAllByText(matcher)
@@ -484,6 +493,64 @@ describe('DecisionsPage', () => {
       )
     })
   }, 10000)
+
+  it('allows clearing the selected database without auto-restoring the first option', async () => {
+    const user = userEvent.setup()
+    mockGetDecisionsCollection.mockReset()
+    mockGetDecisionsDetail.mockReset()
+    mockGetDecisionsCollection
+      .mockResolvedValueOnce({
+        decisions: [defaultDecision],
+        count: 1,
+        metadata_context: defaultMetadataContext,
+      })
+      .mockResolvedValueOnce({
+        decisions: [defaultDecision],
+        count: 1,
+      })
+    mockGetDecisionsDetail
+      .mockResolvedValueOnce({
+        decision: defaultDecision,
+        metadata_context: defaultMetadataContext,
+      })
+      .mockResolvedValueOnce({
+        decision: defaultDecision,
+      })
+
+    renderPage()
+
+    expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
+    expect(mockGetDecisionsCollection).toHaveBeenCalledWith(
+      { database_id: 'db-2' },
+      { skipGlobalError: true },
+    )
+
+    clearSelect('decisions-database-select')
+    await user.click(document.body)
+
+    await waitFor(() => {
+      expect(mockGetDecisionsCollection).toHaveBeenCalledWith(
+        {},
+        { skipGlobalError: true },
+      )
+    })
+
+    expect(
+      mockGetDecisionsCollection.mock.calls.filter(
+        ([query]) => JSON.stringify(query) === JSON.stringify({ database_id: 'db-2' })
+      ).length
+    ).toBe(1)
+
+    await waitFor(() => {
+      expect(mockGetDecisionsDetail).toHaveBeenLastCalledWith(
+        'decision-version-2',
+        {},
+        { skipGlobalError: true },
+      )
+    })
+
+    expect(screen.getByText('Select database')).toBeInTheDocument()
+  })
 
   it('filters document_policy revisions by matching metadata snapshot and allows revealing all revisions', async () => {
     const user = userEvent.setup()
