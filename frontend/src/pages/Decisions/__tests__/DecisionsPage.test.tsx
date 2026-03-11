@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App as AntApp } from 'antd'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const mockGetDecisionsCollection = vi.fn()
@@ -305,6 +305,11 @@ describe('DecisionsPage', () => {
     expect(screen.getByText('snapshot-1')).toBeInTheDocument()
     expect(screen.getAllByText('compatible').length).toBeGreaterThan(0)
     expect(screen.getByText('services-publication-policy')).toBeInTheDocument()
+    expect(await screen.findByText('Structured policy view')).toBeInTheDocument()
+    expect(screen.getByText('Chain 1: sale_chain')).toBeInTheDocument()
+    expect(screen.getByText('Document_Sales')).toBeInTheDocument()
+    expect(screen.getByText('Amount')).toBeInTheDocument()
+    expect(screen.getByText('allocation.amount')).toBeInTheDocument()
   })
 
   it('creates document policy revision from structured builder fields', async () => {
@@ -401,13 +406,70 @@ describe('DecisionsPage', () => {
       )
     })
     expect(mockPostDecisionsCollection).not.toHaveBeenCalled()
-    expect(await screen.findByText('Imported to /decisions')).toBeInTheDocument()
+    const importAlert = await screen.findByRole('alert')
+    expect(within(importAlert).getByText('Imported to /decisions')).toBeInTheDocument()
     expect(screen.getByText('Source: edge.metadata.document_policy (edge-v1)')).toBeInTheDocument()
     expect(screen.getByText('Decision ref: policy-imported r4')).toBeInTheDocument()
     expect(screen.getByText('Affected workflow bindings were updated automatically.')).toBeInTheDocument()
   }, 20000)
 
-  it('supports raw JSON compatibility import, revise and deactivate flows through decision revisions', async () => {
+  it('supports viewing and editing existing decisions through a new revision flow', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Decision Policy Library')
+
+    await user.click(screen.getByRole('button', { name: 'Edit selected decision' }))
+
+    expect(await screen.findByRole('heading', { name: 'Edit selected decision' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Decision table ID')).toHaveValue('services-publication-policy')
+    expect(screen.getByLabelText('Decision name')).toHaveValue('Services publication policy')
+    expect(screen.getByLabelText('Chain 1 ID')).toHaveValue('sale_chain')
+    expect(screen.getByLabelText('Chain 1 document 1 entity')).toHaveValue('Document_Sales')
+    expect(screen.getByLabelText('Chain 1 document 1 field mapping 1 target')).toHaveValue('Amount')
+    expect(screen.getByLabelText('Chain 1 document 1 field mapping 1 source')).toHaveValue('allocation.amount')
+
+    fireEvent.change(screen.getByLabelText('Decision name'), { target: { value: 'Services publication policy v3' } })
+    fireEvent.change(screen.getByLabelText('Chain 1 document 1 field mapping 1 source'), {
+      target: { value: 'allocation.total_amount' },
+    })
+    await user.click(screen.getByRole('button', { name: 'Save decision' }))
+
+    await waitFor(() => {
+      expect(mockPostDecisionsCollection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          parent_version_id: 'decision-version-2',
+          decision_table_id: 'services-publication-policy',
+          name: 'Services publication policy v3',
+          is_active: true,
+          rules: expect.arrayContaining([
+            expect.objectContaining({
+              outputs: expect.objectContaining({
+                document_policy: expect.objectContaining({
+                  chains: expect.arrayContaining([
+                    expect.objectContaining({
+                      chain_id: 'sale_chain',
+                      documents: expect.arrayContaining([
+                        expect.objectContaining({
+                          entity_name: 'Document_Sales',
+                          field_mapping: {
+                            Amount: 'allocation.total_amount',
+                          },
+                        }),
+                      ]),
+                    }),
+                  ]),
+                }),
+              }),
+            }),
+          ]),
+        }),
+        expect.anything(),
+      )
+    })
+  }, 10000)
+
+  it('supports raw JSON compatibility import and deactivate flows through decision revisions', async () => {
     const user = userEvent.setup()
     renderPage()
 
@@ -430,24 +492,6 @@ describe('DecisionsPage', () => {
           decision_table_id: 'policy-imported',
           name: 'Imported policy',
           parent_version_id: undefined,
-        }),
-        expect.anything(),
-      )
-    })
-
-    mockPostDecisionsCollection.mockClear()
-
-    await user.click(screen.getByRole('button', { name: 'Revise selected decision' }))
-    const reviseNameInput = screen.getByLabelText('Decision name')
-    fireEvent.change(reviseNameInput, { target: { value: 'Services publication policy v3' } })
-    await user.click(screen.getByRole('button', { name: 'Save decision' }))
-
-    await waitFor(() => {
-      expect(mockPostDecisionsCollection).toHaveBeenCalledWith(
-        expect.objectContaining({
-          parent_version_id: 'decision-version-2',
-          name: 'Services publication policy v3',
-          is_active: true,
         }),
         expect.anything(),
       )

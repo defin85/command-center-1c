@@ -49,6 +49,7 @@ import {
   type DecisionEditorState,
   type DecisionEditorTab,
 } from './DecisionEditorPanel'
+import { DocumentPolicyViewer } from './DocumentPolicyViewer'
 
 const { Title, Text } = Typography
 
@@ -597,9 +598,9 @@ export function DecisionsPage() {
                 icon={<EditOutlined />}
                 onClick={() => selectedDecision && openEditor('revise', buildDraftFromDecision(selectedDecision))}
                 disabled={!selectedDecision || saving}
-                aria-label="Revise selected decision"
+                aria-label="Edit selected decision"
               >
-                Revise selected decision
+                Edit selected decision
               </Button>
               <Button
                 danger
@@ -745,7 +746,20 @@ export function DecisionsPage() {
               ) : null}
 
               <div>
-                <Text strong>Compiled document_policy output</Text>
+                <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                  <Text strong>Structured policy view</Text>
+                  <Text type="secondary">
+                    Browse the selected decision as chains, documents, field mappings, and table-part mappings.
+                    Use Edit selected decision to save any changes as a new revision.
+                  </Text>
+                </Space>
+                <div style={{ marginTop: 12 }}>
+                  <DocumentPolicyViewer policy={selectedPolicy} />
+                </div>
+              </div>
+
+              <div>
+                <Text strong>Compiled document_policy JSON</Text>
                 <div style={{ marginTop: 12 }}>
                   <LazyJsonCodeEditor
                     value={selectedPolicy ? formatJson(selectedPolicy) : '{}'}

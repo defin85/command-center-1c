@@ -39,8 +39,8 @@ const PANEL_COPY: Record<DecisionEditorMode, { title: string; subtitle: string }
     subtitle: 'Compatibility path for pasting an already validated document_policy payload.',
   },
   revise: {
-    title: 'Revise selected decision',
-    subtitle: 'Publish a new revision while preserving pinned lineage for the selected decision.',
+    title: 'Edit selected decision',
+    subtitle: 'Review the existing decision in builder or raw JSON mode and save it as a new revision.',
   },
 }
 

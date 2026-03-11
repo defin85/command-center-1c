@@ -982,7 +982,7 @@ test('Workflow hardening: /decisions shows shared metadata provenance, canonical
   await expect.poll(() => String(state.lastMigrationPayload?.decision_table_id || '')).toBe('browser-imported-policy')
   await expect.poll(() => String(state.lastMigrationPayload?.name || '')).toBe('Browser imported policy')
   await expect.poll(() => String(state.lastMigrationPayload?.description || '')).toBe('Imported from browser legacy edge')
-  await expect(page.getByText('Imported to /decisions')).toBeVisible()
+  await expect(page.getByText('Imported to /decisions', { exact: true })).toBeVisible()
   await expect(page.getByText('Source: edge.metadata.document_policy (edge-v1)')).toBeVisible()
   await expect(page.getByText('Decision ref: services-publication-policy r2')).toBeVisible()
   await expect(page.getByText('Affected workflow bindings were updated automatically.')).toBeVisible()
@@ -1002,7 +1002,7 @@ test('Workflow hardening: /decisions shows shared metadata provenance, canonical
   await expect.poll(() => String(state.decisionWrites[0]?.decision_table_id || '')).toBe('browser-policy')
   await expect(page.getByText('Browser decision policy')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Revise selected decision' }).click()
+  await page.getByRole('button', { name: 'Edit selected decision' }).click()
   await page.getByLabel('Decision name').fill('Services publication policy v3')
   await page.getByRole('button', { name: 'Save decision' }).click()
 
@@ -1051,7 +1051,7 @@ test('Workflow hardening: /templates and /pools/catalog expose compatibility gui
 
   await expect.poll(() => state.migrationCalls).toBe(1)
   await expect.poll(() => String(state.lastMigrationPayload?.edge_version_id || '')).toBe('edge-v1')
-  await expect(page.getByText('Imported to /decisions')).toBeVisible()
+  await expect(page.getByText('Imported to /decisions', { exact: true })).toBeVisible()
   await expect(page.getByText('Source: edge.metadata.document_policy (edge-v1)')).toBeVisible()
   await expect(page.getByText('Decision ref: services-publication-policy r2')).toBeVisible()
   await expect(page.getByText('Updated bindings: services_publication')).toBeVisible()
