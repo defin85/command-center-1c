@@ -318,11 +318,6 @@ export function DecisionsPage() {
         setDecisions(items)
         setMetadataContext(response.metadata_context ?? null)
         setListReadFallbackUsed(usedFallback)
-        setSelectedDecisionId((current) => (
-          current && items.some((item) => item.id === current)
-            ? current
-            : items[0]?.id ?? null
-        ))
       } catch (error) {
         if (cancelled) return
         setListError(toErrorMessage(error, 'Failed to load decision table revisions.'))
@@ -352,6 +347,7 @@ export function DecisionsPage() {
       setDetailContext(null)
       setDetailError(null)
       setDetailReadFallbackUsed(false)
+      setDetailLoading(false)
       return
     }
 

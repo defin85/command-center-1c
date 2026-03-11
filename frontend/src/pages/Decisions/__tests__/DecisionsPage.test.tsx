@@ -599,6 +599,39 @@ describe('DecisionsPage', () => {
     expect(screen.queryByText('Transfer publication policy')).not.toBeInTheDocument()
   })
 
+  it('does not request decision detail for revisions hidden by the snapshot filter', async () => {
+    const incompatibleDecision = {
+      ...defaultDecision,
+      id: 'decision-version-hidden',
+      decision_table_id: 'transfer-publication-policy',
+      decision_revision: 1,
+      name: 'Transfer publication policy',
+      metadata_context: {
+        ...defaultDecision.metadata_context,
+        metadata_hash: 'b'.repeat(64),
+      },
+      metadata_compatibility: {
+        status: 'incompatible',
+        reason: 'metadata_surface_diverged',
+        is_compatible: false,
+      },
+    }
+
+    mockGetDecisionsCollection.mockResolvedValue({
+      decisions: [incompatibleDecision],
+      count: 1,
+      metadata_context: defaultMetadataContext,
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
+    expect(screen.getByText('Showing 0 of 1 revisions matching the selected metadata snapshot.')).toBeInTheDocument()
+    expect(screen.getByText('No decision revisions match the selected metadata snapshot')).toBeInTheDocument()
+    expect(screen.getByText('Select a decision revision to inspect metadata and output')).toBeInTheDocument()
+    expect(mockGetDecisionsDetail).not.toHaveBeenCalled()
+  })
+
   it('resets diagnostics mode back to matching snapshot when the selected database changes', async () => {
     const user = userEvent.setup()
     const incompatibleDecision = {
