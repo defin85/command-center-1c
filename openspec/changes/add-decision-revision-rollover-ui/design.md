@@ -1,7 +1,9 @@
 ## Контекст
-`/decisions` уже умеет создавать новую revision из существующей через обычный edit/revise flow и текущий `POST /api/v2/decisions`. Также UI уже умеет скрывать revision, не совпадающие с metadata snapshot выбранной ИБ, и открывать diagnostics mode с полным списком revisions.
+`/decisions` уже умеет создавать новую revision из существующей через обычный edit/revise flow и текущий `POST /api/v2/decisions`.
 
-Проблема не в отсутствии базового механизма, а в отсутствии явного UX-контракта для сценария "после обновления ИБ перевыпустить policy под новый релиз, используя старую revision как исходник". Сейчас этот сценарий требует знания внутренней mechanics списка и diagnostics filter.
+После `update-business-configuration-identity-for-decision-reuse` default compatible list должен определяться business identity `config_name + config_version`, а не `metadata_hash` или именем ИБ. Это означает, что same-release revisions между ИБ одной конфигурации должны оставаться видимыми по умолчанию.
+
+Проблема не в отсутствии базового механизма, а в отсутствии явного UX-контракта для сценария "после обновления ИБ перевыпустить policy под новый релиз, используя revision предыдущего релиза как исходник". Сейчас этот сценарий требует знания внутренней mechanics revise flow и source picking.
 
 ## Цели
 - Дать аналитику явный и discoverable flow для rollover `decision_revision` под выбранную ИБ.
@@ -27,11 +29,13 @@
 - минимизируется риск архитектурного дублирования и drift между двумя publish path;
 - UI change остаётся локальным и обратимым.
 
-### Decision 2: Несовместимые revision допускаются как source-only candidates
-Matching-snapshot filter остаётся default режимом списка, чтобы штатный selection для workflow/binding не засорялся drifted revisions. Но для rollover flow аналитик должен иметь явную возможность выбрать несовместимую revision как source.
+### Decision 2: Revision вне target compatible set допускаются как source-only candidates
+Default compatible selection должен оставаться aligned с active business-identity contract: same-release compatible revisions остаются видимыми по умолчанию и не переводятся в hidden state только из-за publication drift или другого имени ИБ.
+
+Но для rollover flow аналитик должен иметь явную возможность выбрать revision вне target compatible set как source. Практический случай для этого flow: source revision предыдущего релиза используется как seed для target database с новым релизом.
 
 Практически это означает:
-- несовместимая revision не становится "подходящей" автоматически;
+- revision вне target compatible set не становится "подходящей" автоматически;
 - UI должен отличать source selection от ready-to-pin selection;
 - после выбора source revision editor открывается уже в target database context.
 
@@ -54,13 +58,13 @@ Rollover flow должен завершаться созданием новой 
 ## Риски и компромиссы
 - Риск: аналитик может ожидать, что новая revision автоматически заменит старую везде.
   - Mitigation: явный copy в UI и spec-level запрет на auto-rebind.
-- Риск: diagnostics/source-picking усложнит экран `/decisions`.
-  - Mitigation: сохранить matching-snapshot list как default и делать rollover flow explicit, а не always-on.
-- Риск: overlapping work с `add-config-generation-id-metadata-snapshots`, который меняет metadata provenance display.
-  - Mitigation: рассматривать `config_generation_id` как дополнительный marker в source-target summary, не меняя core rollover semantics.
+- Риск: source-picking для предыдущего релиза усложнит экран `/decisions`.
+  - Mitigation: сохранить default compatible selection как основной mode и делать rollover flow explicit, а не always-on.
+- Риск: overlapping work с `update-business-configuration-identity-for-decision-reuse`, который меняет compatibility/filtering semantics.
+  - Mitigation: строить rollover поверх business-identity matching и использовать source mode только для revisions вне target compatible set.
 
 ## План миграции
 1. Добавить explicit source-target UX contract в `/decisions`.
 2. Переиспользовать текущий revise/save path без нового backend endpoint.
-3. Обновить frontend tests на сценарии drifted source revision -> new target revision.
-4. При необходимости синхронизировать copy/layout с изменениями provenance markers из связанного active change.
+3. Обновить frontend tests на сценарии previous-release source revision -> new target revision.
+4. Синхронизировать copy/layout с business-identity compatibility contract из связанного active change.

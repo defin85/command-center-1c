@@ -23,7 +23,7 @@
 ## 4. Decision Compatibility And UI
 - [ ] 4.1 Обновить `pool-document-policy` contract: `decision_revision` compatibility опирается только на business identity конфигурации.
 - [ ] 4.2 Обновить `workflow-decision-modeling` contract: `/decisions` не скрывает compatible revisions только из-за `metadata_hash`, `extensions_fingerprint` или имени ИБ.
-- [ ] 4.3 Согласовать новый contract с активными change `add-config-generation-id-metadata-snapshots` и `add-decision-revision-rollover-ui`.
+- [ ] 4.3 Согласовать новый contract с активным change `add-decision-revision-rollover-ui`.
 
 ## 5. Validation
 - [ ] 5.1 Добавить backend tests на extraction business identity из `Configuration.xml`, полученного через selective export root object.

@@ -1,6 +1,6 @@
 ## 1. UX и surface `/decisions`
 - [ ] 1.1 Спроектировать explicit rollover entry point в `/decisions` для сценария "создать новую revision для выбранной ИБ из существующей revision".
-- [ ] 1.2 Обновить список/detail surface так, чтобы аналитик мог выбрать несовместимую revision как source для rollover flow без снятия fail-closed ограничений на публикацию.
+- [ ] 1.2 Обновить список/detail surface так, чтобы аналитик мог выбрать revision вне default compatible selection как source для rollover flow без снятия fail-closed ограничений на публикацию.
 - [ ] 1.3 Добавить в editor/source-target summary явные маркеры `source revision`, `target database` и target metadata context перед сохранением.
 
 ## 2. Publish semantics
@@ -9,6 +9,6 @@
 - [ ] 2.3 Сохранить fail-closed поведение: новая revision публикуется только если source policy проходит validation против resolved metadata snapshot выбранной ИБ.
 
 ## 3. Проверка
-- [ ] 3.1 Добавить frontend tests на guided rollover из несовместимой revision под новую ИБ, включая source-target summary и корректный `postDecisionsCollection` payload.
+- [ ] 3.1 Добавить frontend tests на guided rollover из revision предыдущего релиза / вне target compatible set под новую ИБ, включая source-target summary и корректный `postDecisionsCollection` payload.
 - [ ] 3.2 Добавить/обновить тесты на fail-closed publish при несовместимости source policy с target metadata snapshot.
 - [ ] 3.3 Прогнать минимальный релевантный verification set (`vitest` по `/Decisions` и точечные backend tests только если будут затронуты API semantics) и зафиксировать результаты.

@@ -1,27 +1,28 @@
 ## MODIFIED Requirements
 ### Requirement: Document policy authoring MUST использовать configuration-scoped metadata snapshots
-Система ДОЛЖНА (SHALL) валидировать и preview'ить новый `document_policy` против canonical metadata snapshot, разделяемого между ИБ с совместимой configuration signature.
+Система ДОЛЖНА (SHALL) валидировать и preview'ить новый `document_policy` против canonical metadata snapshot, резолвимого для target business configuration identity выбранной ИБ.
 
-Система НЕ ДОЛЖНА (SHALL NOT) требовать отдельный database-local snapshot для каждого policy, если compatible canonical snapshot уже существует.
+Система НЕ ДОЛЖНА (SHALL NOT) требовать отдельный database-local snapshot для каждого policy, если compatible canonical snapshot уже существует для target business configuration identity.
 
-Система НЕ ДОЛЖНА (SHALL NOT) silently reuse snapshot только по совпадению `config_version`, если metadata surface differs.
+Same-release compatibility и reuse canonical snapshot должны следовать active metadata contract `/decisions`; guided rollover нужен не для same-release publication drift, а для controlled authoring новой revision под другой target release/business identity.
 
 Каждая versioned decision revision, materializing `document_policy`, ДОЛЖНА (SHALL) сохранять resolved metadata snapshot provenance/compatibility markers, чтобы builder, preview и binding selection использовали один и тот же auditable configuration-scoped context.
 
 Guided rollover flow, создающий новую revision из существующей revision под новую ИБ, ДОЛЖЕН (SHALL) использовать source revision только как editable seed и НЕ ДОЛЖЕН (SHALL NOT) обходить validation против target metadata snapshot выбранной ИБ.
 
-#### Scenario: Policy builder переиспользует shared metadata snapshot для другой ИБ той же конфигурации
-- **GIVEN** canonical metadata snapshot уже существует для configuration signature
-- **AND** оператор или аналитик выбирает другую ИБ с той же configuration signature
+#### Scenario: Policy builder переиспользует canonical snapshot для same-release target identity
+- **GIVEN** canonical metadata snapshot уже существует для target business configuration identity
+- **AND** оператор или аналитик выбирает другую ИБ той же конфигурации и релиза
 - **WHEN** открывается builder или preview в `/decisions`
 - **THEN** UI/backend используют тот же canonical metadata snapshot
 - **AND** не требуют отдельный manual refresh только из-за другого `database_id`
 
-#### Scenario: Diverged metadata surface блокирует reuse в policy builder
-- **GIVEN** выбранная ИБ имеет ту же `config_version`, но другой published metadata payload
-- **WHEN** система пытается резолвить metadata snapshot для `/decisions`
-- **THEN** reuse чужого canonical snapshot не происходит
-- **AND** UI получает новый resolved snapshot scope или fail-closed indication о несовместимой metadata surface
+#### Scenario: Revision предыдущего релиза используется как seed для target release
+- **GIVEN** source revision опубликована под предыдущий релиз или другую target business identity
+- **AND** в `/decisions` выбрана target database с новым release context
+- **WHEN** аналитик запускает guided rollover flow
+- **THEN** UI/backend резолвят target metadata snapshot для выбранной ИБ
+- **AND** source revision используется только как editable seed, а не как уже-compatible target revision
 
 #### Scenario: Decision revision сохраняет metadata snapshot provenance
 - **GIVEN** аналитик сохраняет новый `document_policy` через `/decisions`

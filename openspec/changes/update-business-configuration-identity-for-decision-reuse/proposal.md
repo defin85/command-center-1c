@@ -31,7 +31,6 @@
   - `pool-document-policy`
   - `workflow-decision-modeling`
 - Related active changes:
-  - `add-config-generation-id-metadata-snapshots` должен остаться совместимым с новой identity semantics: `config_generation_id` остаётся technical marker и не становится частью reuse key.
   - `add-decision-revision-rollover-ui` должен использовать новый compatibility contract при выборе source revision для rollover.
 - Affected code (expected):
   - `orchestrator/apps/intercompany_pools/**`

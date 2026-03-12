@@ -12,7 +12,7 @@ Frontend surface ДОЛЖЕН (SHALL):
 - показывать produced `document_policy` output и pinned provenance;
 - позволять workflow/binding editor'ам выбирать resulting decision revision из first-class списка, а не требовать manual raw ids как primary UX;
 - предоставлять guided rollover flow для создания новой `decision_revision` из существующей revision под metadata context выбранной ИБ;
-- позволять аналитику использовать revision, скрытую из default matching-snapshot списка, как explicit source для rollover flow без превращения этой revision в default candidate для новых pins;
+- позволять аналитику использовать revision вне default compatible selection как explicit source для rollover flow без превращения этой revision в default candidate для новых pins;
 - явно показывать `source revision`, `target database` и resolved target metadata context до публикации новой revision.
 
 `/workflows` ДОЛЖЕН (SHALL) использовать `/decisions` как reference catalog для выбора pinned decision revisions внутри workflow composition и НЕ ДОЛЖЕН (SHALL NOT) быть единственным decision CRUD surface.
@@ -56,15 +56,15 @@ Frontend surface ДОЛЖЕН (SHALL):
 
 #### Scenario: Аналитик создаёт новую revision под новый релиз ИБ из старой revision
 - **GIVEN** аналитик выбрал target database с новым metadata context
-- **AND** подходящая compatible revision отсутствует или аналитик осознанно хочет взять старую revision как основу
+- **AND** подходящая compatible revision отсутствует или аналитик осознанно хочет взять revision предыдущего релиза как основу
 - **WHEN** он запускает guided rollover flow из существующей revision в `/decisions`
 - **THEN** UI открывает editor с policy из source revision, `parent_version_id` source revision и target metadata context выбранной ИБ
 - **AND** экран явно показывает, какая revision используется как source и для какой ИБ публикуется новая revision
 
-#### Scenario: Несовместимая revision доступна как source, но не как default pin candidate
-- **GIVEN** существующая revision не совпадает с metadata snapshot выбранной ИБ
-- **WHEN** аналитик просматривает список revisions в default matching-snapshot режиме
-- **THEN** эта revision остаётся скрытой из default ready-to-pin списка
+#### Scenario: Revision вне target compatible set доступна как source, но не как default pin candidate
+- **GIVEN** существующая revision относится к предыдущему релизу или иначе не входит в target compatible selection выбранной ИБ
+- **WHEN** аналитик просматривает список revisions в default compatible режиме
+- **THEN** эта revision остаётся вне default ready-to-pin списка
 - **AND** может быть выбрана только через explicit diagnostics/source-selection flow для создания новой revision
 
 #### Scenario: Rollover flow не перепривязывает consumers автоматически
