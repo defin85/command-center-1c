@@ -79,53 +79,35 @@ Generated runtime workflows НЕ ДОЛЖНЫ (SHALL NOT) отображатьс
 Система ДОЛЖНА (SHALL) предоставлять first-class authoring/read-model surface для versioned decision resources, используемых workflow-centric `document_policy`.
 
 Frontend surface ДОЛЖЕН (SHALL):
-- использовать отдельный route `/decisions` как canonical decision lifecycle surface;
-- поддерживать lifecycle `list/detail/create/revise/archive-deactivate` без ручного API-клиента;
-- создавать и ревизировать decision resources без ручного API-клиента;
-- импортировать legacy `edge.metadata.document_policy` в decision resource revision;
-- использовать shared configuration-scoped metadata snapshots для document-policy builder/preview;
-- сохранять и показывать resolved metadata snapshot provenance/compatibility markers для `document_policy` revisions;
-- показывать produced `document_policy` output и pinned provenance;
-- позволять workflow/binding editor'ам выбирать resulting decision revision из first-class списка, а не требовать manual raw ids как primary UX.
+- использовать `/decisions` как canonical decision lifecycle surface;
+- использовать business configuration identity `config_name + config_version` как primary compatibility contract для metadata-aware `document_policy` revisions;
+- сохранять и показывать resolved metadata provenance/diagnostics markers для `document_policy` revisions;
+- показывать `config_generation_id` как отдельный technical marker, если он доступен;
+- не скрывать compatible decision revisions только из-за другого имени ИБ, `metadata_hash`, `extensions_fingerprint` или `config_generation_id`.
 
-`/workflows` ДОЛЖЕН (SHALL) использовать `/decisions` как reference catalog для выбора pinned decision revisions внутри workflow composition и НЕ ДОЛЖЕН (SHALL NOT) быть единственным decision CRUD surface.
+`/decisions` ДОЛЖЕН (SHALL) показывать publication drift как diagnostics/warning, если selected database diverges по published metadata surface от canonical business-scoped snapshot, но такой drift НЕ ДОЛЖЕН (SHALL NOT) сам по себе переводить revision в incompatible.
 
-#### Scenario: Аналитик импортирует legacy edge policy в decision resource
-- **GIVEN** в topology edge существует legacy `document_policy`
-- **WHEN** аналитик или оператор запускает import/migration action на `/decisions`
-- **THEN** система создаёт или обновляет versioned decision resource с эквивалентным `document_policy` output
-- **AND** canonical UI path использует action `Import legacy edge`
-- **AND** action `Import raw JSON` остаётся explicit compatibility-only fallback, а не primary edge-migration path
-- **AND** UI возвращает resulting `decision_table_id` и `decision_revision` для pin в workflow/binding
+`/workflows` и binding editor'ы ДОЛЖНЫ (SHALL) получать decision compatibility по business configuration identity и выбирать compatible revision из `/decisions` без требования manual raw ids.
 
-#### Scenario: Workflow и binding editor используют список decision revisions
-- **GIVEN** в tenant уже есть decision resource revisions для `document_policy`
-- **WHEN** аналитик редактирует workflow или оператор редактирует binding
-- **THEN** UI выбирает decision revision из списка/search surface
-- **AND** manual raw id entry не является primary authoring path
+#### Scenario: `/decisions` показывает compatible revision для другой ИБ той же конфигурации
+- **GIVEN** decision revision сохранена для `config_name + config_version`
+- **AND** аналитик выбирает другую ИБ с той же business configuration identity, но другим именем ИБ
+- **WHEN** UI загружает список compatible revisions
+- **THEN** revision видна в default compatible selection
+- **AND** имя ИБ не ломает compatibility filtering
 
-#### Scenario: Workflow composer использует `/decisions` и `/templates` как разные reference-каталоги
-- **GIVEN** аналитик открыл `/workflows`
-- **WHEN** он добавляет operation node или decision-bound rule
-- **THEN** operation building blocks выбираются из template catalog
-- **AND** pinned decision revisions выбираются из route `/decisions`
-- **AND** `/workflows` остаётся composition surface, а не decision CRUD surface
+#### Scenario: `/decisions` не скрывает compatible revision из-за publication drift
+- **GIVEN** selected database совпадает со stored revision по `config_name + config_version`
+- **AND** selected database имеет другой `metadata_hash`
+- **WHEN** UI вычисляет compatibility и отображает provenance
+- **THEN** revision остаётся selectable
+- **AND** экран показывает warning/diagnostics о publication drift
+- **AND** `metadata_hash` divergence не переводит revision в hidden incompatible state
 
-#### Scenario: `/decisions` показывает configuration-scoped metadata provenance для policy authoring
-- **GIVEN** аналитик открывает decision resource для `document_policy`
-- **WHEN** UI подгружает metadata-aware builder context
-- **THEN** экран показывает resolved configuration-scoped snapshot markers
-- **AND** provenance не ограничивается только `database_id`, если snapshot shared между несколькими ИБ
-
-#### Scenario: Decision revision сохраняет auditable compatibility context
-- **GIVEN** аналитик публикует revision для `document_policy`
-- **WHEN** revision появляется в `/decisions` и в binding selector
-- **THEN** UI/read-model показывают resolved metadata snapshot provenance/compatibility markers этой revision
-- **AND** дальнейшие compatibility checks опираются на сохранённый configuration-scoped context, а не на mutable latest database-local snapshot
-
-#### Scenario: Аналитик архивирует или деактивирует устаревший decision resource без потери lineage
-- **GIVEN** decision resource для `document_policy` больше не должен использоваться для новых bindings
-- **WHEN** аналитик выполняет archive/deactivate action в decision lifecycle UI
-- **THEN** decision resource исчезает из default selection для новых workflow/binding edits
-- **AND** historical lineage и уже pinned revisions остаются читаемыми для diagnostics/audit
+#### Scenario: `/decisions` показывает technical provenance markers отдельно от business compatibility
+- **GIVEN** аналитик открыл `document_policy` revision на `/decisions`
+- **WHEN** UI показывает metadata-aware provenance этой revision
+- **THEN** экран отдельно показывает business identity `config_name + config_version`
+- **AND** отдельно показывает technical markers вроде `config_generation_id` и `metadata_hash`
+- **AND** user-visible compatibility определяется business identity, а не technical markers
 

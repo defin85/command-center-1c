@@ -113,6 +113,36 @@ def test_workflow_centric_repository_acceptance_evidence_describes_default_shipp
     assert "frontend/tests/browser/workflow-io-editor.spec.ts" in repository_evidence
 
 
+def test_workflow_centric_runbook_documents_business_identity_reuse_contract() -> None:
+    runbook = _read_repo_doc("docs", "observability", "WORKFLOW_CENTRIC_POOLS_RUNBOOK.md")
+
+    assert "одинаковая business identity `config_name + config_version` определяет reuse" in runbook
+    assert "`metadata_hash`/`publication_drift` остаются diagnostics-only markers" in runbook
+    assert "не приводит к silent reuse при diverged metadata surface" not in runbook
+    assert "Не возвращай вручную старый snapshot и не форсируй reuse только по совпадению `config_name + config_version`" not in runbook
+
+
+def test_canonical_openspec_specs_align_with_business_identity_contract() -> None:
+    organization_spec = _read_repo_doc("openspec", "specs", "organization-pool-catalog", "spec.md")
+    policy_spec = _read_repo_doc("openspec", "specs", "pool-document-policy", "spec.md")
+    workflow_spec = _read_repo_doc("openspec", "specs", "workflow-decision-modeling", "spec.md")
+
+    assert "Canonical metadata snapshot identity ДОЛЖНА (SHALL) включать только:" in organization_spec
+    assert "различие published OData metadata surface НЕ ДОЛЖНО (SHALL NOT) создавать отдельную compatibility identity." in organization_spec
+    assert "#### Scenario: Одинаковая business identity переиспользует snapshot при publication drift" in organization_spec
+    assert "`extensions_fingerprint` или эквивалентный marker extensions/applicability state" not in organization_spec
+    assert "normalized OData metadata payload у них совпадает" not in organization_spec
+
+    assert "Compatibility `document_policy` revision ДОЛЖНА (SHALL) определяться только по:" in policy_spec
+    assert "#### Scenario: Разный metadata hash не блокирует reuse decision revision" in policy_spec
+    assert "revision остаётся compatible" in policy_spec
+    assert "Diverged metadata surface блокирует reuse в policy builder" not in policy_spec
+
+    assert "использовать business configuration identity `config_name + config_version` как primary compatibility contract" in workflow_spec
+    assert "не скрывать compatible decision revisions только из-за другого имени ИБ, `metadata_hash`, `extensions_fingerprint` или `config_generation_id`." in workflow_spec
+    assert "publication drift как diagnostics/warning" in workflow_spec
+
+
 def test_workflow_centric_evidence_templates_are_marked_as_examples_only() -> None:
     templates_readme = _read_repo_doc("docs", "observability", "artifacts", "refactor-14", "README.md")
 
