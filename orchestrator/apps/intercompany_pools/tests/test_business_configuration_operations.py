@@ -79,7 +79,7 @@ def _seed_ibcmd_business_configuration_catalog(
     )
 
 
-def _create_database(*, with_profile: bool) -> Database:
+def _create_database(*, with_profile: bool, with_connection_profile: bool = True) -> Database:
     tenant, _ = Tenant.objects.get_or_create(slug="default", defaults={"name": "Default"})
     database = Database.objects.create(
         tenant=tenant,
@@ -91,19 +91,22 @@ def _create_database(*, with_profile: bool) -> Database:
         username="u",
         password="p",
     )
+    metadata = dict(database.metadata or {})
     if with_profile:
-        database.metadata = {
-            "business_configuration_profile": {
-                "config_name": "Бухгалтерия предприятия, редакция 3.0",
-                "config_root_name": "БухгалтерияПредприятия",
-                "config_version": "3.0.193.19",
-                "config_vendor": 'Фирма "1С"',
-                "config_generation_id": "old-generation-id",
-                "config_name_source": "synonym_ru",
-                "verification_status": "verified",
-                "verified_at": "2026-03-12T00:00:00+00:00",
-            }
+        metadata["business_configuration_profile"] = {
+            "config_name": "Бухгалтерия предприятия, редакция 3.0",
+            "config_root_name": "БухгалтерияПредприятия",
+            "config_version": "3.0.193.19",
+            "config_vendor": 'Фирма "1С"',
+            "config_generation_id": "old-generation-id",
+            "config_name_source": "synonym_ru",
+            "verification_status": "verified",
+            "verified_at": "2026-03-12T00:00:00+00:00",
         }
+    if with_connection_profile:
+        metadata["ibcmd_connection"] = {"remote": "ssh://agent:1545"}
+    if metadata:
+        database.metadata = metadata
         database.save(update_fields=["metadata", "updated_at"])
     return database
 
@@ -132,7 +135,8 @@ def test_ensure_business_configuration_profile_runtime_enqueues_verification_whe
     payload_data = (operation.payload or {}).get("data") or {}
     assert payload_data.get("ib_auth") == {"strategy": "service"}
     assert payload_data.get("dbms_auth") == {"strategy": "service"}
-    assert "connection_source" not in payload_data
+    assert payload_data.get("connection_source") == "database_profile"
+    assert payload_data.get("connection") == {}
     argv = payload_data.get("argv") or []
     assert argv[:4] == ["infobase", "config", "export", "objects"]
     assert "Configuration" in argv
@@ -158,7 +162,8 @@ def test_ensure_business_configuration_profile_runtime_uses_checked_in_ibcmd_cat
     assert argv[:4] == ["infobase", "config", "export", "objects"]
     assert payload_data.get("ib_auth") == {"strategy": "service"}
     assert payload_data.get("dbms_auth") == {"strategy": "service"}
-    assert "connection_source" not in payload_data
+    assert payload_data.get("connection_source") == "database_profile"
+    assert payload_data.get("connection") == {}
 
 
 @pytest.mark.django_db
@@ -182,7 +187,8 @@ def test_ensure_business_configuration_profile_runtime_falls_back_when_effective
     payload_data = (operation.payload or {}).get("data") or {}
     assert payload_data.get("ib_auth") == {"strategy": "service"}
     assert payload_data.get("dbms_auth") == {"strategy": "service"}
-    assert "connection_source" not in payload_data
+    assert payload_data.get("connection_source") == "database_profile"
+    assert payload_data.get("connection") == {}
     argv = payload_data.get("argv") or []
     assert argv[:4] == ["infobase", "config", "export", "objects"]
 
@@ -208,7 +214,8 @@ def test_ensure_business_configuration_profile_runtime_enqueues_generation_probe
     payload_data = (operation.payload or {}).get("data") or {}
     assert payload_data.get("ib_auth") == {"strategy": "service"}
     assert payload_data.get("dbms_auth") == {"strategy": "service"}
-    assert "connection_source" not in payload_data
+    assert payload_data.get("connection_source") == "database_profile"
+    assert payload_data.get("connection") == {}
     argv = payload_data.get("argv") or []
     assert argv[:3] == ["infobase", "config", "generation-id"]
 
@@ -224,3 +231,21 @@ def test_ensure_business_configuration_profile_runtime_marks_checked_in_preset_s
 
     operation = BatchOperation.objects.get()
     assert (operation.metadata or {}).get("command_catalog_source") == "checked_in_preset"
+
+
+@pytest.mark.django_db
+def test_ensure_business_configuration_profile_runtime_fails_closed_when_ibcmd_connection_profile_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_ibcmd_business_configuration_catalog(monkeypatch)
+
+    def _unexpected_enqueue(op_id: str) -> EnqueueResult:
+        raise AssertionError(f"enqueue_operation must not be called, got {op_id}")
+
+    monkeypatch.setattr(OperationsService, "enqueue_operation", _unexpected_enqueue)
+    database = _create_database(with_profile=False, with_connection_profile=False)
+
+    profile = ensure_business_configuration_profile_runtime(database=database)
+
+    assert profile is None
+    assert BatchOperation.objects.count() == 0

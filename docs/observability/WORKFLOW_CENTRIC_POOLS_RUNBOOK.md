@@ -72,6 +72,7 @@ Marker влияет на phase summary и rollout communication. Он не пе�
    Если rollout поднимается с legacy snapshot/resolution или historical decision rows, сначала прогоняй one-time backfill:
    - `cd orchestrator && ./venv/bin/python manage.py backfill_business_identity_state --dry-run --json`
    - apply-run после dry-run: `cd orchestrator && ./venv/bin/python manage.py backfill_business_identity_state --json`
+   - Команда canonicalize'ит legacy infobase-scoped snapshot/resolution rows по business identity `config_name + config_version`; `extensions_fingerprint` остаётся только diagnostics marker и не делит canonical state.
 4. В `/pools/catalog` открой нужный pool и проверь active workflow bindings, effective period и selector scope.
    Default SPA path использует structured binding editor и first-class binding CRUD, а не raw JSON textarea.
 5. Если на edge ещё жив legacy `document_policy`, выполни canonical import в `/decisions`:
@@ -114,6 +115,7 @@ Templates are examples/placeholders only. They are meant to capture tenant-scope
 - `/api/v2/workflows/list-workflows/?surface=runtime_diagnostics` показывает projections отдельно от analyst library.
 - `/api/v2/decisions/` и detail view показывают expected `config_name`, `config_version`, `config_generation_id`, `metadata_hash`, `publication_drift`, `provenance_database_id`.
 - One-time command `backfill_business_identity_state` не возвращает unexpected unresolved rows для pilot tenant.
+- One-time command `backfill_business_identity_state` схлопывает legacy rows с одинаковой business identity даже при разном `extensions_fingerprint`; fingerprint после этого проверяется только как diagnostics marker.
 - Refresh representative infobase через `/api/v2/pools/odata-metadata/catalog/refresh/` не приводит к silent reuse при diverged metadata surface.
 - `/templates` показывает compatibility marker для workflow executor templates и не выглядит как primary analyst-facing surface.
 - Для production pool нет unintended active binding overlap по selector/effective period.

@@ -985,7 +985,10 @@ def test_handle_worker_completed_generation_change_enqueues_business_configurati
                 "config_name_source": "synonym_ru",
                 "verification_status": "verified",
                 "verified_at": "2026-03-12T00:00:00+00:00",
-            }
+            },
+            "ibcmd_connection": {
+                "remote": "ssh://agent:1545",
+            },
         },
     )
 
@@ -1044,4 +1047,4 @@ def test_handle_worker_completed_generation_change_enqueues_business_configurati
     payload_data = (follow_up.payload or {}).get("data") or {}
     assert payload_data.get("ib_auth") == {"strategy": "service"}
     assert payload_data.get("dbms_auth") == {"strategy": "service"}
-    assert "connection_source" not in payload_data
+    assert payload_data.get("connection_source") == "database_profile"

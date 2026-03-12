@@ -256,6 +256,7 @@ def refresh_metadata_catalog_snapshot(
 
             if existing_version is not None:
                 existing_version.database = database
+                existing_version.extensions_fingerprint = scope.extensions_fingerprint
                 existing_version.metadata_hash = metadata_hash
                 existing_version.payload = catalog_payload
                 existing_version.source = source
@@ -264,6 +265,7 @@ def refresh_metadata_catalog_snapshot(
                 existing_version.save(
                     update_fields=[
                         "database",
+                        "extensions_fingerprint",
                         "metadata_hash",
                         "payload",
                         "source",

@@ -151,6 +151,8 @@ def _enqueue_business_configuration_operation(
     command, catalog, command_catalog_source = _resolve_ibcmd_command(command_id=command_id)
     if command is None or catalog is None:
         return None
+    if not _has_executable_database_profile_connection(database=database):
+        return None
 
     pre_args = build_ibcmd_connection_args(
         driver_schema=catalog.get("driver_schema") if isinstance(catalog, dict) else None,
@@ -172,6 +174,7 @@ def _enqueue_business_configuration_operation(
             "argv_masked": argv_masked,
             "stdin": "",
             "connection": {},
+            "connection_source": "database_profile",
             "ib_auth": {"strategy": "service"},
             "dbms_auth": {"strategy": "service"},
         },
@@ -249,6 +252,73 @@ def _resolve_ibcmd_command(*, command_id: str) -> tuple[dict[str, Any] | None, d
     if not isinstance(fallback_command, dict):
         return None, catalog, ""
     return fallback_command, fallback_catalog, "checked_in_preset"
+
+
+def _has_executable_database_profile_connection(*, database: Database) -> bool:
+    metadata = database.metadata if isinstance(database.metadata, dict) else {}
+    profile = _normalize_ibcmd_connection_profile(metadata.get("ibcmd_connection"))
+    return not _is_empty_ibcmd_connection_profile(profile)
+
+
+def _normalize_ibcmd_connection_profile(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+
+    remote_raw = raw.get("remote")
+    if remote_raw in (None, ""):
+        remote_raw = raw.get("remote_url")
+    remote = str(remote_raw).strip() if remote_raw not in (None, "") else ""
+    if remote and not remote.lower().startswith("ssh://"):
+        remote = ""
+
+    pid_raw = raw.get("pid")
+    pid = pid_raw if isinstance(pid_raw, int) and pid_raw > 0 else None
+
+    offline_in = raw.get("offline")
+    offline: dict[str, str] | None = None
+    if isinstance(offline_in, dict):
+        sanitized_offline: dict[str, str] = {}
+        for key, value in offline_in.items():
+            normalized_key = str(key).strip()
+            if not normalized_key:
+                continue
+            if normalized_key.lower() in {"db_user", "db_pwd", "db_password"}:
+                continue
+            if value in (None, ""):
+                continue
+            normalized_value = str(value).strip()
+            if not normalized_value:
+                continue
+            sanitized_offline[normalized_key] = normalized_value
+        offline = sanitized_offline or None
+
+    profile: dict[str, Any] = {}
+    if remote:
+        profile["remote"] = remote
+    if pid is not None:
+        profile["pid"] = pid
+    if offline:
+        profile["offline"] = offline
+    return profile
+
+
+def _is_empty_ibcmd_connection_profile(profile: dict[str, Any] | None) -> bool:
+    if not isinstance(profile, dict) or not profile:
+        return True
+
+    remote = str(profile.get("remote") or "").strip()
+    if remote:
+        return False
+
+    pid = profile.get("pid")
+    if isinstance(pid, int) and pid > 0:
+        return False
+
+    offline = profile.get("offline")
+    if isinstance(offline, dict) and len(offline) > 0:
+        return False
+
+    return True
 
 
 @lru_cache(maxsize=1)

@@ -9,7 +9,7 @@ from django.contrib.auth.models import User
 from django.core.management import call_command
 from rest_framework.test import APIClient
 
-from apps.databases.models import Database, InfobaseUserMapping
+from apps.databases.models import Database, DatabaseExtensionsSnapshot, InfobaseUserMapping
 from apps.intercompany_pools.metadata_catalog import refresh_metadata_catalog_snapshot
 from apps.intercompany_pools.models import (
     PoolODataMetadataCatalogSnapshot,
@@ -575,6 +575,14 @@ def test_business_identity_backfill_command_upgrades_legacy_scope_and_decision_c
             config_name="Бухгалтерия предприятия, редакция 3.0",
             config_version="3.0.193.19",
         )
+    DatabaseExtensionsSnapshot.objects.create(
+        database=first_database,
+        snapshot={"extensions": [{"name": "CoreA", "version": "1.0.0"}]},
+    )
+    DatabaseExtensionsSnapshot.objects.create(
+        database=second_database,
+        snapshot={"extensions": [{"name": "CoreB", "version": "1.0.0"}]},
+    )
 
     shared_catalog_version = f"legacy-catalog:{uuid.uuid4().hex[:12]}"
     shared_payload = {
@@ -667,6 +675,7 @@ def test_business_identity_backfill_command_upgrades_legacy_scope_and_decision_c
     )
     assert len(canonical_snapshots) == 1
     canonical_snapshot = canonical_snapshots[0]
+    assert canonical_snapshot.extensions_fingerprint != ""
 
     resolutions = list(
         PoolODataMetadataCatalogScopeResolution.objects.filter(
@@ -675,8 +684,12 @@ def test_business_identity_backfill_command_upgrades_legacy_scope_and_decision_c
             config_version="3.0.193.19",
         ).order_by("database_id")
     )
-    assert [str(item.database_id) for item in resolutions] == [str(first_database.id), str(second_database.id)]
+    assert {str(item.database_id) for item in resolutions} == {
+        str(first_database.id),
+        str(second_database.id),
+    }
     assert {str(item.snapshot_id) for item in resolutions} == {str(canonical_snapshot.id)}
+    assert len({item.extensions_fingerprint for item in resolutions}) == 2
 
     decision.refresh_from_db()
     assert decision.metadata_context["snapshot_id"] == str(canonical_snapshot.id)

@@ -8,10 +8,13 @@ from uuid import uuid4
 import pytest
 from django.contrib.auth.models import User
 from django.apps import apps as django_apps
-from django.db import DatabaseError, connection
+from django.db import DatabaseError, IntegrityError, connection, transaction
 
-from apps.databases.models import Database, InfobaseUserMapping
+from apps.databases.models import Database, DatabaseExtensionsSnapshot, InfobaseUserMapping
 from apps.api_v2.tests import _execute_ibcmd_cli_support as support
+from apps.intercompany_pools.business_identity_backfill import (
+    backfill_database_business_identity_scope,
+)
 from apps.intercompany_pools.metadata_catalog import (
     ERROR_CODE_POOL_METADATA_FETCH_FAILED,
     ERROR_CODE_POOL_METADATA_PROFILE_UNAVAILABLE,
@@ -236,6 +239,58 @@ def test_parse_business_configuration_profile_xml_prefers_ru_synonym() -> None:
     assert profile["config_version"] == "3.0.193.19"
 
 
+def test_parse_business_configuration_profile_xml_falls_back_to_first_synonym() -> None:
+    xml_payload = """<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core">
+  <Configuration>
+    <Properties>
+      <Name>AccountingEnterprise</Name>
+      <Synonym>
+        <v8:item>
+          <v8:lang>en</v8:lang>
+          <v8:content>Accounting Enterprise</v8:content>
+        </v8:item>
+        <v8:item>
+          <v8:lang>de</v8:lang>
+          <v8:content>Buchhaltung</v8:content>
+        </v8:item>
+      </Synonym>
+      <Vendor>Vendor</Vendor>
+      <Version>3.0.193.19</Version>
+    </Properties>
+  </Configuration>
+</MetaDataObject>
+"""
+
+    profile = parse_business_configuration_profile_xml(xml_payload)
+
+    assert profile["config_name"] == "Accounting Enterprise"
+    assert profile["config_root_name"] == "AccountingEnterprise"
+    assert profile["config_name_source"] == "synonym_any"
+    assert profile["config_version"] == "3.0.193.19"
+
+
+def test_parse_business_configuration_profile_xml_falls_back_to_root_name_when_synonym_missing() -> None:
+    xml_payload = """<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses">
+  <Configuration>
+    <Properties>
+      <Name>AccountingEnterprise</Name>
+      <Vendor>Vendor</Vendor>
+      <Version>3.0.193.19</Version>
+    </Properties>
+  </Configuration>
+</MetaDataObject>
+"""
+
+    profile = parse_business_configuration_profile_xml(xml_payload)
+
+    assert profile["config_name"] == "AccountingEnterprise"
+    assert profile["config_root_name"] == "AccountingEnterprise"
+    assert profile["config_name_source"] == "name"
+    assert profile["config_version"] == "3.0.193.19"
+
+
 def test_load_configuration_xml_from_archive_artifact(tmp_path) -> None:
     import zipfile
 
@@ -413,6 +468,64 @@ def test_read_snapshot_reuses_existing_shared_snapshot_without_second_live_fetch
 
 
 @pytest.mark.django_db
+def test_refresh_snapshot_updates_canonical_extensions_fingerprint_when_second_database_confirms_same_snapshot(
+    default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-shared-refresh-{uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    second_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-shared-refresh-{uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    _create_service_infobase_mapping(database=first_database)
+    _create_service_infobase_mapping(database=second_database)
+    DatabaseExtensionsSnapshot.objects.create(
+        database=first_database,
+        snapshot={"extensions": [{"name": "CoreA", "version": "1.0.0"}]},
+    )
+    DatabaseExtensionsSnapshot.objects.create(
+        database=second_database,
+        snapshot={"extensions": [{"name": "CoreB", "version": "1.0.0"}]},
+    )
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.metadata_catalog._fetch_live_catalog_payload",
+        lambda **_: _catalog_payload(suffix="shared"),
+    )
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._write_snapshot_to_cache", lambda **_: None)
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._get_redis_client", lambda: None)
+
+    first_snapshot = refresh_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=first_database,
+        requested_by_username="meta-user",
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+    )
+    second_snapshot = refresh_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=second_database,
+        requested_by_username="meta-user",
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+    )
+
+    assert second_snapshot.id == first_snapshot.id
+    second_snapshot.refresh_from_db()
+    expected_scope = resolve_metadata_catalog_scope(
+        tenant_id=str(default_tenant.id),
+        database=second_database,
+    )
+    assert str(second_snapshot.database_id) == str(second_database.id)
+    assert second_snapshot.extensions_fingerprint == expected_scope.extensions_fingerprint
+
+
+@pytest.mark.django_db
 def test_refresh_snapshot_keeps_canonical_shared_snapshot_when_publication_drift_is_detected(
     default_tenant: Tenant,
     monkeypatch: pytest.MonkeyPatch,
@@ -587,6 +700,175 @@ def test_migration_backfills_legacy_database_current_snapshots_into_scope_resolu
     assert first_resolution.resolution_mode == "database_scope"
     assert second_resolution.resolution_mode == "database_scope"
     assert PoolODataMetadataCatalogScopeResolution.objects.filter(tenant=default_tenant).count() == 2
+
+
+@pytest.mark.django_db
+def test_business_identity_persistence_constraints_ignore_extensions_fingerprint(
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-constraint-db-{uuid4().hex[:8]}",
+        base_name="shared-constraints-profile",
+        version="8.3.26",
+    )
+    snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
+        tenant=default_tenant,
+        database=database,
+        config_name="shared-constraints-profile",
+        config_version="8.3.26",
+        extensions_fingerprint="fingerprint-a",
+        metadata_hash="a" * 64,
+        catalog_version=f"v1:{uuid4().hex[:16]}",
+        payload=_catalog_payload(suffix="constraint"),
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+        is_current=True,
+    )
+    PoolODataMetadataCatalogScopeResolution.objects.create(
+        tenant=default_tenant,
+        database=database,
+        snapshot=snapshot,
+        config_name="shared-constraints-profile",
+        config_version="8.3.26",
+        extensions_fingerprint="fingerprint-a",
+        confirmed_at=snapshot.fetched_at,
+    )
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        PoolODataMetadataCatalogSnapshot.objects.create(
+            tenant=default_tenant,
+            database=database,
+            config_name="shared-constraints-profile",
+            config_version="8.3.26",
+            extensions_fingerprint="fingerprint-b",
+            metadata_hash="b" * 64,
+            catalog_version=snapshot.catalog_version,
+            payload=_catalog_payload(suffix="constraint-dup"),
+            source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+            is_current=False,
+        )
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        PoolODataMetadataCatalogScopeResolution.objects.create(
+            tenant=default_tenant,
+            database=database,
+            snapshot=snapshot,
+            config_name="shared-constraints-profile",
+            config_version="8.3.26",
+            extensions_fingerprint="fingerprint-b",
+            confirmed_at=snapshot.fetched_at,
+        )
+
+
+@pytest.mark.django_db
+def test_business_identity_backfill_reuses_canonical_snapshot_across_extensions_fingerprint_drift(
+    default_tenant: Tenant,
+) -> None:
+    shared_name = "shared-profile-backfill"
+    shared_version = "8.3.26"
+    first_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-backfill-db-{uuid4().hex[:8]}",
+        base_name=f"legacy-infobase-{uuid4().hex[:4]}",
+        version="8.3.24",
+    )
+    second_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-backfill-db-{uuid4().hex[:8]}",
+        base_name=f"legacy-infobase-{uuid4().hex[:4]}",
+        version="8.3.24",
+    )
+    for database in (first_database, second_database):
+        metadata = dict(database.metadata or {})
+        profile = dict(metadata.get("business_configuration_profile") or {})
+        profile["config_name"] = shared_name
+        profile["config_version"] = shared_version
+        metadata["business_configuration_profile"] = profile
+        database.metadata = metadata
+        database.save(update_fields=["metadata", "updated_at"])
+    DatabaseExtensionsSnapshot.objects.create(
+        database=first_database,
+        snapshot={"extensions": [{"name": "CoreA", "version": "1.0.0"}]},
+    )
+    DatabaseExtensionsSnapshot.objects.create(
+        database=second_database,
+        snapshot={"extensions": [{"name": "CoreB", "version": "1.0.0"}]},
+    )
+
+    shared_catalog_version = f"v1:{uuid4().hex[:16]}"
+    first_snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
+        tenant=default_tenant,
+        database=first_database,
+        config_name=first_database.base_name,
+        config_version=first_database.version,
+        extensions_fingerprint="legacy-ext-a",
+        metadata_hash="a" * 64,
+        catalog_version=shared_catalog_version,
+        payload=_catalog_payload(suffix="backfill-a"),
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+        is_current=True,
+    )
+    second_snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
+        tenant=default_tenant,
+        database=second_database,
+        config_name=second_database.base_name,
+        config_version=second_database.version,
+        extensions_fingerprint="legacy-ext-b",
+        metadata_hash="a" * 64,
+        catalog_version=shared_catalog_version,
+        payload=_catalog_payload(suffix="backfill-a"),
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+        is_current=True,
+    )
+    PoolODataMetadataCatalogScopeResolution.objects.create(
+        tenant=default_tenant,
+        database=first_database,
+        snapshot=first_snapshot,
+        config_name=first_database.base_name,
+        config_version=first_database.version,
+        extensions_fingerprint="legacy-ext-a",
+        confirmed_at=first_snapshot.fetched_at,
+    )
+    PoolODataMetadataCatalogScopeResolution.objects.create(
+        tenant=default_tenant,
+        database=second_database,
+        snapshot=second_snapshot,
+        config_name=second_database.base_name,
+        config_version=second_database.version,
+        extensions_fingerprint="legacy-ext-b",
+        confirmed_at=second_snapshot.fetched_at,
+    )
+
+    first_result = backfill_database_business_identity_scope(database=first_database)
+    second_result = backfill_database_business_identity_scope(database=second_database)
+
+    canonical_snapshots = list(
+        PoolODataMetadataCatalogSnapshot.objects.filter(
+            tenant=default_tenant,
+            config_name=shared_name,
+            config_version=shared_version,
+            catalog_version=shared_catalog_version,
+        )
+    )
+    assert len(canonical_snapshots) == 1
+    canonical_snapshot = canonical_snapshots[0]
+    assert first_result["snapshot_id"] == str(canonical_snapshot.id)
+    assert second_result["snapshot_id"] == str(canonical_snapshot.id)
+
+    resolutions = list(
+        PoolODataMetadataCatalogScopeResolution.objects.filter(
+            tenant=default_tenant,
+            config_name=shared_name,
+            config_version=shared_version,
+        ).order_by("database_id")
+    )
+    assert {str(item.database_id) for item in resolutions} == {
+        str(first_database.id),
+        str(second_database.id),
+    }
+    assert {str(item.snapshot_id) for item in resolutions} == {str(canonical_snapshot.id)}
+    assert canonical_snapshot.extensions_fingerprint != ""
+    assert len({item.extensions_fingerprint for item in resolutions}) == 2
 
 
 @pytest.mark.django_db

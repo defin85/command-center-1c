@@ -1021,10 +1021,8 @@ class PoolODataMetadataCatalogSnapshot(models.Model):
             models.Index(
                 fields=[
                     "tenant",
-                    "database",
                     "config_name",
                     "config_version",
-                    "extensions_fingerprint",
                     "is_current",
                 ]
             ),
@@ -1044,7 +1042,6 @@ class PoolODataMetadataCatalogSnapshot(models.Model):
                     "tenant",
                     "config_name",
                     "config_version",
-                    "extensions_fingerprint",
                     "catalog_version",
                 ],
                 name="uniq_pool_meta_catalog_snapshot_shared_version",
@@ -1091,7 +1088,6 @@ class PoolODataMetadataCatalogScopeResolution(models.Model):
                     "tenant",
                     "config_name",
                     "config_version",
-                    "extensions_fingerprint",
                 ]
             ),
             models.Index(fields=["snapshot", "-confirmed_at"]),
@@ -1103,7 +1099,6 @@ class PoolODataMetadataCatalogScopeResolution(models.Model):
                     "database",
                     "config_name",
                     "config_version",
-                    "extensions_fingerprint",
                 ],
                 name="uniq_pool_meta_catalog_scope_resolution",
             ),

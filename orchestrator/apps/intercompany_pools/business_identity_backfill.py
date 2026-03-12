@@ -39,15 +39,18 @@ def _canonical_json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
-def _build_business_scope(*, database: Database, profile: Mapping[str, Any]) -> dict[str, str]:
+def _resolve_extensions_fingerprint(*, database: Database) -> str:
     extensions_fingerprint = ""
     snapshot = getattr(database, "extensions_snapshot", None)
     if snapshot is not None and isinstance(getattr(snapshot, "snapshot", None), dict):
         extensions_fingerprint = hashlib.sha256(_canonical_json_bytes(snapshot.snapshot)).hexdigest()
+    return extensions_fingerprint
+
+
+def _build_business_scope(*, database: Database, profile: Mapping[str, Any]) -> dict[str, str]:
     return {
         "config_name": str(profile.get("config_name") or "").strip(),
         "config_version": str(profile.get("config_version") or "").strip(),
-        "extensions_fingerprint": extensions_fingerprint,
     }
 
 
@@ -58,7 +61,6 @@ def _matching_scope_resolution(*, database: Database, scope: Mapping[str, str]):
             database=database,
             config_name=scope["config_name"],
             config_version=scope["config_version"],
-            extensions_fingerprint=scope["extensions_fingerprint"],
         )
         .order_by(*_RESOLUTION_ORDER)
         .first()
@@ -88,7 +90,6 @@ def _shared_scope_snapshot(*, tenant_id: str, scope: Mapping[str, str]):
             tenant_id=tenant_id,
             config_name=scope["config_name"],
             config_version=scope["config_version"],
-            extensions_fingerprint=scope["extensions_fingerprint"],
             is_current=True,
         )
         .order_by(*_SNAPSHOT_ORDER)
@@ -117,12 +118,12 @@ def _materialize_scope_snapshot(
     database: Database,
     scope: Mapping[str, str],
     seed_snapshot: PoolODataMetadataCatalogSnapshot,
+    extensions_fingerprint: str,
     dry_run: bool,
 ) -> tuple[PoolODataMetadataCatalogSnapshot, bool]:
     if (
         str(seed_snapshot.config_name or "") == scope["config_name"]
         and str(seed_snapshot.config_version or "") == scope["config_version"]
-        and str(seed_snapshot.extensions_fingerprint or "") == scope["extensions_fingerprint"]
     ):
         return seed_snapshot, False
 
@@ -131,7 +132,6 @@ def _materialize_scope_snapshot(
             tenant_id=database.tenant_id,
             config_name=scope["config_name"],
             config_version=scope["config_version"],
-            extensions_fingerprint=scope["extensions_fingerprint"],
             catalog_version=seed_snapshot.catalog_version,
         )
         .order_by(*_SNAPSHOT_ORDER)
@@ -152,7 +152,7 @@ def _materialize_scope_snapshot(
         database=seed_snapshot.database,
         config_name=scope["config_name"],
         config_version=scope["config_version"],
-        extensions_fingerprint=scope["extensions_fingerprint"],
+        extensions_fingerprint=extensions_fingerprint,
         metadata_hash=seed_snapshot.metadata_hash,
         catalog_version=seed_snapshot.catalog_version,
         payload=seed_snapshot.payload if isinstance(seed_snapshot.payload, dict) else {},
@@ -173,6 +173,7 @@ def backfill_database_business_identity_scope(
         return {"updated": False, "unresolved_reason": "profile_missing"}
 
     scope = _build_business_scope(database=database, profile=profile)
+    extensions_fingerprint = _resolve_extensions_fingerprint(database=database)
     if not scope["config_name"] or not scope["config_version"]:
         return {"updated": False, "unresolved_reason": "profile_incomplete"}
 
@@ -187,6 +188,7 @@ def backfill_database_business_identity_scope(
             database=database,
             scope=scope,
             seed_snapshot=seed_snapshot,
+            extensions_fingerprint=extensions_fingerprint,
             dry_run=dry_run,
         )
         resolution = _matching_scope_resolution(database=database, scope=scope)
@@ -199,15 +201,27 @@ def backfill_database_business_identity_scope(
                     snapshot=canonical_snapshot,
                     config_name=scope["config_name"],
                     config_version=scope["config_version"],
-                    extensions_fingerprint=scope["extensions_fingerprint"],
+                    extensions_fingerprint=extensions_fingerprint,
                     confirmed_at=seed_snapshot.fetched_at,
                 )
-        elif resolution.snapshot_id != canonical_snapshot.id:
+        elif (
+            resolution.snapshot_id != canonical_snapshot.id
+            or str(resolution.extensions_fingerprint or "") != extensions_fingerprint
+            or resolution.confirmed_at != seed_snapshot.fetched_at
+        ):
             resolution_updated = True
             if not dry_run:
                 resolution.snapshot = canonical_snapshot
+                resolution.extensions_fingerprint = extensions_fingerprint
                 resolution.confirmed_at = seed_snapshot.fetched_at
-                resolution.save(update_fields=["snapshot", "confirmed_at", "updated_at"])
+                resolution.save(
+                    update_fields=[
+                        "snapshot",
+                        "extensions_fingerprint",
+                        "confirmed_at",
+                        "updated_at",
+                    ]
+                )
 
     return {
         "updated": bool(snapshot_updated or resolution_updated),

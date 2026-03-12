@@ -25,6 +25,7 @@
 2. Прогнать one-time business identity backfill для legacy snapshot/resolution и historical decision rows:
    - dry-run: `cd orchestrator && ./venv/bin/python manage.py backfill_business_identity_state --dry-run --json`
    - apply-run: `cd orchestrator && ./venv/bin/python manage.py backfill_business_identity_state --json`
+   - После этого canonical metadata snapshot / scope resolution больше не делятся по `extensions_fingerprint`; marker сохраняется только для diagnostics/provenance.
 3. Прогреть shared metadata snapshots на representative infobase каждой configuration profile:
    - `POST /api/v2/pools/odata-metadata/catalog/refresh/`
 4. Для pool-ов с legacy edge policies выполнить import в `/decisions`:
@@ -44,6 +45,7 @@
 
 - Legacy edge document_policy editor больше не является рекомендуемым net-new path; canonical route для новых policy revisions теперь `/decisions`.
 - External/operator tooling не должно рассчитывать на database-local-only metadata context. Проверяйте `config_name`, `config_version` и diagnostics markers `config_generation_id`/`metadata_hash`/`publication_drift`, а не только `database_id`.
+- Legacy snapshot/resolution state после backfill не должно ожидать отдельный canonical row на каждый `extensions_fingerprint`; shared state теперь canonicalize'ится только по business identity `config_name + config_version`.
 - Historical decision rows и legacy metadata registry state должны быть прогнаны через `backfill_business_identity_state` до tenant cutover; без этого `/decisions` может честно оставаться fail-closed на `missing_metadata_context`.
 - Если import legacy policy завершился с `binding_update_required=true`, rollout нельзя считать завершённым, пока binding refs не закреплены явно.
 - Explicit `pool_workflow_binding_id` requirement для preview/create-run остаётся обязательным; подробности см. в [2026-02-15-pools-run-input-breaking-change.md](./2026-02-15-pools-run-input-breaking-change.md).
