@@ -3,13 +3,66 @@
 import uuid
 from unittest.mock import patch
 
+import pytest
+
+from apps.api_v2.tests import _execute_ibcmd_cli_support as support
 from apps.databases.models import Database, DatabaseExtensionsSnapshot
 from apps.mappings.models import TenantMappingSpec
 from apps.operations.event_subscriber import EventSubscriber
 from apps.operations.models import BatchOperation, CommandResultSnapshot, Task
+from apps.operations.services.operations_service import OperationsService
+from apps.operations.services.operations_service.types import EnqueueResult
 from apps.tenancy.models import Tenant
 
 from ._event_subscriber_test_base import EventSubscriberBaseTestCase
+
+
+def _seed_ibcmd_business_configuration_catalog(monkeypatch) -> None:
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "driver_schema": {},
+        "commands_by_id": {
+            "infobase.config.export.objects": {
+                "label": "config export objects",
+                "description": "Export selected config objects",
+                "argv": ["infobase", "config", "export", "objects"],
+                "scope": "per_database",
+                "risk_level": "safe",
+                "params_by_name": {
+                    "arg1": {
+                        "kind": "positional",
+                        "position": 1,
+                        "required": False,
+                        "expects_value": True,
+                        "label": "Object1 ... ObjectN",
+                    },
+                    "archive": {
+                        "kind": "flag",
+                        "flag": "--archive",
+                        "required": False,
+                        "expects_value": False,
+                        "label": "--archive",
+                    },
+                    "out": {
+                        "kind": "flag",
+                        "flag": "--out",
+                        "required": False,
+                        "expects_value": True,
+                        "label": "--out",
+                    },
+                },
+            },
+        },
+    }
+    support._seed_ibcmd_catalog(
+        monkeypatch,
+        base_catalog=base_catalog,
+        overrides_catalog={"catalog_version": 2, "driver": "ibcmd", "overrides": {}},
+    )
 
 
 class EventSubscriberWorkerEventsTest(EventSubscriberBaseTestCase):
@@ -534,6 +587,156 @@ class EventSubscriberWorkerEventsTest(EventSubscriberBaseTestCase):
 
     @patch("apps.operations.event_subscriber.runtime.operations_redis_client")
     @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_worker_completed_updates_business_configuration_generation_id(
+        self, mock_redis_class, mock_ops_redis
+    ):
+        subscriber = EventSubscriber()
+        self.database.metadata = {
+            "business_configuration_profile": {
+                "config_name": "Бухгалтерия предприятия, редакция 3.0",
+                "config_root_name": "БухгалтерияПредприятия",
+                "config_version": "3.0.193.19",
+                "config_vendor": 'Фирма "1С"',
+                "config_name_source": "synonym_ru",
+                "verification_status": "verified",
+                "verified_at": "2026-03-12T00:00:00+00:00",
+            }
+        }
+        self.database.save(update_fields=["metadata", "updated_at"])
+
+        op = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name="IBCMD config generation-id",
+            operation_type=BatchOperation.TYPE_IBCMD_CLI,
+            target_entity="Infobase",
+            status=BatchOperation.STATUS_PROCESSING,
+            metadata={
+                "command_id": "infobase.config.generation-id",
+                "snapshot_kinds": ["business_configuration_profile"],
+            },
+        )
+        Task.objects.create(
+            id="task-business-config-generation-id",
+            batch_operation=op,
+            database=self.database,
+            status=Task.STATUS_PROCESSING,
+        )
+
+        subscriber.handle_worker_completed(
+            {
+                "operation_id": op.id,
+                "status": "completed",
+                "results": [
+                    {
+                        "database_id": str(self.database.id),
+                        "success": True,
+                        "data": {"stdout": "1f53b85eba259b43bf2c696c614fc1d900000000\n"},
+                    }
+                ],
+                "summary": {"total": 1, "succeeded": 1, "failed": 0},
+            },
+            "corr-business-config-generation-id",
+        )
+
+        self.database.refresh_from_db()
+        profile = (self.database.metadata or {}).get("business_configuration_profile") or {}
+        self.assertEqual(
+            profile.get("config_generation_id"),
+            "1f53b85eba259b43bf2c696c614fc1d900000000",
+        )
+        snapshot = CommandResultSnapshot.objects.filter(operation_id=op.id, database_id=self.database.id).first()
+        self.assertIsNotNone(snapshot, "command result snapshot must be created")
+        self.assertEqual(snapshot.canonical_payload.get("config_generation_id"), "1f53b85eba259b43bf2c696c614fc1d900000000")
+
+    @patch("apps.operations.event_subscriber.runtime.operations_redis_client")
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_worker_completed_persists_business_configuration_profile_from_configuration_xml(
+        self, mock_redis_class, mock_ops_redis
+    ):
+        subscriber = EventSubscriber()
+
+        op = BatchOperation.objects.create(
+            id=str(uuid.uuid4()),
+            name="IBCMD config export objects",
+            operation_type=BatchOperation.TYPE_IBCMD_CLI,
+            target_entity="Infobase",
+            status=BatchOperation.STATUS_PROCESSING,
+            metadata={
+                "command_id": "infobase.config.export.objects",
+                "snapshot_kinds": ["business_configuration_profile"],
+            },
+        )
+        Task.objects.create(
+            id="task-business-config-export",
+            batch_operation=op,
+            database=self.database,
+            status=Task.STATUS_PROCESSING,
+        )
+
+        configuration_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core">
+  <Configuration>
+    <Properties>
+      <Name>БухгалтерияПредприятия</Name>
+      <Synonym>
+        <v8:item>
+          <v8:lang>ru</v8:lang>
+          <v8:content>Бухгалтерия предприятия, редакция 3.0</v8:content>
+        </v8:item>
+      </Synonym>
+      <Vendor>Фирма "1С"</Vendor>
+      <Version>3.0.193.19</Version>
+    </Properties>
+  </Configuration>
+</MetaDataObject>
+"""
+
+        subscriber.handle_worker_completed(
+            {
+                "operation_id": op.id,
+                "status": "completed",
+                "results": [
+                    {
+                        "database_id": str(self.database.id),
+                        "success": True,
+                        "data": {
+                            "configuration_xml": configuration_xml,
+                            "artifact_path": "s3://cc1c-artifacts/tmp/config/Configuration.xml",
+                        },
+                    }
+                ],
+                "summary": {"total": 1, "succeeded": 1, "failed": 0},
+            },
+            "corr-business-config-export",
+        )
+
+        self.database.refresh_from_db()
+        profile = (self.database.metadata or {}).get("business_configuration_profile") or {}
+        self.assertEqual(profile.get("config_name"), "Бухгалтерия предприятия, редакция 3.0")
+        self.assertEqual(profile.get("config_root_name"), "БухгалтерияПредприятия")
+        self.assertEqual(profile.get("config_version"), "3.0.193.19")
+        self.assertEqual(profile.get("config_vendor"), 'Фирма "1С"')
+        self.assertEqual(profile.get("config_name_source"), "synonym_ru")
+        self.assertEqual(profile.get("verification_operation_id"), op.id)
+        self.assertEqual(
+            profile.get("verification_artifact_path"),
+            "s3://cc1c-artifacts/tmp/config/Configuration.xml",
+        )
+
+        task = Task.objects.get(id="task-business-config-export")
+        self.assertEqual(
+            (task.result or {}).get("business_configuration_profile", {}).get("config_name"),
+            "Бухгалтерия предприятия, редакция 3.0",
+        )
+        snapshot = CommandResultSnapshot.objects.filter(operation_id=op.id, database_id=self.database.id).first()
+        self.assertIsNotNone(snapshot, "command result snapshot must be created")
+        self.assertEqual(
+            snapshot.canonical_payload.get("config_version"),
+            "3.0.193.19",
+        )
+
+    @patch("apps.operations.event_subscriber.runtime.operations_redis_client")
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
     def test_handle_worker_completed_fail_closed_on_mapping_version_drift(
         self, mock_redis_class, mock_ops_redis
     ):
@@ -746,3 +949,94 @@ class EventSubscriberWorkerEventsTest(EventSubscriberBaseTestCase):
         self.assertTrue(
             any(isinstance(item, dict) and item.get("code") == "RESULT_CONTRACT_VALIDATION_FAILED" for item in diagnostics)
         )
+
+
+@pytest.mark.django_db
+@patch("apps.operations.event_subscriber.runtime.operations_redis_client")
+@patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+def test_handle_worker_completed_generation_change_enqueues_business_configuration_reverify(
+    mock_redis_class,
+    mock_ops_redis,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _seed_ibcmd_business_configuration_catalog(monkeypatch)
+
+    def _fake_enqueue(op_id: str) -> EnqueueResult:
+        BatchOperation.objects.filter(id=op_id).update(status=BatchOperation.STATUS_QUEUED)
+        return EnqueueResult(success=True, operation_id=op_id, status="queued")
+
+    monkeypatch.setattr(OperationsService, "enqueue_operation", _fake_enqueue)
+
+    database = Database.objects.create(
+        id="db-business-config-reverify",
+        name="Test Database",
+        host="localhost",
+        port=80,
+        odata_url="http://localhost/odata",
+        username="admin",
+        password="password",
+        metadata={
+            "business_configuration_profile": {
+                "config_name": "Бухгалтерия предприятия, редакция 3.0",
+                "config_root_name": "БухгалтерияПредприятия",
+                "config_version": "3.0.193.19",
+                "config_vendor": 'Фирма "1С"',
+                "config_generation_id": "old-generation-id",
+                "config_name_source": "synonym_ru",
+                "verification_status": "verified",
+                "verified_at": "2026-03-12T00:00:00+00:00",
+            }
+        },
+    )
+
+    op = BatchOperation.objects.create(
+        id=str(uuid.uuid4()),
+        name="IBCMD config generation-id changed",
+        operation_type=BatchOperation.TYPE_IBCMD_CLI,
+        target_entity="Infobase",
+        status=BatchOperation.STATUS_PROCESSING,
+        metadata={
+            "command_id": "infobase.config.generation-id",
+            "snapshot_kinds": ["business_configuration_profile"],
+        },
+    )
+    Task.objects.create(
+        id="task-business-config-generation-changed",
+        batch_operation=op,
+        database=database,
+        status=Task.STATUS_PROCESSING,
+    )
+
+    subscriber = EventSubscriber()
+    subscriber.handle_worker_completed(
+        {
+            "operation_id": op.id,
+            "status": "completed",
+            "results": [
+                {
+                    "database_id": str(database.id),
+                    "success": True,
+                    "data": {"stdout": "new-generation-id\n"},
+                }
+            ],
+            "summary": {"total": 1, "succeeded": 1, "failed": 0},
+        },
+        "corr-business-config-generation-changed",
+    )
+
+    database.refresh_from_db()
+    profile = (database.metadata or {}).get("business_configuration_profile") or {}
+    assert profile.get("config_generation_id") == "new-generation-id"
+    assert profile.get("verification_status") == "reverify_required"
+
+    follow_up = (
+        BatchOperation.objects.exclude(id=op.id)
+        .filter(target_databases=database)
+        .order_by("-created_at")
+        .first()
+    )
+    assert follow_up is not None
+    assert follow_up.status == BatchOperation.STATUS_QUEUED
+    assert (follow_up.metadata or {}).get("command_id") == "infobase.config.export.objects"
+    assert (follow_up.metadata or {}).get("business_configuration_job_kind") == "verification"
+    assert (follow_up.metadata or {}).get("triggered_by_operation_id") == op.id

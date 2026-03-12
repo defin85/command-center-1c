@@ -66,6 +66,17 @@ const DECISIONS_API_OPTIONS = { skipGlobalError: true } as const
 
 const formatJson = (value: unknown): string => JSON.stringify(value, null, 2)
 
+const readMetadataString = (metadata: MetadataContextLike, key: string): string => {
+  if (!metadata || typeof metadata !== 'object') return ''
+  const value = (metadata as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+const readMetadataBoolean = (metadata: MetadataContextLike, key: string): boolean => {
+  if (!metadata || typeof metadata !== 'object') return false
+  return Boolean((metadata as Record<string, unknown>)[key])
+}
+
 const getApiErrorInfo = (error: unknown) => {
   const candidate = error as {
     message?: string
@@ -109,6 +120,7 @@ const METADATA_CONTEXT_FALLBACK_CODES = new Set([
   'ODATA_MAPPING_AMBIGUOUS',
   'ODATA_MAPPING_NOT_CONFIGURED',
   'POOL_METADATA_SNAPSHOT_UNAVAILABLE',
+  'POOL_METADATA_PROFILE_UNAVAILABLE',
   'POOL_METADATA_REFRESH_IN_PROGRESS',
   'POOL_METADATA_FETCH_FAILED',
   'POOL_METADATA_PARSE_FAILED',
@@ -204,9 +216,12 @@ const normalizeMetadataItems = (metadata: MetadataContextLike) => (
     ? [
       { key: 'config', label: 'Configuration profile', value: metadata.config_name || '—' },
       { key: 'version', label: 'Config version', value: metadata.config_version || '—' },
+      { key: 'generation', label: 'Config generation ID', value: readMetadataString(metadata, 'config_generation_id') || '—' },
       { key: 'snapshot', label: 'Snapshot ID', value: metadata.snapshot_id || '—' },
       { key: 'mode', label: 'Resolution mode', value: metadata.resolution_mode || '—' },
       { key: 'hash', label: 'Metadata hash', value: metadata.metadata_hash || '—' },
+      { key: 'observed_hash', label: 'Observed hash', value: readMetadataString(metadata, 'observed_metadata_hash') || '—' },
+      { key: 'drift', label: 'Publication drift', value: readMetadataBoolean(metadata, 'publication_drift') ? 'warning' : 'no' },
       { key: 'provenance', label: 'Provenance database', value: metadata.provenance_database_id || '—' },
     ]
     : []
@@ -217,10 +232,6 @@ const renderCompatibilityTag = (compatibility?: DecisionMetadataCompatibility | 
   const color = compatibility.is_compatible ? 'green' : 'red'
   return <Tag color={color}>{compatibility.status}</Tag>
 }
-
-const formatShortHash = (value: string): string => (
-  value.length > 16 ? `${value.slice(0, 8)}...${value.slice(-8)}` : value
-)
 
 const buildChainsFromDraft = (draft: DecisionEditorState): DocumentPolicyBuilderChainFormValue[] => {
   if (draft.activeTab === 'raw') {
@@ -476,10 +487,10 @@ export function DecisionsPage() {
       snapshotFilterMode === 'all'
         ? (
           hiddenDecisionCount > 0
-            ? `Showing all ${decisions.length} revisions for diagnostics. ${hiddenDecisionCount} ${hiddenDecisionCount === 1 ? 'revision does' : 'revisions do'} not match the selected metadata snapshot.`
-            : `Showing all ${decisions.length} revisions for diagnostics. All revisions match the selected metadata snapshot.`
+            ? `Showing all ${decisions.length} revisions for diagnostics. ${hiddenDecisionCount} ${hiddenDecisionCount === 1 ? 'revision does' : 'revisions do'} not match the selected configuration.`
+            : `Showing all ${decisions.length} revisions for diagnostics. All revisions match the selected configuration.`
         )
-        : `Showing ${visibleDecisions.length} of ${decisions.length} revisions matching the selected metadata snapshot.`
+        : `Showing ${visibleDecisions.length} of ${decisions.length} revisions matching the selected configuration.`
     )
     : null
 
@@ -812,8 +823,8 @@ export function DecisionsPage() {
               message={snapshotFilterMessage}
               description={(
                 <Space wrap size={[8, 8]}>
-                  <Text type="secondary">Selected hash</Text>
-                  <Tag>{formatShortHash(decisionSnapshotFilter.selectedMetadataHash)}</Tag>
+                  <Text type="secondary">Selected configuration</Text>
+                  <Tag>{decisionSnapshotFilter.selectedConfigurationLabel}</Tag>
                   {(hiddenDecisionCount > 0 || snapshotFilterMode === 'all') ? (
                     <Button
                       type="link"
@@ -821,7 +832,7 @@ export function DecisionsPage() {
                         current === 'matching_snapshot' ? 'all' : 'matching_snapshot'
                       ))}
                     >
-                      {snapshotFilterMode === 'all' ? 'Show matching snapshot only' : 'Show all revisions'}
+                      {snapshotFilterMode === 'all' ? 'Show matching configuration only' : 'Show all revisions'}
                     </Button>
                   ) : null}
                 </Space>
@@ -836,7 +847,7 @@ export function DecisionsPage() {
           ) : visibleDecisions.length === 0 ? (
             <Empty
               description={decisionSnapshotFilter.canFilterBySnapshot
-                ? 'No decision revisions match the selected metadata snapshot'
+                ? 'No decision revisions match the selected configuration'
                 : 'No decision revisions yet'}
             />
           ) : (
@@ -921,7 +932,7 @@ export function DecisionsPage() {
                 }))}
               />
 
-              {!selectedDecision.metadata_compatibility?.is_compatible && selectedDecision.metadata_compatibility?.reason ? (
+              {selectedDecision.metadata_compatibility?.reason ? (
                 <Alert
                   type="warning"
                   showIcon

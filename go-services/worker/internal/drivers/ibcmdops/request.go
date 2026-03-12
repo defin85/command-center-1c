@@ -11,9 +11,11 @@ import (
 )
 
 type ibcmdRequest struct {
+	CommandID       string
 	Args            []string
 	Stdin           string
 	ArtifactPath    string
+	OutputPath      string
 	RuntimeBindings []map[string]interface{}
 	inputCleanup    func()
 	outputCleanup   func()
@@ -71,6 +73,7 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 		var outputCleanup func()
 		var outputFinalize func(ctx context.Context) error
 		artifactPath := ""
+		outputPath := ""
 		var err error
 
 		if commandID == "infobase.dump" {
@@ -128,6 +131,32 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 			argv[posIdx] = resolvedInput
 			if cleanup != nil {
 				inputCleanup = cleanup
+			}
+		}
+
+		if commandID == "infobase.config.export.objects" {
+			if store == nil {
+				return nil, fmt.Errorf("storage is not configured")
+			}
+			outIdx, requested, hasArchive, inlineValue := findOutputFlag(argv)
+			if outIdx >= 0 && hasArchive {
+				resolvedOutputPath, outArtifactPath, finalize, cleanup, err := store.PrepareOutput(ctx, requested, databaseID, ".zip")
+				if err != nil {
+					return nil, err
+				}
+				if finalize != nil {
+					outputFinalize = finalize
+				}
+				if cleanup != nil {
+					outputCleanup = cleanup
+				}
+				artifactPath = outArtifactPath
+				outputPath = resolvedOutputPath
+				if inlineValue {
+					argv[outIdx] = "--out=" + resolvedOutputPath
+				} else {
+					argv[outIdx] = resolvedOutputPath
+				}
 			}
 		}
 
@@ -258,9 +287,11 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 			})
 		}
 		return &ibcmdRequest{
+			CommandID:       commandID,
 			Args:            credsArgs,
 			Stdin:           stdin,
 			ArtifactPath:    artifactPath,
+			OutputPath:      outputPath,
 			RuntimeBindings: runtimeBindings,
 			inputCleanup:    combinedInputCleanup,
 			outputCleanup:   outputCleanup,
@@ -269,4 +300,22 @@ func buildRequest(ctx context.Context, msg *models.OperationMessage, databaseID 
 	}
 
 	return nil, fmt.Errorf("unsupported operation type: %s", msg.OperationType)
+}
+
+func findOutputFlag(args []string) (int, string, bool, bool) {
+	hasArchive := false
+	for idx := 0; idx < len(args); idx++ {
+		token := strings.TrimSpace(args[idx])
+		if token == "--archive" {
+			hasArchive = true
+			continue
+		}
+		if token == "--out" && idx+1 < len(args) {
+			return idx + 1, strings.TrimSpace(args[idx+1]), hasArchive, false
+		}
+		if strings.HasPrefix(token, "--out=") {
+			return idx, strings.TrimSpace(strings.TrimPrefix(token, "--out=")), hasArchive, true
+		}
+	}
+	return -1, "", hasArchive, false
 }

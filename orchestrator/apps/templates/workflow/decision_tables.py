@@ -56,8 +56,10 @@ def build_decision_table_metadata_context(
         "snapshot_id",
         "config_name",
         "config_version",
+        "config_generation_id",
         "extensions_fingerprint",
         "metadata_hash",
+        "observed_metadata_hash",
         "resolution_mode",
         "provenance_database_id",
     ):
@@ -67,6 +69,8 @@ def build_decision_table_metadata_context(
 
     if "is_shared_snapshot" in metadata_context:
         normalized["is_shared_snapshot"] = bool(metadata_context.get("is_shared_snapshot"))
+    if "publication_drift" in metadata_context:
+        normalized["publication_drift"] = bool(metadata_context.get("publication_drift"))
 
     provenance_confirmed_at = metadata_context.get("provenance_confirmed_at")
     if isinstance(provenance_confirmed_at, datetime):
@@ -135,12 +139,10 @@ def assess_decision_table_metadata_compatibility(
     scope_tuple = (
         str(stored_context.get("config_name") or ""),
         str(stored_context.get("config_version") or ""),
-        str(stored_context.get("extensions_fingerprint") or ""),
     )
     current_scope_tuple = (
         str(current_context.get("config_name") or ""),
         str(current_context.get("config_version") or ""),
-        str(current_context.get("extensions_fingerprint") or ""),
     )
     if scope_tuple != current_scope_tuple:
         return {
@@ -151,9 +153,9 @@ def assess_decision_table_metadata_compatibility(
 
     if str(stored_context.get("metadata_hash") or "") != str(current_context.get("metadata_hash") or ""):
         return {
-            "status": METADATA_COMPATIBILITY_INCOMPATIBLE,
+            "status": METADATA_COMPATIBILITY_COMPATIBLE,
             "reason": METADATA_COMPATIBILITY_REASON_METADATA_SURFACE_DIVERGED,
-            "is_compatible": False,
+            "is_compatible": True,
         }
 
     return {

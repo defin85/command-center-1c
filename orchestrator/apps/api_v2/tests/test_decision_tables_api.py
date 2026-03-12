@@ -48,6 +48,30 @@ def _create_database(
     )
 
 
+def _set_business_configuration_profile(
+    *,
+    database: Database,
+    config_name: str = "Бухгалтерия предприятия, редакция 3.0",
+    root_name: str = "БухгалтерияПредприятия",
+    config_version: str = "3.0.193.19",
+    config_vendor: str = 'Фирма "1С"',
+    config_generation_id: str = "1f53b85eba259b43bf2c696c614fc1d900000000",
+) -> None:
+    metadata = dict(database.metadata or {})
+    metadata["business_configuration_profile"] = {
+        "config_name": config_name,
+        "config_root_name": root_name,
+        "config_version": config_version,
+        "config_vendor": config_vendor,
+        "config_generation_id": config_generation_id,
+        "config_name_source": "synonym_ru",
+        "verification_status": "verified",
+        "verified_at": "2026-03-12T00:00:00+00:00",
+    }
+    database.metadata = metadata
+    database.save(update_fields=["metadata", "updated_at"])
+
+
 def _create_service_infobase_mapping(*, database: Database) -> None:
     InfobaseUserMapping.objects.create(
         database=database,
@@ -65,11 +89,12 @@ def _create_current_metadata_catalog_snapshot(
     payload: dict[str, object] | None = None,
     metadata_hash: str = "a" * 64,
 ) -> PoolODataMetadataCatalogSnapshot:
+    profile = dict(database.metadata.get("business_configuration_profile") or {})
     snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
         tenant=tenant,
         database=database,
-        config_name=str(database.base_name or database.name or database.id),
-        config_version=str(database.version or ""),
+        config_name=str(profile.get("config_name") or ""),
+        config_version=str(profile.get("config_version") or ""),
         extensions_fingerprint="",
         metadata_hash=metadata_hash,
         catalog_version=f"v1:{uuid.uuid4().hex[:16]}",
@@ -101,8 +126,8 @@ def _create_current_metadata_catalog_snapshot(
         tenant=tenant,
         database=database,
         snapshot=snapshot,
-        config_name=str(database.base_name or database.name or database.id),
-        config_version=str(database.version or ""),
+        config_name=str(profile.get("config_name") or ""),
+        config_version=str(profile.get("config_version") or ""),
         extensions_fingerprint="",
         confirmed_at=snapshot.fetched_at,
     )
@@ -270,6 +295,8 @@ def test_decision_tables_api_create_uses_shared_metadata_snapshot_context(
     )
     _create_service_infobase_mapping(database=first_database)
     _create_service_infobase_mapping(database=second_database)
+    _set_business_configuration_profile(database=first_database)
+    _set_business_configuration_profile(database=second_database)
     shared_payload = {
         "documents": [
             {
@@ -321,10 +348,10 @@ def test_decision_tables_api_create_uses_shared_metadata_snapshot_context(
     assert payload["decision"]["metadata_compatibility"]["is_compatible"] is True
     assert payload["metadata_context"]["database_id"] == str(second_database.id)
     assert payload["metadata_context"]["snapshot_id"] == str(snapshot.id)
-    assert payload["metadata_context"]["source"] == "live_refresh"
+    assert payload["metadata_context"]["source"] == "db"
     assert payload["metadata_context"]["resolution_mode"] == "shared_scope"
     assert payload["metadata_context"]["is_shared_snapshot"] is True
-    assert payload["metadata_context"]["provenance_database_id"] == str(second_database.id)
+    assert payload["metadata_context"]["provenance_database_id"] == str(first_database.id)
 
 
 @pytest.mark.django_db
@@ -339,6 +366,7 @@ def test_decision_tables_api_rejects_invalid_document_policy_metadata_refs(
         version="8.3.24",
     )
     _create_service_infobase_mapping(database=database)
+    _set_business_configuration_profile(database=database)
     _create_current_metadata_catalog_snapshot(tenant=tenant, database=database)
 
     invalid_payload = _build_decision_payload()
@@ -379,7 +407,7 @@ def test_decision_tables_api_rejects_document_policy_create_without_database_con
 
 
 @pytest.mark.django_db
-def test_decision_tables_api_reports_diverged_metadata_surface_as_incompatible(
+def test_decision_tables_api_reports_diverged_metadata_surface_as_warning_while_remaining_compatible(
     staff_client: APIClient,
 ) -> None:
     tenant = Tenant.objects.create(slug=f"decision-meta-diverged-{uuid.uuid4().hex[:8]}", name="Decision Meta Diverged")
@@ -397,6 +425,8 @@ def test_decision_tables_api_reports_diverged_metadata_surface_as_incompatible(
     )
     _create_service_infobase_mapping(database=first_database)
     _create_service_infobase_mapping(database=second_database)
+    _set_business_configuration_profile(database=first_database)
+    _set_business_configuration_profile(database=second_database)
     created_snapshot = _create_current_metadata_catalog_snapshot(
         tenant=tenant,
         database=first_database,
@@ -441,8 +471,8 @@ def test_decision_tables_api_reports_diverged_metadata_surface_as_incompatible(
     assert detail_response.status_code == 200
     detail_payload = detail_response.json()
     compatibility = detail_payload["decision"]["metadata_compatibility"]
-    assert compatibility["is_compatible"] is False
-    assert compatibility["status"] == "incompatible"
+    assert compatibility["is_compatible"] is True
+    assert compatibility["status"] == "compatible"
     assert compatibility["reason"] == "metadata_surface_diverged"
 
 
@@ -458,6 +488,7 @@ def test_decision_tables_api_list_returns_metadata_context_for_builder(
         version="8.3.24",
     )
     _create_service_infobase_mapping(database=database)
+    _set_business_configuration_profile(database=database)
     snapshot = _create_current_metadata_catalog_snapshot(tenant=tenant, database=database)
 
     response = staff_client.get(

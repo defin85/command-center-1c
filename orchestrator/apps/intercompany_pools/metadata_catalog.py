@@ -23,6 +23,14 @@ from apps.databases.odata import (
     resolve_database_odata_verify_tls,
 )
 from apps.databases.models import Database, DatabaseExtensionsSnapshot, InfobaseUserMapping
+from apps.intercompany_pools.business_configuration_operations import (
+    ensure_business_configuration_profile_runtime,
+)
+from apps.intercompany_pools.business_configuration_profile import (
+    get_business_configuration_profile,
+    mark_business_configuration_publication_state,
+    persist_business_configuration_profile,
+)
 
 from .models import (
     PoolODataMetadataCatalogSnapshot,
@@ -40,6 +48,7 @@ ERROR_CODE_POOL_METADATA_SNAPSHOT_UNAVAILABLE = "POOL_METADATA_SNAPSHOT_UNAVAILA
 ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS = "POOL_METADATA_REFRESH_IN_PROGRESS"
 ERROR_CODE_POOL_METADATA_FETCH_FAILED = "POOL_METADATA_FETCH_FAILED"
 ERROR_CODE_POOL_METADATA_PARSE_FAILED = "POOL_METADATA_PARSE_FAILED"
+ERROR_CODE_POOL_METADATA_PROFILE_UNAVAILABLE = "POOL_METADATA_PROFILE_UNAVAILABLE"
 
 SOURCE_REDIS = "redis"
 SOURCE_DB = "db"
@@ -90,14 +99,23 @@ class MetadataCatalogError(Exception):
 
 
 def resolve_metadata_catalog_scope(*, tenant_id: str, database: Database) -> MetadataCatalogScope:
-    config_name = str(
-        database.base_name
-        or database.infobase_name
-        or database.name
-        or database.id
-        or ""
-    ).strip()
-    config_version = str(database.version or "").strip()
+    profile = _resolve_business_configuration_profile(database=database)
+    if profile is None:
+        raise MetadataCatalogError(
+            code=ERROR_CODE_POOL_METADATA_PROFILE_UNAVAILABLE,
+            title="Metadata Business Profile Unavailable",
+            detail="Business configuration profile is unavailable for selected database.",
+            status_code=400,
+            errors=[
+                {
+                    "code": ERROR_CODE_POOL_METADATA_PROFILE_UNAVAILABLE,
+                    "path": "database_id",
+                    "detail": "Business configuration profile is unavailable for selected database.",
+                }
+            ],
+        )
+    config_name = str(profile.get("config_name") or "").strip()
+    config_version = str(profile.get("config_version") or "").strip()
 
     extensions_fingerprint = ""
     snapshot: DatabaseExtensionsSnapshot | None = getattr(database, "extensions_snapshot", None)
@@ -120,13 +138,14 @@ def read_metadata_catalog_snapshot(
     requested_by_username: str,
     allow_cold_bootstrap: bool = True,
 ) -> tuple[PoolODataMetadataCatalogSnapshot, str]:
+    ensure_business_configuration_profile_runtime(database=database)
+    scope = resolve_metadata_catalog_scope(tenant_id=tenant_id, database=database)
     # Metadata catalog path is mapping-only for both read and refresh requests.
     # Validate auth configuration before serving cached/snapshotted data.
     _resolve_metadata_mapping_credentials(
         database=database,
         requested_by_username=requested_by_username,
     )
-    scope = resolve_metadata_catalog_scope(tenant_id=tenant_id, database=database)
     cached_snapshot = _read_snapshot_from_cache(scope=scope)
     if cached_snapshot is not None:
         current_resolution = _get_scope_resolution(scope=scope)
@@ -179,6 +198,7 @@ def refresh_metadata_catalog_snapshot(
     requested_by_username: str,
     source: str = PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
 ) -> PoolODataMetadataCatalogSnapshot:
+    ensure_business_configuration_profile_runtime(database=database)
     scope = resolve_metadata_catalog_scope(tenant_id=tenant_id, database=database)
 
     try:
@@ -202,11 +222,37 @@ def refresh_metadata_catalog_snapshot(
             now = timezone.now()
             previous_resolution = _get_scope_resolution(scope=scope, for_update=True)
             previous_snapshot = previous_resolution.snapshot if previous_resolution is not None else None
-            existing_version = (
-                PoolODataMetadataCatalogSnapshot.objects.select_for_update()
-                .filter(**_shared_scope_filters(scope), catalog_version=catalog_version)
-                .first()
-            )
+            current_shared_snapshot = _get_shared_current_snapshot(scope=scope, for_update=True)
+
+            if current_shared_snapshot is not None and current_shared_snapshot.metadata_hash != metadata_hash:
+                if str(current_shared_snapshot.database_id) != str(database.id):
+                    snapshot = current_shared_snapshot
+                    _upsert_scope_resolution(
+                        scope=scope,
+                        database=database,
+                        snapshot=snapshot,
+                        confirmed_at=snapshot.fetched_at,
+                        existing=previous_resolution,
+                    )
+                    _sync_snapshot_current_marker(snapshot=snapshot)
+                    mark_business_configuration_publication_state(
+                        database=database,
+                        observed_metadata_hash=metadata_hash,
+                        fetched_at=now,
+                        canonical_metadata_hash=snapshot.metadata_hash,
+                    )
+                    if previous_snapshot is not None and previous_snapshot.id != snapshot.id:
+                        _sync_snapshot_current_marker(snapshot=previous_snapshot)
+                    _write_snapshot_to_cache(scope=scope, snapshot=snapshot)
+                    return snapshot
+
+            existing_version = None
+            if current_shared_snapshot is None or current_shared_snapshot.metadata_hash == metadata_hash:
+                existing_version = (
+                    PoolODataMetadataCatalogSnapshot.objects.select_for_update()
+                    .filter(**_shared_scope_filters(scope), catalog_version=catalog_version)
+                    .first()
+                )
 
             if existing_version is not None:
                 existing_version.database = database
@@ -251,6 +297,12 @@ def refresh_metadata_catalog_snapshot(
             _sync_snapshot_current_marker(snapshot=snapshot)
             if previous_snapshot is not None and previous_snapshot.id != snapshot.id:
                 _sync_snapshot_current_marker(snapshot=previous_snapshot)
+            mark_business_configuration_publication_state(
+                database=database,
+                observed_metadata_hash=metadata_hash,
+                fetched_at=now,
+                canonical_metadata_hash=snapshot.metadata_hash,
+            )
     except MetadataCatalogError:
         raise
 
@@ -263,6 +315,7 @@ def get_current_snapshot_for_database_scope(
     tenant_id: str,
     database: Database,
 ) -> PoolODataMetadataCatalogSnapshot | None:
+    ensure_business_configuration_profile_runtime(database=database)
     scope = resolve_metadata_catalog_scope(tenant_id=tenant_id, database=database)
     return _get_current_snapshot(scope=scope, database=database)
 
@@ -273,18 +326,8 @@ def describe_metadata_catalog_snapshot_resolution(
     database: Database,
     snapshot: PoolODataMetadataCatalogSnapshot,
 ) -> MetadataCatalogSnapshotResolution:
-    latest_resolution = (
-        PoolODataMetadataCatalogScopeResolution.objects.filter(snapshot_id=snapshot.id)
-        .order_by("-confirmed_at", "-updated_at", "-created_at")
-        .first()
-    )
-    if latest_resolution is not None:
-        provenance_database_id = str(latest_resolution.database_id)
-        provenance_confirmed_at = latest_resolution.confirmed_at
-    else:
-        provenance_database_id = str(snapshot.database_id)
-        provenance_confirmed_at = snapshot.fetched_at
-
+    provenance_database_id = str(snapshot.database_id)
+    provenance_confirmed_at = snapshot.fetched_at
     is_shared_snapshot = (
         provenance_database_id != str(database.id)
         or PoolODataMetadataCatalogScopeResolution.objects.filter(snapshot_id=snapshot.id)
@@ -312,6 +355,7 @@ def build_metadata_catalog_api_payload(
     payload = normalize_catalog_payload(
         payload=snapshot.payload if isinstance(snapshot.payload, dict) else {}
     )
+    profile = get_business_configuration_profile(database=database) or {}
     documents = payload.get("documents") if isinstance(payload.get("documents"), list) else []
     return {
         "database_id": str(database.id),
@@ -323,6 +367,9 @@ def build_metadata_catalog_api_payload(
         "config_version": snapshot.config_version,
         "extensions_fingerprint": snapshot.extensions_fingerprint,
         "metadata_hash": snapshot.metadata_hash,
+        "config_generation_id": str(profile.get("config_generation_id") or ""),
+        "publication_drift": bool(profile.get("publication_drift")),
+        "observed_metadata_hash": str(profile.get("observed_metadata_hash") or ""),
         "resolution_mode": resolution.resolution_mode,
         "is_shared_snapshot": resolution.is_shared_snapshot,
         "provenance_database_id": resolution.provenance_database_id,
@@ -562,7 +609,6 @@ def _shared_scope_filters(scope: MetadataCatalogScope) -> dict[str, str]:
         "tenant_id": scope.tenant_id,
         "config_name": scope.config_name,
         "config_version": scope.config_version,
-        "extensions_fingerprint": scope.extensions_fingerprint,
     }
 
 
@@ -572,7 +618,6 @@ def _resolution_filters(scope: MetadataCatalogScope) -> dict[str, str]:
         "database_id": scope.database_id,
         "config_name": scope.config_name,
         "config_version": scope.config_version,
-        "extensions_fingerprint": scope.extensions_fingerprint,
     }
 
 
@@ -585,24 +630,13 @@ def _get_current_snapshot(
     if resolution is not None:
         return resolution.snapshot
 
-    shared_candidates = list(
-        PoolODataMetadataCatalogSnapshot.objects.filter(
-            **_shared_scope_filters(scope),
-            is_current=True,
-        )
-        .order_by("-fetched_at", "-created_at")[:2]
-    )
-    if len(shared_candidates) != 1:
+    shared_candidates = list(_get_shared_current_snapshot_candidates(scope=scope)[:2])
+    if len(shared_candidates) == 0:
         return None
 
     snapshot = shared_candidates[0]
     if database is None:
         return snapshot
-    if snapshot.database_id != database.id:
-        # Another infobase may share the same configuration profile while publishing a
-        # different OData surface. Reuse across databases requires an explicit
-        # database-specific confirmation via live refresh, not silent adoption on first read.
-        return None
     return _adopt_scope_resolution_for_snapshot(
         scope=scope,
         database=database,
@@ -638,7 +672,6 @@ def _build_catalog_version(*, scope: MetadataCatalogScope, metadata_hash: str) -
             scope.tenant_id,
             scope.config_name,
             scope.config_version,
-            scope.extensions_fingerprint,
             metadata_hash,
         ]
     )
@@ -677,8 +710,21 @@ def _upsert_scope_resolution(
 
     existing.database = database
     existing.snapshot = snapshot
+    existing.config_name = scope.config_name
+    existing.config_version = scope.config_version
+    existing.extensions_fingerprint = scope.extensions_fingerprint
     existing.confirmed_at = confirmed_at
-    existing.save(update_fields=["database", "snapshot", "confirmed_at", "updated_at"])
+    existing.save(
+        update_fields=[
+            "database",
+            "snapshot",
+            "config_name",
+            "config_version",
+            "extensions_fingerprint",
+            "confirmed_at",
+            "updated_at",
+        ]
+    )
     return existing
 
 
@@ -1210,7 +1256,6 @@ def _build_cache_key(*, scope: MetadataCatalogScope) -> str:
             [
                 scope.config_name,
                 scope.config_version,
-                scope.extensions_fingerprint,
             ]
         ).encode("utf-8")
     ).hexdigest()[:16]
@@ -1313,8 +1358,6 @@ def _read_snapshot_from_cache(*, scope: MetadataCatalogScope) -> PoolODataMetada
         return None
     if str(cached_scope_raw.get("config_version") or "") != scope.config_version:
         return None
-    if str(cached_scope_raw.get("extensions_fingerprint") or "") != scope.extensions_fingerprint:
-        return None
     if str(snapshot_raw.get("tenant_id") or "") != scope.tenant_id:
         return None
 
@@ -1350,3 +1393,73 @@ def _parse_iso_datetime(raw: object) -> datetime | None:
         return datetime.fromisoformat(normalized)
     except ValueError:
         return None
+
+
+def _resolve_business_configuration_profile(*, database: Database) -> dict[str, Any] | None:
+    profile = get_business_configuration_profile(database=database)
+    if profile is not None:
+        return profile
+    return _backfill_business_configuration_profile_from_existing_snapshot(database=database)
+
+
+def _backfill_business_configuration_profile_from_existing_snapshot(
+    *,
+    database: Database,
+) -> dict[str, Any] | None:
+    resolution = (
+        PoolODataMetadataCatalogScopeResolution.objects.select_related("snapshot")
+        .filter(database=database)
+        .order_by("-confirmed_at", "-updated_at", "-created_at")
+        .first()
+    )
+    snapshot = resolution.snapshot if resolution is not None else None
+    if snapshot is None:
+        snapshot = (
+            PoolODataMetadataCatalogSnapshot.objects.filter(database=database, is_current=True)
+            .order_by("-fetched_at", "-created_at")
+            .first()
+        )
+    if snapshot is None:
+        return None
+
+    config_name = str(snapshot.config_name or "").strip()
+    config_version = str(snapshot.config_version or "").strip()
+    if not config_name or not config_version:
+        return None
+
+    return persist_business_configuration_profile(
+        database=database,
+        profile={
+            "config_name": config_name,
+            "config_root_name": config_name,
+            "config_version": config_version,
+            "config_name_source": "legacy_snapshot",
+            "verification_status": "migrated_legacy",
+            "verified_at": snapshot.fetched_at,
+            "observed_metadata_hash": snapshot.metadata_hash,
+            "canonical_metadata_hash": snapshot.metadata_hash,
+            "publication_drift": False,
+            "observed_metadata_fetched_at": snapshot.fetched_at,
+        },
+    )
+
+
+def _get_shared_current_snapshot_candidates(*, scope: MetadataCatalogScope):
+    return (
+        PoolODataMetadataCatalogSnapshot.objects.filter(
+            **_shared_scope_filters(scope),
+            is_current=True,
+        )
+        .order_by("-fetched_at", "-created_at")
+    )
+
+
+def _get_shared_current_snapshot(
+    *,
+    scope: MetadataCatalogScope,
+    for_update: bool = False,
+) -> PoolODataMetadataCatalogSnapshot | None:
+    queryset = _get_shared_current_snapshot_candidates(scope=scope)
+    if for_update:
+        queryset = queryset.select_for_update()
+    return queryset.first()

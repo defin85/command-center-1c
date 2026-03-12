@@ -1,0 +1,286 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from uuid import uuid4
+
+from django.utils import timezone
+
+from apps.databases.models import Database
+from apps.intercompany_pools.business_configuration_profile import (
+    get_business_configuration_profile,
+    persist_business_configuration_profile,
+)
+from apps.operations.driver_catalog_effective import (
+    get_effective_driver_catalog,
+    resolve_driver_catalog_versions,
+)
+from apps.operations.ibcmd_cli_builder import (
+    build_ibcmd_cli_argv,
+    build_ibcmd_connection_args,
+)
+from apps.operations.models import BatchOperation, Task
+from apps.operations.services.operations_service import OperationsService
+
+
+BUSINESS_CONFIGURATION_SNAPSHOT_KIND = "business_configuration_profile"
+BUSINESS_CONFIGURATION_COMMAND_GENERATION_ID = "infobase.config.generation-id"
+BUSINESS_CONFIGURATION_COMMAND_EXPORT_OBJECTS = "infobase.config.export.objects"
+
+BUSINESS_CONFIGURATION_JOB_KIND_GENERATION_PROBE = "generation_probe"
+BUSINESS_CONFIGURATION_JOB_KIND_VERIFICATION = "verification"
+
+BUSINESS_CONFIGURATION_GENERATION_PROBE_INTERVAL = timedelta(hours=24)
+
+_ACTIVE_BATCH_OPERATION_STATUSES = (
+    BatchOperation.STATUS_PENDING,
+    BatchOperation.STATUS_QUEUED,
+    BatchOperation.STATUS_PROCESSING,
+)
+
+
+def ensure_business_configuration_profile_runtime(*, database: Database) -> dict[str, Any] | None:
+    profile = get_business_configuration_profile(database=database)
+    if profile is None:
+        enqueue_business_configuration_verification(
+            database=database,
+            reason="profile_missing",
+        )
+        return None
+
+    verification_status = str(profile.get("verification_status") or "").strip()
+    if verification_status in {"migrated_legacy", "reverify_required", "verification_failed"}:
+        enqueue_business_configuration_verification(
+            database=database,
+            reason=verification_status or "verification_required",
+        )
+
+    if _should_enqueue_generation_probe(profile=profile):
+        enqueue_business_configuration_generation_probe(
+            database=database,
+            reason="scheduled_generation_probe",
+        )
+
+    return get_business_configuration_profile(database=database)
+
+
+def enqueue_business_configuration_generation_probe(
+    *,
+    database: Database,
+    reason: str,
+) -> BatchOperation | None:
+    existing = _find_active_operation(
+        database=database,
+        job_kind=BUSINESS_CONFIGURATION_JOB_KIND_GENERATION_PROBE,
+    )
+    if existing is not None:
+        return existing
+
+    operation = _enqueue_business_configuration_operation(
+        database=database,
+        command_id=BUSINESS_CONFIGURATION_COMMAND_GENERATION_ID,
+        job_kind=BUSINESS_CONFIGURATION_JOB_KIND_GENERATION_PROBE,
+        reason=reason,
+        params={},
+    )
+    profile = get_business_configuration_profile(database=database)
+    if operation is not None and profile is not None:
+        updated_profile = dict(profile)
+        updated_profile["generation_probe_operation_id"] = str(operation.id)
+        updated_profile["generation_probe_requested_at"] = timezone.now().isoformat()
+        persist_business_configuration_profile(database=database, profile=updated_profile)
+    return operation
+
+
+def enqueue_business_configuration_verification(
+    *,
+    database: Database,
+    reason: str,
+    triggered_by_operation_id: str | None = None,
+) -> BatchOperation | None:
+    existing = _find_active_operation(
+        database=database,
+        job_kind=BUSINESS_CONFIGURATION_JOB_KIND_VERIFICATION,
+    )
+    if existing is not None:
+        return existing
+
+    artifact_key = (
+        f"business-configuration-profile/{str(database.id)}/"
+        f"{uuid4().hex}/Configuration.zip"
+    )
+    metadata = {}
+    if triggered_by_operation_id:
+        metadata["triggered_by_operation_id"] = str(triggered_by_operation_id)
+    operation = _enqueue_business_configuration_operation(
+        database=database,
+        command_id=BUSINESS_CONFIGURATION_COMMAND_EXPORT_OBJECTS,
+        job_kind=BUSINESS_CONFIGURATION_JOB_KIND_VERIFICATION,
+        reason=reason,
+        params={
+            "arg1": "Configuration",
+            "archive": True,
+            "out": artifact_key,
+        },
+        metadata=metadata,
+    )
+    profile = get_business_configuration_profile(database=database)
+    if operation is not None and profile is not None:
+        updated_profile = dict(profile)
+        updated_profile["verification_operation_id"] = str(operation.id)
+        persist_business_configuration_profile(database=database, profile=updated_profile)
+    return operation
+
+
+def _enqueue_business_configuration_operation(
+    *,
+    database: Database,
+    command_id: str,
+    job_kind: str,
+    reason: str,
+    params: dict[str, Any],
+    metadata: dict[str, Any] | None = None,
+) -> BatchOperation | None:
+    command, catalog = _resolve_ibcmd_command(command_id=command_id)
+    if command is None or catalog is None:
+        return None
+
+    pre_args = build_ibcmd_connection_args(
+        driver_schema=catalog.get("driver_schema") if isinstance(catalog, dict) else None,
+        connection={},
+    )
+    argv, argv_masked = build_ibcmd_cli_argv(
+        command=command,
+        params=params,
+        additional_args=[],
+        pre_args=pre_args,
+    )
+
+    operation_id = str(uuid4())
+    payload = {
+        "data": {
+            "command_id": command_id,
+            "mode": "guided",
+            "argv": argv,
+            "argv_masked": argv_masked,
+            "stdin": "",
+            "connection": {},
+            "connection_source": "database_profile",
+            "ib_auth": {"strategy": "local"},
+            "dbms_auth": {"strategy": "local"},
+        },
+        "filters": {},
+        "options": {},
+    }
+    batch_operation = BatchOperation.objects.create(
+        id=operation_id,
+        name=f"business_configuration_profile {job_kind}",
+        operation_type=BatchOperation.TYPE_IBCMD_CLI,
+        target_entity="Infobase",
+        status=BatchOperation.STATUS_PENDING,
+        payload=payload,
+        config={
+            "batch_size": 1,
+            "timeout_seconds": 900,
+            "retry_count": 1,
+            "priority": "normal",
+        },
+        total_tasks=1,
+        created_by="system",
+        metadata={
+            "tags": ["ibcmd", "ibcmd_cli", command_id, "business_configuration_profile"],
+            "command_id": command_id,
+            "mode": "guided",
+            "snapshot_kinds": [BUSINESS_CONFIGURATION_SNAPSHOT_KIND],
+            "snapshot_source": f"business_configuration_profile.{job_kind}",
+            "business_configuration_job_kind": job_kind,
+            "business_configuration_reason": reason,
+            **(metadata or {}),
+        },
+    )
+    batch_operation.target_databases.set([database])
+    Task.objects.create(
+        id=str(uuid4()),
+        batch_operation=batch_operation,
+        database=database,
+        status=Task.STATUS_PENDING,
+    )
+
+    enqueue_result = OperationsService.enqueue_operation(operation_id)
+    if not enqueue_result.success:
+        batch_operation.status = BatchOperation.STATUS_FAILED
+        batch_operation.metadata = {
+            **(batch_operation.metadata or {}),
+            "error": getattr(enqueue_result, "error", None) or "enqueue_failed",
+            "error_code": getattr(enqueue_result, "error_code", None) or "ENQUEUE_FAILED",
+        }
+        batch_operation.save(update_fields=["status", "metadata", "updated_at"])
+    return batch_operation
+
+
+def _resolve_ibcmd_command(*, command_id: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    versions = resolve_driver_catalog_versions("ibcmd")
+    if versions.base_version is None:
+        return None, None
+    effective = get_effective_driver_catalog(
+        driver="ibcmd",
+        base_version=versions.base_version,
+        overrides_version=versions.overrides_version,
+    )
+    catalog = effective.catalog if isinstance(effective.catalog, dict) else None
+    commands_by_id = catalog.get("commands_by_id") if isinstance(catalog, dict) else None
+    command = commands_by_id.get(command_id) if isinstance(commands_by_id, dict) else None
+    if not isinstance(command, dict):
+        return None, catalog
+    return command, catalog
+
+
+def _find_active_operation(
+    *,
+    database: Database,
+    job_kind: str,
+) -> BatchOperation | None:
+    queryset = (
+        BatchOperation.objects.filter(
+            operation_type=BatchOperation.TYPE_IBCMD_CLI,
+            status__in=_ACTIVE_BATCH_OPERATION_STATUSES,
+            target_databases=database,
+        )
+        .order_by("-created_at")
+    )
+    for operation in queryset:
+        metadata = operation.metadata if isinstance(operation.metadata, dict) else {}
+        if (
+            str(metadata.get("business_configuration_job_kind") or "").strip() == job_kind
+            and BUSINESS_CONFIGURATION_SNAPSHOT_KIND in (metadata.get("snapshot_kinds") or [])
+        ):
+            return operation
+    return None
+
+
+def _should_enqueue_generation_probe(*, profile: dict[str, Any]) -> bool:
+    verification_status = str(profile.get("verification_status") or "").strip()
+    if verification_status in {"verification_pending", "migrated_legacy", "reverify_required"}:
+        return False
+
+    requested_at = _parse_profile_datetime(profile.get("generation_probe_requested_at"))
+    checked_at = _parse_profile_datetime(profile.get("generation_probe_checked_at"))
+    reference = requested_at or checked_at
+    if reference is None:
+        return True
+    return timezone.now() - reference >= BUSINESS_CONFIGURATION_GENERATION_PROBE_INTERVAL
+
+
+def _parse_profile_datetime(raw: object) -> datetime | None:
+    token = str(raw or "").strip()
+    if not token:
+        return None
+    if token.endswith("Z"):
+        token = token[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(token)
+    except ValueError:
+        return None
+    if timezone.is_naive(parsed):
+        return timezone.make_aware(parsed, UTC)
+    return parsed

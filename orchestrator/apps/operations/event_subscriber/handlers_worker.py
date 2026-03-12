@@ -141,6 +141,135 @@ def _append_extensions_snapshot_diagnostics(
         )
 
 
+def _append_business_configuration_snapshot_error(
+    *,
+    snapshot_errors: list[dict[str, Any]],
+    operation_id: str,
+    database_id: str,
+    command_id: str,
+    error: str,
+) -> None:
+    snapshot_errors.append(
+        {
+            "kind": "business_configuration_profile",
+            "operation_id": operation_id,
+            "database_id": database_id,
+            "command_id": command_id,
+            "error": error,
+        }
+    )
+
+
+def _persist_business_configuration_worker_result(
+    *,
+    operation_id: str,
+    database_id: str,
+    command_id: str,
+    result_data: Any,
+    captured_at,
+) -> dict[str, Any] | None:
+    from apps.databases.models import Database as DatabaseModel
+    from apps.intercompany_pools.business_configuration_operations import (
+        enqueue_business_configuration_verification,
+    )
+    from apps.intercompany_pools.business_configuration_profile import (
+        get_business_configuration_profile,
+        load_configuration_xml_from_worker_result,
+        parse_business_configuration_profile_xml,
+        parse_config_generation_id_worker_result,
+        persist_business_configuration_profile,
+    )
+    from apps.operations.models import CommandResultSnapshot
+    from apps.operations.snapshot_hash import canonical_json_hash
+
+    db = DatabaseModel.objects.filter(id=database_id).only("id", "tenant_id", "metadata").first()
+    if db is None:
+        return None
+
+    normalized: dict[str, Any] | None
+    if command_id == "infobase.config.generation-id":
+        generation_id = parse_config_generation_id_worker_result(
+            result_data if isinstance(result_data, dict) else None
+        )
+        if not generation_id:
+            raise ValueError("config generation id is missing in worker result")
+        existing_profile = get_business_configuration_profile(database=db)
+        if existing_profile is None:
+            normalized = {
+                "config_generation_id": generation_id,
+                "generation_probe_checked_at": captured_at.isoformat(),
+            }
+            enqueue_business_configuration_verification(
+                database=db,
+                reason="profile_missing_after_generation_probe",
+                triggered_by_operation_id=str(operation_id),
+            )
+        else:
+            updated_profile = dict(existing_profile)
+            previous_generation_id = str(updated_profile.get("config_generation_id") or "").strip()
+            updated_profile["config_generation_id"] = generation_id
+            updated_profile["generation_probe_checked_at"] = captured_at.isoformat()
+            updated_profile.pop("generation_probe_operation_id", None)
+            updated_profile.pop("generation_probe_requested_at", None)
+            normalized = persist_business_configuration_profile(
+                database=db,
+                profile=updated_profile,
+            )
+            if previous_generation_id and previous_generation_id != generation_id:
+                normalized = persist_business_configuration_profile(
+                    database=db,
+                    profile={
+                        **normalized,
+                        "verification_status": "reverify_required",
+                    },
+                )
+                enqueue_business_configuration_verification(
+                    database=db,
+                    reason="generation_changed",
+                    triggered_by_operation_id=str(operation_id),
+                )
+    elif command_id == "infobase.config.export.objects":
+        xml_payload = load_configuration_xml_from_worker_result(
+            result_data if isinstance(result_data, dict) else None
+        )
+        if not xml_payload:
+            raise ValueError("Configuration.xml is missing in worker result")
+        normalized = parse_business_configuration_profile_xml(xml_payload)
+        existing_profile = get_business_configuration_profile(database=db)
+        if existing_profile is not None:
+            generation_id = str(existing_profile.get("config_generation_id") or "").strip()
+            if generation_id:
+                normalized["config_generation_id"] = generation_id
+        if isinstance(result_data, dict):
+            artifact_path = str(result_data.get("artifact_path") or "").strip()
+            if artifact_path:
+                normalized["verification_artifact_path"] = artifact_path
+        normalized["verification_operation_id"] = str(operation_id)
+        normalized.pop("generation_probe_operation_id", None)
+        normalized.pop("generation_probe_requested_at", None)
+        normalized = persist_business_configuration_profile(database=db, profile=normalized)
+    else:
+        return None
+
+    if getattr(db, "tenant_id", None):
+        raw_payload = result_data if isinstance(result_data, dict) else {"raw": result_data}
+        canonical = normalized if isinstance(normalized, dict) else {}
+        CommandResultSnapshot.objects.create(
+            tenant_id=db.tenant_id,
+            operation_id=str(operation_id),
+            database_id=str(database_id),
+            driver="ibcmd",
+            command_id=command_id,
+            raw_payload=raw_payload,
+            normalized_payload=normalized or {},
+            canonical_payload=canonical,
+            canonical_hash=canonical_json_hash(canonical),
+            captured_at=captured_at,
+        )
+
+    return normalized
+
+
 class WorkerEventHandlersMixin:
     def handle_worker_completed(self, data: Dict[str, Any], correlation_id: str) -> None:
         from apps.operations.models import BatchOperation
@@ -176,6 +305,7 @@ class WorkerEventHandlersMixin:
             snapshot_kinds = (batch_op.metadata or {}).get("snapshot_kinds")
             snapshot_kinds_list = snapshot_kinds if isinstance(snapshot_kinds, list) else []
             has_extensions_snapshot_marker = "extensions" in snapshot_kinds_list
+            has_business_configuration_snapshot_marker = "business_configuration_profile" in snapshot_kinds_list
             snapshot_errors: list[dict[str, Any]] = []
 
             summary = payload.get("summary", {})
@@ -332,6 +462,49 @@ class WorkerEventHandlersMixin:
                                         "command_id": op_command_id,
                                         "error": str(exc),
                                     }
+                                )
+                        should_update_business_configuration_snapshot = (
+                            bool(database_id)
+                            and bool(op_command_id)
+                            and batch_op.operation_type == BatchOperation.TYPE_IBCMD_CLI
+                            and has_business_configuration_snapshot_marker
+                        )
+                        if should_update_business_configuration_snapshot and database_id:
+                            try:
+                                snapshot_data = result.get("data")
+                                normalized_profile = _persist_business_configuration_worker_result(
+                                    operation_id=str(operation_id),
+                                    database_id=str(database_id),
+                                    command_id=op_command_id,
+                                    result_data=snapshot_data,
+                                    captured_at=now,
+                                )
+                                if normalized_profile:
+                                    if isinstance(snapshot_data, dict):
+                                        enriched = dict(snapshot_data)
+                                        enriched["business_configuration_profile"] = normalized_profile
+                                        update_fields["result"] = enriched
+                                    else:
+                                        update_fields["result"] = {
+                                            "raw": snapshot_data,
+                                            "business_configuration_profile": normalized_profile,
+                                        }
+                            except Exception as exc:
+                                runtime.logger.warning(
+                                    "Business configuration profile persistence failed",
+                                    extra={
+                                        "operation_id": str(operation_id),
+                                        "database_id": str(database_id),
+                                        "command_id": op_command_id,
+                                    },
+                                    exc_info=True,
+                                )
+                                _append_business_configuration_snapshot_error(
+                                    snapshot_errors=snapshot_errors,
+                                    operation_id=str(operation_id),
+                                    database_id=str(database_id),
+                                    command_id=op_command_id,
+                                    error=str(exc),
                                 )
                     else:
                         update_fields["error_message"] = result.get("error") or "Unknown error"

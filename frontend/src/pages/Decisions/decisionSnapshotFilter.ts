@@ -15,7 +15,6 @@ type MetadataContextLike =
 type NormalizedMetadataSnapshot = {
   configName: string
   configVersion: string
-  extensionsFingerprint: string
   metadataHash: string
 }
 
@@ -23,7 +22,7 @@ export type DecisionSnapshotFilterResult = {
   canFilterBySnapshot: boolean
   visibleDecisions: DecisionTable[]
   hiddenCount: number
-  selectedMetadataHash: string
+  selectedConfigurationLabel: string
 }
 
 const trimString = (value: unknown): string => (
@@ -35,13 +34,15 @@ const normalizeMetadataSnapshot = (
 ): NormalizedMetadataSnapshot | null => {
   if (!metadata) return null
 
+  const configName = trimString(metadata.config_name)
+  const configVersion = trimString(metadata.config_version)
+  if (!configName || !configVersion) return null
+
   const metadataHash = trimString(metadata.metadata_hash)
-  if (!metadataHash) return null
 
   return {
-    configName: trimString(metadata.config_name),
-    configVersion: trimString(metadata.config_version),
-    extensionsFingerprint: trimString(metadata.extensions_fingerprint),
+    configName,
+    configVersion,
     metadataHash,
   }
 }
@@ -71,8 +72,6 @@ export const decisionMatchesMetadataSnapshot = (
   return (
     storedSnapshot.configName === currentSnapshot.configName
     && storedSnapshot.configVersion === currentSnapshot.configVersion
-    && storedSnapshot.extensionsFingerprint === currentSnapshot.extensionsFingerprint
-    && storedSnapshot.metadataHash === currentSnapshot.metadataHash
   )
 }
 
@@ -93,7 +92,7 @@ export const resolveDecisionSnapshotFilter = ({
       canFilterBySnapshot: false,
       visibleDecisions: decisions,
       hiddenCount: 0,
-      selectedMetadataHash: '',
+      selectedConfigurationLabel: '',
     }
   }
 
@@ -103,7 +102,7 @@ export const resolveDecisionSnapshotFilter = ({
       canFilterBySnapshot: true,
       visibleDecisions: decisions,
       hiddenCount,
-      selectedMetadataHash: currentSnapshot.metadataHash,
+      selectedConfigurationLabel: `${currentSnapshot.configName} (${currentSnapshot.configVersion})`,
     }
   }
 
@@ -112,7 +111,6 @@ export const resolveDecisionSnapshotFilter = ({
     canFilterBySnapshot: true,
     visibleDecisions,
     hiddenCount: Math.max(decisions.length - visibleDecisions.length, 0),
-    selectedMetadataHash: currentSnapshot.metadataHash,
+    selectedConfigurationLabel: `${currentSnapshot.configName} (${currentSnapshot.configVersion})`,
   }
 }
-

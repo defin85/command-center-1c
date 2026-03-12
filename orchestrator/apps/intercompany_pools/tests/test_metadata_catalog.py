@@ -11,8 +11,10 @@ from django.apps import apps as django_apps
 from django.db import DatabaseError, connection
 
 from apps.databases.models import Database, InfobaseUserMapping
+from apps.api_v2.tests import _execute_ibcmd_cli_support as support
 from apps.intercompany_pools.metadata_catalog import (
     ERROR_CODE_POOL_METADATA_FETCH_FAILED,
+    ERROR_CODE_POOL_METADATA_PROFILE_UNAVAILABLE,
     ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS,
     ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
     describe_metadata_catalog_snapshot_resolution,
@@ -25,6 +27,13 @@ from apps.intercompany_pools.metadata_catalog import (
     resolve_metadata_catalog_scope,
     validate_document_policy_references,
 )
+from apps.intercompany_pools.business_configuration_profile import (
+    load_configuration_xml_from_artifact_path,
+    parse_business_configuration_profile_xml,
+)
+from apps.operations.models import BatchOperation
+from apps.operations.services.operations_service import OperationsService
+from apps.operations.services.operations_service.types import EnqueueResult
 from apps.intercompany_pools.models import (
     PoolODataMetadataCatalogSnapshot,
     PoolODataMetadataCatalogScopeResolution,
@@ -38,9 +47,9 @@ def _create_database(
     tenant: Tenant,
     name: str,
     base_name: str | None = None,
-    version: str = "",
+    version: str = "3.0.193.19",
 ) -> Database:
-    return Database.objects.create(
+    database = Database.objects.create(
         tenant=tenant,
         name=name,
         host="localhost",
@@ -50,6 +59,20 @@ def _create_database(
         password="legacy-pass",
         version=version,
     )
+    metadata = dict(database.metadata or {})
+    metadata["business_configuration_profile"] = {
+        "config_name": str(base_name or name),
+        "config_root_name": str(base_name or name),
+        "config_version": str(version or ""),
+        "config_vendor": 'Фирма "1С"',
+        "config_generation_id": "seed-generation-id",
+        "config_name_source": "seed_fixture",
+        "verification_status": "verified",
+        "verified_at": "2026-03-12T00:00:00+00:00",
+    }
+    database.metadata = metadata
+    database.save(update_fields=["metadata", "updated_at"])
+    return database
 
 
 def _catalog_payload(*, suffix: str) -> dict[str, object]:
@@ -74,6 +97,54 @@ def _create_service_infobase_mapping(*, database: Database, username: str = "svc
         ib_username=username,
         ib_password=password,
         is_service=True,
+    )
+
+
+def _seed_ibcmd_business_configuration_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    base_catalog = {
+        "catalog_version": 2,
+        "driver": "ibcmd",
+        "platform_version": "8.3.27",
+        "source": {"type": "test"},
+        "generated_at": "2026-01-01T00:00:00Z",
+        "driver_schema": {},
+        "commands_by_id": {
+            "infobase.config.export.objects": {
+                "label": "config export objects",
+                "description": "Export selected config objects",
+                "argv": ["infobase", "config", "export", "objects"],
+                "scope": "per_database",
+                "risk_level": "safe",
+                "params_by_name": {
+                    "arg1": {
+                        "kind": "positional",
+                        "position": 1,
+                        "required": False,
+                        "expects_value": True,
+                        "label": "Object1 ... ObjectN",
+                    },
+                    "archive": {
+                        "kind": "flag",
+                        "flag": "--archive",
+                        "required": False,
+                        "expects_value": False,
+                        "label": "--archive",
+                    },
+                    "out": {
+                        "kind": "flag",
+                        "flag": "--out",
+                        "required": False,
+                        "expects_value": True,
+                        "label": "--out",
+                    },
+                },
+            },
+        },
+    }
+    support._seed_ibcmd_catalog(
+        monkeypatch,
+        base_catalog=base_catalog,
+        overrides_catalog={"catalog_version": 2, "driver": "ibcmd", "overrides": {}},
     )
 
 
@@ -133,8 +204,100 @@ def test_refresh_snapshot_switches_current_version_atomically(default_tenant: Te
     ).count() == 1
 
 
+def test_parse_business_configuration_profile_xml_prefers_ru_synonym() -> None:
+    xml_payload = """<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core">
+  <Configuration>
+    <Properties>
+      <Name>AccountingEnterprise</Name>
+      <Synonym>
+        <v8:item>
+          <v8:lang>en</v8:lang>
+          <v8:content>Accounting Enterprise</v8:content>
+        </v8:item>
+        <v8:item>
+          <v8:lang>ru</v8:lang>
+          <v8:content>Бухгалтерия предприятия, редакция 3.0</v8:content>
+        </v8:item>
+      </Synonym>
+      <Vendor>Фирма "1С"</Vendor>
+      <Version>3.0.193.19</Version>
+    </Properties>
+  </Configuration>
+</MetaDataObject>
+"""
+
+    profile = parse_business_configuration_profile_xml(xml_payload)
+
+    assert profile["config_name"] == "Бухгалтерия предприятия, редакция 3.0"
+    assert profile["config_root_name"] == "AccountingEnterprise"
+    assert profile["config_name_source"] == "synonym_ru"
+    assert profile["config_vendor"] == 'Фирма "1С"'
+    assert profile["config_version"] == "3.0.193.19"
+
+
+def test_load_configuration_xml_from_archive_artifact(tmp_path) -> None:
+    import zipfile
+
+    archive_path = tmp_path / "Configuration.zip"
+    configuration_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses">
+  <Configuration>
+    <Properties>
+      <Name>AccountingEnterprise</Name>
+      <Version>3.0.193.19</Version>
+    </Properties>
+  </Configuration>
+</MetaDataObject>
+"""
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("Configuration.xml", configuration_xml)
+
+    resolved = load_configuration_xml_from_artifact_path(str(archive_path))
+
+    assert "AccountingEnterprise" in resolved
+    assert "3.0.193.19" in resolved
+
+
 @pytest.mark.django_db
-def test_read_snapshot_requires_database_confirmation_before_shared_reuse(
+def test_read_snapshot_enqueues_business_profile_bootstrap_when_profile_is_missing(
+    default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_ibcmd_business_configuration_catalog(monkeypatch)
+    database = Database.objects.create(
+        tenant=default_tenant,
+        name=f"meta-profile-missing-{uuid4().hex[:8]}",
+        host="localhost",
+        base_name="legacy-name",
+        odata_url="http://localhost/odata/standard.odata",
+        username="legacy-user",
+        password="legacy-pass",
+    )
+
+    def _fake_enqueue(op_id: str) -> EnqueueResult:
+        BatchOperation.objects.filter(id=op_id).update(status=BatchOperation.STATUS_QUEUED)
+        return EnqueueResult(success=True, operation_id=op_id, status="queued")
+
+    monkeypatch.setattr(OperationsService, "enqueue_operation", _fake_enqueue)
+
+    with pytest.raises(MetadataCatalogError) as exc_info:
+        read_metadata_catalog_snapshot(
+            tenant_id=str(default_tenant.id),
+            database=database,
+            requested_by_username="meta-user",
+            allow_cold_bootstrap=False,
+        )
+
+    assert exc_info.value.code == ERROR_CODE_POOL_METADATA_PROFILE_UNAVAILABLE
+    operation = BatchOperation.objects.get()
+    assert operation.status == BatchOperation.STATUS_QUEUED
+    assert (operation.metadata or {}).get("command_id") == "infobase.config.export.objects"
+    assert (operation.metadata or {}).get("business_configuration_job_kind") == "verification"
+
+
+@pytest.mark.django_db
+def test_read_snapshot_reuses_shared_snapshot_by_business_identity_without_database_confirmation(
     default_tenant: Tenant,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -167,20 +330,21 @@ def test_read_snapshot_requires_database_confirmation_before_shared_reuse(
         source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
     )
 
-    with pytest.raises(MetadataCatalogError) as exc_info:
-        read_metadata_catalog_snapshot(
-            tenant_id=str(default_tenant.id),
-            database=second_database,
-            requested_by_username="meta-user",
-            allow_cold_bootstrap=False,
-        )
+    resolved, source = read_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=second_database,
+        requested_by_username="meta-user",
+        allow_cold_bootstrap=False,
+    )
 
     assert refreshed.id is not None
-    assert exc_info.value.code == "POOL_METADATA_SNAPSHOT_UNAVAILABLE"
-    assert not PoolODataMetadataCatalogScopeResolution.objects.filter(
+    assert source == "db"
+    assert resolved.id == refreshed.id
+    resolution = PoolODataMetadataCatalogScopeResolution.objects.get(
         tenant=default_tenant,
         database=second_database,
-    ).exists()
+    )
+    assert resolution.snapshot_id == refreshed.id
     assert (
         PoolODataMetadataCatalogSnapshot.objects.filter(
             tenant=default_tenant,
@@ -192,7 +356,7 @@ def test_read_snapshot_requires_database_confirmation_before_shared_reuse(
 
 
 @pytest.mark.django_db
-def test_read_snapshot_cold_bootstrap_confirms_shared_snapshot_before_reuse(
+def test_read_snapshot_reuses_existing_shared_snapshot_without_second_live_fetch(
     default_tenant: Tenant,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -238,9 +402,9 @@ def test_read_snapshot_cold_bootstrap_confirms_shared_snapshot_before_reuse(
         allow_cold_bootstrap=True,
     )
 
-    assert source == "live_refresh"
+    assert source == "db"
     assert resolved.id == refreshed.id
-    assert fetch_calls == [str(first_database.id), str(second_database.id)]
+    assert fetch_calls == [str(first_database.id)]
     resolution = PoolODataMetadataCatalogScopeResolution.objects.get(
         tenant=default_tenant,
         database=second_database,
@@ -249,7 +413,7 @@ def test_read_snapshot_cold_bootstrap_confirms_shared_snapshot_before_reuse(
 
 
 @pytest.mark.django_db
-def test_read_snapshot_preserves_database_specific_resolution_when_profile_has_multiple_variants(
+def test_refresh_snapshot_keeps_canonical_shared_snapshot_when_publication_drift_is_detected(
     default_tenant: Tenant,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -312,7 +476,7 @@ def test_read_snapshot_preserves_database_specific_resolution_when_profile_has_m
         source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
     )
 
-    assert first_snapshot.id != second_snapshot.id
+    assert first_snapshot.id == second_snapshot.id
     assert third_snapshot.id == first_snapshot.id
 
     resolved_first, source_first = read_metadata_catalog_snapshot(
@@ -331,7 +495,7 @@ def test_read_snapshot_preserves_database_specific_resolution_when_profile_has_m
     assert source_first == "db"
     assert source_second == "db"
     assert resolved_first.id == first_snapshot.id
-    assert resolved_second.id == second_snapshot.id
+    assert resolved_second.id == first_snapshot.id
 
 
 @pytest.mark.django_db
@@ -572,11 +736,12 @@ def test_fetch_live_catalog_payload_rejects_non_local_plain_http_before_network_
 def test_read_snapshot_falls_back_to_db_when_cache_miss(default_tenant: Tenant, monkeypatch: pytest.MonkeyPatch) -> None:
     database = _create_database(tenant=default_tenant, name=f"meta-read-db-{uuid4().hex[:8]}")
     _create_service_infobase_mapping(database=database)
+    profile = (database.metadata or {}).get("business_configuration_profile") or {}
     snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
         tenant=default_tenant,
         database=database,
-        config_name=database.name,
-        config_version="",
+        config_name=profile["config_name"],
+        config_version=profile["config_version"],
         extensions_fingerprint="",
         metadata_hash="a" * 64,
         catalog_version="v1:test",
@@ -616,11 +781,12 @@ def test_read_snapshot_returns_redis_hit_without_db_lookup(
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"meta-redis-hit-db-{uuid4().hex[:8]}")
     _create_service_infobase_mapping(database=database)
+    profile = (database.metadata or {}).get("business_configuration_profile") or {}
     snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
         tenant=default_tenant,
         database=database,
-        config_name=database.name,
-        config_version="",
+        config_name=profile["config_name"],
+        config_version=profile["config_version"],
         extensions_fingerprint="",
         metadata_hash="b" * 64,
         catalog_version="v1:redis-hit",
@@ -632,8 +798,8 @@ def test_read_snapshot_returns_redis_hit_without_db_lookup(
         tenant=default_tenant,
         database=database,
         snapshot=snapshot,
-        config_name=database.name,
-        config_version="",
+        config_name=profile["config_name"],
+        config_version=profile["config_version"],
         extensions_fingerprint="",
         confirmed_at=snapshot.fetched_at,
     )
@@ -645,16 +811,16 @@ def test_read_snapshot_returns_redis_hit_without_db_lookup(
                     "scope": {
                         "tenant_id": str(default_tenant.id),
                         "database_id": str(database.id),
-                        "config_name": database.name,
-                        "config_version": "",
+                        "config_name": profile["config_name"],
+                        "config_version": profile["config_version"],
                         "extensions_fingerprint": "",
                     },
                     "snapshot": {
                         "id": str(snapshot.id),
                         "tenant_id": str(default_tenant.id),
                         "database_id": str(database.id),
-                        "config_name": database.name,
-                        "config_version": "",
+                        "config_name": profile["config_name"],
+                        "config_version": profile["config_version"],
                         "extensions_fingerprint": "",
                         "metadata_hash": snapshot.metadata_hash,
                         "catalog_version": snapshot.catalog_version,
@@ -701,11 +867,12 @@ def test_read_snapshot_adopts_database_scope_resolution_on_redis_hit(
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"meta-redis-adopt-db-{uuid4().hex[:8]}")
     _create_service_infobase_mapping(database=database)
+    profile = (database.metadata or {}).get("business_configuration_profile") or {}
     snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
         tenant=default_tenant,
         database=database,
-        config_name=database.name,
-        config_version="",
+        config_name=profile["config_name"],
+        config_version=profile["config_version"],
         extensions_fingerprint="",
         metadata_hash="ba" * 32,
         catalog_version="v1:redis-adopt",
@@ -721,16 +888,16 @@ def test_read_snapshot_adopts_database_scope_resolution_on_redis_hit(
                     "scope": {
                         "tenant_id": str(default_tenant.id),
                         "database_id": str(database.id),
-                        "config_name": database.name,
-                        "config_version": "",
+                        "config_name": profile["config_name"],
+                        "config_version": profile["config_version"],
                         "extensions_fingerprint": "",
                     },
                     "snapshot": {
                         "id": str(snapshot.id),
                         "tenant_id": str(default_tenant.id),
                         "database_id": str(database.id),
-                        "config_name": database.name,
-                        "config_version": "",
+                        "config_name": profile["config_name"],
+                        "config_version": profile["config_version"],
                         "extensions_fingerprint": "",
                         "metadata_hash": snapshot.metadata_hash,
                         "catalog_version": snapshot.catalog_version,
@@ -864,11 +1031,12 @@ def test_read_snapshot_falls_back_to_db_when_redis_read_fails(
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"meta-redis-fail-db-{uuid4().hex[:8]}")
     _create_service_infobase_mapping(database=database)
+    profile = (database.metadata or {}).get("business_configuration_profile") or {}
     snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
         tenant=default_tenant,
         database=database,
-        config_name=database.name,
-        config_version="",
+        config_name=profile["config_name"],
+        config_version=profile["config_version"],
         extensions_fingerprint="",
         metadata_hash="c" * 64,
         catalog_version="v1:redis-fallback",

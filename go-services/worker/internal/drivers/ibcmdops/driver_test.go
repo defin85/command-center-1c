@@ -656,6 +656,79 @@ func TestBuildRequestIbcmdCliInfobaseDumpUsesStoragePrepareOutput(t *testing.T) 
 	}
 }
 
+func TestBuildRequestIbcmdCliConfigExportObjectsUsesStoragePrepareOutput(t *testing.T) {
+	store := &fakeStorage{
+		prepareOutputPath:   "/tmp/configuration.zip",
+		prepareArtifactPath: "s3://bucket/configuration.zip",
+	}
+
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"command_id": "infobase.config.export.objects",
+				"argv": []string{
+					"infobase",
+					"config",
+					"export",
+					"objects",
+					"Configuration",
+					"--archive",
+					"--out",
+					"business-configuration-profile/db-1/Configuration.zip",
+				},
+			},
+		},
+	}
+
+	req, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{
+			DBMS:       "PostgreSQL",
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "dbuser",
+			DBPassword: "dbpass",
+			IBUsername: "ibuser",
+			IBPassword: "ibpass",
+		},
+		store,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req == nil {
+		t.Fatalf("expected request")
+	}
+	if req.ArtifactPath != "s3://bucket/configuration.zip" {
+		t.Fatalf("expected artifact path, got %q", req.ArtifactPath)
+	}
+	if req.OutputPath != "/tmp/configuration.zip" {
+		t.Fatalf("expected output path, got %q", req.OutputPath)
+	}
+	if store.prepareRequestedPath != "business-configuration-profile/db-1/Configuration.zip" {
+		t.Fatalf("expected PrepareOutput requested path, got %q", store.prepareRequestedPath)
+	}
+	if !reflect.DeepEqual(req.Args[:5], []string{
+		"infobase",
+		"config",
+		"export",
+		"objects",
+		"Configuration",
+	}) {
+		t.Fatalf("unexpected command prefix: %#v", req.Args)
+	}
+	if !containsToken(req.Args, "--archive") {
+		t.Fatalf("expected --archive in args: %#v", req.Args)
+	}
+	if !containsAdjacentTokens(req.Args, "--out", "/tmp/configuration.zip") {
+		t.Fatalf("expected --out /tmp/configuration.zip in args: %#v", req.Args)
+	}
+}
+
 func TestBuildRequestIbcmdCliInjectsOfflineDbmsArgsFromCredentials(t *testing.T) {
 	msg := &models.OperationMessage{
 		OperationID:   "op-1",
@@ -842,4 +915,22 @@ func TestResolveOutputPathUsesStorageBase(t *testing.T) {
 	if path == base {
 		t.Fatalf("expected output path to include filename")
 	}
+}
+
+func containsToken(args []string, token string) bool {
+	for _, item := range args {
+		if item == token {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAdjacentTokens(args []string, left string, right string) bool {
+	for idx := 0; idx+1 < len(args); idx++ {
+		if args[idx] == left && args[idx+1] == right {
+			return true
+		}
+	}
+	return false
 }

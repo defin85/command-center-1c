@@ -2,9 +2,12 @@
 package ibcmdops
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -147,7 +150,7 @@ func (d *Driver) Execute(ctx context.Context, msg *models.OperationMessage, data
 		return d.failResultWithExecution(msg, databaseID, start, err.Error(), "IBCMD_ERROR", res, request.RuntimeBindings, request.ArtifactPath), nil
 	}
 
-	result := d.buildResult(msg, databaseID, start, res, request.RuntimeBindings, request.ArtifactPath)
+	result := d.buildResult(msg, databaseID, start, res, request)
 
 	d.timeline.Record(ctx, msg.OperationID, "external.ibcmd.finished", events.MergeMetadata(map[string]interface{}{
 		"database_id":    databaseID,
@@ -164,8 +167,7 @@ func (d *Driver) buildResult(
 	databaseID string,
 	start time.Time,
 	res *ibcmd.ExecutionResult,
-	runtimeBindings []map[string]interface{},
-	artifactPath string,
+	request *ibcmdRequest,
 ) models.DatabaseResultV2 {
 	duration := time.Since(start)
 	eventBase := fmt.Sprintf("ibcmd.%s", msg.OperationType)
@@ -173,8 +175,8 @@ func (d *Driver) buildResult(
 	data := map[string]interface{}{
 		"duration_ms": duration.Milliseconds(),
 	}
-	if len(runtimeBindings) > 0 {
-		data["runtime_bindings"] = runtimeBindings
+	if request != nil && len(request.RuntimeBindings) > 0 {
+		data["runtime_bindings"] = request.RuntimeBindings
 	}
 	if res != nil {
 		data["exit_code"] = res.ExitCode
@@ -184,8 +186,13 @@ func (d *Driver) buildResult(
 		data["stderr_truncated"] = res.StderrTruncated
 		data["wait_delay_hit"] = res.WaitDelayHit
 	}
-	if artifactPath != "" {
-		data["artifact_path"] = artifactPath
+	if request != nil && request.ArtifactPath != "" {
+		data["artifact_path"] = request.ArtifactPath
+	}
+	if request != nil && request.CommandID == "infobase.config.export.objects" && request.OutputPath != "" {
+		if configurationXML, err := loadBusinessConfigurationXML(request.OutputPath); err == nil && configurationXML != "" {
+			data["configuration_xml"] = configurationXML
+		}
 	}
 
 	d.timeline.Record(context.Background(), msg.OperationID, eventBase+".completed", events.MergeMetadata(map[string]interface{}{
@@ -199,6 +206,44 @@ func (d *Driver) buildResult(
 		Duration:   duration.Seconds(),
 		Data:       data,
 	}
+}
+
+func loadBusinessConfigurationXML(outputPath string) (string, error) {
+	raw := strings.TrimSpace(outputPath)
+	if raw == "" {
+		return "", nil
+	}
+
+	if strings.EqualFold(filepath.Ext(raw), ".zip") {
+		archive, err := zip.OpenReader(raw)
+		if err != nil {
+			return "", err
+		}
+		defer archive.Close()
+
+		for _, file := range archive.File {
+			if strings.EqualFold(filepath.Base(file.Name), "Configuration.xml") {
+				reader, err := file.Open()
+				if err != nil {
+					return "", err
+				}
+				defer reader.Close()
+
+				payload := bytes.NewBuffer(nil)
+				if _, err := payload.ReadFrom(reader); err != nil {
+					return "", err
+				}
+				return payload.String(), nil
+			}
+		}
+		return "", fmt.Errorf("Configuration.xml not found in archive")
+	}
+
+	payload, err := os.ReadFile(raw)
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
 }
 
 func (d *Driver) failResult(msg *models.OperationMessage, databaseID string, start time.Time, message, code string) models.DatabaseResultV2 {

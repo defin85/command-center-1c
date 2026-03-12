@@ -552,9 +552,8 @@ describe('DecisionsPage', () => {
     expect(screen.getByText('Select database')).toBeInTheDocument()
   })
 
-  it('filters document_policy revisions by matching metadata snapshot and allows revealing all revisions', async () => {
-    const user = userEvent.setup()
-    const incompatibleDecision = {
+  it('keeps publication drift revisions visible when business configuration still matches', async () => {
+    const driftedDecision = {
       ...defaultDecision,
       id: 'decision-version-3',
       decision_table_id: 'transfer-publication-policy',
@@ -565,41 +564,31 @@ describe('DecisionsPage', () => {
         metadata_hash: 'b'.repeat(64),
       },
       metadata_compatibility: {
-        status: 'incompatible',
+        status: 'compatible',
         reason: 'metadata_surface_diverged',
-        is_compatible: false,
+        is_compatible: true,
       },
     }
 
     mockGetDecisionsCollection.mockResolvedValue({
-      decisions: [defaultDecision, incompatibleDecision],
+      decisions: [defaultDecision, driftedDecision],
       count: 2,
       metadata_context: defaultMetadataContext,
     })
     mockGetDecisionsDetail.mockImplementation(async (decisionId: string) => ({
-      decision: decisionId === incompatibleDecision.id ? incompatibleDecision : defaultDecision,
+      decision: decisionId === driftedDecision.id ? driftedDecision : defaultDecision,
       metadata_context: defaultMetadataContext,
     }))
 
     renderPage()
 
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
-    expect(screen.getByText('Showing 1 of 2 revisions matching the selected metadata snapshot.')).toBeInTheDocument()
+    expect(screen.getByText('Showing 2 of 2 revisions matching the selected configuration.')).toBeInTheDocument()
     expect(screen.getAllByText('services-publication-policy').length).toBeGreaterThan(0)
-    expect(screen.queryByText('Transfer publication policy')).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Show all revisions' }))
-
-    expect(await screen.findByText('Showing all 2 revisions for diagnostics. 1 revision does not match the selected metadata snapshot.')).toBeInTheDocument()
     expect(screen.getByText('Transfer publication policy')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Show matching snapshot only' }))
-
-    expect(await screen.findByText('Showing 1 of 2 revisions matching the selected metadata snapshot.')).toBeInTheDocument()
-    expect(screen.queryByText('Transfer publication policy')).not.toBeInTheDocument()
   })
 
-  it('does not request decision detail for revisions hidden by the snapshot filter', async () => {
+  it('does not request decision detail for revisions hidden by the configuration filter', async () => {
     const incompatibleDecision = {
       ...defaultDecision,
       id: 'decision-version-hidden',
@@ -608,11 +597,11 @@ describe('DecisionsPage', () => {
       name: 'Transfer publication policy',
       metadata_context: {
         ...defaultDecision.metadata_context,
-        metadata_hash: 'b'.repeat(64),
+        config_version: '3.0.200.1',
       },
       metadata_compatibility: {
         status: 'incompatible',
-        reason: 'metadata_surface_diverged',
+        reason: 'configuration_scope_mismatch',
         is_compatible: false,
       },
     }
@@ -626,13 +615,13 @@ describe('DecisionsPage', () => {
     renderPage()
 
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
-    expect(screen.getByText('Showing 0 of 1 revisions matching the selected metadata snapshot.')).toBeInTheDocument()
-    expect(screen.getByText('No decision revisions match the selected metadata snapshot')).toBeInTheDocument()
+    expect(screen.getByText('Showing 0 of 1 revisions matching the selected configuration.')).toBeInTheDocument()
+    expect(screen.getByText('No decision revisions match the selected configuration')).toBeInTheDocument()
     expect(screen.getByText('Select a decision revision to inspect metadata and output')).toBeInTheDocument()
     expect(mockGetDecisionsDetail).not.toHaveBeenCalled()
   })
 
-  it('resets diagnostics mode back to matching snapshot when the selected database changes', async () => {
+  it('resets diagnostics mode back to matching configuration when the selected database changes', async () => {
     const user = userEvent.setup()
     const incompatibleDecision = {
       ...defaultDecision,
@@ -642,11 +631,11 @@ describe('DecisionsPage', () => {
       name: 'Transfer publication policy',
       metadata_context: {
         ...defaultDecision.metadata_context,
-        metadata_hash: 'b'.repeat(64),
+        config_version: '3.0.200.1',
       },
       metadata_compatibility: {
         status: 'incompatible',
-        reason: 'metadata_surface_diverged',
+        reason: 'configuration_scope_mismatch',
         is_compatible: false,
       },
     }
@@ -688,13 +677,13 @@ describe('DecisionsPage', () => {
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Show all revisions' }))
 
-    expect(await screen.findByText('Showing all 2 revisions for diagnostics. 1 revision does not match the selected metadata snapshot.')).toBeInTheDocument()
+    expect(await screen.findByText('Showing all 2 revisions for diagnostics. 1 revision does not match the selected configuration.')).toBeInTheDocument()
     expect(screen.getByText('Transfer publication policy')).toBeInTheDocument()
 
     openSelect('decisions-database-select')
     await selectDropdownOption('Sibling DB (shared-profile)')
 
-    expect(await screen.findByText('Showing 1 of 2 revisions matching the selected metadata snapshot.')).toBeInTheDocument()
+    expect(await screen.findByText('Showing 1 of 2 revisions matching the selected configuration.')).toBeInTheDocument()
     expect(screen.queryByText('Transfer publication policy')).not.toBeInTheDocument()
     expect(mockGetDecisionsCollection).toHaveBeenCalledWith(
       { database_id: 'db-3' },

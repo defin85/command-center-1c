@@ -1,6 +1,7 @@
 package ibcmdops
 
 import (
+	"archive/zip"
 	"context"
 	"os"
 	"path/filepath"
@@ -85,5 +86,40 @@ func TestDriverExecute_OnNonZeroExit_PreservesStdoutStderrInData(t *testing.T) {
 	}
 	if res.Data["stderr"] != "err\n" {
 		t.Fatalf("expected stderr to be preserved, got %#v", res.Data["stderr"])
+	}
+}
+
+func TestLoadBusinessConfigurationXML_FromArchive(t *testing.T) {
+	tmp := t.TempDir()
+	archivePath := filepath.Join(tmp, "Configuration.zip")
+	archive, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatalf("failed to create archive: %v", err)
+	}
+
+	zipWriter := zip.NewWriter(archive)
+	entry, err := zipWriter.Create("Configuration.xml")
+	if err != nil {
+		t.Fatalf("failed to create archive entry: %v", err)
+	}
+	if _, err := entry.Write([]byte("<Configuration><Properties><Name>AccountingEnterprise</Name></Properties></Configuration>")); err != nil {
+		t.Fatalf("failed to write archive entry: %v", err)
+	}
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("failed to close zip writer: %v", err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatalf("failed to close archive file: %v", err)
+	}
+
+	xmlPayload, err := loadBusinessConfigurationXML(archivePath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if xmlPayload == "" {
+		t.Fatalf("expected xml payload")
+	}
+	if got := xmlPayload; got != "<Configuration><Properties><Name>AccountingEnterprise</Name></Properties></Configuration>" {
+		t.Fatalf("unexpected xml payload: %q", got)
 	}
 }
