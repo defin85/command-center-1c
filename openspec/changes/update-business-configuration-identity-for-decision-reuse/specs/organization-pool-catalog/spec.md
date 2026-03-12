@@ -22,9 +22,14 @@ Runtime acquisition contract ДОЛЖЕН (SHALL) быть profile-driven:
 - metadata refresh/read path ДОЛЖЕН (SHALL) использовать persisted business profile, если он уже известен и не требует re-verify;
 - система ДОЛЖНА (SHALL) использовать `config_generation_id` только как cheap equal/not-equal marker, определяющий необходимость re-verify;
 - если profile отсутствует или generation marker указывает на изменение конфигурации, система ДОЛЖНА (SHALL) запускать async verification/bootstrap job;
-- default verification/bootstrap job ДОЛЖЕН (SHALL) использовать `ibcmd infobase config export objects Configuration`;
+- verification/bootstrap job ДОЛЖЕН (SHALL) переиспользовать существующую execution chain `workflow/operations -> worker -> driver`;
+- standalone verification/bootstrap execution ДОЛЖЕН (SHALL) использовать executor `ibcmd_cli`, а не direct shell/probe path в orchestrator;
+- standalone verification/bootstrap execution ДОЛЖЕН (SHALL) использовать existing public `execute-ibcmd-cli` contract или эквивалентный operation template / workflow step, который в итоге вызывает тот же `ibcmd_cli` executor;
+- если verification является частью большего maintenance flow, она ДОЛЖНА (SHALL) встраиваться как workflow step, который в итоге использует тот же `ibcmd_cli` execution path;
+- default verification/bootstrap command ДОЛЖЕН (SHALL) использовать existing schema-driven `command_id = infobase.config.export.objects` с root object selector `Configuration`;
 - verification job ДОЛЖЕН (SHALL) парсить `Configuration.xml` и сохранять как минимум `Name`, `Synonym`, `Vendor`, `Version`;
-- hot path metadata refresh НЕ ДОЛЖЕН (SHALL NOT) требовать full configuration export или Designer/X11 invocation для каждой ИБ.
+- worker result/artifact contract ДОЛЖЕН (SHALL) позволять orchestrator получить `Configuration.xml` или его нормализованное содержимое для обновления persisted business profile;
+- hot path metadata refresh НЕ ДОЛЖЕН (SHALL NOT) требовать full configuration export, Designer/X11 invocation или обхода worker/driver chain для каждой ИБ.
 
 Canonical snapshot identity НЕ ДОЛЖНА (SHALL NOT) включать:
 - `database_id`;
@@ -65,12 +70,14 @@ Read/refresh path МОЖЕТ (MAY) стартовать от выбранной 
 - **AND** `config_generation_id` не указывает на изменение конфигурации с момента последней верификации
 - **WHEN** backend выполняет metadata read или refresh
 - **THEN** runtime использует persisted `config_name` и `config_version`
-- **AND** не требует full export или Designer invocation в hot path
+- **AND** не требует full export, Designer invocation или direct shell execution в hot path
 
 #### Scenario: Business identity конфигурации верифицируется selective export root object
 - **GIVEN** persisted business profile отсутствует или требует re-verify после изменения generation marker
 - **WHEN** backend запускает verification/bootstrap job для выбранной ИБ
-- **THEN** job использует `ibcmd infobase config export objects Configuration`
+- **THEN** job проходит через существующую execution chain `workflow/operations -> worker -> driver`
+- **AND** использует executor `ibcmd_cli`
+- **AND** использует existing `command_id = infobase.config.export.objects` с root object selector `Configuration`
 - **AND** парсит `Configuration.xml`
 - **AND** `config_name` берётся из root configuration `Synonym` или fallback `Name`
 - **AND** `config_version` берётся из root configuration `Version`
@@ -81,4 +88,5 @@ Read/refresh path МОЖЕТ (MAY) стартовать от выбранной 
 - **WHEN** очередной cheap probe возвращает другой `config_generation_id`
 - **THEN** система помечает business profile как требующий re-verify
 - **AND** запускает async verification job
+- **AND** выполняет probe через existing `command_id = infobase.config.generation-id` по тому же `ibcmd_cli`/worker path
 - **AND** не использует `config_generation_id` как reuse key между ИБ

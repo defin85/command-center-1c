@@ -22,6 +22,8 @@
 - Сделать publication drift non-blocking для authoring/reuse: он должен показываться как диагностика, а не как hard incompatibility между ИБ одной и той же конфигурации.
 - Зафиксировать, что root configuration properties остаются source-of-truth по смыслу, а runtime acquisition по умолчанию идёт через persisted business profile.
 - Зафиксировать async verification/bootstrap path через `ibcmd infobase config export objects Configuration`, а `ibcmd config generation-id` использовать только как cheap technical probe для change detection.
+- Зафиксировать, что execution acquisition path переиспользует существующую цепочку `workflow/operations -> worker -> driver`, а не вводит отдельный direct shell/probe mechanism в orchestrator.
+- Зафиксировать, что acquisition path использует уже существующий публичный executor `ibcmd_cli` и уже существующие guided command schemas `infobase.config.generation-id` и `infobase.config.export.objects`, а не требует отдельного low-level executor или нового driver family.
 
 ## Impact
 - Affected specs:
@@ -33,8 +35,10 @@
   - `add-decision-revision-rollover-ui` должен использовать новый compatibility contract при выборе source revision для rollover.
 - Affected code (expected):
   - `orchestrator/apps/intercompany_pools/**`
+  - `orchestrator/apps/operations/**`
   - `orchestrator/apps/templates/workflow/**`
   - `orchestrator/apps/api_v2/views/decisions.py`
+  - `go-services/worker/**`
   - `frontend/src/pages/Decisions/**`
   - `contracts/orchestrator/**`
 
@@ -49,4 +53,6 @@
 - Не оставлять имя ИБ как fallback identity marker в новом контракте.
 - Не делать `metadata_hash` replacement для `config_version`.
 - Не выполнять full configuration dump или Designer-based probe для каждой ИБ на каждом metadata refresh.
+- Не вводить отдельный ad-hoc executor или direct shell path в orchestrator в обход существующей `operations -> worker -> driver` execution chain.
+- Не вводить новый driver family или альтернативный command catalog для извлечения business identity, если существующие `ibcmd_cli` command schemas уже покрывают нужный path.
 - Не строить в этом change отдельный operational readiness program для исправления неверной OData publication на стороне tenant.
