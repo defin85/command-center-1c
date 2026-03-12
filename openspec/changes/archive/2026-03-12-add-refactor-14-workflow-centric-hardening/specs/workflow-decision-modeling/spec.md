@@ -31,7 +31,6 @@ Pinned subworkflow provenance ДОЛЖЕН (SHALL) фиксироваться в
 - **THEN** run lineage/diagnostics сохраняет исполненную subworkflow revision как provenance snapshot
 - **AND** последующее изменение latest revision не меняет уже сохранённую диагностику
 
-## ADDED Requirements
 ### Requirement: Decision resources MUST быть first-class authoring surface для workflow-centric document rules
 Система ДОЛЖНА (SHALL) предоставлять first-class authoring/read-model surface для versioned decision resources, используемых workflow-centric `document_policy`.
 

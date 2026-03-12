@@ -336,15 +336,15 @@ Read/refresh path МОЖЕТ (MAY) стартовать от выбранной 
 Для legacy edge `document_policy` UI ДОЛЖЕН (SHALL):
 - показывать existing policy read-only по умолчанию;
 - требовать явное compatibility/migration действие для открытия legacy editor;
-- предоставлять migration/import action в decision resource + selected binding refs;
+- предоставлять explicit compatibility shortcut/handoff к canonical import surface на `/decisions` и к тому же migration contract для decision resource + selected binding refs;
 - показывать migration provenance и целевые refs после успешного импорта.
 
-#### Scenario: Оператор мигрирует legacy edge policy в decision resource и binding refs
+#### Scenario: Оператор запускает compatibility shortcut из `/pools/catalog` для legacy edge policy
 - **GIVEN** topology edge содержит legacy `document_policy`
 - **AND** для пула существует workflow-centric binding
-- **WHEN** оператор запускает explicit migration action из `/pools/catalog`
-- **THEN** UI создаёт/import'ит decision resource revision и pin-ит resulting decision ref в выбранный binding
-- **AND** topology editor показывает migration outcome вместо продолжения direct edge authoring как primary path
+- **WHEN** оператор запускает explicit compatibility action из `/pools/catalog`
+- **THEN** UI использует тот же deterministic migration contract, что и canonical import surface на `/decisions`
+- **AND** topology editor показывает migration outcome и направляет оператора на decision-resource lifecycle вместо продолжения direct edge authoring как primary path
 
 #### Scenario: Новый topology edge не навязывает direct document_policy authoring
 - **GIVEN** оператор добавляет новый edge в topology editor

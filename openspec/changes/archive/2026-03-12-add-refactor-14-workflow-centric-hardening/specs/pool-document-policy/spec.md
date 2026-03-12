@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 ### Requirement: Legacy edge document policy MUST мигрировать в decision resources и binding refs
 Система ДОЛЖНА (SHALL) предоставлять deterministic migration path `edge.metadata.document_policy -> decision resource + pool_workflow_binding.decisions` для workflow-centric source-of-truth.
 

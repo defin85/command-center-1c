@@ -43,7 +43,6 @@ Snapshot binding provenance для конкретного запуска НЕ Д
 - **THEN** bindings остаются доступными через dedicated binding API и runtime resolution
 - **AND** pool upsert path не переписывает canonical binding payload как побочный эффект
 
-## ADDED Requirements
 ### Requirement: Pool workflow binding mutating MUST быть conflict-safe и audit-friendly
 Система ДОЛЖНА (SHALL) предоставлять conflict-safe mutating semantics для `pool_workflow_binding`, достаточные для конкурентного редактирования и audit trail.
 

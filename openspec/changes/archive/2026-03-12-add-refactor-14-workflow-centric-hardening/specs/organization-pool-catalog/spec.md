@@ -72,7 +72,6 @@ Raw JSON fallback МОЖЕТ (MAY) использоваться в explicit comp
 - **THEN** unknown keys `edge.metadata` сохраняются без потери
 - **AND** UI/backend фиксируют provenance `edge -> decision revision -> binding ref`
 
-## ADDED Requirements
 ### Requirement: Pool catalog workflow bindings MUST использовать isolated binding workspace и canonical CRUD
 Система ДОЛЖНА (SHALL) управлять workflow bindings на `/pools/catalog` через dedicated binding workspace и dedicated binding endpoints, backed by the same canonical store, который использует runtime resolution.
 
