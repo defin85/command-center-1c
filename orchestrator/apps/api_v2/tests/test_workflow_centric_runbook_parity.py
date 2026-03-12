@@ -20,7 +20,7 @@ def test_workflow_centric_runbook_references_existing_archived_cutover_plan() ->
     )
     archived_link = (
         "/home/egor/code/command-center-1c/openspec/changes/archive/"
-        "2026-03-09-refactor-12-workflow-centric-analyst-modeling/cutover.md"
+        "2026-03-11-refactor-12-workflow-centric-analyst-modeling/cutover.md"
     )
 
     assert stale_link not in content
@@ -34,7 +34,7 @@ def test_workflow_centric_runbook_and_cutover_notes_require_explicit_binding_ref
         "openspec",
         "changes",
         "archive",
-        "2026-03-09-refactor-12-workflow-centric-analyst-modeling",
+        "2026-03-11-refactor-12-workflow-centric-analyst-modeling",
         "cutover.md",
     )
 

@@ -1,7 +1,7 @@
 # refactor-14 repository acceptance evidence
 
 This file is the checked-in repository acceptance evidence for the shipped default path of
-`add-refactor-14-workflow-centric-hardening`.
+`archive/2026-03-12-add-refactor-14-workflow-centric-hardening`.
 
 It proves repository-local acceptance through source code, contracts, tests, and shipped docs.
 It is not a tenant-specific production rollout log.
@@ -36,5 +36,5 @@ Tenant-scoped live cutover evidence belongs in the `*.template.json` files in th
 
 - Runbook: `docs/observability/WORKFLOW_CENTRIC_POOLS_RUNBOOK.md`
 - Release notes: `docs/release-notes/2026-03-10-workflow-centric-hardening-cutover.md`
-- Cutover notes: `openspec/changes/add-refactor-14-workflow-centric-hardening/cutover.md`
+- Cutover notes: `openspec/changes/archive/2026-03-12-add-refactor-14-workflow-centric-hardening/cutover.md`
 - Docs parity test: `orchestrator/apps/api_v2/tests/test_workflow_centric_hardening_docs_parity.py`

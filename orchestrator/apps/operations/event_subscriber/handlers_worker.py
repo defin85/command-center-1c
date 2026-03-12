@@ -796,8 +796,8 @@ class WorkerEventHandlersMixin:
                 "stdin": stdin,
                 "connection": connection,
                 "connection_source": "database_profile",
-                "ib_auth": {"strategy": "local"},
-                "dbms_auth": {"strategy": "local"},
+                "ib_auth": {"strategy": "service"},
+                "dbms_auth": {"strategy": "service"},
             }
             payload = {"data": payload_data, "filters": {}, "options": {}}
 

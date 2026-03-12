@@ -12,6 +12,10 @@ _VALID_IB_AUTH_STRATEGIES = {IB_AUTH_STRATEGY_ACTOR, IB_AUTH_STRATEGY_SERVICE, "
 ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED = "ODATA_MAPPING_NOT_CONFIGURED"
 ERROR_CODE_ODATA_MAPPING_AMBIGUOUS = "ODATA_MAPPING_AMBIGUOUS"
 ERROR_CODE_ODATA_PUBLICATION_AUTH_CONTEXT_INVALID = "ODATA_PUBLICATION_AUTH_CONTEXT_INVALID"
+ERROR_CODE_INFOBASE_MAPPING_NOT_CONFIGURED = "INFOBASE_MAPPING_NOT_CONFIGURED"
+ERROR_CODE_INFOBASE_MAPPING_AMBIGUOUS = "INFOBASE_MAPPING_AMBIGUOUS"
+ERROR_CODE_DBMS_MAPPING_NOT_CONFIGURED = "DBMS_MAPPING_NOT_CONFIGURED"
+ERROR_CODE_DBMS_MAPPING_AMBIGUOUS = "DBMS_MAPPING_AMBIGUOUS"
 RESOLUTION_OUTCOME_ACTOR_SUCCESS = "actor_success"
 RESOLUTION_OUTCOME_SERVICE_SUCCESS = "service_success"
 RESOLUTION_OUTCOME_MISSING_MAPPING = "missing_mapping"
@@ -22,6 +26,10 @@ ERROR_CODE_TO_RESOLUTION_OUTCOME = {
     ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED: RESOLUTION_OUTCOME_MISSING_MAPPING,
     ERROR_CODE_ODATA_MAPPING_AMBIGUOUS: RESOLUTION_OUTCOME_AMBIGUOUS_MAPPING,
     ERROR_CODE_ODATA_PUBLICATION_AUTH_CONTEXT_INVALID: RESOLUTION_OUTCOME_INVALID_AUTH_CONTEXT,
+    ERROR_CODE_INFOBASE_MAPPING_NOT_CONFIGURED: RESOLUTION_OUTCOME_MISSING_MAPPING,
+    ERROR_CODE_INFOBASE_MAPPING_AMBIGUOUS: RESOLUTION_OUTCOME_AMBIGUOUS_MAPPING,
+    ERROR_CODE_DBMS_MAPPING_NOT_CONFIGURED: RESOLUTION_OUTCOME_MISSING_MAPPING,
+    ERROR_CODE_DBMS_MAPPING_AMBIGUOUS: RESOLUTION_OUTCOME_AMBIGUOUS_MAPPING,
 }
 
 
@@ -231,18 +239,7 @@ class CommandHandlersMixin:
                     else RESOLUTION_OUTCOME_SERVICE_SUCCESS
                 )
             else:
-                if ib_auth_strategy == IB_AUTH_STRATEGY_SERVICE:
-                    mapping = (
-                        InfobaseUserMapping.objects.filter(
-                            database=database,
-                            is_service=True,
-                            user__isnull=True,
-                        ).first()
-                    )
-                    if mapping:
-                        ib_username = mapping.ib_username
-                        ib_password = mapping.ib_password
-                elif created_by:
+                if ib_auth_strategy != IB_AUTH_STRATEGY_SERVICE and created_by:
                     user_model = get_user_model()
                     user = user_model.objects.filter(username=created_by).first()
                     if user:
@@ -250,20 +247,46 @@ class CommandHandlersMixin:
                         if mapping:
                             ib_username = mapping.ib_username
                             ib_password = mapping.ib_password
+                if ib_auth_strategy == IB_AUTH_STRATEGY_SERVICE:
+                    try:
+                        mapping = self._resolve_service_infobase_mapping(
+                            database=database,
+                            infobase_mapping_model=InfobaseUserMapping,
+                        )
+                    except CredentialsResolutionError as resolution_error:
+                        self._publish_database_credentials_resolution_error(
+                            response=response,
+                            database_id=database_id,
+                            auth_strategy=ib_auth_strategy,
+                            created_by=created_by,
+                            resolution_error=resolution_error,
+                            log_prefix="Service infobase credentials mapping lookup failed",
+                        )
+                        return
+                    ib_username = mapping.ib_username
+                    ib_password = mapping.ib_password
+                    response["resolution_outcome"] = RESOLUTION_OUTCOME_SERVICE_SUCCESS
 
             db_user = ""
             db_password = ""
             if dbms_auth_strategy == "service":
-                dbms_mapping = (
-                    DbmsUserMapping.objects.filter(
+                try:
+                    dbms_mapping = self._resolve_service_dbms_mapping(
                         database=database,
-                        is_service=True,
-                        user__isnull=True,
-                    ).first()
-                )
-                if dbms_mapping:
-                    db_user = dbms_mapping.db_username
-                    db_password = dbms_mapping.db_password
+                        dbms_mapping_model=DbmsUserMapping,
+                    )
+                except CredentialsResolutionError as resolution_error:
+                    self._publish_database_credentials_resolution_error(
+                        response=response,
+                        database_id=database_id,
+                        auth_strategy=dbms_auth_strategy,
+                        created_by=created_by,
+                        resolution_error=resolution_error,
+                        log_prefix="Service DBMS credentials mapping lookup failed",
+                    )
+                    return
+                db_user = dbms_mapping.db_username
+                db_password = dbms_mapping.db_password
             elif created_by:
                 user_model = get_user_model()
                 user = user_model.objects.filter(username=created_by).first()
@@ -438,6 +461,93 @@ class CommandHandlersMixin:
                 message="infobase mapping must contain non-empty username and password for publication auth",
             )
         return mapping
+
+    def _resolve_service_infobase_mapping(
+        self,
+        *,
+        database,
+        infobase_mapping_model,
+    ):
+        queryset = infobase_mapping_model.objects.filter(
+            database=database,
+            is_service=True,
+            user__isnull=True,
+        )
+        candidates = list(queryset.only("id", "ib_username", "ib_password")[:2])
+        if not candidates:
+            raise CredentialsResolutionError(
+                code=ERROR_CODE_INFOBASE_MAPPING_NOT_CONFIGURED,
+                message="service infobase user mapping is not configured",
+            )
+        if len(candidates) > 1:
+            raise CredentialsResolutionError(
+                code=ERROR_CODE_INFOBASE_MAPPING_AMBIGUOUS,
+                message="multiple service infobase user mappings found",
+            )
+        mapping = candidates[0]
+        if not str(mapping.ib_username or "").strip() or not str(mapping.ib_password or "").strip():
+            raise CredentialsResolutionError(
+                code=ERROR_CODE_INFOBASE_MAPPING_NOT_CONFIGURED,
+                message="service infobase user mapping must contain non-empty username and password",
+            )
+        return mapping
+
+    def _resolve_service_dbms_mapping(
+        self,
+        *,
+        database,
+        dbms_mapping_model,
+    ):
+        queryset = dbms_mapping_model.objects.filter(
+            database=database,
+            is_service=True,
+            user__isnull=True,
+        )
+        candidates = list(queryset.only("id", "db_username", "db_password")[:2])
+        if not candidates:
+            raise CredentialsResolutionError(
+                code=ERROR_CODE_DBMS_MAPPING_NOT_CONFIGURED,
+                message="service DBMS user mapping is not configured",
+            )
+        if len(candidates) > 1:
+            raise CredentialsResolutionError(
+                code=ERROR_CODE_DBMS_MAPPING_AMBIGUOUS,
+                message="multiple service DBMS user mappings found",
+            )
+        mapping = candidates[0]
+        if not str(mapping.db_username or "").strip() or not str(mapping.db_password or "").strip():
+            raise CredentialsResolutionError(
+                code=ERROR_CODE_DBMS_MAPPING_NOT_CONFIGURED,
+                message="service DBMS user mapping must contain non-empty username and password",
+            )
+        return mapping
+
+    def _publish_database_credentials_resolution_error(
+        self,
+        *,
+        response: Dict[str, str],
+        database_id: str,
+        auth_strategy: str,
+        created_by: str,
+        resolution_error: CredentialsResolutionError,
+        log_prefix: str,
+    ) -> None:
+        response["error_code"] = resolution_error.code
+        response["error"] = resolution_error.response_error
+        response["resolution_outcome"] = ERROR_CODE_TO_RESOLUTION_OUTCOME.get(
+            resolution_error.code,
+            RESOLUTION_OUTCOME_MISSING_MAPPING,
+        )
+        logger.warning(
+            "%s: database_id=%s, strategy=%s, created_by=%s, code=%s, resolution_outcome=%s",
+            log_prefix,
+            database_id,
+            auth_strategy,
+            created_by,
+            resolution_error.code,
+            response["resolution_outcome"],
+        )
+        self._publish_database_credentials_response(response)
 
     def _publish_database_credentials_response(self, response: Dict[str, str]) -> None:
         response_stream = "events:orchestrator:database-credentials-response"

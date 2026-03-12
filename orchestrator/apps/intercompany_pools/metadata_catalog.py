@@ -356,6 +356,8 @@ def build_metadata_catalog_api_payload(
         payload=snapshot.payload if isinstance(snapshot.payload, dict) else {}
     )
     profile = get_business_configuration_profile(database=database) or {}
+    config_name = str(profile.get("config_name") or snapshot.config_name or "")
+    config_version = str(profile.get("config_version") or snapshot.config_version or "")
     documents = payload.get("documents") if isinstance(payload.get("documents"), list) else []
     return {
         "database_id": str(database.id),
@@ -363,8 +365,8 @@ def build_metadata_catalog_api_payload(
         "source": str(source or snapshot.source or ""),
         "fetched_at": snapshot.fetched_at,
         "catalog_version": snapshot.catalog_version,
-        "config_name": snapshot.config_name,
-        "config_version": snapshot.config_version,
+        "config_name": config_name,
+        "config_version": config_version,
         "extensions_fingerprint": snapshot.extensions_fingerprint,
         "metadata_hash": snapshot.metadata_hash,
         "config_generation_id": str(profile.get("config_generation_id") or ""),

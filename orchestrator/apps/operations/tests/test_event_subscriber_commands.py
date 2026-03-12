@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 
 from apps.databases.encryption import decrypt_credentials_from_transport
 from apps.databases.models import Database
+from apps.databases.models import DbmsUserMapping
 from apps.databases.models import InfobaseUserMapping
 from apps.operations.event_subscriber import EventSubscriber
 
@@ -279,6 +280,155 @@ class EventSubscriberClusterInfoTest(EventSubscriberBaseTestCase):
         self.assertEqual(response["error_code"], "ODATA_MAPPING_AMBIGUOUS")
         self.assertEqual(response["resolution_outcome"], "ambiguous_mapping")
         self.assertIn("ODATA_MAPPING_AMBIGUOUS", response["error"])
+
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_get_database_credentials_service_mappings_success(self, mock_redis_class):
+        InfobaseUserMapping.objects.create(
+            database=self.database,
+            user=None,
+            ib_username="svc_infobase_user",
+            ib_password="svc_infobase_pwd",
+            is_service=True,
+        )
+        DbmsUserMapping.objects.create(
+            database=self.database,
+            user=None,
+            db_username="svc_db_user",
+            db_password="svc_db_pwd",
+            is_service=True,
+        )
+
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+        subscriber = EventSubscriber()
+
+        data = {
+            "correlation_id": "test-svc-mapping-1",
+            "database_id": self.database.id,
+            "created_by": "system",
+            "ib_auth_strategy": "service",
+            "dbms_auth_strategy": "service",
+            "timestamp": "2026-03-12T10:30:00Z",
+        }
+        subscriber.handle_get_database_credentials(data, "test-svc-mapping-1")
+
+        response = mock_redis.xadd.call_args[0][1]
+        self.assertEqual(response["success"], "true")
+        encrypted_payload = {
+            "encrypted_data": response["encrypted_data"],
+            "nonce": response["nonce"],
+            "expires_at": response["expires_at"],
+            "encryption_version": response["encryption_version"],
+        }
+        credentials_payload = decrypt_credentials_from_transport(encrypted_payload)
+        self.assertEqual(credentials_payload["ib_username"], "svc_infobase_user")
+        self.assertEqual(credentials_payload["ib_password"], "svc_infobase_pwd")
+        self.assertEqual(credentials_payload["db_user"], "svc_db_user")
+        self.assertEqual(credentials_payload["db_password"], "svc_db_pwd")
+
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_get_database_credentials_service_infobase_mapping_missing_fail_closed(self, mock_redis_class):
+        DbmsUserMapping.objects.create(
+            database=self.database,
+            user=None,
+            db_username="svc_db_user",
+            db_password="svc_db_pwd",
+            is_service=True,
+        )
+
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+        subscriber = EventSubscriber()
+
+        data = {
+            "correlation_id": "test-svc-infobase-missing-1",
+            "database_id": self.database.id,
+            "created_by": "system",
+            "ib_auth_strategy": "service",
+            "dbms_auth_strategy": "service",
+            "timestamp": "2026-03-12T10:30:00Z",
+        }
+        subscriber.handle_get_database_credentials(data, "test-svc-infobase-missing-1")
+
+        response = mock_redis.xadd.call_args[0][1]
+        self.assertEqual(response["success"], "false")
+        self.assertEqual(response["error_code"], "INFOBASE_MAPPING_NOT_CONFIGURED")
+        self.assertEqual(response["resolution_outcome"], "missing_mapping")
+        self.assertIn("INFOBASE_MAPPING_NOT_CONFIGURED", response["error"])
+
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_get_database_credentials_service_dbms_mapping_missing_fail_closed(self, mock_redis_class):
+        InfobaseUserMapping.objects.create(
+            database=self.database,
+            user=None,
+            ib_username="svc_infobase_user",
+            ib_password="svc_infobase_pwd",
+            is_service=True,
+        )
+
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+        subscriber = EventSubscriber()
+
+        data = {
+            "correlation_id": "test-svc-dbms-missing-1",
+            "database_id": self.database.id,
+            "created_by": "system",
+            "ib_auth_strategy": "service",
+            "dbms_auth_strategy": "service",
+            "timestamp": "2026-03-12T10:30:00Z",
+        }
+        subscriber.handle_get_database_credentials(data, "test-svc-dbms-missing-1")
+
+        response = mock_redis.xadd.call_args[0][1]
+        self.assertEqual(response["success"], "false")
+        self.assertEqual(response["error_code"], "DBMS_MAPPING_NOT_CONFIGURED")
+        self.assertEqual(response["resolution_outcome"], "missing_mapping")
+        self.assertIn("DBMS_MAPPING_NOT_CONFIGURED", response["error"])
+
+    @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
+    def test_handle_get_database_credentials_service_infobase_mapping_ambiguous_fail_closed(self, mock_redis_class):
+        InfobaseUserMapping.objects.create(
+            database=self.database,
+            user=None,
+            ib_username="svc_infobase_user_1",
+            ib_password="svc_infobase_pwd_1",
+            is_service=True,
+        )
+        InfobaseUserMapping.objects.create(
+            database=self.database,
+            user=None,
+            ib_username="svc_infobase_user_2",
+            ib_password="svc_infobase_pwd_2",
+            is_service=True,
+        )
+        DbmsUserMapping.objects.create(
+            database=self.database,
+            user=None,
+            db_username="svc_db_user",
+            db_password="svc_db_pwd",
+            is_service=True,
+        )
+
+        mock_redis = MagicMock()
+        mock_redis_class.return_value = mock_redis
+        subscriber = EventSubscriber()
+
+        data = {
+            "correlation_id": "test-svc-infobase-ambiguous-1",
+            "database_id": self.database.id,
+            "created_by": "system",
+            "ib_auth_strategy": "service",
+            "dbms_auth_strategy": "service",
+            "timestamp": "2026-03-12T10:30:00Z",
+        }
+        subscriber.handle_get_database_credentials(data, "test-svc-infobase-ambiguous-1")
+
+        response = mock_redis.xadd.call_args[0][1]
+        self.assertEqual(response["success"], "false")
+        self.assertEqual(response["error_code"], "INFOBASE_MAPPING_AMBIGUOUS")
+        self.assertEqual(response["resolution_outcome"], "ambiguous_mapping")
+        self.assertIn("INFOBASE_MAPPING_AMBIGUOUS", response["error"])
 
     @patch("apps.operations.event_subscriber.subscriber.redis.Redis")
     def test_handle_get_cluster_info_database_not_found(self, mock_redis_class):

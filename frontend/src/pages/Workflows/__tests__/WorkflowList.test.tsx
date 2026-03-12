@@ -24,7 +24,7 @@ vi.mock('../../../api/generated', async (importOriginal) => {
   }
 })
 
-function renderPage() {
+function renderPage(initialEntry = '/workflows') {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -34,7 +34,7 @@ function renderPage() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter future={ROUTER_FUTURE}>
+      <MemoryRouter initialEntries={[initialEntry]} future={ROUTER_FUTURE}>
         <AntApp>
           <WorkflowList />
         </AntApp>
@@ -94,5 +94,44 @@ describe('WorkflowList', () => {
     expect(screen.getByText('Deferred: extensions.*')).toBeInTheDocument()
     expect(screen.getByText('Deferred: database.ib_user.*')).toBeInTheDocument()
     expect(screen.getByText('Follow-up: add-13-service-workflow-automation')).toBeInTheDocument()
+  })
+
+  it('preserves database_id in workflow links when compatibility context is provided', async () => {
+    mockGetWorkflowsListWorkflows.mockResolvedValueOnce({
+      workflows: [
+        {
+          id: 'workflow-1',
+          name: 'Decision-aware Workflow',
+          description: 'authoring',
+          workflow_type: 'complex',
+          category: 'custom',
+          is_valid: true,
+          is_active: true,
+          is_system_managed: false,
+          management_mode: 'user_authored',
+          visibility_surface: 'workflow_library',
+          read_only_reason: null,
+          version_number: 1,
+          parent_version: null,
+          created_by: null,
+          created_by_username: 'analyst',
+          node_count: 2,
+          execution_count: 0,
+          created_at: '2026-03-08T12:00:00Z',
+          updated_at: '2026-03-08T12:00:00Z',
+        },
+      ],
+      count: 1,
+      total: 1,
+      authoring_phase: null,
+    })
+
+    renderPage('/workflows?database_id=22222222-2222-2222-2222-222222222222')
+
+    const link = await screen.findByRole('link', { name: 'Decision-aware Workflow' })
+    expect(link).toHaveAttribute(
+      'href',
+      '/workflows/workflow-1?database_id=22222222-2222-2222-2222-222222222222'
+    )
   })
 })

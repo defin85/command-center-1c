@@ -80,5 +80,10 @@ func shouldInjectInfobaseAuthArgs(commandID string, argv []string) bool {
 
 func isServiceDbmsAuthAllowed(commandID string) bool {
 	// Keep this intentionally tight; expand only with explicit approval.
-	return commandID == "infobase.extension.list" || commandID == "infobase.extension.info"
+	switch commandID {
+	case "infobase.extension.list", "infobase.extension.info", "infobase.config.generation-id", "infobase.config.export.objects":
+		return true
+	default:
+		return false
+	}
 }

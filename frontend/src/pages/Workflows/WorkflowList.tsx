@@ -52,11 +52,31 @@ const workflowTypeColors: Record<string, string> = {
 const WORKFLOW_LIBRARY_SURFACE = 'workflow_library'
 const WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE = 'runtime_diagnostics'
 
-const buildWorkflowHref = (id: string, isSystemManaged?: boolean) => (
-  isSystemManaged
-    ? `/workflows/${id}?surface=${WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE}`
-    : `/workflows/${id}`
-)
+const buildWorkflowHref = (
+  id: string,
+  {
+    isSystemManaged,
+    databaseId,
+    execute,
+  }: {
+    isSystemManaged?: boolean
+    databaseId?: string
+    execute?: boolean
+  } = {}
+) => {
+  const params = new URLSearchParams()
+  if (isSystemManaged) {
+    params.set('surface', WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE)
+  }
+  if (databaseId) {
+    params.set('database_id', databaseId)
+  }
+  if (execute) {
+    params.set('execute', 'true')
+  }
+  const query = params.toString()
+  return query ? `/workflows/${id}?${query}` : `/workflows/${id}`
+}
 
 const WorkflowList = () => {
   const navigate = useNavigate()
@@ -66,6 +86,7 @@ const WorkflowList = () => {
   const surface = searchParams.get('surface') === WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE
     ? WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE
     : WORKFLOW_LIBRARY_SURFACE
+  const decisionDatabaseId = String(searchParams.get('database_id') || '').trim()
   const isRuntimeDiagnosticsSurface = surface === WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE
   const fallbackColumnConfigs = useMemo(() => [
     { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
@@ -93,15 +114,15 @@ const WorkflowList = () => {
         new_name: `${name} (Copy)`
       })
       message.success('Workflow cloned')
-      navigate(`/workflows/${cloned.workflow.id}`)
+      navigate(buildWorkflowHref(cloned.workflow.id, { databaseId: decisionDatabaseId }))
     } catch (_error) {
       message.error('Failed to clone workflow')
     }
-  }, [message, navigate])
+  }, [decisionDatabaseId, message, navigate])
 
   const openWorkflow = useCallback((id: string, isSystemManaged?: boolean) => {
-    navigate(buildWorkflowHref(id, isSystemManaged))
-  }, [navigate])
+    navigate(buildWorkflowHref(id, { isSystemManaged, databaseId: decisionDatabaseId }))
+  }, [decisionDatabaseId, navigate])
 
   const columns: ColumnsType<WorkflowTemplateList> = useMemo(() => ([
     {
@@ -110,7 +131,7 @@ const WorkflowList = () => {
       key: 'name',
       render: (name, record) => (
         <Space>
-          <Link to={buildWorkflowHref(record.id, record.is_system_managed)}>{name}</Link>
+          <Link to={buildWorkflowHref(record.id, { isSystemManaged: record.is_system_managed, databaseId: decisionDatabaseId })}>{name}</Link>
           {record.is_system_managed ? (
             <Tag color="gold">System managed</Tag>
           ) : null}
@@ -192,7 +213,7 @@ const WorkflowList = () => {
                   size="small"
                   aria-label="Execute workflow"
                   disabled={!record.is_valid}
-                  onClick={() => navigate(`/workflows/${record.id}?execute=true`)}
+                  onClick={() => navigate(buildWorkflowHref(record.id, { databaseId: decisionDatabaseId, execute: true }))}
                 />
               </Tooltip>
               <Popconfirm
@@ -211,7 +232,7 @@ const WorkflowList = () => {
         </Space>
       )
     }
-  ]), [handleClone, handleDelete, openWorkflow])
+  ]), [decisionDatabaseId, handleClone, handleDelete, openWorkflow])
 
   const table = useTableToolkit({
     tableId: 'workflows',
@@ -287,7 +308,7 @@ const WorkflowList = () => {
             <Button
               type="primary"
               icon={<PlusOutlined />}
-              onClick={() => navigate('/workflows/new')}
+              onClick={() => navigate(buildWorkflowHref('new', { databaseId: decisionDatabaseId }))}
             >
               New Scheme
             </Button>

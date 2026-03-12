@@ -22,6 +22,9 @@
  * @module types/workflow
  */
 
+import type { DecisionMetadataCompatibility } from '../api/generated/model/decisionMetadataCompatibility'
+import type { DecisionRevisionMetadataContext } from '../api/generated/model/decisionRevisionMetadataContext'
+
 // ============================================================================
 // DAG Structure Types (match backend models.py)
 // ============================================================================
@@ -224,6 +227,8 @@ export interface AvailableDecisionRevision {
   decisionTableId: string
   decisionKey: string
   decisionRevision: number
+  metadataContext?: DecisionRevisionMetadataContext | null
+  metadataCompatibility?: DecisionMetadataCompatibility | null
 }
 
 // ============================================================================

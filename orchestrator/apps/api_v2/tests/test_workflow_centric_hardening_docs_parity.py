@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 CHANGE_ID = "add-refactor-14-workflow-centric-hardening"
+CHANGE_ARCHIVE_PATH = ("openspec", "changes", "archive", "2026-03-12-add-refactor-14-workflow-centric-hardening")
 
 
 def _repo_root() -> Path:
@@ -22,15 +23,13 @@ def test_workflow_centric_runbook_documents_hardening_surfaces() -> None:
     assert "compatibility shortcut: `/pools/catalog` -> `Import to /decisions`" in runbook
     assert "POST /api/v2/pools/odata-metadata/catalog/refresh/" in runbook
     assert "POST /api/v2/pools/<pool_id>/document-policy-migrations/" in runbook
-    assert "shared configuration-scoped snapshot" in runbook
+    assert "canonical business-scoped snapshot" in runbook
     assert "pinned subworkflow" in runbook
 
 
 def test_workflow_centric_hardening_cutover_notes_cover_backfill_and_rollback_window() -> None:
     cutover = _read_repo_doc(
-        "openspec",
-        "changes",
-        CHANGE_ID,
+        *CHANGE_ARCHIVE_PATH,
         "cutover.md",
     )
 
@@ -57,7 +56,7 @@ def test_workflow_centric_hardening_release_note_documents_operator_changes() ->
     assert "Import raw JSON" in release_note
     assert "Compatibility UI shortcut: `/pools/catalog` -> `Import to /decisions`" in release_note
     assert "workflow executor templates remain available here only as a compatibility/integration path" in release_note
-    assert "shared configuration-scoped metadata snapshots" in release_note
+    assert "shared business-identity metadata snapshots" in release_note
     assert "POST /api/v2/pools/{pool_id}/document-policy-migrations/" in release_note
     assert "legacy edge document_policy editor" in release_note
     assert "pinned subworkflow" in release_note
@@ -66,9 +65,7 @@ def test_workflow_centric_hardening_release_note_documents_operator_changes() ->
 def test_workflow_centric_docs_reference_checked_in_evidence_templates() -> None:
     runbook = _read_repo_doc("docs", "observability", "WORKFLOW_CENTRIC_POOLS_RUNBOOK.md")
     cutover = _read_repo_doc(
-        "openspec",
-        "changes",
-        CHANGE_ID,
+        *CHANGE_ARCHIVE_PATH,
         "cutover.md",
     )
     release_note = _read_repo_doc(
@@ -92,7 +89,7 @@ def test_workflow_centric_docs_reference_checked_in_evidence_templates() -> None
 
 
 def test_workflow_centric_tasks_validate_active_change_id() -> None:
-    tasks = _read_repo_doc("openspec", "changes", CHANGE_ID, "tasks.md")
+    tasks = _read_repo_doc(*CHANGE_ARCHIVE_PATH, "tasks.md")
 
     assert f"openspec validate {CHANGE_ID} --strict --no-interactive" in tasks
 

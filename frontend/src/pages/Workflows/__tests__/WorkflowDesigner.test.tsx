@@ -391,4 +391,109 @@ describe('WorkflowDesigner', () => {
       })
     )
   })
+
+  it('passes database_id query param to /decisions compatibility lookup when authoring context provides one', async () => {
+    renderPage('/workflows/runtime-1?surface=runtime_diagnostics&database_id=22222222-2222-2222-2222-222222222222')
+
+    await waitFor(() => expect(mockGetDecisionsCollection).toHaveBeenCalledWith({
+      database_id: '22222222-2222-2222-2222-222222222222',
+    }))
+  })
+
+  it('filters incompatible decision revisions from default selector options while keeping drift-compatible ones', async () => {
+    mockGetDecisionsCollection.mockResolvedValueOnce({
+      decisions: [
+        {
+          id: 'decision-compatible',
+          decision_table_id: 'decision-root',
+          decision_key: 'document_policy',
+          decision_revision: 2,
+          name: 'Compatible Policy',
+          description: 'compatible',
+          inputs: [],
+          outputs: [],
+          rules: [],
+          hit_policy: 'first_match',
+          validation_mode: 'fail_closed',
+          is_active: true,
+          metadata_context: {
+            config_name: 'shared-profile',
+            config_version: '8.3.24',
+          },
+          metadata_compatibility: {
+            status: 'compatible',
+            reason: null,
+            is_compatible: true,
+          },
+          parent_version: null,
+          created_at: '2026-03-08T12:00:00Z',
+          updated_at: '2026-03-08T12:00:00Z',
+        },
+        {
+          id: 'decision-drifted',
+          decision_table_id: 'decision-root',
+          decision_key: 'document_policy',
+          decision_revision: 3,
+          name: 'Drifted Policy',
+          description: 'drifted',
+          inputs: [],
+          outputs: [],
+          rules: [],
+          hit_policy: 'first_match',
+          validation_mode: 'fail_closed',
+          is_active: true,
+          metadata_context: {
+            config_name: 'shared-profile',
+            config_version: '8.3.24',
+            publication_drift: true,
+          },
+          metadata_compatibility: {
+            status: 'compatible',
+            reason: 'metadata_surface_diverged',
+            is_compatible: true,
+          },
+          parent_version: null,
+          created_at: '2026-03-08T12:00:00Z',
+          updated_at: '2026-03-08T12:00:00Z',
+        },
+        {
+          id: 'decision-incompatible',
+          decision_table_id: 'decision-root',
+          decision_key: 'document_policy',
+          decision_revision: 4,
+          name: 'Incompatible Policy',
+          description: 'incompatible',
+          inputs: [],
+          outputs: [],
+          rules: [],
+          hit_policy: 'first_match',
+          validation_mode: 'fail_closed',
+          is_active: true,
+          metadata_context: {
+            config_name: 'other-profile',
+            config_version: '1.0.0',
+          },
+          metadata_compatibility: {
+            status: 'incompatible',
+            reason: 'configuration_scope_mismatch',
+            is_compatible: false,
+          },
+          parent_version: null,
+          created_at: '2026-03-08T12:00:00Z',
+          updated_at: '2026-03-08T12:00:00Z',
+        },
+      ],
+      count: 3,
+    })
+
+    renderPage('/workflows/runtime-1?surface=runtime_diagnostics&database_id=22222222-2222-2222-2222-222222222222')
+
+    await waitFor(() => {
+      const lastCall = mockPropertyEditor.mock.calls.at(-1)?.[0]
+      expect(lastCall?.availableDecisions).toEqual([
+        expect.objectContaining({ id: 'decision-compatible' }),
+        expect.objectContaining({ id: 'decision-drifted' }),
+      ])
+    })
+  })
 })

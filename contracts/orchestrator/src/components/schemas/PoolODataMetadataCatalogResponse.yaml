@@ -15,10 +15,16 @@ properties:
     type: string
   config_version:
     type: string
+  config_generation_id:
+    type: string
   extensions_fingerprint:
     type: string
   metadata_hash:
     type: string
+  observed_metadata_hash:
+    type: string
+  publication_drift:
+    type: boolean
   resolution_mode:
     type: string
   is_shared_snapshot:

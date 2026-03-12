@@ -16,6 +16,9 @@ from apps.intercompany_pools.document_policy_contract import (
     DOCUMENT_POLICY_METADATA_KEY,
     validate_document_policy_v1,
 )
+from apps.intercompany_pools.business_identity_backfill import (
+    backfill_decision_table_business_metadata_context,
+)
 from apps.intercompany_pools.metadata_catalog import (
     MetadataCatalogError,
     build_metadata_catalog_api_payload,
@@ -180,11 +183,11 @@ def _serialize_decision_table(
     metadata_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     contract = build_decision_table_contract(decision_table=decision_table)
-    stored_metadata_context = build_decision_table_metadata_context(
-        metadata_context=decision_table.metadata_context
-        if isinstance(decision_table.metadata_context, dict)
-        else None
+    metadata_backfill = backfill_decision_table_business_metadata_context(
+        decision_table=decision_table,
+        dry_run=False,
     )
+    stored_metadata_context = metadata_backfill.get("metadata_context")
     metadata_compatibility = assess_decision_table_metadata_compatibility(
         decision_table=decision_table,
         metadata_context=metadata_context,

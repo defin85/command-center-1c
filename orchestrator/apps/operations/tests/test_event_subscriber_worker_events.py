@@ -1039,4 +1039,9 @@ def test_handle_worker_completed_generation_change_enqueues_business_configurati
     assert follow_up.status == BatchOperation.STATUS_QUEUED
     assert (follow_up.metadata or {}).get("command_id") == "infobase.config.export.objects"
     assert (follow_up.metadata or {}).get("business_configuration_job_kind") == "verification"
+    assert (follow_up.metadata or {}).get("command_catalog_source") == "approved_effective"
     assert (follow_up.metadata or {}).get("triggered_by_operation_id") == op.id
+    payload_data = (follow_up.payload or {}).get("data") or {}
+    assert payload_data.get("ib_auth") == {"strategy": "service"}
+    assert payload_data.get("dbms_auth") == {"strategy": "service"}
+    assert "connection_source" not in payload_data

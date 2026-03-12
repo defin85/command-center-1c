@@ -1035,6 +1035,50 @@ describe('PoolCatalogPage', () => {
           decision_revision: 4,
           name: 'Route Documents',
           is_active: true,
+          metadata_context: {
+            config_name: 'shared-profile',
+            config_version: '8.3.24',
+          },
+          metadata_compatibility: {
+            status: 'compatible',
+            reason: null,
+            is_compatible: true,
+          },
+        },
+        {
+          id: 'decision-version-5',
+          decision_table_id: 'decision-2',
+          decision_key: 'route_documents_drift',
+          decision_revision: 5,
+          name: 'Route Documents Drift',
+          is_active: true,
+          metadata_context: {
+            config_name: 'shared-profile',
+            config_version: '8.3.24',
+            publication_drift: true,
+          },
+          metadata_compatibility: {
+            status: 'compatible',
+            reason: 'metadata_surface_diverged',
+            is_compatible: true,
+          },
+        },
+        {
+          id: 'decision-version-6',
+          decision_table_id: 'decision-3',
+          decision_key: 'route_documents_incompatible',
+          decision_revision: 6,
+          name: 'Incompatible Route',
+          is_active: true,
+          metadata_context: {
+            config_name: 'other-profile',
+            config_version: '1.0.0',
+          },
+          metadata_compatibility: {
+            status: 'incompatible',
+            reason: 'configuration_scope_mismatch',
+            is_compatible: false,
+          },
         },
         {
           id: 'decision-version-3',
@@ -1056,7 +1100,10 @@ describe('PoolCatalogPage', () => {
     await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-decision-0'))
 
     openSelectByTestId('pool-catalog-workflow-binding-decision-select-0-0')
-    expect(await screen.findByText('Route Documents (route_documents) · r4')).toBeInTheDocument()
+    expect(mockGetDecisionsCollection).toHaveBeenCalledWith({ database_id: baseOrganization.database_id })
+    expect(await screen.findByText('Route Documents (route_documents) · r4 · shared-profile 8.3.24')).toBeInTheDocument()
+    expect(screen.getByText('Route Documents Drift (route_documents_drift) · r5 · shared-profile 8.3.24 · drift')).toBeInTheDocument()
+    expect(screen.queryByText('Incompatible Route (route_documents_incompatible) · r6')).not.toBeInTheDocument()
     expect(screen.queryByText('Legacy Route (legacy_route) · r3')).not.toBeInTheDocument()
   }, 30000)
 

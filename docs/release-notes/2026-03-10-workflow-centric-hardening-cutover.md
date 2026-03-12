@@ -12,9 +12,9 @@
   - `Import raw JSON` внутри `/decisions` остаётся explicit compatibility-only fallback;
   - deterministic API path: `POST /api/v2/pools/{pool_id}/document-policy-migrations/`.
 - Для avoid-regression parity: legacy edge document_policy editor больше не считается primary net-new authoring path.
-- Decision authoring/import и migration path теперь опираются на shared configuration-scoped metadata snapshots:
-  - в UI/API видны `snapshot_id`, `resolution_mode`, `metadata_hash`, `is_shared_snapshot`, `provenance_database_id`;
-  - одинаковый `config_version` сам по себе больше не считается достаточным условием reuse.
+- Decision authoring/import и migration path теперь опираются на shared business-identity metadata snapshots:
+  - в UI/API видны `config_name`, `config_version`, `config_generation_id`, `metadata_hash`, `observed_metadata_hash`, `publication_drift`, `is_shared_snapshot`, `provenance_database_id`;
+  - одинаковая business identity `config_name + config_version` определяет reuse, а `metadata_hash`/`publication_drift` остаются diagnostics-only markers.
 - Reusable subworkflow calls закреплены на pinned subworkflow revision: runtime использует `subworkflow_ref(binding_mode="pinned_revision")` и отклоняет drift/mismatch fail-closed вместо silent fallback на latest revision.
 - `/workflows` закреплён как composition surface, а `/pools/runs` как operator lifecycle/read-model surface для create/inspect/confirm/retry.
 
@@ -22,17 +22,20 @@
 
 1. Прогнать canonical binding backfill:
    - `cd orchestrator && ./venv/bin/python manage.py backfill_pool_workflow_bindings --dry-run --json`
-2. Прогреть shared metadata snapshots на representative infobase каждой configuration profile:
+2. Прогнать one-time business identity backfill для legacy snapshot/resolution и historical decision rows:
+   - dry-run: `cd orchestrator && ./venv/bin/python manage.py backfill_business_identity_state --dry-run --json`
+   - apply-run: `cd orchestrator && ./venv/bin/python manage.py backfill_business_identity_state --json`
+3. Прогреть shared metadata snapshots на representative infobase каждой configuration profile:
    - `POST /api/v2/pools/odata-metadata/catalog/refresh/`
-3. Для pool-ов с legacy edge policies выполнить import в `/decisions`:
+4. Для pool-ов с legacy edge policies выполнить import в `/decisions`:
    - UI: `/decisions` -> `Import legacy edge`
    - explicit compatibility-only fallback: `/decisions` -> `Import raw JSON`
    - Compatibility UI shortcut: `/pools/catalog` -> `Import to /decisions`
    - API: `POST /api/v2/pools/{pool_id}/document-policy-migrations/`
-4. Только после этого включать tenant-scoped rollout marker `workflows.authoring.phase=workflow_centric_active`.
-5. Для checked-in proof shipped default path использовать:
+5. Только после этого включать tenant-scoped rollout marker `workflows.authoring.phase=workflow_centric_active`.
+6. Для checked-in proof shipped default path использовать:
    - `docs/observability/artifacts/refactor-14/repository-acceptance-evidence.md`
-6. Evidence capture во время live tenant cutover вести по checked-in templates:
+7. Evidence capture во время live tenant cutover вести по checked-in templates:
    - `docs/observability/artifacts/refactor-14/shared-metadata-evidence.template.json`
    - `docs/observability/artifacts/refactor-14/legacy-document-policy-migration-evidence.template.json`
    - `docs/observability/artifacts/refactor-14/operator-canary-evidence.template.json`
@@ -40,7 +43,8 @@
 ### Breaking / migration notes
 
 - Legacy edge document_policy editor больше не является рекомендуемым net-new path; canonical route для новых policy revisions теперь `/decisions`.
-- External/operator tooling не должно рассчитывать на database-local-only metadata context. Проверяйте `resolution_mode` и `metadata_hash`, а не только `database_id` или `config_version`.
+- External/operator tooling не должно рассчитывать на database-local-only metadata context. Проверяйте `config_name`, `config_version` и diagnostics markers `config_generation_id`/`metadata_hash`/`publication_drift`, а не только `database_id`.
+- Historical decision rows и legacy metadata registry state должны быть прогнаны через `backfill_business_identity_state` до tenant cutover; без этого `/decisions` может честно оставаться fail-closed на `missing_metadata_context`.
 - Если import legacy policy завершился с `binding_update_required=true`, rollout нельзя считать завершённым, пока binding refs не закреплены явно.
 - Explicit `pool_workflow_binding_id` requirement для preview/create-run остаётся обязательным; подробности см. в [2026-02-15-pools-run-input-breaking-change.md](./2026-02-15-pools-run-input-breaking-change.md).
 
@@ -56,4 +60,4 @@
 ### Canonical references
 
 - Runbook: [WORKFLOW_CENTRIC_POOLS_RUNBOOK.md](../observability/WORKFLOW_CENTRIC_POOLS_RUNBOOK.md)
-- Cutover notes: [add-refactor-14-workflow-centric-hardening/cutover.md](/home/egor/code/command-center-1c/openspec/changes/add-refactor-14-workflow-centric-hardening/cutover.md)
+- Cutover notes: [add-refactor-14-workflow-centric-hardening/cutover.md](/home/egor/code/command-center-1c/openspec/changes/archive/2026-03-12-add-refactor-14-workflow-centric-hardening/cutover.md)

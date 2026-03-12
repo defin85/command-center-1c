@@ -66,6 +66,7 @@ import {
 } from '../../api/intercompanyPools'
 import { getV2 } from '../../api/generated/v2/v2'
 import type { AvailableDecisionRevision } from '../../types/workflow'
+import { isDecisionAvailableByDefault } from '../../components/workflow/decisionOptions'
 import { PoolWorkflowBindingsEditor } from './PoolWorkflowBindingsEditor'
 import {
   buildWorkflowBindingsFromForm,
@@ -1477,6 +1478,10 @@ export function PoolCatalogPage() {
     () => organizations.find((item) => item.id === selectedOrganizationId) ?? null,
     [organizations, selectedOrganizationId]
   )
+  const selectedOrganizationDatabaseId = useMemo(
+    () => String(selectedOrganization?.database_id || '').trim(),
+    [selectedOrganization]
+  )
   const selectedPool = useMemo(
     () => pools.find((item) => item.id === selectedPoolId) ?? null,
     [pools, selectedPoolId]
@@ -2198,22 +2203,41 @@ export function PoolCatalogPage() {
         cancelled = true
       }
     }
+    if (!selectedOrganizationDatabaseId) {
+      setAvailableDecisions([])
+      setIsPoolDecisionsLoading(false)
+      setPoolDecisionsLoadError('У выбранной организации не настроена database_id, поэтому compatible decision revisions недоступны.')
+      return () => {
+        cancelled = true
+      }
+    }
 
     setIsPoolDecisionsLoading(true)
     setPoolDecisionsLoadError(null)
-    void api.getDecisionsCollection()
+    void api.getDecisionsCollection({ database_id: selectedOrganizationDatabaseId })
       .then((response) => {
         if (cancelled) {
           return
         }
         const nextDecisions = (response.decisions ?? [])
           .filter((decision) => decision.is_active !== false)
+          .filter((decision) => isDecisionAvailableByDefault({
+            id: decision.id,
+            name: decision.name,
+            decisionTableId: decision.decision_table_id,
+            decisionKey: decision.decision_key,
+            decisionRevision: decision.decision_revision,
+            metadataContext: decision.metadata_context,
+            metadataCompatibility: decision.metadata_compatibility,
+          }))
           .map((decision) => ({
             id: decision.id,
             name: decision.name,
             decisionTableId: decision.decision_table_id,
             decisionKey: decision.decision_key,
             decisionRevision: decision.decision_revision,
+            metadataContext: decision.metadata_context,
+            metadataCompatibility: decision.metadata_compatibility,
           }))
           .sort((left, right) => (
             left.name.localeCompare(right.name) || left.decisionRevision - right.decisionRevision
@@ -2237,7 +2261,7 @@ export function PoolCatalogPage() {
     return () => {
       cancelled = true
     }
-  }, [activeWorkspaceTab, api, selectedPool])
+  }, [activeWorkspaceTab, api, selectedOrganizationDatabaseId, selectedPool])
 
   const reloadBindingsWorkspace = useCallback(async (pool: OrganizationPool) => {
     setIsPoolBindingsLoading(true)

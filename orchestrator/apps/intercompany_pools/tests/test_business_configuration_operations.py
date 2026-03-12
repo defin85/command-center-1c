@@ -15,7 +15,54 @@ from apps.operations.services.operations_service.types import EnqueueResult
 from apps.tenancy.models import Tenant
 
 
-def _seed_ibcmd_business_configuration_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+def _seed_ibcmd_business_configuration_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    include_generation_id: bool = True,
+    include_export_objects: bool = True,
+) -> None:
+    commands_by_id = {}
+    if include_generation_id:
+        commands_by_id["infobase.config.generation-id"] = {
+            "label": "config generation-id",
+            "description": "Get config generation id",
+            "argv": ["infobase", "config", "generation-id"],
+            "scope": "per_database",
+            "risk_level": "safe",
+            "params_by_name": {},
+        }
+    if include_export_objects:
+        commands_by_id["infobase.config.export.objects"] = {
+            "label": "config export objects",
+            "description": "Export selected config objects",
+            "argv": ["infobase", "config", "export", "objects"],
+            "scope": "per_database",
+            "risk_level": "safe",
+            "params_by_name": {
+                "arg1": {
+                    "kind": "positional",
+                    "position": 1,
+                    "required": False,
+                    "expects_value": True,
+                    "label": "Object1 ... ObjectN",
+                },
+                "archive": {
+                    "kind": "flag",
+                    "flag": "--archive",
+                    "required": False,
+                    "expects_value": False,
+                    "label": "--archive",
+                },
+                "out": {
+                    "kind": "flag",
+                    "flag": "--out",
+                    "required": False,
+                    "expects_value": True,
+                    "label": "--out",
+                },
+            },
+        }
+
     base_catalog = {
         "catalog_version": 2,
         "driver": "ibcmd",
@@ -23,46 +70,7 @@ def _seed_ibcmd_business_configuration_catalog(monkeypatch: pytest.MonkeyPatch) 
         "source": {"type": "test"},
         "generated_at": "2026-01-01T00:00:00Z",
         "driver_schema": {},
-        "commands_by_id": {
-            "infobase.config.generation-id": {
-                "label": "config generation-id",
-                "description": "Get config generation id",
-                "argv": ["infobase", "config", "generation-id"],
-                "scope": "per_database",
-                "risk_level": "safe",
-                "params_by_name": {},
-            },
-            "infobase.config.export.objects": {
-                "label": "config export objects",
-                "description": "Export selected config objects",
-                "argv": ["infobase", "config", "export", "objects"],
-                "scope": "per_database",
-                "risk_level": "safe",
-                "params_by_name": {
-                    "arg1": {
-                        "kind": "positional",
-                        "position": 1,
-                        "required": False,
-                        "expects_value": True,
-                        "label": "Object1 ... ObjectN",
-                    },
-                    "archive": {
-                        "kind": "flag",
-                        "flag": "--archive",
-                        "required": False,
-                        "expects_value": False,
-                        "label": "--archive",
-                    },
-                    "out": {
-                        "kind": "flag",
-                        "flag": "--out",
-                        "required": False,
-                        "expects_value": True,
-                        "label": "--out",
-                    },
-                },
-            },
-        },
+        "commands_by_id": commands_by_id,
     }
     support._seed_ibcmd_catalog(
         monkeypatch,
@@ -121,11 +129,62 @@ def test_ensure_business_configuration_profile_runtime_enqueues_verification_whe
     assert (operation.metadata or {}).get("command_id") == "infobase.config.export.objects"
     assert (operation.metadata or {}).get("business_configuration_job_kind") == "verification"
     assert (operation.metadata or {}).get("snapshot_kinds") == ["business_configuration_profile"]
-    argv = ((operation.payload or {}).get("data") or {}).get("argv") or []
+    payload_data = (operation.payload or {}).get("data") or {}
+    assert payload_data.get("ib_auth") == {"strategy": "service"}
+    assert payload_data.get("dbms_auth") == {"strategy": "service"}
+    assert "connection_source" not in payload_data
+    argv = payload_data.get("argv") or []
     assert argv[:4] == ["infobase", "config", "export", "objects"]
     assert "Configuration" in argv
     assert "--archive" in argv
     assert any(token == "--out" or str(token).startswith("--out=") for token in argv)
+
+
+@pytest.mark.django_db
+def test_ensure_business_configuration_profile_runtime_uses_checked_in_ibcmd_catalog_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(OperationsService, "enqueue_operation", _fake_enqueue)
+    database = _create_database(with_profile=False)
+
+    profile = ensure_business_configuration_profile_runtime(database=database)
+
+    assert profile is None
+    operation = BatchOperation.objects.get()
+    assert operation.status == BatchOperation.STATUS_QUEUED
+    assert (operation.metadata or {}).get("command_id") == "infobase.config.export.objects"
+    payload_data = (operation.payload or {}).get("data") or {}
+    argv = payload_data.get("argv") or []
+    assert argv[:4] == ["infobase", "config", "export", "objects"]
+    assert payload_data.get("ib_auth") == {"strategy": "service"}
+    assert payload_data.get("dbms_auth") == {"strategy": "service"}
+    assert "connection_source" not in payload_data
+
+
+@pytest.mark.django_db
+def test_ensure_business_configuration_profile_runtime_falls_back_when_effective_catalog_lacks_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_ibcmd_business_configuration_catalog(
+        monkeypatch,
+        include_generation_id=True,
+        include_export_objects=False,
+    )
+    monkeypatch.setattr(OperationsService, "enqueue_operation", _fake_enqueue)
+    database = _create_database(with_profile=False)
+
+    profile = ensure_business_configuration_profile_runtime(database=database)
+
+    assert profile is None
+    operation = BatchOperation.objects.get()
+    assert operation.status == BatchOperation.STATUS_QUEUED
+    assert (operation.metadata or {}).get("command_catalog_source") == "checked_in_preset"
+    payload_data = (operation.payload or {}).get("data") or {}
+    assert payload_data.get("ib_auth") == {"strategy": "service"}
+    assert payload_data.get("dbms_auth") == {"strategy": "service"}
+    assert "connection_source" not in payload_data
+    argv = payload_data.get("argv") or []
+    assert argv[:4] == ["infobase", "config", "export", "objects"]
 
 
 @pytest.mark.django_db
@@ -146,5 +205,22 @@ def test_ensure_business_configuration_profile_runtime_enqueues_generation_probe
     database.refresh_from_db()
     persisted_profile = (database.metadata or {}).get("business_configuration_profile") or {}
     assert persisted_profile.get("generation_probe_operation_id") == operation.id
-    argv = ((operation.payload or {}).get("data") or {}).get("argv") or []
+    payload_data = (operation.payload or {}).get("data") or {}
+    assert payload_data.get("ib_auth") == {"strategy": "service"}
+    assert payload_data.get("dbms_auth") == {"strategy": "service"}
+    assert "connection_source" not in payload_data
+    argv = payload_data.get("argv") or []
     assert argv[:3] == ["infobase", "config", "generation-id"]
+
+
+@pytest.mark.django_db
+def test_ensure_business_configuration_profile_runtime_marks_checked_in_preset_source_when_catalog_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(OperationsService, "enqueue_operation", _fake_enqueue)
+    database = _create_database(with_profile=False)
+
+    ensure_business_configuration_profile_runtime(database=database)
+
+    operation = BatchOperation.objects.get()
+    assert (operation.metadata or {}).get("command_catalog_source") == "checked_in_preset"

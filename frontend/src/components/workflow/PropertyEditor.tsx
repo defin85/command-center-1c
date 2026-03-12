@@ -40,6 +40,7 @@ import type {
 } from '../../types/workflow'
 import { NODE_TYPE_INFO } from '../../types/workflow'
 import { LazyJsonCodeEditor } from '../code/LazyJsonCodeEditor'
+import { formatAvailableDecisionLabel } from './decisionOptions'
 import './PropertyEditor.css'
 
 const { Text } = Typography
@@ -457,7 +458,7 @@ const ConditionForm = ({
     : undefined
   const decisionOptions = availableDecisions.map((decision) => ({
     value: `${decision.decisionTableId}:${decision.decisionRevision}`,
-    label: `${decision.name} (${decision.decisionKey}) · r${decision.decisionRevision}`,
+    label: formatAvailableDecisionLabel(decision),
   }))
   if (decisionRef && !selectedDecision) {
     decisionOptions.unshift({

@@ -35,6 +35,7 @@ import {
 } from '@ant-design/icons'
 import { WorkflowCanvas, NodePalette, PropertyEditor } from '../../components/workflow'
 import { LazyJsonCodeEditor } from '../../components/code/LazyJsonCodeEditor'
+import { isDecisionAvailableByDefault } from '../../components/workflow/decisionOptions'
 
 // Types from types/workflow (legacy format for UI components)
 import type {
@@ -65,6 +66,26 @@ import './WorkflowDesigner.css'
 
 const { Header, Sider, Content } = Layout
 const { Title } = Typography
+
+const buildRouteWithWorkflowContext = ({
+  basePath,
+  databaseId,
+  surface,
+}: {
+  basePath: string
+  databaseId?: string
+  surface?: string
+}) => {
+  const params = new URLSearchParams()
+  if (surface) {
+    params.set('surface', surface)
+  }
+  if (databaseId) {
+    params.set('database_id', databaseId)
+  }
+  const query = params.toString()
+  return query ? `${basePath}?${query}` : basePath
+}
 
 interface WorkflowDesignerState {
   template: WorkflowTemplate | null
@@ -234,11 +255,14 @@ const WorkflowDesigner = () => {
   const [executeInput, setExecuteInput] = useState('{}')
   const dagStructureRef = useRef<DAGStructure>(initialDagStructure)
   const isSystemManagedProjection = state.template?.is_system_managed === true
+  const decisionDatabaseId = String(searchParams.get('database_id') || '').trim()
   const isRuntimeDiagnosticsSurface =
     searchParams.get('surface') === 'runtime_diagnostics' || isSystemManagedProjection
-  const backTarget = isRuntimeDiagnosticsSurface
-    ? '/workflows?surface=runtime_diagnostics'
-    : '/workflows'
+  const backTarget = buildRouteWithWorkflowContext({
+    basePath: '/workflows',
+    databaseId: decisionDatabaseId,
+    surface: isRuntimeDiagnosticsSurface ? 'runtime_diagnostics' : undefined,
+  })
   const runtimeProjectionReadOnlyReason = state.template?.read_only_reason
     || 'System-managed runtime workflow projections are available for diagnostics only.'
 
@@ -276,7 +300,11 @@ const WorkflowDesigner = () => {
       try {
         const [workflowResponse, decisionResponse] = await Promise.all([
           api.getWorkflowsListWorkflows({ surface: 'workflow_library', limit: 1000 }),
-          api.getDecisionsCollection(),
+          api.getDecisionsCollection(
+            decisionDatabaseId
+              ? { database_id: decisionDatabaseId }
+              : undefined
+          ),
         ])
 
         const workflowsById = new Map(
@@ -317,12 +345,23 @@ const WorkflowDesigner = () => {
 
         const availableDecisions = (decisionResponse.decisions ?? [])
           .filter((decision) => decision.is_active !== false)
+          .filter((decision) => isDecisionAvailableByDefault({
+            id: decision.id,
+            name: decision.name,
+            decisionTableId: decision.decision_table_id,
+            decisionKey: decision.decision_key,
+            decisionRevision: decision.decision_revision,
+            metadataContext: decision.metadata_context,
+            metadataCompatibility: decision.metadata_compatibility,
+          }))
           .map((decision) => ({
             id: decision.id,
             name: decision.name,
             decisionTableId: decision.decision_table_id,
             decisionKey: decision.decision_key,
             decisionRevision: decision.decision_revision,
+            metadataContext: decision.metadata_context,
+            metadataCompatibility: decision.metadata_compatibility,
           }))
           .sort((left, right) => (
             left.name.localeCompare(right.name) || left.decisionRevision - right.decisionRevision
@@ -339,7 +378,7 @@ const WorkflowDesigner = () => {
     }
 
     void loadAuthoringReferences()
-  }, [api])
+  }, [api, decisionDatabaseId])
 
   // Load operation templates
   useEffect(() => {
@@ -556,7 +595,13 @@ const WorkflowDesigner = () => {
         savedTemplate = convertTemplateToLegacy(response.workflow)
         message.success('Workflow created successfully')
         // Navigate to edit URL
-        navigate(`/workflows/${savedTemplate.id}`, { replace: true })
+        navigate(
+          buildRouteWithWorkflowContext({
+            basePath: `/workflows/${savedTemplate.id}`,
+            databaseId: decisionDatabaseId,
+          }),
+          { replace: true }
+        )
       }
 
       setState((prev) => ({
@@ -602,7 +647,12 @@ const WorkflowDesigner = () => {
       setExecuteModalVisible(false)
 
       // Navigate to monitor page
-      navigate(`/workflows/executions/${response.execution_id}`)
+      navigate(
+        buildRouteWithWorkflowContext({
+          basePath: `/workflows/executions/${response.execution_id}`,
+          databaseId: decisionDatabaseId,
+        })
+      )
     } catch (error: unknown) {
       if (error instanceof SyntaxError) {
         message.error('Invalid JSON input')

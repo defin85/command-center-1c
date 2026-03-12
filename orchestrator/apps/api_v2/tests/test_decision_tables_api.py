@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 import uuid
+from io import StringIO
 
 import pytest
 from django.contrib.auth.models import User
+from django.core.management import call_command
 from rest_framework.test import APIClient
 
 from apps.databases.models import Database, InfobaseUserMapping
@@ -14,6 +17,7 @@ from apps.intercompany_pools.models import (
     PoolODataMetadataCatalogSnapshotSource,
 )
 from apps.tenancy.models import Tenant
+from apps.templates.workflow.models import DecisionTable
 
 
 @pytest.fixture
@@ -88,16 +92,21 @@ def _create_current_metadata_catalog_snapshot(
     database: Database,
     payload: dict[str, object] | None = None,
     metadata_hash: str = "a" * 64,
+    catalog_version: str | None = None,
+    snapshot_config_name: str | None = None,
+    snapshot_config_version: str | None = None,
+    resolution_config_name: str | None = None,
+    resolution_config_version: str | None = None,
 ) -> PoolODataMetadataCatalogSnapshot:
     profile = dict(database.metadata.get("business_configuration_profile") or {})
     snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
         tenant=tenant,
         database=database,
-        config_name=str(profile.get("config_name") or ""),
-        config_version=str(profile.get("config_version") or ""),
+        config_name=str(snapshot_config_name or profile.get("config_name") or ""),
+        config_version=str(snapshot_config_version or profile.get("config_version") or ""),
         extensions_fingerprint="",
         metadata_hash=metadata_hash,
-        catalog_version=f"v1:{uuid.uuid4().hex[:16]}",
+        catalog_version=str(catalog_version or f"v1:{uuid.uuid4().hex[:16]}"),
         payload=payload
         or {
             "documents": [
@@ -126,8 +135,8 @@ def _create_current_metadata_catalog_snapshot(
         tenant=tenant,
         database=database,
         snapshot=snapshot,
-        config_name=str(profile.get("config_name") or ""),
-        config_version=str(profile.get("config_version") or ""),
+        config_name=str(resolution_config_name or profile.get("config_name") or ""),
+        config_version=str(resolution_config_version or profile.get("config_version") or ""),
         extensions_fingerprint="",
         confirmed_at=snapshot.fetched_at,
     )
@@ -474,6 +483,215 @@ def test_decision_tables_api_reports_diverged_metadata_surface_as_warning_while_
     assert compatibility["is_compatible"] is True
     assert compatibility["status"] == "compatible"
     assert compatibility["reason"] == "metadata_surface_diverged"
+
+
+@pytest.mark.django_db
+def test_decision_detail_backfills_legacy_metadata_context_from_business_profile(
+    staff_client: APIClient,
+) -> None:
+    tenant = Tenant.objects.create(slug=f"decision-meta-legacy-{uuid.uuid4().hex[:8]}", name="Decision Meta Legacy")
+    database = _create_database(
+        tenant=tenant,
+        name=f"decision-legacy-db-{uuid.uuid4().hex[:8]}",
+        base_name="legacy-infobase-name",
+        version="8.3.24",
+    )
+    _set_business_configuration_profile(
+        database=database,
+        config_name="Бухгалтерия предприятия, редакция 3.0",
+        config_version="3.0.193.19",
+    )
+    legacy_snapshot = _create_current_metadata_catalog_snapshot(
+        tenant=tenant,
+        database=database,
+        snapshot_config_name=database.base_name,
+        snapshot_config_version=database.version,
+        resolution_config_name=database.base_name,
+        resolution_config_version=database.version,
+    )
+    decision = DecisionTable.objects.create(
+        decision_table_id=f"legacy-policy-{uuid.uuid4().hex[:8]}",
+        decision_key="document_policy",
+        name="Legacy Policy",
+        outputs=[{"name": "document_policy", "value_type": "json", "required": True}],
+        rules=[
+            {
+                "rule_id": "default",
+                "priority": 0,
+                "conditions": {},
+                "outputs": {"document_policy": {"version": "document_policy.v1", "chains": []}},
+            }
+        ],
+        metadata_context={
+            "database_id": str(database.id),
+            "snapshot_id": str(legacy_snapshot.id),
+            "config_name": database.base_name,
+            "config_version": database.version,
+            "metadata_hash": legacy_snapshot.metadata_hash,
+            "extensions_fingerprint": "",
+        },
+        source_provenance={
+            "kind": "legacy_edge_document_policy",
+            "child_database_id": str(database.id),
+        },
+        version_number=1,
+    )
+
+    response = staff_client.get(f"/api/v2/decisions/{decision.id}/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["decision"]["metadata_context"]["snapshot_id"] == str(legacy_snapshot.id)
+    assert payload["decision"]["metadata_context"]["config_name"] == "Бухгалтерия предприятия, редакция 3.0"
+    assert payload["decision"]["metadata_context"]["config_version"] == "3.0.193.19"
+
+    decision.refresh_from_db()
+    assert decision.metadata_context["snapshot_id"] == str(legacy_snapshot.id)
+    assert decision.metadata_context["config_name"] == "Бухгалтерия предприятия, редакция 3.0"
+    assert decision.metadata_context["config_version"] == "3.0.193.19"
+
+
+@pytest.mark.django_db
+def test_business_identity_backfill_command_upgrades_legacy_scope_and_decision_contexts(
+    staff_client: APIClient,
+) -> None:
+    tenant = Tenant.objects.create(slug=f"decision-backfill-{uuid.uuid4().hex[:8]}", name="Decision Backfill")
+    first_database = _create_database(
+        tenant=tenant,
+        name=f"decision-backfill-a-{uuid.uuid4().hex[:8]}",
+        base_name="legacy-infobase-a",
+        version="8.3.24",
+    )
+    second_database = _create_database(
+        tenant=tenant,
+        name=f"decision-backfill-b-{uuid.uuid4().hex[:8]}",
+        base_name="legacy-infobase-b",
+        version="8.3.24",
+    )
+    for database in (first_database, second_database):
+        _create_service_infobase_mapping(database=database)
+        _set_business_configuration_profile(
+            database=database,
+            config_name="Бухгалтерия предприятия, редакция 3.0",
+            config_version="3.0.193.19",
+        )
+
+    shared_catalog_version = f"legacy-catalog:{uuid.uuid4().hex[:12]}"
+    shared_payload = {
+        "documents": [
+            {
+                "entity_name": "Document_Sales",
+                "display_name": "Sales",
+                "fields": [
+                    {"name": "Amount", "type": "Edm.Decimal", "nullable": False},
+                ],
+                "table_parts": [],
+            }
+        ]
+    }
+    first_snapshot = _create_current_metadata_catalog_snapshot(
+        tenant=tenant,
+        database=first_database,
+        payload=shared_payload,
+        metadata_hash="c" * 64,
+        catalog_version=shared_catalog_version,
+        snapshot_config_name=first_database.base_name,
+        snapshot_config_version=first_database.version,
+        resolution_config_name=first_database.base_name,
+        resolution_config_version=first_database.version,
+    )
+    _create_current_metadata_catalog_snapshot(
+        tenant=tenant,
+        database=second_database,
+        payload=shared_payload,
+        metadata_hash="c" * 64,
+        catalog_version=shared_catalog_version,
+        snapshot_config_name=second_database.base_name,
+        snapshot_config_version=second_database.version,
+        resolution_config_name=second_database.base_name,
+        resolution_config_version=second_database.version,
+    )
+
+    decision = DecisionTable.objects.create(
+        decision_table_id=f"legacy-shared-policy-{uuid.uuid4().hex[:8]}",
+        decision_key="document_policy",
+        name="Legacy Shared Policy",
+        outputs=[{"name": "document_policy", "value_type": "json", "required": True}],
+        rules=[
+            {
+                "rule_id": "default",
+                "priority": 0,
+                "conditions": {},
+                "outputs": {"document_policy": {"version": "document_policy.v1", "chains": []}},
+            }
+        ],
+        metadata_context={
+            "database_id": str(first_database.id),
+            "snapshot_id": str(first_snapshot.id),
+            "config_name": first_database.base_name,
+            "config_version": first_database.version,
+            "metadata_hash": first_snapshot.metadata_hash,
+            "extensions_fingerprint": "",
+        },
+        source_provenance={
+            "kind": "legacy_edge_document_policy",
+            "child_database_id": str(first_database.id),
+        },
+        version_number=1,
+    )
+
+    out = StringIO()
+    call_command(
+        "backfill_business_identity_state",
+        "--tenant-id",
+        str(tenant.id),
+        "--json",
+        stdout=out,
+    )
+    command_payload = json.loads(out.getvalue())
+
+    assert command_payload["databases_scanned"] == 2
+    assert command_payload["scope_backfilled"] == 2
+    assert command_payload["scope_unresolved"] == []
+    assert command_payload["decisions_scanned"] == 1
+    assert command_payload["decision_contexts_backfilled"] == 1
+    assert command_payload["decision_context_unresolved"] == []
+
+    canonical_snapshots = list(
+        PoolODataMetadataCatalogSnapshot.objects.filter(
+            tenant=tenant,
+            config_name="Бухгалтерия предприятия, редакция 3.0",
+            config_version="3.0.193.19",
+            catalog_version=shared_catalog_version,
+        )
+    )
+    assert len(canonical_snapshots) == 1
+    canonical_snapshot = canonical_snapshots[0]
+
+    resolutions = list(
+        PoolODataMetadataCatalogScopeResolution.objects.filter(
+            tenant=tenant,
+            config_name="Бухгалтерия предприятия, редакция 3.0",
+            config_version="3.0.193.19",
+        ).order_by("database_id")
+    )
+    assert [str(item.database_id) for item in resolutions] == [str(first_database.id), str(second_database.id)]
+    assert {str(item.snapshot_id) for item in resolutions} == {str(canonical_snapshot.id)}
+
+    decision.refresh_from_db()
+    assert decision.metadata_context["snapshot_id"] == str(canonical_snapshot.id)
+    assert decision.metadata_context["config_name"] == "Бухгалтерия предприятия, редакция 3.0"
+    assert decision.metadata_context["config_version"] == "3.0.193.19"
+
+    detail_response = staff_client.get(
+        f"/api/v2/decisions/{decision.id}/?database_id={second_database.id}",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["decision"]["metadata_context"]["snapshot_id"] == str(canonical_snapshot.id)
+    assert detail_payload["decision"]["metadata_compatibility"]["is_compatible"] is True
 
 
 @pytest.mark.django_db

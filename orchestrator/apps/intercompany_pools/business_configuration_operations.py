@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from functools import lru_cache
+from pathlib import Path
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -15,6 +18,7 @@ from apps.operations.driver_catalog_effective import (
     get_effective_driver_catalog,
     resolve_driver_catalog_versions,
 )
+from apps.operations.ibcmd_catalog_v2 import build_base_catalog_from_its
 from apps.operations.ibcmd_cli_builder import (
     build_ibcmd_cli_argv,
     build_ibcmd_connection_args,
@@ -37,6 +41,9 @@ _ACTIVE_BATCH_OPERATION_STATUSES = (
     BatchOperation.STATUS_QUEUED,
     BatchOperation.STATUS_PROCESSING,
 )
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_CHECKED_IN_IBCMD_ITS_PATH = _REPO_ROOT / "generated" / "its" / "ibcmd.json"
 
 
 def ensure_business_configuration_profile_runtime(*, database: Database) -> dict[str, Any] | None:
@@ -141,7 +148,7 @@ def _enqueue_business_configuration_operation(
     params: dict[str, Any],
     metadata: dict[str, Any] | None = None,
 ) -> BatchOperation | None:
-    command, catalog = _resolve_ibcmd_command(command_id=command_id)
+    command, catalog, command_catalog_source = _resolve_ibcmd_command(command_id=command_id)
     if command is None or catalog is None:
         return None
 
@@ -165,9 +172,8 @@ def _enqueue_business_configuration_operation(
             "argv_masked": argv_masked,
             "stdin": "",
             "connection": {},
-            "connection_source": "database_profile",
-            "ib_auth": {"strategy": "local"},
-            "dbms_auth": {"strategy": "local"},
+            "ib_auth": {"strategy": "service"},
+            "dbms_auth": {"strategy": "service"},
         },
         "filters": {},
         "options": {},
@@ -193,6 +199,7 @@ def _enqueue_business_configuration_operation(
             "mode": "guided",
             "snapshot_kinds": [BUSINESS_CONFIGURATION_SNAPSHOT_KIND],
             "snapshot_source": f"business_configuration_profile.{job_kind}",
+            "command_catalog_source": command_catalog_source,
             "business_configuration_job_kind": job_kind,
             "business_configuration_reason": reason,
             **(metadata or {}),
@@ -218,10 +225,15 @@ def _enqueue_business_configuration_operation(
     return batch_operation
 
 
-def _resolve_ibcmd_command(*, command_id: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+def _resolve_ibcmd_command(*, command_id: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None, str]:
+    fallback_catalog = _load_checked_in_ibcmd_catalog()
     versions = resolve_driver_catalog_versions("ibcmd")
     if versions.base_version is None:
-        return None, None
+        commands_by_id = fallback_catalog.get("commands_by_id") if isinstance(fallback_catalog, dict) else None
+        command = commands_by_id.get(command_id) if isinstance(commands_by_id, dict) else None
+        if not isinstance(command, dict):
+            return None, None, ""
+        return command, fallback_catalog, "checked_in_preset"
     effective = get_effective_driver_catalog(
         driver="ibcmd",
         base_version=versions.base_version,
@@ -230,9 +242,25 @@ def _resolve_ibcmd_command(*, command_id: str) -> tuple[dict[str, Any] | None, d
     catalog = effective.catalog if isinstance(effective.catalog, dict) else None
     commands_by_id = catalog.get("commands_by_id") if isinstance(catalog, dict) else None
     command = commands_by_id.get(command_id) if isinstance(commands_by_id, dict) else None
-    if not isinstance(command, dict):
-        return None, catalog
-    return command, catalog
+    if isinstance(command, dict):
+        return command, catalog, "approved_effective"
+    fallback_commands = fallback_catalog.get("commands_by_id") if isinstance(fallback_catalog, dict) else None
+    fallback_command = fallback_commands.get(command_id) if isinstance(fallback_commands, dict) else None
+    if not isinstance(fallback_command, dict):
+        return None, catalog, ""
+    return fallback_command, fallback_catalog, "checked_in_preset"
+
+
+@lru_cache(maxsize=1)
+def _load_checked_in_ibcmd_catalog() -> dict[str, Any] | None:
+    try:
+        payload = json.loads(_CHECKED_IN_IBCMD_ITS_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    catalog = build_base_catalog_from_its(payload)
+    return catalog if isinstance(catalog, dict) else None
 
 
 def _find_active_operation(

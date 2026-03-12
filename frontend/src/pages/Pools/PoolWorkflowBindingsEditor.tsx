@@ -1,5 +1,6 @@
 import { Alert, Button, Card, Col, Form, Input, Row, Select, Space, Typography } from 'antd'
 import type { AvailableDecisionRevision } from '../../types/workflow'
+import { formatAvailableDecisionLabel } from '../../components/workflow/decisionOptions'
 
 import {
   createEmptyWorkflowBindingFormValue,
@@ -242,7 +243,7 @@ export function PoolWorkflowBindingsEditor({
                                   )
                                   const decisionOptions = availableDecisions.map((decision) => ({
                                     value: `${decision.decisionTableId}:${decision.decisionRevision}`,
-                                    label: `${decision.name} (${decision.decisionKey}) · r${decision.decisionRevision}`,
+                                    label: formatAvailableDecisionLabel(decision),
                                     decisionTableId: decision.decisionTableId,
                                     decisionKey: decision.decisionKey,
                                     decisionRevision: decision.decisionRevision,

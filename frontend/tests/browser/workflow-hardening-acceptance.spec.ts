@@ -21,8 +21,11 @@ const BASE_METADATA_CONTEXT = {
   catalog_version: 'v1:shared-services',
   config_name: 'shared-profile',
   config_version: '8.3.24',
+  config_generation_id: 'generation-shared-services',
   extensions_fingerprint: '',
   metadata_hash: 'a'.repeat(64),
+  observed_metadata_hash: 'a'.repeat(64),
+  publication_drift: false,
   resolution_mode: 'shared_scope',
   is_shared_snapshot: true,
   provenance_database_id: '20202020-2020-2020-2020-202020202020',
@@ -76,8 +79,11 @@ const BASE_DECISION = {
     snapshot_id: 'snapshot-shared-services',
     config_name: 'shared-profile',
     config_version: '8.3.24',
+    config_generation_id: 'generation-shared-services',
     extensions_fingerprint: '',
     metadata_hash: 'a'.repeat(64),
+    observed_metadata_hash: 'a'.repeat(64),
+    publication_drift: false,
     resolution_mode: 'shared_scope',
     is_shared_snapshot: true,
     provenance_database_id: '20202020-2020-2020-2020-202020202020',
@@ -92,7 +98,7 @@ const BASE_DECISION = {
   updated_at: NOW,
 }
 
-const INCOMPATIBLE_DECISION = {
+const DRIFTED_DECISION = {
   ...BASE_DECISION,
   id: 'decision-version-3',
   decision_table_id: 'transfer-publication-policy',
@@ -101,11 +107,13 @@ const INCOMPATIBLE_DECISION = {
   metadata_context: {
     ...BASE_DECISION.metadata_context,
     metadata_hash: 'b'.repeat(64),
+    observed_metadata_hash: 'b'.repeat(64),
+    publication_drift: true,
   },
   metadata_compatibility: {
-    status: 'incompatible',
+    status: 'compatible',
     reason: 'metadata_surface_diverged',
-    is_compatible: false,
+    is_compatible: true,
   },
 }
 
@@ -322,7 +330,7 @@ function createAcceptanceState(): AcceptanceState {
         version: '8.3.24',
       },
     ],
-    decisions: [deepClone(BASE_DECISION), deepClone(INCOMPATIBLE_DECISION)],
+    decisions: [deepClone(BASE_DECISION), deepClone(DRIFTED_DECISION)],
     decisionListQueries: [],
     decisionWrites: [],
     metadataContext: deepClone(BASE_METADATA_CONTEXT),
@@ -989,7 +997,7 @@ test('Workflow hardening: /decisions shows shared metadata provenance, canonical
   await expect(page.getByText('shared_scope').first()).toBeVisible()
   await expect(page.getByText('20202020-2020-2020-2020-202020202020').first()).toBeVisible()
   await expect(page.getByText('Services publication policy').first()).toBeVisible()
-  await expect(page.getByText('Showing 1 of 2 revisions matching the selected metadata snapshot.')).toBeVisible()
+  await expect(page.getByText('Showing 1 of 2 revisions matching the selected configuration.')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Show all revisions' })).toBeVisible()
   await expect(page.getByText('Transfer publication policy')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Import legacy edge' })).toBeVisible()
@@ -997,14 +1005,14 @@ test('Workflow hardening: /decisions shows shared metadata provenance, canonical
   await expect.poll(() => state.decisionListQueries.at(-1)).toBe('10101010-1010-1010-1010-101010101010')
 
   await page.getByRole('button', { name: 'Show all revisions' }).click()
-  await expect(page.getByText('Showing all 2 revisions for diagnostics. 1 revision does not match the selected metadata snapshot.')).toBeVisible()
+  await expect(page.getByText('Showing all 2 revisions for diagnostics. 1 revision does not match the selected configuration.')).toBeVisible()
   await expect(page.getByText('Transfer publication policy')).toBeVisible()
 
   await page.getByTestId('decisions-database-select').click()
   await page.getByText('Shared provenance DB (shared-profile)').click()
-  await expect(page.getByText('Showing 1 of 2 revisions matching the selected metadata snapshot.')).toBeVisible()
+  await expect(page.getByText('Showing 1 of 2 revisions matching the selected configuration.')).toBeVisible()
   await expect(page.getByText('Transfer publication policy')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Show matching snapshot only' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Show matching configuration only' })).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Import legacy edge' }).click()
   await expect(page.getByText('Import legacy edge policy')).toBeVisible()

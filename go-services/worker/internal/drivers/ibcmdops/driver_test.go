@@ -496,6 +496,70 @@ func TestBuildRequestIbcmdCliDbmsServiceStrategyUsesServiceMappingSourceRefForEx
 	}
 }
 
+func TestBuildRequestIbcmdCliDbmsServiceStrategyUsesServiceMappingSourceRefForConfigGenerationID(t *testing.T) {
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"command_id": "infobase.config.generation-id",
+				"argv":       []string{"infobase", "config", "generation-id"},
+				"dbms_auth":  map[string]interface{}{"strategy": "service"},
+			},
+		},
+	}
+
+	req, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{
+			DBMS:       "PostgreSQL",
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "svc_db",
+			DBPassword: "svcpwd",
+			IBUsername: "ibuser",
+			IBPassword: "ibpass",
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req == nil {
+		t.Fatalf("expected request")
+	}
+
+	findBinding := func(targetRef string) map[string]interface{} {
+		for _, raw := range req.RuntimeBindings {
+			if raw == nil {
+				continue
+			}
+			if v, ok := raw["target_ref"]; ok && v == targetRef {
+				return raw
+			}
+		}
+		return nil
+	}
+
+	dbUser := findBinding("flag:--db-user")
+	if dbUser == nil {
+		t.Fatalf("expected flag:--db-user binding, got %#v", req.RuntimeBindings)
+	}
+	if dbUser["source_ref"] != "credentials.db_service_mapping" {
+		t.Fatalf("unexpected db user source_ref: %#v", dbUser)
+	}
+
+	dbPwd := findBinding("flag:--db-pwd")
+	if dbPwd == nil {
+		t.Fatalf("expected flag:--db-pwd binding, got %#v", req.RuntimeBindings)
+	}
+	if dbPwd["source_ref"] != "credentials.db_service_mapping" {
+		t.Fatalf("unexpected db password source_ref: %#v", dbPwd)
+	}
+}
+
 func TestBuildRequestIbcmdCliDbmsServiceStrategyFailsClosedOutsideAllowlist(t *testing.T) {
 	msg := &models.OperationMessage{
 		OperationID:   "op-1",
@@ -526,6 +590,106 @@ func TestBuildRequestIbcmdCliDbmsServiceStrategyFailsClosedOutsideAllowlist(t *t
 	)
 	if err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestBuildRequestIbcmdCliConfigGenerationIDAllowsServiceDbmsAuth(t *testing.T) {
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"command_id": "infobase.config.generation-id",
+				"argv":       []string{"infobase", "config", "generation-id"},
+				"ib_auth":    map[string]interface{}{"strategy": "service"},
+				"dbms_auth":  map[string]interface{}{"strategy": "service"},
+			},
+		},
+	}
+
+	req, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{
+			DBMS:       "PostgreSQL",
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "svc_db",
+			DBPassword: "svcpwd",
+			IBUsername: "svc",
+			IBPassword: "svcpass",
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req == nil {
+		t.Fatalf("expected request")
+	}
+	if !strings.Contains(strings.Join(req.Args, " "), "--user=svc") {
+		t.Fatalf("expected service IB auth in args, got %#v", req.Args)
+	}
+	if !strings.Contains(strings.Join(req.Args, " "), "--db-user=svc_db") {
+		t.Fatalf("expected service DB auth in args, got %#v", req.Args)
+	}
+}
+
+func TestBuildRequestIbcmdCliConfigExportObjectsAllowsServiceDbmsAuth(t *testing.T) {
+	store := &fakeStorage{
+		prepareOutputPath:   "/tmp/configuration.zip",
+		prepareArtifactPath: "s3://bucket/configuration.zip",
+	}
+
+	msg := &models.OperationMessage{
+		OperationID:   "op-1",
+		OperationType: "ibcmd_cli",
+		Payload: models.OperationPayload{
+			Data: map[string]interface{}{
+				"command_id": "infobase.config.export.objects",
+				"argv": []string{
+					"infobase",
+					"config",
+					"export",
+					"objects",
+					"Configuration",
+					"--archive",
+					"--out",
+					"business-configuration-profile/db-1/Configuration.zip",
+				},
+				"ib_auth":   map[string]interface{}{"strategy": "service"},
+				"dbms_auth": map[string]interface{}{"strategy": "service"},
+			},
+		},
+	}
+
+	req, err := buildRequest(
+		context.Background(),
+		msg,
+		"db-1",
+		&credentials.DatabaseCredentials{
+			DBMS:       "PostgreSQL",
+			DBServer:   "localhost",
+			DBName:     "testdb",
+			DBUser:     "svc_db",
+			DBPassword: "svcpwd",
+			IBUsername: "svc",
+			IBPassword: "svcpass",
+		},
+		store,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req == nil {
+		t.Fatalf("expected request")
+	}
+	if req.ArtifactPath != "s3://bucket/configuration.zip" {
+		t.Fatalf("expected artifact path, got %q", req.ArtifactPath)
+	}
+	if !strings.Contains(strings.Join(req.Args, " "), "--db-user=svc_db") {
+		t.Fatalf("expected service DB auth in args, got %#v", req.Args)
 	}
 }
 

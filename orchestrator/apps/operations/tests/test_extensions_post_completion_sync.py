@@ -134,6 +134,9 @@ def test_post_completion_extensions_sync_enqueues_follow_up_from_metadata_execut
     assert follow.total_tasks == 1
     assert follow.target_databases.count() == 1
     assert Task.objects.filter(batch_operation=follow).count() == 1
+    payload_data = (follow.payload or {}).get("data") or {}
+    assert payload_data.get("ib_auth") == {"strategy": "service"}
+    assert payload_data.get("dbms_auth") == {"strategy": "service"}
     payload = follow.payload or {}
     argv = ((payload.get("data") or {}).get("argv")) if isinstance(payload.get("data"), dict) else None
     assert isinstance(argv, list)
