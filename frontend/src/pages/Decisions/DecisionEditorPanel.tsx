@@ -1,11 +1,28 @@
-import { Alert, Button, Card, Input, Space, Typography } from 'antd'
+import { Alert, Button, Card, Descriptions, Input, Space, Typography } from 'antd'
 
 import { LazyJsonCodeEditorFormField } from '../../components/code/LazyJsonCodeEditor'
 import type { DocumentPolicyBuilderChainFormValue } from './documentPolicyBuilder'
 import { DocumentPolicyBuilderEditor } from './DocumentPolicyBuilderEditor'
 
-export type DecisionEditorMode = 'create' | 'import' | 'revise'
+export type DecisionEditorMode = 'create' | 'import' | 'revise' | 'rollover'
 export type DecisionEditorTab = 'builder' | 'raw'
+
+export type DecisionEditorSourceSummary = {
+  decisionId: string
+  decisionTableId: string
+  decisionRevision: number
+  name: string
+  compatibilityStatus?: string
+  compatibilityReason?: string
+}
+
+export type DecisionEditorTargetSummary = {
+  databaseId: string
+  databaseLabel: string
+  configurationLabel: string
+  snapshotId?: string
+  resolutionMode?: string
+}
 
 export type DecisionEditorState = {
   mode: DecisionEditorMode
@@ -17,6 +34,9 @@ export type DecisionEditorState = {
   rawJson: string
   isActive: boolean
   parentVersionId?: string
+  targetDatabaseId?: string
+  sourceSummary?: DecisionEditorSourceSummary
+  targetSummary?: DecisionEditorTargetSummary
 }
 
 type DecisionEditorPanelProps = {
@@ -42,6 +62,10 @@ const PANEL_COPY: Record<DecisionEditorMode, { title: string; subtitle: string }
     title: 'Edit selected decision',
     subtitle: 'Review the existing decision in builder or raw JSON mode and save it as a new revision.',
   },
+  rollover: {
+    title: 'Rollover selected revision',
+    subtitle: 'Use the selected revision as a source seed and publish a new revision for the target database metadata context.',
+  },
 }
 
 export function DecisionEditorPanel({
@@ -54,6 +78,53 @@ export function DecisionEditorPanel({
   onTabChange,
 }: DecisionEditorPanelProps) {
   const copy = PANEL_COPY[value.mode]
+  const saveButtonLabel = value.mode === 'rollover' ? 'Publish rollover revision' : 'Save decision'
+  const summaryItems = [
+    value.sourceSummary
+      ? {
+        key: 'source-revision',
+        label: 'Source revision',
+        children: `${value.sourceSummary.name} (${value.sourceSummary.decisionTableId} r${value.sourceSummary.decisionRevision})`,
+      }
+      : null,
+    value.sourceSummary?.compatibilityStatus
+      ? {
+        key: 'source-compatibility',
+        label: 'Source compatibility',
+        children: value.sourceSummary.compatibilityReason
+          ? `${value.sourceSummary.compatibilityStatus} · ${value.sourceSummary.compatibilityReason}`
+          : value.sourceSummary.compatibilityStatus,
+      }
+      : null,
+    value.targetSummary
+      ? {
+        key: 'target-database',
+        label: 'Target database',
+        children: value.targetSummary.databaseLabel,
+      }
+      : null,
+    value.targetSummary
+      ? {
+        key: 'target-configuration',
+        label: 'Target metadata snapshot',
+        children: value.targetSummary.configurationLabel,
+      }
+      : null,
+    value.targetSummary?.snapshotId
+      ? {
+        key: 'target-snapshot-id',
+        label: 'Target snapshot ID',
+        children: value.targetSummary.snapshotId,
+      }
+      : null,
+    value.targetSummary?.resolutionMode
+      ? {
+        key: 'target-resolution-mode',
+        label: 'Target resolution mode',
+        children: value.targetSummary.resolutionMode,
+      }
+      : null,
+  ].filter(Boolean)
 
   return (
     <Card>
@@ -69,6 +140,22 @@ export function DecisionEditorPanel({
 
         {error ? (
           <Alert type="error" showIcon message={error} />
+        ) : null}
+
+        {summaryItems.length > 0 ? (
+          <Descriptions
+            size="small"
+            column={1}
+            items={summaryItems}
+          />
+        ) : null}
+
+        {value.mode === 'rollover' ? (
+          <Alert
+            type="info"
+            showIcon
+            message="Publishing a rollover creates a new revision only. Existing workflows, bindings, and runtime projections stay pinned until you update them explicitly."
+          />
         ) : null}
 
         <Space direction="vertical" size="small" style={{ display: 'flex' }}>
@@ -166,7 +253,7 @@ export function DecisionEditorPanel({
 
         <Space wrap>
           <Button type="primary" loading={saving} onClick={onSave}>
-            Save decision
+            {saveButtonLabel}
           </Button>
           <Button disabled={saving} onClick={onCancel}>
             Cancel

@@ -400,6 +400,84 @@ def test_decision_tables_api_rejects_invalid_document_policy_metadata_refs(
 
 
 @pytest.mark.django_db
+def test_decision_tables_api_rejects_rollover_publish_when_source_policy_is_incompatible_with_target_snapshot(
+    staff_client: APIClient,
+) -> None:
+    tenant = Tenant.objects.create(slug=f"decision-meta-rollover-{uuid.uuid4().hex[:8]}", name="Decision Meta Rollover")
+    source_database = _create_database(
+        tenant=tenant,
+        name=f"decision-rollover-source-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    target_database = _create_database(
+        tenant=tenant,
+        name=f"decision-rollover-target-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.25",
+    )
+    _create_service_infobase_mapping(database=source_database)
+    _create_service_infobase_mapping(database=target_database)
+    _set_business_configuration_profile(
+        database=source_database,
+        config_version="8.3.24",
+    )
+    _set_business_configuration_profile(
+        database=target_database,
+        config_version="8.3.25",
+    )
+    _create_current_metadata_catalog_snapshot(tenant=tenant, database=source_database)
+    _create_current_metadata_catalog_snapshot(
+        tenant=tenant,
+        database=target_database,
+        payload={
+            "documents": [
+                {
+                    "entity_name": "Document_Sales",
+                    "display_name": "Sales",
+                    "fields": [
+                        {"name": "Amount", "type": "Edm.Decimal", "nullable": False},
+                    ],
+                    "table_parts": [],
+                }
+            ]
+        },
+    )
+
+    create_response = staff_client.post(
+        "/api/v2/decisions/",
+        data={
+            **_build_decision_payload(decision_table_id="rollover-policy"),
+            "database_id": str(source_database.id),
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+    assert create_response.status_code == 201
+    source_revision = create_response.json()["decision"]
+
+    rollover_response = staff_client.post(
+        "/api/v2/decisions/",
+        data={
+            **_build_decision_payload(decision_table_id="rollover-policy"),
+            "parent_version_id": source_revision["id"],
+            "database_id": str(target_database.id),
+            "name": "Rollover Policy for 8.3.25",
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+
+    assert rollover_response.status_code == 400
+    payload = rollover_response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "POOL_METADATA_REFERENCE_INVALID"
+    assert DecisionTable.objects.filter(decision_table_id="rollover-policy").count() == 1
+    source_decision = DecisionTable.objects.get(id=source_revision["id"])
+    assert source_decision.parent_version_id is None
+
+
+@pytest.mark.django_db
 def test_decision_tables_api_rejects_document_policy_create_without_database_context(
     staff_client: APIClient,
 ) -> None:

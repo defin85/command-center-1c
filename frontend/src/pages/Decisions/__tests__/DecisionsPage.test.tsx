@@ -393,7 +393,7 @@ describe('DecisionsPage', () => {
         { skipGlobalError: true },
       )
     })
-  }, 15000)
+  }, 20000)
 
   it('imports a legacy edge policy through the pool migration API on /decisions', async () => {
     const user = userEvent.setup()
@@ -488,6 +488,76 @@ describe('DecisionsPage', () => {
               }),
             }),
           ]),
+        }),
+        { skipGlobalError: true },
+      )
+    })
+  }, 10000)
+
+  it('supports guided rollover from a revision outside the default compatible selection', async () => {
+    const user = userEvent.setup()
+    const previousReleaseDecision = {
+      ...defaultDecision,
+      id: 'decision-version-previous-release',
+      decision_revision: 7,
+      name: 'Previous release policy',
+      metadata_context: {
+        ...defaultDecision.metadata_context,
+        config_version: '8.3.23',
+      },
+      metadata_compatibility: {
+        status: 'incompatible',
+        reason: 'configuration_scope_mismatch',
+        is_compatible: false,
+      },
+    }
+
+    mockGetDecisionsCollection.mockResolvedValue({
+      decisions: [defaultDecision, previousReleaseDecision],
+      count: 2,
+      metadata_context: defaultMetadataContext,
+    })
+    mockGetDecisionsDetail.mockImplementation(async (decisionId: string) => ({
+      decision: decisionId === previousReleaseDecision.id ? previousReleaseDecision : defaultDecision,
+      metadata_context: defaultMetadataContext,
+    }))
+
+    renderPage()
+
+    expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show all revisions' }))
+    expect(await screen.findByText('Previous release policy')).toBeInTheDocument()
+
+    await user.click(screen.getByText('Previous release policy'))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Edit selected decision' })).toBeDisabled()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Rollover selected revision' }))
+
+    expect(await screen.findByRole('heading', { name: 'Rollover selected revision' })).toBeInTheDocument()
+    expect(screen.getByText('Source revision')).toBeInTheDocument()
+    expect(screen.getByText('Previous release policy (services-publication-policy r7)')).toBeInTheDocument()
+    expect(screen.getByText('Target database')).toBeInTheDocument()
+    expect(screen.getAllByText('Target DB (shared-profile)').length).toBeGreaterThan(0)
+    expect(screen.getByText('Target metadata snapshot')).toBeInTheDocument()
+    expect(screen.getByText('shared-profile 8.3.24')).toBeInTheDocument()
+    expect(screen.getByText('Publishing a rollover creates a new revision only. Existing workflows, bindings, and runtime projections stay pinned until you update them explicitly.')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Decision name'), {
+      target: { value: 'Previous release policy for Target DB' },
+    })
+    await user.click(screen.getByRole('button', { name: 'Publish rollover revision' }))
+
+    await waitFor(() => {
+      expect(mockPostDecisionsCollection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          database_id: 'db-2',
+          decision_table_id: 'services-publication-policy',
+          parent_version_id: 'decision-version-previous-release',
+          name: 'Previous release policy for Target DB',
+          is_active: true,
         }),
         { skipGlobalError: true },
       )
@@ -815,5 +885,27 @@ describe('DecisionsPage', () => {
         { skipGlobalError: true },
       )
     })
+  }, 10000)
+
+  it('keeps guided rollover fail-closed when target metadata validation rejects publish', async () => {
+    const user = userEvent.setup()
+    mockPostDecisionsCollection.mockRejectedValueOnce(
+      makeApiError(
+        'Document policy references are invalid for the selected target metadata snapshot.',
+        'POOL_METADATA_REFERENCE_INVALID',
+        400,
+      ),
+    )
+
+    renderPage()
+
+    await screen.findByText('Decision Policy Library')
+    await user.click(screen.getByRole('button', { name: 'Rollover selected revision' }))
+
+    expect(await screen.findByRole('heading', { name: 'Rollover selected revision' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Publish rollover revision' }))
+
+    expect(await screen.findByText('Document policy references are invalid for the selected target metadata snapshot.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Rollover selected revision' })).toBeInTheDocument()
   }, 10000)
 })

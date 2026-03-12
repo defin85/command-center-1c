@@ -51,7 +51,9 @@ import {
   DecisionEditorPanel,
   type DecisionEditorMode,
   type DecisionEditorState,
+  type DecisionEditorSourceSummary,
   type DecisionEditorTab,
+  type DecisionEditorTargetSummary,
 } from './DecisionEditorPanel'
 import { DocumentPolicyViewer } from './DocumentPolicyViewer'
 
@@ -195,11 +197,53 @@ const buildEmptyLegacyImportDraft = (poolId = ''): DecisionLegacyImportState => 
   description: '',
 })
 
-const buildDraftFromDecision = (decision: DecisionTable): DecisionEditorState => {
+const formatDatabaseOptionLabel = (
+  database: { id: string; name?: string | null; base_name?: string | null; version?: string | null }
+): string => `${database.name} (${database.base_name ?? database.version ?? database.id})`
+
+const buildEditorSourceSummary = (decision: DecisionTable): DecisionEditorSourceSummary => ({
+  decisionId: decision.id,
+  decisionTableId: decision.decision_table_id,
+  decisionRevision: decision.decision_revision,
+  name: decision.name,
+  compatibilityStatus: decision.metadata_compatibility?.status ?? undefined,
+  compatibilityReason: decision.metadata_compatibility?.reason ?? undefined,
+})
+
+const buildEditorTargetSummary = (
+  metadata: MetadataContextLike,
+  options: {
+    databaseId: string
+    databaseLabel: string
+  },
+): DecisionEditorTargetSummary | undefined => {
+  const configName = readMetadataString(metadata, 'config_name')
+  const configVersion = readMetadataString(metadata, 'config_version')
+  if (!configName || !configVersion) {
+    return undefined
+  }
+
+  return {
+    databaseId: options.databaseId,
+    databaseLabel: options.databaseLabel,
+    configurationLabel: `${configName} ${configVersion}`,
+    snapshotId: readMetadataString(metadata, 'snapshot_id') || undefined,
+    resolutionMode: readMetadataString(metadata, 'resolution_mode') || undefined,
+  }
+}
+
+const buildDraftFromDecision = (
+  decision: DecisionTable,
+  options?: {
+    mode?: DecisionEditorMode
+    targetDatabaseId?: string
+    targetSummary?: DecisionEditorTargetSummary
+  },
+): DecisionEditorState => {
   const policy = extractDocumentPolicyOutput(decision, { allowNonDefaultRuleId: true })
   const chains = documentPolicyToBuilderChains(policy)
   return {
-    mode: 'revise',
+    mode: options?.mode ?? 'revise',
     decisionTableId: decision.decision_table_id,
     name: decision.name,
     description: decision.description ?? '',
@@ -208,6 +252,9 @@ const buildDraftFromDecision = (decision: DecisionTable): DecisionEditorState =>
     activeTab: 'builder',
     parentVersionId: decision.id,
     isActive: decision.is_active,
+    targetDatabaseId: options?.targetDatabaseId,
+    sourceSummary: options?.mode === 'rollover' ? buildEditorSourceSummary(decision) : undefined,
+    targetSummary: options?.mode === 'rollover' ? options?.targetSummary : undefined,
   }
 }
 
@@ -279,6 +326,23 @@ export function DecisionsPage() {
   const [detailReadFallbackUsed, setDetailReadFallbackUsed] = useState(false)
   const [snapshotFilterMode, setSnapshotFilterMode] = useState<DecisionSnapshotFilterMode>('matching_snapshot')
   const effectiveSelectedDatabaseId = selectedDatabaseId ?? undefined
+  const selectedDatabase = useMemo(
+    () => databases.find((database) => database.id === effectiveSelectedDatabaseId) ?? null,
+    [databases, effectiveSelectedDatabaseId],
+  )
+  const selectedDatabaseLabel = selectedDatabase ? formatDatabaseOptionLabel(selectedDatabase) : ''
+  const rolloverTargetMetadataContext = detailContext ?? metadataContext
+  const selectedDecisionRequiresRollover = Boolean(selectedDecision?.metadata_compatibility?.is_compatible === false)
+  const canOpenRollover = Boolean(
+    selectedDecision
+    && effectiveSelectedDatabaseId
+    && !listReadFallbackUsed
+    && !detailReadFallbackUsed
+    && buildEditorTargetSummary(rolloverTargetMetadataContext, {
+      databaseId: effectiveSelectedDatabaseId,
+      databaseLabel: selectedDatabaseLabel,
+    }),
+  )
 
   useEffect(() => {
     if (selectedDatabaseId !== undefined || databases.length === 0) return
@@ -549,12 +613,62 @@ export function DecisionsPage() {
 
   const handleOpenSelectedDecisionForEdit = () => {
     if (!selectedDecision) return
+    if (selectedDecisionRequiresRollover) {
+      setEditorDraft(null)
+      setEditorError('This revision is outside the selected target configuration. Use guided rollover to publish a new revision for the current database.')
+      setLegacyImportDraft(null)
+      setLegacyImportGraph(null)
+      setLegacyImportError(null)
+      return
+    }
 
     try {
       openEditor('revise', buildDraftFromDecision(selectedDecision))
     } catch (error) {
       setEditorDraft(null)
       setEditorError(toErrorMessage(error, 'Selected decision cannot be opened in the editor.'))
+      setLegacyImportDraft(null)
+      setLegacyImportGraph(null)
+      setLegacyImportError(null)
+    }
+  }
+
+  const handleOpenSelectedDecisionForRollover = () => {
+    if (!selectedDecision) return
+    if (!effectiveSelectedDatabaseId || !selectedDatabaseLabel) {
+      setEditorDraft(null)
+      setEditorError('Select a target database before starting guided rollover.')
+      setLegacyImportDraft(null)
+      setLegacyImportGraph(null)
+      setLegacyImportError(null)
+      return
+    }
+
+    const targetSummary = buildEditorTargetSummary(rolloverTargetMetadataContext, {
+      databaseId: effectiveSelectedDatabaseId,
+      databaseLabel: selectedDatabaseLabel,
+    })
+    if (!targetSummary) {
+      setEditorDraft(null)
+      setEditorError('Resolved target metadata context is unavailable. Guided rollover requires a target snapshot before publish.')
+      setLegacyImportDraft(null)
+      setLegacyImportGraph(null)
+      setLegacyImportError(null)
+      return
+    }
+
+    try {
+      openEditor(
+        'rollover',
+        buildDraftFromDecision(selectedDecision, {
+          mode: 'rollover',
+          targetDatabaseId: effectiveSelectedDatabaseId,
+          targetSummary,
+        }),
+      )
+    } catch (error) {
+      setEditorDraft(null)
+      setEditorError(toErrorMessage(error, 'Selected decision cannot be opened as a rollover source.'))
       setLegacyImportDraft(null)
       setLegacyImportGraph(null)
       setLegacyImportError(null)
@@ -595,7 +709,7 @@ export function DecisionsPage() {
 
     try {
       const payload = buildDocumentPolicyDecisionPayload({
-        database_id: effectiveSelectedDatabaseId,
+        database_id: editorDraft.targetDatabaseId ?? effectiveSelectedDatabaseId,
         decision_table_id: editorDraft.decisionTableId,
         name: editorDraft.name,
         description: editorDraft.description,
@@ -604,9 +718,17 @@ export function DecisionsPage() {
         is_active: editorDraft.isActive,
       })
 
-      await api.postDecisionsCollection(payload, DECISIONS_API_OPTIONS)
-      message.success(editorDraft.mode === 'revise' ? 'Decision revision created' : 'Decision saved')
+      const response = await api.postDecisionsCollection(payload, DECISIONS_API_OPTIONS)
+      const nextDecisionId = response?.decision?.id ?? null
+      message.success(
+        editorDraft.mode === 'rollover'
+          ? 'Rollover revision created'
+          : editorDraft.mode === 'revise'
+            ? 'Decision revision created'
+            : 'Decision saved',
+      )
       setEditorDraft(null)
+      setSelectedDecisionId(nextDecisionId)
       setReloadTick((value) => value + 1)
     } catch (error) {
       setEditorError(toErrorMessage(error, 'Failed to save decision.'))
@@ -758,16 +880,23 @@ export function DecisionsPage() {
               <Button
                 icon={<EditOutlined />}
                 onClick={handleOpenSelectedDecisionForEdit}
-                disabled={!selectedDecision || saving}
+                disabled={!selectedDecision || saving || selectedDecisionRequiresRollover}
                 aria-label="Edit selected decision"
               >
                 Edit selected decision
               </Button>
               <Button
+                onClick={handleOpenSelectedDecisionForRollover}
+                disabled={!selectedDecision || saving || !canOpenRollover}
+                aria-label="Rollover selected revision"
+              >
+                Rollover selected revision
+              </Button>
+              <Button
                 danger
                 icon={<MinusCircleOutlined />}
                 onClick={() => void handleDeactivateSelected()}
-                disabled={!selectedDecision || saving}
+                disabled={!selectedDecision || saving || selectedDecisionRequiresRollover}
                 aria-label="Deactivate selected decision"
               >
                 Deactivate selected decision
@@ -937,6 +1066,14 @@ export function DecisionsPage() {
                   type="warning"
                   showIcon
                   message={selectedDecision.metadata_compatibility.reason}
+                />
+              ) : null}
+
+              {selectedDecisionRequiresRollover ? (
+                <Alert
+                  type="info"
+                  showIcon
+                  message="This revision is outside the default compatible set for the selected database. Use Rollover selected revision to create a new revision for the current target metadata context."
                 />
               ) : null}
 
