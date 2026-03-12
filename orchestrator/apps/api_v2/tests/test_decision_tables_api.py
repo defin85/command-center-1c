@@ -400,6 +400,96 @@ def test_decision_tables_api_rejects_invalid_document_policy_metadata_refs(
 
 
 @pytest.mark.django_db
+def test_decision_tables_api_creates_rollover_revision_with_target_metadata_provenance(
+    staff_client: APIClient,
+) -> None:
+    tenant = Tenant.objects.create(slug=f"decision-meta-rollover-ok-{uuid.uuid4().hex[:8]}", name="Decision Meta Rollover OK")
+    source_database = _create_database(
+        tenant=tenant,
+        name=f"decision-rollover-ok-source-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    target_database = _create_database(
+        tenant=tenant,
+        name=f"decision-rollover-ok-target-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.25",
+    )
+    _create_service_infobase_mapping(database=source_database)
+    _create_service_infobase_mapping(database=target_database)
+    _set_business_configuration_profile(
+        database=source_database,
+        config_version="8.3.24",
+    )
+    _set_business_configuration_profile(
+        database=target_database,
+        config_version="8.3.25",
+    )
+    source_snapshot = _create_current_metadata_catalog_snapshot(
+        tenant=tenant,
+        database=source_database,
+        catalog_version="v1:rollover-source",
+        metadata_hash="a" * 64,
+    )
+    target_snapshot = _create_current_metadata_catalog_snapshot(
+        tenant=tenant,
+        database=target_database,
+        catalog_version="v1:rollover-target",
+        metadata_hash="b" * 64,
+    )
+
+    create_response = staff_client.post(
+        "/api/v2/decisions/",
+        data={
+            **_build_decision_payload(decision_table_id="rollover-policy"),
+            "database_id": str(source_database.id),
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+    assert create_response.status_code == 201
+    source_revision = create_response.json()["decision"]
+
+    rollover_response = staff_client.post(
+        "/api/v2/decisions/",
+        data={
+            **_build_decision_payload(decision_table_id="rollover-policy"),
+            "parent_version_id": source_revision["id"],
+            "database_id": str(target_database.id),
+            "name": "Rollover Policy for 8.3.25",
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+
+    assert rollover_response.status_code == 201
+    payload = rollover_response.json()
+    created = payload["decision"]
+    assert created["decision_revision"] == 2
+    assert created["parent_version"] == source_revision["id"]
+    assert created["name"] == "Rollover Policy for 8.3.25"
+    assert created["metadata_context"]["database_id"] == str(target_database.id)
+    assert created["metadata_context"]["snapshot_id"] == str(target_snapshot.id)
+    assert created["metadata_context"]["config_version"] == "8.3.25"
+    assert created["metadata_context"]["metadata_hash"] == target_snapshot.metadata_hash
+    assert created["metadata_context"]["provenance_database_id"] == str(target_database.id)
+    assert payload["metadata_context"]["database_id"] == str(target_database.id)
+    assert payload["metadata_context"]["snapshot_id"] == str(target_snapshot.id)
+    assert payload["metadata_context"]["provenance_database_id"] == str(target_database.id)
+
+    source_decision = DecisionTable.objects.get(id=source_revision["id"])
+    source_decision_metadata = dict(source_decision.metadata_context or {})
+    assert source_decision.parent_version_id is None
+    assert source_decision.version_number == 1
+    assert source_decision_metadata["database_id"] == str(source_database.id)
+    assert source_decision_metadata["snapshot_id"] == str(source_snapshot.id)
+    assert source_decision_metadata["config_version"] == "8.3.24"
+    assert source_decision_metadata["provenance_database_id"] == str(source_database.id)
+    assert DecisionTable.objects.filter(decision_table_id="rollover-policy").count() == 2
+
+
+@pytest.mark.django_db
 def test_decision_tables_api_rejects_rollover_publish_when_source_policy_is_incompatible_with_target_snapshot(
     staff_client: APIClient,
 ) -> None:

@@ -98,22 +98,20 @@ const BASE_DECISION = {
   updated_at: NOW,
 }
 
-const DRIFTED_DECISION = {
+const PREVIOUS_RELEASE_DECISION = {
   ...BASE_DECISION,
-  id: 'decision-version-3',
-  decision_table_id: 'transfer-publication-policy',
-  decision_revision: 1,
-  name: 'Transfer publication policy',
+  id: 'decision-version-previous-release',
+  decision_revision: 7,
+  name: 'Previous release policy',
   metadata_context: {
     ...BASE_DECISION.metadata_context,
-    metadata_hash: 'b'.repeat(64),
-    observed_metadata_hash: 'b'.repeat(64),
-    publication_drift: true,
+    config_version: '8.3.23',
+    config_generation_id: 'generation-shared-services-prev',
   },
   metadata_compatibility: {
-    status: 'compatible',
-    reason: 'metadata_surface_diverged',
-    is_compatible: true,
+    status: 'incompatible',
+    reason: 'configuration_scope_mismatch',
+    is_compatible: false,
   },
 }
 
@@ -330,7 +328,7 @@ function createAcceptanceState(): AcceptanceState {
         version: '8.3.24',
       },
     ],
-    decisions: [deepClone(BASE_DECISION), deepClone(DRIFTED_DECISION)],
+    decisions: [deepClone(BASE_DECISION), deepClone(PREVIOUS_RELEASE_DECISION)],
     decisionListQueries: [],
     decisionWrites: [],
     metadataContext: deepClone(BASE_METADATA_CONTEXT),
@@ -999,19 +997,19 @@ test('Workflow hardening: /decisions shows shared metadata provenance, canonical
   await expect(page.getByText('Services publication policy').first()).toBeVisible()
   await expect(page.getByText('Showing 1 of 2 revisions matching the selected configuration.')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Show all revisions' })).toBeVisible()
-  await expect(page.getByText('Transfer publication policy')).toHaveCount(0)
+  await expect(page.getByText('Previous release policy')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Import legacy edge' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Import raw JSON' })).toBeVisible()
   await expect.poll(() => state.decisionListQueries.at(-1)).toBe('10101010-1010-1010-1010-101010101010')
 
   await page.getByRole('button', { name: 'Show all revisions' }).click()
   await expect(page.getByText('Showing all 2 revisions for diagnostics. 1 revision does not match the selected configuration.')).toBeVisible()
-  await expect(page.getByText('Transfer publication policy')).toBeVisible()
+  await expect(page.getByText('Previous release policy')).toBeVisible()
 
   await page.getByTestId('decisions-database-select').click()
   await page.getByText('Shared provenance DB (shared-profile)').click()
   await expect(page.getByText('Showing 1 of 2 revisions matching the selected configuration.')).toBeVisible()
-  await expect(page.getByText('Transfer publication policy')).toHaveCount(0)
+  await expect(page.getByText('Previous release policy')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Show matching configuration only' })).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Import legacy edge' }).click()
@@ -1044,14 +1042,14 @@ test('Workflow hardening: /decisions shows shared metadata provenance, canonical
 
   await expect.poll(() => state.decisionWrites.length).toBe(1)
   await expect.poll(() => String(state.decisionWrites[0]?.decision_table_id || '')).toBe('browser-policy')
-  await expect(page.getByText('Browser decision policy')).toBeVisible()
+  await expect(page.getByText('Browser decision policy').first()).toBeVisible()
 
   await page.getByRole('button', { name: 'Edit selected decision' }).click()
   await page.getByLabel('Decision name').fill('Services publication policy v3')
   await page.getByRole('button', { name: 'Save decision' }).click()
 
   await expect.poll(() => state.decisionWrites.length).toBe(2)
-  await expect.poll(() => String(state.decisionWrites[1]?.parent_version_id || '')).toBe('decision-version-2')
+  await expect.poll(() => String(state.decisionWrites[1]?.parent_version_id || '')).toBe('decision-version-3')
   await expect.poll(() => String(state.decisionWrites[1]?.name || '')).toBe('Services publication policy v3')
 
   await page.getByRole('button', { name: 'Deactivate selected decision' }).click()
@@ -1063,6 +1061,46 @@ test('Workflow hardening: /decisions shows shared metadata provenance, canonical
   await page.locator('[data-testid=\"decisions-database-select\"] .ant-select-clear').click()
   await expect.poll(() => state.decisionListQueries.at(-1)).toBe('')
   await expect(page.getByText('Select database')).toBeVisible()
+})
+
+test('Workflow hardening: /decisions supports guided rollover from a previous-release revision', async ({ page }) => {
+  const state = createAcceptanceState()
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/decisions', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Decision Policy Library' })).toBeVisible()
+  await expect(page.getByText('Previous release policy')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Show all revisions' }).click()
+  await expect(page.getByText('Previous release policy')).toBeVisible()
+  await page.getByText('Previous release policy').click()
+
+  await expect(page.getByRole('button', { name: 'Edit selected decision' })).toBeDisabled()
+  await expect(page.getByText('This revision is outside the default compatible set for the selected database. Use Rollover selected revision to create a new revision for the current target metadata context.')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Rollover selected revision' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Rollover selected revision' })).toBeVisible()
+  await expect(page.getByText('Source revision')).toBeVisible()
+  await expect(page.getByText('Previous release policy (services-publication-policy r7)')).toBeVisible()
+  await expect(page.getByText('Target database', { exact: true })).toBeVisible()
+  await expect(page.getByText('Target DB (shared-profile)').last()).toBeVisible()
+  await expect(page.getByText('Target metadata snapshot', { exact: true })).toBeVisible()
+  await expect(page.getByText('shared-profile 8.3.24')).toBeVisible()
+  await expect(page.getByText('Publishing a rollover creates a new revision only. Existing workflows, bindings, and runtime projections stay pinned until you update them explicitly.')).toBeVisible()
+
+  await page.getByLabel('Decision name').fill('Previous release policy for Target DB')
+  await page.getByRole('button', { name: 'Publish rollover revision' }).click()
+
+  await expect.poll(() => state.decisionWrites.length).toBe(1)
+  await expect.poll(() => String(state.decisionWrites[0]?.database_id || '')).toBe('10101010-1010-1010-1010-101010101010')
+  await expect.poll(() => String(state.decisionWrites[0]?.parent_version_id || '')).toBe('decision-version-previous-release')
+  await expect.poll(() => String(state.decisionWrites[0]?.name || '')).toBe('Previous release policy for Target DB')
+  await expect.poll(() => String(state.decisions[0]?.parent_version || '')).toBe('decision-version-previous-release')
+  await expect.poll(() => String((state.decisions[0]?.metadata_context as AnyRecord | undefined)?.config_version || '')).toBe('8.3.24')
 })
 
 test('Workflow hardening: /templates and /pools/catalog expose compatibility guidance and legacy migration outcome', async ({ page }) => {
