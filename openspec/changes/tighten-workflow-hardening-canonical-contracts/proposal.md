@@ -10,8 +10,8 @@
 
 ## What Changes
 - Зафиксировать, что default binding workspace, shipped read models и runtime path читают workflow bindings только из canonical binding collection и не используют silent fallback к `pool.metadata["workflow_bindings"]`.
-- Добавить collection-level atomic replace contract для binding workspace на `/pools/catalog`, чтобы create/update/delete набора bindings выполнялись как одна conflict-safe операция без partial apply.
-- Оставить single-binding CRUD как compatibility surface, но перевести default UI workspace на collection-safe path.
+- Добавить collection-level atomic replace contract `GET/PUT /api/v2/pools/workflow-bindings/` для binding workspace на `/pools/catalog`, чтобы create/update/delete набора bindings выполнялись как одна conflict-safe операция без partial apply.
+- Оставить существующие single-binding compatibility endpoint'ы (`POST /api/v2/pools/workflow-bindings/upsert/`, `GET/DELETE /api/v2/pools/workflow-bindings/{binding_id}/`) только как compatibility surface вне default workspace-save path.
 - Зафиксировать, что `/api/v2/pools/odata-metadata/catalog/` и `/refresh/` в shipped frontend path используют generated OpenAPI contract как единственный typed source-of-truth; hand-written DTO для этого surface не должны оставаться runtime-источником контракта.
 - Ввести schema-validated tenant cutover evidence bundle и fail-closed go/no-go contract, который явно различает:
   - checked-in repository acceptance evidence для shipped default path;
@@ -40,10 +40,10 @@
 
 ## Breaking Changes
 - **BREAKING (operational)**: staging/prod cutover workflow-centric hardening больше не должен считаться complete только по checked-in repository evidence; нужен отдельный tenant-scoped live evidence bundle с sign-off.
-- **BREAKING (shipped UI contract)**: default `/pools/catalog` binding workspace перестаёт silently читать legacy `pool.metadata["workflow_bindings"]`; legacy payload остаётся только explicit import/backfill path.
+- **BREAKING (shipped UI contract)**: default `/pools/catalog` binding workspace перестаёт silently читать legacy `pool.metadata["workflow_bindings"]`; legacy payload остаётся только в `backfill_pool_workflow_bindings`, dedicated compatibility import tooling и tests/fixtures, а default UI входит в blocking remediation state до явной remediation.
 - **BREAKING (workspace semantics)**: multi-binding save для default UI path становится atomic collection operation; partial apply перестаёт быть допустимой семантикой.
 
 ## Non-Goals
 - Не менять продуктовую семантику lifecycle `/decisions`; gap вокруг отдельного `archive` action оформляется отдельно и не смешивается с этим hardening change.
 - Не перепроектировать existing binding model, decision resources или shared metadata snapshots заново; change дожимает source-of-truth, save semantics и rollout proof.
-- Не удалять сразу все per-binding endpoint'ы, если они нужны как compatibility surface для пошаговой миграции UI и интеграций.
+- Не удалять в рамках этого change существующие compatibility endpoint'ы `POST /api/v2/pools/workflow-bindings/upsert/`, `GET /api/v2/pools/workflow-bindings/{binding_id}/`, `DELETE /api/v2/pools/workflow-bindings/{binding_id}/`.
