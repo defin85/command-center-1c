@@ -329,6 +329,12 @@ def test_read_snapshot_enqueues_business_profile_bootstrap_when_profile_is_missi
         username="legacy-user",
         password="legacy-pass",
     )
+    database.metadata = {
+        "ibcmd_connection": {
+            "remote": "ssh://agent:1545",
+        }
+    }
+    database.save(update_fields=["metadata", "updated_at"])
 
     def _fake_enqueue(op_id: str) -> EnqueueResult:
         BatchOperation.objects.filter(id=op_id).update(status=BatchOperation.STATUS_QUEUED)
@@ -609,6 +615,116 @@ def test_refresh_snapshot_keeps_canonical_shared_snapshot_when_publication_drift
     assert source_second == "db"
     assert resolved_first.id == first_snapshot.id
     assert resolved_second.id == first_snapshot.id
+
+
+@pytest.mark.django_db
+def test_refresh_snapshot_keeps_single_current_shared_snapshot_when_provenance_database_drifts(
+    default_tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared_name = "shared-profile-provenance-drift"
+    shared_version = "8.3.27"
+    first_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-provenance-drift-a-{uuid4().hex[:8]}",
+        base_name=shared_name,
+        version=shared_version,
+    )
+    second_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-provenance-drift-b-{uuid4().hex[:8]}",
+        base_name=shared_name,
+        version=shared_version,
+    )
+    third_database = _create_database(
+        tenant=default_tenant,
+        name=f"meta-provenance-drift-c-{uuid4().hex[:8]}",
+        base_name=shared_name,
+        version=shared_version,
+    )
+    for database in (first_database, second_database, third_database):
+        _create_service_infobase_mapping(database=database)
+
+    payload_by_database = {
+        first_database.id: _catalog_payload(suffix="canonical-a"),
+        second_database.id: _catalog_payload(suffix="canonical-a"),
+        third_database.id: _catalog_payload(suffix="canonical-a"),
+    }
+    fetch_calls: list[str] = []
+
+    def _fetch_payload(*, database: Database, **_: object) -> dict[str, object]:
+        fetch_calls.append(str(database.id))
+        return payload_by_database[database.id]
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.metadata_catalog._fetch_live_catalog_payload",
+        _fetch_payload,
+    )
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._write_snapshot_to_cache", lambda **_: None)
+    monkeypatch.setattr("apps.intercompany_pools.metadata_catalog._get_redis_client", lambda: None)
+
+    first_snapshot = refresh_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=first_database,
+        requested_by_username="meta-user",
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+    )
+    adopted_second, source_second = read_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=second_database,
+        requested_by_username="meta-user",
+        allow_cold_bootstrap=False,
+    )
+
+    assert source_second == "db"
+    assert adopted_second.id == first_snapshot.id
+
+    payload_by_database[first_database.id] = _catalog_payload(suffix="drifted-b")
+
+    drifted_refresh = refresh_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=first_database,
+        requested_by_username="meta-user",
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+    )
+
+    resolved_third, source_third = read_metadata_catalog_snapshot(
+        tenant_id=str(default_tenant.id),
+        database=third_database,
+        requested_by_username="meta-user",
+        allow_cold_bootstrap=False,
+    )
+
+    first_database.refresh_from_db()
+    profile = (first_database.metadata or {}).get("business_configuration_profile") or {}
+    current_snapshots = PoolODataMetadataCatalogSnapshot.objects.filter(
+        tenant=default_tenant,
+        config_name=shared_name,
+        config_version=shared_version,
+        is_current=True,
+    )
+
+    assert drifted_refresh.id == first_snapshot.id
+    assert source_third == "db"
+    assert resolved_third.id == first_snapshot.id
+    assert current_snapshots.count() == 1
+    assert current_snapshots.get().id == first_snapshot.id
+    assert (
+        PoolODataMetadataCatalogScopeResolution.objects.filter(
+            tenant=default_tenant,
+            config_name=shared_name,
+            config_version=shared_version,
+            snapshot_id=first_snapshot.id,
+        ).count()
+        == 3
+    )
+    assert profile["publication_drift"] is True
+    assert profile["canonical_metadata_hash"] == first_snapshot.metadata_hash
+    assert profile["observed_metadata_hash"] != first_snapshot.metadata_hash
+    assert fetch_calls == [
+        str(first_database.id),
+        str(first_database.id),
+    ]
 
 
 @pytest.mark.django_db

@@ -225,7 +225,14 @@ def refresh_metadata_catalog_snapshot(
             current_shared_snapshot = _get_shared_current_snapshot(scope=scope, for_update=True)
 
             if current_shared_snapshot is not None and current_shared_snapshot.metadata_hash != metadata_hash:
-                if str(current_shared_snapshot.database_id) != str(database.id):
+                should_reuse_current_snapshot = (
+                    str(current_shared_snapshot.database_id) != str(database.id)
+                    or _shared_snapshot_has_peer_resolution(
+                        snapshot=current_shared_snapshot,
+                        database=database,
+                    )
+                )
+                if should_reuse_current_snapshot:
                     snapshot = current_shared_snapshot
                     _upsert_scope_resolution(
                         scope=scope,
@@ -1467,3 +1474,15 @@ def _get_shared_current_snapshot(
     if for_update:
         queryset = queryset.select_for_update()
     return queryset.first()
+
+
+def _shared_snapshot_has_peer_resolution(
+    *,
+    snapshot: PoolODataMetadataCatalogSnapshot,
+    database: Database,
+) -> bool:
+    return (
+        PoolODataMetadataCatalogScopeResolution.objects.filter(snapshot=snapshot)
+        .exclude(database_id=database.id)
+        .exists()
+    )
