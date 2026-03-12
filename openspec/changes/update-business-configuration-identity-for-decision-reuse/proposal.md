@@ -20,7 +20,8 @@
 - Явно исключить имя ИБ, `metadata_hash`, `extensions_fingerprint` и `config_generation_id` из compatibility/reuse key.
 - Сохранить `metadata_hash`, `extensions_fingerprint` и `config_generation_id` как provenance/diagnostics markers publication state.
 - Сделать publication drift non-blocking для authoring/reuse: он должен показываться как диагностика, а не как hard incompatibility между ИБ одной и той же конфигурации.
-- Зафиксировать Designer-derived source-of-truth для business identity конфигурации через root configuration export/properties.
+- Зафиксировать, что root configuration properties остаются source-of-truth по смыслу, а runtime acquisition по умолчанию идёт через persisted business profile.
+- Зафиксировать async verification/bootstrap path через `ibcmd infobase config export objects Configuration`, а `ibcmd config generation-id` использовать только как cheap technical probe для change detection.
 
 ## Impact
 - Affected specs:
@@ -47,4 +48,5 @@
 - Не вводить extension-specific HTTP endpoint для имени/версии конфигурации.
 - Не оставлять имя ИБ как fallback identity marker в новом контракте.
 - Не делать `metadata_hash` replacement для `config_version`.
+- Не выполнять full configuration dump или Designer-based probe для каждой ИБ на каждом metadata refresh.
 - Не строить в этом change отдельный operational readiness program для исправления неверной OData publication на стороне tenant.
