@@ -1,7 +1,7 @@
 # database-metadata-management-ui Specification
 
 ## Purpose
-TBD - created by archiving change add-database-metadata-management-ui. Update Purpose after archive.
+Зафиксировать `/databases` как канонический operator-facing surface для управления configuration profile и metadata snapshot выбранной ИБ и задать явный handoff из consumer surfaces.
 ## Requirements
 ### Requirement: `/databases` MUST предоставлять канонический metadata management surface для выбранной ИБ
 Система ДОЛЖНА (SHALL) предоставлять на route `/databases` operator-facing surface для управления configuration profile и metadata snapshot выбранной информационной базы без использования ручного API-клиента.
@@ -61,4 +61,3 @@ UI ДОЛЖЕН (SHALL) явно объяснять, что:
 - **WHEN** оператор открывает metadata management surface
 - **THEN** UI показывает, какой именно слой недоступен
 - **AND** предлагает подходящий следующий шаг вместо общего недиагностичного reload-сообщения
-
