@@ -40,6 +40,7 @@ properties:
   metadata_context:
     $ref: ./DecisionRevisionMetadataContext.yaml
     nullable: true
+    description: Resolved metadata snapshot provenance captured for metadata-aware decision revisions.
   metadata_compatibility:
     $ref: ./DecisionMetadataCompatibility.yaml
     nullable: true

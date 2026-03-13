@@ -1,8 +1,9 @@
 type: object
-description: Create a new decision table revision.
+description: Create a new decision table revision. Metadata-aware document_policy authoring requires `database_id`; rollover/revise flows continue to validate the resulting revision against the target database metadata context resolved from that database.
 properties:
   database_id:
     type: string
+    description: Target database used to resolve metadata context for document_policy authoring and rollover.
   decision_table_id:
     type: string
   decision_key:
@@ -36,6 +37,7 @@ properties:
   parent_version_id:
     type: string
     format: uuid
+    description: Optional source revision to revise or roll over. Supplying this field does not mutate the parent revision or bypass target metadata validation.
 required:
   - name
   - rules

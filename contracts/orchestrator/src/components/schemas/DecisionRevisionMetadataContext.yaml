@@ -1,4 +1,5 @@
 type: object
+description: Immutable metadata snapshot provenance stored on a decision revision for compatibility, audit, and target-context rollover semantics.
 properties:
   database_id:
     type: string

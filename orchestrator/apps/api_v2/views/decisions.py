@@ -140,6 +140,29 @@ class DecisionTableDetailResponseSerializer(serializers.Serializer):
     metadata_context = DecisionMetadataContextSerializer(required=False)
 
 
+def _resolve_parent_decision_table(*, parent_version_id: Any) -> DecisionTable | None:
+    if not parent_version_id:
+        return None
+    return (
+        DecisionTable.objects.filter(id=parent_version_id)
+        .only("id", "decision_table_id", "decision_key", "version_number")
+        .first()
+    )
+
+
+def _resolve_effective_decision_key(
+    *,
+    payload: dict[str, Any],
+    parent_version: DecisionTable | None,
+) -> str:
+    explicit_key = str(payload.get("decision_key") or "").strip()
+    if explicit_key:
+        return explicit_key
+    if parent_version is not None:
+        return str(parent_version.decision_key or "").strip()
+    return ""
+
+
 def _permission_denied() -> Response:
     return Response(
         {
@@ -365,6 +388,21 @@ def decisions_collection(request):
 
     try:
         normalized_payload = dict(serializer.validated_data)
+        parent_version = _resolve_parent_decision_table(
+            parent_version_id=normalized_payload.get("parent_version_id"),
+        )
+        if normalized_payload.get("parent_version_id") and parent_version is None:
+            return _error(
+                code="CREATE_ERROR",
+                message="parent_version_id does not reference an existing decision table",
+                status=400,
+            )
+        effective_decision_key = _resolve_effective_decision_key(
+            payload=normalized_payload,
+            parent_version=parent_version,
+        )
+        if effective_decision_key:
+            normalized_payload["decision_key"] = effective_decision_key
         normalized_payload.pop("database_id", None)
         if _requires_document_policy_metadata_context(payload=normalized_payload) and metadata_context is None:
             return _error(
@@ -389,6 +427,7 @@ def decisions_collection(request):
         decision = create_decision_table_revision(
             contract=normalized_payload,
             created_by=request.user,
+            parent_version=parent_version,
         )
     except ValueError as exc:
         return _error(
