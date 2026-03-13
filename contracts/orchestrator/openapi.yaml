@@ -14377,6 +14377,7 @@ components:
         - outputs
     DecisionRevisionMetadataContext:
       type: object
+      description: Immutable metadata snapshot provenance stored on a decision revision for compatibility, audit, and target-context rollover semantics.
       properties:
         database_id:
           type: string
@@ -14460,6 +14461,7 @@ components:
         metadata_context:
           $ref: '#/components/schemas/DecisionRevisionMetadataContext'
           nullable: true
+          description: Resolved metadata snapshot provenance captured for metadata-aware decision revisions.
         metadata_compatibility:
           $ref: '#/components/schemas/DecisionMetadataCompatibility'
           nullable: true
@@ -14600,10 +14602,11 @@ components:
         - count
     DecisionTableWriteRequest:
       type: object
-      description: Create a new decision table revision.
+      description: Create a new decision table revision. Metadata-aware document_policy authoring requires `database_id`; rollover/revise flows continue to validate the resulting revision against the target database metadata context resolved from that database.
       properties:
         database_id:
           type: string
+          description: Target database used to resolve metadata context for document_policy authoring and rollover.
         decision_table_id:
           type: string
         decision_key:
@@ -14637,6 +14640,7 @@ components:
         parent_version_id:
           type: string
           format: uuid
+          description: Optional source revision to revise or roll over. Supplying this field does not mutate the parent revision or bypass target metadata validation.
       required:
         - name
         - rules
