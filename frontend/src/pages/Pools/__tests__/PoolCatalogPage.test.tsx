@@ -2793,6 +2793,52 @@ describe('PoolCatalogPage', () => {
     ).toBeInTheDocument()
   }, EXTENDED_UI_TEST_TIMEOUT_MS)
 
+  it('adds /databases remediation when topology save is blocked by missing metadata context', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+      ],
+      edges: [],
+    })
+    mockUpsertPoolTopologySnapshot.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Metadata Snapshot Unavailable',
+          status: 400,
+          detail: 'Current metadata snapshot is missing for selected database scope.',
+          code: 'POOL_METADATA_SNAPSHOT_UNAVAILABLE',
+        },
+      },
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+
+    await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
+    expect(
+      await screen.findByText(
+        /Metadata context недоступен для topology editor\. Откройте \/databases, перепроверьте configuration identity или обновите metadata snapshot и повторите\./
+      )
+    ).toBeInTheDocument()
+  }, EXTENDED_UI_TEST_TIMEOUT_MS)
+
   it('applies field-level serializer errors to form fields on upsert', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()

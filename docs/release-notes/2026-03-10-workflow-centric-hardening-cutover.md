@@ -27,7 +27,9 @@
    - apply-run: `cd orchestrator && ./venv/bin/python manage.py backfill_business_identity_state --json`
    - После этого canonical metadata snapshot / scope resolution больше не делятся по `extensions_fingerprint`; marker сохраняется только для diagnostics/provenance.
 3. Прогреть shared metadata snapshots на representative infobase каждой configuration profile:
-   - `POST /api/v2/pools/odata-metadata/catalog/refresh/`
+   - открыть `/databases`
+   - выбрать representative database для нужной business identity
+   - в `Metadata management` при необходимости запустить `Re-verify configuration identity`, затем `Refresh metadata snapshot`
 4. Для pool-ов с legacy edge policies выполнить import в `/decisions`:
    - UI: `/decisions` -> `Import legacy edge`
    - explicit compatibility-only fallback: `/decisions` -> `Import raw JSON`

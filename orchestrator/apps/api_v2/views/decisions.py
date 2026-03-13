@@ -22,8 +22,7 @@ from apps.intercompany_pools.business_identity_backfill import (
 from apps.intercompany_pools.metadata_catalog import (
     MetadataCatalogError,
     build_metadata_catalog_api_payload,
-    describe_metadata_catalog_snapshot_resolution,
-    read_metadata_catalog_snapshot,
+    read_existing_metadata_catalog_snapshot,
     validate_document_policy_references,
 )
 from apps.templates.workflow.decision_tables import (
@@ -176,6 +175,19 @@ def _permission_denied() -> Response:
     )
 
 
+def _database_context_permission_denied() -> Response:
+    return Response(
+        {
+            "success": False,
+            "error": {
+                "code": "PERMISSION_DENIED",
+                "message": "You do not have permission to access selected database metadata context.",
+            },
+        },
+        status=403,
+    )
+
+
 def _error(*, code: str, message: str, status: int) -> Response:
     return Response(
         {
@@ -261,26 +273,24 @@ def _resolve_metadata_context(
             status=404,
         )
 
+    if not request.user.has_perm(perms.PERM_DATABASES_VIEW_DATABASE, database):
+        return None, None, _database_context_permission_denied()
+
     try:
-        snapshot, source = read_metadata_catalog_snapshot(
+        snapshot, source, resolution, profile = read_existing_metadata_catalog_snapshot(
             tenant_id=tenant_id,
             database=database,
             requested_by_username=str(getattr(request.user, "username", "") or "").strip(),
-            allow_cold_bootstrap=True,
         )
     except MetadataCatalogError as exc:
         return None, None, _error(code=exc.code, message=exc.detail, status=exc.status_code)
 
-    resolution = describe_metadata_catalog_snapshot_resolution(
-        tenant_id=tenant_id,
-        database=database,
-        snapshot=snapshot,
-    )
     payload = build_metadata_catalog_api_payload(
         database=database,
         snapshot=snapshot,
         source=source,
         resolution=resolution,
+        profile=profile,
     )
     return payload, snapshot, None
 
@@ -448,7 +458,9 @@ def decisions_collection(request):
     summary="Get decision table detail",
     responses={
         200: DecisionTableDetailResponseSerializer,
+        400: ErrorResponseSerializer,
         401: OpenApiResponse(description="Unauthorized"),
+        403: ErrorResponseSerializer,
         404: ErrorResponseSerializer,
     },
 )

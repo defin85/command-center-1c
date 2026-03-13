@@ -24,8 +24,20 @@ get:
         application/json:
           schema:
             $ref: ../components/schemas/DecisionTableDetailResponse.yaml
+    '400':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
     '401':
       description: Unauthorized
+    '403':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
     '404':
       description: ''
       content:

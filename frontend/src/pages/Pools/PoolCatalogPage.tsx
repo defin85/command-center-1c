@@ -110,6 +110,17 @@ const API_ERROR_MESSAGE_MAP: Record<string, string> = {
   POOL_WORKFLOW_BINDING_COLLECTION_CONFLICT: 'Набор workflow bindings уже был изменён другим оператором. Обновите bindings и повторите сохранение.',
 }
 
+const METADATA_HANDOFF_ERROR_CODES = new Set([
+  'ODATA_MAPPING_NOT_CONFIGURED',
+  'ODATA_MAPPING_AMBIGUOUS',
+  'POOL_METADATA_REFERENCE_INVALID',
+  'POOL_METADATA_SNAPSHOT_UNAVAILABLE',
+  'POOL_METADATA_PROFILE_UNAVAILABLE',
+  'POOL_METADATA_REFRESH_IN_PROGRESS',
+  'POOL_METADATA_FETCH_FAILED',
+  'POOL_METADATA_PARSE_FAILED',
+])
+
 type OrganizationFormValues = {
   inn: string
   name: string
@@ -463,6 +474,39 @@ const resolveApiError = (
     message: fallbackFromError || fallbackMessage,
     fieldErrors: {},
   }
+}
+
+const getApiErrorCode = (error: unknown): string => {
+  const err = error as {
+    response?: {
+      data?: {
+        code?: unknown
+        error?: {
+          code?: unknown
+        }
+      }
+    }
+  } | null
+  const responseData = err?.response?.data
+  if (!responseData || typeof responseData !== 'object' || Array.isArray(responseData)) {
+    return ''
+  }
+  if (typeof responseData.code === 'string') {
+    return responseData.code
+  }
+  if (
+    responseData.error
+    && typeof responseData.error === 'object'
+    && typeof responseData.error.code === 'string'
+  ) {
+    return responseData.error.code
+  }
+  return ''
+}
+
+const appendMetadataManagementHandoff = (message: string): string => {
+  const handoff = 'Metadata context недоступен для topology editor. Откройте /databases, перепроверьте configuration identity или обновите metadata snapshot и повторите.'
+  return mergeMessageParts([message, handoff]) || handoff
 }
 
 const describePoolWorkflowBinding = (binding: PoolWorkflowBinding): string => {
@@ -2488,7 +2532,12 @@ export function PoolCatalogPage() {
         'Не удалось сохранить topology snapshot.',
         { includeProblemItems: true }
       )
-      setTopologySubmitError(resolved.message)
+      const errorCode = getApiErrorCode(err)
+      setTopologySubmitError(
+        METADATA_HANDOFF_ERROR_CODES.has(errorCode)
+          ? appendMetadataManagementHandoff(resolved.message)
+          : resolved.message
+      )
     } finally {
       setIsTopologySaving(false)
     }

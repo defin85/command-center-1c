@@ -6,12 +6,13 @@ from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
+from django.contrib.contenttypes.models import ContentType
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.databases.models import Database, InfobaseUserMapping
+from apps.databases.models import Database, DatabasePermission, InfobaseUserMapping, PermissionLevel
 from apps.intercompany_pools.metadata_catalog import (
     ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS,
     MetadataCatalogError,
@@ -50,6 +51,7 @@ from apps.intercompany_pools.workflow_bindings_store import (
     upsert_canonical_pool_workflow_binding,
 )
 from apps.intercompany_pools.workflow_runtime import POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY
+from apps.operations.models import BatchOperation
 from apps.operations.services import EnqueueResult
 from apps.runtime_settings.models import RuntimeSetting
 from apps.templates.workflow.decision_tables import create_decision_table_revision
@@ -69,6 +71,29 @@ def _create_validated_run(*, tenant: Tenant, pool: OrganizationPool) -> PoolRun:
     run.confirm_publication()
     run.save(update_fields=["publication_confirmed_at", "publication_confirmed_by", "updated_at"])
     return run
+
+
+def _grant_database_permission(client: APIClient, user: User, codename: str) -> None:
+    ct = ContentType.objects.get(app_label="databases", model="database")
+    perm = Permission.objects.get(content_type=ct, codename=codename)
+    user.user_permissions.add(perm)
+    client.force_authenticate(user=User.objects.get(pk=user.pk))
+
+
+def _grant_database_access(
+    client: APIClient,
+    user: User,
+    *,
+    database: Database,
+    codename: str,
+    level: int,
+) -> None:
+    _grant_database_permission(client, user, codename)
+    DatabasePermission.objects.update_or_create(
+        user=user,
+        database=database,
+        defaults={"level": level},
+    )
 
 
 def _attach_workflow_execution_to_run(
@@ -161,6 +186,40 @@ def _create_service_infobase_mapping(*, database: Database, username: str = "svc
         ib_password=password,
         is_service=True,
     )
+
+
+def _set_business_configuration_profile(
+    *,
+    database: Database,
+    config_name: str | None = None,
+    config_version: str | None = None,
+) -> None:
+    metadata = dict(database.metadata or {})
+    resolved_name = str(
+        config_name
+        or database.base_name
+        or database.infobase_name
+        or database.name
+        or database.id
+        or ""
+    ).strip()
+    resolved_version = str(
+        config_version if config_version is not None else (database.version or "8.3.24")
+    ).strip()
+    database.base_name = database.base_name or resolved_name
+    database.version = resolved_version
+    metadata["business_configuration_profile"] = {
+        "config_name": resolved_name,
+        "config_root_name": resolved_name,
+        "config_version": resolved_version,
+        "config_vendor": 'Фирма "1С"',
+        "config_generation_id": "1f53b85eba259b43bf2c696c614fc1d900000000",
+        "config_name_source": "synonym_ru",
+        "verification_status": "verified",
+        "verified_at": "2026-03-12T00:00:00+00:00",
+    }
+    database.metadata = metadata
+    database.save(update_fields=["base_name", "version", "metadata", "updated_at"])
 
 
 def _create_actor_infobase_mapping(
@@ -948,13 +1007,22 @@ def test_sync_organizations_catalog_endpoint_returns_stats(
 @pytest.mark.django_db
 def test_get_pool_odata_metadata_catalog_returns_current_snapshot(
     authenticated_client: APIClient,
+    user: User,
     default_tenant: Tenant,
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"metadata-get-db-{uuid4().hex[:8]}")
     _create_service_infobase_mapping(database=database)
+    _set_business_configuration_profile(database=database)
     snapshot = _create_current_metadata_catalog_snapshot(
         tenant=default_tenant,
         database=database,
+    )
+    _grant_database_access(
+        authenticated_client,
+        user,
+        database=database,
+        codename="view_database",
+        level=PermissionLevel.VIEW,
     )
 
     response = authenticated_client.get(f"/api/v2/pools/odata-metadata/catalog/?database_id={database.id}")
@@ -980,6 +1048,7 @@ def test_get_pool_odata_metadata_catalog_returns_current_snapshot(
 @pytest.mark.django_db
 def test_get_pool_odata_metadata_catalog_reports_shared_snapshot_provenance(
     authenticated_client: APIClient,
+    user: User,
     default_tenant: Tenant,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -997,6 +1066,8 @@ def test_get_pool_odata_metadata_catalog_reports_shared_snapshot_provenance(
     )
     _create_service_infobase_mapping(database=first_database)
     _create_service_infobase_mapping(database=second_database)
+    _set_business_configuration_profile(database=first_database, config_name="shared-profile", config_version="8.3.24")
+    _set_business_configuration_profile(database=second_database, config_name="shared-profile", config_version="8.3.24")
     shared_payload = {
         "documents": [
             {
@@ -1021,6 +1092,13 @@ def test_get_pool_odata_metadata_catalog_reports_shared_snapshot_provenance(
         requested_by_username="pool-api-user",
         source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
     )
+    _grant_database_access(
+        authenticated_client,
+        user,
+        database=second_database,
+        codename="view_database",
+        level=PermissionLevel.VIEW,
+    )
 
     response = authenticated_client.get(f"/api/v2/pools/odata-metadata/catalog/?database_id={second_database.id}")
 
@@ -1030,21 +1108,30 @@ def test_get_pool_odata_metadata_catalog_reports_shared_snapshot_provenance(
     assert payload["snapshot_id"] == str(snapshot.id)
     assert payload["config_name"] == "shared-profile"
     assert payload["config_version"] == "8.3.24"
-    assert payload["source"] == "live_refresh"
+    assert payload["source"] == "db"
     assert payload["resolution_mode"] == "shared_scope"
     assert payload["is_shared_snapshot"] is True
-    assert payload["provenance_database_id"] == str(second_database.id)
+    assert payload["provenance_database_id"] == str(first_database.id)
 
 
 @pytest.mark.django_db
 def test_get_pool_odata_metadata_catalog_rejects_missing_mapping_without_legacy_fallback_even_with_snapshot(
     authenticated_client: APIClient,
+    user: User,
     default_tenant: Tenant,
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"metadata-get-nomapping-db-{uuid4().hex[:8]}")
+    _set_business_configuration_profile(database=database)
     _create_current_metadata_catalog_snapshot(
         tenant=default_tenant,
         database=database,
+    )
+    _grant_database_access(
+        authenticated_client,
+        user,
+        database=database,
+        codename="view_database",
+        level=PermissionLevel.VIEW,
     )
 
     with patch("apps.intercompany_pools.metadata_catalog.ODataMetadataAdapter.fetch_metadata") as metadata_fetch:
@@ -1063,9 +1150,18 @@ def test_get_pool_odata_metadata_catalog_rejects_missing_mapping_without_legacy_
 @pytest.mark.django_db
 def test_refresh_pool_odata_metadata_catalog_rejects_missing_mapping_without_legacy_fallback(
     authenticated_client: APIClient,
+    user: User,
     default_tenant: Tenant,
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"metadata-refresh-db-{uuid4().hex[:8]}")
+    _set_business_configuration_profile(database=database)
+    _grant_database_access(
+        authenticated_client,
+        user,
+        database=database,
+        codename="operate_database",
+        level=PermissionLevel.OPERATE,
+    )
 
     with patch("apps.intercompany_pools.metadata_catalog.ODataMetadataAdapter.fetch_metadata") as metadata_fetch:
         response = authenticated_client.post(
@@ -1087,15 +1183,24 @@ def test_refresh_pool_odata_metadata_catalog_rejects_missing_mapping_without_leg
 @pytest.mark.django_db
 def test_get_pool_odata_metadata_catalog_sends_utf8_basic_for_cyrillic_mapping_credentials(
     authenticated_client: APIClient,
+    user: User,
     default_tenant: Tenant,
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"metadata-nonlatin-db-{uuid4().hex[:8]}")
+    _set_business_configuration_profile(database=database)
     InfobaseUserMapping.objects.create(
         database=database,
         user=None,
         ib_username="ГлавБух",
         ib_password="пароль",
         is_service=True,
+    )
+    _grant_database_access(
+        authenticated_client,
+        user,
+        database=database,
+        codename="view_database",
+        level=PermissionLevel.VIEW,
     )
 
     class _Response:
@@ -1109,31 +1214,33 @@ def test_get_pool_odata_metadata_catalog_sends_utf8_basic_for_cyrillic_mapping_c
     problem = _assert_problem_details_response(
         response,
         status_code=400,
-        code="ODATA_MAPPING_NOT_CONFIGURED",
+        code="POOL_METADATA_SNAPSHOT_UNAVAILABLE",
     )
-    assert "latin-1" not in problem["detail"].lower()
-    assert "rejected" in problem["detail"].lower()
-
-    requests_get.assert_called_once()
-    kwargs = requests_get.call_args.kwargs
-    assert "auth" not in kwargs
-    assert kwargs["headers"]["Accept"] == "application/xml"
-    expected_auth = "Basic " + base64.b64encode("ГлавБух:пароль".encode("utf-8")).decode("ascii")
-    assert kwargs["headers"]["Authorization"] == expected_auth
+    assert "snapshot" in problem["detail"].lower()
+    requests_get.assert_not_called()
 
 
 @pytest.mark.django_db
 def test_refresh_pool_odata_metadata_catalog_sends_utf8_basic_for_cyrillic_mapping_credentials(
     authenticated_client: APIClient,
+    user: User,
     default_tenant: Tenant,
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"metadata-refresh-nonlatin-db-{uuid4().hex[:8]}")
+    _set_business_configuration_profile(database=database)
     InfobaseUserMapping.objects.create(
         database=database,
         user=None,
         ib_username="ГлавБух",
         ib_password="пароль",
         is_service=True,
+    )
+    _grant_database_access(
+        authenticated_client,
+        user,
+        database=database,
+        codename="operate_database",
+        level=PermissionLevel.OPERATE,
     )
 
     class _Response:
@@ -1167,15 +1274,24 @@ def test_refresh_pool_odata_metadata_catalog_sends_utf8_basic_for_cyrillic_mappi
 @pytest.mark.django_db
 def test_get_pool_odata_metadata_catalog_keeps_ascii_basic_auth_compatibility(
     authenticated_client: APIClient,
+    user: User,
     default_tenant: Tenant,
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"metadata-ascii-db-{uuid4().hex[:8]}")
+    _set_business_configuration_profile(database=database)
     InfobaseUserMapping.objects.create(
         database=database,
         user=None,
         ib_username="svc-user",
         ib_password="svc-pass",
         is_service=True,
+    )
+    _grant_database_access(
+        authenticated_client,
+        user,
+        database=database,
+        codename="view_database",
+        level=PermissionLevel.VIEW,
     )
 
     class _Response:
@@ -1189,25 +1305,28 @@ def test_get_pool_odata_metadata_catalog_keeps_ascii_basic_auth_compatibility(
     _assert_problem_details_response(
         response,
         status_code=400,
-        code="ODATA_MAPPING_NOT_CONFIGURED",
+        code="POOL_METADATA_SNAPSHOT_UNAVAILABLE",
     )
-
-    requests_get.assert_called_once()
-    kwargs = requests_get.call_args.kwargs
-    assert "auth" not in kwargs
-    expected_auth = "Basic " + base64.b64encode("svc-user:svc-pass".encode("utf-8")).decode("ascii")
-    assert kwargs["headers"]["Authorization"] == expected_auth
+    requests_get.assert_not_called()
 
 
 @pytest.mark.django_db
 def test_refresh_pool_odata_metadata_catalog_returns_serialized_snapshot(
     authenticated_client: APIClient,
+    user: User,
     default_tenant: Tenant,
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"metadata-refresh-ok-db-{uuid4().hex[:8]}")
     snapshot = _create_current_metadata_catalog_snapshot(
         tenant=default_tenant,
         database=database,
+    )
+    _grant_database_access(
+        authenticated_client,
+        user,
+        database=database,
+        codename="operate_database",
+        level=PermissionLevel.OPERATE,
     )
 
     with patch(
@@ -1245,9 +1364,17 @@ def test_refresh_pool_odata_metadata_catalog_returns_serialized_snapshot(
 @pytest.mark.django_db
 def test_refresh_pool_odata_metadata_catalog_returns_conflict_when_lock_is_busy(
     authenticated_client: APIClient,
+    user: User,
     default_tenant: Tenant,
 ) -> None:
     database = _create_database(tenant=default_tenant, name=f"metadata-refresh-lock-db-{uuid4().hex[:8]}")
+    _grant_database_access(
+        authenticated_client,
+        user,
+        database=database,
+        codename="operate_database",
+        level=PermissionLevel.OPERATE,
+    )
 
     with patch(
         "apps.api_v2.views.intercompany_pools.refresh_metadata_catalog_snapshot",
@@ -1271,6 +1398,91 @@ def test_refresh_pool_odata_metadata_catalog_returns_conflict_when_lock_is_busy(
     )
     assert payload["title"] == "Metadata Refresh In Progress"
     assert "already in progress" in payload["detail"].lower()
+
+
+@pytest.mark.django_db
+def test_get_pool_odata_metadata_catalog_requires_database_view_permission(
+    authenticated_client: APIClient,
+    user: User,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"metadata-view-rbac-db-{uuid4().hex[:8]}")
+    _create_service_infobase_mapping(database=database)
+    _set_business_configuration_profile(database=database)
+    _create_current_metadata_catalog_snapshot(tenant=default_tenant, database=database)
+    _grant_database_permission(authenticated_client, user, "view_database")
+
+    response = authenticated_client.get(f"/api/v2/pools/odata-metadata/catalog/?database_id={database.id}")
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=403,
+        code="PERMISSION_DENIED",
+    )
+    assert "permission" in payload["detail"].lower()
+
+
+@pytest.mark.django_db
+def test_get_pool_odata_metadata_catalog_does_not_hidden_bootstrap_when_profile_is_missing(
+    authenticated_client: APIClient,
+    user: User,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"metadata-no-bootstrap-db-{uuid4().hex[:8]}")
+    _create_service_infobase_mapping(database=database)
+    _grant_database_access(
+        authenticated_client,
+        user,
+        database=database,
+        codename="view_database",
+        level=PermissionLevel.VIEW,
+    )
+
+    with patch("apps.intercompany_pools.metadata_catalog.ODataMetadataAdapter.fetch_metadata") as metadata_fetch:
+        response = authenticated_client.get(f"/api/v2/pools/odata-metadata/catalog/?database_id={database.id}")
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_METADATA_PROFILE_UNAVAILABLE",
+    )
+    assert "profile" in payload["detail"].lower()
+    assert PoolODataMetadataCatalogSnapshot.objects.count() == 0
+    assert PoolODataMetadataCatalogScopeResolution.objects.count() == 0
+    assert BatchOperation.objects.count() == 0
+    metadata_fetch.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_refresh_pool_odata_metadata_catalog_requires_database_operate_permission(
+    authenticated_client: APIClient,
+    user: User,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"metadata-operate-rbac-db-{uuid4().hex[:8]}")
+    _set_business_configuration_profile(database=database)
+    _grant_database_access(
+        authenticated_client,
+        user,
+        database=database,
+        codename="operate_database",
+        level=PermissionLevel.VIEW,
+    )
+
+    with patch("apps.api_v2.views.intercompany_pools.refresh_metadata_catalog_snapshot") as refresh_snapshot:
+        response = authenticated_client.post(
+            "/api/v2/pools/odata-metadata/catalog/refresh/",
+            {"database_id": str(database.id)},
+            format="json",
+        )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=403,
+        code="PERMISSION_DENIED",
+    )
+    assert "permission" in payload["detail"].lower()
+    refresh_snapshot.assert_not_called()
 
 
 @pytest.mark.django_db

@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ComponentProps } from 'react'
 
 import { DatabaseMetadataManagementDrawer } from '../DatabaseMetadataManagementDrawer'
 
@@ -18,7 +19,7 @@ vi.mock('../../../../api/queries/databases', () => ({
   useRefreshDatabaseMetadataSnapshot: (...args: unknown[]) => mockUseRefreshDatabaseMetadataSnapshot(...args),
 }))
 
-const renderDrawer = () => {
+const renderDrawer = (props?: Partial<ComponentProps<typeof DatabaseMetadataManagementDrawer>>) => {
   const onClose = vi.fn()
   const onOperationQueued = vi.fn()
   render(
@@ -28,8 +29,10 @@ const renderDrawer = () => {
           open
           databaseId="db-1"
           databaseName="Accounting DB"
+          mutatingDisabled={false}
           onClose={onClose}
           onOperationQueued={onOperationQueued}
+          {...props}
         />
       </App>
     </QueryClientProvider>
@@ -159,5 +162,54 @@ describe('DatabaseMetadataManagementDrawer', () => {
     expect(
       screen.getByText('Metadata snapshot недоступен, пока не подтверждён configuration profile.')
     ).toBeInTheDocument()
+  })
+
+  it('disables mutate controls when database operate access is unavailable', () => {
+    mockUseDatabaseMetadataManagement.mockReturnValue({
+      isLoading: false,
+      error: null,
+      data: {
+        database_id: 'db-1',
+        configuration_profile: {
+          status: 'verified',
+          config_name: 'Бухгалтерия предприятия, редакция 3.0',
+          config_version: '3.0.193.19',
+          config_generation_id: 'gen-1',
+          config_root_name: 'БухгалтерияПредприятия',
+          config_vendor: '1С',
+          config_name_source: 'synonym_ru',
+          verification_operation_id: '',
+          verified_at: '2026-03-12T00:00:00Z',
+          generation_probe_requested_at: null,
+          generation_probe_checked_at: null,
+          observed_metadata_hash: '',
+          canonical_metadata_hash: '',
+          publication_drift: false,
+        },
+        metadata_snapshot: {
+          status: 'available',
+          missing_reason: '',
+          snapshot_id: 'snapshot-1',
+          source: 'db',
+          fetched_at: '2026-03-12T01:00:00Z',
+          catalog_version: 'v1:abc',
+          config_name: 'Бухгалтерия предприятия, редакция 3.0',
+          config_version: '3.0.193.19',
+          extensions_fingerprint: '',
+          metadata_hash: 'a'.repeat(64),
+          resolution_mode: 'database_scope',
+          is_shared_snapshot: false,
+          provenance_database_id: 'db-1',
+          provenance_confirmed_at: '2026-03-12T01:00:00Z',
+          observed_metadata_hash: '',
+          publication_drift: false,
+        },
+      },
+    })
+
+    renderDrawer({ mutatingDisabled: true })
+
+    expect(screen.getByRole('button', { name: /Перепроверить configuration identity/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Обновить metadata snapshot/i })).toBeDisabled()
   })
 })

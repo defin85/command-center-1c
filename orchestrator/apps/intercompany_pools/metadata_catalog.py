@@ -105,6 +105,29 @@ class MetadataCatalogError(Exception):
         self.errors = errors or []
 
 
+def _build_metadata_catalog_scope_from_profile(
+    *,
+    tenant_id: str,
+    database: Database,
+    profile: dict[str, Any],
+) -> MetadataCatalogScope:
+    config_name = str(profile.get("config_name") or "").strip()
+    config_version = str(profile.get("config_version") or "").strip()
+
+    extensions_fingerprint = ""
+    snapshot: DatabaseExtensionsSnapshot | None = getattr(database, "extensions_snapshot", None)
+    if snapshot and isinstance(snapshot.snapshot, dict):
+        extensions_fingerprint = hashlib.sha256(_canonical_json_bytes(snapshot.snapshot)).hexdigest()
+
+    return MetadataCatalogScope(
+        tenant_id=str(tenant_id),
+        database_id=str(database.id),
+        config_name=config_name,
+        config_version=config_version,
+        extensions_fingerprint=extensions_fingerprint,
+    )
+
+
 def resolve_metadata_catalog_scope(*, tenant_id: str, database: Database) -> MetadataCatalogScope:
     profile = _resolve_business_configuration_profile(database=database)
     if profile is None:
@@ -121,20 +144,10 @@ def resolve_metadata_catalog_scope(*, tenant_id: str, database: Database) -> Met
                 }
             ],
         )
-    config_name = str(profile.get("config_name") or "").strip()
-    config_version = str(profile.get("config_version") or "").strip()
-
-    extensions_fingerprint = ""
-    snapshot: DatabaseExtensionsSnapshot | None = getattr(database, "extensions_snapshot", None)
-    if snapshot and isinstance(snapshot.snapshot, dict):
-        extensions_fingerprint = hashlib.sha256(_canonical_json_bytes(snapshot.snapshot)).hexdigest()
-
-    return MetadataCatalogScope(
-        tenant_id=str(tenant_id),
-        database_id=str(database.id),
-        config_name=config_name,
-        config_version=config_version,
-        extensions_fingerprint=extensions_fingerprint,
+    return _build_metadata_catalog_scope_from_profile(
+        tenant_id=tenant_id,
+        database=database,
+        profile=profile,
     )
 
 
@@ -336,12 +349,75 @@ def get_current_snapshot_for_database_scope(
     return _get_current_snapshot(scope=scope, database=database)
 
 
+def read_existing_metadata_catalog_snapshot(
+    *,
+    tenant_id: str,
+    database: Database,
+    requested_by_username: str,
+) -> tuple[PoolODataMetadataCatalogSnapshot, str, MetadataCatalogSnapshotResolution, dict[str, Any]]:
+    profile = _resolve_business_configuration_profile(
+        database=database,
+        materialize_legacy=False,
+        include_legacy_snapshot_profile=True,
+    )
+    if profile is None:
+        raise MetadataCatalogError(
+            code=ERROR_CODE_POOL_METADATA_PROFILE_UNAVAILABLE,
+            title="Metadata Business Profile Unavailable",
+            detail="Business configuration profile is unavailable for selected database.",
+            status_code=400,
+            errors=[
+                {
+                    "code": ERROR_CODE_POOL_METADATA_PROFILE_UNAVAILABLE,
+                    "path": "database_id",
+                    "detail": "Business configuration profile is unavailable for selected database.",
+                }
+            ],
+        )
+
+    scope = _build_metadata_catalog_scope_from_profile(
+        tenant_id=tenant_id,
+        database=database,
+        profile=profile,
+    )
+    _resolve_metadata_mapping_credentials(
+        database=database,
+        requested_by_username=requested_by_username,
+    )
+    snapshot = _get_current_snapshot(scope=scope, database=None)
+    if snapshot is None:
+        raise MetadataCatalogError(
+            code=ERROR_CODE_POOL_METADATA_SNAPSHOT_UNAVAILABLE,
+            title="Metadata Snapshot Unavailable",
+            detail="Current metadata snapshot is missing for selected database scope.",
+            status_code=400,
+            errors=[
+                {
+                    "code": ERROR_CODE_POOL_METADATA_SNAPSHOT_UNAVAILABLE,
+                    "path": "database_id",
+                    "detail": "Current metadata snapshot is missing for selected database scope.",
+                }
+            ],
+        )
+
+    resolution = describe_metadata_catalog_snapshot_resolution(
+        tenant_id=tenant_id,
+        database=database,
+        snapshot=snapshot,
+    )
+    return snapshot, SOURCE_DB, resolution, profile
+
+
 def get_database_metadata_catalog_state(
     *,
     tenant_id: str,
     database: Database,
 ) -> DatabaseMetadataCatalogState:
-    profile = _resolve_business_configuration_profile(database=database)
+    profile = _resolve_business_configuration_profile(
+        database=database,
+        materialize_legacy=False,
+        include_legacy_snapshot_profile=True,
+    )
     if profile is None:
         return DatabaseMetadataCatalogState(
             profile=None,
@@ -349,7 +425,11 @@ def get_database_metadata_catalog_state(
             resolution=None,
         )
 
-    scope = resolve_metadata_catalog_scope(tenant_id=tenant_id, database=database)
+    scope = _build_metadata_catalog_scope_from_profile(
+        tenant_id=tenant_id,
+        database=database,
+        profile=profile,
+    )
     snapshot = _get_current_snapshot(scope=scope, database=None)
     if snapshot is None:
         return DatabaseMetadataCatalogState(
@@ -401,13 +481,14 @@ def build_metadata_catalog_api_payload(
     snapshot: PoolODataMetadataCatalogSnapshot,
     source: str,
     resolution: MetadataCatalogSnapshotResolution,
+    profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = normalize_catalog_payload(
         payload=snapshot.payload if isinstance(snapshot.payload, dict) else {}
     )
-    profile = get_business_configuration_profile(database=database) or {}
-    config_name = str(profile.get("config_name") or snapshot.config_name or "")
-    config_version = str(profile.get("config_version") or snapshot.config_version or "")
+    effective_profile = profile if profile is not None else (get_business_configuration_profile(database=database) or {})
+    config_name = str(effective_profile.get("config_name") or snapshot.config_name or "")
+    config_version = str(effective_profile.get("config_version") or snapshot.config_version or "")
     documents = payload.get("documents") if isinstance(payload.get("documents"), list) else []
     return {
         "database_id": str(database.id),
@@ -419,9 +500,9 @@ def build_metadata_catalog_api_payload(
         "config_version": config_version,
         "extensions_fingerprint": snapshot.extensions_fingerprint,
         "metadata_hash": snapshot.metadata_hash,
-        "config_generation_id": str(profile.get("config_generation_id") or ""),
-        "publication_drift": bool(profile.get("publication_drift")),
-        "observed_metadata_hash": str(profile.get("observed_metadata_hash") or ""),
+        "config_generation_id": str(effective_profile.get("config_generation_id") or ""),
+        "publication_drift": bool(effective_profile.get("publication_drift")),
+        "observed_metadata_hash": str(effective_profile.get("observed_metadata_hash") or ""),
         "resolution_mode": resolution.resolution_mode,
         "is_shared_snapshot": resolution.is_shared_snapshot,
         "provenance_database_id": resolution.provenance_database_id,
@@ -1447,14 +1528,29 @@ def _parse_iso_datetime(raw: object) -> datetime | None:
         return None
 
 
-def _resolve_business_configuration_profile(*, database: Database) -> dict[str, Any] | None:
+def _resolve_business_configuration_profile(
+    *,
+    database: Database,
+    materialize_legacy: bool = True,
+    include_legacy_snapshot_profile: bool = True,
+) -> dict[str, Any] | None:
     profile = get_business_configuration_profile(database=database)
     if profile is not None:
         return profile
-    return _backfill_business_configuration_profile_from_existing_snapshot(database=database)
+    legacy_profile = _build_business_configuration_profile_from_existing_snapshot(database=database)
+    if legacy_profile is None:
+        return None
+    if materialize_legacy:
+        return persist_business_configuration_profile(
+            database=database,
+            profile=legacy_profile,
+        )
+    if include_legacy_snapshot_profile:
+        return legacy_profile
+    return None
 
 
-def _backfill_business_configuration_profile_from_existing_snapshot(
+def _build_business_configuration_profile_from_existing_snapshot(
     *,
     database: Database,
 ) -> dict[str, Any] | None:
@@ -1479,21 +1575,28 @@ def _backfill_business_configuration_profile_from_existing_snapshot(
     if not config_name or not config_version:
         return None
 
-    return persist_business_configuration_profile(
-        database=database,
-        profile={
-            "config_name": config_name,
-            "config_root_name": config_name,
-            "config_version": config_version,
-            "config_name_source": "legacy_snapshot",
-            "verification_status": "migrated_legacy",
-            "verified_at": snapshot.fetched_at,
-            "observed_metadata_hash": snapshot.metadata_hash,
-            "canonical_metadata_hash": snapshot.metadata_hash,
-            "publication_drift": False,
-            "observed_metadata_fetched_at": snapshot.fetched_at,
-        },
-    )
+    return {
+        "config_name": config_name,
+        "config_root_name": config_name,
+        "config_version": config_version,
+        "config_name_source": "legacy_snapshot",
+        "verification_status": "migrated_legacy",
+        "verified_at": snapshot.fetched_at,
+        "observed_metadata_hash": snapshot.metadata_hash,
+        "canonical_metadata_hash": snapshot.metadata_hash,
+        "publication_drift": False,
+        "observed_metadata_fetched_at": snapshot.fetched_at,
+    }
+
+
+def _backfill_business_configuration_profile_from_existing_snapshot(
+    *,
+    database: Database,
+) -> dict[str, Any] | None:
+    profile = _build_business_configuration_profile_from_existing_snapshot(database=database)
+    if profile is None:
+        return None
+    return persist_business_configuration_profile(database=database, profile=profile)
 
 
 def _get_shared_current_snapshot_candidates(*, scope: MetadataCatalogScope):

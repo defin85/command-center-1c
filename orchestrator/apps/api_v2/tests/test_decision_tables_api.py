@@ -6,11 +6,18 @@ from datetime import date
 from io import StringIO
 
 import pytest
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
+from django.contrib.contenttypes.models import ContentType
 from django.core.management import call_command
 from rest_framework.test import APIClient
 
-from apps.databases.models import Database, DatabaseExtensionsSnapshot, InfobaseUserMapping
+from apps.databases.models import (
+    Database,
+    DatabaseExtensionsSnapshot,
+    DatabasePermission,
+    InfobaseUserMapping,
+    PermissionLevel,
+)
 from apps.intercompany_pools.binding_preview import build_pool_workflow_binding_preview
 from apps.intercompany_pools.metadata_catalog import refresh_metadata_catalog_snapshot
 from apps.intercompany_pools.models import (
@@ -27,6 +34,7 @@ from apps.intercompany_pools.models import (
     PoolSchemaTemplateFormat,
     PoolWorkflowBinding,
 )
+from apps.operations.models import BatchOperation
 from apps.intercompany_pools.workflow_bindings_store import upsert_canonical_pool_workflow_binding
 from apps.tenancy.models import Tenant
 from apps.templates.workflow.models import DecisionTable, WorkflowTemplate, WorkflowType
@@ -43,6 +51,29 @@ def staff_client(db):
     client = APIClient()
     client.force_authenticate(user=user)
     return client
+
+
+def _grant_database_permission(client: APIClient, user: User, codename: str) -> None:
+    ct = ContentType.objects.get(app_label="databases", model="database")
+    perm = Permission.objects.get(content_type=ct, codename=codename)
+    user.user_permissions.add(perm)
+    client.force_authenticate(user=User.objects.get(pk=user.pk))
+
+
+def _grant_database_access(
+    client: APIClient,
+    user: User,
+    *,
+    database: Database,
+    codename: str,
+    level: int,
+) -> None:
+    _grant_database_permission(client, user, codename)
+    DatabasePermission.objects.update_or_create(
+        user=user,
+        database=database,
+        defaults={"level": level},
+    )
 
 
 def _create_database(
@@ -1264,3 +1295,56 @@ def test_decision_tables_api_list_returns_metadata_context_for_builder(
     assert payload["metadata_context"]["database_id"] == str(database.id)
     assert payload["metadata_context"]["snapshot_id"] == str(snapshot.id)
     assert payload["metadata_context"]["resolution_mode"] == "database_scope"
+
+
+@pytest.mark.django_db
+def test_decision_tables_api_list_does_not_hidden_bootstrap_metadata_context(
+    staff_client: APIClient,
+) -> None:
+    tenant = Tenant.objects.create(slug=f"decision-meta-no-bootstrap-{uuid.uuid4().hex[:8]}", name="Decision Meta No Bootstrap")
+    database = _create_database(
+        tenant=tenant,
+        name=f"decision-no-bootstrap-db-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    _create_service_infobase_mapping(database=database)
+
+    response = staff_client.get(
+        f"/api/v2/decisions/?database_id={database.id}",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "POOL_METADATA_PROFILE_UNAVAILABLE"
+    assert PoolODataMetadataCatalogSnapshot.objects.count() == 0
+    assert PoolODataMetadataCatalogScopeResolution.objects.count() == 0
+    assert BatchOperation.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_decision_tables_api_rejects_database_metadata_context_without_view_permission() -> None:
+    tenant = Tenant.objects.create(slug=f"decision-meta-rbac-{uuid.uuid4().hex[:8]}", name="Decision Meta RBAC")
+    database = _create_database(
+        tenant=tenant,
+        name=f"decision-rbac-db-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    _create_service_infobase_mapping(database=database)
+    _set_business_configuration_profile(database=database)
+    _create_current_metadata_catalog_snapshot(tenant=tenant, database=database)
+    user = User.objects.create_user(username=f"decision_reader_{uuid.uuid4().hex[:8]}", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    client.credentials(HTTP_X_CC1C_TENANT_ID=str(tenant.id))
+    _grant_database_permission(client, user, "view_database")
+
+    response = client.get(f"/api/v2/decisions/?database_id={database.id}")
+
+    assert response.status_code == 403
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "PERMISSION_DENIED"

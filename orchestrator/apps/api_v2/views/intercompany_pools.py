@@ -18,6 +18,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.core import permission_codes as perms
 from apps.api_v2.serializers.common import ErrorResponseSerializer, ProblemDetailsErrorSerializer
 from apps.databases.models import Database
 from apps.intercompany_pools.models import (
@@ -48,6 +49,7 @@ from apps.intercompany_pools.metadata_catalog import (
     describe_metadata_catalog_snapshot_resolution,
     get_current_snapshot_for_database_scope,
     normalize_catalog_payload,
+    read_existing_metadata_catalog_snapshot,
     read_metadata_catalog_snapshot,
     refresh_metadata_catalog_snapshot,
     validate_document_policy_references,
@@ -236,6 +238,15 @@ def _problem(
         payload,
         status=status_code,
         content_type="application/problem+json",
+    )
+
+
+def _database_permission_problem(*, detail: str) -> Response:
+    return _problem(
+        code="PERMISSION_DENIED",
+        title="Permission Denied",
+        detail=detail,
+        status_code=http_status.HTTP_403_FORBIDDEN,
     )
 
 
@@ -523,12 +534,14 @@ def _serialize_metadata_catalog_snapshot(
     snapshot: PoolODataMetadataCatalogSnapshot,
     source: str,
     resolution,
+    profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return build_metadata_catalog_api_payload(
         database=database,
         snapshot=snapshot,
         source=source,
         resolution=resolution,
+        profile=profile,
     )
 
 
@@ -3617,6 +3630,7 @@ def sync_organizations_catalog(request):
         200: PoolODataMetadataCatalogResponseSerializer,
         (400, "application/problem+json"): ProblemDetailsErrorSerializer,
         401: OpenApiResponse(description="Unauthorized"),
+        (403, "application/problem+json"): ProblemDetailsErrorSerializer,
         (404, "application/problem+json"): ProblemDetailsErrorSerializer,
         (409, "application/problem+json"): ProblemDetailsErrorSerializer,
     },
@@ -3652,12 +3666,16 @@ def get_pool_odata_metadata_catalog(request):
             status_code=http_status.HTTP_404_NOT_FOUND,
         )
 
+    if not request.user.has_perm(perms.PERM_DATABASES_VIEW_DATABASE, database):
+        return _database_permission_problem(
+            detail="You do not have permission to access this database metadata catalog.",
+        )
+
     try:
-        snapshot, source = read_metadata_catalog_snapshot(
+        snapshot, source, resolution, profile = read_existing_metadata_catalog_snapshot(
             tenant_id=tenant_id,
             database=database,
             requested_by_username=str(getattr(request.user, "username", "") or "").strip(),
-            allow_cold_bootstrap=True,
         )
     except MetadataCatalogError as exc:
         return _problem(
@@ -3668,17 +3686,13 @@ def get_pool_odata_metadata_catalog(request):
             errors=exc.errors or None,
         )
 
-    resolution = describe_metadata_catalog_snapshot_resolution(
-        tenant_id=tenant_id,
-        database=database,
-        snapshot=snapshot,
-    )
     return Response(
         _serialize_metadata_catalog_snapshot(
             database=database,
             snapshot=snapshot,
             source=source,
             resolution=resolution,
+            profile=profile,
         ),
         status=http_status.HTTP_200_OK,
     )
@@ -3693,6 +3707,7 @@ def get_pool_odata_metadata_catalog(request):
         200: PoolODataMetadataCatalogResponseSerializer,
         (400, "application/problem+json"): ProblemDetailsErrorSerializer,
         401: OpenApiResponse(description="Unauthorized"),
+        (403, "application/problem+json"): ProblemDetailsErrorSerializer,
         (404, "application/problem+json"): ProblemDetailsErrorSerializer,
         (409, "application/problem+json"): ProblemDetailsErrorSerializer,
     },
@@ -3726,6 +3741,11 @@ def refresh_pool_odata_metadata_catalog(request):
             title="Database Not Found",
             detail="Database not found in current tenant context.",
             status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    if not request.user.has_perm(perms.PERM_DATABASES_OPERATE_DATABASE, database):
+        return _database_permission_problem(
+            detail="You do not have permission to refresh metadata for this database.",
         )
 
     try:

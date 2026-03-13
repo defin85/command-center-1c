@@ -18,8 +18,20 @@ get:
         application/json:
           schema:
             $ref: ../components/schemas/DecisionTableListResponse.yaml
+    '400':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
     '401':
       description: Unauthorized
+    '403':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
 post:
   operationId: v2_decisions_collection_create
   summary: Create decision table revision
