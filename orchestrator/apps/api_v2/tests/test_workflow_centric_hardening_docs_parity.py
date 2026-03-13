@@ -45,6 +45,14 @@ def test_workflow_centric_hardening_cutover_notes_cover_backfill_and_rollback_wi
     assert "Следующий run должен стартовать только через явный `pool_workflow_binding_id`." in cutover
     assert "Rollback window" in cutover
     assert "pinned subworkflow" in cutover
+    assert (
+        "docs/observability/artifacts/workflow-hardening-rollout-evidence/live/<tenant_id>/<environment>/"
+        "workflow-hardening-cutover-evidence.json"
+    ) in cutover
+    assert "verify_workflow_hardening_cutover_evidence" in cutover
+    assert "bundle_digest" in cutover
+    assert "repository acceptance evidence не заменяет tenant live cutover evidence bundle" in cutover
+    assert "templates/examples are inputs only and are not sufficient for staging/prod go-no-go" in cutover
 
 
 def test_workflow_centric_hardening_release_note_documents_operator_changes() -> None:
@@ -136,14 +144,16 @@ def test_canonical_openspec_specs_align_with_business_identity_contract() -> Non
     assert "`extensions_fingerprint` или эквивалентный marker extensions/applicability state" not in organization_spec
     assert "normalized OData metadata payload у них совпадает" not in organization_spec
 
-    assert "Compatibility `document_policy` revision ДОЛЖНА (SHALL) определяться только по:" in policy_spec
-    assert "#### Scenario: Разный metadata hash не блокирует reuse decision revision" in policy_spec
-    assert "revision остаётся compatible" in policy_spec
+    assert "валидировать и preview'ить новый `document_policy` против canonical metadata snapshot" in policy_spec
+    assert "Same-release compatibility и reuse canonical snapshot должны следовать active metadata contract `/decisions`" in policy_spec
+    assert "#### Scenario: Policy builder переиспользует canonical snapshot для same-release target identity" in policy_spec
+    assert "#### Scenario: Decision revision сохраняет metadata snapshot provenance" in policy_spec
     assert "Diverged metadata surface блокирует reuse в policy builder" not in policy_spec
 
-    assert "использовать business configuration identity `config_name + config_version` как primary compatibility contract" in workflow_spec
-    assert "не скрывать compatible decision revisions только из-за другого имени ИБ, `metadata_hash`, `extensions_fingerprint` или `config_generation_id`." in workflow_spec
-    assert "publication drift как diagnostics/warning" in workflow_spec
+    assert "resolved metadata snapshot provenance/compatibility markers" in workflow_spec
+    assert "#### Scenario: Decision revision сохраняет auditable compatibility context" in workflow_spec
+    assert "#### Scenario: Revision вне target compatible set доступна как source, но не как default pin candidate" in workflow_spec
+    assert "#### Scenario: Аналитик создаёт новую revision под новый релиз ИБ из старой revision" in workflow_spec
 
 
 def test_workflow_centric_evidence_templates_are_marked_as_examples_only() -> None:
@@ -171,6 +181,10 @@ def test_workflow_hardening_docs_distinguish_repository_evidence_from_tenant_liv
         "release-notes",
         "2026-03-10-workflow-centric-hardening-cutover.md",
     )
+    cutover = _read_repo_doc(
+        *CHANGE_ARCHIVE_PATH,
+        "cutover.md",
+    )
 
     expected_repository_evidence = (
         "docs/observability/artifacts/refactor-14/repository-acceptance-evidence.md"
@@ -182,12 +196,18 @@ def test_workflow_hardening_docs_distinguish_repository_evidence_from_tenant_liv
 
     assert expected_repository_evidence in runbook
     assert expected_repository_evidence in release_note
+    assert expected_repository_evidence in cutover
     assert expected_live_bundle in runbook
     assert expected_live_bundle in release_note
+    assert expected_live_bundle in cutover
     assert "repository acceptance evidence не заменяет tenant live cutover evidence bundle" in runbook
     assert "repository evidence alone is not a tenant go-no-go artifact" in release_note
+    assert "repository acceptance evidence не заменяет tenant live cutover evidence bundle" in cutover
+    assert "templates/examples are inputs only and are not sufficient for staging/prod go-no-go" in cutover
     assert "verify_workflow_hardening_cutover_evidence" in runbook
     assert "verify_workflow_hardening_cutover_evidence" in release_note
+    assert "verify_workflow_hardening_cutover_evidence" in cutover
+    assert "bundle_digest" in cutover
 
 
 def test_workflow_hardening_rollout_evidence_artifacts_exist_and_example_matches_schema() -> None:

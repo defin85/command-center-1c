@@ -12,10 +12,28 @@ Change: `refactor-14-workflow-centric-hardening`
 
 - Repository acceptance evidence proves the shipped default path inside git:
   - `docs/observability/artifacts/refactor-14/repository-acceptance-evidence.md`
-- Tenant-scoped live cutover capture uses checked-in templates/examples:
+- Tenant-scoped live cutover capture may start from checked-in templates/examples:
   - `docs/observability/artifacts/refactor-14/shared-metadata-evidence.template.json`
   - `docs/observability/artifacts/refactor-14/legacy-document-policy-migration-evidence.template.json`
   - `docs/observability/artifacts/refactor-14/operator-canary-evidence.template.json`
+
+Repository acceptance evidence не заменяет tenant live cutover evidence bundle.
+Templates/examples are inputs only and are not sufficient for staging/prod go-no-go.
+
+## Tenant live cutover evidence bundle
+
+- Stable artifact root:
+  - `docs/observability/artifacts/workflow-hardening-rollout-evidence/`
+- Default live bundle location:
+  - `docs/observability/artifacts/workflow-hardening-rollout-evidence/live/<tenant_id>/<environment>/workflow-hardening-cutover-evidence.json`
+- Verifier:
+  - `cd orchestrator && ../.venv/bin/python manage.py verify_workflow_hardening_cutover_evidence ../docs/observability/artifacts/workflow-hardening-rollout-evidence/live/<tenant_id>/<environment>/workflow-hardening-cutover-evidence.json`
+
+Перед staging/prod go-no-go:
+- Сверь repository proof в `docs/observability/artifacts/refactor-14/repository-acceptance-evidence.md`.
+- Собери tenant-scoped live bundle по стабильному path.
+- Прогони `verify_workflow_hardening_cutover_evidence` и зафиксируй machine-readable `bundle_digest`.
+- Не считай checked-in templates/examples или repository proof заменой live tenant artifact.
 
 ## Goal
 
@@ -86,6 +104,7 @@ Shared registry потом гидратируется через refresh/probe p
 4. Если refresh даёт новый `snapshot_id` при том же `config_version`, трактовать это как допустимый divergence только после проверки фактического `metadata_hash`/published metadata surface.
 5. Для фиксации evidence используй checked-in template:
    - `docs/observability/artifacts/refactor-14/shared-metadata-evidence.template.json`
+6. Shared metadata evidence template является capture input only; staging/prod go-no-go выполняется только через tenant live bundle.
 
 ## Stage 3: Legacy document_policy migration
 
@@ -104,6 +123,7 @@ Shared registry потом гидратируется через refresh/probe p
 4. Если ответ вернул `binding_update_required=true`, не переходить к tenant cutover, пока binding refs не закреплены явно.
 5. Для фиксации evidence используй checked-in template:
    - `docs/observability/artifacts/refactor-14/legacy-document-policy-migration-evidence.template.json`
+6. Migration evidence template является capture input only; финальный gate использует tenant live bundle с machine-readable outcome.
 
 ## Stage 4: Tenant-scoped cutover
 
@@ -125,7 +145,13 @@ Shared registry потом гидратируется через refresh/probe p
    Следующий run должен стартовать только через явный `pool_workflow_binding_id`.
    Для фиксации preview/create-run/inspect evidence используй:
    - `docs/observability/artifacts/refactor-14/operator-canary-evidence.template.json`
-5. После green pilot расширять rollout батчами tenant-ов.
+5. После capture inputs собрать tenant-scoped live bundle:
+   - `docs/observability/artifacts/workflow-hardening-rollout-evidence/live/<tenant_id>/<environment>/workflow-hardening-cutover-evidence.json`
+   - verifier: `cd orchestrator && ../.venv/bin/python manage.py verify_workflow_hardening_cutover_evidence ../docs/observability/artifacts/workflow-hardening-rollout-evidence/live/<tenant_id>/<environment>/workflow-hardening-cutover-evidence.json`
+   - repository acceptance evidence не заменяет tenant live cutover evidence bundle
+   - templates/examples are inputs only and are not sufficient for staging/prod go-no-go
+   - для финального gate зафиксировать machine-readable `bundle_digest`
+6. После `status=passed` и `go_no_go=go` расширять rollout батчами tenant-ов.
 
 ## Rollback window
 
@@ -151,4 +177,5 @@ Rollback window остаётся открытым до завершения pilo
 - reusable subprocess path подтверждает pinned subworkflow fail-closed behaviour на checked-in shipped path;
 - shared metadata snapshot evidence собран по каждой configuration profile;
 - legacy document_policy migration outcome зафиксирован для всех pilot pools;
+- tenant live cutover evidence bundle проходит verifier и зафиксирован с machine-readable `bundle_digest`;
 - rollback window либо закрыт после успешного first scale-out batch, либо остаётся открытым с documented follow-up.
