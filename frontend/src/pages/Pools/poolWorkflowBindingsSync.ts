@@ -1,7 +1,7 @@
 import {
-  deletePoolWorkflowBinding,
-  upsertPoolWorkflowBinding,
+  replacePoolWorkflowBindingsCollection,
   type PoolWorkflowBinding,
+  type PoolWorkflowBindingCollection,
   type PoolWorkflowBindingInput,
 } from '../../api/intercompanyPools'
 
@@ -91,45 +91,21 @@ export function hasWorkflowBindingChanges({
 
 export async function syncPoolWorkflowBindings({
   poolId,
-  previousBindings,
+  collectionEtag,
   nextBindings,
 }: {
   poolId: string
-  previousBindings: PoolWorkflowBinding[]
+  collectionEtag: string
   nextBindings: PoolWorkflowBindingInput[]
-}) {
-  const retainedBindingIds = new Set(
-    nextBindings
-      .map((binding) => String(binding.binding_id ?? '').trim())
-      .filter(Boolean)
-  )
-  const previousById = new Map(
-    previousBindings
-      .map((binding) => [String(binding.binding_id ?? '').trim(), binding] as const)
-      .filter(([bindingId]) => bindingId.length > 0)
-  )
-
-  for (const binding of nextBindings) {
-    const bindingId = String(binding.binding_id ?? '').trim()
-    const previousBinding = bindingId ? previousById.get(bindingId) : undefined
-    if (previousBinding && areBindingsEquivalent(previousBinding, binding)) {
-      continue
-    }
-    await upsertPoolWorkflowBinding({
-      pool_id: poolId,
-      workflow_binding: binding,
-    })
+}): Promise<PoolWorkflowBindingCollection> {
+  const normalizedCollectionEtag = String(collectionEtag ?? '').trim()
+  if (!normalizedCollectionEtag) {
+    throw new Error('collectionEtag is required for atomic workflow binding save.')
   }
 
-  for (const binding of previousBindings) {
-    const bindingId = String(binding.binding_id ?? '').trim()
-    const revision = Number(binding.revision)
-    if (!bindingId || retainedBindingIds.has(bindingId)) {
-      continue
-    }
-    if (!Number.isInteger(revision) || revision <= 0) {
-      throw new Error(`Binding ${bindingId} is missing revision and cannot be deleted safely.`)
-    }
-    await deletePoolWorkflowBinding(poolId, bindingId, revision)
-  }
+  return replacePoolWorkflowBindingsCollection({
+    pool_id: poolId,
+    expected_collection_etag: normalizedCollectionEtag,
+    workflow_bindings: nextBindings,
+  })
 }

@@ -4646,7 +4646,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PoolWorkflowBindingListResponse'
+                $ref: '#/components/schemas/PoolWorkflowBindingCollectionResponse'
         '400':
           description: ''
           content:
@@ -4656,6 +4656,54 @@ paths:
         '401':
           description: Unauthorized
         '404':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+    put:
+      operationId: v2_pools_workflow_bindings_replace
+      summary: Replace workflow bindings collection for a pool
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolWorkflowBindingCollectionReplaceRequest'
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolWorkflowBindingCollectionResponse'
+        '400':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+        '401':
+          description: Unauthorized
+        '404':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+        '409':
           description: ''
           content:
             application/problem+json:
@@ -16433,22 +16481,33 @@ components:
       required:
         - count
         - pools
-    PoolWorkflowBindingListResponse:
+    PoolWorkflowBindingCollectionResponse:
       type: object
       properties:
         pool_id:
           type: string
           format: uuid
-        bindings:
+        workflow_bindings:
           type: array
           items:
             $ref: '#/components/schemas/PoolWorkflowBindingRead'
-        count:
-          type: integer
+        collection_etag:
+          type: string
+          description: Opaque optimistic concurrency token for the entire binding collection.
+        blocking_remediation:
+          type: object
+          nullable: true
+          properties:
+            code:
+              type: string
+            title:
+              type: string
+            detail:
+              type: string
       required:
         - pool_id
-        - bindings
-        - count
+        - workflow_bindings
+        - collection_etag
     ProblemDetailsFieldErrors:
       type: object
       description: Field-level validation errors map.
@@ -16555,6 +16614,23 @@ components:
       required:
         - workflow
         - effective_from
+    PoolWorkflowBindingCollectionReplaceRequest:
+      type: object
+      properties:
+        pool_id:
+          type: string
+          format: uuid
+        expected_collection_etag:
+          type: string
+          description: Opaque concurrency token returned by the previous collection read.
+        workflow_bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolWorkflowBindingInput'
+      required:
+        - pool_id
+        - expected_collection_etag
+        - workflow_bindings
     PoolWorkflowBindingUpsertRequest:
       type: object
       properties:

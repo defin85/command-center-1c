@@ -54,13 +54,6 @@ const normalizeWorkflowBindingsArray = (rawBindings: unknown): PoolWorkflowBindi
   return rawBindings.filter((item) => item && typeof item === 'object' && !Array.isArray(item)) as PoolWorkflowBinding[]
 }
 
-const normalizeMetadataObject = (rawMetadata: unknown): Record<string, unknown> => {
-  if (!rawMetadata || typeof rawMetadata !== 'object' || Array.isArray(rawMetadata)) {
-    return {}
-  }
-  return { ...(rawMetadata as Record<string, unknown>) }
-}
-
 const formatJsonValue = (value: unknown): string => {
   try {
     return JSON.stringify(value, null, 2)
@@ -174,13 +167,9 @@ export const createEmptyWorkflowBindingFormValue = (): PoolWorkflowBindingFormVa
 export const extractWorkflowBindingsFromPool = (
   pool: OrganizationPool | null | undefined
 ): PoolWorkflowBinding[] => {
-  if (!pool) {
-    return []
-  }
-  if (Array.isArray(pool.workflow_bindings)) {
-    return normalizeWorkflowBindingsArray(pool.workflow_bindings)
-  }
-  return normalizeWorkflowBindingsArray(normalizeMetadataObject(pool.metadata).workflow_bindings)
+  return Array.isArray(pool?.workflow_bindings)
+    ? normalizeWorkflowBindingsArray(pool.workflow_bindings)
+    : []
 }
 
 export const workflowBindingsToFormValues = (

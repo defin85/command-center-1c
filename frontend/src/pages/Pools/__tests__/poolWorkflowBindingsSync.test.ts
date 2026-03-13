@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PoolWorkflowBinding } from '../../../api/intercompanyPools'
 import { syncPoolWorkflowBindings } from '../poolWorkflowBindingsSync'
 
-const mockDeletePoolWorkflowBinding = vi.fn()
-const mockUpsertPoolWorkflowBinding = vi.fn()
+const mockReplacePoolWorkflowBindingsCollection = vi.fn()
 
 vi.mock('../../../api/intercompanyPools', () => ({
-  deletePoolWorkflowBinding: (...args: unknown[]) => mockDeletePoolWorkflowBinding(...args),
-  upsertPoolWorkflowBinding: (...args: unknown[]) => mockUpsertPoolWorkflowBinding(...args),
+  replacePoolWorkflowBindingsCollection: (...args: unknown[]) => (
+    mockReplacePoolWorkflowBindingsCollection(...args)
+  ),
 }))
 
 function buildBinding(overrides: Partial<PoolWorkflowBinding> = {}): PoolWorkflowBinding {
@@ -35,13 +35,11 @@ function buildBinding(overrides: Partial<PoolWorkflowBinding> = {}): PoolWorkflo
 
 describe('syncPoolWorkflowBindings', () => {
   beforeEach(() => {
-    mockDeletePoolWorkflowBinding.mockReset()
-    mockUpsertPoolWorkflowBinding.mockReset()
-    mockUpsertPoolWorkflowBinding.mockResolvedValue(undefined)
-    mockDeletePoolWorkflowBinding.mockResolvedValue(undefined)
+    mockReplacePoolWorkflowBindingsCollection.mockReset()
+    mockReplacePoolWorkflowBindingsCollection.mockResolvedValue(undefined)
   })
 
-  it('passes revision to delete API for removed bindings and skips unchanged retained bindings', async () => {
+  it('sends the full workflow binding collection with collection etag in a single request', async () => {
     const retainedBinding = buildBinding()
     const removedBinding = buildBinding({
       binding_id: 'binding-removed',
@@ -50,56 +48,54 @@ describe('syncPoolWorkflowBindings', () => {
 
     await syncPoolWorkflowBindings({
       poolId: '44444444-4444-4444-4444-444444444444',
-      previousBindings: [retainedBinding, removedBinding],
+      collectionEtag: 'sha256:etag-1',
       nextBindings: [retainedBinding],
     })
 
-    expect(mockUpsertPoolWorkflowBinding).not.toHaveBeenCalled()
-    expect(mockDeletePoolWorkflowBinding).toHaveBeenCalledTimes(1)
-    expect(mockDeletePoolWorkflowBinding).toHaveBeenCalledWith(
-      '44444444-4444-4444-4444-444444444444',
-      'binding-removed',
-      7
+    expect(mockReplacePoolWorkflowBindingsCollection).toHaveBeenCalledTimes(1)
+    expect(mockReplacePoolWorkflowBindingsCollection).toHaveBeenCalledWith({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      expected_collection_etag: 'sha256:etag-1',
+      workflow_bindings: [retainedBinding],
+    })
+    expect(mockReplacePoolWorkflowBindingsCollection).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflow_bindings: [retainedBinding, removedBinding],
+      })
     )
   })
 
-  it('upserts only changed bindings', async () => {
-    const previousBinding = buildBinding()
+  it('keeps existing binding revisions inside the atomic replace payload', async () => {
     const changedBinding = buildBinding({
       workflow: {
-        ...previousBinding.workflow,
+        ...buildBinding().workflow,
         workflow_name: 'services_publication_v2',
       },
     })
 
     await syncPoolWorkflowBindings({
       poolId: '44444444-4444-4444-4444-444444444444',
-      previousBindings: [previousBinding],
+      collectionEtag: 'sha256:etag-2',
       nextBindings: [changedBinding],
     })
 
-    expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledTimes(1)
-    expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledWith({
+    expect(mockReplacePoolWorkflowBindingsCollection).toHaveBeenCalledTimes(1)
+    expect(mockReplacePoolWorkflowBindingsCollection).toHaveBeenCalledWith({
       pool_id: '44444444-4444-4444-4444-444444444444',
-      workflow_binding: changedBinding,
+      expected_collection_etag: 'sha256:etag-2',
+      workflow_bindings: [changedBinding],
     })
-    expect(mockDeletePoolWorkflowBinding).not.toHaveBeenCalled()
   })
 
-  it('fails closed when removed binding has no revision', async () => {
+  it('fails closed when collection etag is missing', async () => {
     await expect(
       syncPoolWorkflowBindings({
         poolId: '44444444-4444-4444-4444-444444444444',
-        previousBindings: [
-          buildBinding({
-            binding_id: 'binding-missing-revision',
-            revision: undefined,
-          }),
-        ],
-        nextBindings: [],
+        collectionEtag: '',
+        nextBindings: [buildBinding()],
       })
-    ).rejects.toThrow('Binding binding-missing-revision is missing revision and cannot be deleted safely.')
+    ).rejects.toThrow('collectionEtag is required for atomic workflow binding save.')
 
-    expect(mockDeletePoolWorkflowBinding).not.toHaveBeenCalled()
+    expect(mockReplacePoolWorkflowBindingsCollection).not.toHaveBeenCalled()
   })
 })

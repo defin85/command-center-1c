@@ -28,7 +28,7 @@ get:
       content:
         application/json:
           schema:
-            $ref: ../components/schemas/PoolWorkflowBindingListResponse.yaml
+            $ref: ../components/schemas/PoolWorkflowBindingCollectionResponse.yaml
     '400':
       description: ''
       content:
@@ -38,6 +38,57 @@ get:
     '401':
       description: Unauthorized
     '404':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+put:
+  operationId: v2_pools_workflow_bindings_replace
+  summary: Replace workflow bindings collection for a pool
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/PoolWorkflowBindingCollectionReplaceRequest.yaml
+  responses:
+    '200':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/PoolWorkflowBindingCollectionResponse.yaml
+    '400':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+    '401':
+      description: Unauthorized
+    '404':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+    '409':
       description: ''
       content:
         application/problem+json:

@@ -7,12 +7,15 @@ from django.core.exceptions import ValidationError
 
 from apps.intercompany_pools.models import OrganizationPool, PoolWorkflowBinding
 from apps.intercompany_pools.workflow_bindings_store import (
+    PoolWorkflowBindingCollectionConflictError,
     PoolWorkflowBindingNotFoundError,
     PoolWorkflowBindingRevisionConflictError,
     PoolWorkflowBindingStoreError,
     delete_canonical_pool_workflow_binding,
+    get_canonical_pool_workflow_binding_collection,
     get_canonical_pool_workflow_binding,
     list_canonical_pool_workflow_bindings,
+    replace_canonical_pool_workflow_bindings_collection,
     upsert_canonical_pool_workflow_binding,
 )
 from apps.tenancy.models import Tenant
@@ -87,6 +90,46 @@ def test_upsert_canonical_pool_workflow_binding_persists_required_fields() -> No
     assert listed == [saved_binding]
     resolved = get_canonical_pool_workflow_binding(pool=pool, binding_id=saved_binding["binding_id"])
     assert resolved == saved_binding
+
+
+@pytest.mark.django_db
+def test_get_canonical_pool_workflow_binding_collection_returns_etag_and_blocking_remediation() -> None:
+    tenant = Tenant.objects.create(slug=f"binding-store-collection-{uuid4().hex[:8]}", name="Collection Tenant")
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code=f"pool-{uuid4().hex[:6]}",
+        name="Collection Pool",
+        metadata={
+            "workflow_bindings": [
+                {
+                    "binding_id": "legacy-binding",
+                    "workflow": {
+                        "workflow_definition_key": "legacy-publication",
+                        "workflow_revision_id": str(uuid4()),
+                        "workflow_revision": 1,
+                        "workflow_name": "legacy_publication",
+                    },
+                    "effective_from": "2026-01-01",
+                    "status": "active",
+                }
+            ]
+        },
+    )
+
+    collection = get_canonical_pool_workflow_binding_collection(pool=pool)
+
+    assert collection["pool_id"] == str(pool.id)
+    assert collection["workflow_bindings"] == []
+    assert isinstance(collection["collection_etag"], str)
+    assert collection["collection_etag"]
+    assert collection["blocking_remediation"] == {
+        "code": "LEGACY_METADATA_WORKFLOW_BINDINGS_PRESENT",
+        "title": "Legacy workflow bindings remediation required",
+        "detail": (
+            "Canonical binding collection is empty while legacy pool.metadata.workflow_bindings "
+            "payload is still present. Run explicit remediation before using the default workspace."
+        ),
+    }
 
 
 @pytest.mark.django_db
@@ -171,6 +214,182 @@ def test_upsert_canonical_pool_workflow_binding_raises_conflict_for_stale_revisi
     assert exc_info.value.binding_id == created_binding["binding_id"]
     assert exc_info.value.expected_revision == 1
     assert exc_info.value.actual_revision == 2
+
+
+@pytest.mark.django_db
+def test_replace_canonical_pool_workflow_bindings_collection_applies_atomic_diff() -> None:
+    tenant = Tenant.objects.create(slug=f"binding-store-replace-{uuid4().hex[:8]}", name="Replace Tenant")
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code=f"pool-{uuid4().hex[:6]}",
+        name="Replace Pool",
+    )
+    first_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=_build_binding_payload(pool=pool),
+        actor_username="creator",
+    )
+    second_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding={
+            **_build_binding_payload(pool=pool),
+            "binding_id": str(uuid4()),
+            "workflow": {
+                "workflow_definition_key": "bottom-up-import",
+                "workflow_revision_id": str(uuid4()),
+                "workflow_revision": 5,
+                "workflow_name": "bottom_up_import",
+            },
+            "selector": {
+                "direction": "bottom_up",
+                "mode": "safe",
+                "tags": ["monthly"],
+            },
+        },
+        actor_username="creator",
+    )
+    initial_collection = get_canonical_pool_workflow_binding_collection(pool=pool)
+
+    replaced_collection = replace_canonical_pool_workflow_bindings_collection(
+        pool=pool,
+        expected_collection_etag=initial_collection["collection_etag"],
+        workflow_bindings=[
+            {
+                **first_binding,
+                "workflow": {
+                    **first_binding["workflow"],
+                    "workflow_revision": 4,
+                },
+                "status": "inactive",
+            },
+            {
+                **_build_binding_payload(pool=pool),
+                "binding_id": str(uuid4()),
+                "workflow": {
+                    "workflow_definition_key": "services-publication-v2",
+                    "workflow_revision_id": str(uuid4()),
+                    "workflow_revision": 7,
+                    "workflow_name": "services_publication_v2",
+                },
+                "selector": {
+                    "direction": "top_down",
+                    "mode": "unsafe",
+                    "tags": ["cutover"],
+                },
+            },
+        ],
+        actor_username="editor",
+    )
+
+    assert replaced_collection["pool_id"] == str(pool.id)
+    assert replaced_collection["collection_etag"] != initial_collection["collection_etag"]
+    assert [item["binding_id"] for item in replaced_collection["workflow_bindings"]] == [
+        first_binding["binding_id"],
+        replaced_collection["workflow_bindings"][1]["binding_id"],
+    ]
+    assert replaced_collection["workflow_bindings"][0]["revision"] == 2
+    assert replaced_collection["workflow_bindings"][0]["workflow"]["workflow_revision"] == 4
+    assert replaced_collection["workflow_bindings"][0]["status"] == "inactive"
+    assert replaced_collection["workflow_bindings"][1]["revision"] == 1
+    assert {
+        item["binding_id"] for item in list_canonical_pool_workflow_bindings(pool=pool)
+    } == {
+        first_binding["binding_id"],
+        replaced_collection["workflow_bindings"][1]["binding_id"],
+    }
+    assert second_binding["binding_id"] not in {
+        item["binding_id"] for item in list_canonical_pool_workflow_bindings(pool=pool)
+    }
+
+
+@pytest.mark.django_db
+def test_replace_canonical_pool_workflow_bindings_collection_rejects_stale_etag_without_partial_apply() -> None:
+    tenant = Tenant.objects.create(slug=f"binding-store-stale-{uuid4().hex[:8]}", name="Stale Tenant")
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code=f"pool-{uuid4().hex[:6]}",
+        name="Stale Pool",
+    )
+    created_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=_build_binding_payload(pool=pool),
+        actor_username="creator",
+    )
+    stale_collection = get_canonical_pool_workflow_binding_collection(pool=pool)
+    winner_collection = replace_canonical_pool_workflow_bindings_collection(
+        pool=pool,
+        expected_collection_etag=stale_collection["collection_etag"],
+        workflow_bindings=[
+            {
+                **created_binding,
+                "status": "inactive",
+            }
+        ],
+        actor_username="winner",
+    )
+
+    with pytest.raises(PoolWorkflowBindingCollectionConflictError) as exc_info:
+        replace_canonical_pool_workflow_bindings_collection(
+            pool=pool,
+            expected_collection_etag=stale_collection["collection_etag"],
+            workflow_bindings=[
+                {
+                    **created_binding,
+                    "status": "draft",
+                },
+                {
+                    **_build_binding_payload(pool=pool),
+                    "binding_id": str(uuid4()),
+                    "workflow": {
+                        "workflow_definition_key": "late-binding",
+                        "workflow_revision_id": str(uuid4()),
+                        "workflow_revision": 8,
+                        "workflow_name": "late_binding",
+                    },
+                },
+            ],
+            actor_username="stale-editor",
+        )
+
+    assert exc_info.value.expected_collection_etag == stale_collection["collection_etag"]
+    assert exc_info.value.actual_collection_etag == winner_collection["collection_etag"]
+    assert get_canonical_pool_workflow_binding_collection(pool=pool) == winner_collection
+
+
+@pytest.mark.django_db
+def test_replace_canonical_pool_workflow_bindings_collection_rolls_back_on_validation_error() -> None:
+    tenant = Tenant.objects.create(slug=f"binding-store-rollback-{uuid4().hex[:8]}", name="Rollback Tenant")
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code=f"pool-{uuid4().hex[:6]}",
+        name="Rollback Pool",
+    )
+    created_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=_build_binding_payload(pool=pool),
+        actor_username="creator",
+    )
+    initial_collection = get_canonical_pool_workflow_binding_collection(pool=pool)
+
+    with pytest.raises(PoolWorkflowBindingStoreError):
+        replace_canonical_pool_workflow_bindings_collection(
+            pool=pool,
+            expected_collection_etag=initial_collection["collection_etag"],
+            workflow_bindings=[
+                {
+                    **created_binding,
+                    "status": "inactive",
+                },
+                {
+                    **_build_binding_payload(pool=pool),
+                    "binding_id": str(uuid4()),
+                    "effective_to": "2025-01-01",
+                },
+            ],
+            actor_username="editor",
+        )
+
+    assert get_canonical_pool_workflow_binding_collection(pool=pool) == initial_collection
 
 
 @pytest.mark.django_db

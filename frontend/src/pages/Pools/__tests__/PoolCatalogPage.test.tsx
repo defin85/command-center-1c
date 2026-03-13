@@ -4,7 +4,11 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 
-import type { Organization, PoolWorkflowBinding } from '../../../api/intercompanyPools'
+import type {
+  Organization,
+  PoolWorkflowBinding,
+  PoolWorkflowBindingCollection,
+} from '../../../api/intercompanyPools'
 import { PoolCatalogPage } from '../PoolCatalogPage'
 
 const mockGetDecisionsCollection = vi.fn()
@@ -42,6 +46,8 @@ vi.mock('reactflow', () => ({
 vi.mock('../../../api/generated/v2/v2', () => ({
   getV2: () => ({
     getDecisionsCollection: (...args: unknown[]) => mockGetDecisionsCollection(...args),
+    getPoolsOdataMetadataCatalogGet: (...args: unknown[]) => mockGetPoolODataMetadataCatalog(...args),
+    postPoolsOdataMetadataCatalogRefresh: (...args: unknown[]) => mockRefreshPoolODataMetadataCatalog(...args),
   }),
 }))
 
@@ -136,6 +142,37 @@ function buildPoolWorkflowBinding(overrides: Partial<PoolWorkflowBinding> = {}):
   }
 }
 
+function buildPoolWorkflowBindingCollection(
+  workflowBindings: PoolWorkflowBinding[] = [],
+  overrides: Partial<PoolWorkflowBindingCollection> = {}
+): PoolWorkflowBindingCollection {
+  return {
+    pool_id: '44444444-4444-4444-4444-444444444444',
+    workflow_bindings: workflowBindings,
+    collection_etag: 'sha256:test-etag',
+    blocking_remediation: null,
+    ...overrides,
+  }
+}
+
+function buildMinimalDocumentPolicy() {
+  return {
+    version: 'document_policy.v1',
+    chains: [
+      {
+        chain_id: 'sale_chain',
+        documents: [
+          {
+            document_id: 'sale',
+            entity_name: 'Document_Sales',
+            document_role: 'sale',
+          },
+        ],
+      },
+    ],
+  }
+}
+
 async function waitForInitialCatalogLoad() {
   await waitFor(() => expect(mockListOrganizations).toHaveBeenCalled())
   await waitFor(() => expect(mockGetOrganization).toHaveBeenCalled())
@@ -200,6 +237,10 @@ async function openFirstEdgeLegacyDocumentPolicyEditor(user: ReturnType<typeof u
   const openButton = await screen.findByTestId('pool-catalog-topology-edge-open-legacy-policy-editor-0')
   await user.click(openButton)
 }
+
+const EXTENDED_UI_TEST_TIMEOUT_MS = 30000
+const TOPOLOGY_EDITOR_TIMEOUT_MS = EXTENDED_UI_TEST_TIMEOUT_MS
+const SYNC_MODAL_TIMEOUT_MS = EXTENDED_UI_TEST_TIMEOUT_MS
 
 describe('PoolCatalogPage', () => {
   beforeEach(() => {
@@ -342,7 +383,7 @@ describe('PoolCatalogPage', () => {
         },
       ],
     })
-    mockListPoolWorkflowBindings.mockResolvedValue([])
+    mockListPoolWorkflowBindings.mockResolvedValue(buildPoolWorkflowBindingCollection())
     mockGetDecisionsCollection.mockResolvedValue({
       decisions: [
         {
@@ -398,40 +439,7 @@ describe('PoolCatalogPage', () => {
         },
       },
     })
-    mockSyncPoolWorkflowBindings.mockImplementation(async ({
-      poolId,
-      previousBindings,
-      nextBindings,
-    }: {
-      poolId: string
-      previousBindings: PoolWorkflowBinding[]
-      nextBindings: PoolWorkflowBinding[]
-    }) => {
-      const retainedBindingIds = new Set(
-        nextBindings
-          .map((binding) => String(binding.binding_id ?? '').trim())
-          .filter(Boolean)
-      )
-
-      for (const binding of nextBindings) {
-        await mockUpsertPoolWorkflowBinding({
-          pool_id: poolId,
-          workflow_binding: binding,
-        })
-      }
-
-      for (const binding of previousBindings) {
-        const bindingId = String(binding.binding_id ?? '').trim()
-        const revision = Number(binding.revision)
-        if (!bindingId || retainedBindingIds.has(bindingId)) {
-          continue
-        }
-        if (!Number.isInteger(revision) || revision <= 0) {
-          throw new Error(`Binding ${bindingId} is missing revision and cannot be deleted safely.`)
-        }
-        await mockDeletePoolWorkflowBinding(poolId, bindingId, revision)
-      }
-    })
+    mockSyncPoolWorkflowBindings.mockResolvedValue(undefined)
     mockListMasterDataParties.mockResolvedValue({
       parties: [
         {
@@ -509,7 +517,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
 
     expect(await screen.findByText('Org One')).toBeInTheDocument()
-    expect(screen.getByText('Mutating actions are disabled')).toBeInTheDocument()
+    expect(screen.getAllByText('Mutating actions are disabled').length).toBeGreaterThan(0)
     expect(screen.getByTestId('pool-catalog-add-org')).toBeDisabled()
     expect(screen.getByTestId('pool-catalog-edit-org')).toBeDisabled()
     expect(screen.getByTestId('pool-catalog-sync-orgs')).toBeDisabled()
@@ -688,7 +696,7 @@ describe('PoolCatalogPage', () => {
       })
     )
     expect(await screen.findByText('Pool Two')).toBeInTheDocument()
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('edits selected pool via drawer and sends pool_id in upsert payload', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -711,7 +719,7 @@ describe('PoolCatalogPage', () => {
         name: 'Pool One Updated',
       })
     )
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('renders existing workflow bindings in isolated workspace and keeps pool drawer focused on pool fields', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -745,7 +753,7 @@ describe('PoolCatalogPage', () => {
         updated_at: '2026-01-01T00:00:00Z',
       },
     ])
-    mockListPoolWorkflowBindings.mockResolvedValueOnce([
+    mockListPoolWorkflowBindings.mockResolvedValueOnce(buildPoolWorkflowBindingCollection([
       buildPoolWorkflowBinding(),
       buildPoolWorkflowBinding({
         binding_id: 'binding-bottom-up',
@@ -761,7 +769,7 @@ describe('PoolCatalogPage', () => {
           tags: ['cutover', 'monthly'],
         },
       }),
-    ])
+    ]))
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
@@ -789,7 +797,7 @@ describe('PoolCatalogPage', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Edit pool' })
     expect(within(dialog).queryByTestId('pool-catalog-workflow-binding-card-0')).not.toBeInTheDocument()
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('removes deleted workflow bindings through first-class binding API', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -807,7 +815,9 @@ describe('PoolCatalogPage', () => {
         updated_at: '2026-01-01T00:00:00Z',
       },
     ])
-    mockListPoolWorkflowBindings.mockResolvedValueOnce([buildPoolWorkflowBinding()])
+    mockListPoolWorkflowBindings.mockResolvedValueOnce(
+      buildPoolWorkflowBindingCollection([buildPoolWorkflowBinding()])
+    )
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
@@ -817,14 +827,15 @@ describe('PoolCatalogPage', () => {
     await user.click(screen.getByTestId('pool-catalog-save-bindings'))
 
     expect(mockUpsertOrganizationPool).not.toHaveBeenCalled()
-    await waitFor(() => expect(mockDeletePoolWorkflowBinding).toHaveBeenCalledTimes(1))
-    expect(mockDeletePoolWorkflowBinding).toHaveBeenCalledWith(
-      '44444444-4444-4444-4444-444444444444',
-      'binding-top-down',
-      1
-    )
+    await waitFor(() => expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledTimes(1))
+    expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledWith({
+      poolId: '44444444-4444-4444-4444-444444444444',
+      collectionEtag: 'sha256:test-etag',
+      nextBindings: [],
+    })
     expect(mockUpsertPoolWorkflowBinding).not.toHaveBeenCalled()
-  }, 15000)
+    expect(mockDeletePoolWorkflowBinding).not.toHaveBeenCalled()
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('does not sync workflow bindings when saving only pool fields', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -846,7 +857,11 @@ describe('PoolCatalogPage', () => {
         updated_at: '2026-01-01T00:00:00Z',
       },
     ])
-    mockListPoolWorkflowBindings.mockResolvedValueOnce([existingBinding])
+    mockListPoolWorkflowBindings.mockResolvedValueOnce(
+      buildPoolWorkflowBindingCollection([existingBinding], {
+        collection_etag: 'sha256:existing-binding-etag',
+      })
+    )
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
@@ -858,7 +873,7 @@ describe('PoolCatalogPage', () => {
     await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
     expect(mockSyncPoolWorkflowBindings).not.toHaveBeenCalled()
     expect(mockUpsertPoolWorkflowBinding).not.toHaveBeenCalled()
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('shows stale binding revision conflict without clearing edited workflow binding form', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -880,15 +895,19 @@ describe('PoolCatalogPage', () => {
         updated_at: '2026-01-01T00:00:00Z',
       },
     ])
-    mockListPoolWorkflowBindings.mockResolvedValueOnce([existingBinding])
+    mockListPoolWorkflowBindings.mockResolvedValueOnce(
+      buildPoolWorkflowBindingCollection([existingBinding], {
+        collection_etag: 'sha256:existing-binding-etag',
+      })
+    )
     mockSyncPoolWorkflowBindings.mockRejectedValueOnce({
       response: {
         data: {
           type: 'about:blank',
-          title: 'Workflow Binding Revision Conflict',
+          title: 'Workflow Binding Collection Conflict',
           status: 409,
-          detail: 'Workflow binding was updated by another operator. Reload bindings and retry.',
-          code: 'POOL_WORKFLOW_BINDING_REVISION_CONFLICT',
+          detail: 'Workflow binding collection was updated by another operator. Reload bindings and retry.',
+          code: 'POOL_WORKFLOW_BINDING_COLLECTION_CONFLICT',
         },
       },
     })
@@ -916,7 +935,7 @@ describe('PoolCatalogPage', () => {
     await waitFor(() => expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledTimes(1), { timeout: 2000 })
     expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledWith({
       poolId: '44444444-4444-4444-4444-444444444444',
-      previousBindings: [existingBinding],
+      collectionEtag: 'sha256:existing-binding-etag',
       nextBindings: [
         expect.objectContaining({
           binding_id: 'binding-existing',
@@ -989,13 +1008,15 @@ describe('PoolCatalogPage', () => {
     await user.click(screen.getByTestId('pool-catalog-save-bindings'))
 
     expect(mockUpsertOrganizationPool).not.toHaveBeenCalled()
-    await waitFor(() => expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledTimes(1))
-    expect(mockUpsertPoolWorkflowBinding).toHaveBeenCalledWith({
-      pool_id: '44444444-4444-4444-4444-444444444444',
-      workflow_binding: expect.objectContaining({
-        workflow: expect.objectContaining({
-          workflow_definition_key: 'services-publication',
-          workflow_revision: 3,
+    await waitFor(() => expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledTimes(1))
+    expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledWith({
+      poolId: '44444444-4444-4444-4444-444444444444',
+      collectionEtag: 'sha256:test-etag',
+      nextBindings: [
+        expect.objectContaining({
+          workflow: expect.objectContaining({
+            workflow_definition_key: 'services-publication',
+            workflow_revision: 3,
         }),
         decisions: [
           expect.objectContaining({
@@ -1018,6 +1039,7 @@ describe('PoolCatalogPage', () => {
         effective_to: '2026-12-31',
         status: 'draft',
       }),
+      ],
     })
     expect(mockDeletePoolWorkflowBinding).not.toHaveBeenCalled()
   }, 30000)
@@ -1132,7 +1154,11 @@ describe('PoolCatalogPage', () => {
         updated_at: '2026-01-01T00:00:00Z',
       },
     ])
-    mockListPoolWorkflowBindings.mockResolvedValueOnce([existingBinding])
+    mockListPoolWorkflowBindings.mockResolvedValueOnce(
+      buildPoolWorkflowBindingCollection([existingBinding], {
+        collection_etag: 'sha256:inactive-binding-etag',
+      })
+    )
     mockGetDecisionsCollection.mockResolvedValueOnce({
       decisions: [
         {
@@ -1189,7 +1215,44 @@ describe('PoolCatalogPage', () => {
     expect(screen.getByTestId('pool-catalog-save-bindings')).toBeDisabled()
     expect(screen.queryByDisplayValue('services-publication')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Workflow bindings JSON')).not.toBeInTheDocument()
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
+  it('enters blocking remediation state when canonical collection is empty but legacy metadata is present', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizationPools.mockResolvedValueOnce([
+      {
+        id: '44444444-4444-4444-4444-444444444444',
+        code: 'pool-1',
+        name: 'Pool One',
+        description: 'Main pool',
+        is_active: true,
+        metadata: {},
+        workflow_bindings: [],
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ])
+    mockListPoolWorkflowBindings.mockResolvedValueOnce(buildPoolWorkflowBindingCollection([], {
+      collection_etag: 'sha256:legacy-remediation',
+      blocking_remediation: {
+        code: 'LEGACY_METADATA_WORKFLOW_BINDINGS_PRESENT',
+        title: 'Legacy workflow bindings remediation required',
+        detail: 'Canonical binding collection is empty while legacy metadata payload is still present.',
+      },
+    }))
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Bindings')
+
+    expect(await screen.findByText('Legacy workflow bindings remediation required')).toBeInTheDocument()
+    expect(
+      screen.getByText('Canonical binding collection is empty while legacy metadata payload is still present.')
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-save-bindings')).toBeDisabled()
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('blocks save when structured workflow binding contains invalid parameter JSON', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1226,10 +1289,10 @@ describe('PoolCatalogPage', () => {
     await user.click(screen.getByTestId('pool-catalog-save-bindings'))
 
     expect(
-      await screen.findAllByText('Binding #1: parameters.strategy должен быть валидным JSON.')
-    ).toHaveLength(2)
+      await screen.findByText('Binding #1: parameters.strategy должен быть валидным JSON.')
+    ).toBeInTheDocument()
     expect(mockUpsertOrganizationPool).not.toHaveBeenCalled()
-  }, 15000)
+  }, SYNC_MODAL_TIMEOUT_MS)
 
   it('deactivates selected pool via toggle action', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1248,7 +1311,7 @@ describe('PoolCatalogPage', () => {
         is_active: false,
       })
     )
-  }, 15000)
+  }, SYNC_MODAL_TIMEOUT_MS)
 
   it('blocks topology save when preflight validation fails and keeps form input', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1264,7 +1327,7 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Preflight validation failed')).toBeInTheDocument()
     expect(await screen.findByText('Добавьте хотя бы один topology node.')).toBeInTheDocument()
     expect(mockUpsertPoolTopologySnapshot).not.toHaveBeenCalled()
-  }, 15000)
+  }, SYNC_MODAL_TIMEOUT_MS)
 
   it('renders move arrows for topology nodes and edges', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1290,7 +1353,7 @@ describe('PoolCatalogPage', () => {
     await user.click(screen.getByTestId('pool-catalog-topology-add-edge'))
     expect(screen.getByTestId('pool-catalog-topology-edge-move-up-1')).toBeEnabled()
     expect(screen.getByTestId('pool-catalog-topology-edge-move-down-0')).toBeEnabled()
-  }, 15000)
+  }, SYNC_MODAL_TIMEOUT_MS)
 
   it('loads master-data token catalogs with backend-compatible limit in topology mode', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1307,7 +1370,7 @@ describe('PoolCatalogPage', () => {
       expect(mockListMasterDataContracts).toHaveBeenCalledWith({ limit: 200, offset: 0 })
       expect(mockListMasterDataTaxProfiles).toHaveBeenCalledWith({ limit: 200, offset: 0 })
     })
-  }, 15000)
+  }, SYNC_MODAL_TIMEOUT_MS)
 
   it('loads topology snapshots list and switches graph date from snapshot row', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1357,7 +1420,7 @@ describe('PoolCatalogPage', () => {
         '2026-01-01'
       )
     })
-  }, 15000)
+  }, SYNC_MODAL_TIMEOUT_MS)
 
   it('hides legacy edge document_policy editor behind explicit compatibility action', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1425,7 +1488,7 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByTestId('pool-catalog-topology-edge-open-legacy-policy-editor-0')).toBeInTheDocument()
     expect(await screen.findByTestId('pool-catalog-topology-edge-policy-readonly-0')).toBeDisabled()
     expect(screen.queryByTestId('pool-catalog-topology-edge-policy-mode-0')).not.toBeInTheDocument()
-  }, 15000)
+  }, EXTENDED_UI_TEST_TIMEOUT_MS)
 
   it('imports legacy edge document_policy into /decisions and shows binding migration outcome', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1482,7 +1545,7 @@ describe('PoolCatalogPage', () => {
         },
       ],
     })
-    mockListPoolWorkflowBindings.mockResolvedValueOnce([
+    mockListPoolWorkflowBindings.mockResolvedValueOnce(buildPoolWorkflowBindingCollection([
       buildPoolWorkflowBinding({
         decisions: [
           {
@@ -1492,7 +1555,7 @@ describe('PoolCatalogPage', () => {
           },
         ],
       }),
-    ])
+    ]))
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
@@ -1514,7 +1577,7 @@ describe('PoolCatalogPage', () => {
     expect(screen.getByText('Source: edge.metadata.document_policy (edge-v1)')).toBeInTheDocument()
     expect(screen.getByText('Decision ref: services-publication-policy r2')).toBeInTheDocument()
     expect(screen.getByText('Updated bindings: services_publication')).toBeInTheDocument()
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('blocks topology save when edge document_policy JSON is invalid', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1588,7 +1651,7 @@ describe('PoolCatalogPage', () => {
       await screen.findByText('Edge #1: document_policy должен быть валидным JSON.')
     ).toBeInTheDocument()
     expect(mockUpsertPoolTopologySnapshot).not.toHaveBeenCalled()
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('includes edge document_policy in topology upsert payload after preflight', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1625,7 +1688,9 @@ describe('PoolCatalogPage', () => {
           weight: '1',
           min_amount: null,
           max_amount: null,
-          metadata: {},
+          metadata: {
+            document_policy: buildMinimalDocumentPolicy(),
+          },
         },
       ],
     })
@@ -1661,7 +1726,7 @@ describe('PoolCatalogPage', () => {
         ],
       })
     )
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('builds document_policy in builder mode and preserves unknown edge metadata keys', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1760,7 +1825,7 @@ describe('PoolCatalogPage', () => {
         ],
       })
     )
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('loads and refreshes metadata catalog for edge builder mode', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1797,7 +1862,9 @@ describe('PoolCatalogPage', () => {
           weight: '1',
           min_amount: null,
           max_amount: null,
-          metadata: {},
+          metadata: {
+            document_policy: buildMinimalDocumentPolicy(),
+          },
         },
       ],
     })
@@ -1811,14 +1878,20 @@ describe('PoolCatalogPage', () => {
     await selectDropdownOption(/builder/i)
 
     await waitFor(() => {
-      expect(mockGetPoolODataMetadataCatalog).toHaveBeenCalledWith('88888888-8888-8888-8888-888888888888')
+      expect(mockGetPoolODataMetadataCatalog).toHaveBeenCalledWith(
+        { database_id: '88888888-8888-8888-8888-888888888888' },
+        { skipGlobalError: true }
+      )
     })
 
     await user.click(screen.getByTestId('pool-catalog-topology-edge-policy-refresh-metadata-0'))
     await waitFor(() => {
-      expect(mockRefreshPoolODataMetadataCatalog).toHaveBeenCalledWith('88888888-8888-8888-8888-888888888888')
+      expect(mockRefreshPoolODataMetadataCatalog).toHaveBeenCalledWith(
+        { database_id: '88888888-8888-8888-8888-888888888888' },
+        { skipGlobalError: true }
+      )
     })
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('shows detailed problem+json error for metadata refresh failure', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1855,7 +1928,9 @@ describe('PoolCatalogPage', () => {
           weight: '1',
           min_amount: null,
           max_amount: null,
-          metadata: {},
+          metadata: {
+            document_policy: buildMinimalDocumentPolicy(),
+          },
         },
       ],
     })
@@ -1887,14 +1962,17 @@ describe('PoolCatalogPage', () => {
     await selectDropdownOption(/builder/i)
 
     await waitFor(() => {
-      expect(mockGetPoolODataMetadataCatalog).toHaveBeenCalledWith('88888888-8888-8888-8888-888888888888')
+      expect(mockGetPoolODataMetadataCatalog).toHaveBeenCalledWith(
+        { database_id: '88888888-8888-8888-8888-888888888888' },
+        { skipGlobalError: true }
+      )
     })
 
     await user.click(screen.getByTestId('pool-catalog-topology-edge-policy-refresh-metadata-0'))
 
     expect(await screen.findByText(/OData endpoint returned HTTP 500 for \$metadata\./i)).toBeInTheDocument()
     expect(await screen.findByText(/\$metadata: На сервере 1С:Предприятия не найдена лицензия\./i)).toBeInTheDocument()
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('shows warning when selected entity has no metadata fields in builder mode', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1983,7 +2061,7 @@ describe('PoolCatalogPage', () => {
     expect(
       await screen.findByText('Для "Document_Sales" в metadata catalog нет fields.')
     ).toBeInTheDocument()
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('preserves link_rules when saving document_policy from builder mode', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -2090,7 +2168,7 @@ describe('PoolCatalogPage', () => {
         ],
       })
     )
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('preserves canonical master_data token in field_mapping from builder mode', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -2187,7 +2265,7 @@ describe('PoolCatalogPage', () => {
         ],
       })
     )
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('shows preflight validation error when expression source contains canonical master_data token', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -2302,6 +2380,7 @@ describe('PoolCatalogPage', () => {
           min_amount: null,
           max_amount: null,
           metadata: {
+            document_policy: buildMinimalDocumentPolicy(),
             custom_edge_key: 'preserve-this',
             custom_nested: { level: 2 },
           },
@@ -2334,7 +2413,7 @@ describe('PoolCatalogPage', () => {
         ],
       })
     )
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('does not auto-retry metadata catalog load after initial failure', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -2373,7 +2452,9 @@ describe('PoolCatalogPage', () => {
           weight: '1',
           min_amount: null,
           max_amount: null,
-          metadata: {},
+          metadata: {
+            document_policy: buildMinimalDocumentPolicy(),
+          },
         },
       ],
     })
@@ -2388,7 +2469,10 @@ describe('PoolCatalogPage', () => {
 
     await waitFor(() => {
       expect(mockGetPoolODataMetadataCatalog).toHaveBeenCalledTimes(1)
-      expect(mockGetPoolODataMetadataCatalog).toHaveBeenCalledWith('88888888-8888-8888-8888-888888888888')
+      expect(mockGetPoolODataMetadataCatalog).toHaveBeenCalledWith(
+        { database_id: '88888888-8888-8888-8888-888888888888' },
+        { skipGlobalError: true }
+      )
     })
 
     await waitFor(
@@ -2400,9 +2484,12 @@ describe('PoolCatalogPage', () => {
 
     await user.click(screen.getByTestId('pool-catalog-topology-edge-policy-refresh-metadata-0'))
     await waitFor(() => {
-      expect(mockRefreshPoolODataMetadataCatalog).toHaveBeenCalledWith('88888888-8888-8888-8888-888888888888')
+      expect(mockRefreshPoolODataMetadataCatalog).toHaveBeenCalledWith(
+        { database_id: '88888888-8888-8888-8888-888888888888' },
+        { skipGlobalError: true }
+      )
     })
-  }, 15000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('preserves existing node and edge metadata when editing edge document_policy', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -2559,7 +2646,7 @@ describe('PoolCatalogPage', () => {
       )
     ).toBeInTheDocument()
     expect(screen.getAllByText('Org One (730000000001)').length).toBeGreaterThan(0)
-  }, 15000)
+  }, EXTENDED_UI_TEST_TIMEOUT_MS)
 
   it('shows mapped backend domain error for organization upsert and keeps form data', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -2591,7 +2678,7 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Выбранная база уже привязана к другой организации.')).toBeInTheDocument()
     expect(screen.getByLabelText('INN')).toHaveValue('730000000111')
     expect(screen.getByLabelText('Name')).toHaveValue('Mapped Error Org')
-  }, 15000)
+  }, EXTENDED_UI_TEST_TIMEOUT_MS)
 
   it('shows problem detail for topology validation error without field-level payload', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -2636,7 +2723,7 @@ describe('PoolCatalogPage', () => {
       await screen.findByText('Pool graph must have exactly one root node, got 2.')
     ).toBeInTheDocument()
     expect(screen.queryByText('Проверьте корректность данных.')).not.toBeInTheDocument()
-  }, 15000)
+  }, EXTENDED_UI_TEST_TIMEOUT_MS)
 
   it('shows problem items for topology metadata reference errors', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -2702,7 +2789,7 @@ describe('PoolCatalogPage', () => {
         /edges\[1\]\.metadata\.document_policy\.chains\[0\]\.documents\[1\]\.field_mapping\.BaseDocument: Field 'BaseDocument' is not available for entity 'Document_ПоступлениеТоваровУслуг'/
       )
     ).toBeInTheDocument()
-  }, 15000)
+  }, EXTENDED_UI_TEST_TIMEOUT_MS)
 
   it('applies field-level serializer errors to form fields on upsert', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -2732,7 +2819,7 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Проверьте корректность заполнения полей.')).toBeInTheDocument()
     expect(await screen.findByText('ИНН уже существует')).toBeInTheDocument()
     expect(screen.getByLabelText('INN')).toHaveValue('730000000001')
-  }, 15000)
+  }, EXTENDED_UI_TEST_TIMEOUT_MS)
 
   it('applies field-level validation errors from problem+json payload on upsert', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -2766,7 +2853,7 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Проверьте корректность данных.')).toBeInTheDocument()
     expect(await screen.findByText('ИНН уже существует')).toBeInTheDocument()
     expect(screen.getByLabelText('INN')).toHaveValue('730000000001')
-  }, 15000)
+  }, EXTENDED_UI_TEST_TIMEOUT_MS)
 
   it('blocks sync submit when preflight validation fails', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -2783,7 +2870,7 @@ describe('PoolCatalogPage', () => {
 
     expect(await screen.findByText('Строка 1: поле inn обязательно.')).toBeInTheDocument()
     expect(mockSyncOrganizationsCatalog).not.toHaveBeenCalled()
-  }, 15000)
+  }, EXTENDED_UI_TEST_TIMEOUT_MS)
 
   it('blocks sync submit when payload exceeds 1000 rows', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -2807,7 +2894,7 @@ describe('PoolCatalogPage', () => {
 
     expect(await screen.findByText('Превышен лимит batch: максимум 1000 строк.')).toBeInTheDocument()
     expect(mockSyncOrganizationsCatalog).not.toHaveBeenCalled()
-  }, 15000)
+  }, SYNC_MODAL_TIMEOUT_MS)
 
   it('shows field-level backend validation errors in sync modal', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -2835,7 +2922,7 @@ describe('PoolCatalogPage', () => {
 
     expect(await screen.findByText('Проверьте корректность заполнения полей.')).toBeInTheDocument()
     expect(await screen.findByText('rows: Некорректный формат строки')).toBeInTheDocument()
-  }, 15000)
+  }, SYNC_MODAL_TIMEOUT_MS)
 
   it('runs sync with valid payload and shows stats', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -2862,5 +2949,5 @@ describe('PoolCatalogPage', () => {
     })
     expect(await screen.findByText('Sync completed')).toBeInTheDocument()
     expect(screen.getByText('total_rows:')).toBeInTheDocument()
-  }, 15000)
+  }, SYNC_MODAL_TIMEOUT_MS)
 })

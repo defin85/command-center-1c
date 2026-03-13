@@ -75,6 +75,19 @@ export type PoolWorkflowBindingInput = PoolWorkflowBindingBase & {
   status?: PoolWorkflowBindingStatus
 }
 
+export type PoolWorkflowBindingBlockingRemediation = {
+  code: string
+  title: string
+  detail: string
+}
+
+export type PoolWorkflowBindingCollection = {
+  pool_id: string
+  workflow_bindings: PoolWorkflowBinding[]
+  collection_etag: string
+  blocking_remediation?: PoolWorkflowBindingBlockingRemediation | null
+}
+
 export type OrganizationStatus = 'active' | 'inactive' | 'archived'
 
 export type Organization = {
@@ -392,35 +405,6 @@ export type PoolGraph = {
   edges: PoolGraphEdge[]
 }
 
-export type PoolODataMetadataCatalogField = {
-  name: string
-  type: string
-  nullable: boolean
-}
-
-export type PoolODataMetadataCatalogTablePart = {
-  name: string
-  row_fields: PoolODataMetadataCatalogField[]
-}
-
-export type PoolODataMetadataCatalogDocument = {
-  entity_name: string
-  display_name: string
-  fields: PoolODataMetadataCatalogField[]
-  table_parts: PoolODataMetadataCatalogTablePart[]
-}
-
-export type PoolODataMetadataCatalogResponse = {
-  database_id: string
-  source: string
-  fetched_at: string
-  catalog_version: string
-  config_name: string
-  config_version: string
-  metadata_hash: string
-  documents: PoolODataMetadataCatalogDocument[]
-}
-
 export type PoolTopologySnapshotPeriod = {
   effective_from: string
   effective_to: string | null
@@ -667,15 +651,40 @@ export async function upsertOrganizationPool(
 
 export async function listPoolWorkflowBindings(
   poolId: string
-): Promise<PoolWorkflowBinding[]> {
-  const response = await apiClient.get<{ pool_id: string; bindings: PoolWorkflowBinding[]; count: number }>(
+): Promise<PoolWorkflowBindingCollection> {
+  const response = await apiClient.get<PoolWorkflowBindingCollection>(
     '/api/v2/pools/workflow-bindings/',
     {
       params: { pool_id: poolId },
       skipGlobalError: true,
     }
   )
-  return response.data.bindings ?? []
+  return {
+    pool_id: response.data.pool_id,
+    workflow_bindings: response.data.workflow_bindings ?? [],
+    collection_etag: response.data.collection_etag,
+    blocking_remediation: response.data.blocking_remediation ?? null,
+  }
+}
+
+export async function replacePoolWorkflowBindingsCollection(
+  payload: {
+    pool_id: string
+    expected_collection_etag: string
+    workflow_bindings: PoolWorkflowBindingInput[]
+  }
+): Promise<PoolWorkflowBindingCollection> {
+  const response = await apiClient.put<PoolWorkflowBindingCollection>(
+    '/api/v2/pools/workflow-bindings/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return {
+    pool_id: response.data.pool_id,
+    workflow_bindings: response.data.workflow_bindings ?? [],
+    collection_etag: response.data.collection_etag,
+    blocking_remediation: response.data.blocking_remediation ?? null,
+  }
 }
 
 export async function getPoolWorkflowBinding(
@@ -833,30 +842,6 @@ export async function migratePoolEdgeDocumentPolicy(
   const response = await apiClient.post<PoolDocumentPolicyMigrationResponse>(
     `/api/v2/pools/${poolId}/document-policy-migrations/`,
     payload,
-    { skipGlobalError: true }
-  )
-  return response.data
-}
-
-export async function getPoolODataMetadataCatalog(
-  databaseId: string
-): Promise<PoolODataMetadataCatalogResponse> {
-  const response = await apiClient.get<PoolODataMetadataCatalogResponse>(
-    '/api/v2/pools/odata-metadata/catalog/',
-    {
-      params: { database_id: databaseId },
-      skipGlobalError: true,
-    }
-  )
-  return response.data
-}
-
-export async function refreshPoolODataMetadataCatalog(
-  databaseId: string
-): Promise<PoolODataMetadataCatalogResponse> {
-  const response = await apiClient.post<PoolODataMetadataCatalogResponse>(
-    '/api/v2/pools/odata-metadata/catalog/refresh/',
-    { database_id: databaseId },
     { skipGlobalError: true }
   )
   return response.data

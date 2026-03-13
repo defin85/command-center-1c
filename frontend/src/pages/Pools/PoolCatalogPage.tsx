@@ -33,7 +33,6 @@ import {
   getOrganization,
   getPoolGraph,
   migratePoolEdgeDocumentPolicy,
-  getPoolODataMetadataCatalog,
   listPoolWorkflowBindings,
   listMasterDataContracts,
   listMasterDataItems,
@@ -42,7 +41,6 @@ import {
   listPoolTopologySnapshots,
   listOrganizationPools,
   listOrganizations,
-  refreshPoolODataMetadataCatalog,
   syncOrganizationsCatalog,
   upsertOrganizationPool,
   upsertOrganization,
@@ -57,14 +55,17 @@ import {
   type PoolMasterParty,
   type PoolMasterTaxProfile,
   type PoolDocumentPolicyMigrationResponse,
-  type PoolODataMetadataCatalogDocument,
-  type PoolODataMetadataCatalogResponse,
+  type PoolWorkflowBindingBlockingRemediation,
   type PoolTopologySnapshotPeriod,
   type PoolTopologySnapshotEdgeInput,
   type PoolTopologySnapshotNodeInput,
   type PoolWorkflowBinding,
 } from '../../api/intercompanyPools'
 import { getV2 } from '../../api/generated/v2/v2'
+import type {
+  PoolODataMetadataCatalogDocument,
+  PoolODataMetadataCatalogResponse,
+} from '../../api/generated/model'
 import type { AvailableDecisionRevision } from '../../types/workflow'
 import { isDecisionAvailableByDefault } from '../../components/workflow/decisionOptions'
 import { PoolWorkflowBindingsEditor } from './PoolWorkflowBindingsEditor'
@@ -105,6 +106,7 @@ const API_ERROR_MESSAGE_MAP: Record<string, string> = {
   POOL_METADATA_SNAPSHOT_UNAVAILABLE: 'Metadata snapshot недоступен для выбранной базы.',
   POOL_METADATA_REFRESH_IN_PROGRESS: 'Metadata refresh уже выполняется для этой базы.',
   POOL_WORKFLOW_BINDING_REVISION_CONFLICT: 'Workflow binding уже был изменён другим оператором. Обновите bindings и повторите сохранение.',
+  POOL_WORKFLOW_BINDING_COLLECTION_CONFLICT: 'Набор workflow bindings уже был изменён другим оператором. Обновите bindings и повторите сохранение.',
 }
 
 type OrganizationFormValues = {
@@ -1443,7 +1445,9 @@ export function PoolCatalogPage() {
   const [isPoolBindingsSaving, setIsPoolBindingsSaving] = useState(false)
   const [poolBindingsLoadError, setPoolBindingsLoadError] = useState<string | null>(null)
   const [poolBindingsSubmitError, setPoolBindingsSubmitError] = useState<string | null>(null)
-  const [loadedPoolBindings, setLoadedPoolBindings] = useState<PoolWorkflowBinding[]>([])
+  const [, setLoadedPoolBindings] = useState<PoolWorkflowBinding[]>([])
+  const [loadedPoolBindingsCollectionEtag, setLoadedPoolBindingsCollectionEtag] = useState('')
+  const [poolBindingsBlockingRemediation, setPoolBindingsBlockingRemediation] = useState<PoolWorkflowBindingBlockingRemediation | null>(null)
   const [availableDecisions, setAvailableDecisions] = useState<AvailableDecisionRevision[]>([])
   const [isPoolDecisionsLoading, setIsPoolDecisionsLoading] = useState(false)
   const [poolDecisionsLoadError, setPoolDecisionsLoadError] = useState<string | null>(null)
@@ -1683,8 +1687,14 @@ export function PoolCatalogPage() {
     }))
     try {
       const payload = forceRefresh
-        ? await refreshPoolODataMetadataCatalog(normalizedDatabaseId)
-        : await getPoolODataMetadataCatalog(normalizedDatabaseId)
+        ? await api.postPoolsOdataMetadataCatalogRefresh(
+          { database_id: normalizedDatabaseId },
+          { skipGlobalError: true }
+        )
+        : await api.getPoolsOdataMetadataCatalogGet(
+          { database_id: normalizedDatabaseId },
+          { skipGlobalError: true }
+        )
       setMetadataCatalogByDatabase((previous) => ({
         ...previous,
         [normalizedDatabaseId]: payload,
@@ -1710,7 +1720,7 @@ export function PoolCatalogPage() {
         [normalizedDatabaseId]: false,
       }))
     }
-  }, [])
+  }, [api])
 
   const loadMasterDataTokenCatalog = useCallback(async () => {
     if (!hasTenantContext) {
@@ -1877,8 +1887,8 @@ export function PoolCatalogPage() {
       const decisionRef = response.migration.decision_ref
       let updatedBindings: PoolWorkflowBinding[] = []
       try {
-        const bindings = await listPoolWorkflowBindings(selectedPoolId)
-        updatedBindings = bindings.filter((binding) => (
+        const collection = await listPoolWorkflowBindings(selectedPoolId)
+        updatedBindings = collection.workflow_bindings.filter((binding) => (
           Array.isArray(binding.decisions)
           && binding.decisions.some((decision) => (
             decision.decision_table_id === decisionRef.decision_table_id
@@ -2268,14 +2278,18 @@ export function PoolCatalogPage() {
     setPoolBindingsLoadError(null)
     setPoolBindingsSubmitError(null)
     try {
-      const bindings = await listPoolWorkflowBindings(pool.id)
-      setLoadedPoolBindings(bindings)
+      const collection = await listPoolWorkflowBindings(pool.id)
+      setLoadedPoolBindings(collection.workflow_bindings)
+      setLoadedPoolBindingsCollectionEtag(collection.collection_etag)
+      setPoolBindingsBlockingRemediation(collection.blocking_remediation ?? null)
       poolBindingsForm.setFieldsValue({
-        workflow_bindings: workflowBindingsToFormValues(bindings),
+        workflow_bindings: workflowBindingsToFormValues(collection.workflow_bindings),
       })
     } catch (err) {
       const resolved = resolveApiError(err, 'Не удалось загрузить workflow bindings.')
       setLoadedPoolBindings([])
+      setLoadedPoolBindingsCollectionEtag('')
+      setPoolBindingsBlockingRemediation(null)
       setPoolBindingsLoadError(resolved.message)
       poolBindingsForm.setFieldsValue({ workflow_bindings: [] })
     } finally {
@@ -2307,6 +2321,8 @@ export function PoolCatalogPage() {
   useEffect(() => {
     if (activeWorkspaceTab !== 'bindings' || !selectedPool) {
       setLoadedPoolBindings([])
+      setLoadedPoolBindingsCollectionEtag('')
+      setPoolBindingsBlockingRemediation(null)
       setIsPoolBindingsLoading(false)
       setPoolBindingsLoadError(null)
       setPoolBindingsSubmitError(null)
@@ -2359,6 +2375,7 @@ export function PoolCatalogPage() {
 
   const submitPoolBindings = useCallback(async () => {
     if (mutatingDisabled || isPoolBindingsLoading || isPoolBindingsSaving || !selectedPool) return
+    if (poolBindingsBlockingRemediation) return
     setPoolBindingsSubmitError(null)
     try {
       const values = await poolBindingsForm.validateFields()
@@ -2370,7 +2387,7 @@ export function PoolCatalogPage() {
       setIsPoolBindingsSaving(true)
       await syncPoolWorkflowBindings({
         poolId: selectedPool.id,
-        previousBindings: loadedPoolBindings,
+        collectionEtag: loadedPoolBindingsCollectionEtag,
         nextBindings: preparedBindings.bindings,
       })
       await reloadBindingsWorkspace(selectedPool)
@@ -2395,10 +2412,11 @@ export function PoolCatalogPage() {
     isPoolBindingsSaving,
     loadOrganizationDetail,
     loadPools,
-    loadedPoolBindings,
+    loadedPoolBindingsCollectionEtag,
     message,
     mutatingDisabled,
     poolBindingsForm,
+    poolBindingsBlockingRemediation,
     reloadBindingsWorkspace,
     selectedPool,
   ])
@@ -2951,6 +2969,8 @@ export function PoolCatalogPage() {
                           || isPoolBindingsLoading
                           || isPoolBindingsSaving
                           || Boolean(poolBindingsLoadError)
+                          || Boolean(poolBindingsBlockingRemediation)
+                          || !loadedPoolBindingsCollectionEtag
                         )}
                         data-testid="pool-catalog-save-bindings"
                       >
@@ -2960,6 +2980,14 @@ export function PoolCatalogPage() {
 
                     {poolBindingsSubmitError && <Alert type="error" message={poolBindingsSubmitError} showIcon />}
                     {poolBindingsLoadError && <Alert type="error" message={poolBindingsLoadError} showIcon />}
+                    {poolBindingsBlockingRemediation && (
+                      <Alert
+                        type="warning"
+                        message={poolBindingsBlockingRemediation.title}
+                        description={poolBindingsBlockingRemediation.detail}
+                        showIcon
+                      />
+                    )}
                     {isPoolBindingsLoading && (
                       <Alert type="info" message="Loading workflow bindings..." showIcon />
                     )}
@@ -2978,7 +3006,12 @@ export function PoolCatalogPage() {
                           availableDecisions={availableDecisions}
                           decisionsLoading={isPoolDecisionsLoading}
                           decisionsLoadError={poolDecisionsLoadError}
-                          disabled={mutatingDisabled || isPoolBindingsSaving || isPoolBindingsLoading}
+                          disabled={
+                            mutatingDisabled
+                            || isPoolBindingsSaving
+                            || isPoolBindingsLoading
+                            || Boolean(poolBindingsBlockingRemediation)
+                          }
                         />
                       </Form>
                     )}

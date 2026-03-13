@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any, Iterable
 from uuid import uuid4
 
@@ -37,6 +39,22 @@ class PoolWorkflowBindingRevisionConflictError(PoolWorkflowBindingStoreError):
         self.expected_revision = expected_revision
         self.actual_revision = actual_revision
         self.operation = operation
+
+
+class PoolWorkflowBindingCollectionConflictError(PoolWorkflowBindingStoreError):
+    def __init__(
+        self,
+        *,
+        expected_collection_etag: str,
+        actual_collection_etag: str,
+    ) -> None:
+        super().__init__(
+            "Pool workflow binding collection conflict: "
+            f"expected_collection_etag='{expected_collection_etag}', "
+            f"actual_collection_etag='{actual_collection_etag}'"
+        )
+        self.expected_collection_etag = expected_collection_etag
+        self.actual_collection_etag = actual_collection_etag
 
 
 def list_canonical_pool_workflow_bindings(*, pool: OrganizationPool) -> list[dict[str, Any]]:
@@ -165,6 +183,104 @@ def delete_canonical_pool_workflow_binding(
         return serialized
 
 
+def get_canonical_pool_workflow_binding_collection(*, pool: OrganizationPool) -> dict[str, Any]:
+    bindings = list_canonical_pool_workflow_bindings(pool=pool)
+    return _serialize_canonical_collection(pool=pool, bindings=bindings)
+
+
+def replace_canonical_pool_workflow_bindings_collection(
+    *,
+    pool: OrganizationPool,
+    expected_collection_etag: str,
+    workflow_bindings: Iterable[dict[str, Any]],
+    actor_username: str = "",
+) -> dict[str, Any]:
+    normalized_expected_collection_etag = str(expected_collection_etag or "").strip()
+    if not normalized_expected_collection_etag:
+        raise PoolWorkflowBindingStoreError("expected_collection_etag is required for atomic replace")
+
+    normalized_bindings = normalize_pool_workflow_bindings_for_storage(
+        pool_id=str(pool.id),
+        workflow_bindings=workflow_bindings,
+    )
+    actor = str(actor_username or "").strip()
+
+    with transaction.atomic():
+        existing_records = list(
+            PoolWorkflowBinding.objects.select_for_update()
+            .filter(pool=pool)
+            .order_by("effective_from", "created_at", "binding_id")
+        )
+        actual_collection_etag = _calculate_collection_etag(
+            [_serialize_canonical_record(record) for record in existing_records]
+        )
+        if normalized_expected_collection_etag != actual_collection_etag:
+            raise PoolWorkflowBindingCollectionConflictError(
+                expected_collection_etag=normalized_expected_collection_etag,
+                actual_collection_etag=actual_collection_etag,
+            )
+
+        existing_by_id = {record.binding_id: record for record in existing_records}
+        next_binding_ids: set[str] = set()
+
+        for normalized_binding in normalized_bindings:
+            contract = PoolWorkflowBindingContract(**normalized_binding)
+            binding_id = contract.binding_id
+            if binding_id is None:
+                raise PoolWorkflowBindingStoreError("binding_id is required after normalization")
+            next_binding_ids.add(binding_id)
+            existing = existing_by_id.get(binding_id)
+            if existing is None:
+                PoolWorkflowBinding.objects.create(
+                    binding_id=binding_id,
+                    tenant=pool.tenant,
+                    pool=pool,
+                    contract_version=contract.contract_version,
+                    status=contract.status.value,
+                    effective_from=contract.effective_from,
+                    effective_to=contract.effective_to,
+                    direction=contract.selector.direction or "",
+                    mode=contract.selector.mode or "",
+                    selector_tags=list(contract.selector.tags),
+                    workflow_definition_key=contract.workflow.workflow_definition_key,
+                    workflow_revision_id=contract.workflow.workflow_revision_id,
+                    workflow_revision=contract.workflow.workflow_revision,
+                    workflow_name=contract.workflow.workflow_name,
+                    decisions=[decision.model_dump(mode="json") for decision in contract.decisions],
+                    parameters=dict(contract.parameters),
+                    role_mapping=dict(contract.role_mapping),
+                    revision=1,
+                    created_by=actor,
+                    updated_by=actor,
+                )
+                continue
+
+            if _record_matches_contract(existing=existing, contract=contract):
+                continue
+
+            existing.contract_version = contract.contract_version
+            existing.status = contract.status.value
+            existing.effective_from = contract.effective_from
+            existing.effective_to = contract.effective_to
+            existing.direction = contract.selector.direction or ""
+            existing.mode = contract.selector.mode or ""
+            existing.selector_tags = list(contract.selector.tags)
+            existing.workflow_definition_key = contract.workflow.workflow_definition_key
+            existing.workflow_revision_id = contract.workflow.workflow_revision_id
+            existing.workflow_revision = contract.workflow.workflow_revision
+            existing.workflow_name = contract.workflow.workflow_name
+            existing.decisions = [decision.model_dump(mode="json") for decision in contract.decisions]
+            existing.parameters = dict(contract.parameters)
+            existing.role_mapping = dict(contract.role_mapping)
+            existing.revision += 1
+            existing.updated_by = actor
+            existing.save()
+
+        PoolWorkflowBinding.objects.filter(pool=pool).exclude(binding_id__in=next_binding_ids).delete()
+
+    return get_canonical_pool_workflow_binding_collection(pool=pool)
+
+
 def extract_pool_workflow_bindings(metadata: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(metadata, dict):
         return []
@@ -240,6 +356,25 @@ def delete_pool_workflow_binding(
     return delete_canonical_pool_workflow_binding(pool=pool, binding_id=binding_id, revision=revision)
 
 
+def get_pool_workflow_binding_collection(*, pool: OrganizationPool) -> dict[str, Any]:
+    return get_canonical_pool_workflow_binding_collection(pool=pool)
+
+
+def replace_pool_workflow_bindings_collection(
+    *,
+    pool: OrganizationPool,
+    expected_collection_etag: str,
+    workflow_bindings: Iterable[dict[str, Any]],
+    actor_username: str = "",
+) -> dict[str, Any]:
+    return replace_canonical_pool_workflow_bindings_collection(
+        pool=pool,
+        expected_collection_etag=expected_collection_etag,
+        workflow_bindings=workflow_bindings,
+        actor_username=actor_username,
+    )
+
+
 def _normalize_requested_revision(
     raw_revision: object,
     *,
@@ -291,18 +426,73 @@ def _serialize_canonical_record(record: PoolWorkflowBinding) -> dict[str, Any]:
     }
 
 
+def _record_matches_contract(
+    *,
+    existing: PoolWorkflowBinding,
+    contract: PoolWorkflowBindingContract,
+) -> bool:
+    return (
+        existing.contract_version == contract.contract_version
+        and existing.status == contract.status.value
+        and existing.effective_from == contract.effective_from
+        and existing.effective_to == contract.effective_to
+        and existing.direction == (contract.selector.direction or "")
+        and existing.mode == (contract.selector.mode or "")
+        and list(existing.selector_tags) == list(contract.selector.tags)
+        and existing.workflow_definition_key == contract.workflow.workflow_definition_key
+        and existing.workflow_revision_id == contract.workflow.workflow_revision_id
+        and existing.workflow_revision == contract.workflow.workflow_revision
+        and existing.workflow_name == contract.workflow.workflow_name
+        and list(existing.decisions) == [decision.model_dump(mode="json") for decision in contract.decisions]
+        and dict(existing.parameters) == dict(contract.parameters)
+        and dict(existing.role_mapping) == dict(contract.role_mapping)
+    )
+
+
+def _serialize_canonical_collection(
+    *,
+    pool: OrganizationPool,
+    bindings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    response = {
+        "pool_id": str(pool.id),
+        "workflow_bindings": bindings,
+        "collection_etag": _calculate_collection_etag(bindings),
+    }
+    if not bindings and extract_pool_workflow_bindings(pool.metadata):
+        response["blocking_remediation"] = {
+            "code": "LEGACY_METADATA_WORKFLOW_BINDINGS_PRESENT",
+            "title": "Legacy workflow bindings remediation required",
+            "detail": (
+                "Canonical binding collection is empty while legacy pool.metadata.workflow_bindings "
+                "payload is still present. Run explicit remediation before using the default workspace."
+            ),
+        }
+    return response
+
+
+def _calculate_collection_etag(bindings: list[dict[str, Any]]) -> str:
+    normalized = json.dumps(bindings, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+    return f"sha256:{hashlib.sha256(normalized.encode('utf-8')).hexdigest()}"
+
+
 __all__ = [
+    "PoolWorkflowBindingCollectionConflictError",
     "PoolWorkflowBindingNotFoundError",
     "PoolWorkflowBindingRevisionConflictError",
     "PoolWorkflowBindingStoreError",
     "delete_canonical_pool_workflow_binding",
     "delete_pool_workflow_binding",
     "extract_pool_workflow_bindings",
+    "get_canonical_pool_workflow_binding_collection",
     "get_canonical_pool_workflow_binding",
+    "get_pool_workflow_binding_collection",
     "get_pool_workflow_binding",
     "list_canonical_pool_workflow_bindings",
     "list_pool_workflow_bindings",
     "normalize_pool_workflow_bindings_for_storage",
+    "replace_canonical_pool_workflow_bindings_collection",
+    "replace_pool_workflow_bindings_collection",
     "upsert_canonical_pool_workflow_binding",
     "upsert_pool_workflow_binding",
 ]

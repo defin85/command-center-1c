@@ -1,0 +1,16 @@
+type: object
+properties:
+  pool_id:
+    type: string
+    format: uuid
+  expected_collection_etag:
+    type: string
+    description: Opaque concurrency token returned by the previous collection read.
+  workflow_bindings:
+    type: array
+    items:
+      $ref: ./PoolWorkflowBindingInput.yaml
+required:
+  - pool_id
+  - expected_collection_etag
+  - workflow_bindings

@@ -75,6 +75,19 @@ async function setupApiMocks(page: Page, state: {
   state.bindingUpsertCalls = state.bindingUpsertCalls ?? 0
   state.bindingDeleteCalls = state.bindingDeleteCalls ?? 0
   state.lastBindingPayload = state.lastBindingPayload ?? null
+  const bindingCollectionEtags = new Map<string, string>()
+  const computeBindingCollectionEtag = (bindings: AnyRecord[]) => (
+    `sha256:${Buffer.from(JSON.stringify(bindings)).toString('hex').slice(0, 64).padEnd(64, '0')}`
+  )
+  const getBindingCollectionEtag = (poolId: string, bindings: AnyRecord[]) => {
+    const existing = bindingCollectionEtags.get(poolId)
+    if (existing) {
+      return existing
+    }
+    const next = computeBindingCollectionEtag(bindings)
+    bindingCollectionEtags.set(poolId, next)
+    return next
+  }
 
   await page.route('**/api/v2/**', async (route) => {
     const request = route.request()
@@ -244,7 +257,60 @@ async function setupApiMocks(page: Page, state: {
       const poolId = String(url.searchParams.get('pool_id') || '')
       const pool = pools.find((item) => String(item.id) === poolId)
       const bindings = Array.isArray(pool?.workflow_bindings) ? pool.workflow_bindings : []
-      return fulfillJson(route, { pool_id: poolId, bindings, count: bindings.length })
+      return fulfillJson(route, {
+        pool_id: poolId,
+        workflow_bindings: bindings,
+        collection_etag: getBindingCollectionEtag(poolId, bindings),
+        blocking_remediation: null,
+      })
+    }
+
+    if (method === 'PUT' && path === '/api/v2/pools/workflow-bindings/') {
+      const payload = request.postDataJSON() as AnyRecord
+      const poolId = String(payload.pool_id || '')
+      const pool = pools.find((item) => String(item.id) === poolId)
+      if (!pool) {
+        return fulfillJson(route, { type: 'about:blank', title: 'Pool Not Found', status: 404, detail: 'Pool not found.' }, 404)
+      }
+
+      const currentBindings = Array.isArray(pool.workflow_bindings) ? [...pool.workflow_bindings] : []
+      const currentEtag = getBindingCollectionEtag(poolId, currentBindings)
+      if (String(payload.expected_collection_etag || '') !== currentEtag) {
+        return fulfillJson(route, {
+          type: 'about:blank',
+          title: 'Workflow Binding Collection Conflict',
+          status: 409,
+          detail: 'Workflow binding collection was updated by another operator. Reload bindings and retry.',
+          code: 'POOL_WORKFLOW_BINDING_COLLECTION_CONFLICT',
+        }, 409)
+      }
+
+      const submittedBindings = Array.isArray(payload.workflow_bindings) ? payload.workflow_bindings : []
+      const nextBindings = submittedBindings.map((rawBinding, index) => {
+        const workflowBinding = rawBinding && typeof rawBinding === 'object'
+          ? { ...(rawBinding as AnyRecord) }
+          : {}
+        return {
+          ...workflowBinding,
+          binding_id: String(workflowBinding.binding_id || `binding-${index + 1}`),
+          pool_id: poolId,
+          revision: Number(workflowBinding.revision || 1),
+        }
+      })
+
+      state.bindingUpsertCalls! += 1
+      state.lastBindingPayload = payload
+      pool.workflow_bindings = nextBindings
+      pool.updated_at = '2026-01-01T00:00:00Z'
+      const nextEtag = computeBindingCollectionEtag(nextBindings)
+      bindingCollectionEtags.set(poolId, nextEtag)
+
+      return fulfillJson(route, {
+        pool_id: poolId,
+        workflow_bindings: nextBindings,
+        collection_etag: nextEtag,
+        blocking_remediation: null,
+      })
     }
 
     if (method === 'POST' && path === '/api/v2/pools/workflow-bindings/upsert/') {
@@ -324,7 +390,7 @@ test('Pool Catalog: staff without tenant context has mutating actions disabled',
   await page.goto('/pools/catalog', { waitUntil: 'domcontentloaded' })
 
   await expect(page.getByRole('heading', { name: 'Pool Catalog', exact: true })).toBeVisible()
-  await expect(page.getByText('Mutating actions are disabled', { exact: true })).toBeVisible()
+  await expect(page.getByText('Mutating actions are disabled', { exact: true }).first()).toBeVisible()
   await expect(page.getByTestId('pool-catalog-add-org')).toBeDisabled()
   await expect(page.getByTestId('pool-catalog-edit-org')).toBeDisabled()
   await expect(page.getByTestId('pool-catalog-sync-orgs')).toBeDisabled()
@@ -347,14 +413,14 @@ test('Pool Catalog: non-staff can create, edit and sync organizations without ex
   await page.locator('#name').fill('Created Org')
   await page.getByRole('button', { name: 'Save', exact: true }).click()
 
-  await expect(page.getByText('Created Org', { exact: true })).toBeVisible()
+  await expect(page.locator('.ant-table-tbody tr').filter({ hasText: 'Created Org' }).first()).toBeVisible()
 
   await page.locator('.ant-table-tbody tr').filter({ hasText: 'Created Org' }).first().click()
   await page.getByTestId('pool-catalog-edit-org').click()
   await page.locator('#name').fill('Created Org Updated')
   await page.getByRole('button', { name: 'Save', exact: true }).click()
 
-  await expect(page.getByText('Created Org Updated', { exact: true })).toBeVisible()
+  await expect(page.locator('.ant-table-tbody tr').filter({ hasText: 'Created Org Updated' }).first()).toBeVisible()
 
   await page.getByTestId('pool-catalog-sync-orgs').click()
   await page.getByTestId('pool-catalog-sync-input').fill(
@@ -367,7 +433,7 @@ test('Pool Catalog: non-staff can create, edit and sync organizations without ex
   await expect(page.getByText('Synced Org', { exact: true })).toBeVisible()
 })
 
-test('Pool Catalog: workflow bindings editor saves through first-class binding API', async ({ page }) => {
+test('Pool Catalog: workflow bindings editor saves through canonical collection API', async ({ page }) => {
   const state = {
     me: { id: 1, username: 'user', is_staff: false },
     myTenants: { active_tenant_id: 't1', tenants: [{ id: 't1', slug: 'default', name: 'Default' }] },
@@ -380,8 +446,7 @@ test('Pool Catalog: workflow bindings editor saves through first-class binding A
   await setupApiMocks(page, state)
 
   await page.goto('/pools/catalog', { waitUntil: 'domcontentloaded' })
-  await page.getByRole('tab', { name: 'Pools' }).click()
-  await page.getByTestId('pool-catalog-edit-pool').click()
+  await page.getByRole('tab', { name: 'Bindings' }).click()
 
   await expect(page.getByTestId('pool-catalog-workflow-binding-add')).toBeVisible()
   await expect(page.getByLabel('Workflow bindings JSON')).toHaveCount(0)
@@ -398,27 +463,30 @@ test('Pool Catalog: workflow bindings editor saves through first-class binding A
   await page.getByTestId('pool-catalog-workflow-binding-add-parameter-0').click()
   await page.getByTestId('pool-catalog-workflow-binding-parameter-key-0-0').fill('strategy')
   await page.getByTestId('pool-catalog-workflow-binding-parameter-value-0-0').fill('"strict"')
-  await page.getByTestId('pool-catalog-save-pool').click()
+  await page.getByTestId('pool-catalog-save-bindings').click()
 
   await expect.poll(() => state.bindingUpsertCalls).toBe(1)
   await expect.poll(() => state.bindingDeleteCalls).toBe(0)
   await expect.poll(() => state.lastBindingPayload).toMatchObject({
     pool_id: '99999999-9999-9999-9999-999999999999',
-    workflow_binding: {
-      workflow: {
-        workflow_definition_key: 'services-publication',
-        workflow_revision: 3,
-        workflow_name: 'services_publication',
+    workflow_bindings: [
+      {
+        workflow: {
+          workflow_definition_key: 'services-publication',
+          workflow_revision: 3,
+          workflow_name: 'services_publication',
+        },
+        selector: {
+          direction: 'top_down',
+          mode: 'safe',
+          tags: ['baseline', 'monthly'],
+        },
+        parameters: {
+          strategy: 'strict',
+        },
+        effective_from: '2026-01-01',
       },
-      selector: {
-        direction: 'top_down',
-        mode: 'safe',
-        tags: ['baseline', 'monthly'],
-      },
-      parameters: {
-        strategy: 'strict',
-      },
-      effective_from: '2026-01-01',
-    },
+    ],
   })
+  expect(String(state.lastBindingPayload?.expected_collection_etag || '')).toMatch(/^sha256:/)
 })

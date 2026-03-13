@@ -93,12 +93,15 @@ from apps.intercompany_pools.workflow_binding_resolution import (
     resolve_pool_workflow_binding_for_run,
 )
 from apps.intercompany_pools.workflow_bindings_store import (
+    PoolWorkflowBindingCollectionConflictError,
     PoolWorkflowBindingNotFoundError,
     PoolWorkflowBindingRevisionConflictError,
     PoolWorkflowBindingStoreError,
     delete_pool_workflow_binding as delete_stored_pool_workflow_binding,
+    get_pool_workflow_binding_collection as get_stored_pool_workflow_binding_collection,
     get_pool_workflow_binding as get_stored_pool_workflow_binding,
     list_pool_workflow_bindings as list_stored_pool_workflow_bindings,
+    replace_pool_workflow_bindings_collection as replace_stored_pool_workflow_bindings_collection,
     upsert_pool_workflow_binding as upsert_stored_pool_workflow_binding,
 )
 from apps.templates.workflow.models import WorkflowExecution
@@ -285,6 +288,24 @@ def _binding_revision_conflict_problem(exc: PoolWorkflowBindingRevisionConflictE
                 "expected_revision": exc.expected_revision,
                 "actual_revision": exc.actual_revision,
                 "operation": exc.operation,
+            }
+        ],
+    )
+
+
+def _binding_collection_conflict_problem(exc: PoolWorkflowBindingCollectionConflictError) -> Response:
+    return _problem(
+        code="POOL_WORKFLOW_BINDING_COLLECTION_CONFLICT",
+        title="Pool Workflow Binding Collection Conflict",
+        detail=(
+            "Workflow binding collection was changed by another session. "
+            "Reload the canonical collection and retry with the latest collection_etag."
+        ),
+        status_code=http_status.HTTP_409_CONFLICT,
+        errors=[
+            {
+                "expected_collection_etag": exc.expected_collection_etag,
+                "actual_collection_etag": exc.actual_collection_etag,
             }
         ],
     )
@@ -2360,10 +2381,26 @@ class PoolWorkflowBindingDeleteQuerySerializer(serializers.Serializer):
     revision = serializers.IntegerField(min_value=1)
 
 
-class PoolWorkflowBindingListResponseSerializer(serializers.Serializer):
+class PoolWorkflowBindingBlockingRemediationSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    title = serializers.CharField()
+    detail = serializers.CharField()
+
+
+class PoolWorkflowBindingCollectionResponseSerializer(serializers.Serializer):
     pool_id = serializers.UUIDField()
-    bindings = PoolWorkflowBindingReadSerializer(many=True)
-    count = serializers.IntegerField()
+    workflow_bindings = PoolWorkflowBindingReadSerializer(many=True)
+    collection_etag = serializers.CharField()
+    blocking_remediation = PoolWorkflowBindingBlockingRemediationSerializer(
+        required=False,
+        allow_null=True,
+    )
+
+
+class PoolWorkflowBindingCollectionReplaceRequestSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    expected_collection_etag = serializers.CharField(allow_blank=False)
+    workflow_bindings = PoolWorkflowBindingInputSerializer(many=True)
 
 
 class PoolWorkflowBindingDetailResponseSerializer(serializers.Serializer):
@@ -2888,13 +2925,28 @@ def preview_pool_workflow_binding(request):
     operation_id="v2_pools_workflow_bindings_list",
     summary="List workflow bindings for a pool",
     responses={
-        200: PoolWorkflowBindingListResponseSerializer,
+        200: PoolWorkflowBindingCollectionResponseSerializer,
         (400, "application/problem+json"): ProblemDetailsErrorSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         (404, "application/problem+json"): ProblemDetailsErrorSerializer,
     },
+    methods=["GET"],
 )
-@api_view(["GET"])
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_workflow_bindings_replace",
+    summary="Replace workflow bindings collection for a pool",
+    request=PoolWorkflowBindingCollectionReplaceRequestSerializer,
+    responses={
+        200: PoolWorkflowBindingCollectionResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+        (409, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+    methods=["PUT"],
+)
+@api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def list_pool_workflow_bindings(request):
     tenant_id = _resolve_tenant_id(request)
@@ -2906,12 +2958,41 @@ def list_pool_workflow_bindings(request):
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    serializer_class = (
-        PoolWorkflowBindingDeleteQuerySerializer
-        if request.method == "DELETE"
-        else PoolWorkflowBindingScopeQuerySerializer
-    )
-    serializer = serializer_class(data=request.query_params)
+    if request.method == "GET":
+        serializer = PoolWorkflowBindingScopeQuerySerializer(data=request.query_params)
+        if not serializer.is_valid():
+            return _problem(
+                code="VALIDATION_ERROR",
+                title="Validation Error",
+                detail=str(serializer.errors),
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+            )
+
+        pool = OrganizationPool.objects.filter(
+            id=serializer.validated_data["pool_id"],
+            tenant_id=tenant_id,
+        ).first()
+        if pool is None:
+            return _problem(
+                code="POOL_NOT_FOUND",
+                title="Pool Not Found",
+                detail="Organization pool not found in current tenant context.",
+                status_code=http_status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            collection = get_stored_pool_workflow_binding_collection(pool=pool)
+        except PoolWorkflowBindingResolutionError as exc:
+            return _problem(
+                code=exc.code,
+                title="Pool Workflow Binding Resolution Failed",
+                detail=str(exc),
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                errors=exc.errors,
+            )
+        return Response(collection, status=http_status.HTTP_200_OK)
+
+    serializer = PoolWorkflowBindingCollectionReplaceRequestSerializer(data=request.data or {})
     if not serializer.is_valid():
         return _problem(
             code="VALIDATION_ERROR",
@@ -2920,10 +3001,8 @@ def list_pool_workflow_bindings(request):
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    pool = OrganizationPool.objects.filter(
-        id=serializer.validated_data["pool_id"],
-        tenant_id=tenant_id,
-    ).first()
+    data = serializer.validated_data
+    pool = OrganizationPool.objects.filter(id=data["pool_id"], tenant_id=tenant_id).first()
     if pool is None:
         return _problem(
             code="POOL_NOT_FOUND",
@@ -2933,7 +3012,25 @@ def list_pool_workflow_bindings(request):
         )
 
     try:
-        bindings = list_stored_pool_workflow_bindings(pool=pool)
+        collection = replace_stored_pool_workflow_bindings_collection(
+            pool=pool,
+            expected_collection_etag=data["expected_collection_etag"],
+            workflow_bindings=[dict(item) for item in data["workflow_bindings"]],
+            actor_username=(
+                request.user.username
+                if request.user and request.user.is_authenticated
+                else ""
+            ),
+        )
+    except PoolWorkflowBindingCollectionConflictError as exc:
+        return _binding_collection_conflict_problem(exc)
+    except PoolWorkflowBindingStoreError as exc:
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
     except PoolWorkflowBindingResolutionError as exc:
         return _problem(
             code=exc.code,
@@ -2942,14 +3039,8 @@ def list_pool_workflow_bindings(request):
             status_code=http_status.HTTP_400_BAD_REQUEST,
             errors=exc.errors,
         )
-    return Response(
-        {
-            "pool_id": str(pool.id),
-            "bindings": bindings,
-            "count": len(bindings),
-        },
-        status=http_status.HTTP_200_OK,
-    )
+
+    return Response(collection, status=http_status.HTTP_200_OK)
 
 
 @extend_schema(

@@ -1491,15 +1491,176 @@ def test_pool_workflow_bindings_list_exposes_multiple_pinned_bindings(
     assert response.status_code == 200
     payload = response.json()
     assert payload["pool_id"] == str(pool.id)
-    assert payload["count"] == 2
-    assert [item["binding_id"] for item in payload["bindings"]] == [
+    assert isinstance(payload["collection_etag"], str)
+    assert payload["collection_etag"]
+    assert [item["binding_id"] for item in payload["workflow_bindings"]] == [
         first_binding["binding_id"],
         second_binding["binding_id"],
     ]
-    assert payload["bindings"][0]["revision"] == 1
-    assert payload["bindings"][1]["revision"] == 1
-    assert payload["bindings"][0]["workflow"]["workflow_revision"] == 3
-    assert payload["bindings"][1]["workflow"]["workflow_revision"] == 5
+    assert payload["workflow_bindings"][0]["revision"] == 1
+    assert payload["workflow_bindings"][1]["revision"] == 1
+    assert payload["workflow_bindings"][0]["workflow"]["workflow_revision"] == 3
+    assert payload["workflow_bindings"][1]["workflow"]["workflow_revision"] == 5
+
+
+@pytest.mark.django_db
+def test_pool_workflow_bindings_collection_put_applies_atomic_replace_and_returns_new_etag(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    first_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=_build_pool_workflow_binding_payload(
+            pool=pool,
+            workflow_definition_key="services-publication",
+            workflow_revision=3,
+            direction=PoolRunDirection.TOP_DOWN,
+            mode=PoolRunMode.SAFE,
+        ),
+        actor_username="collection-put-test",
+    )
+    second_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=_build_pool_workflow_binding_payload(
+            pool=pool,
+            workflow_definition_key="bottom-up-import",
+            workflow_revision=5,
+            direction=PoolRunDirection.BOTTOM_UP,
+            mode=PoolRunMode.SAFE,
+        ),
+        actor_username="collection-put-test",
+    )
+    initial_response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
+    assert initial_response.status_code == 200
+    initial_payload = initial_response.json()
+
+    put_response = authenticated_client.put(
+        "/api/v2/pools/workflow-bindings/",
+        {
+            "pool_id": str(pool.id),
+            "expected_collection_etag": initial_payload["collection_etag"],
+            "workflow_bindings": [
+                {
+                    **first_binding,
+                    "workflow": {
+                        **first_binding["workflow"],
+                        "workflow_revision": 4,
+                    },
+                    "status": "inactive",
+                },
+                {
+                    **_build_pool_workflow_binding_payload(
+                        pool=pool,
+                        workflow_definition_key="services-publication-v2",
+                        workflow_revision=8,
+                        direction=PoolRunDirection.TOP_DOWN,
+                        mode=PoolRunMode.UNSAFE,
+                    ),
+                    "binding_id": "replacement-binding",
+                },
+            ],
+        },
+        format="json",
+    )
+
+    assert put_response.status_code == 200
+    payload = put_response.json()
+    assert payload["pool_id"] == str(pool.id)
+    assert payload["collection_etag"] != initial_payload["collection_etag"]
+    assert [item["binding_id"] for item in payload["workflow_bindings"]] == [
+        first_binding["binding_id"],
+        "replacement-binding",
+    ]
+    assert payload["workflow_bindings"][0]["revision"] == 2
+    assert payload["workflow_bindings"][0]["status"] == "inactive"
+    assert payload["workflow_bindings"][0]["workflow"]["workflow_revision"] == 4
+    assert payload["workflow_bindings"][1]["revision"] == 1
+
+    stored_bindings = list_pool_workflow_bindings(pool=pool)
+    assert [item["binding_id"] for item in stored_bindings] == [
+        first_binding["binding_id"],
+        "replacement-binding",
+    ]
+    assert second_binding["binding_id"] not in {item["binding_id"] for item in stored_bindings}
+
+
+@pytest.mark.django_db
+def test_pool_workflow_bindings_collection_put_returns_conflict_without_partial_apply(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    created_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=_build_pool_workflow_binding_payload(
+            pool=pool,
+            workflow_definition_key="services-publication",
+            workflow_revision=3,
+            direction=PoolRunDirection.TOP_DOWN,
+            mode=PoolRunMode.SAFE,
+        ),
+        actor_username="collection-conflict-test",
+    )
+    stale_response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
+    assert stale_response.status_code == 200
+    stale_payload = stale_response.json()
+
+    winner_response = authenticated_client.put(
+        "/api/v2/pools/workflow-bindings/",
+        {
+            "pool_id": str(pool.id),
+            "expected_collection_etag": stale_payload["collection_etag"],
+            "workflow_bindings": [
+                {
+                    **created_binding,
+                    "status": "inactive",
+                }
+            ],
+        },
+        format="json",
+    )
+    assert winner_response.status_code == 200
+    winner_payload = winner_response.json()
+
+    conflict_response = authenticated_client.put(
+        "/api/v2/pools/workflow-bindings/",
+        {
+            "pool_id": str(pool.id),
+            "expected_collection_etag": stale_payload["collection_etag"],
+            "workflow_bindings": [
+                {
+                    **created_binding,
+                    "status": "draft",
+                },
+                {
+                    **_build_pool_workflow_binding_payload(
+                        pool=pool,
+                        workflow_definition_key="late-binding",
+                        workflow_revision=9,
+                        direction=PoolRunDirection.TOP_DOWN,
+                        mode=PoolRunMode.UNSAFE,
+                    ),
+                    "binding_id": "late-binding",
+                },
+            ],
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        conflict_response,
+        status_code=409,
+        code="POOL_WORKFLOW_BINDING_COLLECTION_CONFLICT",
+    )
+    assert payload["errors"] == [
+        {
+            "expected_collection_etag": stale_payload["collection_etag"],
+            "actual_collection_etag": winner_payload["collection_etag"],
+        }
+    ]
+
+    current_response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
+    assert current_response.status_code == 200
+    assert current_response.json() == winner_payload
 
 
 @pytest.mark.django_db
@@ -1836,8 +1997,16 @@ def test_pool_workflow_bindings_list_ignores_invalid_legacy_metadata_after_cutov
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["count"] == 0
-    assert payload["bindings"] == []
+    assert payload["workflow_bindings"] == []
+    assert isinstance(payload["collection_etag"], str)
+    assert payload["blocking_remediation"] == {
+        "code": "LEGACY_METADATA_WORKFLOW_BINDINGS_PRESENT",
+        "title": "Legacy workflow bindings remediation required",
+        "detail": (
+            "Canonical binding collection is empty while legacy pool.metadata.workflow_bindings "
+            "payload is still present. Run explicit remediation before using the default workspace."
+        ),
+    }
 
 
 @pytest.mark.django_db

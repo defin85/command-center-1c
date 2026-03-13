@@ -1,0 +1,26 @@
+type: object
+properties:
+  pool_id:
+    type: string
+    format: uuid
+  workflow_bindings:
+    type: array
+    items:
+      $ref: ./PoolWorkflowBindingRead.yaml
+  collection_etag:
+    type: string
+    description: Opaque optimistic concurrency token for the entire binding collection.
+  blocking_remediation:
+    type: object
+    nullable: true
+    properties:
+      code:
+        type: string
+      title:
+        type: string
+      detail:
+        type: string
+required:
+  - pool_id
+  - workflow_bindings
+  - collection_etag
