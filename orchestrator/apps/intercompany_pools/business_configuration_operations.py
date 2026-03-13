@@ -36,6 +36,9 @@ BUSINESS_CONFIGURATION_JOB_KIND_VERIFICATION = "verification"
 
 BUSINESS_CONFIGURATION_GENERATION_PROBE_INTERVAL = timedelta(hours=24)
 
+BUSINESS_CONFIGURATION_REVERIFY_BLOCKER_IBCMD_PROFILE_REQUIRED = "IBCMD_CONNECTION_PROFILE_REQUIRED"
+BUSINESS_CONFIGURATION_REVERIFY_BLOCKER_DRIVER_UNAVAILABLE = "BUSINESS_CONFIGURATION_DRIVER_UNAVAILABLE"
+
 _ACTIVE_BATCH_OPERATION_STATUSES = (
     BatchOperation.STATUS_PENDING,
     BatchOperation.STATUS_QUEUED,
@@ -105,6 +108,58 @@ def find_active_business_configuration_operation(
     job_kind: str,
 ) -> BatchOperation | None:
     return _find_active_operation(database=database, job_kind=job_kind)
+
+
+def get_business_configuration_verification_availability(
+    *,
+    database: Database,
+) -> dict[str, Any]:
+    existing = _find_active_operation(
+        database=database,
+        job_kind=BUSINESS_CONFIGURATION_JOB_KIND_VERIFICATION,
+    )
+    if existing is not None:
+        return {
+            "available": True,
+            "blocker_code": "",
+            "blocker_message": "",
+            "blocking_action": "",
+            "active_operation_id": str(existing.id),
+        }
+
+    command, catalog, _command_catalog_source = _resolve_ibcmd_command(
+        command_id=BUSINESS_CONFIGURATION_COMMAND_EXPORT_OBJECTS,
+    )
+    if command is None or catalog is None:
+        return {
+            "available": False,
+            "blocker_code": BUSINESS_CONFIGURATION_REVERIFY_BLOCKER_DRIVER_UNAVAILABLE,
+            "blocker_message": (
+                "IBCMD driver catalog is unavailable for configuration identity re-verify."
+            ),
+            "blocking_action": "",
+            "active_operation_id": "",
+        }
+
+    if not _has_executable_database_profile_connection(database=database):
+        return {
+            "available": False,
+            "blocker_code": BUSINESS_CONFIGURATION_REVERIFY_BLOCKER_IBCMD_PROFILE_REQUIRED,
+            "blocker_message": (
+                "Configure IBCMD connection profile for the selected database before running "
+                "Re-verify configuration identity."
+            ),
+            "blocking_action": "configure_ibcmd_connection_profile",
+            "active_operation_id": "",
+        }
+
+    return {
+        "available": True,
+        "blocker_code": "",
+        "blocker_message": "",
+        "blocking_action": "",
+        "active_operation_id": "",
+    }
 
 
 def enqueue_business_configuration_verification(

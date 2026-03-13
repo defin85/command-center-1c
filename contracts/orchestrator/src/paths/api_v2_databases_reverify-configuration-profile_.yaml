@@ -46,7 +46,10 @@ post:
         application/json:
           schema:
             $ref: ../components/schemas/DatabaseErrorResponse.yaml
-      description: ''
+      description: >-
+        Re-verify is currently unavailable. Possible `error.code` values include
+        `IBCMD_CONNECTION_PROFILE_REQUIRED` and
+        `BUSINESS_CONFIGURATION_DRIVER_UNAVAILABLE`.
   parameters:
     - name: X-CC1C-Tenant-ID
       in: header

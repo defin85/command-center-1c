@@ -35,6 +35,14 @@ properties:
     type: string
   publication_drift:
     type: boolean
+  reverify_available:
+    type: boolean
+  reverify_blocker_code:
+    type: string
+  reverify_blocker_message:
+    type: string
+  reverify_blocking_action:
+    type: string
 required:
   - status
   - config_name
@@ -47,3 +55,7 @@ required:
   - observed_metadata_hash
   - canonical_metadata_hash
   - publication_drift
+  - reverify_available
+  - reverify_blocker_code
+  - reverify_blocker_message
+  - reverify_blocking_action

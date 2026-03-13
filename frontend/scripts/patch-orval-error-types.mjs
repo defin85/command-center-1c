@@ -4,6 +4,10 @@ import { resolve } from 'node:path'
 const targetPath = resolve(process.cwd(), 'src/api/generated/v2/v2.ts')
 const retryRequestPath = resolve(process.cwd(), 'src/api/generated/model/poolRunRetryRequest.ts')
 const poolRunPath = resolve(process.cwd(), 'src/api/generated/model/poolRun.ts')
+const metadataManagementProfilePath = resolve(
+  process.cwd(),
+  'src/api/generated/model/databaseMetadataManagementConfigurationProfile.ts'
+)
 
 const bodyImportRegex = /import type { BodyType } from ['"]\.\.\/\.\.\/mutator['"];?/
 const mutatorTypeImport = "import type { ErrorType } from '../../mutator';"
@@ -68,3 +72,17 @@ poolRunContent = poolRunContent.replace(
   '  runtime_projection?: PoolRuntimeProjection | null;\n'
 )
 writeFileSync(poolRunPath, poolRunContent, 'utf8')
+
+let metadataManagementProfileContent = readFileSync(metadataManagementProfilePath, 'utf8')
+// orval currently skips blocker fields for database metadata management profile.
+if (!metadataManagementProfileContent.includes('  reverify_available: boolean;\n')) {
+  metadataManagementProfileContent = metadataManagementProfileContent.replace(
+    '  publication_drift: boolean;\n',
+    '  publication_drift: boolean;\n' +
+      '  reverify_available: boolean;\n' +
+      '  reverify_blocker_code: string;\n' +
+      '  reverify_blocker_message: string;\n' +
+      '  reverify_blocking_action: string;\n'
+  )
+}
+writeFileSync(metadataManagementProfilePath, metadataManagementProfileContent, 'utf8')

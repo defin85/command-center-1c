@@ -797,6 +797,10 @@ export const Databases = () => {
         mutatingDisabled={metadataManagementMutatingDisabled}
         onClose={closeMetadataManagementDrawer}
         onOperationQueued={(operationId) => navigate(`/operations?operation=${operationId}`)}
+        onOpenIbcmdProfile={() => {
+          if (!metadataManagementDatabase) return
+          openIbcmdProfileModal(metadataManagementDatabase)
+        }}
       />
 
       <ExtensionsDrawer

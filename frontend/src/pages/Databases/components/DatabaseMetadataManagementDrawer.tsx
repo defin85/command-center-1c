@@ -20,6 +20,7 @@ export interface DatabaseMetadataManagementDrawerProps {
   mutatingDisabled?: boolean
   onClose: () => void
   onOperationQueued?: (operationId: string) => void
+  onOpenIbcmdProfile?: () => void
 }
 
 type StatusDescriptor = {
@@ -27,6 +28,13 @@ type StatusDescriptor = {
   label: string
   message: string
   description?: string
+}
+
+type ConfigurationProfileState = DatabaseMetadataManagementConfigurationProfile & {
+  reverify_available?: boolean
+  reverify_blocker_code?: string
+  reverify_blocker_message?: string
+  reverify_blocking_action?: string
 }
 
 const formatDateTime = (value?: string | null): string => {
@@ -40,8 +48,12 @@ const formatValue = (value?: string | null): string => {
 }
 
 const buildProfileStatusDescriptor = (
-  profile: DatabaseMetadataManagementConfigurationProfile
+  profile: ConfigurationProfileState
 ): StatusDescriptor => {
+  const reverifyBlocked = profile.reverify_available === false
+  const blockerMessage = typeof profile.reverify_blocker_message === 'string'
+    ? profile.reverify_blocker_message.trim()
+    : ''
   switch (profile.status) {
     case 'verified':
       return {
@@ -60,44 +72,54 @@ const buildProfileStatusDescriptor = (
     case 'migrated_legacy':
       return {
         tone: 'warning',
-        label: 'Legacy',
-        message: 'Profile собран из legacy snapshot и требует перепроверки.',
-        description: 'Запустите Re-verify configuration identity, чтобы закрепить canonical reuse key.',
+        label: reverifyBlocked ? 'Blocked' : 'Legacy',
+        message: reverifyBlocked
+          ? 'Profile собран из legacy snapshot, но перепроверка сейчас недоступна.'
+          : 'Profile собран из legacy snapshot и требует перепроверки.',
+        description: blockerMessage || 'Запустите Re-verify configuration identity, чтобы закрепить canonical reuse key.',
       }
     case 'reverify_required':
       return {
         tone: 'warning',
-        label: 'Reverify required',
-        message: 'Configuration identity помечен как требующий перепроверки.',
-        description: 'Запустите Re-verify configuration identity перед полаганием на reuse key.',
+        label: reverifyBlocked ? 'Blocked' : 'Reverify required',
+        message: reverifyBlocked
+          ? 'Configuration identity требует перепроверки, но re-verify сейчас недоступен.'
+          : 'Configuration identity помечен как требующий перепроверки.',
+        description: blockerMessage || 'Запустите Re-verify configuration identity перед полаганием на reuse key.',
       }
     case 'verification_failed':
       return {
-        tone: 'error',
-        label: 'Failed',
-        message: 'Последняя перепроверка configuration identity завершилась ошибкой.',
-        description: 'Повторите re-verify и проверьте operation result.',
+        tone: reverifyBlocked ? 'warning' : 'error',
+        label: reverifyBlocked ? 'Blocked' : 'Failed',
+        message: reverifyBlocked
+          ? 'Последняя перепроверка configuration identity завершилась ошибкой, а повторный запуск сейчас недоступен.'
+          : 'Последняя перепроверка configuration identity завершилась ошибкой.',
+        description: blockerMessage || 'Повторите re-verify и проверьте operation result.',
       }
     default:
       return {
         tone: 'warning',
-        label: 'Missing',
+        label: reverifyBlocked ? 'Blocked' : 'Missing',
         message: 'Configuration profile отсутствует.',
-        description: 'Сначала запустите Re-verify configuration identity.',
+        description: blockerMessage || 'Сначала запустите Re-verify configuration identity.',
       }
   }
 }
 
 const buildSnapshotStatusDescriptor = (
-  snapshot: DatabaseMetadataManagementSnapshot
+  snapshot: DatabaseMetadataManagementSnapshot,
+  profile?: ConfigurationProfileState | null,
 ): StatusDescriptor => {
   if (snapshot.status !== 'available') {
     if (snapshot.missing_reason === 'configuration_profile_unavailable') {
+      const blockerMessage = typeof profile?.reverify_blocker_message === 'string'
+        ? profile.reverify_blocker_message.trim()
+        : ''
       return {
         tone: 'warning',
         label: 'Blocked',
         message: 'Metadata snapshot недоступен, пока не подтверждён configuration profile.',
-        description: 'Сначала перепроверьте configuration identity.',
+        description: blockerMessage || 'Сначала перепроверьте configuration identity.',
       }
     }
     return {
@@ -149,6 +171,7 @@ export const DatabaseMetadataManagementDrawer = ({
   mutatingDisabled = false,
   onClose,
   onOperationQueued,
+  onOpenIbcmdProfile,
 }: DatabaseMetadataManagementDrawerProps) => {
   const { message } = App.useApp()
   const metadataQuery = useDatabaseMetadataManagement({
@@ -159,12 +182,17 @@ export const DatabaseMetadataManagementDrawer = ({
   const refreshMutation = useRefreshDatabaseMetadataSnapshot()
 
   const payload: DatabaseMetadataManagementResponse | null = metadataQuery.data ?? null
-  const profile = payload?.configuration_profile ?? null
+  const profile = (payload?.configuration_profile ?? null) as ConfigurationProfileState | null
   const snapshot = payload?.metadata_snapshot ?? null
   const profileDescriptor = profile ? buildProfileStatusDescriptor(profile) : null
-  const snapshotDescriptor = snapshot ? buildSnapshotStatusDescriptor(snapshot) : null
+  const snapshotDescriptor = snapshot ? buildSnapshotStatusDescriptor(snapshot, profile) : null
   const queuedOperationId =
     reverifyMutation.data?.operation_id || profile?.verification_operation_id || ''
+  const reverifyBlockedByIbcmdProfile = (
+    profile?.reverify_available === false
+    && profile?.reverify_blocking_action === 'configure_ibcmd_connection_profile'
+  )
+  const refreshBlockedByMissingProfile = snapshot?.missing_reason === 'configuration_profile_unavailable'
 
   const handleReverify = () => {
     if (!databaseId || mutatingDisabled) return
@@ -242,15 +270,26 @@ export const DatabaseMetadataManagementDrawer = ({
             }
             description={profileDescriptor?.description}
             action={
-              <Button
-                icon={<SyncOutlined />}
-                onClick={handleReverify}
-                loading={reverifyMutation.isPending}
-                disabled={mutatingDisabled}
-                data-testid="database-metadata-management-reverify"
-              >
-                Перепроверить configuration identity
-              </Button>
+              reverifyBlockedByIbcmdProfile && onOpenIbcmdProfile ? (
+                <Button
+                  icon={<LinkOutlined />}
+                  onClick={onOpenIbcmdProfile}
+                  disabled={mutatingDisabled}
+                  data-testid="database-metadata-management-open-ibcmd-profile"
+                >
+                  Открыть IBCMD profile
+                </Button>
+              ) : (
+                <Button
+                  icon={<SyncOutlined />}
+                  onClick={handleReverify}
+                  loading={reverifyMutation.isPending}
+                  disabled={mutatingDisabled || profile?.reverify_available === false}
+                  data-testid="database-metadata-management-reverify"
+                >
+                  Перепроверить configuration identity
+                </Button>
+              )
             }
           />
 
@@ -291,7 +330,7 @@ export const DatabaseMetadataManagementDrawer = ({
                 icon={<ReloadOutlined />}
                 onClick={handleRefresh}
                 loading={refreshMutation.isPending}
-                disabled={mutatingDisabled}
+                disabled={mutatingDisabled || refreshBlockedByMissingProfile}
                 data-testid="database-metadata-management-refresh"
               >
                 Обновить metadata snapshot

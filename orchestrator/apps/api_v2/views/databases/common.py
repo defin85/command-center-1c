@@ -392,6 +392,10 @@ class DatabaseMetadataManagementConfigurationProfileSerializer(serializers.Seria
     observed_metadata_hash = serializers.CharField(allow_blank=True, required=False)
     canonical_metadata_hash = serializers.CharField(allow_blank=True, required=False)
     publication_drift = serializers.BooleanField(required=False)
+    reverify_available = serializers.BooleanField(required=False)
+    reverify_blocker_code = serializers.CharField(allow_blank=True, required=False)
+    reverify_blocker_message = serializers.CharField(allow_blank=True, required=False)
+    reverify_blocking_action = serializers.CharField(allow_blank=True, required=False)
 
 
 class DatabaseMetadataManagementSnapshotSerializer(serializers.Serializer):

@@ -22,6 +22,7 @@ vi.mock('../../../../api/queries/databases', () => ({
 const renderDrawer = (props?: Partial<ComponentProps<typeof DatabaseMetadataManagementDrawer>>) => {
   const onClose = vi.fn()
   const onOperationQueued = vi.fn()
+  const onOpenIbcmdProfile = vi.fn()
   render(
     <QueryClientProvider client={new QueryClient()}>
       <App>
@@ -32,12 +33,13 @@ const renderDrawer = (props?: Partial<ComponentProps<typeof DatabaseMetadataMana
           mutatingDisabled={false}
           onClose={onClose}
           onOperationQueued={onOperationQueued}
+          onOpenIbcmdProfile={onOpenIbcmdProfile}
           {...props}
         />
       </App>
     </QueryClientProvider>
   )
-  return { onClose, onOperationQueued }
+  return { onClose, onOperationQueued, onOpenIbcmdProfile }
 }
 
 describe('DatabaseMetadataManagementDrawer', () => {
@@ -78,6 +80,10 @@ describe('DatabaseMetadataManagementDrawer', () => {
           observed_metadata_hash: 'b'.repeat(64),
           canonical_metadata_hash: 'a'.repeat(64),
           publication_drift: true,
+          reverify_available: true,
+          reverify_blocker_code: '',
+          reverify_blocker_message: '',
+          reverify_blocking_action: '',
         },
         metadata_snapshot: {
           status: 'available',
@@ -113,7 +119,7 @@ describe('DatabaseMetadataManagementDrawer', () => {
     expect(onOperationQueued).toHaveBeenCalledWith('op-42')
   })
 
-  it('shows fail-closed guidance when configuration profile and snapshot are missing', () => {
+  it('shows fail-closed guidance when configuration profile and snapshot are missing', async () => {
     mockUseDatabaseMetadataManagement.mockReturnValue({
       isLoading: false,
       error: null,
@@ -134,6 +140,10 @@ describe('DatabaseMetadataManagementDrawer', () => {
           observed_metadata_hash: '',
           canonical_metadata_hash: '',
           publication_drift: false,
+          reverify_available: false,
+          reverify_blocker_code: 'IBCMD_CONNECTION_PROFILE_REQUIRED',
+          reverify_blocker_message: 'Configure IBCMD connection profile for the selected database before running Re-verify configuration identity.',
+          reverify_blocking_action: 'configure_ibcmd_connection_profile',
         },
         metadata_snapshot: {
           status: 'missing',
@@ -156,12 +166,22 @@ describe('DatabaseMetadataManagementDrawer', () => {
       },
     })
 
-    renderDrawer()
+    const { onOpenIbcmdProfile } = renderDrawer()
 
     expect(screen.getByText('Configuration profile отсутствует.')).toBeInTheDocument()
     expect(
       screen.getByText('Metadata snapshot недоступен, пока не подтверждён configuration profile.')
     ).toBeInTheDocument()
+    expect(
+      screen.getAllByText(
+        'Configure IBCMD connection profile for the selected database before running Re-verify configuration identity.'
+      )
+    ).toHaveLength(2)
+    expect(screen.getByTestId('database-metadata-management-open-ibcmd-profile')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Обновить metadata snapshot/i })).toBeDisabled()
+
+    await userEvent.setup().click(screen.getByTestId('database-metadata-management-open-ibcmd-profile'))
+    expect(onOpenIbcmdProfile).toHaveBeenCalledTimes(1)
   })
 
   it('disables mutate controls when database operate access is unavailable', () => {
@@ -185,6 +205,10 @@ describe('DatabaseMetadataManagementDrawer', () => {
           observed_metadata_hash: '',
           canonical_metadata_hash: '',
           publication_drift: false,
+          reverify_available: true,
+          reverify_blocker_code: '',
+          reverify_blocker_message: '',
+          reverify_blocking_action: '',
         },
         metadata_snapshot: {
           status: 'available',

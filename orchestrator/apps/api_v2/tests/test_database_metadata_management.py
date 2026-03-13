@@ -118,6 +118,10 @@ def test_get_database_metadata_management_returns_missing_state_without_hidden_b
     payload = response.json()
     assert payload["database_id"] == str(db.id)
     assert payload["configuration_profile"]["status"] == "missing"
+    assert payload["configuration_profile"]["reverify_available"] is False
+    assert payload["configuration_profile"]["reverify_blocker_code"] == "IBCMD_CONNECTION_PROFILE_REQUIRED"
+    assert "Configure IBCMD connection profile" in payload["configuration_profile"]["reverify_blocker_message"]
+    assert payload["configuration_profile"]["reverify_blocking_action"] == "configure_ibcmd_connection_profile"
     assert payload["metadata_snapshot"]["status"] == "missing"
     assert payload["metadata_snapshot"]["missing_reason"] == "configuration_profile_unavailable"
     assert PoolODataMetadataCatalogSnapshot.objects.count() == 0
@@ -129,6 +133,8 @@ def test_get_database_metadata_management_returns_profile_and_snapshot_state(cli
     db = target_dbs[0]
     _grant_database_permission(client, user, "view_database")
     support._allow_operate(user, db, level=PermissionLevel.VIEW)
+    db.metadata = {"ibcmd_connection": {"remote": "ssh://host:1545"}}
+    db.save(update_fields=["metadata", "updated_at"])
     _set_business_configuration_profile(
         database=db,
         observed_metadata_hash="b" * 64,
@@ -148,6 +154,10 @@ def test_get_database_metadata_management_returns_profile_and_snapshot_state(cli
     assert payload["configuration_profile"]["publication_drift"] is True
     assert payload["configuration_profile"]["observed_metadata_hash"] == "b" * 64
     assert payload["configuration_profile"]["canonical_metadata_hash"] == "a" * 64
+    assert payload["configuration_profile"]["reverify_available"] is True
+    assert payload["configuration_profile"]["reverify_blocker_code"] == ""
+    assert payload["configuration_profile"]["reverify_blocker_message"] == ""
+    assert payload["configuration_profile"]["reverify_blocking_action"] == ""
     assert payload["metadata_snapshot"]["status"] == "available"
     assert payload["metadata_snapshot"]["snapshot_id"] == str(snapshot.id)
     assert payload["metadata_snapshot"]["metadata_hash"] == "a" * 64
@@ -188,6 +198,7 @@ def test_get_database_metadata_management_marks_verification_pending_from_active
     payload = response.json()
     assert payload["configuration_profile"]["status"] == "verification_pending"
     assert payload["configuration_profile"]["verification_operation_id"] == str(operation.id)
+    assert payload["configuration_profile"]["reverify_available"] is True
     assert payload["metadata_snapshot"]["status"] == "missing"
     assert payload["metadata_snapshot"]["missing_reason"] == "current_snapshot_missing"
 
@@ -215,6 +226,8 @@ def test_reverify_configuration_profile_queues_operation(client, user, target_db
     db = target_dbs[0]
     _grant_database_permission(client, user, "operate_database")
     support._allow_operate(user, db, level=PermissionLevel.OPERATE)
+    db.metadata = {"ibcmd_connection": {"remote": "ssh://host:1545"}}
+    db.save(update_fields=["metadata", "updated_at"])
 
     operation = BatchOperation.objects.create(
         name="business_configuration_profile verification",
@@ -254,6 +267,26 @@ def test_reverify_configuration_profile_queues_operation(client, user, target_db
     assert payload["database_id"] == str(db.id)
     assert payload["status"] == "queued"
     assert payload["operation_id"] == str(operation.id)
+
+
+@pytest.mark.django_db
+def test_reverify_configuration_profile_reports_ibcmd_profile_blocker(client, user, target_dbs):
+    db = target_dbs[0]
+    _grant_database_permission(client, user, "operate_database")
+    support._allow_operate(user, db, level=PermissionLevel.OPERATE)
+
+    response = client.post(
+        "/api/v2/databases/reverify-configuration-profile/",
+        {"database_id": str(db.id)},
+        format="json",
+    )
+
+    assert response.status_code == 409
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "IBCMD_CONNECTION_PROFILE_REQUIRED"
+    assert "Configure IBCMD connection profile" in payload["error"]["message"]
+    assert payload["error"]["details"]["blocking_action"] == "configure_ibcmd_connection_profile"
 
 
 @pytest.mark.django_db

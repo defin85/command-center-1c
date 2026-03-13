@@ -2038,7 +2038,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DatabaseErrorResponse'
-          description: ''
+          description: Re-verify is currently unavailable. Possible `error.code` values include `IBCMD_CONNECTION_PROFILE_REQUIRED` and `BUSINESS_CONFIGURATION_DRIVER_UNAVAILABLE`.
       parameters:
         - name: X-CC1C-Tenant-ID
           in: header
@@ -13716,6 +13716,14 @@ components:
           type: string
         publication_drift:
           type: boolean
+        reverify_available:
+          type: boolean
+        reverify_blocker_code:
+          type: string
+        reverify_blocker_message:
+          type: string
+        reverify_blocking_action:
+          type: string
       required:
         - status
         - config_name
@@ -13728,6 +13736,10 @@ components:
         - observed_metadata_hash
         - canonical_metadata_hash
         - publication_drift
+        - reverify_available
+        - reverify_blocker_code
+        - reverify_blocker_message
+        - reverify_blocking_action
     DatabaseMetadataManagementSnapshot:
       type: object
       description: Metadata snapshot state for database metadata management UI.

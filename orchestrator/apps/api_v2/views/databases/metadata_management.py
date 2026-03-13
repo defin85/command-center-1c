@@ -11,6 +11,7 @@ from apps.intercompany_pools.business_configuration_operations import (
     BUSINESS_CONFIGURATION_JOB_KIND_VERIFICATION,
     enqueue_business_configuration_verification,
     find_active_business_configuration_operation,
+    get_business_configuration_verification_availability,
 )
 from apps.intercompany_pools.business_configuration_profile import get_business_configuration_profile
 from apps.intercompany_pools.metadata_catalog import (
@@ -42,13 +43,16 @@ def _load_database_for_tenant(request, *, database_id: str) -> Database | None:
 
 def _serialize_configuration_profile_state(*, database: Database) -> dict[str, Any]:
     profile = get_business_configuration_profile(database=database) or {}
+    availability = get_business_configuration_verification_availability(database=database)
     active_verification = find_active_business_configuration_operation(
         database=database,
         job_kind=BUSINESS_CONFIGURATION_JOB_KIND_VERIFICATION,
     )
     if active_verification is not None:
         status = "verification_pending"
-        verification_operation_id = str(active_verification.id)
+        verification_operation_id = str(
+            availability.get("active_operation_id") or active_verification.id
+        )
     elif profile:
         status = str(profile.get("verification_status") or "").strip() or "verified"
         verification_operation_id = str(profile.get("verification_operation_id") or "").strip()
@@ -71,6 +75,10 @@ def _serialize_configuration_profile_state(*, database: Database) -> dict[str, A
         "observed_metadata_hash": str(profile.get("observed_metadata_hash") or ""),
         "canonical_metadata_hash": str(profile.get("canonical_metadata_hash") or ""),
         "publication_drift": bool(profile.get("publication_drift")),
+        "reverify_available": bool(availability.get("available")),
+        "reverify_blocker_code": str(availability.get("blocker_code") or ""),
+        "reverify_blocker_message": str(availability.get("blocker_message") or ""),
+        "reverify_blocking_action": str(availability.get("blocking_action") or ""),
     }
 
 
@@ -214,6 +222,29 @@ def reverify_configuration_profile(request):
 
     if not request.user.has_perm(perms.PERM_DATABASES_OPERATE_DATABASE, database):
         return _permission_denied("You do not have permission to operate this database.")
+
+    availability = get_business_configuration_verification_availability(database=database)
+    if not availability.get("available"):
+        details: dict[str, Any] | None = None
+        if any(
+            str(availability.get(key) or "").strip()
+            for key in ("blocking_action", "active_operation_id")
+        ):
+            details = {
+                "blocking_action": str(availability.get("blocking_action") or ""),
+                "active_operation_id": str(availability.get("active_operation_id") or ""),
+            }
+        return _database_error(
+            code=str(
+                availability.get("blocker_code") or "BUSINESS_CONFIGURATION_VERIFICATION_UNAVAILABLE"
+            ),
+            message=str(
+                availability.get("blocker_message")
+                or "Configuration identity re-verify is unavailable for selected database."
+            ),
+            details=details,
+            status_code=409,
+        )
 
     operation = enqueue_business_configuration_verification(
         database=database,
