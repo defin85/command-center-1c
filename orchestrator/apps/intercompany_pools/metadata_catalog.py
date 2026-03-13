@@ -76,6 +76,13 @@ class MetadataCatalogSnapshotResolution:
     provenance_confirmed_at: datetime | None
 
 
+@dataclass(frozen=True)
+class DatabaseMetadataCatalogState:
+    profile: dict[str, Any] | None
+    snapshot: PoolODataMetadataCatalogSnapshot | None
+    resolution: MetadataCatalogSnapshotResolution | None
+
+
 RESOLUTION_MODE_DATABASE_SCOPE = "database_scope"
 RESOLUTION_MODE_SHARED_SCOPE = "shared_scope"
 
@@ -327,6 +334,40 @@ def get_current_snapshot_for_database_scope(
     ensure_business_configuration_profile_runtime(database=database)
     scope = resolve_metadata_catalog_scope(tenant_id=tenant_id, database=database)
     return _get_current_snapshot(scope=scope, database=database)
+
+
+def get_database_metadata_catalog_state(
+    *,
+    tenant_id: str,
+    database: Database,
+) -> DatabaseMetadataCatalogState:
+    profile = _resolve_business_configuration_profile(database=database)
+    if profile is None:
+        return DatabaseMetadataCatalogState(
+            profile=None,
+            snapshot=None,
+            resolution=None,
+        )
+
+    scope = resolve_metadata_catalog_scope(tenant_id=tenant_id, database=database)
+    snapshot = _get_current_snapshot(scope=scope, database=None)
+    if snapshot is None:
+        return DatabaseMetadataCatalogState(
+            profile=profile,
+            snapshot=None,
+            resolution=None,
+        )
+
+    resolution = describe_metadata_catalog_snapshot_resolution(
+        tenant_id=tenant_id,
+        database=database,
+        snapshot=snapshot,
+    )
+    return DatabaseMetadataCatalogState(
+        profile=profile,
+        snapshot=snapshot,
+        resolution=resolution,
+    )
 
 
 def describe_metadata_catalog_snapshot_resolution(

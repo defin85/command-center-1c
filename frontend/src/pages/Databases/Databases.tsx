@@ -29,6 +29,7 @@ import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { DatabaseCredentialsModal } from './components/DatabaseCredentialsModal'
 import { DatabaseDbmsMetadataModal } from './components/DatabaseDbmsMetadataModal'
 import { DatabaseIbcmdConnectionProfileModal } from './components/DatabaseIbcmdConnectionProfileModal'
+import { DatabaseMetadataManagementDrawer } from './components/DatabaseMetadataManagementDrawer'
 import { ExtensionsDrawer } from './components/ExtensionsDrawer'
 import { useDatabasesColumns } from './components/useDatabasesColumns'
 import { buildIbcmdConnectionProfileUpdatePayload } from './lib/ibcmdConnectionProfile'
@@ -58,6 +59,8 @@ export const Databases = () => {
   const [ibcmdProfileModalVisible, setIbcmdProfileModalVisible] = useState(false)
   const [ibcmdProfileDatabase, setIbcmdProfileDatabase] = useState<Database | null>(null)
   const [ibcmdProfileForm] = Form.useForm()
+  const [metadataManagementDrawerVisible, setMetadataManagementDrawerVisible] = useState(false)
+  const [metadataManagementDatabase, setMetadataManagementDatabase] = useState<Database | null>(null)
   const [extensionsDrawerVisible, setExtensionsDrawerVisible] = useState(false)
   const [extensionsDatabase, setExtensionsDatabase] = useState<Database | null>(null)
 
@@ -126,6 +129,11 @@ export const Databases = () => {
 
   const canManageDatabase = useCallback(
     (databaseId: string) => authz.canDatabase(databaseId, 'MANAGE'),
+    [authz]
+  )
+
+  const canViewDatabase = useCallback(
+    (databaseId: string) => authz.canDatabase(databaseId, 'VIEW'),
     [authz]
   )
 
@@ -439,6 +447,20 @@ export const Databases = () => {
     setExtensionsDatabase(null)
   }
 
+  const openMetadataManagementDrawer = (database: Database) => {
+    if (!canViewDatabase(database.id)) {
+      message.error('Недостаточно прав для просмотра metadata management')
+      return
+    }
+    setMetadataManagementDatabase(database)
+    setMetadataManagementDrawerVisible(true)
+  }
+
+  const closeMetadataManagementDrawer = () => {
+    setMetadataManagementDrawerVisible(false)
+    setMetadataManagementDatabase(null)
+  }
+
   // Row selection configuration
   const rowSelection: TableRowSelection<Database> | undefined = canSelectRows
     ? {
@@ -572,11 +594,13 @@ export const Databases = () => {
     setSelectedDatabases([])
   }, [])
   const columns = useDatabasesColumns({
+    canViewDatabase,
     canOperateDatabase,
     canManageDatabase,
     openCredentialsModal,
     openDbmsMetadataModal,
     openIbcmdProfileModal,
+    openMetadataManagementDrawer,
     openExtensionsDrawer,
     handleSingleAction,
     healthCheckPendingIds,
@@ -759,6 +783,14 @@ export const Databases = () => {
         onCancel={closeIbcmdProfileModal}
         onSave={() => void handleIbcmdProfileSave()}
         onReset={handleIbcmdProfileReset}
+      />
+      <DatabaseMetadataManagementDrawer
+        open={metadataManagementDrawerVisible}
+        databaseId={metadataManagementDatabase?.id}
+        databaseName={metadataManagementDatabase?.name}
+        mutatingDisabled={mutatingDisabled}
+        onClose={closeMetadataManagementDrawer}
+        onOperationQueued={(operationId) => navigate(`/operations?operation=${operationId}`)}
       />
 
       <ExtensionsDrawer

@@ -17,6 +17,13 @@
 ### Databases (`/databases`)
 - Просмотр/поиск баз, фильтры по статусу/health.
 - Операторские операции выполняются через Operations (ниже).
+- Для каждой ИБ доступен `Metadata management` drawer:
+  - `Configuration profile` показывает `config_name`, `config_version`, `config_generation_id`, verification status и drift markers;
+  - `Metadata snapshot` показывает `snapshot_id`, `resolution_mode`, `metadata_hash`, `observed_metadata_hash`, `publication_drift`, `provenance_database_id`.
+- Два действия разделены намеренно:
+  - `Перепроверить configuration identity` запускает async verification через worker path и при необходимости ведёт в `/operations`;
+  - `Обновить metadata snapshot` обновляет только current metadata snapshot и publication drift diagnostics.
+- `/pools/catalog` и `/decisions` больше не являются canonical местом для metadata maintenance: если там не хватает metadata context, исправление выполняется через `/databases`.
 
 ### Extensions (`/extensions`)
 - Основной путь для массового `extensions.set_flags`: workflow-first запуск с явным runtime input (`flags_values` + `apply_mask`).

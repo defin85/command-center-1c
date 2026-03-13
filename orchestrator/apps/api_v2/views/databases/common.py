@@ -369,6 +369,69 @@ class DatabaseExtensionsSnapshotResponseSerializer(serializers.Serializer):
     source_operation_id = serializers.CharField(allow_blank=True, required=False)
 
 
+class DatabaseMetadataManagementActionRequestSerializer(serializers.Serializer):
+    """Request body / query params for database metadata management actions."""
+
+    database_id = serializers.CharField(help_text="Database UUID")
+
+
+class DatabaseMetadataManagementConfigurationProfileSerializer(serializers.Serializer):
+    """Configuration profile state for database metadata management UI."""
+
+    status = serializers.CharField()
+    config_name = serializers.CharField(allow_blank=True, required=False)
+    config_version = serializers.CharField(allow_blank=True, required=False)
+    config_generation_id = serializers.CharField(allow_blank=True, required=False)
+    config_root_name = serializers.CharField(allow_blank=True, required=False)
+    config_vendor = serializers.CharField(allow_blank=True, required=False)
+    config_name_source = serializers.CharField(allow_blank=True, required=False)
+    verification_operation_id = serializers.CharField(allow_blank=True, required=False)
+    verified_at = serializers.DateTimeField(allow_null=True, required=False)
+    generation_probe_requested_at = serializers.DateTimeField(allow_null=True, required=False)
+    generation_probe_checked_at = serializers.DateTimeField(allow_null=True, required=False)
+    observed_metadata_hash = serializers.CharField(allow_blank=True, required=False)
+    canonical_metadata_hash = serializers.CharField(allow_blank=True, required=False)
+    publication_drift = serializers.BooleanField(required=False)
+
+
+class DatabaseMetadataManagementSnapshotSerializer(serializers.Serializer):
+    """Metadata snapshot state for database metadata management UI."""
+
+    status = serializers.CharField()
+    missing_reason = serializers.CharField(allow_blank=True, required=False)
+    snapshot_id = serializers.CharField(allow_blank=True, required=False)
+    source = serializers.CharField(allow_blank=True, required=False)
+    fetched_at = serializers.DateTimeField(allow_null=True, required=False)
+    catalog_version = serializers.CharField(allow_blank=True, required=False)
+    config_name = serializers.CharField(allow_blank=True, required=False)
+    config_version = serializers.CharField(allow_blank=True, required=False)
+    extensions_fingerprint = serializers.CharField(allow_blank=True, required=False)
+    metadata_hash = serializers.CharField(allow_blank=True, required=False)
+    resolution_mode = serializers.CharField(allow_blank=True, required=False)
+    is_shared_snapshot = serializers.BooleanField(required=False)
+    provenance_database_id = serializers.CharField(allow_blank=True, required=False)
+    provenance_confirmed_at = serializers.DateTimeField(allow_null=True, required=False)
+    observed_metadata_hash = serializers.CharField(allow_blank=True, required=False)
+    publication_drift = serializers.BooleanField(required=False)
+
+
+class DatabaseMetadataManagementResponseSerializer(serializers.Serializer):
+    """Response payload for canonical database metadata management state."""
+
+    database_id = serializers.UUIDField(help_text="Database UUID")
+    configuration_profile = DatabaseMetadataManagementConfigurationProfileSerializer()
+    metadata_snapshot = DatabaseMetadataManagementSnapshotSerializer()
+
+
+class DatabaseMetadataManagementReverifyResponseSerializer(serializers.Serializer):
+    """Response for queued configuration identity re-verification."""
+
+    database_id = serializers.UUIDField(help_text="Database UUID")
+    operation_id = serializers.CharField(allow_blank=True, required=False)
+    status = serializers.CharField()
+    message = serializers.CharField()
+
+
 class DatabaseCredentialsUpdateRequestSerializer(serializers.Serializer):
     """Request body for update_database_credentials endpoint."""
     database_id = serializers.CharField(help_text="Database ID to update")

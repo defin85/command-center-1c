@@ -1,0 +1,8 @@
+type: object
+description: Request body / query params for database metadata management actions.
+properties:
+  database_id:
+    type: string
+    description: Database UUID
+required:
+  - database_id

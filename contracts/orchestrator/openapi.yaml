@@ -1553,6 +1553,52 @@ paths:
               schema:
                 $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
+  /api/v2/databases/get-metadata-management/:
+    get:
+      operationId: v2_databases_get_metadata_management_retrieve
+      description: Return truthful configuration profile and metadata snapshot state for the selected database.
+      summary: Get database metadata management state
+      parameters:
+        - in: query
+          name: database_id
+          schema:
+            type: string
+          description: Database UUID
+          required: true
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseMetadataManagementResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
   /api/v2/databases/health-check/:
     post:
       operationId: v2_databases_health_check_create
@@ -1805,6 +1851,64 @@ paths:
           description: Forbidden
         '404':
           description: Database not found
+  /api/v2/databases/refresh-metadata-snapshot/:
+    post:
+      operationId: v2_databases_refresh_metadata_snapshot_create
+      description: Refresh normalized metadata snapshot and return updated canonical metadata management state.
+      summary: Refresh metadata snapshot for selected database
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatabaseMetadataManagementActionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DatabaseMetadataManagementActionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DatabaseMetadataManagementActionRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseMetadataManagementResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
   /api/v2/databases/reset-dbms-user-password/:
     post:
       operationId: v2_databases_reset_dbms_user_password_create
@@ -1877,6 +1981,64 @@ paths:
           description: Forbidden
         '404':
           description: Not found
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+  /api/v2/databases/reverify-configuration-profile/:
+    post:
+      operationId: v2_databases_reverify_configuration_profile_create
+      description: Queue async business configuration profile verification for the selected database.
+      summary: Queue configuration identity re-verification
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatabaseMetadataManagementActionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DatabaseMetadataManagementActionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DatabaseMetadataManagementActionRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseMetadataManagementReverifyResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
       parameters:
         - name: X-CC1C-Tenant-ID
           in: header
@@ -13480,6 +13642,127 @@ components:
       required:
         - database_id
         - snapshot
+    DatabaseMetadataManagementConfigurationProfile:
+      type: object
+      description: Configuration profile state for database metadata management UI.
+      properties:
+        status:
+          type: string
+        config_name:
+          type: string
+        config_version:
+          type: string
+        config_generation_id:
+          type: string
+        config_root_name:
+          type: string
+        config_vendor:
+          type: string
+        config_name_source:
+          type: string
+        verification_operation_id:
+          type: string
+        verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        generation_probe_requested_at:
+          type: string
+          format: date-time
+          nullable: true
+        generation_probe_checked_at:
+          type: string
+          format: date-time
+          nullable: true
+        observed_metadata_hash:
+          type: string
+        canonical_metadata_hash:
+          type: string
+        publication_drift:
+          type: boolean
+      required:
+        - status
+        - config_name
+        - config_version
+        - config_generation_id
+        - config_root_name
+        - config_vendor
+        - config_name_source
+        - verification_operation_id
+        - observed_metadata_hash
+        - canonical_metadata_hash
+        - publication_drift
+    DatabaseMetadataManagementSnapshot:
+      type: object
+      description: Metadata snapshot state for database metadata management UI.
+      properties:
+        status:
+          type: string
+        missing_reason:
+          type: string
+        snapshot_id:
+          type: string
+        source:
+          type: string
+        fetched_at:
+          type: string
+          format: date-time
+          nullable: true
+        catalog_version:
+          type: string
+        config_name:
+          type: string
+        config_version:
+          type: string
+        extensions_fingerprint:
+          type: string
+        metadata_hash:
+          type: string
+        resolution_mode:
+          type: string
+        is_shared_snapshot:
+          type: boolean
+        provenance_database_id:
+          type: string
+        provenance_confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+        observed_metadata_hash:
+          type: string
+        publication_drift:
+          type: boolean
+      required:
+        - status
+        - missing_reason
+        - snapshot_id
+        - source
+        - catalog_version
+        - config_name
+        - config_version
+        - extensions_fingerprint
+        - metadata_hash
+        - resolution_mode
+        - is_shared_snapshot
+        - provenance_database_id
+        - observed_metadata_hash
+        - publication_drift
+    DatabaseMetadataManagementResponse:
+      type: object
+      description: Response payload for canonical database metadata management state.
+      properties:
+        database_id:
+          type: string
+          format: uuid
+          description: Database UUID
+        configuration_profile:
+          $ref: '#/components/schemas/DatabaseMetadataManagementConfigurationProfile'
+        metadata_snapshot:
+          $ref: '#/components/schemas/DatabaseMetadataManagementSnapshot'
+      required:
+        - database_id
+        - configuration_profile
+        - metadata_snapshot
     HealthCheckRequest:
       type: object
       description: Request body for health_check endpoint.
@@ -13539,6 +13822,15 @@ components:
         - count
         - total
         - users
+    DatabaseMetadataManagementActionRequest:
+      type: object
+      description: Request body / query params for database metadata management actions.
+      properties:
+        database_id:
+          type: string
+          description: Database UUID
+      required:
+        - database_id
     DbmsUserPasswordReset:
       type: object
       properties:
@@ -13553,6 +13845,25 @@ components:
           type: integer
       required:
         - id
+    DatabaseMetadataManagementReverifyResponse:
+      type: object
+      description: Response for queued configuration identity re-verification.
+      properties:
+        database_id:
+          type: string
+          format: uuid
+          description: Database UUID
+        operation_id:
+          type: string
+        status:
+          type: string
+        message:
+          type: string
+      required:
+        - database_id
+        - operation_id
+        - status
+        - message
     DbmsUserPasswordSet:
       type: object
       properties:

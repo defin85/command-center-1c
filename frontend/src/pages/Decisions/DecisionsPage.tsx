@@ -1,5 +1,6 @@
 import { EditOutlined, ImportOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Alert,
   App,
@@ -128,8 +129,9 @@ const METADATA_CONTEXT_FALLBACK_CODES = new Set([
   'POOL_METADATA_PARSE_FAILED',
 ])
 
-const METADATA_CONTEXT_FALLBACK_MESSAGE = 'Metadata context is unavailable for the selected database. Showing global decision revisions without database-specific compatibility context.'
-const METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE = 'Resolved metadata context is unavailable for the selected database. Reload database-specific metadata before editing, deactivating, or rolling over this revision.'
+const METADATA_CONTEXT_FALLBACK_MESSAGE = 'Metadata context недоступен для выбранной базы. Показываем глобальный список revisions без compatibility context этой базы; управлять configuration profile и metadata snapshot нужно через /databases.'
+const METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE = 'Metadata context недоступен для выбранной базы. Чтобы восстановить configuration profile и metadata snapshot, откройте /databases.'
+const METADATA_CONTEXT_ROLLOVER_BLOCKED_MESSAGE = 'Resolved target metadata context недоступен. Откройте /databases и обновите metadata snapshot перед guided rollover.'
 
 const shouldFallbackToUnscopedDecisionRead = (error: unknown): boolean => {
   const { code, status } = getApiErrorInfo(error)
@@ -294,6 +296,7 @@ const hasLegacyDocumentPolicy = (metadata: Record<string, unknown> | null | unde
 )
 
 export function DecisionsPage() {
+  const navigate = useNavigate()
   const { message } = App.useApp()
   const databasesQuery = useDatabases({ filters: { limit: 500, offset: 0 } })
 
@@ -659,7 +662,7 @@ export function DecisionsPage() {
     })
     if (!targetSummary) {
       setEditorDraft(null)
-      setEditorError('Resolved target metadata context is unavailable. Guided rollover requires a target snapshot before publish.')
+      setEditorError(METADATA_CONTEXT_ROLLOVER_BLOCKED_MESSAGE)
       setLegacyImportDraft(null)
       setLegacyImportGraph(null)
       setLegacyImportError(null)
@@ -834,7 +837,20 @@ export function DecisionsPage() {
       </Space>
 
       {editorError && !editorDraft ? (
-        <Alert type="error" showIcon message={editorError} />
+        <Alert
+          type="error"
+          showIcon
+          message={editorError}
+          action={editorError.includes('/databases') ? (
+            <Button
+              size="small"
+              onClick={() => { navigate('/databases') }}
+              data-testid="decisions-open-databases"
+            >
+              Открыть /databases
+            </Button>
+          ) : undefined}
+        />
       ) : null}
 
       {legacyImportResult ? (
@@ -942,7 +958,20 @@ export function DecisionsPage() {
           />
 
           {metadataContextWarning ? (
-            <Alert type="warning" showIcon message={metadataContextWarning} />
+            <Alert
+              type="warning"
+              showIcon
+              message={metadataContextWarning}
+              action={(
+                <Button
+                  size="small"
+                  onClick={() => { navigate('/databases') }}
+                  data-testid="decisions-warning-open-databases"
+                >
+                  Открыть /databases
+                </Button>
+              )}
+            />
           ) : null}
         </Space>
       </Card>

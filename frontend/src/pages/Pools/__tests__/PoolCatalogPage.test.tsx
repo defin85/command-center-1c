@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
+import { MemoryRouter } from 'react-router-dom'
 
 import type {
   Organization,
@@ -183,9 +184,11 @@ async function waitForInitialCatalogLoad() {
 
 function renderPage() {
   const result = render(
-    <AntApp>
-      <PoolCatalogPage />
-    </AntApp>
+    <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+      <AntApp>
+        <PoolCatalogPage />
+      </AntApp>
+    </MemoryRouter>
   )
   initialCatalogLoadPromise = waitForInitialCatalogLoad()
   return result
@@ -1827,7 +1830,7 @@ describe('PoolCatalogPage', () => {
     )
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
-  it('loads and refreshes metadata catalog for edge builder mode', async () => {
+  it('shows readonly metadata status and /databases handoff for edge builder mode', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
@@ -1884,16 +1887,18 @@ describe('PoolCatalogPage', () => {
       )
     })
 
-    await user.click(screen.getByTestId('pool-catalog-topology-edge-policy-refresh-metadata-0'))
-    await waitFor(() => {
-      expect(mockRefreshPoolODataMetadataCatalog).toHaveBeenCalledWith(
-        { database_id: '88888888-8888-8888-8888-888888888888' },
-        { skipGlobalError: true }
+    expect(screen.getByText('каталог v1:test • документов 1')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-topology-edge-policy-open-databases-0')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Configuration profile и metadata snapshot управляются на странице /databases. В topology editor используется только текущий metadata context.'
       )
-    })
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('pool-catalog-topology-edge-policy-refresh-metadata-0')).not.toBeInTheDocument()
+    expect(mockRefreshPoolODataMetadataCatalog).not.toHaveBeenCalled()
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
-  it('shows detailed problem+json error for metadata refresh failure', async () => {
+  it('shows detailed metadata load error with /databases handoff', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
@@ -1934,7 +1939,7 @@ describe('PoolCatalogPage', () => {
         },
       ],
     })
-    mockRefreshPoolODataMetadataCatalog.mockRejectedValueOnce({
+    mockGetPoolODataMetadataCatalog.mockRejectedValueOnce({
       response: {
         data: {
           type: 'about:blank',
@@ -1968,10 +1973,11 @@ describe('PoolCatalogPage', () => {
       )
     })
 
-    await user.click(screen.getByTestId('pool-catalog-topology-edge-policy-refresh-metadata-0'))
-
     expect(await screen.findByText(/OData endpoint returned HTTP 500 for \$metadata\./i)).toBeInTheDocument()
     expect(await screen.findByText(/\$metadata: На сервере 1С:Предприятия не найдена лицензия\./i)).toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-topology-edge-policy-error-open-databases-0')).toBeInTheDocument()
+    expect(screen.queryByTestId('pool-catalog-topology-edge-policy-refresh-metadata-0')).not.toBeInTheDocument()
+    expect(mockRefreshPoolODataMetadataCatalog).not.toHaveBeenCalled()
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('shows warning when selected entity has no metadata fields in builder mode', async () => {
@@ -2482,13 +2488,9 @@ describe('PoolCatalogPage', () => {
       { timeout: 1000 }
     )
 
-    await user.click(screen.getByTestId('pool-catalog-topology-edge-policy-refresh-metadata-0'))
-    await waitFor(() => {
-      expect(mockRefreshPoolODataMetadataCatalog).toHaveBeenCalledWith(
-        { database_id: '88888888-8888-8888-8888-888888888888' },
-        { skipGlobalError: true }
-      )
-    })
+    expect(screen.getByTestId('pool-catalog-topology-edge-policy-error-open-databases-0')).toBeInTheDocument()
+    expect(screen.queryByTestId('pool-catalog-topology-edge-policy-refresh-metadata-0')).not.toBeInTheDocument()
+    expect(mockRefreshPoolODataMetadataCatalog).not.toHaveBeenCalled()
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('preserves existing node and edge metadata when editing edge document_policy', async () => {

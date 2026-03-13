@@ -1,0 +1,18 @@
+type: object
+description: Response for queued configuration identity re-verification.
+properties:
+  database_id:
+    type: string
+    format: uuid
+    description: Database UUID
+  operation_id:
+    type: string
+  status:
+    type: string
+  message:
+    type: string
+required:
+  - database_id
+  - operation_id
+  - status
+  - message

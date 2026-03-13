@@ -803,8 +803,9 @@ describe('DecisionsPage', () => {
     })
 
     expect(await screen.findByText(
-      'Metadata context is unavailable for the selected database. Showing global decision revisions without database-specific compatibility context.'
+      'Metadata context недоступен для выбранной базы. Показываем глобальный список revisions без compatibility context этой базы; управлять configuration profile и metadata snapshot нужно через /databases.'
     )).toBeInTheDocument()
+    expect(screen.getByTestId('decisions-warning-open-databases')).toBeInTheDocument()
     expect(screen.queryByText('Failed to load decision table revisions.')).not.toBeInTheDocument()
     expect(screen.queryByText('Failed to load decision detail.')).not.toBeInTheDocument()
     expect(screen.getAllByText('Services publication policy').length).toBeGreaterThan(0)

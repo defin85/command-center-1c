@@ -16,6 +16,9 @@ import type { DatabaseDbmsMetadataUpdateRequest } from '../generated/model/datab
 import type { DatabaseDbmsMetadataUpdateResponse } from '../generated/model/databaseDbmsMetadataUpdateResponse'
 import type { DatabaseExtensionsSnapshotResponse } from '../generated/model/databaseExtensionsSnapshotResponse'
 import type { DatabaseListResponse } from '../generated/model/databaseListResponse'
+import type { DatabaseMetadataManagementActionRequest } from '../generated/model/databaseMetadataManagementActionRequest'
+import type { DatabaseMetadataManagementResponse } from '../generated/model/databaseMetadataManagementResponse'
+import type { DatabaseMetadataManagementReverifyResponse } from '../generated/model/databaseMetadataManagementReverifyResponse'
 import type { DbmsUserListResponse } from '../generated/model/dbmsUserListResponse'
 import type { DbmsUserMapping } from '../generated/model/dbmsUserMapping'
 import type { DbmsUserMappingCreate } from '../generated/model/dbmsUserMappingCreate'
@@ -82,6 +85,16 @@ export async function fetchDatabaseExtensionsSnapshot(
   signal?: AbortSignal
 ): Promise<DatabaseExtensionsSnapshotResponse> {
   return api.getDatabasesGetExtensionsSnapshot({ database_id: id }, { signal })
+}
+
+/**
+ * Fetch canonical metadata management state for a database.
+ */
+export async function fetchDatabaseMetadataManagement(
+  id: string,
+  signal?: AbortSignal
+): Promise<DatabaseMetadataManagementResponse> {
+  return api.getDatabasesGetMetadataManagement({ database_id: id }, { signal })
 }
 
 // =============================================================================
@@ -262,6 +275,21 @@ export function useDatabaseExtensionsSnapshot(options: UseDatabaseExtensionsSnap
   })
 }
 
+export interface UseDatabaseMetadataManagementOptions {
+  id: string
+  enabled?: boolean
+}
+
+export function useDatabaseMetadataManagement(options: UseDatabaseMetadataManagementOptions) {
+  const { id, enabled = true } = options
+
+  return useQuery({
+    queryKey: queryKeys.databases.metadataManagement(id),
+    queryFn: ({ signal }) => fetchDatabaseMetadataManagement(id, signal),
+    enabled: enabled && !!id,
+  })
+}
+
 // =============================================================================
 // Mutation Hooks
 // =============================================================================
@@ -363,6 +391,39 @@ export function useUpdateDatabaseIbcmdConnectionProfile() {
       return response.data
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
+    },
+  })
+}
+
+export function useReverifyDatabaseConfigurationProfile() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (
+      data: DatabaseMetadataManagementActionRequest
+    ): Promise<DatabaseMetadataManagementReverifyResponse> => {
+      return api.postDatabasesReverifyConfigurationProfile(data)
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.databases.metadataManagement(variables.database_id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.operations.all })
+    },
+  })
+}
+
+export function useRefreshDatabaseMetadataSnapshot() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (
+      data: DatabaseMetadataManagementActionRequest
+    ): Promise<DatabaseMetadataManagementResponse> => {
+      return api.postDatabasesRefreshMetadataSnapshot(data)
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.databases.metadataManagement(variables.database_id) })
       queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
     },
   })

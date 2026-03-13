@@ -1,0 +1,54 @@
+type: object
+description: Metadata snapshot state for database metadata management UI.
+properties:
+  status:
+    type: string
+  missing_reason:
+    type: string
+  snapshot_id:
+    type: string
+  source:
+    type: string
+  fetched_at:
+    type: string
+    format: date-time
+    nullable: true
+  catalog_version:
+    type: string
+  config_name:
+    type: string
+  config_version:
+    type: string
+  extensions_fingerprint:
+    type: string
+  metadata_hash:
+    type: string
+  resolution_mode:
+    type: string
+  is_shared_snapshot:
+    type: boolean
+  provenance_database_id:
+    type: string
+  provenance_confirmed_at:
+    type: string
+    format: date-time
+    nullable: true
+  observed_metadata_hash:
+    type: string
+  publication_drift:
+    type: boolean
+required:
+  - status
+  - missing_reason
+  - snapshot_id
+  - source
+  - catalog_version
+  - config_name
+  - config_version
+  - extensions_fingerprint
+  - metadata_hash
+  - resolution_mode
+  - is_shared_snapshot
+  - provenance_database_id
+  - observed_metadata_hash
+  - publication_drift

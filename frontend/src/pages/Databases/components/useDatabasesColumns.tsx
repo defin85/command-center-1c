@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Button, Dropdown, Space, Tag, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { AppstoreOutlined, DatabaseOutlined, DownOutlined, EditOutlined, HeartOutlined, KeyOutlined, LinkOutlined } from '@ant-design/icons'
+import { AppstoreOutlined, DatabaseOutlined, DeploymentUnitOutlined, DownOutlined, EditOutlined, HeartOutlined, KeyOutlined, LinkOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 
 import type { Database } from '../../../api/generated/model/database'
@@ -18,11 +18,13 @@ type MessageApi = {
 }
 
 export type UseDatabasesColumnsParams = {
+  canViewDatabase: (databaseId: string) => boolean
   canOperateDatabase: (databaseId: string) => boolean
   canManageDatabase: (databaseId: string) => boolean
   openCredentialsModal: (database: Database) => void
   openDbmsMetadataModal: (database: Database) => void
   openIbcmdProfileModal: (database: Database) => void
+  openMetadataManagementDrawer: (database: Database) => void
   openExtensionsDrawer: (database: Database) => void
   handleSingleAction: (action: DatabaseActionKey, database: Database) => void
   healthCheckPendingIds: Set<string>
@@ -35,11 +37,13 @@ export type UseDatabasesColumnsParams = {
 }
 
 export const useDatabasesColumns = ({
+  canViewDatabase,
   canOperateDatabase,
   canManageDatabase,
   openCredentialsModal,
   openDbmsMetadataModal,
   openIbcmdProfileModal,
+  openMetadataManagementDrawer,
   openExtensionsDrawer,
   handleSingleAction,
   healthCheckPendingIds,
@@ -182,8 +186,9 @@ export const useDatabasesColumns = ({
     {
       title: 'Actions',
       key: 'actions',
-      width: 260,
+      width: 320,
       render: (_: unknown, record: Database) => {
+        const canView = canViewDatabase(record.id)
         const canOperate = canOperateDatabase(record.id)
         const canManage = canManageDatabase(record.id)
 
@@ -269,6 +274,15 @@ export const useDatabasesColumns = ({
                 disabled={!canManage}
               />
             </Tooltip>
+            <Tooltip title="Metadata management">
+              <Button
+                size="small"
+                icon={<DeploymentUnitOutlined />}
+                onClick={() => openMetadataManagementDrawer(record)}
+                aria-label="Metadata management"
+                disabled={!canView}
+              />
+            </Tooltip>
             <Tooltip title="Extensions">
               <Button
                 size="small"
@@ -289,6 +303,7 @@ export const useDatabasesColumns = ({
       },
     },
   ]), [
+    canViewDatabase,
     canManageDatabase,
     canOperateDatabase,
     getErrorMessage,
@@ -301,6 +316,7 @@ export const useDatabasesColumns = ({
     openCredentialsModal,
     openDbmsMetadataModal,
     openIbcmdProfileModal,
+    openMetadataManagementDrawer,
     openExtensionsDrawer,
     runSetStatus,
   ])

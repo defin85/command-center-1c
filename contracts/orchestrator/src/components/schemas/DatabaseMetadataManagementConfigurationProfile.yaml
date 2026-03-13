@@ -1,0 +1,49 @@
+type: object
+description: Configuration profile state for database metadata management UI.
+properties:
+  status:
+    type: string
+  config_name:
+    type: string
+  config_version:
+    type: string
+  config_generation_id:
+    type: string
+  config_root_name:
+    type: string
+  config_vendor:
+    type: string
+  config_name_source:
+    type: string
+  verification_operation_id:
+    type: string
+  verified_at:
+    type: string
+    format: date-time
+    nullable: true
+  generation_probe_requested_at:
+    type: string
+    format: date-time
+    nullable: true
+  generation_probe_checked_at:
+    type: string
+    format: date-time
+    nullable: true
+  observed_metadata_hash:
+    type: string
+  canonical_metadata_hash:
+    type: string
+  publication_drift:
+    type: boolean
+required:
+  - status
+  - config_name
+  - config_version
+  - config_generation_id
+  - config_root_name
+  - config_vendor
+  - config_name_source
+  - verification_operation_id
+  - observed_metadata_hash
+  - canonical_metadata_hash
+  - publication_drift

@@ -68,6 +68,8 @@ paths:
     $ref: paths/api_v2_databases_get-database_.yaml
   /api/v2/databases/get-extensions-snapshot/:
     $ref: paths/api_v2_databases_get-extensions-snapshot_.yaml
+  /api/v2/databases/get-metadata-management/:
+    $ref: paths/api_v2_databases_get-metadata-management_.yaml
   /api/v2/databases/health-check/:
     $ref: paths/api_v2_databases_health-check_.yaml
   /api/v2/databases/list-databases/:
@@ -76,10 +78,14 @@ paths:
     $ref: paths/api_v2_databases_list-dbms-users_.yaml
   /api/v2/databases/list-ib-users/:
     $ref: paths/api_v2_databases_list-ib-users_.yaml
+  /api/v2/databases/refresh-metadata-snapshot/:
+    $ref: paths/api_v2_databases_refresh-metadata-snapshot_.yaml
   /api/v2/databases/reset-dbms-user-password/:
     $ref: paths/api_v2_databases_reset-dbms-user-password_.yaml
   /api/v2/databases/reset-ib-user-password/:
     $ref: paths/api_v2_databases_reset-ib-user-password_.yaml
+  /api/v2/databases/reverify-configuration-profile/:
+    $ref: paths/api_v2_databases_reverify-configuration-profile_.yaml
   /api/v2/databases/set-dbms-user-password/:
     $ref: paths/api_v2_databases_set-dbms-user-password_.yaml
   /api/v2/databases/set-ib-user-password/:

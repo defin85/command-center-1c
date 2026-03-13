@@ -19,6 +19,7 @@ export const queryKeys = {
     list: (filters?: DatabaseFilters) => [...queryKeys.databases.all, 'list', filters] as const,
     detail: (id: string) => [...queryKeys.databases.all, 'detail', id] as const,
     extensionsSnapshot: (id: string) => [...queryKeys.databases.all, 'extensions-snapshot', id] as const,
+    metadataManagement: (id: string) => [...queryKeys.databases.all, 'metadata-management', id] as const,
     ibUsers: (filters?: { databaseId?: string; search?: string; limit?: number; offset?: number }) => (
       [...queryKeys.databases.all, 'ib-users', filters] as const
     ),

@@ -1,0 +1,15 @@
+type: object
+description: Response payload for canonical database metadata management state.
+properties:
+  database_id:
+    type: string
+    format: uuid
+    description: Database UUID
+  configuration_profile:
+    $ref: ./DatabaseMetadataManagementConfigurationProfile.yaml
+  metadata_snapshot:
+    $ref: ./DatabaseMetadataManagementSnapshot.yaml
+required:
+  - database_id
+  - configuration_profile
+  - metadata_snapshot

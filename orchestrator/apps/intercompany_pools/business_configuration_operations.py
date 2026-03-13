@@ -99,6 +99,14 @@ def enqueue_business_configuration_generation_probe(
     return operation
 
 
+def find_active_business_configuration_operation(
+    *,
+    database: Database,
+    job_kind: str,
+) -> BatchOperation | None:
+    return _find_active_operation(database=database, job_kind=job_kind)
+
+
 def enqueue_business_configuration_verification(
     *,
     database: Database,

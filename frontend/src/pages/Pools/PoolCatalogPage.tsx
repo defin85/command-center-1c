@@ -24,6 +24,7 @@ import {
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import ReactFlow, { Background, Controls, MiniMap, type Edge, type Node } from 'reactflow'
+import { useNavigate } from 'react-router-dom'
 import 'reactflow/dist/style.css'
 
 import { useDatabases } from '../../api/queries/databases'
@@ -1397,6 +1398,7 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
 
 export function PoolCatalogPage() {
   const { message } = AntApp.useApp()
+  const navigate = useNavigate()
   const api = useMemo(() => getV2(), [])
   const meQuery = useMe()
   const hasAuthToken = Boolean(localStorage.getItem('auth_token'))
@@ -3499,32 +3501,43 @@ export function PoolCatalogPage() {
                                                           />
                                                         )}
                                                         {databaseId && (
-                                                          <Space size="small" wrap>
-                                                            <Tag color={metadataCatalog ? 'blue' : 'default'}>
-                                                              {metadataCatalog
-                                                                ? `catalog ${metadataCatalog.catalog_version} • docs ${metadataDocuments.length}`
-                                                                : 'catalog not loaded'}
-                                                            </Tag>
-                                                            <Button
-                                                              size="small"
-                                                              loading={metadataLoading}
-                                                              onClick={() => { void loadMetadataCatalog(databaseId, false) }}
-                                                              data-testid={`pool-catalog-topology-edge-policy-load-metadata-${field.name}`}
-                                                            >
-                                                              Load metadata
-                                                            </Button>
-                                                            <Button
-                                                              size="small"
-                                                              loading={metadataLoading}
-                                                              onClick={() => { void loadMetadataCatalog(databaseId, true) }}
-                                                              data-testid={`pool-catalog-topology-edge-policy-refresh-metadata-${field.name}`}
-                                                            >
-                                                              Refresh metadata
-                                                            </Button>
+                                                          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                                                            <Space size="small" wrap>
+                                                              <Tag color={metadataCatalog ? 'blue' : metadataLoading ? 'processing' : 'default'}>
+                                                                {metadataCatalog
+                                                                  ? `каталог ${metadataCatalog.catalog_version} • документов ${metadataDocuments.length}`
+                                                                  : metadataLoading
+                                                                    ? 'metadata context загружается'
+                                                                    : 'metadata context недоступен'}
+                                                              </Tag>
+                                                              <Button
+                                                                size="small"
+                                                                onClick={() => { navigate('/databases') }}
+                                                                data-testid={`pool-catalog-topology-edge-policy-open-databases-${field.name}`}
+                                                              >
+                                                                Открыть /databases
+                                                              </Button>
+                                                            </Space>
+                                                            <Text type="secondary">
+                                                              Configuration profile и metadata snapshot управляются на странице /databases. В topology editor используется только текущий metadata context.
+                                                            </Text>
                                                           </Space>
                                                         )}
                                                         {metadataError && (
-                                                          <Alert type="error" showIcon message={metadataError} />
+                                                          <Alert
+                                                            type="error"
+                                                            showIcon
+                                                            message={metadataError}
+                                                            action={(
+                                                              <Button
+                                                                size="small"
+                                                                onClick={() => { navigate('/databases') }}
+                                                                data-testid={`pool-catalog-topology-edge-policy-error-open-databases-${field.name}`}
+                                                              >
+                                                                Открыть /databases
+                                                              </Button>
+                                                            )}
+                                                          />
                                                         )}
                                                         {masterDataTokenCatalogError && (
                                                           <Alert
@@ -3737,7 +3750,7 @@ export function PoolCatalogPage() {
                                                                                   message={(
                                                                                     `Entity "${selectedEntityName}" не найден в загруженном metadata catalog.`
                                                                                   )}
-                                                                                  description="Нажмите Refresh metadata или выберите другой entity_name."
+                                                                                  description="Проверьте metadata snapshot через /databases или выберите другой entity_name."
                                                                                 />
                                                                               )}
                                                                               {selectedDocument && fieldOptions.length === 0 && (
@@ -3749,7 +3762,7 @@ export function PoolCatalogPage() {
                                                                                     `Для "${selectedEntityName}" в metadata catalog нет fields.`
                                                                                   )}
                                                                                   description={(
-                                                                                    'Проверьте OData metadata (включая BaseType-наследование) и обновите snapshot.'
+                                                                                    'Проверьте metadata snapshot через /databases, включая BaseType-наследование и publication drift.'
                                                                                   )}
                                                                                 />
                                                                               )}
