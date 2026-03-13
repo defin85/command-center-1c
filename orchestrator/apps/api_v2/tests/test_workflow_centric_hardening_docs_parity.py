@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+from jsonschema import Draft202012Validator
 
 CHANGE_ID = "add-refactor-14-workflow-centric-hardening"
 CHANGE_ARCHIVE_PATH = ("openspec", "changes", "archive", "2026-03-12-add-refactor-14-workflow-centric-hardening")
@@ -159,3 +162,73 @@ def test_workflow_centric_evidence_templates_are_marked_as_examples_only() -> No
         template = _read_repo_doc(*path.split("/"))
         assert "Template/example only." in template
         assert "<" in template
+
+
+def test_workflow_hardening_docs_distinguish_repository_evidence_from_tenant_live_bundle() -> None:
+    runbook = _read_repo_doc("docs", "observability", "WORKFLOW_CENTRIC_POOLS_RUNBOOK.md")
+    release_note = _read_repo_doc(
+        "docs",
+        "release-notes",
+        "2026-03-10-workflow-centric-hardening-cutover.md",
+    )
+
+    expected_repository_evidence = (
+        "docs/observability/artifacts/refactor-14/repository-acceptance-evidence.md"
+    )
+    expected_live_bundle = (
+        "docs/observability/artifacts/workflow-hardening-rollout-evidence/live/<tenant_id>/<environment>/"
+        "workflow-hardening-cutover-evidence.json"
+    )
+
+    assert expected_repository_evidence in runbook
+    assert expected_repository_evidence in release_note
+    assert expected_live_bundle in runbook
+    assert expected_live_bundle in release_note
+    assert "repository acceptance evidence не заменяет tenant live cutover evidence bundle" in runbook
+    assert "repository evidence alone is not a tenant go-no-go artifact" in release_note
+    assert "verify_workflow_hardening_cutover_evidence" in runbook
+    assert "verify_workflow_hardening_cutover_evidence" in release_note
+
+
+def test_workflow_hardening_rollout_evidence_artifacts_exist_and_example_matches_schema() -> None:
+    artifact_root = _repo_root().joinpath(
+        "docs",
+        "observability",
+        "artifacts",
+        "workflow-hardening-rollout-evidence",
+    )
+    schema_path = artifact_root / "workflow-hardening-cutover-evidence.schema.json"
+    example_path = artifact_root / "workflow-hardening-cutover-evidence.example.json"
+    readme_path = artifact_root / "README.md"
+    live_placeholder_path = artifact_root / "live" / "<tenant_id>" / "<environment>" / "workflow-hardening-cutover-evidence.json"
+
+    assert schema_path.exists()
+    assert example_path.exists()
+    assert readme_path.exists()
+    assert live_placeholder_path.exists()
+
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    example = json.loads(example_path.read_text(encoding="utf-8"))
+    live_placeholder = json.loads(live_placeholder_path.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+
+    assert list(validator.iter_errors(example)) == []
+    assert list(validator.iter_errors(live_placeholder)) == []
+    assert example["schema_version"] == "workflow_hardening_cutover_evidence.v1"
+    assert live_placeholder["schema_version"] == "workflow_hardening_cutover_evidence.v1"
+    assert [item["kind"] for item in example["evidence_refs"]] == [
+        "binding_preview",
+        "create_run",
+        "inspect_lineage",
+        "migration_outcome",
+    ]
+    assert [item["role"] for item in example["sign_off"]] == [
+        "platform",
+        "security",
+        "operations",
+    ]
+
+    readme = readme_path.read_text(encoding="utf-8")
+    assert "verify_workflow_hardening_cutover_evidence" in readme
+    assert "bundle_digest рассчитывается по canonical JSON без top-level `bundle_digest`" in readme
+    assert "repository acceptance evidence не заменяет tenant live cutover evidence bundle" in readme

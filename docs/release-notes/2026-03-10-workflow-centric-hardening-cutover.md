@@ -40,6 +40,11 @@
    - `docs/observability/artifacts/refactor-14/shared-metadata-evidence.template.json`
    - `docs/observability/artifacts/refactor-14/legacy-document-policy-migration-evidence.template.json`
    - `docs/observability/artifacts/refactor-14/operator-canary-evidence.template.json`
+8. После capture собрать tenant-scoped live bundle по стабильному artifact path:
+   - `docs/observability/artifacts/workflow-hardening-rollout-evidence/live/<tenant_id>/<environment>/workflow-hardening-cutover-evidence.json`
+   - verifier: `cd orchestrator && ../.venv/bin/python manage.py verify_workflow_hardening_cutover_evidence ../docs/observability/artifacts/workflow-hardening-rollout-evidence/live/<tenant_id>/<environment>/workflow-hardening-cutover-evidence.json`
+   - repository evidence alone is not a tenant go-no-go artifact
+   - для финального gate зафиксировать machine-readable `bundle_digest`
 
 ### Breaking / migration notes
 
@@ -62,4 +67,5 @@
 ### Canonical references
 
 - Runbook: [WORKFLOW_CENTRIC_POOLS_RUNBOOK.md](../observability/WORKFLOW_CENTRIC_POOLS_RUNBOOK.md)
+- Live bundle contract: [workflow-hardening-rollout-evidence/README.md](../observability/artifacts/workflow-hardening-rollout-evidence/README.md)
 - Cutover notes: [add-refactor-14-workflow-centric-hardening/cutover.md](/home/egor/code/command-center-1c/openspec/changes/archive/2026-03-12-add-refactor-14-workflow-centric-hardening/cutover.md)

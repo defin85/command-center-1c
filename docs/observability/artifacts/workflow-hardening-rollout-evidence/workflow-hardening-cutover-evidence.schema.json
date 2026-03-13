@@ -1,0 +1,291 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://command-center-1c.local/schemas/workflow-hardening-cutover-evidence.schema.json",
+  "title": "Workflow Hardening Cutover Evidence Bundle",
+  "description": "Tenant-scoped live cutover evidence bundle for workflow hardening go/no-go.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "change_id",
+    "git_sha",
+    "environment",
+    "tenant_id",
+    "runbook_version",
+    "captured_at",
+    "bundle_digest",
+    "evidence_refs",
+    "overall_status",
+    "sign_off"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "workflow_hardening_cutover_evidence.v1"
+    },
+    "change_id": {
+      "type": "string",
+      "const": "tighten-workflow-hardening-canonical-contracts"
+    },
+    "git_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "environment": {
+      "type": "string",
+      "enum": [
+        "staging",
+        "production"
+      ]
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runbook_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "bundle_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "$ref": "#/$defs/evidenceRef"
+      },
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "binding_preview"
+              }
+            }
+          },
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "create_run"
+              }
+            }
+          },
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "inspect_lineage"
+              }
+            }
+          },
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "migration_outcome"
+              }
+            }
+          },
+          "minContains": 1
+        }
+      ]
+    },
+    "overall_status": {
+      "type": "string",
+      "enum": [
+        "go",
+        "no_go"
+      ]
+    },
+    "sign_off": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/signOff"
+      },
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "role"
+            ],
+            "properties": {
+              "role": {
+                "const": "platform"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "role"
+            ],
+            "properties": {
+              "role": {
+                "const": "security"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "role"
+            ],
+            "properties": {
+              "role": {
+                "const": "operations"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "evidenceRef": {
+      "type": "object",
+      "required": [
+        "kind",
+        "uri",
+        "digest",
+        "captured_at",
+        "result"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "binding_preview",
+            "create_run",
+            "inspect_lineage",
+            "migration_outcome"
+          ]
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "captured_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "failed",
+            "not_applicable"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "kind",
+              "result"
+            ],
+            "properties": {
+              "kind": {
+                "const": "migration_outcome"
+              },
+              "result": {
+                "const": "not_applicable"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reason"
+            ]
+          }
+        }
+      ]
+    },
+    "signOff": {
+      "type": "object",
+      "required": [
+        "role",
+        "actor",
+        "signed_at",
+        "verdict"
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": [
+            "platform",
+            "security",
+            "operations"
+          ]
+        },
+        "actor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "signed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "go",
+            "no_go"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

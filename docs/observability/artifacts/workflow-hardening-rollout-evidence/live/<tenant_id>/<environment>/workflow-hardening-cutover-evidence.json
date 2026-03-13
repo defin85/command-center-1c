@@ -1,0 +1,62 @@
+{
+  "schema_version": "workflow_hardening_cutover_evidence.v1",
+  "change_id": "tighten-workflow-hardening-canonical-contracts",
+  "git_sha": "0000000000000000000000000000000000000000",
+  "environment": "staging",
+  "tenant_id": "<tenant_id>",
+  "runbook_version": "2026-03-13",
+  "captured_at": "2026-03-13T00:00:00Z",
+  "bundle_digest": "sha256:526af01c97ccdafb592b66023ba97a03edcf2251d868bc800531e5c81e5045fb",
+  "evidence_refs": [
+    {
+      "kind": "binding_preview",
+      "uri": "file://<tenant_id>/staging/binding-preview.json",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "captured_at": "2026-03-13T00:01:00Z",
+      "result": "passed"
+    },
+    {
+      "kind": "create_run",
+      "uri": "file://<tenant_id>/staging/create-run.json",
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "captured_at": "2026-03-13T00:02:00Z",
+      "result": "passed"
+    },
+    {
+      "kind": "inspect_lineage",
+      "uri": "file://<tenant_id>/staging/inspect-lineage.png",
+      "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "captured_at": "2026-03-13T00:03:00Z",
+      "result": "passed"
+    },
+    {
+      "kind": "migration_outcome",
+      "uri": "file://<tenant_id>/staging/migration-outcome.json",
+      "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "captured_at": "2026-03-13T00:04:00Z",
+      "result": "not_applicable",
+      "reason": "replace with migration artifact ref or explicit machine-readable reason"
+    }
+  ],
+  "overall_status": "go",
+  "sign_off": [
+    {
+      "role": "platform",
+      "actor": "<platform_actor>",
+      "signed_at": "2026-03-13T00:05:00Z",
+      "verdict": "go"
+    },
+    {
+      "role": "security",
+      "actor": "<security_actor>",
+      "signed_at": "2026-03-13T00:06:00Z",
+      "verdict": "go"
+    },
+    {
+      "role": "operations",
+      "actor": "<operations_actor>",
+      "signed_at": "2026-03-13T00:07:00Z",
+      "verdict": "go"
+    }
+  ]
+}

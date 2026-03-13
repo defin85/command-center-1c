@@ -97,6 +97,7 @@ Marker влияет на phase summary и rollout communication. Он не пе�
   - `docs/observability/artifacts/refactor-14/repository-acceptance-evidence.md`
 
 Repository acceptance evidence is the canonical checked-in proof path for shipped behavior inside git.
+repository acceptance evidence не заменяет tenant live cutover evidence bundle.
 
 ## Checked-in operator evidence templates
 
@@ -108,6 +109,21 @@ Repository acceptance evidence is the canonical checked-in proof path for shippe
   - `docs/observability/artifacts/refactor-14/operator-canary-evidence.template.json`
 
 Templates are examples/placeholders only. They are meant to capture tenant-scoped live cutover evidence and must not be committed as production rollout proof without replacing placeholders.
+
+## Tenant live cutover evidence bundle
+
+- Stable artifact root:
+  - `docs/observability/artifacts/workflow-hardening-rollout-evidence/`
+- Default live bundle location:
+  - `docs/observability/artifacts/workflow-hardening-rollout-evidence/live/<tenant_id>/<environment>/workflow-hardening-cutover-evidence.json`
+- Verifier:
+  - `cd orchestrator && ../.venv/bin/python manage.py verify_workflow_hardening_cutover_evidence ../docs/observability/artifacts/workflow-hardening-rollout-evidence/live/<tenant_id>/<environment>/workflow-hardening-cutover-evidence.json`
+
+Перед staging/prod go-no-go:
+- Сверь repository proof в `docs/observability/artifacts/refactor-14/repository-acceptance-evidence.md`.
+- Собери tenant-scoped live bundle по стабильному path.
+- Прогони `verify_workflow_hardening_cutover_evidence` и зафиксируй `bundle_digest` из machine-readable verdict.
+- Не считай checked-in templates или repository proof заменой live tenant artifact.
 
 ## Canary checklist
 

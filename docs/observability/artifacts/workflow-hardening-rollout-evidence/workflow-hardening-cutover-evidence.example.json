@@ -1,0 +1,62 @@
+{
+  "schema_version": "workflow_hardening_cutover_evidence.v1",
+  "change_id": "tighten-workflow-hardening-canonical-contracts",
+  "git_sha": "0123456789abcdef0123456789abcdef01234567",
+  "environment": "staging",
+  "tenant_id": "stroygrupp",
+  "runbook_version": "2026-03-13",
+  "captured_at": "2026-03-13T09:00:00Z",
+  "bundle_digest": "sha256:057ebd34110692897e9a372e769f1d58282bb002a38f3717a475fe5016247875",
+  "evidence_refs": [
+    {
+      "kind": "binding_preview",
+      "uri": "s3://tenant-artifacts/staging/binding-preview.json",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "captured_at": "2026-03-13T08:50:00Z",
+      "result": "passed"
+    },
+    {
+      "kind": "create_run",
+      "uri": "s3://tenant-artifacts/staging/create-run.json",
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "captured_at": "2026-03-13T08:52:00Z",
+      "result": "passed"
+    },
+    {
+      "kind": "inspect_lineage",
+      "uri": "s3://tenant-artifacts/staging/inspect-lineage.png",
+      "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "captured_at": "2026-03-13T08:54:00Z",
+      "result": "passed"
+    },
+    {
+      "kind": "migration_outcome",
+      "uri": "s3://tenant-artifacts/staging/migration-outcome.json",
+      "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "captured_at": "2026-03-13T08:55:00Z",
+      "result": "not_applicable",
+      "reason": "legacy policy import was not required for this tenant"
+    }
+  ],
+  "overall_status": "go",
+  "sign_off": [
+    {
+      "role": "platform",
+      "actor": "platform.lead",
+      "signed_at": "2026-03-13T08:56:00Z",
+      "verdict": "go"
+    },
+    {
+      "role": "security",
+      "actor": "security.lead",
+      "signed_at": "2026-03-13T08:57:00Z",
+      "verdict": "go"
+    },
+    {
+      "role": "operations",
+      "actor": "operations.lead",
+      "signed_at": "2026-03-13T08:58:00Z",
+      "verdict": "go"
+    }
+  ]
+}
