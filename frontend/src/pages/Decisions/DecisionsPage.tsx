@@ -129,6 +129,7 @@ const METADATA_CONTEXT_FALLBACK_CODES = new Set([
 ])
 
 const METADATA_CONTEXT_FALLBACK_MESSAGE = 'Metadata context is unavailable for the selected database. Showing global decision revisions without database-specific compatibility context.'
+const METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE = 'Resolved metadata context is unavailable for the selected database. Reload database-specific metadata before editing, deactivating, or rolling over this revision.'
 
 const shouldFallbackToUnscopedDecisionRead = (error: unknown): boolean => {
   const { code, status } = getApiErrorInfo(error)
@@ -333,11 +334,11 @@ export function DecisionsPage() {
   const selectedDatabaseLabel = selectedDatabase ? formatDatabaseOptionLabel(selectedDatabase) : ''
   const rolloverTargetMetadataContext = detailContext ?? metadataContext
   const selectedDecisionRequiresRollover = Boolean(selectedDecision?.metadata_compatibility?.is_compatible === false)
+  const metadataContextFallbackActive = Boolean(effectiveSelectedDatabaseId && (listReadFallbackUsed || detailReadFallbackUsed))
   const canOpenRollover = Boolean(
     selectedDecision
     && effectiveSelectedDatabaseId
-    && !listReadFallbackUsed
-    && !detailReadFallbackUsed
+    && !metadataContextFallbackActive
     && buildEditorTargetSummary(rolloverTargetMetadataContext, {
       databaseId: effectiveSelectedDatabaseId,
       databaseLabel: selectedDatabaseLabel,
@@ -558,7 +559,7 @@ export function DecisionsPage() {
     )
     : null
 
-  const metadataContextWarning = effectiveSelectedDatabaseId && (listReadFallbackUsed || detailReadFallbackUsed)
+  const metadataContextWarning = metadataContextFallbackActive
     ? METADATA_CONTEXT_FALLBACK_MESSAGE
     : null
 
@@ -613,6 +614,14 @@ export function DecisionsPage() {
 
   const handleOpenSelectedDecisionForEdit = () => {
     if (!selectedDecision) return
+    if (metadataContextFallbackActive) {
+      setEditorDraft(null)
+      setEditorError(METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE)
+      setLegacyImportDraft(null)
+      setLegacyImportGraph(null)
+      setLegacyImportError(null)
+      return
+    }
     if (selectedDecisionRequiresRollover) {
       setEditorDraft(null)
       setEditorError('This revision is outside the selected target configuration. Use guided rollover to publish a new revision for the current database.')
@@ -739,6 +748,10 @@ export function DecisionsPage() {
 
   const handleDeactivateSelected = async () => {
     if (!selectedDecision) return
+    if (metadataContextFallbackActive) {
+      setEditorError(METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE)
+      return
+    }
 
     setSaving(true)
     setEditorError(null)
@@ -877,13 +890,13 @@ export function DecisionsPage() {
               >
                 Import raw JSON
               </Button>
-              <Button
-                icon={<EditOutlined />}
-                onClick={handleOpenSelectedDecisionForEdit}
-                disabled={!selectedDecision || saving || selectedDecisionRequiresRollover}
-                aria-label="Edit selected decision"
-              >
-                Edit selected decision
+                <Button
+                  icon={<EditOutlined />}
+                  onClick={handleOpenSelectedDecisionForEdit}
+                  disabled={!selectedDecision || saving || selectedDecisionRequiresRollover || metadataContextFallbackActive}
+                  aria-label="Edit selected decision"
+                >
+                  Edit selected decision
               </Button>
               <Button
                 onClick={handleOpenSelectedDecisionForRollover}
@@ -892,13 +905,13 @@ export function DecisionsPage() {
               >
                 Rollover selected revision
               </Button>
-              <Button
-                danger
-                icon={<MinusCircleOutlined />}
-                onClick={() => void handleDeactivateSelected()}
-                disabled={!selectedDecision || saving || selectedDecisionRequiresRollover}
-                aria-label="Deactivate selected decision"
-              >
+                <Button
+                  danger
+                  icon={<MinusCircleOutlined />}
+                  onClick={() => void handleDeactivateSelected()}
+                  disabled={!selectedDecision || saving || selectedDecisionRequiresRollover || metadataContextFallbackActive}
+                  aria-label="Deactivate selected decision"
+                >
                 Deactivate selected decision
               </Button>
             </Space>

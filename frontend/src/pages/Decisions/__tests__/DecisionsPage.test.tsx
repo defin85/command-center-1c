@@ -808,6 +808,9 @@ describe('DecisionsPage', () => {
     expect(screen.queryByText('Failed to load decision table revisions.')).not.toBeInTheDocument()
     expect(screen.queryByText('Failed to load decision detail.')).not.toBeInTheDocument()
     expect(screen.getAllByText('Services publication policy').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Edit selected decision' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Rollover selected revision' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Deactivate selected decision' })).toBeDisabled()
   })
 
   it('keeps legacy non-default rule_id decisions editable in builder mode', async () => {
