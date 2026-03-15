@@ -229,6 +229,27 @@ def test_pool_workflow_binding_read_schema_requires_server_managed_fields() -> N
     assert runtime_fields["status"].required is True
 
 
+def test_pool_workflow_binding_preview_schema_exposes_slot_coverage_summary() -> None:
+    contract = _load_openapi_contract()
+    preview_schema = _schema(contract, "PoolWorkflowBindingPreviewResponse")
+    properties = preview_schema.get("properties")
+    assert isinstance(properties, dict)
+
+    assert properties["compiled_document_policy_slots"]["type"] == "object"
+    slot_coverage_summary = properties.get("slot_coverage_summary")
+    assert isinstance(slot_coverage_summary, dict)
+    assert slot_coverage_summary["type"] == "object"
+    assert slot_coverage_summary["properties"]["total_edges"] == {"type": "integer"}
+    assert slot_coverage_summary["properties"]["items"]["type"] == "array"
+
+    required = preview_schema.get("required")
+    assert isinstance(required, list)
+    assert {"workflow_binding", "compiled_document_policy_slots", "slot_coverage_summary", "runtime_projection"}.issubset(
+        set(required)
+    )
+    assert "compiled_document_policy" not in required
+
+
 def test_pool_workflow_binding_mutating_paths_expose_revision_conflict_contract() -> None:
     contract = _load_openapi_contract()
     paths = contract.get("paths")

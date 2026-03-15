@@ -24,9 +24,11 @@ POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY = "pool_runtime_compiled_docum
 POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY = "pool_runtime_compiled_document_policy_slots"
 POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY = "pool_runtime_document_policy_source"
 POOL_DOCUMENT_PLAN_ARTIFACT_INVALID = "POOL_DOCUMENT_PLAN_ARTIFACT_INVALID"
-POOL_DOCUMENT_POLICY_SLOT_SELECTOR_REQUIRED = "POOL_DOCUMENT_POLICY_SLOT_SELECTOR_REQUIRED"
+POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING = "POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING"
 POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND = "POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND"
-POOL_DOCUMENT_POLICY_SLOT_INVALID = "POOL_DOCUMENT_POLICY_SLOT_INVALID"
+POOL_DOCUMENT_POLICY_SLOT_DUPLICATE = "POOL_DOCUMENT_POLICY_SLOT_DUPLICATE"
+POOL_DOCUMENT_POLICY_SLOT_OUTPUT_INVALID = "POOL_DOCUMENT_POLICY_SLOT_OUTPUT_INVALID"
+POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS = "POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS"
 POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED = "POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED"
 
 REQUIRED_DOCUMENT_PLAN_ARTIFACT_FIELDS = {
@@ -229,26 +231,28 @@ def validate_compiled_document_policy_slots_snapshot(
         slot_key = str(raw_slot_key or "").strip()
         if not slot_key:
             raise ValueError(
-                f"{POOL_DOCUMENT_POLICY_SLOT_INVALID}: slot key must be a non-empty string"
+                f"{POOL_DOCUMENT_POLICY_SLOT_OUTPUT_INVALID}: slot key must be a non-empty string"
             )
         if slot_key in normalized:
             raise ValueError(
-                f"{POOL_DOCUMENT_POLICY_SLOT_INVALID}: duplicate slot key '{slot_key}'"
+                f"{POOL_DOCUMENT_POLICY_SLOT_DUPLICATE}: duplicate slot key '{slot_key}'"
             )
         if not isinstance(raw_slot_projection, Mapping):
             raise ValueError(
-                f"{POOL_DOCUMENT_POLICY_SLOT_INVALID}: slot '{slot_key}' must be an object"
+                f"{POOL_DOCUMENT_POLICY_SLOT_OUTPUT_INVALID}: slot '{slot_key}' must be an object"
             )
         slot_projection = dict(raw_slot_projection)
         raw_document_policy = slot_projection.get("document_policy")
         if not isinstance(raw_document_policy, Mapping):
             raise ValueError(
-                f"{POOL_DOCUMENT_POLICY_SLOT_INVALID}: slot '{slot_key}' document_policy must be an object"
+                f"{POOL_DOCUMENT_POLICY_SLOT_OUTPUT_INVALID}: "
+                f"slot '{slot_key}' document_policy must be an object"
             )
         document_policy_source = str(slot_projection.get("document_policy_source") or "").strip()
         if not document_policy_source:
             raise ValueError(
-                f"{POOL_DOCUMENT_POLICY_SLOT_INVALID}: slot '{slot_key}' document_policy_source is required"
+                f"{POOL_DOCUMENT_POLICY_SLOT_OUTPUT_INVALID}: "
+                f"slot '{slot_key}' document_policy_source is required"
             )
         normalized[slot_key] = {
             **slot_projection,
@@ -267,7 +271,7 @@ def _resolve_document_policy_key_for_edge(
     if slot_key:
         return slot_key
     raise ValueError(
-        f"{POOL_DOCUMENT_POLICY_SLOT_SELECTOR_REQUIRED}: edge "
+        f"{POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING}: edge "
         f"{str(edge_ref.get('parent_node_id') or '').strip()}->"
         f"{str(edge_ref.get('child_node_id') or '').strip()} requires metadata.document_policy_key"
     )

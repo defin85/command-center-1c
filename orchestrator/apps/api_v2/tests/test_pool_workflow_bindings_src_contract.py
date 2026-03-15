@@ -123,11 +123,21 @@ def test_pool_workflow_bindings_preview_response_src_contract_exposes_slot_proje
             "additionalProperties": True,
         },
     }
+    slot_coverage_summary = properties.get("slot_coverage_summary")
+    assert isinstance(slot_coverage_summary, dict)
+    assert slot_coverage_summary["type"] == "object"
+    assert slot_coverage_summary["properties"]["total_edges"] == {"type": "integer"}
+    assert slot_coverage_summary["properties"]["items"]["type"] == "array"
+    coverage_properties = slot_coverage_summary["properties"]["items"]["items"]["properties"]["coverage"][
+        "properties"
+    ]
+    assert coverage_properties["code"] == {"type": "string", "nullable": True}
 
     required = payload.get("required")
     assert required == [
         "workflow_binding",
         "compiled_document_policy_slots",
+        "slot_coverage_summary",
         "runtime_projection",
     ]
     assert "compiled_document_policy" not in required

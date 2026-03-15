@@ -19,6 +19,13 @@ from apps.intercompany_pools.models import (
     PoolSchemaTemplateFormat,
 )
 from apps.intercompany_pools.binding_preview import build_pool_workflow_binding_preview
+from apps.intercompany_pools.workflow_authoring_contract import (
+    DecisionTableRef,
+    PoolWorkflowBindingContract,
+    PoolWorkflowBindingSelector,
+    PoolWorkflowBindingStatus,
+    build_workflow_definition_ref,
+)
 from apps.intercompany_pools.workflow_bindings_store import upsert_canonical_pool_workflow_binding
 from apps.templates.workflow.decision_tables import create_decision_table_revision
 from apps.templates.workflow.models import WorkflowTemplate, WorkflowType
@@ -130,7 +137,11 @@ def _create_runtime_workflow_template(*, direction: str) -> WorkflowTemplate:
     )
 
 
-def _create_preview_fixture(*, child_count: int = 1) -> dict[str, object]:
+def _create_preview_fixture(
+    *,
+    child_count: int = 1,
+    slot_keys: list[str | None] | None = None,
+) -> dict[str, object]:
     tenant = Tenant.objects.create(slug=f"binding-preview-{uuid4().hex[:8]}", name="Binding Preview")
     pool = OrganizationPool.objects.create(
         tenant=tenant,
@@ -180,6 +191,11 @@ def _create_preview_fixture(*, child_count: int = 1) -> dict[str, object]:
             parent_node=root_node,
             child_node=child_node,
             effective_from=date(2026, 1, 1),
+            metadata=(
+                {"document_policy_key": str(slot_keys[index]).strip()}
+                if slot_keys is not None and index < len(slot_keys) and slot_keys[index]
+                else {}
+            ),
         )
     return {
         "tenant": tenant,
@@ -218,7 +234,7 @@ def _build_binding(
 
 @pytest.mark.django_db
 def test_build_pool_workflow_binding_preview_returns_compiled_projection_and_decision_lineage() -> None:
-    fixture = _create_preview_fixture()
+    fixture = _create_preview_fixture(slot_keys=["document_policy"])
     tenant = fixture["tenant"]
     pool = fixture["pool"]
     schema_template = fixture["schema_template"]
@@ -271,7 +287,7 @@ def test_build_pool_workflow_binding_preview_returns_compiled_projection_and_dec
     }
     assert preview["runtime_projection"]["workflow_binding"]["binding_id"] == binding["binding_id"]
     assert preview["runtime_projection"]["document_policy_projection"]["policy_refs_count"] == 1
-    assert preview["runtime_projection"]["decision_refs"] == [
+    assert preview["runtime_projection"]["workflow_binding"]["decision_refs"] == [
         {
             "decision_table_id": decision.decision_table_id,
             "decision_key": decision.decision_key,
@@ -284,7 +300,7 @@ def test_build_pool_workflow_binding_preview_returns_compiled_projection_and_dec
 def test_build_pool_workflow_binding_preview_materializes_slots_once_per_decision(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = _create_preview_fixture(child_count=2)
+    fixture = _create_preview_fixture(child_count=2, slot_keys=["sale", "purchase"])
     tenant = fixture["tenant"]
     pool = fixture["pool"]
     schema_template = fixture["schema_template"]
@@ -363,14 +379,16 @@ def test_build_pool_workflow_binding_preview_materializes_slots_once_per_decisio
         preview["compiled_document_policy_slots"]["purchase"]["document_policy"]["chains"][0]["chain_id"]
         == "purchase_chain"
     )
+    assert preview["slot_coverage_summary"]["total_edges"] == 2
+    assert preview["slot_coverage_summary"]["counts"]["resolved"] == 2
+    assert preview["slot_coverage_summary"]["counts"]["missing_slot"] == 0
+    assert preview["slot_coverage_summary"]["items"][0]["coverage"]["code"] is None
 
 
 @pytest.mark.django_db
 def test_build_pool_workflow_binding_preview_fails_closed_on_duplicate_decision_key() -> None:
     fixture = _create_preview_fixture()
-    tenant = fixture["tenant"]
     pool = fixture["pool"]
-    schema_template = fixture["schema_template"]
 
     first_decision = create_decision_table_revision(
         contract=_build_decision_payload(
@@ -387,39 +405,42 @@ def test_build_pool_workflow_binding_preview_fails_closed_on_duplicate_decision_
         )
     )
     workflow = _create_runtime_workflow_template(direction=PoolRunDirection.BOTTOM_UP)
-    binding = _build_binding(
-        pool=pool,
-        workflow=workflow,
+    binding = PoolWorkflowBindingContract.model_construct(
+        contract_version="pool_workflow_binding.v1",
+        binding_id=str(uuid4()),
+        pool_id=str(pool.id),
+        workflow=build_workflow_definition_ref(workflow_template=workflow),
         decisions=[
-            {
-                "decision_table_id": first_decision.decision_table_id,
-                "decision_key": first_decision.decision_key,
-                "decision_revision": first_decision.version_number,
-            },
-            {
-                "decision_table_id": second_decision.decision_table_id,
-                "decision_key": second_decision.decision_key,
-                "decision_revision": second_decision.version_number,
-            },
+            DecisionTableRef(
+                decision_table_id=first_decision.decision_table_id,
+                decision_key=first_decision.decision_key,
+                decision_revision=first_decision.version_number,
+            ),
+            DecisionTableRef(
+                decision_table_id=second_decision.decision_table_id,
+                decision_key=second_decision.decision_key,
+                decision_revision=second_decision.version_number,
+            ),
         ],
-        direction=PoolRunDirection.BOTTOM_UP,
-        mode=PoolRunMode.SAFE,
-    )
-    upsert_canonical_pool_workflow_binding(
-        pool=pool,
-        workflow_binding=binding,
-        actor_username="binding-preview-test",
+        parameters={},
+        role_mapping={},
+        selector=PoolWorkflowBindingSelector(
+            direction=PoolRunDirection.BOTTOM_UP,
+            mode=PoolRunMode.SAFE,
+            tags=[],
+        ),
+        effective_from=date(2026, 1, 1),
+        effective_to=None,
+        status=PoolWorkflowBindingStatus.ACTIVE,
     )
 
     with pytest.raises(ValueError, match="Duplicate decision_key in workflow binding decisions"):
-        build_pool_workflow_binding_preview(
-            tenant=tenant,
+        binding_preview.evaluate_binding_decisions(
+            binding=binding,
             pool=pool,
-            pool_workflow_binding_id=binding["binding_id"],
             direction=PoolRunDirection.BOTTOM_UP,
             mode=PoolRunMode.SAFE,
             period_start=date(2026, 1, 1),
             period_end=date(2026, 1, 31),
             run_input={"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
-            schema_template=schema_template,
         )

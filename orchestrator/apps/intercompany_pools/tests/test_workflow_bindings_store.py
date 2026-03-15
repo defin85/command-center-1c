@@ -178,6 +178,39 @@ def test_upsert_canonical_pool_workflow_binding_requires_matching_revision_for_u
 
 
 @pytest.mark.django_db
+def test_upsert_canonical_pool_workflow_binding_rejects_duplicate_decision_key() -> None:
+    tenant = Tenant.objects.create(slug=f"binding-store-duplicate-slot-{uuid4().hex[:8]}", name="Duplicate Slot Tenant")
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code=f"pool-{uuid4().hex[:6]}",
+        name="Duplicate Slot Pool",
+    )
+
+    with pytest.raises(PoolWorkflowBindingStoreError, match="POOL_DOCUMENT_POLICY_SLOT_DUPLICATE"):
+        upsert_canonical_pool_workflow_binding(
+            pool=pool,
+            workflow_binding={
+                **_build_binding_payload(pool=pool),
+                "decisions": [
+                    {
+                        "decision_table_id": "document-policy-a",
+                        "decision_key": "document_policy",
+                        "decision_revision": 2,
+                    },
+                    {
+                        "decision_table_id": "document-policy-b",
+                        "decision_key": "document_policy",
+                        "decision_revision": 3,
+                    },
+                ],
+            },
+            actor_username="creator",
+        )
+
+    assert list_canonical_pool_workflow_bindings(pool=pool) == []
+
+
+@pytest.mark.django_db
 def test_upsert_canonical_pool_workflow_binding_raises_conflict_for_stale_revision() -> None:
     tenant = Tenant.objects.create(slug=f"binding-store-conflict-{uuid4().hex[:8]}", name="Conflict Tenant")
     pool = OrganizationPool.objects.create(

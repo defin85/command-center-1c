@@ -19,6 +19,7 @@ from apps.intercompany_pools.metadata_catalog import (
     refresh_metadata_catalog_snapshot,
 )
 from apps.intercompany_pools.document_plan_artifact_contract import (
+    POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED,
     POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY,
     POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY,
 )
@@ -259,6 +260,44 @@ def _attach_pool_target_database(
         is_root=True,
     )
     return database
+
+
+def _attach_pool_slot_edge(
+    *,
+    tenant: Tenant,
+    pool: OrganizationPool,
+    database: Database,
+    period_start: date,
+    slot_key: str = "document_policy",
+) -> None:
+    root_node = PoolNodeVersion.objects.get(
+        pool=pool,
+        effective_from=period_start,
+        is_root=True,
+    )
+    if root_node.organization.database_id == database.id:
+        root_node.organization.database = None
+        root_node.organization.save(update_fields=["database", "updated_at"])
+    child_org = Organization.objects.create(
+        tenant=tenant,
+        database=database,
+        name=f"Org Leaf {uuid4().hex[:6]}",
+        inn=f"74{uuid4().hex[:10]}",
+        status=OrganizationStatus.ACTIVE,
+    )
+    child_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=child_org,
+        effective_from=period_start,
+        is_root=False,
+    )
+    PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=root_node,
+        child_node=child_node,
+        effective_from=period_start,
+        metadata={"document_policy_key": slot_key},
+    )
 
 
 def _create_run_with_execution_state(
@@ -1625,6 +1664,39 @@ def test_upsert_pool_metadata_rejects_workflow_bindings_nested_inside_metadata(
 
 
 @pytest.mark.django_db
+def test_upsert_pool_metadata_rejects_legacy_document_policy_write_path(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    pool.metadata = {"owner": "finance"}
+    pool.save(update_fields=["metadata", "updated_at"])
+
+    response = authenticated_client.post(
+        "/api/v2/pools/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "code": pool.code,
+            "name": pool.name,
+            "metadata": {
+                "owner": "ops",
+                "document_policy": _build_document_policy_payload(),
+            },
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code=POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED,
+    )
+    assert "metadata.document_policy" in payload["detail"]
+
+    pool.refresh_from_db()
+    assert pool.metadata == {"owner": "finance"}
+
+
+@pytest.mark.django_db
 def test_upsert_pool_metadata_preserves_existing_workflow_bindings(
     authenticated_client: APIClient,
     pool: OrganizationPool,
@@ -1876,6 +1948,64 @@ def test_pool_workflow_bindings_collection_put_returns_conflict_without_partial_
 
 
 @pytest.mark.django_db
+def test_pool_workflow_bindings_collection_put_rejects_duplicate_decision_key_without_partial_apply(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    created_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=_build_pool_workflow_binding_payload(
+            pool=pool,
+            workflow_definition_key="services-publication",
+            workflow_revision=3,
+            direction=PoolRunDirection.TOP_DOWN,
+            mode=PoolRunMode.SAFE,
+        ),
+        actor_username="collection-duplicate-slot-test",
+    )
+    initial_response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
+    assert initial_response.status_code == 200
+    initial_payload = initial_response.json()
+
+    response = authenticated_client.put(
+        "/api/v2/pools/workflow-bindings/",
+        {
+            "pool_id": str(pool.id),
+            "expected_collection_etag": initial_payload["collection_etag"],
+            "workflow_bindings": [
+                {
+                    **created_binding,
+                    "decisions": [
+                        {
+                            "decision_table_id": "decision-a",
+                            "decision_key": "shared_slot",
+                            "decision_revision": 1,
+                        },
+                        {
+                            "decision_table_id": "decision-b",
+                            "decision_key": "shared_slot",
+                            "decision_revision": 2,
+                        },
+                    ],
+                }
+            ],
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
+    )
+    assert "decision_key" in payload["detail"]
+
+    current_response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
+    assert current_response.status_code == 200
+    assert current_response.json() == initial_payload
+
+
+@pytest.mark.django_db
 def test_pool_workflow_binding_upsert_creates_and_updates_first_class_binding(
     authenticated_client: APIClient,
     pool: OrganizationPool,
@@ -1945,6 +2075,51 @@ def test_pool_workflow_binding_upsert_creates_and_updates_first_class_binding(
     assert bindings[0]["binding_id"] == binding_id
     assert bindings[0]["revision"] == 2
     assert bindings[0]["selector"]["tags"] == ["baseline", "monthly"]
+
+
+@pytest.mark.django_db
+def test_pool_workflow_binding_upsert_rejects_duplicate_decision_key(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": {
+                "workflow": {
+                    "workflow_definition_key": "services-publication",
+                    "workflow_revision_id": "11111111-1111-1111-1111-111111111111",
+                    "workflow_revision": 3,
+                    "workflow_name": "services_publication",
+                },
+                "decisions": [
+                    {
+                        "decision_table_id": "decision-a",
+                        "decision_key": "shared_slot",
+                        "decision_revision": 1,
+                    },
+                    {
+                        "decision_table_id": "decision-b",
+                        "decision_key": "shared_slot",
+                        "decision_revision": 2,
+                    },
+                ],
+                "selector": {"direction": "top_down", "mode": "safe", "tags": ["baseline"]},
+                "effective_from": "2026-01-01",
+                "status": "active",
+            },
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
+    )
+    assert "decision_key" in payload["detail"]
+    assert list_pool_workflow_bindings(pool=pool) == []
 
 
 @pytest.mark.django_db
@@ -2349,26 +2524,17 @@ def test_upsert_pool_topology_snapshot_preserves_node_and_edge_order_in_graph_re
 
 
 @pytest.mark.django_db
-def test_upsert_pool_topology_snapshot_accepts_valid_document_policy_metadata(
+def test_upsert_pool_topology_snapshot_rejects_legacy_document_policy_payload(
     authenticated_client: APIClient,
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
-    leaf_db = _create_database(tenant=default_tenant, name=f"policy-leaf-db-{uuid4().hex[:8]}")
-    _create_current_metadata_catalog_snapshot(
-        tenant=default_tenant,
-        database=leaf_db,
-    )
     root_org = Organization.objects.create(tenant=default_tenant, name="Policy Root", inn="741100000001")
-    leaf_org = Organization.objects.create(
-        tenant=default_tenant,
-        database=leaf_db,
-        name="Policy Leaf",
-        inn="741100000002",
-    )
+    leaf_org = Organization.objects.create(tenant=default_tenant, name="Policy Leaf", inn="741100000002")
     graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
     assert graph_before.status_code == 200
-    current_version = graph_before.json()["version"]
+    graph_before_payload = graph_before.json()
+    current_version = graph_before_payload["version"]
 
     response = authenticated_client.post(
         f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
@@ -2392,498 +2558,34 @@ def test_upsert_pool_topology_snapshot_accepts_valid_document_policy_metadata(
         },
         format="json",
     )
-    assert response.status_code == 200
 
-    edge = (
-        PoolEdgeVersion.objects.select_related("parent_node__organization", "child_node__organization")
-        .filter(pool=pool, effective_from=date(2026, 1, 1))
-        .get(
-            parent_node__organization=root_org,
-            child_node__organization=leaf_org,
-        )
-    )
-    edge_metadata = edge.metadata if isinstance(edge.metadata, dict) else {}
-    policy = edge_metadata.get("document_policy")
-    assert isinstance(policy, dict)
-    documents = policy["chains"][0]["documents"]
-    assert documents[0]["invoice_mode"] == "required"
-    assert documents[1]["invoice_mode"] == "optional"
-
-
-@pytest.mark.django_db
-def test_upsert_pool_topology_snapshot_rejects_invalid_document_policy_mapping(
-    authenticated_client: APIClient,
-    default_tenant: Tenant,
-    pool: OrganizationPool,
-) -> None:
-    root_org = Organization.objects.create(tenant=default_tenant, name="Policy Invalid Root", inn="741100000011")
-    leaf_org = Organization.objects.create(tenant=default_tenant, name="Policy Invalid Leaf", inn="741100000012")
-    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
-    assert graph_before.status_code == 200
-    current_version = graph_before.json()["version"]
-
-    invalid_policy = _build_document_policy_payload()
-    invalid_policy["chains"][0]["documents"][0]["field_mapping"] = []
-
-    response = authenticated_client.post(
-        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
-        {
-            "version": current_version,
-            "effective_from": "2026-01-01",
-            "nodes": [
-                {"organization_id": str(root_org.id), "is_root": True},
-                {"organization_id": str(leaf_org.id), "is_root": False},
-            ],
-            "edges": [
-                {
-                    "parent_organization_id": str(root_org.id),
-                    "child_organization_id": str(leaf_org.id),
-                    "weight": "1.0",
-                    "metadata": {
-                        "document_policy": invalid_policy,
-                    },
-                },
-            ],
-        },
-        format="json",
-    )
-    payload = _assert_problem_details_response(response, status_code=400, code="VALIDATION_ERROR")
-    assert "POOL_DOCUMENT_POLICY_MAPPING_INVALID" in payload["detail"]
-
-
-@pytest.mark.django_db
-def test_upsert_pool_topology_snapshot_rejects_missing_required_invoice_in_policy(
-    authenticated_client: APIClient,
-    default_tenant: Tenant,
-    pool: OrganizationPool,
-) -> None:
-    root_org = Organization.objects.create(tenant=default_tenant, name="Policy Missing Invoice Root", inn="741100000021")
-    leaf_org = Organization.objects.create(tenant=default_tenant, name="Policy Missing Invoice Leaf", inn="741100000022")
-    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
-    assert graph_before.status_code == 200
-    current_version = graph_before.json()["version"]
-
-    invalid_policy = _build_document_policy_payload()
-    invalid_policy["chains"][0]["documents"] = [
-        {
-            "document_id": "sale",
-            "entity_name": "Document_Sales",
-            "document_role": "sale",
-            "field_mapping": {"Amount": "allocation.amount"},
-            "table_parts_mapping": {},
-            "link_rules": {},
-            "invoice_mode": "required",
-        }
-    ]
-
-    response = authenticated_client.post(
-        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
-        {
-            "version": current_version,
-            "effective_from": "2026-01-01",
-            "nodes": [
-                {"organization_id": str(root_org.id), "is_root": True},
-                {"organization_id": str(leaf_org.id), "is_root": False},
-            ],
-            "edges": [
-                {
-                    "parent_organization_id": str(root_org.id),
-                    "child_organization_id": str(leaf_org.id),
-                    "weight": "1.0",
-                    "metadata": {
-                        "document_policy": invalid_policy,
-                    },
-                },
-            ],
-        },
-        format="json",
-    )
-    payload = _assert_problem_details_response(response, status_code=400, code="VALIDATION_ERROR")
-    assert "POOL_DOCUMENT_POLICY_MISSING_REQUIRED_INVOICE" in payload["detail"]
-
-
-@pytest.mark.django_db
-def test_upsert_pool_topology_snapshot_returns_unified_referential_error_for_unknown_metadata_field(
-    authenticated_client: APIClient,
-    default_tenant: Tenant,
-    pool: OrganizationPool,
-) -> None:
-    leaf_db = _create_database(tenant=default_tenant, name=f"policy-ref-db-{uuid4().hex[:8]}")
-    _create_current_metadata_catalog_snapshot(
-        tenant=default_tenant,
-        database=leaf_db,
-    )
-    root_org = Organization.objects.create(tenant=default_tenant, name="Policy Ref Root", inn="741100000041")
-    leaf_org = Organization.objects.create(
-        tenant=default_tenant,
-        database=leaf_db,
-        name="Policy Ref Leaf",
-        inn="741100000042",
-    )
-    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
-    assert graph_before.status_code == 200
-    current_version = graph_before.json()["version"]
-
-    invalid_policy = _build_document_policy_payload()
-    invalid_policy["chains"][0]["documents"][0]["field_mapping"] = {
-        "UnknownField": "allocation.amount",
-    }
-
-    response = authenticated_client.post(
-        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
-        {
-            "version": current_version,
-            "effective_from": "2026-01-01",
-            "nodes": [
-                {"organization_id": str(root_org.id), "is_root": True},
-                {"organization_id": str(leaf_org.id), "is_root": False},
-            ],
-            "edges": [
-                {
-                    "parent_organization_id": str(root_org.id),
-                    "child_organization_id": str(leaf_org.id),
-                    "weight": "1.0",
-                    "metadata": {
-                        "document_policy": invalid_policy,
-                    },
-                },
-            ],
-        },
-        format="json",
-    )
     payload = _assert_problem_details_response(
         response,
         status_code=400,
-        code="POOL_METADATA_REFERENCE_INVALID",
+        code=POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED,
     )
-    errors = payload.get("errors")
-    assert isinstance(errors, list) and errors
-    first_error = errors[0]
-    assert isinstance(first_error, dict)
-    assert {"code", "path", "detail"}.issubset(set(first_error.keys()))
-    assert first_error["code"] == "POOL_METADATA_REFERENCE_INVALID"
-    assert "field_mapping.UnknownField" in str(first_error["path"])
+    assert "edges[0].metadata.document_policy" in payload["detail"]
+
+    graph_after = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_after.status_code == 200
+    assert graph_after.json() == graph_before_payload
+    assert not PoolEdgeVersion.objects.filter(
+        pool=pool,
+        effective_from=date(2026, 1, 1),
+        parent_node__organization=root_org,
+        child_node__organization=leaf_org,
+    ).exists()
 
 
 @pytest.mark.django_db
-def test_upsert_pool_topology_snapshot_returns_unified_referential_error_for_unknown_table_part(
+def test_get_pool_graph_returns_node_and_edge_metadata_including_document_policy_key(
     authenticated_client: APIClient,
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
-    leaf_db = _create_database(tenant=default_tenant, name=f"policy-tablepart-db-{uuid4().hex[:8]}")
-    _create_current_metadata_catalog_snapshot(
-        tenant=default_tenant,
-        database=leaf_db,
-    )
-    root_org = Organization.objects.create(tenant=default_tenant, name="Policy TP Root", inn="741100000043")
-    leaf_org = Organization.objects.create(
-        tenant=default_tenant,
-        database=leaf_db,
-        name="Policy TP Leaf",
-        inn="741100000044",
-    )
-    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
-    assert graph_before.status_code == 200
-    current_version = graph_before.json()["version"]
-
-    invalid_policy = _build_document_policy_payload()
-    invalid_policy["chains"][0]["documents"][0]["table_parts_mapping"] = {
-        "UnknownItems": {"LineAmount": "allocation.amount"},
-    }
-
-    response = authenticated_client.post(
-        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
-        {
-            "version": current_version,
-            "effective_from": "2026-01-01",
-            "nodes": [
-                {"organization_id": str(root_org.id), "is_root": True},
-                {"organization_id": str(leaf_org.id), "is_root": False},
-            ],
-            "edges": [
-                {
-                    "parent_organization_id": str(root_org.id),
-                    "child_organization_id": str(leaf_org.id),
-                    "weight": "1.0",
-                    "metadata": {
-                        "document_policy": invalid_policy,
-                    },
-                },
-            ],
-        },
-        format="json",
-    )
-    payload = _assert_problem_details_response(
-        response,
-        status_code=400,
-        code="POOL_METADATA_REFERENCE_INVALID",
-    )
-    errors = payload.get("errors")
-    assert isinstance(errors, list) and errors
-    first_error = errors[0]
-    assert isinstance(first_error, dict)
-    assert {"code", "path", "detail"}.issubset(set(first_error.keys()))
-    assert first_error["code"] == "POOL_METADATA_REFERENCE_INVALID"
-    assert "table_parts_mapping.UnknownItems" in str(first_error["path"])
-
-
-@pytest.mark.django_db
-def test_upsert_pool_topology_snapshot_returns_unified_referential_error_for_unknown_row_field(
-    authenticated_client: APIClient,
-    default_tenant: Tenant,
-    pool: OrganizationPool,
-) -> None:
-    leaf_db = _create_database(tenant=default_tenant, name=f"policy-rowfield-db-{uuid4().hex[:8]}")
-    _create_current_metadata_catalog_snapshot(
-        tenant=default_tenant,
-        database=leaf_db,
-    )
-    root_org = Organization.objects.create(tenant=default_tenant, name="Policy Row Root", inn="741100000045")
-    leaf_org = Organization.objects.create(
-        tenant=default_tenant,
-        database=leaf_db,
-        name="Policy Row Leaf",
-        inn="741100000046",
-    )
-    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
-    assert graph_before.status_code == 200
-    current_version = graph_before.json()["version"]
-
-    invalid_policy = _build_document_policy_payload()
-    invalid_policy["chains"][0]["documents"][0]["table_parts_mapping"] = {
-        "Items": {"UnknownRowField": "allocation.amount"},
-    }
-
-    response = authenticated_client.post(
-        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
-        {
-            "version": current_version,
-            "effective_from": "2026-01-01",
-            "nodes": [
-                {"organization_id": str(root_org.id), "is_root": True},
-                {"organization_id": str(leaf_org.id), "is_root": False},
-            ],
-            "edges": [
-                {
-                    "parent_organization_id": str(root_org.id),
-                    "child_organization_id": str(leaf_org.id),
-                    "weight": "1.0",
-                    "metadata": {
-                        "document_policy": invalid_policy,
-                    },
-                },
-            ],
-        },
-        format="json",
-    )
-    payload = _assert_problem_details_response(
-        response,
-        status_code=400,
-        code="POOL_METADATA_REFERENCE_INVALID",
-    )
-    errors = payload.get("errors")
-    assert isinstance(errors, list) and errors
-    first_error = errors[0]
-    assert isinstance(first_error, dict)
-    assert {"code", "path", "detail"}.issubset(set(first_error.keys()))
-    assert first_error["code"] == "POOL_METADATA_REFERENCE_INVALID"
-    assert "table_parts_mapping.Items.UnknownRowField" in str(first_error["path"])
-
-
-@pytest.mark.django_db
-def test_upsert_pool_topology_snapshot_returns_unified_referential_error_for_invalid_link_to(
-    authenticated_client: APIClient,
-    default_tenant: Tenant,
-    pool: OrganizationPool,
-) -> None:
-    leaf_db = _create_database(tenant=default_tenant, name=f"policy-linkto-db-{uuid4().hex[:8]}")
-    _create_current_metadata_catalog_snapshot(
-        tenant=default_tenant,
-        database=leaf_db,
-    )
-    root_org = Organization.objects.create(tenant=default_tenant, name="Policy Link Root", inn="741100000047")
-    leaf_org = Organization.objects.create(
-        tenant=default_tenant,
-        database=leaf_db,
-        name="Policy Link Leaf",
-        inn="741100000048",
-    )
-    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
-    assert graph_before.status_code == 200
-    current_version = graph_before.json()["version"]
-
-    invalid_policy = _build_document_policy_payload()
-    invalid_policy["chains"][0]["documents"][1]["link_to"] = "missing-sale-document"
-
-    response = authenticated_client.post(
-        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
-        {
-            "version": current_version,
-            "effective_from": "2026-01-01",
-            "nodes": [
-                {"organization_id": str(root_org.id), "is_root": True},
-                {"organization_id": str(leaf_org.id), "is_root": False},
-            ],
-            "edges": [
-                {
-                    "parent_organization_id": str(root_org.id),
-                    "child_organization_id": str(leaf_org.id),
-                    "weight": "1.0",
-                    "metadata": {
-                        "document_policy": invalid_policy,
-                    },
-                },
-            ],
-        },
-        format="json",
-    )
-    payload = _assert_problem_details_response(
-        response,
-        status_code=400,
-        code="POOL_METADATA_REFERENCE_INVALID",
-    )
-    errors = payload.get("errors")
-    assert isinstance(errors, list) and errors
-    first_error = errors[0]
-    assert isinstance(first_error, dict)
-    assert {"code", "path", "detail"}.issubset(set(first_error.keys()))
-    assert first_error["code"] == "POOL_METADATA_REFERENCE_INVALID"
-    assert str(first_error["path"]).endswith(".link_to")
-
-
-@pytest.mark.django_db
-def test_upsert_pool_topology_snapshot_returns_unified_referential_error_for_invalid_link_rules_depends_on(
-    authenticated_client: APIClient,
-    default_tenant: Tenant,
-    pool: OrganizationPool,
-) -> None:
-    leaf_db = _create_database(tenant=default_tenant, name=f"policy-linkrules-db-{uuid4().hex[:8]}")
-    _create_current_metadata_catalog_snapshot(
-        tenant=default_tenant,
-        database=leaf_db,
-    )
-    root_org = Organization.objects.create(tenant=default_tenant, name="Policy Rules Root", inn="741100000049")
-    leaf_org = Organization.objects.create(
-        tenant=default_tenant,
-        database=leaf_db,
-        name="Policy Rules Leaf",
-        inn="741100000050",
-    )
-    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
-    assert graph_before.status_code == 200
-    current_version = graph_before.json()["version"]
-
-    invalid_policy = _build_document_policy_payload()
-    invalid_policy["chains"][0]["documents"][1]["link_rules"] = {
-        "depends_on": "missing-sale-document",
-    }
-
-    response = authenticated_client.post(
-        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
-        {
-            "version": current_version,
-            "effective_from": "2026-01-01",
-            "nodes": [
-                {"organization_id": str(root_org.id), "is_root": True},
-                {"organization_id": str(leaf_org.id), "is_root": False},
-            ],
-            "edges": [
-                {
-                    "parent_organization_id": str(root_org.id),
-                    "child_organization_id": str(leaf_org.id),
-                    "weight": "1.0",
-                    "metadata": {
-                        "document_policy": invalid_policy,
-                    },
-                },
-            ],
-        },
-        format="json",
-    )
-    payload = _assert_problem_details_response(
-        response,
-        status_code=400,
-        code="POOL_METADATA_REFERENCE_INVALID",
-    )
-    errors = payload.get("errors")
-    assert isinstance(errors, list) and errors
-    first_error = errors[0]
-    assert isinstance(first_error, dict)
-    assert {"code", "path", "detail"}.issubset(set(first_error.keys()))
-    assert first_error["code"] == "POOL_METADATA_REFERENCE_INVALID"
-    assert str(first_error["path"]).endswith(".link_rules.depends_on")
-
-
-@pytest.mark.django_db
-def test_upsert_pool_topology_snapshot_returns_snapshot_unavailable_with_unified_error_shape(
-    authenticated_client: APIClient,
-    default_tenant: Tenant,
-    pool: OrganizationPool,
-) -> None:
-    leaf_db = _create_database(tenant=default_tenant, name=f"policy-nosnapshot-db-{uuid4().hex[:8]}")
-    root_org = Organization.objects.create(tenant=default_tenant, name="Policy NoSnapshot Root", inn="741100000051")
-    leaf_org = Organization.objects.create(
-        tenant=default_tenant,
-        database=leaf_db,
-        name="Policy NoSnapshot Leaf",
-        inn="741100000052",
-    )
-    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
-    assert graph_before.status_code == 200
-    current_version = graph_before.json()["version"]
-
-    response = authenticated_client.post(
-        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
-        {
-            "version": current_version,
-            "effective_from": "2026-01-01",
-            "nodes": [
-                {"organization_id": str(root_org.id), "is_root": True},
-                {"organization_id": str(leaf_org.id), "is_root": False},
-            ],
-            "edges": [
-                {
-                    "parent_organization_id": str(root_org.id),
-                    "child_organization_id": str(leaf_org.id),
-                    "weight": "1.0",
-                    "metadata": {
-                        "document_policy": _build_document_policy_payload(),
-                    },
-                },
-            ],
-        },
-        format="json",
-    )
-    payload = _assert_problem_details_response(
-        response,
-        status_code=400,
-        code="POOL_METADATA_SNAPSHOT_UNAVAILABLE",
-    )
-    errors = payload.get("errors")
-    assert isinstance(errors, list) and errors
-    first_error = errors[0]
-    assert isinstance(first_error, dict)
-    assert {"code", "path", "detail"}.issubset(set(first_error.keys()))
-    assert first_error["code"] == "POOL_METADATA_SNAPSHOT_UNAVAILABLE"
-    assert "document_policy" in str(first_error["path"])
-
-
-@pytest.mark.django_db
-def test_get_pool_graph_returns_node_and_edge_metadata_including_document_policy(
-    authenticated_client: APIClient,
-    default_tenant: Tenant,
-    pool: OrganizationPool,
-) -> None:
-    leaf_db = _create_database(tenant=default_tenant, name=f"graph-leaf-db-{uuid4().hex[:8]}")
-    _create_current_metadata_catalog_snapshot(
-        tenant=default_tenant,
-        database=leaf_db,
-    )
     root_org = Organization.objects.create(tenant=default_tenant, name="Graph Metadata Root", inn="741100000031")
     leaf_org = Organization.objects.create(
         tenant=default_tenant,
-        database=leaf_db,
         name="Graph Metadata Leaf",
         inn="741100000032",
     )
@@ -2915,7 +2617,7 @@ def test_get_pool_graph_returns_node_and_edge_metadata_including_document_policy
                     "weight": "1.0",
                     "metadata": {
                         "edge_tag": "edge-tag",
-                        "document_policy": _build_document_policy_payload(),
+                        "document_policy_key": "sale",
                     },
                 },
             ],
@@ -2935,10 +2637,7 @@ def test_get_pool_graph_returns_node_and_edge_metadata_including_document_policy
     assert len(payload["edges"]) == 1
     edge_metadata = payload["edges"][0]["metadata"]
     assert edge_metadata["edge_tag"] == "edge-tag"
-    assert edge_metadata["document_policy"]["version"] == "document_policy.v1"
-    documents = edge_metadata["document_policy"]["chains"][0]["documents"]
-    assert documents[0]["invoice_mode"] == "required"
-    assert documents[1]["invoice_mode"] == "optional"
+    assert edge_metadata["document_policy_key"] == "sale"
 
 
 @pytest.mark.django_db
@@ -3090,7 +2789,9 @@ def test_migrate_pool_edge_document_policy_updates_canonical_binding_runtime_pat
         preview_payload = preview_response.json()
         assert preview_payload["workflow_binding"]["decisions"] == [migrated_decision_ref]
         assert preview_payload["compiled_document_policy"]["chains"][0]["chain_id"] == "migrated_sale_chain"
-        assert preview_payload["runtime_projection"]["decision_refs"] == [migrated_decision_ref]
+        assert preview_payload["runtime_projection"]["workflow_binding"]["decision_refs"] == [
+            migrated_decision_ref
+        ]
 
         with patch(
             "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
@@ -3119,9 +2820,9 @@ def test_migrate_pool_edge_document_policy_updates_canonical_binding_runtime_pat
     assert workflow_execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)["decisions"] == [
         migrated_decision_ref
     ]
-    assert workflow_execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["decision_refs"] == [
-        migrated_decision_ref
-    ]
+    assert workflow_execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["workflow_binding"][
+        "decision_refs"
+    ] == [migrated_decision_ref]
     assert workflow_execution.input_context.get(
         POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY
     )["chains"][0]["chain_id"] == "migrated_sale_chain"
@@ -4095,12 +3796,19 @@ def test_preview_pool_workflow_binding_uses_managed_default_schema_template_on_d
         direction=PoolRunDirection.BOTTOM_UP,
         mode=PoolRunMode.SAFE,
     )
-    bindings, _ = _prepare_pool_runtime_bindings(
+    bindings, target_database = _prepare_pool_runtime_bindings(
         tenant=pool.tenant,
         pool=pool,
         bindings=[binding],
         period_start=date(2026, 1, 1),
         actor=user,
+    )
+    _attach_pool_slot_edge(
+        tenant=pool.tenant,
+        pool=pool,
+        database=target_database,
+        period_start=date(2026, 1, 1),
+        slot_key="document_policy",
     )
     binding = bindings[0]
 
@@ -4130,6 +3838,10 @@ def test_preview_pool_workflow_binding_uses_managed_default_schema_template_on_d
     assert payload["compiled_document_policy_slots"]["document_policy"]["document_policy"]["version"] == (
         "document_policy.v1"
     )
+    assert payload["slot_coverage_summary"]["total_edges"] == 1
+    assert payload["slot_coverage_summary"]["counts"]["resolved"] == 1
+    assert payload["slot_coverage_summary"]["items"][0]["slot_key"] == "document_policy"
+    assert payload["slot_coverage_summary"]["items"][0]["coverage"]["code"] is None
     assert payload["runtime_projection"]["workflow_binding"]["binding_id"] == binding["binding_id"]
     assert payload["compiled_document_policy"]["version"] == "document_policy.v1"
     assert PoolSchemaTemplate.objects.filter(
@@ -4527,13 +4239,19 @@ def test_top_down_pool_run_read_model_projects_publication_attempts_and_verifica
     user: User,
     pool: OrganizationPool,
 ) -> None:
-    _, database = _prepare_single_pool_runtime_binding(
+    binding, database = _prepare_single_pool_runtime_binding(
         tenant=default_tenant,
         pool=pool,
         workflow_definition_key="top-down-publication",
         workflow_revision=3,
         direction=PoolRunDirection.TOP_DOWN,
         mode=PoolRunMode.UNSAFE,
+        period_start=date(2026, 1, 1),
+    )
+    _attach_pool_slot_edge(
+        tenant=default_tenant,
+        pool=pool,
+        database=database,
         period_start=date(2026, 1, 1),
     )
     InfobaseUserMapping.objects.create(
@@ -4605,6 +4323,7 @@ def test_top_down_pool_run_read_model_projects_publication_attempts_and_verifica
             "/api/v2/pools/runs/",
             {
                 "pool_id": str(pool.id),
+                "pool_workflow_binding_id": binding["binding_id"],
                 "direction": PoolRunDirection.TOP_DOWN,
                 "period_start": "2026-01-01",
                 "period_end": "2026-01-31",
@@ -4773,13 +4492,19 @@ def test_top_down_pool_run_read_model_projects_failed_verification_after_interna
     user: User,
     pool: OrganizationPool,
 ) -> None:
-    _, database = _prepare_single_pool_runtime_binding(
+    binding, database = _prepare_single_pool_runtime_binding(
         tenant=default_tenant,
         pool=pool,
         workflow_definition_key="top-down-publication-failed-verify",
         workflow_revision=4,
         direction=PoolRunDirection.TOP_DOWN,
         mode=PoolRunMode.UNSAFE,
+        period_start=date(2026, 1, 1),
+    )
+    _attach_pool_slot_edge(
+        tenant=default_tenant,
+        pool=pool,
+        database=database,
         period_start=date(2026, 1, 1),
     )
     InfobaseUserMapping.objects.create(
@@ -4841,6 +4566,7 @@ def test_top_down_pool_run_read_model_projects_failed_verification_after_interna
             "/api/v2/pools/runs/",
             {
                 "pool_id": str(pool.id),
+                "pool_workflow_binding_id": binding["binding_id"],
                 "direction": PoolRunDirection.TOP_DOWN,
                 "period_start": "2026-01-01",
                 "period_end": "2026-01-31",

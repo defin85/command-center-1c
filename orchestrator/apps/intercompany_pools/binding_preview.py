@@ -9,7 +9,11 @@ from apps.templates.workflow.decision_tables import (
     resolve_pinned_decision_table,
 )
 
-from .document_plan_artifact_contract import compile_document_plan_artifact_v1
+from .document_plan_artifact_contract import (
+    POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND,
+    POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING,
+    compile_document_plan_artifact_v1,
+)
 from .document_policy_contract import validate_document_policy_v1
 from .distribution_artifact_contract import validate_distribution_artifact_v1
 from .models import OrganizationPool, PoolRun, PoolSchemaTemplate
@@ -184,6 +188,10 @@ def build_pool_workflow_binding_runtime_bundle(
         compiled_document_policy=compiled_document_policy,
         document_policy_source=document_policy_source,
     )
+    slot_coverage_summary = _build_slot_coverage_summary(
+        topology=topology,
+        compiled_document_policy_slots=compiled_document_policy_slots,
+    )
     plan = compile_pool_execution_plan(
         schema_template=schema_template,
         run_context=PoolWorkflowRunContext(
@@ -210,6 +218,7 @@ def build_pool_workflow_binding_runtime_bundle(
         "compiled_document_policy": compiled_document_policy,
         "document_policy_source": document_policy_source,
         "document_plan_artifact": document_plan_artifact,
+        "slot_coverage_summary": slot_coverage_summary,
         "plan": plan,
         "runtime_projection": runtime_projection,
         "run_input": sanitized_run_input,
@@ -244,6 +253,7 @@ def build_pool_workflow_binding_preview(
         "workflow_binding": bundle["workflow_binding"],
         "compiled_document_policy_slots": bundle["compiled_document_policy_slots"],
         "compiled_document_policy": bundle["compiled_document_policy"],
+        "slot_coverage_summary": bundle["slot_coverage_summary"],
         "runtime_projection": bundle["runtime_projection"],
     }
 
@@ -316,6 +326,109 @@ def _build_decision_inputs(
         }
     )
     return inputs
+
+
+def _build_slot_coverage_summary(
+    *,
+    topology: Mapping[str, Any],
+    compiled_document_policy_slots: Mapping[str, Any],
+) -> dict[str, Any]:
+    counts = {
+        "resolved": 0,
+        "missing_selector": 0,
+        "missing_slot": 0,
+        "ambiguous_slot": 0,
+        "ambiguous_context": 0,
+        "unavailable_context": 0,
+    }
+    edge_models_raw = topology.get("edge_models")
+    node_models_raw = topology.get("node_models")
+    if not isinstance(edge_models_raw, Mapping) or not isinstance(node_models_raw, Mapping):
+        return {
+            "total_edges": 0,
+            "counts": counts,
+            "items": [],
+        }
+
+    items: list[dict[str, Any]] = []
+    sorted_edges = sorted(
+        (
+            (str(parent_node_id), str(child_node_id), edge_model)
+            for (parent_node_id, child_node_id), edge_model in edge_models_raw.items()
+        ),
+        key=lambda item: (item[0], item[1]),
+    )
+    for parent_node_id, child_node_id, edge_model in sorted_edges:
+        edge_metadata = edge_model.metadata if isinstance(getattr(edge_model, "metadata", None), Mapping) else {}
+        slot_key = str(edge_metadata.get("document_policy_key") or "").strip()
+        if not slot_key:
+            coverage = {
+                "code": POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING,
+                "status": "missing_selector",
+                "label": "Slot required",
+                "detail": "Set edge.metadata.document_policy_key to resolve publication slot coverage.",
+            }
+        else:
+            slot_projection = compiled_document_policy_slots.get(slot_key)
+            if not isinstance(slot_projection, Mapping):
+                coverage = {
+                    "code": POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND,
+                    "status": "missing_slot",
+                    "label": "Slot missing",
+                    "detail": f"Selected binding does not pin slot '{slot_key}'.",
+                }
+            else:
+                decision_table_id = str(slot_projection.get("decision_table_id") or "").strip()
+                decision_revision = str(slot_projection.get("decision_revision") or "").strip()
+                coverage = {
+                    "code": None,
+                    "status": "resolved",
+                    "label": "Resolved",
+                    "detail": (
+                        f"{slot_key} -> {decision_table_id} r{decision_revision}"
+                        if decision_table_id and decision_revision
+                        else slot_key
+                    ),
+                }
+        counts[str(coverage["status"])] += 1
+        items.append(
+            {
+                "edge_id": str(getattr(edge_model, "id", "") or f"{parent_node_id}:{child_node_id}"),
+                "edge_label": _build_topology_edge_label(
+                    node_models=node_models_raw,
+                    parent_node_id=parent_node_id,
+                    child_node_id=child_node_id,
+                ),
+                "slot_key": slot_key,
+                "coverage": coverage,
+            }
+        )
+    return {
+        "total_edges": len(items),
+        "counts": counts,
+        "items": items,
+    }
+
+
+def _build_topology_edge_label(
+    *,
+    node_models: Mapping[str, Any],
+    parent_node_id: str,
+    child_node_id: str,
+) -> str:
+    parent_node = node_models.get(parent_node_id)
+    child_node = node_models.get(child_node_id)
+    parent_label = str(
+        getattr(parent_node.organization, "name", None)
+        if getattr(parent_node, "organization", None) is not None
+        else (getattr(parent_node, "name", None) or parent_node_id)
+    ).strip() or parent_node_id
+    child_label = str(
+        getattr(child_node.organization, "name", None)
+        if getattr(child_node, "organization", None) is not None
+        else (getattr(child_node, "name", None) or child_node_id)
+    ).strip() or child_node_id
+    return f"{parent_label} -> {child_label}"
 
 __all__ = [
     "build_pool_workflow_binding_preview",

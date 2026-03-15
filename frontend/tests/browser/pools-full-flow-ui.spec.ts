@@ -193,6 +193,17 @@ async function setupApiMocks(page: Page, state: PoolsUiMockState) {
     if (method === 'GET' && path === '/api/v2/pools/') {
       return fulfillJson(route, { pools: state.pools, count: state.pools.length })
     }
+    if (method === 'GET' && path === '/api/v2/pools/workflow-bindings/') {
+      const poolId = String(url.searchParams.get('pool_id') || '')
+      const pool = state.pools.find((item) => String(item.id) === poolId)
+      const bindings = Array.isArray(pool?.workflow_bindings) ? pool.workflow_bindings : []
+      return fulfillJson(route, {
+        pool_id: poolId,
+        workflow_bindings: bindings,
+        collection_etag: 'sha256:browser-bindings',
+        blocking_remediation: null,
+      })
+    }
     if (method === 'GET' && path.startsWith('/api/v2/pools/') && path.endsWith('/graph/')) {
       const poolId = path.split('/')[4] || ''
       const graph = state.graphByPoolId[poolId] || {
@@ -760,6 +771,34 @@ test('Pools browser-flow: token authoring -> failed gate diagnostics -> remediat
         description: 'Pool for master-data browser flow',
         is_active: true,
         metadata: {},
+        workflow_bindings: [
+          {
+            binding_id: 'binding-purchase',
+            pool_id: poolId,
+            revision: 1,
+            status: 'active',
+            workflow: {
+              workflow_definition_key: 'services-publication',
+              workflow_revision_id: 'workflow-revision-1',
+              workflow_revision: 1,
+              workflow_name: 'services_publication',
+            },
+            decisions: [
+              {
+                decision_table_id: 'decision-purchase',
+                decision_key: 'purchase',
+                decision_revision: 3,
+              },
+            ],
+            selector: {
+              direction: 'top_down',
+              mode: 'safe',
+              tags: [],
+            },
+            effective_from: '2026-01-01',
+            effective_to: null,
+          },
+        ],
         updated_at: NOW,
       },
     ],
@@ -795,24 +834,7 @@ test('Pools browser-flow: token authoring -> failed gate diagnostics -> remediat
             min_amount: null,
             max_amount: null,
             metadata: {
-              document_policy: {
-                version: 'document_policy.v1',
-                chains: [
-                  {
-                    chain_id: 'sale_chain',
-                    documents: [
-                      {
-                        document_id: 'sale',
-                        entity_name: 'Document_Sales',
-                        document_role: 'sale',
-                        field_mapping: { Amount: 'allocation.amount' },
-                        table_parts_mapping: {},
-                        link_rules: {},
-                      },
-                    ],
-                  },
-                ],
-              },
+              document_policy_key: 'sale',
             },
           },
         ],
@@ -867,17 +889,8 @@ test('Pools browser-flow: token authoring -> failed gate diagnostics -> remediat
   await page.goto('/pools/catalog', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Pool Catalog', exact: true })).toBeVisible()
   await page.getByRole('tab', { name: 'Topology Editor' }).click()
-  await page.getByText('Advanced edge JSON / document policy').first().click()
-  await expect(page.getByTestId('pool-catalog-topology-edge-policy-mode-0')).toBeVisible()
-
-  await page.getByTestId('pool-catalog-topology-edge-policy-mode-0').click()
-  await page.locator('.ant-select-dropdown .ant-select-item-option-content', { hasText: 'Builder' }).first().click()
-  await page.getByTestId('pool-catalog-topology-field-mapping-source-type-0-0-0-0').click()
-  await page.locator('.ant-select-dropdown .ant-select-item-option-content', { hasText: 'master_data_token' }).first().click()
-  await page.getByTestId('pool-catalog-topology-field-mapping-token-entity-0-0-0-0').click()
-  await page.locator('.ant-select-dropdown .ant-select-item-option-content', { hasText: 'item' }).first().click()
-  await page.getByTestId('pool-catalog-topology-field-mapping-token-canonical-0-0-0-0').click()
-  await page.locator('.ant-select-dropdown .ant-select-item-option-content', { hasText: 'item-001 - Item One' }).first().click()
+  await expect(page.getByTestId('pool-catalog-topology-edge-slot-0')).toBeVisible()
+  await page.getByTestId('pool-catalog-topology-edge-slot-0').fill('purchase')
   await page.getByTestId('pool-catalog-topology-save').click()
 
   await expect.poll(() => state.topologyUpsertCalls).toBe(1)
@@ -886,16 +899,8 @@ test('Pools browser-flow: token authoring -> failed gate diagnostics -> remediat
     const edges = Array.isArray(payload?.edges) ? payload.edges as AnyRecord[] : []
     const edge = edges[0] || {}
     const metadata = edge.metadata && typeof edge.metadata === 'object' ? edge.metadata as AnyRecord : {}
-    const policy = metadata.document_policy && typeof metadata.document_policy === 'object'
-      ? metadata.document_policy as AnyRecord
-      : {}
-    const chains = Array.isArray(policy.chains) ? policy.chains as AnyRecord[] : []
-    const documents = Array.isArray(chains[0]?.documents) ? chains[0].documents as AnyRecord[] : []
-    const fieldMapping = documents[0]?.field_mapping && typeof documents[0].field_mapping === 'object'
-      ? documents[0].field_mapping as AnyRecord
-      : {}
-    return String(fieldMapping.Amount || '')
-  }).toBe('master_data.item.item-001.ref')
+    return String(metadata.document_policy_key || '')
+  }).toBe('purchase')
 
   await page.goto('/pools/runs', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Pool Runs', exact: true })).toBeVisible()

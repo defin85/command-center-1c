@@ -17250,11 +17250,84 @@ components:
           type: object
           description: Compatibility single-policy projection derived from slot-based source-of-truth.
           additionalProperties: true
+        slot_coverage_summary:
+          type: object
+          description: Canonical slot coverage summary for active topology edges against selected binding slots.
+          properties:
+            total_edges:
+              type: integer
+            counts:
+              type: object
+              properties:
+                resolved:
+                  type: integer
+                missing_selector:
+                  type: integer
+                missing_slot:
+                  type: integer
+                ambiguous_slot:
+                  type: integer
+                ambiguous_context:
+                  type: integer
+                unavailable_context:
+                  type: integer
+              required:
+                - resolved
+                - missing_selector
+                - missing_slot
+                - ambiguous_slot
+                - ambiguous_context
+                - unavailable_context
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  edge_id:
+                    type: string
+                  edge_label:
+                    type: string
+                  slot_key:
+                    type: string
+                  coverage:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        nullable: true
+                      status:
+                        type: string
+                        enum:
+                          - resolved
+                          - missing_selector
+                          - missing_slot
+                          - ambiguous_slot
+                          - ambiguous_context
+                          - unavailable_context
+                      label:
+                        type: string
+                      detail:
+                        type: string
+                    required:
+                      - code
+                      - status
+                      - label
+                      - detail
+                required:
+                  - edge_id
+                  - edge_label
+                  - slot_key
+                  - coverage
+          required:
+            - total_edges
+            - counts
+            - items
         runtime_projection:
           $ref: '#/components/schemas/PoolRuntimeProjection'
       required:
         - workflow_binding
         - compiled_document_policy_slots
+        - slot_coverage_summary
         - runtime_projection
     PoolMasterDataBinding:
       type: object

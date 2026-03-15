@@ -117,6 +117,23 @@ def test_generated_pool_workflow_binding_input_keeps_mutating_fields_optional() 
     assert re.search(r"status\?: PoolWorkflowBindingInputStatus;", content)
 
 
+def test_generated_pool_workflow_binding_preview_response_covers_slot_projection_contract() -> None:
+    contract = _load_openapi_contract()
+    schema = _schema(contract, "PoolWorkflowBindingPreviewResponse")
+    properties = schema.get("properties")
+    assert isinstance(properties, dict)
+
+    generated_fields = _generated_model_fields("poolWorkflowBindingPreviewResponse.ts")
+    assert {"workflow_binding", "compiled_document_policy_slots", "slot_coverage_summary", "runtime_projection"}.issubset(
+        generated_fields
+    )
+    assert "compiled_document_policy" in generated_fields
+    assert set(properties.keys()).issubset(generated_fields), (
+        "PoolWorkflowBindingPreviewResponse fields missing in generated model "
+        f"poolWorkflowBindingPreviewResponse.ts: {sorted(set(properties.keys()) - generated_fields)}"
+    )
+
+
 def test_generated_pool_workflow_binding_delete_params_require_revision() -> None:
     model_path = (
         _repo_root()

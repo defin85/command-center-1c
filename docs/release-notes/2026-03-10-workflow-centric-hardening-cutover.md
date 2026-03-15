@@ -6,11 +6,11 @@
 
 - /decisions становится primary surface для workflow-centric `document_policy` authoring, revise/import и metadata-aware preview.
 - `workflow executor templates remain available here only as a compatibility/integration path`: `/templates` остаётся catalog atomic operations и больше не должен трактоваться как primary analyst-facing workflow modeling surface.
-- Legacy edge document_policy editor в `/pools/catalog` переведён в compatibility mode:
-  - existing payload показывается read-only по умолчанию;
-  - import идёт через явное действие в `/decisions`;
-  - `Import raw JSON` внутри `/decisions` остаётся explicit compatibility-only fallback;
-  - deterministic API path: `POST /api/v2/pools/{pool_id}/document-policy-migrations/`.
+- `/pools/catalog` больше не использует inline legacy edge document_policy editor как shipped operator path:
+  - topology editor редактирует только `edge.metadata.document_policy_key`;
+  - save-path reject'ит legacy `document_policy` payload fail-closed;
+  - migration/remediation идёт через `/decisions` или `POST /api/v2/pools/{pool_id}/document-policy-migrations/`;
+  - `Import raw JSON` внутри `/decisions` остаётся explicit compatibility-only fallback.
 - Для avoid-regression parity: legacy edge document_policy editor больше не считается primary net-new authoring path.
 - Decision authoring/import и migration path теперь опираются на shared business-identity metadata snapshots:
   - в UI/API видны `config_name`, `config_version`, `config_generation_id`, `metadata_hash`, `observed_metadata_hash`, `publication_drift`, `is_shared_snapshot`, `provenance_database_id`;
@@ -33,7 +33,6 @@
 4. Для pool-ов с legacy edge policies выполнить import в `/decisions`:
    - UI: `/decisions` -> `Import legacy edge`
    - explicit compatibility-only fallback: `/decisions` -> `Import raw JSON`
-   - Compatibility UI shortcut: `/pools/catalog` -> `Import to /decisions`
    - API: `POST /api/v2/pools/{pool_id}/document-policy-migrations/`
 5. Только после этого включать tenant-scoped rollout marker `workflows.authoring.phase=workflow_centric_active`.
 6. Для checked-in proof shipped default path использовать:

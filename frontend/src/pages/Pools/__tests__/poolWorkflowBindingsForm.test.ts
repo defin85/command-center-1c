@@ -73,4 +73,28 @@ describe('poolWorkflowBindingsForm', () => {
       'Binding #1: revision обязателен для обновления существующего binding.'
     )
   })
+
+  it('fails closed on duplicate decision_key inside one binding', () => {
+    const binding = buildBinding({
+      decisions: [
+        {
+          decision_table_id: 'decision-1',
+          decision_key: 'shared_slot',
+          decision_revision: 4,
+        },
+        {
+          decision_table_id: 'decision-2',
+          decision_key: 'shared_slot',
+          decision_revision: 5,
+        },
+      ],
+    })
+
+    const prepared = buildWorkflowBindingsFromForm(workflowBindingsToFormValues([binding]))
+
+    expect(prepared.bindings).toEqual([])
+    expect(prepared.errors).toContain(
+      'Binding #1: decisions.decision_key должен быть уникальным внутри binding.'
+    )
+  })
 })

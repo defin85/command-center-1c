@@ -9,9 +9,10 @@ from apps.databases.models import Database
 from apps.intercompany_pools.document_plan_artifact_contract import (
     DOCUMENT_PLAN_ARTIFACT_VERSION,
     POOL_DOCUMENT_PLAN_ARTIFACT_INVALID,
-    compile_document_plan_artifact_v1,
     build_publication_payload_from_document_plan_artifact,
+    compile_document_plan_artifact_v1,
     validate_document_plan_artifact_v1,
+    validate_compiled_document_policy_slots_snapshot,
 )
 from apps.intercompany_pools.document_policy_contract import (
     DOCUMENT_POLICY_METADATA_KEY,
@@ -481,7 +482,7 @@ def test_compile_document_plan_artifact_v1_resolves_slot_based_policy_per_edge()
 def test_compile_document_plan_artifact_v1_fails_closed_when_slot_selector_missing() -> None:
     fixture = _create_compile_fixture(slot_keys=[None])
 
-    with pytest.raises(ValueError, match="POOL_DOCUMENT_POLICY_SLOT_SELECTOR_REQUIRED"):
+    with pytest.raises(ValueError, match="POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING"):
         compile_document_plan_artifact_v1(
             run=fixture["run"],
             distribution_artifact=fixture["distribution_artifact"],
@@ -498,6 +499,21 @@ def test_compile_document_plan_artifact_v1_fails_closed_when_slot_selector_missi
                     ),
                 )
             },
+        )
+
+
+@pytest.mark.django_db
+def test_validate_compiled_document_policy_slots_snapshot_uses_output_invalid_code() -> None:
+    with pytest.raises(ValueError, match="POOL_DOCUMENT_POLICY_SLOT_OUTPUT_INVALID"):
+        validate_compiled_document_policy_slots_snapshot(
+            {
+                "sale": {
+                    "decision_table_id": "sale-slot",
+                    "decision_revision": 1,
+                    "document_policy": "broken",
+                    "document_policy_source": "workflow_binding.decision_table:sale-slot:v1",
+                }
+            }
         )
 
 

@@ -243,6 +243,7 @@ const buildDecisions = (
   errors: string[]
 ) => {
   const decisions = Array.isArray(rawDecisions) ? rawDecisions : []
+  const seenDecisionKeys = new Set<string>()
   const normalized: Array<{
     decision_table_id: string
     decision_key: string
@@ -267,6 +268,11 @@ const buildDecisions = (
       errors.push(`${decisionLabel}: decision_revision должен быть положительным integer.`)
       return
     }
+    if (seenDecisionKeys.has(decisionKey)) {
+      errors.push(`${bindingLabel}: decisions.decision_key должен быть уникальным внутри binding.`)
+      return
+    }
+    seenDecisionKeys.add(decisionKey)
     normalized.push({
       decision_table_id: decisionTableId,
       decision_key: decisionKey,

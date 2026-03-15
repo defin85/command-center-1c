@@ -874,8 +874,11 @@ def test_decision_tables_api_rollover_does_not_rebind_existing_consumers(
     )
 
     assert preview_after["workflow_binding"]["decisions"] == preview_before["workflow_binding"]["decisions"]
-    assert preview_after["runtime_projection"]["decision_refs"] == preview_before["runtime_projection"]["decision_refs"]
-    assert preview_after["runtime_projection"]["decision_refs"] == [
+    assert (
+        preview_after["runtime_projection"]["workflow_binding"]["decision_refs"]
+        == preview_before["runtime_projection"]["workflow_binding"]["decision_refs"]
+    )
+    assert preview_after["runtime_projection"]["workflow_binding"]["decision_refs"] == [
         {
             "decision_table_id": source_decision.decision_table_id,
             "decision_key": source_decision.decision_key,

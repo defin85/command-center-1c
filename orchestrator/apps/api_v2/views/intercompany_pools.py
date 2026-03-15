@@ -62,6 +62,9 @@ from apps.intercompany_pools.command_log import (
     PoolRunCommandIdempotencyConflict,
     record_pool_run_command_outcome,
 )
+from apps.intercompany_pools.document_plan_artifact_contract import (
+    POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED,
+)
 from apps.intercompany_pools.document_policy_contract import (
     DOCUMENT_POLICY_METADATA_KEY,
     resolve_document_policy_from_edge_metadata,
@@ -159,6 +162,9 @@ _POOL_RUNTIME_START_FAIL_CLOSED_CODES = {
     "ODATA_MAPPING_NOT_CONFIGURED",
     "ODATA_MAPPING_AMBIGUOUS",
     "ODATA_PUBLICATION_AUTH_CONTEXT_INVALID",
+}
+_POOL_WORKFLOW_BINDING_VALIDATION_CODES = {
+    "POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
 }
 POOL_PROJECTION_HARDENING_CUTOFF_KEY = "pools.projection.publication_hardening_cutoff_utc"
 POOL_PUBLICATION_STEP_INCOMPLETE_CODE = "POOL_PUBLICATION_STEP_INCOMPLETE"
@@ -364,6 +370,26 @@ def _resolve_pool_runtime_start_error(exc: Exception) -> tuple[str, str]:
     detail = str(raw_detail or "").strip()
     if has_separator and code in _POOL_RUNTIME_START_FAIL_CLOSED_CODES:
         return code, detail or message
+    return "VALIDATION_ERROR", message
+
+
+def _resolve_pool_workflow_binding_validation_error(exc: Exception) -> tuple[str, str]:
+    message = _validation_message(exc).strip()
+    if not message:
+        return "VALIDATION_ERROR", "Pool workflow binding validation failed."
+
+    raw_code, has_separator, raw_detail = message.partition(":")
+    code = str(raw_code or "").strip().upper()
+    detail = str(raw_detail or "").strip()
+    if has_separator and code in _POOL_WORKFLOW_BINDING_VALIDATION_CODES:
+        return code, detail or message
+    for known_code in _POOL_WORKFLOW_BINDING_VALIDATION_CODES:
+        if known_code not in message:
+            continue
+        match = re.search(rf"{re.escape(known_code)}:\s*([^\n]+)", message)
+        if match is not None:
+            return known_code, str(match.group(1) or "").strip() or message
+        return known_code, message
     return "VALIDATION_ERROR", message
 
 
@@ -597,6 +623,51 @@ def _resolve_topology_document_policy_referential_errors(
         )
         errors.extend(policy_errors)
     return errors
+
+
+def _collect_legacy_document_policy_write_errors(
+    *,
+    pool_metadata: Mapping[str, Any] | None = None,
+    edges_payload: list[dict[str, Any]] | None = None,
+) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
+    if isinstance(pool_metadata, Mapping) and DOCUMENT_POLICY_METADATA_KEY in pool_metadata:
+        errors.append(
+            {
+                "code": POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED,
+                "path": f"metadata.{DOCUMENT_POLICY_METADATA_KEY}",
+                "detail": (
+                    "Legacy pool.metadata.document_policy is not allowed in mutating authoring path. "
+                    "Use /decisions, workflow bindings, and edge.metadata.document_policy_key."
+                ),
+            }
+        )
+    for edge_index, edge in enumerate(edges_payload or []):
+        metadata = edge.get("metadata")
+        if not isinstance(metadata, Mapping) or DOCUMENT_POLICY_METADATA_KEY not in metadata:
+            continue
+        errors.append(
+            {
+                "code": POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED,
+                "path": f"edges[{edge_index}].metadata.{DOCUMENT_POLICY_METADATA_KEY}",
+                "detail": (
+                    "Legacy edge.metadata.document_policy is not allowed in mutating authoring path. "
+                    "Use /decisions, workflow bindings, and edge.metadata.document_policy_key."
+                ),
+            }
+        )
+    return errors
+
+
+def _legacy_document_policy_write_problem(*, errors: list[dict[str, str]]) -> Response:
+    first_error = errors[0]
+    return _problem(
+        code=POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED,
+        title="Legacy Document Policy Rejected",
+        detail=f"{first_error['detail']} (path: {first_error['path']})",
+        status_code=http_status.HTTP_400_BAD_REQUEST,
+        errors=errors,
+    )
 
 
 def _serialize_run(
@@ -2145,6 +2216,7 @@ class PoolWorkflowBindingPreviewResponseSerializer(serializers.Serializer):
     workflow_binding = serializers.JSONField()
     compiled_document_policy_slots = serializers.JSONField()
     compiled_document_policy = serializers.JSONField(required=False)
+    slot_coverage_summary = serializers.JSONField()
     runtime_projection = serializers.JSONField()
 
 
@@ -2504,14 +2576,7 @@ class PoolTopologySnapshotEdgeInputSerializer(serializers.Serializer):
     def validate_metadata(self, value):
         if not isinstance(value, dict):
             raise serializers.ValidationError("metadata must be an object")
-        normalized = dict(value)
-        try:
-            policy = resolve_document_policy_from_edge_metadata(metadata=normalized)
-        except ValueError as exc:
-            raise serializers.ValidationError(str(exc))
-        if policy is not None:
-            normalized[DOCUMENT_POLICY_METADATA_KEY] = policy
-        return normalized
+        return dict(value)
 
 
 class PoolTopologySnapshotUpsertRequestSerializer(serializers.Serializer):
@@ -3039,10 +3104,11 @@ def list_pool_workflow_bindings(request):
     except PoolWorkflowBindingCollectionConflictError as exc:
         return _binding_collection_conflict_problem(exc)
     except PoolWorkflowBindingStoreError as exc:
+        error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
         return _problem(
-            code="VALIDATION_ERROR",
+            code=error_code,
             title="Validation Error",
-            detail=str(exc),
+            detail=detail,
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
     except PoolWorkflowBindingResolutionError as exc:
@@ -3114,10 +3180,11 @@ def upsert_pool_workflow_binding(request):
     except PoolWorkflowBindingRevisionConflictError as exc:
         return _binding_revision_conflict_problem(exc)
     except PoolWorkflowBindingStoreError as exc:
+        error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
         return _problem(
-            code="VALIDATION_ERROR",
+            code=error_code,
             title="Validation Error",
-            detail=str(exc),
+            detail=detail,
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
     except PoolWorkflowBindingResolutionError as exc:
@@ -3870,6 +3937,9 @@ def upsert_organization_pool(request):
     metadata_value.pop("workflow_bindings", None)
     is_active_value = data.get("is_active", pool.is_active if pool else True)
     pool_uuid = pool.id if pool else uuid4()
+    legacy_write_errors = _collect_legacy_document_policy_write_errors(pool_metadata=metadata_value)
+    if legacy_write_errors:
+        return _legacy_document_policy_write_problem(errors=legacy_write_errors)
 
     try:
         if created:
@@ -3962,6 +4032,12 @@ def upsert_pool_topology_snapshot(request, pool_id: UUID):
     edges_payload = list(data.get("edges") or [])
     effective_from = data["effective_from"]
     effective_to = data.get("effective_to")
+    legacy_write_errors = _collect_legacy_document_policy_write_errors(
+        pool_metadata=pool.metadata if isinstance(pool.metadata, Mapping) else None,
+        edges_payload=edges_payload,
+    )
+    if legacy_write_errors:
+        return _legacy_document_policy_write_problem(errors=legacy_write_errors)
 
     active_nodes, active_edges = _load_pool_graph_state(pool=pool, target_date=effective_from)
     current_version = _build_topology_version_token(
@@ -3999,29 +4075,6 @@ def upsert_pool_topology_snapshot(request, pool_id: UUID):
             title="Organization Not Found",
             detail=f"Organizations not found in tenant context: {', '.join(missing_org_ids)}",
             status_code=http_status.HTTP_404_NOT_FOUND,
-        )
-
-    referential_errors = _resolve_topology_document_policy_referential_errors(
-        tenant_id=tenant_id,
-        organizations=organizations,
-        edges_payload=edges_payload,
-    )
-    if referential_errors:
-        first_error = referential_errors[0]
-        error_code = str(first_error.get("code") or ERROR_CODE_POOL_METADATA_REFERENCE_INVALID)
-        error_path = str(first_error.get("path") or "document_policy")
-        error_detail = str(first_error.get("detail") or "Metadata referential validation failed.")
-        error_title = (
-            "Metadata Snapshot Unavailable"
-            if error_code == ERROR_CODE_POOL_METADATA_SNAPSHOT_UNAVAILABLE
-            else "Metadata Reference Validation Error"
-        )
-        return _problem(
-            code=error_code,
-            title=error_title,
-            detail=f"{error_detail} (path: {error_path})",
-            status_code=http_status.HTTP_400_BAD_REQUEST,
-            errors=referential_errors,
         )
 
     edge_pairs: list[tuple[str, str]] = []

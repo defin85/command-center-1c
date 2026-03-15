@@ -17,6 +17,7 @@ from apps.templates.workflow.authoring_contract import (
 
 
 POOL_WORKFLOW_BINDING_CONTRACT_VERSION = "pool_workflow_binding.v1"
+POOL_DOCUMENT_POLICY_SLOT_DUPLICATE = "POOL_DOCUMENT_POLICY_SLOT_DUPLICATE"
 
 
 class PoolWorkflowBindingStatus(str, Enum):
@@ -61,6 +62,12 @@ class PoolWorkflowBindingContract(BaseModel):
         ]
         if len(decision_refs) != len(set(decision_refs)):
             raise ValueError("decision refs must be unique per decision_table_id/revision")
+        decision_keys = [str(decision.decision_key or "").strip() for decision in self.decisions]
+        if len(decision_keys) != len(set(decision_keys)):
+            raise ValueError(
+                f"{POOL_DOCUMENT_POLICY_SLOT_DUPLICATE}: "
+                "decision_key values must be unique within binding decisions"
+            )
         for role, target in self.role_mapping.items():
             if not str(role or "").strip():
                 raise ValueError("role_mapping keys must not be empty")
@@ -101,6 +108,7 @@ __all__ = [
     "DecisionRule",
     "DecisionTableContract",
     "DecisionTableRef",
+    "POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
     "POOL_WORKFLOW_BINDING_CONTRACT_VERSION",
     "PoolWorkflowBindingContract",
     "PoolWorkflowBindingSelector",

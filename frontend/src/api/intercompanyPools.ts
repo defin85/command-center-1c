@@ -250,10 +250,38 @@ export type PoolRunRuntimeProjection = {
   compile_summary: PoolRunRuntimeProjectionCompileSummary
 }
 
+export type PoolWorkflowBindingPreviewSlotCoverage = {
+  code?: string | null
+  status: 'resolved' | 'missing_selector' | 'missing_slot' | 'ambiguous_slot' | 'ambiguous_context' | 'unavailable_context'
+  label: string
+  detail: string
+}
+
+export type PoolWorkflowBindingPreviewSlotCoverageItem = {
+  edge_id: string
+  edge_label: string
+  slot_key: string
+  coverage: PoolWorkflowBindingPreviewSlotCoverage
+}
+
+export type PoolWorkflowBindingPreviewSlotCoverageSummary = {
+  total_edges: number
+  counts: {
+    resolved: number
+    missing_selector: number
+    missing_slot: number
+    ambiguous_slot: number
+    ambiguous_context: number
+    unavailable_context: number
+  }
+  items: PoolWorkflowBindingPreviewSlotCoverageItem[]
+}
+
 export type PoolWorkflowBindingPreview = {
   workflow_binding: PoolWorkflowBinding
   compiled_document_policy_slots: Record<string, Record<string, unknown>>
   compiled_document_policy?: Record<string, unknown>
+  slot_coverage_summary: PoolWorkflowBindingPreviewSlotCoverageSummary
   runtime_projection: PoolRunRuntimeProjection
 }
 

@@ -48,7 +48,6 @@ def build_pool_runtime_projection_v1(
             "workflow_type": str(plan.workflow_type),
         },
         "workflow_binding": dict(plan.workflow_binding_snapshot or {"binding_mode": "unbound"}),
-        "decision_refs": list((plan.workflow_binding_snapshot or {}).get("decision_refs") or []),
         "document_policy_projection": {
             "source_mode": (
                 "document_plan_artifact"
@@ -111,10 +110,6 @@ def validate_pool_runtime_projection_v1(*, projection: Any) -> dict[str, Any]:
             raise ValueError(
                 f"{POOL_RUNTIME_PROJECTION_INVALID}: field '{field_name}' must be an object"
             )
-    if payload.get("decision_refs") is not None and not isinstance(payload.get("decision_refs"), list):
-        raise ValueError(
-            f"{POOL_RUNTIME_PROJECTION_INVALID}: field 'decision_refs' must be an array"
-        )
     workflow_binding = dict(payload["workflow_binding"])
     binding_mode = str(workflow_binding.get("binding_mode") or "").strip()
     if not binding_mode:

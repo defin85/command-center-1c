@@ -54,6 +54,7 @@ import {
   type PoolSchemaTemplate,
   type PoolWorkflowBinding,
   type PoolWorkflowBindingPreview,
+  type PoolWorkflowBindingPreviewSlotCoverageSummary,
 } from '../../api/intercompanyPools'
 import {
   buildTopologyCoverageContext,
@@ -1042,6 +1043,38 @@ function TopologySlotCoveragePanel({
   )
 }
 
+const normalizePreviewSlotCoverageSummary = (
+  summary: PoolWorkflowBindingPreviewSlotCoverageSummary | null | undefined
+): TopologyCoverageSummary | null => {
+  if (!summary) {
+    return null
+  }
+  return {
+    totalEdges: Number(summary.total_edges || 0),
+    counts: {
+      resolved: Number(summary.counts?.resolved || 0),
+      missing_selector: Number(summary.counts?.missing_selector || 0),
+      missing_slot: Number(summary.counts?.missing_slot || 0),
+      ambiguous_slot: Number(summary.counts?.ambiguous_slot || 0),
+      ambiguous_context: Number(summary.counts?.ambiguous_context || 0),
+      unavailable_context: Number(summary.counts?.unavailable_context || 0),
+    },
+    items: Array.isArray(summary.items)
+      ? summary.items.map((item) => ({
+        edgeId: String(item.edge_id || ''),
+        edgeLabel: String(item.edge_label || '').trim(),
+        slotKey: String(item.slot_key || '').trim(),
+        coverage: {
+          code: item.coverage.code ?? null,
+          status: item.coverage.status,
+          label: String(item.coverage.label || '').trim(),
+          detail: String(item.coverage.detail || '').trim(),
+        },
+      }))
+      : [],
+  }
+}
+
 export function PoolRunsPage() {
   const { message } = AntApp.useApp()
   const [pools, setPools] = useState<OrganizationPool[]>([])
@@ -1784,15 +1817,8 @@ export function PoolRunsPage() {
     if (!bindingPreview) {
       return null
     }
-    const bindingLabel = describePoolWorkflowBindingCoverage(bindingPreview.workflow_binding)
-    return buildTopologyCoverageSummary({
-      bindingLabel,
-      decisions: bindingPreview.workflow_binding.decisions ?? [],
-      detail: `Coverage is evaluated against preview binding ${bindingLabel}.`,
-      selectors: topologyEdgeSelectors,
-      source: 'selected',
-    })
-  }, [bindingPreview, topologyEdgeSelectors])
+    return normalizePreviewSlotCoverageSummary(bindingPreview.slot_coverage_summary)
+  }, [bindingPreview])
   const runLineageCoverageSummary = useMemo(() => {
     if (!workflowBinding && !runtimeProjection) {
       return null
@@ -2014,7 +2040,7 @@ export function PoolRunsPage() {
                       description="Для выбранного pool/direction/mode найдено несколько active bindings. Выберите binding явно, чтобы увидеть slot coverage и построить preview."
                     />
                   ) : null}
-                  {selectedCreateBinding ? (
+                  {selectedCreateBinding && !bindingPreview ? (
                     <Card
                       size="small"
                       title="Topology slot coverage"

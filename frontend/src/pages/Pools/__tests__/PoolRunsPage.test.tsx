@@ -238,6 +238,29 @@ function buildWorkflowBindingPreview(overrides: Record<string, unknown> = {}) {
       version: 'document_policy.v1',
       targets: 3,
     },
+    slot_coverage_summary: {
+      total_edges: 1,
+      counts: {
+        resolved: 1,
+        missing_selector: 0,
+        missing_slot: 0,
+        ambiguous_slot: 0,
+        ambiguous_context: 0,
+        unavailable_context: 0,
+      },
+      items: [
+        {
+          edge_id: 'edge-1',
+          edge_label: 'Root Org -> Child Org',
+          slot_key: 'invoice_mode',
+          coverage: {
+            status: 'resolved',
+            label: 'Resolved',
+            detail: 'invoice_mode -> decision-1 r2',
+          },
+        },
+      ],
+    },
     runtime_projection: {
       version: 'pool_runtime_projection.v1',
       run_id: 'preview-run',
@@ -1227,6 +1250,45 @@ describe('PoolRunsPage', () => {
     expect((screen.getByTestId('pool-runs-binding-preview-slot-projection') as HTMLTextAreaElement).value).toContain(
       '"invoice_mode"'
     )
+  }, 15000)
+
+  it('uses backend slot coverage summary for binding preview instead of recomputing it from graph', async () => {
+    const user = userEvent.setup()
+    mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph('unexpected_slot'))
+    mockPreviewPoolWorkflowBinding.mockResolvedValueOnce(buildWorkflowBindingPreview({
+      slot_coverage_summary: {
+        total_edges: 1,
+        counts: {
+          resolved: 1,
+          missing_selector: 0,
+          missing_slot: 0,
+          ambiguous_slot: 0,
+          ambiguous_context: 0,
+          unavailable_context: 0,
+        },
+        items: [
+          {
+            edge_id: 'edge-1',
+            edge_label: 'Root Org -> Child Org',
+            slot_key: 'invoice_mode',
+            coverage: {
+              status: 'resolved',
+              label: 'Resolved',
+              detail: 'invoice_mode -> decision-1 r2',
+            },
+          },
+        ],
+      },
+    }))
+
+    renderPage()
+
+    await openRunsStage(user, 'Create')
+    await user.click(await screen.findByTestId('pool-runs-create-preview'))
+
+    expect(await screen.findByTestId('pool-runs-binding-preview-slot-coverage')).toHaveTextContent('resolved: 1')
+    expect(screen.getByText('All topology edges are covered by this binding preview.')).toBeInTheDocument()
+    expect(screen.queryByText(/unexpected_slot/i)).not.toBeInTheDocument()
   }, 15000)
 
   it('submits bottom_up create-run payload with source_payload and selected schema template', async () => {

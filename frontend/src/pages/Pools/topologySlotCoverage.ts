@@ -12,6 +12,7 @@ export type TopologyCoverageContext = {
 }
 
 export type TopologySlotCoverage = {
+  code?: string | null
   status: 'resolved' | 'missing_selector' | 'missing_slot' | 'ambiguous_slot' | 'ambiguous_context' | 'unavailable_context'
   label: string
   detail: string
@@ -136,6 +137,7 @@ export const resolveTopologySlotCoverage = (
   const normalizedSlotKey = String(slotKey || '').trim()
   if (!normalizedSlotKey) {
     return {
+      code: 'POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING',
       status: 'missing_selector',
       label: 'Slot required',
       detail: 'Set document_policy_key to verify publication slot coverage.',
@@ -143,6 +145,7 @@ export const resolveTopologySlotCoverage = (
   }
   if (context.status === 'ambiguous') {
     return {
+      code: 'POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS',
       status: 'ambiguous_context',
       label: 'Coverage unavailable',
       detail: context.detail,
@@ -150,6 +153,7 @@ export const resolveTopologySlotCoverage = (
   }
   if (context.status === 'unavailable' || !context.bindingLabel) {
     return {
+      code: null,
       status: 'unavailable_context',
       label: 'Coverage unavailable',
       detail: context.detail,
@@ -158,6 +162,7 @@ export const resolveTopologySlotCoverage = (
   const matches = context.slotRefs.filter((slotRef) => slotRef.slotKey === normalizedSlotKey)
   if (matches.length === 0) {
     return {
+      code: 'POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND',
       status: 'missing_slot',
       label: 'Slot missing',
       detail: `${context.bindingLabel} does not pin slot ${normalizedSlotKey}.`,
@@ -165,12 +170,14 @@ export const resolveTopologySlotCoverage = (
   }
   if (matches.length > 1) {
     return {
+      code: 'POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS',
       status: 'ambiguous_slot',
       label: 'Ambiguous slot',
       detail: `${context.bindingLabel} contains ${matches.length} refs for slot ${normalizedSlotKey}.`,
     }
   }
   return {
+    code: null,
     status: 'resolved',
     label: 'Resolved',
     detail: `${context.bindingLabel} -> ${matches[0]?.refLabel || normalizedSlotKey}`,

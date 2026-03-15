@@ -103,3 +103,29 @@ def test_pool_workflow_binding_contract_builds_lineage_snapshot() -> None:
     ]
     assert lineage["selector"] == {"direction": "top_down", "mode": "safe", "tags": ["baseline"]}
     assert lineage["status"] == "active"
+
+
+@pytest.mark.django_db
+def test_pool_workflow_binding_contract_rejects_duplicate_decision_key() -> None:
+    workflow = _create_workflow_template(name=f"wf-{uuid4().hex[:6]}", version_number=1)
+
+    with pytest.raises(ValueError, match="POOL_DOCUMENT_POLICY_SLOT_DUPLICATE"):
+        PoolWorkflowBindingContract(
+            binding_id="binding-services-v1",
+            pool_id=str(uuid4()),
+            workflow=build_workflow_definition_ref(workflow_template=workflow),
+            decisions=[
+                DecisionTableRef(
+                    decision_table_id="decision-publication-a",
+                    decision_key="publication_variant",
+                    decision_revision=3,
+                ),
+                DecisionTableRef(
+                    decision_table_id="decision-publication-b",
+                    decision_key="publication_variant",
+                    decision_revision=4,
+                ),
+            ],
+            effective_from=date(2026, 1, 1),
+            status=PoolWorkflowBindingStatus.ACTIVE,
+        )

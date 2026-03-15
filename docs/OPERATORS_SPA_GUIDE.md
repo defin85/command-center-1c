@@ -103,12 +103,13 @@
 8. Для остановки активного исполнения используй `Cancel`.
 
 #### Как это использовать в Topology/Policy
-- В `Pool Catalog` при настройке `document_policy` используй master-data token:
+- В `/decisions` при authoring `document_policy` используй master-data token:
   - `master_data.party.<canonical_id>.<organization|counterparty>.ref`
   - `master_data.item.<canonical_id>.ref`
   - `master_data.contract.<canonical_id>.<owner_counterparty_canonical_id>.ref`
   - `master_data.tax_profile.<canonical_id>.ref`
-- На исполнении gate резолвит token в конкретный `ib_ref_key` по target database.
+- Во вкладке `Bindings` pin decision revision в named publication slot (`decision_key`), а в `Topology Editor` укажи соответствующий `edge.metadata.document_policy_key`.
+- На исполнении gate резолвит token в конкретный `ib_ref_key` по target database из concrete slot-selected decision policy.
 
 #### Частые ошибки
 - `MASTER_DATA_ENTITY_NOT_FOUND`: нет canonical записи в `/pools/master-data` для token.
