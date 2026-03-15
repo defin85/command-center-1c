@@ -1126,10 +1126,14 @@ describe('PoolCatalogPage', () => {
 
     openSelectByTestId('pool-catalog-workflow-binding-decision-select-0-0')
     expect(mockGetDecisionsCollection).toHaveBeenCalledWith({ database_id: baseOrganization.database_id })
-    expect(await screen.findByText('Route Documents (route_documents) · r4 · shared-profile 8.3.24')).toBeInTheDocument()
+    const activeOption = await screen.findByText('Route Documents (route_documents) · r4 · shared-profile 8.3.24')
+    expect(activeOption).toBeInTheDocument()
     expect(screen.getByText('Route Documents Drift (route_documents_drift) · r5 · shared-profile 8.3.24 · drift')).toBeInTheDocument()
     expect(screen.queryByText('Incompatible Route (route_documents_incompatible) · r6')).not.toBeInTheDocument()
     expect(screen.queryByText('Legacy Route (legacy_route) · r3')).not.toBeInTheDocument()
+
+    await user.click(activeOption)
+    expect(await screen.findByTestId('pool-catalog-workflow-binding-slot-key-0-0')).toHaveTextContent('route_documents')
   }, 30000)
 
   it('keeps inactive pinned decision refs visible for existing workflow bindings', async () => {
@@ -1183,6 +1187,7 @@ describe('PoolCatalogPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('pool-catalog-workflow-binding-decision-select-0-0')).toBeInTheDocument()
     })
+    expect(screen.getByTestId('pool-catalog-workflow-binding-slot-key-0-0')).toHaveTextContent('legacy_route')
 
     openSelectByTestId('pool-catalog-workflow-binding-decision-select-0-0')
     expect(
