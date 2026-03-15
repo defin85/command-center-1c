@@ -624,8 +624,17 @@ ensure_env_local() {
     local default_path=""
 
     if is_wsl; then
-        # WSL: путь должен быть в формате /mnt/c/...
-        default_path="/mnt/c/Program Files/1cv8/8.3.27.1786/bin"
+        # WSL: предпочитаем локальную Linux-установку 1С, если она есть
+        local latest_linux_1c_path=""
+        if [[ -d "/opt/1cv8/x86_64" ]]; then
+            latest_linux_1c_path=$(find /opt/1cv8/x86_64 -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -V | tail -n1)
+        fi
+
+        if [[ -n "$latest_linux_1c_path" ]] && [[ -x "$latest_linux_1c_path/1cv8" ]]; then
+            default_path="$latest_linux_1c_path"
+        else
+            default_path="/mnt/c/Program Files/1cv8/8.3.27.1786/bin"
+        fi
         if [[ "$platform_path" == "C:\\"* ]] || [[ "$platform_path" == "C:/"* ]] || [[ -z "$platform_path" ]]; then
             needs_update=true
         fi

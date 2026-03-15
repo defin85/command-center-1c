@@ -88,6 +88,24 @@ show_help() {
     echo ""
 }
 
+check_tcp_endpoint() {
+    local host=$1
+    local port=$2
+    local timeout_sec=${3:-3}
+
+    if command -v nc >/dev/null 2>&1; then
+        nc -z -w "$timeout_sec" "$host" "$port" 2>/dev/null
+        return $?
+    fi
+
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$timeout_sec" bash -c "echo >/dev/tcp/$host/$port" 2>/dev/null
+        return $?
+    fi
+
+    (echo >/dev/tcp/"$host"/"$port") 2>/dev/null
+}
+
 ##############################################################################
 # ARGUMENT PARSING
 ##############################################################################
@@ -660,54 +678,36 @@ else
     RAGENT_PORT="${RAGENT_PORT:-1640}"
     RAGENT_HOST="${RAGENT_HOST:-192.168.32.143}"
     # Проверить что ragent доступен (порт по умолчанию 1640)
-    if ! check_port_listening "$RAGENT_PORT"; then
-        echo -e "${YELLOW}⚠️  1C Server Agent (ragent) не найден на порту $RAGENT_PORT${NC}"
+    if ! check_tcp_endpoint "$RAGENT_HOST" "$RAGENT_PORT" 3; then
+        echo -e "${YELLOW}⚠️  1C Server Agent (ragent) недоступен по адресу ${RAGENT_HOST}:${RAGENT_PORT}${NC}"
         echo -e "${YELLOW}   Убедитесь, что служба 'Агент сервера 1С:Предприятия' запущена${NC}"
         echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
     elif [ -z "$PLATFORM_1C_BIN_PATH" ]; then
         echo -e "${YELLOW}⚠️  PLATFORM_1C_BIN_PATH не задан в .env.local${NC}"
         echo -e "${YELLOW}   RAS не будет запущен. Установите путь к платформе 1С:${NC}"
         if is_wsl; then
-            echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=\"/mnt/c/Program Files/1cv8/8.3.27.1786/bin\"${NC}"
+            echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=\"/opt/1cv8/x86_64/8.3.27.1859\"${NC}"
+            echo -e "${YELLOW}   или PLATFORM_1C_BIN_PATH=\"/mnt/c/Program Files/1cv8/8.3.27.1786/bin\"${NC}"
+        elif [[ "$OS_TYPE" == "linux" ]]; then
+            echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=\"/opt/1cv8/x86_64/8.3.27.1859\"${NC}"
         else
-            echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=\"C:\\Program Files\\1cv8\\8.3.27.1786\\bin\"${NC}"
+            echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=\"/mnt/c/Program Files/1cv8/8.3.27.1786/bin\"${NC}"
+            echo -e "${YELLOW}   или PLATFORM_1C_BIN_PATH=\"C:\\Program Files\\1cv8\\8.3.27.1786\\bin\"${NC}"
         fi
         echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
     else
-        # Определяем путь к ras.exe в зависимости от платформы
-        if is_wsl; then
-            # WSL: конвертируем путь и запускаем через PowerShell
-            if [[ "$PLATFORM_1C_BIN_PATH" == /mnt/* ]]; then
-                # WSL путь типа /mnt/c/Program Files/... -> C:\Program Files\...
-                WIN_DRIVE=$(echo "$PLATFORM_1C_BIN_PATH" | sed 's|/mnt/\([a-z]\)/|\U\1:\\|' | sed 's|/|\\|g')
-                RAS_WIN_PATH="${WIN_DRIVE}\\ras.exe"
-            else
-                RAS_WIN_PATH="${PLATFORM_1C_BIN_PATH}\\ras.exe"
-            fi
-            RAS_EXE="$PLATFORM_1C_BIN_PATH/ras.exe"
-        else
-            # Native Windows (Git Bash / MSYS2): используем путь напрямую
-            RAS_EXE="$PLATFORM_1C_BIN_PATH/ras.exe"
-            RAS_WIN_PATH="$PLATFORM_1C_BIN_PATH\\ras.exe"
-        fi
+        RAS_EXE="$(_resolve_ras_binary_path "$PLATFORM_1C_BIN_PATH" 2>/dev/null || true)"
 
-        # Проверить что ras.exe существует
-        if [ ! -f "$RAS_EXE" ]; then
-            echo -e "${YELLOW}⚠️  ras.exe не найден: $RAS_EXE${NC}"
+        if [ -z "$RAS_EXE" ]; then
+            echo -e "${YELLOW}⚠️  ras/ras.exe не найден в каталоге: $PLATFORM_1C_BIN_PATH${NC}"
             echo -e "${YELLOW}   Продолжаю без RAS...${NC}"
         else
-            # RAS в режиме cluster подключается к ragent и предоставляет API на порту 1645
-            echo -e "${CYAN}   Запуск: ras.exe cluster --port=${RAS_PORT:-1645} ${RAGENT_HOST}:${RAGENT_PORT}${NC}"
+            RAS_BIN_NAME=$(basename "$RAS_EXE")
+            echo -e "${CYAN}   Запуск: ${RAS_BIN_NAME} cluster --port=${RAS_PORT:-1645} ${RAGENT_HOST}:${RAGENT_PORT}${NC}"
 
-            if is_wsl; then
-                # WSL: запуск через PowerShell (создает Windows процесс)
-                powershell.exe -Command "Start-Process -FilePath '$RAS_WIN_PATH' -ArgumentList 'cluster','--port=${RAS_PORT:-1645}','${RAGENT_HOST}:${RAGENT_PORT}' -WindowStyle Hidden" > "$LOGS_DIR/ras.log" 2>&1
-            else
-                # Native Windows: запуск напрямую в фоне
-                nohup "$RAS_EXE" cluster --port=${RAS_PORT:-1645} ${RAGENT_HOST}:${RAGENT_PORT} > "$LOGS_DIR/ras.log" 2>&1 &
-                RAS_PID=$!
-                echo $RAS_PID > "$PIDS_DIR/ras.pid"
-            fi
+            nohup "$RAS_EXE" cluster --port=${RAS_PORT:-1645} ${RAGENT_HOST}:${RAGENT_PORT} > "$LOGS_DIR/ras.log" 2>&1 &
+            RAS_PID=$!
+            echo $RAS_PID > "$PIDS_DIR/ras.pid"
 
             # Ждем запуска RAS
             sleep 3

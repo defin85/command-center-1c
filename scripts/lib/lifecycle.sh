@@ -449,6 +449,27 @@ _start_frontend_service() {
 # EXTERNAL SERVICE STARTERS
 ##############################################################################
 
+# _resolve_ras_binary_path - ищет ras binary в каталоге платформы 1С
+# Usage: _resolve_ras_binary_path [bin_path]
+# Echoes: полный путь к ras/ras.exe
+# Returns: 0 если найден, 1 если нет
+_resolve_ras_binary_path() {
+    local bin_path="${1:-${PLATFORM_1C_BIN_PATH:-}}"
+    if [[ -z "$bin_path" ]]; then
+        return 1
+    fi
+
+    local candidate
+    for candidate in "$bin_path/ras" "$bin_path/ras.exe"; do
+        if [[ -f "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 # _start_external_service - запуск внешних сервисов (RAS и т.д.)
 # Usage: _start_external_service "ras"
 # Sets: LAST_SERVICE_PID
@@ -471,14 +492,16 @@ _start_external_service() {
                 return 1
             fi
 
-            local ras_exe="$PLATFORM_1C_BIN_PATH/ras.exe"
-            if [[ ! -f "$ras_exe" ]]; then
-                log_error "ras.exe не найден: $ras_exe"
+            local ras_exe=""
+            if ! ras_exe=$(_resolve_ras_binary_path); then
+                log_error "ras/ras.exe не найден в PLATFORM_1C_BIN_PATH: ${PLATFORM_1C_BIN_PATH}"
                 return 1
             fi
 
             local port="${RAS_PORT:-1645}"
-            nohup "$ras_exe" cluster --port="$port" > "$log_file" 2>&1 &
+            local ragent_host="${RAGENT_HOST:-127.0.0.1}"
+            local ragent_port="${RAGENT_PORT:-1640}"
+            nohup "$ras_exe" cluster --port="$port" "${ragent_host}:${ragent_port}" > "$log_file" 2>&1 &
             LAST_SERVICE_PID=$!
             ;;
         *)
