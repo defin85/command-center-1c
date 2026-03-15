@@ -394,6 +394,7 @@ def start_pool_run_retry_workflow_execution(
                 run=locked_run,
                 plan=plan,
                 document_plan_artifact=document_plan_artifact,
+                compiled_document_policy_slots=compiled_document_policy_slots,
                 compiled_document_policy=compiled_document_policy,
             )
             decision_outputs = _resolve_retry_decision_outputs(parent_input_context)

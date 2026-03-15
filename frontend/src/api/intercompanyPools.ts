@@ -218,9 +218,21 @@ export type PoolRunRuntimeProjectionWorkflowBinding = {
   status?: string
 }
 
+export type PoolRunRuntimeProjectionDocumentPolicyRef = {
+  slot_key: string | null
+  edge_ref: {
+    parent_node_id: string
+    child_node_id: string
+  }
+  policy_version: string
+  source: string
+}
+
 export type PoolRunRuntimeProjectionDocumentPolicyProjection = {
   source_mode: string
-  policy_refs: Array<Record<string, unknown>>
+  policy_refs: PoolRunRuntimeProjectionDocumentPolicyRef[]
+  compiled_document_policy_slots: Record<string, Record<string, unknown>>
+  slot_coverage_summary: PoolWorkflowBindingPreviewSlotCoverageSummary
   policy_refs_count: number
   targets_count: number
 }
@@ -416,6 +428,10 @@ export type PoolGraphNode = {
   metadata: Record<string, unknown>
 }
 
+export type PoolTopologyEdgeMetadata = Record<string, unknown> & {
+  document_policy_key?: string
+}
+
 export type PoolGraphEdge = {
   edge_version_id: string
   parent_node_version_id: string
@@ -423,7 +439,7 @@ export type PoolGraphEdge = {
   weight: string
   min_amount: string | null
   max_amount: string | null
-  metadata: Record<string, unknown>
+  metadata: PoolTopologyEdgeMetadata
 }
 
 export type PoolGraph = {
@@ -453,6 +469,19 @@ export type PoolDocumentPolicyMigrationDecisionRef = {
   decision_revision: number
 }
 
+export type PoolDocumentPolicyMigrationBindingDecisionRef = {
+  decision_table_id: string
+  decision_key: string
+  decision_revision: number
+}
+
+export type PoolDocumentPolicyMigrationAffectedBinding = {
+  binding_id: string
+  revision: number
+  updated: boolean
+  decision_ref: PoolDocumentPolicyMigrationBindingDecisionRef
+}
+
 export type PoolDocumentPolicyMigrationSource = {
   kind?: string
   source_path: string
@@ -475,8 +504,11 @@ export type PoolDocumentPolicyMigrationReport = {
   created: boolean
   reused_existing_revision: boolean
   binding_update_required: boolean
+  slot_key: string
+  legacy_payload_removed: boolean
   source: PoolDocumentPolicyMigrationSource
   decision_ref: PoolDocumentPolicyMigrationDecisionRef
+  affected_bindings: PoolDocumentPolicyMigrationAffectedBinding[]
 }
 
 export type PoolDocumentPolicyMigrationDecision = {
@@ -578,7 +610,7 @@ export type PoolTopologySnapshotEdgeInput = {
   weight?: string
   min_amount?: string | null
   max_amount?: string | null
-  metadata?: Record<string, unknown>
+  metadata?: PoolTopologyEdgeMetadata
 }
 
 export type UpsertPoolTopologySnapshotPayload = {

@@ -32,8 +32,10 @@
    - в `Metadata management` при необходимости запустить `Re-verify configuration identity`, затем `Refresh metadata snapshot`
 4. Для pool-ов с legacy edge policies выполнить import в `/decisions`:
    - UI: `/decisions` -> `Import legacy edge`
+   - Compatibility UI shortcut: `/pools/catalog` -> `Import to /decisions`
    - explicit compatibility-only fallback: `/decisions` -> `Import raw JSON`
    - API: `POST /api/v2/pools/{pool_id}/document-policy-migrations/`
+   - migration report должен зафиксировать `slot_key`, `legacy_payload_removed` и `affected_bindings[].decision_ref`
 5. Только после этого включать tenant-scoped rollout marker `workflows.authoring.phase=workflow_centric_active`.
 6. Для checked-in proof shipped default path использовать:
    - `docs/observability/artifacts/refactor-14/repository-acceptance-evidence.md`
@@ -54,6 +56,7 @@
 - Legacy snapshot/resolution state после backfill не должно ожидать отдельный canonical row на каждый `extensions_fingerprint`; shared state теперь canonicalize'ится только по business identity `config_name + config_version`.
 - Historical decision rows и legacy metadata registry state должны быть прогнаны через `backfill_business_identity_state` до tenant cutover; без этого `/decisions` может честно оставаться fail-closed на `missing_metadata_context`.
 - Если import legacy policy завершился с `binding_update_required=true`, rollout нельзя считать завершённым, пока binding refs не закреплены явно.
+- Если migration report не показывает `legacy_payload_removed=true` и expected `slot_key`/`affected_bindings`, topology cutover для этого edge не завершён.
 - Explicit `pool_workflow_binding_id` requirement для preview/create-run остаётся обязательным; подробности см. в [2026-02-15-pools-run-input-breaking-change.md](./2026-02-15-pools-run-input-breaking-change.md).
 
 ### Rollback window

@@ -50,6 +50,14 @@ class DocumentPolicyMigrationResult:
     created: bool
 
 
+@dataclass(frozen=True)
+class DocumentPolicyMigrationBindingOutcome:
+    binding_id: str
+    revision: int
+    updated: bool
+    decision_ref: dict[str, Any]
+
+
 def migrate_legacy_edge_document_policy(
     *,
     tenant_id: str,
@@ -123,6 +131,7 @@ def migrate_legacy_edge_document_policy(
     stored_source_provenance = (
         build_decision_table_source_provenance(source_provenance=source_provenance) or {}
     )
+    slot_key = _resolve_slot_key(pool=pool, edge_version=edge_version)
 
     normalized_decision_table_id = str(decision_table_id or "").strip() or _build_decision_table_id(
         pool=pool,
@@ -191,10 +200,15 @@ def migrate_legacy_edge_document_policy(
             )
             created = True
             reused_existing_revision = False
-        affected_bindings_count = _update_affected_pool_workflow_bindings(
+        affected_bindings = _update_affected_pool_workflow_bindings(
             pool=pool,
             decision=decision,
+            slot_key=slot_key,
             actor_username=actor_username,
+        )
+        legacy_payload_removed = _update_edge_document_policy_slot(
+            edge_version=edge_version,
+            slot_key=slot_key,
         )
 
     return DocumentPolicyMigrationResult(
@@ -204,10 +218,13 @@ def migrate_legacy_edge_document_policy(
             pool=pool,
             edge_version=edge_version,
             decision=decision,
+            slot_key=slot_key,
             source_provenance=stored_source_provenance,
             created=created,
             reused_existing_revision=reused_existing_revision,
-            binding_update_required=affected_bindings_count == 0,
+            binding_update_required=not affected_bindings,
+            affected_bindings=affected_bindings,
+            legacy_payload_removed=legacy_payload_removed,
         ),
         created=created,
     )
@@ -229,6 +246,18 @@ def _build_decision_name(*, pool: OrganizationPool, edge_version: PoolEdgeVersio
         edge_version.child_node.organization_id
     )
     return f"{pool.code}: {parent_name} -> {child_name} document policy"
+
+
+def _resolve_slot_key(*, pool: OrganizationPool, edge_version: PoolEdgeVersion) -> str:
+    metadata = edge_version.metadata if isinstance(edge_version.metadata, Mapping) else {}
+    existing_slot_key = str(metadata.get("document_policy_key") or "").strip()
+    if existing_slot_key:
+        return existing_slot_key
+
+    raw_identity = (
+        f"{pool.id}:{edge_version.parent_node.organization_id}:{edge_version.child_node.organization_id}"
+    )
+    return f"legacy_edge_{hashlib.sha256(raw_identity.encode('utf-8')).hexdigest()[:16]}"
 
 
 def _build_source_provenance(
@@ -298,22 +327,41 @@ def _update_affected_pool_workflow_bindings(
     *,
     pool: OrganizationPool,
     decision: DecisionTable,
+    slot_key: str,
     actor_username: str,
-) -> int:
+) -> list[DocumentPolicyMigrationBindingOutcome]:
     canonical_bindings = list_canonical_pool_workflow_bindings(pool=pool)
-    migrated_decision_ref = build_decision_table_ref(decision_table=decision).model_dump(mode="json")
+    migrated_decision_ref = {
+        **build_decision_table_ref(decision_table=decision).model_dump(mode="json"),
+        "decision_key": slot_key,
+    }
+    outcomes: list[DocumentPolicyMigrationBindingOutcome] = []
 
     for binding in canonical_bindings:
         rewritten_decisions = _rewrite_document_policy_binding_decisions(
             decisions=binding.get("decisions"),
             migrated_decision_ref=migrated_decision_ref,
+            binding_id=str(binding.get("binding_id") or ""),
+            slot_key=slot_key,
         )
-        if rewritten_decisions == list(binding.get("decisions") or []):
+        existing_decisions = list(binding.get("decisions") or [])
+        updated = rewritten_decisions != existing_decisions
+        updated_binding = binding
+        revision = int(binding.get("revision") or 0)
+        if not updated:
+            outcomes.append(
+                DocumentPolicyMigrationBindingOutcome(
+                    binding_id=str(binding.get("binding_id") or ""),
+                    revision=revision,
+                    updated=False,
+                    decision_ref=dict(migrated_decision_ref),
+                )
+            )
             continue
         updated_payload = dict(binding)
         updated_payload["decisions"] = rewritten_decisions
         try:
-            upsert_canonical_pool_workflow_binding(
+            updated_binding, _ = upsert_canonical_pool_workflow_binding(
                 pool=pool,
                 workflow_binding=updated_payload,
                 actor_username=actor_username,
@@ -328,13 +376,23 @@ def _update_affected_pool_workflow_bindings(
                 ),
                 status_code=status_code,
             ) from exc
-    return len(canonical_bindings)
+        outcomes.append(
+            DocumentPolicyMigrationBindingOutcome(
+                binding_id=str(updated_binding.get("binding_id") or ""),
+                revision=int(updated_binding.get("revision") or 0),
+                updated=True,
+                decision_ref=dict(migrated_decision_ref),
+            )
+        )
+    return outcomes
 
 
 def _rewrite_document_policy_binding_decisions(
     *,
     decisions: object,
     migrated_decision_ref: Mapping[str, Any],
+    binding_id: str,
+    slot_key: str,
 ) -> list[dict[str, Any]]:
     existing_decisions = [
         dict(decision_ref)
@@ -345,10 +403,24 @@ def _rewrite_document_policy_binding_decisions(
     document_policy_pinned = False
 
     for decision_ref in existing_decisions:
-        if str(decision_ref.get("decision_key") or "").strip() == DOCUMENT_POLICY_METADATA_KEY:
+        decision_key = str(decision_ref.get("decision_key") or "").strip()
+        if decision_key == slot_key:
             if not document_policy_pinned:
+                if not _decision_refs_match(
+                    left=decision_ref,
+                    right=migrated_decision_ref,
+                ):
+                    raise DocumentPolicyMigrationError(
+                        code="POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
+                        detail=(
+                            f"Binding '{binding_id or '<unknown>'}' already "
+                            f"uses slot '{slot_key}' for a different decision ref."
+                        ),
+                    )
                 rewritten_decisions.append(dict(migrated_decision_ref))
                 document_policy_pinned = True
+            continue
+        if decision_key == DOCUMENT_POLICY_METADATA_KEY:
             continue
         rewritten_decisions.append(decision_ref)
 
@@ -357,15 +429,41 @@ def _rewrite_document_policy_binding_decisions(
     return rewritten_decisions
 
 
+def _decision_refs_match(*, left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
+    return (
+        str(left.get("decision_table_id") or "").strip()
+        == str(right.get("decision_table_id") or "").strip()
+        and int(left.get("decision_revision") or 0) == int(right.get("decision_revision") or 0)
+        and str(left.get("decision_key") or "").strip() == str(right.get("decision_key") or "").strip()
+    )
+
+
+def _update_edge_document_policy_slot(
+    *,
+    edge_version: PoolEdgeVersion,
+    slot_key: str,
+) -> bool:
+    metadata = dict(edge_version.metadata or {}) if isinstance(edge_version.metadata, Mapping) else {}
+    metadata["document_policy_key"] = slot_key
+    legacy_payload_removed = DOCUMENT_POLICY_METADATA_KEY in metadata
+    metadata.pop(DOCUMENT_POLICY_METADATA_KEY, None)
+    edge_version.metadata = metadata
+    edge_version.save(update_fields=["metadata", "updated_at"])
+    return legacy_payload_removed
+
+
 def _build_migration_report(
     *,
     pool: OrganizationPool,
     edge_version: PoolEdgeVersion,
     decision: DecisionTable,
+    slot_key: str,
     source_provenance: Mapping[str, Any],
     created: bool,
     reused_existing_revision: bool,
     binding_update_required: bool,
+    affected_bindings: list[DocumentPolicyMigrationBindingOutcome],
+    legacy_payload_removed: bool,
 ) -> dict[str, Any]:
     source = dict(source_provenance)
     source["pool_code"] = pool.code
@@ -375,12 +473,23 @@ def _build_migration_report(
         "created": created,
         "reused_existing_revision": reused_existing_revision,
         "binding_update_required": binding_update_required,
+        "slot_key": slot_key,
+        "legacy_payload_removed": legacy_payload_removed,
         "source": source,
         "decision_ref": {
             "decision_id": str(decision.id),
             "decision_table_id": decision.decision_table_id,
             "decision_revision": decision.version_number,
         },
+        "affected_bindings": [
+            {
+                "binding_id": outcome.binding_id,
+                "revision": outcome.revision,
+                "updated": outcome.updated,
+                "decision_ref": dict(outcome.decision_ref),
+            }
+            for outcome in affected_bindings
+        ],
     }
 
 

@@ -596,7 +596,7 @@ def test_reconciliation_rejects_legacy_edge_policy_in_shipped_runtime_path() -> 
 
 
 @pytest.mark.django_db
-def test_reconciliation_prefers_compiled_document_policy_from_execution_context() -> None:
+def test_reconciliation_fails_closed_when_only_compatibility_compiled_document_policy_is_present() -> None:
     run = _create_pool_run(
         mode=PoolRunMode.UNSAFE,
         direction=PoolRunDirection.TOP_DOWN,
@@ -633,23 +633,13 @@ def test_reconciliation_prefers_compiled_document_policy_from_execution_context(
         context={"pool_run_id": str(run.id)},
         execution=execution,
     )
-    reconciliation_output = execute_pool_runtime_step(
-        operation_type="pool.reconciliation_report",
-        rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
-        context={"pool_run_id": str(run.id)},
-        execution=execution,
-    )
-
-    artifact = reconciliation_output.get("document_plan_artifact")
-    assert isinstance(artifact, dict)
-    assert artifact["policy_refs"][0]["source"] == "workflow_binding.decision_table:doc-policy:v4"
-
-    left_target = next(
-        target
-        for target in artifact["targets"]
-        if isinstance(target, dict) and target.get("database_id") == topology["left_database_id"]
-    )
-    assert left_target["chains"][0]["chain_id"] == "compiled_chain"
+    with pytest.raises(ValueError, match="POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_REQUIRED"):
+        execute_pool_runtime_step(
+            operation_type="pool.reconciliation_report",
+            rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
 
 
 @pytest.mark.django_db

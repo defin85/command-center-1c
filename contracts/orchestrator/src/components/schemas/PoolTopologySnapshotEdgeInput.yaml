@@ -21,7 +21,13 @@ properties:
     format: decimal
     pattern: ^-?\d{0,16}(?:\.\d{0,2})?$
     nullable: true
-  metadata: {}
+  metadata:
+    type: object
+    properties:
+      document_policy_key:
+        type: string
+        description: Publication slot selector resolved against active binding decision_key refs.
+    additionalProperties: true
 required:
   - child_organization_id
   - parent_organization_id

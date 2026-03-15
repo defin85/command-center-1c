@@ -191,6 +191,81 @@ def test_generated_models_cover_document_policy_migration_schemas() -> None:
             f"{sorted(set(properties.keys()) - generated_fields)}"
         )
 
+    report_content = (
+        _repo_root()
+        / "frontend"
+        / "src"
+        / "api"
+        / "generated"
+        / "model"
+        / "poolDocumentPolicyMigrationReport.ts"
+    ).read_text(encoding="utf-8")
+    assert re.search(r"slot_key: string;", report_content)
+    assert re.search(r"legacy_payload_removed: boolean;", report_content)
+    assert re.search(r"affected_bindings: PoolDocumentPolicyMigrationReportAffectedBindingsItem\[];", report_content)
+
+    affected_binding_content = (
+        _repo_root()
+        / "frontend"
+        / "src"
+        / "api"
+        / "generated"
+        / "model"
+        / "poolDocumentPolicyMigrationReportAffectedBindingsItemDecisionRef.ts"
+    ).read_text(encoding="utf-8")
+    assert re.search(r"decision_table_id: string;", affected_binding_content)
+    assert re.search(r"decision_key: string;", affected_binding_content)
+    assert re.search(r"decision_revision: number;", affected_binding_content)
+
+
+def test_generated_pool_runtime_projection_model_covers_slot_lineage_contract() -> None:
+    contract = _load_openapi_contract()
+    schema = _schema(contract, "PoolRuntimeProjection")
+    properties = schema.get("properties")
+    assert isinstance(properties, dict)
+
+    generated_fields = _generated_model_fields("poolRuntimeProjection.ts")
+    assert set(properties.keys()).issubset(generated_fields)
+
+    projection_content = (
+        _repo_root()
+        / "frontend"
+        / "src"
+        / "api"
+        / "generated"
+        / "model"
+        / "poolRuntimeProjectionDocumentPolicyProjection.ts"
+    ).read_text(encoding="utf-8")
+    assert re.search(r"compiled_document_policy_slots:", projection_content)
+    assert re.search(r"slot_coverage_summary:", projection_content)
+
+    policy_ref_content = (
+        _repo_root()
+        / "frontend"
+        / "src"
+        / "api"
+        / "generated"
+        / "model"
+        / "poolRuntimeProjectionDocumentPolicyProjectionPolicyRefsItem.ts"
+    ).read_text(encoding="utf-8")
+    assert re.search(r"slot_key: string \| null;", policy_ref_content)
+    assert re.search(
+        r"edge_ref: PoolRuntimeProjectionDocumentPolicyProjectionPolicyRefsItemEdgeRef;",
+        policy_ref_content,
+    )
+
+    slot_coverage_content = (
+        _repo_root()
+        / "frontend"
+        / "src"
+        / "api"
+        / "generated"
+        / "model"
+        / "poolRuntimeProjectionDocumentPolicyProjectionSlotCoverageSummary.ts"
+    ).read_text(encoding="utf-8")
+    assert re.search(r"total_edges: number;", slot_coverage_content)
+    assert re.search(r"items: PoolRuntimeProjectionDocumentPolicyProjectionSlotCoverageSummaryItemsItem\[];", slot_coverage_content)
+
 
 def test_generated_gateway_routes_include_document_policy_migration_path() -> None:
     routes_path = (
@@ -245,6 +320,27 @@ def test_generated_models_cover_graph_metadata_fields_from_contract() -> None:
 
         generated_fields = _generated_model_fields(model_file)
         assert "metadata" in generated_fields, f"{schema_name}.metadata missing in generated {model_file}"
+
+
+def test_generated_edge_metadata_models_include_document_policy_key() -> None:
+    checks = (
+        "poolGraphEdgeMetadata.ts",
+        "poolTopologySnapshotEdgeInputMetadata.ts",
+    )
+
+    for model_file in checks:
+        content = (
+            _repo_root()
+            / "frontend"
+            / "src"
+            / "api"
+            / "generated"
+            / "model"
+            / model_file
+        ).read_text(encoding="utf-8")
+        assert re.search(r"document_policy_key\?: string;", content), (
+            f"document_policy_key missing in generated metadata model {model_file}"
+        )
 
 
 def test_pool_upsert_generated_client_does_not_expose_workflow_bindings_write_field() -> None:

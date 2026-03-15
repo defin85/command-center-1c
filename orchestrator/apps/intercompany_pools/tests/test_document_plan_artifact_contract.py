@@ -41,6 +41,7 @@ def _build_artifact() -> dict[str, object]:
         "topology_version_ref": "pool_topology:abc123",
         "policy_refs": [
             {
+                "slot_key": "document_policy",
                 "edge_ref": {
                     "parent_node_id": "parent-1",
                     "child_node_id": "child-1",
@@ -222,6 +223,7 @@ def test_validate_document_plan_artifact_v1_accepts_required_contract_fields() -
     validated = validate_document_plan_artifact_v1(artifact=artifact)
 
     assert validated["version"] == DOCUMENT_PLAN_ARTIFACT_VERSION
+    assert validated["policy_refs"][0]["slot_key"] == "document_policy"
     assert validated["policy_refs"][0]["policy_version"] == "document_policy.v1"
 
 
@@ -464,6 +466,7 @@ def test_compile_document_plan_artifact_v1_resolves_slot_based_policy_per_edge()
 
     assert artifact is not None
     assert artifact["compile_summary"]["compiled_edges"] == 2
+    assert {ref["slot_key"] for ref in artifact["policy_refs"]} == {"sale", "purchase"}
     assert {ref["source"] for ref in artifact["policy_refs"]} == {
         "workflow_binding.decision_table:sale-slot:v3",
         "workflow_binding.decision_table:purchase-slot:v4",

@@ -209,7 +209,9 @@ def build_pool_workflow_binding_runtime_bundle(
         run=preview_run,
         plan=plan,
         document_plan_artifact=document_plan_artifact,
+        compiled_document_policy_slots=compiled_document_policy_slots,
         compiled_document_policy=compiled_document_policy,
+        slot_coverage_summary=slot_coverage_summary,
     )
     return {
         "workflow_binding": resolved_binding.model_dump(mode="json"),

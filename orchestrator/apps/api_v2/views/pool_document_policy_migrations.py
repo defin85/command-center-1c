@@ -36,6 +36,19 @@ class PoolDocumentPolicyMigrationDecisionRefSerializer(serializers.Serializer):
     decision_revision = serializers.IntegerField(min_value=1)
 
 
+class PoolDocumentPolicyMigrationBindingDecisionRefSerializer(serializers.Serializer):
+    decision_table_id = serializers.CharField()
+    decision_key = serializers.CharField()
+    decision_revision = serializers.IntegerField(min_value=1)
+
+
+class PoolDocumentPolicyMigrationAffectedBindingSerializer(serializers.Serializer):
+    binding_id = serializers.CharField()
+    revision = serializers.IntegerField(min_value=1)
+    updated = serializers.BooleanField()
+    decision_ref = PoolDocumentPolicyMigrationBindingDecisionRefSerializer()
+
+
 class PoolDocumentPolicyMigrationSourceSerializer(serializers.Serializer):
     kind = serializers.CharField()
     source_path = serializers.CharField()
@@ -58,8 +71,11 @@ class PoolDocumentPolicyMigrationReportSerializer(serializers.Serializer):
     created = serializers.BooleanField()
     reused_existing_revision = serializers.BooleanField()
     binding_update_required = serializers.BooleanField()
+    slot_key = serializers.CharField()
+    legacy_payload_removed = serializers.BooleanField()
     source = PoolDocumentPolicyMigrationSourceSerializer()
     decision_ref = PoolDocumentPolicyMigrationDecisionRefSerializer()
+    affected_bindings = PoolDocumentPolicyMigrationAffectedBindingSerializer(many=True)
 
 
 class PoolDocumentPolicyMigrationDecisionSerializer(serializers.Serializer):

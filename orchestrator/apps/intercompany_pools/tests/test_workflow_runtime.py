@@ -449,6 +449,7 @@ def _build_document_plan_artifact_for_compile() -> dict[str, object]:
         "topology_version_ref": "topology-v1",
         "policy_refs": [
             {
+                "slot_key": "document_policy",
                 "edge_ref": {
                     "parent_node_id": "node-parent",
                     "child_node_id": "node-child",
@@ -603,6 +604,10 @@ def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_bindi
     assert runtime_projection["workflow_binding"]["binding_mode"] == "pool_workflow_binding"
     assert runtime_projection["workflow_binding"]["binding_id"] == workflow_binding["binding_id"]
     assert runtime_projection["workflow_binding"]["workflow_revision"] == 3
+    assert runtime_projection["document_policy_projection"]["compiled_document_policy_slots"] == (
+        compiled_document_policy_slots
+    )
+    assert runtime_projection["document_policy_projection"]["slot_coverage_summary"]["counts"]["resolved"] == 1
 
     binding_entry = next(
         item
@@ -677,7 +682,18 @@ def test_start_pool_run_workflow_execution_reloads_binding_snapshot_from_canonic
         f"{updated_decision.decision_table_id}:v{updated_decision.version_number}"
     )
     assert runtime_projection["workflow_binding"]["binding_id"] == stale_binding["binding_id"]
-    assert runtime_projection["decision_refs"] == expected_binding["decisions"]
+    assert runtime_projection["workflow_binding"]["decision_refs"] == expected_binding["decisions"]
+    assert runtime_projection["document_policy_projection"]["compiled_document_policy_slots"] == {
+        updated_decision.decision_key: {
+            "decision_table_id": updated_decision.decision_table_id,
+            "decision_revision": updated_decision.version_number,
+            "document_policy_source": (
+                "workflow_binding.decision_table:"
+                f"{updated_decision.decision_table_id}:v{updated_decision.version_number}"
+            ),
+            "document_policy": compiled_document_policy,
+        }
+    }
 
     persisted_run = PoolRun.objects.get(id=run.id)
     assert persisted_run.workflow_binding_snapshot == expected_binding
@@ -715,12 +731,17 @@ def test_start_pool_run_workflow_execution_uses_atomic_publication_nodes_when_do
     assert len(atomic_publication_node_ids) == 2
     assert "publication_odata" not in node_ids
     assert isinstance(runtime_projection, dict)
-    assert runtime_projection["document_policy_projection"] == {
-        "source_mode": "document_plan_artifact",
-        "policy_refs": artifact["policy_refs"],
-        "policy_refs_count": 1,
-        "targets_count": 1,
-    }
+    assert runtime_projection["document_policy_projection"]["source_mode"] == "document_plan_artifact"
+    assert runtime_projection["document_policy_projection"]["policy_refs"] == artifact["policy_refs"]
+    assert runtime_projection["document_policy_projection"]["policy_refs_count"] == 1
+    assert runtime_projection["document_policy_projection"]["targets_count"] == 1
+    compiled_slots = runtime_projection["document_policy_projection"]["compiled_document_policy_slots"]
+    assert set(compiled_slots) == {"document_policy"}
+    assert compiled_slots["document_policy"]["document_policy"]["version"] == DOCUMENT_POLICY_VERSION
+    assert compiled_slots["document_policy"]["document_policy_source"].startswith(
+        "workflow_binding.decision_table:"
+    )
+    assert runtime_projection["document_policy_projection"]["slot_coverage_summary"]["counts"]["resolved"] == 1
     assert runtime_projection["artifacts"]["document_plan_artifact_version"] == "document_plan_artifact.v1"
     assert runtime_projection["artifacts"]["topology_version_ref"] == "topology-v1"
     assert runtime_projection["artifacts"]["distribution_artifact_ref"] == artifact["distribution_artifact_ref"]

@@ -277,11 +277,10 @@ def _execute_reconciliation(
         if (
             _has_workflow_binding_context(execution_context)
             and compiled_document_policy_slots is None
-            and compiled_document_policy is None
         ):
             raise ValueError(
                 f"{POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_REQUIRED}: "
-                "compiled document policy is required for workflow-bound reconciliation"
+                "compiled document policy slots are required for workflow-bound reconciliation"
             )
         publication_payload = build_publication_payload_from_artifact(
             artifact=distribution_artifact,

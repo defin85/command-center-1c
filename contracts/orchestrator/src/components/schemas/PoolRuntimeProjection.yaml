@@ -64,7 +64,109 @@ properties:
         type: string
       policy_refs:
         type: array
-        items: {}
+        items:
+          type: object
+          properties:
+            slot_key:
+              type: string
+              nullable: true
+            edge_ref:
+              type: object
+              properties:
+                parent_node_id:
+                  type: string
+                child_node_id:
+                  type: string
+              required:
+                - parent_node_id
+                - child_node_id
+            policy_version:
+              type: string
+            source:
+              type: string
+          required:
+            - slot_key
+            - edge_ref
+            - policy_version
+            - source
+      compiled_document_policy_slots:
+        type: object
+        description: Materialized publication slot projection keyed by binding decision_key.
+        additionalProperties:
+          type: object
+          additionalProperties: true
+      slot_coverage_summary:
+        type: object
+        description: Persisted slot coverage summary for run lineage and retry diagnostics.
+        properties:
+          total_edges:
+            type: integer
+          counts:
+            type: object
+            properties:
+              resolved:
+                type: integer
+              missing_selector:
+                type: integer
+              missing_slot:
+                type: integer
+              ambiguous_slot:
+                type: integer
+              ambiguous_context:
+                type: integer
+              unavailable_context:
+                type: integer
+            required:
+              - resolved
+              - missing_selector
+              - missing_slot
+              - ambiguous_slot
+              - ambiguous_context
+              - unavailable_context
+          items:
+            type: array
+            items:
+              type: object
+              properties:
+                edge_id:
+                  type: string
+                edge_label:
+                  type: string
+                slot_key:
+                  type: string
+                coverage:
+                  type: object
+                  properties:
+                    code:
+                      type: string
+                      nullable: true
+                    status:
+                      type: string
+                      enum:
+                        - resolved
+                        - missing_selector
+                        - missing_slot
+                        - ambiguous_slot
+                        - ambiguous_context
+                        - unavailable_context
+                    label:
+                      type: string
+                    detail:
+                      type: string
+                  required:
+                    - code
+                    - status
+                    - label
+                    - detail
+              required:
+                - edge_id
+                - edge_label
+                - slot_key
+                - coverage
+        required:
+          - total_edges
+          - counts
+          - items
       policy_refs_count:
         type: integer
       targets_count:
@@ -72,6 +174,8 @@ properties:
     required:
       - source_mode
       - policy_refs
+      - compiled_document_policy_slots
+      - slot_coverage_summary
       - policy_refs_count
       - targets_count
   artifacts:

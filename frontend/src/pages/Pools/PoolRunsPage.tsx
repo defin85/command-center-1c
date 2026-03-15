@@ -1820,6 +1820,12 @@ export function PoolRunsPage() {
     return normalizePreviewSlotCoverageSummary(bindingPreview.slot_coverage_summary)
   }, [bindingPreview])
   const runLineageCoverageSummary = useMemo(() => {
+    const persistedSummary = normalizePreviewSlotCoverageSummary(
+      runtimeProjection?.document_policy_projection.slot_coverage_summary
+    )
+    if (persistedSummary) {
+      return persistedSummary
+    }
     if (!workflowBinding && !runtimeProjection) {
       return null
     }
@@ -1837,6 +1843,7 @@ export function PoolRunsPage() {
       source: 'selected',
     })
   }, [runtimeProjection, topologyEdgeSelectors, workflowBinding, workflowDecisionRefs])
+  const runLineageSlotProjection = runtimeProjection?.document_policy_projection.compiled_document_policy_slots ?? null
   const workflowDiagnosticsId = runDetails?.workflow_execution_id
     ?? (retryChain.length > 0 ? retryChain[retryChain.length - 1].workflow_run_id : null)
     ?? workflowRunId
@@ -2296,6 +2303,18 @@ export function PoolRunsPage() {
                               emptyMessage="No topology edges in the selected snapshot yet."
                               resolvedMessage="All topology edges are covered by the persisted run lineage binding."
                             />
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Slot Projection" span={2}>
+                            {runtimeProjection ? (
+                              <TextArea
+                                data-testid="pool-runs-lineage-slot-projection"
+                                value={JSON.stringify(runLineageSlotProjection ?? {}, null, 2)}
+                                autoSize={{ minRows: 8, maxRows: 20 }}
+                                readOnly
+                              />
+                            ) : (
+                              <Text type="secondary">Historical run without persisted slot projection.</Text>
+                            )}
                           </Descriptions.Item>
                           <Descriptions.Item label="Compiled Runtime" span={1}>
                             <Text>{runtimeProjection?.workflow_definition.workflow_template_name ?? '-'}</Text>

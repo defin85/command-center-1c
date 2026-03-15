@@ -1578,6 +1578,19 @@ describe('PoolCatalogPage', () => {
     const user = userEvent.setup()
 
     mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockListPoolWorkflowBindings.mockResolvedValue(
+      buildPoolWorkflowBindingCollection([
+        buildPoolWorkflowBinding({
+          decisions: [
+            {
+              decision_table_id: 'decision-1',
+              decision_key: 'sale',
+              decision_revision: 4,
+            },
+          ],
+        }),
+      ])
+    )
     mockGetPoolGraph.mockResolvedValue({
       pool_id: '44444444-4444-4444-4444-444444444444',
       date: '2026-01-01',
@@ -1648,6 +1661,19 @@ describe('PoolCatalogPage', () => {
     const user = userEvent.setup()
 
     mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockListPoolWorkflowBindings.mockResolvedValue(
+      buildPoolWorkflowBindingCollection([
+        buildPoolWorkflowBinding({
+          decisions: [
+            {
+              decision_table_id: 'decision-1',
+              decision_key: 'sale',
+              decision_revision: 4,
+            },
+          ],
+        }),
+      ])
+    )
     mockGetPoolGraph.mockResolvedValue({
       pool_id: '44444444-4444-4444-4444-444444444444',
       date: '2026-01-01',
@@ -1691,7 +1717,7 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Org One')).toBeInTheDocument()
     await openWorkspaceTab(user, 'Topology Editor')
 
-    expect(await screen.findByDisplayValue('sale')).toBeInTheDocument()
+    expect(await screen.findByTestId('pool-catalog-topology-edge-slot-0')).toHaveValue('sale')
     await expandFirstEdgeAdvanced(user)
 
     openSelectByTestId('pool-catalog-topology-edge-metadata-mode-0')
@@ -1722,6 +1748,19 @@ describe('PoolCatalogPage', () => {
     const user = userEvent.setup()
 
     mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockListPoolWorkflowBindings.mockResolvedValue(
+      buildPoolWorkflowBindingCollection([
+        buildPoolWorkflowBinding({
+          decisions: [
+            {
+              decision_table_id: 'decision-1',
+              decision_key: 'sale',
+              decision_revision: 4,
+            },
+          ],
+        }),
+      ])
+    )
     mockGetPoolGraph.mockResolvedValue({
       pool_id: '44444444-4444-4444-4444-444444444444',
       date: '2026-01-01',
@@ -1755,7 +1794,6 @@ describe('PoolCatalogPage', () => {
           metadata: {
             document_policy_key: 'legacy-sale',
             custom_edge_key: 'preserve-this',
-            document_policy: buildMinimalDocumentPolicy(),
           },
         },
       ],
@@ -1797,9 +1835,6 @@ describe('PoolCatalogPage', () => {
             metadata: expect.objectContaining({
               custom_edge_key: 'preserve-this',
               document_policy_key: 'sale',
-              document_policy: expect.objectContaining({
-                version: 'document_policy.v1',
-              }),
             }),
           }),
         ],
@@ -2040,7 +2075,8 @@ describe('PoolCatalogPage', () => {
     const topologyCard = screen.getByText('Topology snapshot editor').closest('.ant-card')
     expect(topologyCard).toBeTruthy()
 
-    const nodeSelector = topologyCard?.querySelector('.ant-select .ant-select-selector')
+    const nodeSelectors = topologyCard?.querySelectorAll('.ant-select .ant-select-selector')
+    const nodeSelector = nodeSelectors?.[nodeSelectors.length - 1] ?? null
     expect(nodeSelector).toBeTruthy()
     fireEvent.mouseDown(nodeSelector as Element)
     fireEvent.click(await screen.findByText('Org One (730000000001)'))

@@ -20,6 +20,8 @@ from apps.intercompany_pools.metadata_catalog import (
 )
 from apps.intercompany_pools.document_plan_artifact_contract import (
     POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED,
+    POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND,
+    POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING,
     POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY,
     POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY,
 )
@@ -2731,16 +2733,23 @@ def test_migrate_pool_edge_document_policy_updates_canonical_binding_runtime_pat
     payload = response.json()
     decision_payload = payload["decision"]
     migration = payload["migration"]
+    migrated_slot_key = str(migration["slot_key"])
     assert decision_payload["decision_key"] == "document_policy"
     assert decision_payload["decision_revision"] == 1
     assert decision_payload["rules"][0]["outputs"]["document_policy"] == normalized_policy
     assert migration["created"] is True
     assert migration["binding_update_required"] is False
+    assert migrated_slot_key
+    assert migrated_slot_key != "document_policy"
+    assert migration["legacy_payload_removed"] is True
     assert migration["source"]["pool_id"] == str(pool.id)
     assert migration["source"]["edge_version_id"] == str(edge.id)
     assert migration["source"]["source_path"] == "edge.metadata.document_policy"
     assert migration["decision_ref"]["decision_table_id"] == decision_payload["decision_table_id"]
     assert migration["decision_ref"]["decision_revision"] == decision_payload["decision_revision"]
+    assert {item["binding_id"] for item in migration["affected_bindings"]} == {
+        str(binding["binding_id"]) for binding in bindings
+    }
 
     decision = DecisionTable.objects.get(id=decision_payload["id"])
     assert decision.metadata_context["snapshot_id"] == str(snapshot.id)
@@ -2752,7 +2761,7 @@ def test_migrate_pool_edge_document_policy_updates_canonical_binding_runtime_pat
 
     migrated_decision_ref = {
         "decision_table_id": decision_payload["decision_table_id"],
-        "decision_key": decision_payload["decision_key"],
+        "decision_key": migrated_slot_key,
         "decision_revision": decision_payload["decision_revision"],
     }
     updated_bindings_by_id = {
@@ -2766,6 +2775,16 @@ def test_migrate_pool_edge_document_policy_updates_canonical_binding_runtime_pat
         updated_binding = updated_bindings_by_id[binding_id]
         assert updated_binding["revision"] == initial_binding["revision"] + 1
         assert updated_binding["decisions"] == [migrated_decision_ref]
+
+    edge.refresh_from_db()
+    assert edge.metadata["document_policy_key"] == migrated_slot_key
+    assert "document_policy" not in edge.metadata
+
+    graph_response = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_response.status_code == 200
+    graph_payload = graph_response.json()
+    assert graph_payload["edges"][0]["metadata"]["document_policy_key"] == migrated_slot_key
+    assert "document_policy" not in graph_payload["edges"][0]["metadata"]
 
     with patch(
         "apps.intercompany_pools.metadata_catalog.read_metadata_catalog_snapshot",
@@ -2792,6 +2811,10 @@ def test_migrate_pool_edge_document_policy_updates_canonical_binding_runtime_pat
         assert preview_payload["runtime_projection"]["workflow_binding"]["decision_refs"] == [
             migrated_decision_ref
         ]
+        assert (
+            preview_payload["runtime_projection"]["document_policy_projection"]["slot_coverage_summary"]["counts"]["resolved"]
+            == 1
+        )
 
         with patch(
             "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
@@ -2823,6 +2846,9 @@ def test_migrate_pool_edge_document_policy_updates_canonical_binding_runtime_pat
     assert workflow_execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["workflow_binding"][
         "decision_refs"
     ] == [migrated_decision_ref]
+    assert workflow_execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["document_policy_projection"][
+        "slot_coverage_summary"
+    ]["counts"]["resolved"] == 1
     assert workflow_execution.input_context.get(
         POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY
     )["chains"][0]["chain_id"] == "migrated_sale_chain"
@@ -3843,11 +3869,116 @@ def test_preview_pool_workflow_binding_uses_managed_default_schema_template_on_d
     assert payload["slot_coverage_summary"]["items"][0]["slot_key"] == "document_policy"
     assert payload["slot_coverage_summary"]["items"][0]["coverage"]["code"] is None
     assert payload["runtime_projection"]["workflow_binding"]["binding_id"] == binding["binding_id"]
+    assert payload["runtime_projection"]["document_policy_projection"]["compiled_document_policy_slots"] == (
+        payload["compiled_document_policy_slots"]
+    )
+    assert payload["runtime_projection"]["document_policy_projection"]["slot_coverage_summary"] == (
+        payload["slot_coverage_summary"]
+    )
     assert payload["compiled_document_policy"]["version"] == "document_policy.v1"
     assert PoolSchemaTemplate.objects.filter(
         tenant=pool.tenant,
         code="__runtime-default__",
     ).exists()
+
+
+@pytest.mark.django_db
+def test_preview_pool_workflow_binding_surfaces_missing_selector_in_slot_coverage_summary(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    bindings, target_database = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    _attach_pool_slot_edge(
+        tenant=pool.tenant,
+        pool=pool,
+        database=target_database,
+        period_start=date(2026, 1, 1),
+        slot_key="",
+    )
+
+    response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/preview/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": bindings[0]["binding_id"],
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["slot_coverage_summary"]["counts"]["missing_selector"] == 1
+    assert payload["slot_coverage_summary"]["items"][0]["coverage"]["code"] == (
+        POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING
+    )
+
+
+@pytest.mark.django_db
+def test_create_pool_run_returns_slot_not_bound_problem_code_on_default_path(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    bindings, target_database = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    with patch(
+        "apps.api_v2.views.intercompany_pools.start_pool_run_workflow_execution",
+        side_effect=ValueError(
+            "POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND: binding slot 'sale' is not bound for edge node-parent->node-child"
+        ),
+    ):
+        response = authenticated_client.post(
+            "/api/v2/pools/runs/",
+            {
+                "pool_id": str(pool.id),
+                "pool_workflow_binding_id": bindings[0]["binding_id"],
+                "direction": PoolRunDirection.BOTTOM_UP,
+                "period_start": "2026-01-01",
+                "period_end": "2026-01-31",
+                "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+                "mode": PoolRunMode.SAFE,
+            },
+            format="json",
+        )
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code=POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND,
+    )
+    assert problem["title"] == "Pool Runtime Configuration Error"
+    assert "sale" in problem["detail"]
 
 
 @pytest.mark.django_db
@@ -5209,7 +5340,46 @@ def test_get_pool_run_report_exposes_binding_lineage_and_runtime_projection(
         },
         "document_policy_projection": {
             "source_mode": "document_plan_artifact",
-            "policy_refs": [{"policy_id": "policy-1"}],
+            "policy_refs": [
+                {
+                    "slot_key": "invoice_mode",
+                    "edge_ref": {"parent_node_id": "node-root", "child_node_id": "node-child"},
+                    "policy_version": "document_policy.v1",
+                    "source": "workflow_binding.decision_table:decision-1:v2",
+                }
+            ],
+            "compiled_document_policy_slots": {
+                "invoice_mode": {
+                    "decision_table_id": "decision-1",
+                    "decision_revision": 2,
+                    "document_policy_source": "workflow_binding.decision_table:decision-1:v2",
+                    "document_policy": _build_document_policy_payload(),
+                }
+            },
+            "slot_coverage_summary": {
+                "total_edges": 1,
+                "counts": {
+                    "resolved": 1,
+                    "missing_selector": 0,
+                    "missing_slot": 0,
+                    "ambiguous_slot": 0,
+                    "ambiguous_context": 0,
+                    "unavailable_context": 0,
+                },
+                "items": [
+                    {
+                        "edge_id": "node-root:node-child",
+                        "edge_label": "node-root -> node-child",
+                        "slot_key": "invoice_mode",
+                        "coverage": {
+                            "code": None,
+                            "status": "resolved",
+                            "label": "Resolved",
+                            "detail": "invoice_mode -> decision-1 r2",
+                        },
+                    }
+                ],
+            },
             "policy_refs_count": 1,
             "targets_count": 3,
         },
@@ -5253,6 +5423,16 @@ def test_get_pool_run_report_exposes_binding_lineage_and_runtime_projection(
     ]
     assert run_payload["runtime_projection"]["workflow_definition"]["plan_key"] == "plan-services-v7"
     assert run_payload["runtime_projection"]["workflow_binding"]["binding_id"] == binding["binding_id"]
+    assert (
+        run_payload["runtime_projection"]["document_policy_projection"]["compiled_document_policy_slots"][
+            "invoice_mode"
+        ]["decision_table_id"]
+        == "decision-1"
+    )
+    assert (
+        run_payload["runtime_projection"]["document_policy_projection"]["slot_coverage_summary"]["counts"]["resolved"]
+        == 1
+    )
     assert run_payload["runtime_projection"]["compile_summary"]["compiled_targets_count"] == 3
 
 

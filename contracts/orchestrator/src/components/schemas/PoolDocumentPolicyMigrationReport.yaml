@@ -6,13 +6,51 @@ properties:
     type: boolean
   binding_update_required:
     type: boolean
+  slot_key:
+    type: string
+  legacy_payload_removed:
+    type: boolean
   source:
     $ref: ./PoolDocumentPolicyMigrationSource.yaml
   decision_ref:
     $ref: ./PoolDocumentPolicyMigrationDecisionRef.yaml
+  affected_bindings:
+    type: array
+    items:
+      type: object
+      properties:
+        binding_id:
+          type: string
+        revision:
+          type: integer
+          minimum: 1
+        updated:
+          type: boolean
+        decision_ref:
+          type: object
+          properties:
+            decision_table_id:
+              type: string
+            decision_key:
+              type: string
+            decision_revision:
+              type: integer
+              minimum: 1
+          required:
+            - decision_table_id
+            - decision_key
+            - decision_revision
+      required:
+        - binding_id
+        - revision
+        - updated
+        - decision_ref
 required:
   - created
   - reused_existing_revision
   - binding_update_required
+  - slot_key
+  - legacy_payload_removed
   - source
   - decision_ref
+  - affected_bindings

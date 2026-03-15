@@ -250,6 +250,41 @@ def test_pool_workflow_binding_preview_schema_exposes_slot_coverage_summary() ->
     assert "compiled_document_policy" not in required
 
 
+def test_pool_runtime_projection_schema_exposes_slot_lineage_contract() -> None:
+    contract = _load_openapi_contract()
+    runtime_projection_schema = _schema(contract, "PoolRuntimeProjection")
+    runtime_projection_properties = runtime_projection_schema.get("properties")
+    assert isinstance(runtime_projection_properties, dict)
+
+    document_policy_projection = runtime_projection_properties.get("document_policy_projection")
+    assert isinstance(document_policy_projection, dict)
+    projection_properties = document_policy_projection.get("properties")
+    assert isinstance(projection_properties, dict)
+
+    assert projection_properties["compiled_document_policy_slots"]["type"] == "object"
+
+    slot_coverage_summary = projection_properties.get("slot_coverage_summary")
+    assert isinstance(slot_coverage_summary, dict)
+    assert slot_coverage_summary["type"] == "object"
+    assert slot_coverage_summary["properties"]["total_edges"] == {"type": "integer"}
+    assert slot_coverage_summary["properties"]["items"]["type"] == "array"
+
+    policy_refs = projection_properties.get("policy_refs")
+    assert isinstance(policy_refs, dict)
+    assert policy_refs["type"] == "array"
+    policy_ref_item = policy_refs.get("items")
+    assert isinstance(policy_ref_item, dict)
+    policy_ref_properties = policy_ref_item.get("properties")
+    assert isinstance(policy_ref_properties, dict)
+    assert policy_ref_properties["slot_key"]["type"] == "string"
+    assert policy_ref_properties["slot_key"]["nullable"] is True
+    edge_ref = policy_ref_properties.get("edge_ref")
+    assert isinstance(edge_ref, dict)
+    edge_ref_properties = edge_ref.get("properties")
+    assert isinstance(edge_ref_properties, dict)
+    assert {"parent_node_id", "child_node_id"}.issubset(set(edge_ref_properties.keys()))
+
+
 def test_pool_workflow_binding_mutating_paths_expose_revision_conflict_contract() -> None:
     contract = _load_openapi_contract()
     paths = contract.get("paths")
@@ -400,6 +435,17 @@ def test_pool_topology_and_graph_schemas_include_metadata_contract_fields() -> N
         assert isinstance(properties, dict)
         assert "metadata" in properties, f"{schema_name}.metadata missing in OpenAPI contract"
 
+        if schema_name in {"PoolTopologySnapshotEdgeInput", "PoolGraphEdge"}:
+            metadata_schema = properties["metadata"]
+            assert isinstance(metadata_schema, dict)
+            assert metadata_schema.get("type") == "object"
+            assert metadata_schema.get("additionalProperties") is True
+            metadata_properties = metadata_schema.get("properties")
+            assert isinstance(metadata_properties, dict)
+            document_policy_key = metadata_properties.get("document_policy_key")
+            assert isinstance(document_policy_key, dict)
+            assert document_policy_key.get("type") == "string"
+
         runtime_fields = set(serializer_cls().fields.keys())
         contract_fields = set(properties.keys())
         assert runtime_fields.issubset(contract_fields)
@@ -514,6 +560,23 @@ def test_document_policy_migration_path_and_schemas_are_in_contract() -> None:
         migration_view.PoolDocumentPolicyMigrationResponseSerializer().fields.keys()
     )
     assert runtime_response_fields.issubset(set(response_properties.keys()))
+
+    report_schema = _schema(contract, "PoolDocumentPolicyMigrationReport")
+    report_properties = report_schema.get("properties")
+    assert isinstance(report_properties, dict)
+    assert {"slot_key", "legacy_payload_removed", "affected_bindings"}.issubset(
+        set(report_properties.keys())
+    )
+    affected_bindings = report_properties.get("affected_bindings")
+    assert isinstance(affected_bindings, dict)
+    assert affected_bindings.get("type") == "array"
+    affected_binding_item = affected_bindings.get("items")
+    assert isinstance(affected_binding_item, dict)
+    affected_binding_properties = affected_binding_item.get("properties")
+    assert isinstance(affected_binding_properties, dict)
+    assert {"binding_id", "revision", "updated", "decision_ref"}.issubset(
+        set(affected_binding_properties.keys())
+    )
 
 
 def test_decision_table_schema_includes_metadata_context_and_compatibility_fields() -> None:

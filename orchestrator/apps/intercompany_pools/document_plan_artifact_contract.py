@@ -160,6 +160,7 @@ def compile_document_plan_artifact_v1(
         if policy_ref_key not in seen_policy_refs:
             policy_refs.append(
                 {
+                    "slot_key": slot_key if normalized_compiled_policy_slots is not None else None,
                     "edge_ref": edge_ref,
                     "policy_version": str(policy.get("version") or ""),
                     "source": source,
@@ -362,6 +363,12 @@ def validate_document_plan_artifact_v1(*, artifact: Any) -> dict[str, Any]:
             policy_ref.get("source"),
             field_name=f"document_plan_artifact.policy_refs[{index}].source",
         )
+        slot_key_value = policy_ref.get("slot_key")
+        if slot_key_value is not None:
+            _require_string(
+                slot_key_value,
+                field_name=f"document_plan_artifact.policy_refs[{index}].slot_key",
+            )
 
     targets = _require_array(
         payload.get("targets"),

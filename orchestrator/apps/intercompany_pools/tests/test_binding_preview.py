@@ -287,6 +287,12 @@ def test_build_pool_workflow_binding_preview_returns_compiled_projection_and_dec
     }
     assert preview["runtime_projection"]["workflow_binding"]["binding_id"] == binding["binding_id"]
     assert preview["runtime_projection"]["document_policy_projection"]["policy_refs_count"] == 1
+    assert preview["runtime_projection"]["document_policy_projection"]["compiled_document_policy_slots"] == (
+        preview["compiled_document_policy_slots"]
+    )
+    assert preview["runtime_projection"]["document_policy_projection"]["slot_coverage_summary"] == (
+        preview["slot_coverage_summary"]
+    )
     assert preview["runtime_projection"]["workflow_binding"]["decision_refs"] == [
         {
             "decision_table_id": decision.decision_table_id,

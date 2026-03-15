@@ -26,8 +26,11 @@ Tenant-scoped live cutover evidence belongs in the `*.template.json` files in th
   Code: `frontend/src/pages/Decisions/DecisionsPage.tsx`, `frontend/src/pages/Decisions/DecisionEditorPanel.tsx`, `orchestrator/apps/api_v2/views/decisions.py`
   Tests: `frontend/src/pages/Decisions/__tests__/DecisionsPage.test.tsx`, `orchestrator/apps/api_v2/tests/test_decision_tables_api.py`, `frontend/tests/browser/workflow-hardening-acceptance.spec.ts`
 - Legacy `edge.metadata.document_policy` migrates to decision revisions plus binding refs on the default path.
-  Code: `orchestrator/apps/api_v2/views/pool_document_policy_migrations.py`
+  Code: `orchestrator/apps/api_v2/views/pool_document_policy_migrations.py`, `orchestrator/apps/intercompany_pools/document_policy_migrations.py`
   Tests: `orchestrator/apps/api_v2/tests/test_intercompany_pool_runs.py`
+- Runtime projection persists slot lineage for operator audit and retry semantics.
+  Code: `orchestrator/apps/intercompany_pools/runtime_projection_contract.py`, `orchestrator/apps/intercompany_pools/workflow_runtime.py`, `frontend/src/pages/Pools/PoolRunsPage.tsx`
+  Tests: `orchestrator/apps/intercompany_pools/tests/test_workflow_runtime.py`, `frontend/src/pages/Pools/__tests__/PoolRunsPage.test.tsx`, `orchestrator/apps/api_v2/tests/test_pool_runs_openapi_contract_parity.py`
 - Pinned subworkflow execution stays on the pinned revision and fails closed on drift/mismatch.
   Code: `orchestrator/apps/templates/workflow/schema.py`, `orchestrator/apps/templates/workflow/handlers/factory.py`, `orchestrator/apps/templates/workflow/handlers/subworkflow.py`
   Tests: `orchestrator/apps/templates/workflow/tests/test_handlers_advanced.py`, `orchestrator/apps/api_v2/tests/test_workflows_binding_policy.py`, `frontend/src/components/workflow/__tests__/PropertyEditor.test.tsx`, `frontend/tests/browser/workflow-io-editor.spec.ts`

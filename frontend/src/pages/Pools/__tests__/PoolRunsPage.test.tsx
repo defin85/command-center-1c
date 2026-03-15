@@ -297,7 +297,47 @@ function buildWorkflowBindingPreview(overrides: Record<string, unknown> = {}) {
       },
       document_policy_projection: {
         source_mode: 'decision_tables',
-        policy_refs: [{ policy_id: 'policy-1' }],
+        policy_refs: [
+          {
+            slot_key: 'invoice_mode',
+            edge_ref: {
+              parent_node_id: 'node-root',
+              child_node_id: 'node-child',
+            },
+            policy_version: 'document_policy.v1',
+            source: 'decision_tables',
+          },
+        ],
+        compiled_document_policy_slots: {
+          invoice_mode: {
+            decision_table_id: 'decision-1',
+            decision_revision: 2,
+            document_policy_source: 'decision_tables',
+          },
+        },
+        slot_coverage_summary: {
+          total_edges: 1,
+          counts: {
+            resolved: 1,
+            missing_selector: 0,
+            missing_slot: 0,
+            ambiguous_slot: 0,
+            ambiguous_context: 0,
+            unavailable_context: 0,
+          },
+          items: [
+            {
+              edge_id: 'edge-1',
+              edge_label: 'Root Org -> Child Org',
+              slot_key: 'invoice_mode',
+              coverage: {
+                status: 'resolved',
+                label: 'Resolved',
+                detail: 'invoice_mode -> decision-1 r2',
+              },
+            },
+          ],
+        },
         policy_refs_count: 1,
         targets_count: 3,
       },
@@ -495,7 +535,7 @@ describe('PoolRunsPage', () => {
 
   it('shows run lineage as primary operator context and keeps workflow diagnostics secondary', async () => {
     const user = userEvent.setup()
-    mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph())
+    mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph('unexpected_slot'))
     const run = {
       ...buildRun({
         direction: 'top_down',
@@ -568,7 +608,51 @@ describe('PoolRunsPage', () => {
         },
         document_policy_projection: {
           source_mode: 'document_plan_artifact',
-          policy_refs: [{ policy_id: 'policy-1' }],
+          policy_refs: [
+            {
+              slot_key: 'invoice_mode',
+              edge_ref: {
+                parent_node_id: 'node-root',
+                child_node_id: 'node-child',
+              },
+              policy_version: 'document_policy.v1',
+              source: 'decision_tables',
+            },
+          ],
+          compiled_document_policy_slots: {
+            invoice_mode: {
+              decision_table_id: 'decision-1',
+              decision_revision: 2,
+              document_policy_source: 'decision_tables',
+              document_policy: {
+                version: 'document_policy.v1',
+                targets: 3,
+              },
+            },
+          },
+          slot_coverage_summary: {
+            total_edges: 1,
+            counts: {
+              resolved: 1,
+              missing_selector: 0,
+              missing_slot: 0,
+              ambiguous_slot: 0,
+              ambiguous_context: 0,
+              unavailable_context: 0,
+            },
+            items: [
+              {
+                edge_id: 'edge-1',
+                edge_label: 'Root Org -> Child Org',
+                slot_key: 'invoice_mode',
+                coverage: {
+                  status: 'resolved',
+                  label: 'Resolved',
+                  detail: 'invoice_mode -> decision-1 r2',
+                },
+              },
+            ],
+          },
           policy_refs_count: 1,
           targets_count: 3,
         },
@@ -600,6 +684,9 @@ describe('PoolRunsPage', () => {
     expect(screen.getByText('compiled targets: 3')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-lineage-slot-coverage')).toHaveTextContent('resolved: 1')
     expect(screen.getByText('All topology edges are covered by the persisted run lineage binding.')).toBeInTheDocument()
+    expect((screen.getByTestId('pool-runs-lineage-slot-projection') as HTMLTextAreaElement).value).toContain(
+      '"invoice_mode"'
+    )
     const diagnosticsLink = screen.getByRole('link', { name: 'Open Workflow Diagnostics' })
     expect(diagnosticsLink).toHaveAttribute(
       'href',
