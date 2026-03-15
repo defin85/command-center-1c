@@ -6,6 +6,8 @@ Transfer workbench ДОЛЖЕН (SHALL):
 - использовать source revision только как immutable authoring seed;
 - явно показывать `source revision`, `target database`, resolved `configuration profile` и resolved target `metadata snapshot`;
 - строить явный transfer report со статусами `matched`, `ambiguous`, `missing` и `incompatible`;
+- использовать stable metadata design identifiers из `ConfigDumpInfo.xml`/`ibcmd`-enriched snapshot как primary signal для automatic matches там, где они доступны;
+- использовать canonical metadata path/name + type/shape fallback только для items без доступного design-time identifier и НЕ ДОЛЖЕН (SHALL NOT) помечать uncertain fallback matches как `matched`;
 - позволять аналитику исправлять unresolved mappings до публикации;
 - разрешать использовать revision вне default compatible selection как source template без превращения её в default ready-to-pin candidate;
 - публиковать только новую concrete revision и НЕ ДОЛЖЕН (SHALL NOT) вводить abstract revision как runtime/binding artifact;
@@ -22,6 +24,12 @@ Transfer workbench ДОЛЖЕН (SHALL):
 - **WHEN** `/decisions` открывает transfer workbench
 - **THEN** экран показывает source revision provenance, target database, resolved configuration profile и target metadata snapshot
 - **AND** UI отображает transfer report со статусами `matched`, `ambiguous`, `missing` и `incompatible`
+
+#### Scenario: Transfer workbench использует enriched metadata identity раньше name-based fallback
+- **GIVEN** source и target metadata context содержат stable metadata design identifiers для части document-policy references
+- **WHEN** backend строит transfer report
+- **THEN** automatic matches определяются по этим identifiers в первую очередь
+- **AND** canonical path/name + type/shape fallback используется только для items без доступного design-time identifier
 
 #### Scenario: Успешный transfer публикует новую concrete revision без auto-rebind
 - **GIVEN** аналитик разрешил все unresolved items в transfer workbench

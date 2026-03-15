@@ -8,12 +8,14 @@
 - Сохранить текущую runtime модель: concrete revisions, pinned consumers, deterministic compile и auditable provenance.
 - Явно отделить default ready-to-pin selection от source-only transfer mode.
 - Зафиксировать fail-closed remap semantics против target metadata snapshot.
+- Повысить точность automatic remap через stable metadata identity там, где она доступна.
 
 ## Не-цели
 - Не вводить abstract `Decision revision`, `Decision blueprint` или другой новый runtime artifact.
 - Не делать `/decisions` primary surface для управления configuration profile или metadata snapshot; canonical maintenance остаётся в `/databases`.
 - Не добавлять автоматическую массовую перепривязку workflow definitions, workflow bindings или runtime projections на новую revision.
 - Не обещать fully automatic semantic transfer между разными document archetypes без подтверждения аналитика.
+- Не требовать, чтобы standard OData interface сам возвращал stable design-time metadata IDs для этого change.
 
 ## Решения
 
@@ -39,7 +41,23 @@ Source revision остаётся единственным reusable seed. Она:
 - `/databases` управляет profile/snapshot;
 - `/decisions` потребляет их как authoring context.
 
-### Decision 3: Transfer report становится явной частью authoring contract
+### Decision 3: Metadata identity для transfer matching использует design-time IDs как primary signal
+Для remap между source policy и target metadata snapshot change использует двухуровневую стратегию identity:
+- primary signal — stable design-time metadata identifiers из `ConfigDumpInfo.xml`/`ibcmd`-enriched snapshot;
+- fallback signal — canonical metadata path/name + type/shape, если design-time IDs недоступны.
+
+Практически это означает:
+- standard OData interface остаётся source-of-truth для published metadata surface и runtime shape;
+- `ConfigDumpInfo.xml`/XML configuration dump используется как source-of-truth для design-time metadata identity;
+- если target/source item не имеет доступного design-time ID, backend не пытается «додумать» exact match только по display name;
+- если fallback по canonical path/name + type/shape даёт больше одного правдоподобного target candidate, item классифицируется как `ambiguous`, а не как `matched`.
+
+Это удерживает change в совместимых границах:
+- transfer workbench может становиться точнее там, где доступен `ibcmd`/config dump;
+- OData-only среды не блокируются, но получают более консервативный report;
+- standard attributes/platform-defined fields допускают explicit fallback по canonical tokens, когда design-time ID неэкспортируем или недоступен.
+
+### Decision 4: Transfer report становится явной частью authoring contract
 Transfer workbench ДОЛЖЕН явно классифицировать элементы source policy относительно target snapshot:
 - `matched` — автоматически переносится без ручного вмешательства;
 - `ambiguous` — найдено несколько правдоподобных target matches;
@@ -48,7 +66,7 @@ Transfer workbench ДОЛЖЕН явно классифицировать эле
 
 Publish новой revision блокируется fail-closed, пока остаются `ambiguous`, `missing` или `incompatible` элементы.
 
-### Decision 4: Transfer использует stateless two-phase contract: server-evaluated preview + publish через existing revision publish core
+### Decision 5: Transfer использует stateless two-phase contract: server-evaluated preview + publish через existing revision publish core
 MVP transfer workbench фиксируется как два явных шага:
 - `transfer preview` принимает source revision и target database, резолвит target context на backend и возвращает transfer report/read-model для analyst UX;
 - `transfer publish` принимает результат analyst remap, повторно считает report относительно текущего target snapshot и только после этого создаёт новую revision;
@@ -61,14 +79,14 @@ MVP НЕ вводит persistent draft artifact, отдельную abstract rev
 - publish не доверяет устаревшему client-side report и повторно валидирует unresolved items;
 - create/revise lifecycle для обычного `/decisions` остаётся совместимым и не перегружается transfer-only semantics.
 
-### Decision 5: Publish создаёт только новую concrete revision и не меняет existing consumers
+### Decision 6: Publish создаёт только новую concrete revision и не меняет existing consumers
 Transfer workbench не получает отдельный runtime artifact и не меняет semantics existing pins. Успешный publish:
 - использует `parent_version_id` source revision;
 - валидирует финальный policy против target snapshot;
 - сохраняет target metadata provenance в новой revision;
 - не перепривязывает workflow definitions, bindings и runtime projections автоматически.
 
-### Decision 6: Default compatible selection и source-selection остаются разными режимами
+### Decision 7: Default compatible selection и source-selection остаются разными режимами
 Revision вне default compatible set может быть полезной как source для transfer, но не должна становиться ready-to-pin candidate автоматически.
 
 Практически это означает:
@@ -100,12 +118,15 @@ Revision вне default compatible set может быть полезной ка
 - Автоматический remap может быть "почти правильным", поэтому ambiguous/missing/incompatible cases нельзя публиковать молча.
 - UI `/decisions` станет сложнее, если transfer mode не будет отделён от default ready-to-pin flow.
 - Если в будущем понадобится reusable preset library, этот change должен остаться совместимым и не подменять presets скрытой transfer-магией.
+- `ConfigDumpInfo.xml` IDs полезны как technical identity signal, но platform docs рассматривают их как internal identifiers; значит change должен использовать их для matching/audit, а не как analyst-facing public contract.
+- В OData-only среде без `ibcmd`/config dump quality auto-remap будет ниже, поэтому `ambiguous` cases станут встречаться чаще; это ожидаемый fail-closed trade-off.
 
 ## План миграции
 1. Зафиксировать spec-level transfer contract поверх текущего rollover semantics.
-2. Определить stateless two-phase API/read-model shape: `transfer preview` и `transfer publish`.
-3. Реализовать backend remap/validation path поверх существующей publish semantics, сохранив existing revision publish core как финальный шаг materialization.
-4. Добавить analyst-facing transfer UI и тесты fail-closed поведения.
+2. Зафиксировать metadata identity contract: `ConfigDumpInfo.xml`/`ibcmd`-enriched design-time IDs как primary signal и canonical path/name + type/shape как fallback.
+3. Определить stateless two-phase API/read-model shape: `transfer preview` и `transfer publish`.
+4. Реализовать backend remap/validation path поверх существующей publish semantics, сохранив existing revision publish core как финальный шаг materialization.
+5. Добавить analyst-facing transfer UI и тесты fail-closed поведения.
 
 ## Открытые вопросы
 - Нужен ли отдельный "fast publish" UX для полностью `matched` transfer report, или достаточно общего publish flow?
