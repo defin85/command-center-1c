@@ -70,15 +70,18 @@ import { isDecisionAvailableByDefault } from '../../components/workflow/decision
 import { PoolWorkflowBindingsEditor } from './PoolWorkflowBindingsEditor'
 import {
   buildWorkflowBindingsFromForm,
+  getWorkflowBindingCardTitle,
   summarizeWorkflowBindings,
   workflowBindingsToFormValues,
   type PoolWorkflowBindingFormValue,
 } from './poolWorkflowBindingsForm'
 import { syncPoolWorkflowBindings } from './poolWorkflowBindingsSync'
 import {
+  buildTopologyCoverageContext,
   describePoolWorkflowBindingCoverage,
   resolveTopologyCoverageContext,
   resolveTopologySlotCoverage,
+  summarizeTopologySlotCoverage,
   type TopologyEdgeSelector,
 } from './topologySlotCoverage'
 
@@ -508,6 +511,123 @@ const getApiErrorCode = (error: unknown): string => {
 const appendMetadataManagementHandoff = (message: string): string => {
   const handoff = 'Metadata context недоступен для topology editor. Откройте /databases, перепроверьте configuration identity или обновите metadata snapshot и повторите.'
   return mergeMessageParts([message, handoff]) || handoff
+}
+
+const hasLegacyDocumentPolicyPayload = (value: unknown): value is Record<string, unknown> => (
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+)
+
+const buildDraftTopologyEdgeSelectors = (
+  edges: TopologyEdgeFormValue[] | undefined,
+  organizationById: Record<string, Organization>
+): TopologyEdgeSelector[] => (
+  (Array.isArray(edges) ? edges : []).map((edge, index) => {
+    const parentOrganizationId = String(edge.parent_organization_id || '').trim()
+    const childOrganizationId = String(edge.child_organization_id || '').trim()
+    const parentLabel = String(
+      organizationById[parentOrganizationId]?.name
+      || parentOrganizationId
+      || `edge-${index + 1}-parent`
+    ).trim()
+    const childLabel = String(
+      organizationById[childOrganizationId]?.name
+      || childOrganizationId
+      || `edge-${index + 1}-child`
+    ).trim()
+    return {
+      edgeId: String(edge.edge_version_id || `${parentOrganizationId}:${childOrganizationId}:${index}`),
+      edgeLabel: `${parentLabel} -> ${childLabel}`,
+      slotKey: String(edge.document_policy_key || '').trim(),
+    }
+  })
+)
+
+const buildBindingSlotRefsFromForm = (
+  binding: PoolWorkflowBindingFormValue | undefined
+): Array<{ slotKey: string; refLabel: string }> => (
+  (binding?.decisions ?? [])
+    .map((decision) => {
+      const slotKey = String(decision?.decision_key || '').trim()
+      const decisionTableId = String(decision?.decision_table_id || '').trim()
+      const decisionRevision = String(decision?.decision_revision ?? '').trim()
+      if (!slotKey || !decisionTableId || !decisionRevision) {
+        return null
+      }
+      return {
+        slotKey,
+        refLabel: `${decisionTableId} r${decisionRevision}`,
+      }
+    })
+    .filter((slotRef): slotRef is { slotKey: string; refLabel: string } => Boolean(slotRef))
+)
+
+const buildLegacyTopologyBlockingRemediation = ({
+  graph,
+  pool,
+}: {
+  graph: PoolGraph | null
+  pool: OrganizationPool | null | undefined
+}): PoolWorkflowBindingBlockingRemediation | null => {
+  const poolHasLegacyPolicy = hasLegacyDocumentPolicyPayload(pool?.metadata?.document_policy)
+  const legacyEdgeLabels: string[] = []
+  if (graph) {
+    const nodeByVersionId = new Map(
+      graph.nodes.map((node) => [node.node_version_id, node])
+    )
+    graph.edges.forEach((edge) => {
+      const metadata = edge.metadata
+      if (!hasLegacyDocumentPolicyPayload(metadata) || !hasLegacyDocumentPolicyPayload(metadata.document_policy)) {
+        return
+      }
+      const parentNode = nodeByVersionId.get(edge.parent_node_version_id)
+      const childNode = nodeByVersionId.get(edge.child_node_version_id)
+      const parentLabel = String(parentNode?.name || parentNode?.organization_id || edge.parent_node_version_id).trim()
+      const childLabel = String(childNode?.name || childNode?.organization_id || edge.child_node_version_id).trim()
+      legacyEdgeLabels.push(`${parentLabel} -> ${childLabel}`)
+    })
+  }
+  if (!poolHasLegacyPolicy && legacyEdgeLabels.length === 0) {
+    return null
+  }
+  const detailParts: string[] = []
+  if (poolHasLegacyPolicy) {
+    detailParts.push('pool.metadata still contains legacy document_policy payload.')
+  }
+  if (legacyEdgeLabels.length > 0) {
+    const suffix = legacyEdgeLabels.length > 2 ? ', …' : ''
+    detailParts.push(
+      `Legacy document_policy payload is still attached to ${legacyEdgeLabels.length} topology edge(s): ${legacyEdgeLabels.slice(0, 2).join(', ')}${suffix}.`
+    )
+  }
+  detailParts.push('Move concrete policy authoring to /decisions, pin named slots in Bindings, then keep only document_policy_key on topology edges.')
+  return {
+    code: 'LEGACY_TOPOLOGY_DOCUMENT_POLICY_PRESENT',
+    title: 'Legacy topology remediation required',
+    detail: detailParts.join(' '),
+  }
+}
+
+const buildCoverageBlockingRemediation = ({
+  code,
+  title,
+  summary,
+  unresolvedDetail,
+}: {
+  code: string
+  title: string
+  summary: ReturnType<typeof summarizeTopologySlotCoverage>
+  unresolvedDetail: string
+}): PoolWorkflowBindingBlockingRemediation | null => {
+  const unresolvedItems = summary.items.filter((item) => item.coverage.status !== 'resolved')
+  if (unresolvedItems.length === 0) {
+    return null
+  }
+  const firstItem = unresolvedItems[0]
+  return {
+    code,
+    title,
+    detail: `${unresolvedDetail} First issue: ${firstItem?.edgeLabel || 'edge'} · ${firstItem?.slotKey || 'slot not set'} · ${firstItem?.coverage.label || 'Unresolved'}.`,
+  }
 }
 
 const parseSyncPayload = (input: string): SyncPreflightResult => {
@@ -1389,6 +1509,12 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
     if (policyResult.errors.length > 0) {
       return
     }
+    if (policyResult.policy) {
+      errors.push(
+        `Edge #${rowNo}: legacy document_policy больше не поддерживается в Topology Editor. Используйте /decisions и workflow bindings remediation flow.`
+      )
+      return
+    }
     const edgeMetadataMode = String(edge.edge_metadata_mode ?? 'raw').trim().toLowerCase() === 'builder'
       ? 'builder'
       : 'raw'
@@ -1405,9 +1531,6 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
     const documentPolicyKey = String(edge.document_policy_key || '').trim()
     if (documentPolicyKey) {
       metadata.document_policy_key = documentPolicyKey
-    }
-    if (policyResult.policy) {
-      metadata.document_policy = policyResult.policy
     }
     edges.push({
       parent_organization_id: parentId,
@@ -1487,7 +1610,7 @@ export function PoolCatalogPage() {
   const [poolBindingsSubmitError, setPoolBindingsSubmitError] = useState<string | null>(null)
   const [loadedPoolBindings, setLoadedPoolBindings] = useState<PoolWorkflowBinding[]>([])
   const [loadedPoolBindingsCollectionEtag, setLoadedPoolBindingsCollectionEtag] = useState('')
-  const [poolBindingsBlockingRemediation, setPoolBindingsBlockingRemediation] = useState<PoolWorkflowBindingBlockingRemediation | null>(null)
+  const [poolBindingsBackendBlockingRemediation, setPoolBindingsBackendBlockingRemediation] = useState<PoolWorkflowBindingBlockingRemediation | null>(null)
   const [availableDecisions, setAvailableDecisions] = useState<AvailableDecisionRevision[]>([])
   const [isPoolDecisionsLoading, setIsPoolDecisionsLoading] = useState(false)
   const [poolDecisionsLoadError, setPoolDecisionsLoadError] = useState<string | null>(null)
@@ -1511,6 +1634,7 @@ export function PoolCatalogPage() {
   const [loadingMasterDataTokenCatalog, setLoadingMasterDataTokenCatalog] = useState(false)
   const [masterDataTokenCatalogError, setMasterDataTokenCatalogError] = useState<string | null>(null)
   const watchedEdges = Form.useWatch('edges', topologyForm)
+  const watchedWorkflowBindings = Form.useWatch('workflow_bindings', poolBindingsForm)
 
   const selectedOrganization = useMemo(
     () => organizations.find((item) => item.id === selectedOrganizationId) ?? null,
@@ -1540,6 +1664,112 @@ export function PoolCatalogPage() {
     () => resolveTopologyCoverageContext(loadedPoolBindings, topologyCoverageBindingId),
     [loadedPoolBindings, topologyCoverageBindingId]
   )
+  const topologyEdgeSelectors = useMemo<TopologyEdgeSelector[]>(() => {
+    if (!graph) {
+      return []
+    }
+    const nodeByVersionId = new Map(
+      graph.nodes.map((node) => [node.node_version_id, node])
+    )
+    return graph.edges.map((edge, index) => {
+      const metadata = normalizeMetadataObject(edge.metadata)
+      const slotKey = String(metadata.document_policy_key || '').trim()
+      const parentNode = nodeByVersionId.get(edge.parent_node_version_id)
+      const childNode = nodeByVersionId.get(edge.child_node_version_id)
+      const parentLabel = String(parentNode?.name || parentNode?.organization_id || edge.parent_node_version_id).trim()
+      const childLabel = String(childNode?.name || childNode?.organization_id || edge.child_node_version_id).trim()
+      return {
+        edgeId: String(edge.edge_version_id || `${edge.parent_node_version_id}:${edge.child_node_version_id}:${index}`),
+        edgeLabel: `${parentLabel} -> ${childLabel}`,
+        slotKey,
+      }
+    })
+  }, [graph])
+  const draftTopologyEdgeSelectors = useMemo(
+    () => buildDraftTopologyEdgeSelectors(watchedEdges, organizationById),
+    [organizationById, watchedEdges]
+  )
+  const topologyCoverageSummary = useMemo(
+    () => summarizeTopologySlotCoverage(draftTopologyEdgeSelectors, topologyCoverageContext),
+    [draftTopologyEdgeSelectors, topologyCoverageContext]
+  )
+  const legacyTopologyBlockingRemediation = useMemo(
+    () => buildLegacyTopologyBlockingRemediation({ graph, pool: selectedPool }),
+    [graph, selectedPool]
+  )
+  const topologyCoverageBlockingRemediation = useMemo(() => {
+    if (draftTopologyEdgeSelectors.length === 0) {
+      return null
+    }
+    if (topologyCoverageContext.status !== 'resolved') {
+      return buildCoverageBlockingRemediation({
+        code: 'TOPOLOGY_SLOT_COVERAGE_INCOMPLETE',
+        title: 'Topology remediation required',
+        summary: topologyCoverageSummary,
+        unresolvedDetail: `${topologyCoverageContext.detail} Resolve coverage before saving topology.`,
+      })
+    }
+    return buildCoverageBlockingRemediation({
+      code: 'TOPOLOGY_SLOT_COVERAGE_INCOMPLETE',
+      title: 'Topology remediation required',
+      summary: topologyCoverageSummary,
+      unresolvedDetail: 'Resolve publication slot coverage for all topology edges before saving this snapshot.',
+    })
+  }, [draftTopologyEdgeSelectors.length, topologyCoverageContext, topologyCoverageSummary])
+  const topologyBlockingRemediations = useMemo(
+    () => [
+      legacyTopologyBlockingRemediation,
+      topologyCoverageBlockingRemediation,
+    ].filter((item): item is PoolWorkflowBindingBlockingRemediation => Boolean(item)),
+    [legacyTopologyBlockingRemediation, topologyCoverageBlockingRemediation]
+  )
+  const poolBindingsCoverageBlockingRemediation = useMemo(() => {
+    if (topologyEdgeSelectors.length === 0) {
+      return null
+    }
+    const draftBindings = (Array.isArray(watchedWorkflowBindings) ? watchedWorkflowBindings : [])
+      .filter((binding) => String(binding?.status ?? 'draft').trim() === 'active')
+    if (draftBindings.length === 0) {
+      return null
+    }
+    for (let index = 0; index < draftBindings.length; index += 1) {
+      const binding = draftBindings[index]
+      const bindingLabel = getWorkflowBindingCardTitle(binding, index + 1)
+      const coverageSummary = summarizeTopologySlotCoverage(
+        topologyEdgeSelectors,
+        buildTopologyCoverageContext({
+          bindingLabel,
+          detail: `Coverage is evaluated against binding draft ${bindingLabel}.`,
+          slotRefs: buildBindingSlotRefsFromForm(binding),
+          source: 'selected',
+        })
+      )
+      const remediation = buildCoverageBlockingRemediation({
+        code: 'POOL_BINDING_SLOT_COVERAGE_INCOMPLETE',
+        title: 'Binding remediation required',
+        summary: coverageSummary,
+        unresolvedDetail: `${bindingLabel} leaves topology slot coverage incomplete. Add or fix named slots before saving bindings.`,
+      })
+      if (remediation) {
+        return remediation
+      }
+    }
+    return null
+  }, [topologyEdgeSelectors, watchedWorkflowBindings])
+  const poolBindingsBlockingRemediations = useMemo(
+    () => [
+      poolBindingsBackendBlockingRemediation,
+      legacyTopologyBlockingRemediation,
+      poolBindingsCoverageBlockingRemediation,
+    ].filter((item): item is PoolWorkflowBindingBlockingRemediation => Boolean(item)),
+    [
+      legacyTopologyBlockingRemediation,
+      poolBindingsBackendBlockingRemediation,
+      poolBindingsCoverageBlockingRemediation,
+    ]
+  )
+  const isPoolBindingsSaveBlocked = poolBindingsBlockingRemediations.length > 0
+  const isTopologySaveBlocked = topologyBlockingRemediations.length > 0
 
   const databaseOptions = useMemo(() => {
     const databases = databasesQuery.data?.databases ?? []
@@ -1610,27 +1840,6 @@ export function PoolCatalogPage() {
   )
 
   const flow = useMemo(() => buildFlowLayout(graph), [graph])
-  const topologyEdgeSelectors = useMemo<TopologyEdgeSelector[]>(() => {
-    if (!graph) {
-      return []
-    }
-    const nodeByVersionId = new Map(
-      graph.nodes.map((node) => [node.node_version_id, node])
-    )
-    return graph.edges.map((edge, index) => {
-      const metadata = normalizeMetadataObject(edge.metadata)
-      const slotKey = String(metadata.document_policy_key || '').trim()
-      const parentNode = nodeByVersionId.get(edge.parent_node_version_id)
-      const childNode = nodeByVersionId.get(edge.child_node_version_id)
-      const parentLabel = String(parentNode?.name || parentNode?.organization_id || edge.parent_node_version_id).trim()
-      const childLabel = String(childNode?.name || childNode?.organization_id || edge.child_node_version_id).trim()
-      return {
-        edgeId: String(edge.edge_version_id || `${edge.parent_node_version_id}:${edge.child_node_version_id}:${index}`),
-        edgeLabel: `${parentLabel} -> ${childLabel}`,
-        slotKey,
-      }
-    })
-  }, [graph])
 
   const loadOrganizations = useCallback(async () => {
     setLoadingOrganizations(true)
@@ -2212,7 +2421,7 @@ export function PoolCatalogPage() {
       const collection = await listPoolWorkflowBindings(pool.id)
       setLoadedPoolBindings(collection.workflow_bindings)
       setLoadedPoolBindingsCollectionEtag(collection.collection_etag)
-      setPoolBindingsBlockingRemediation(collection.blocking_remediation ?? null)
+      setPoolBindingsBackendBlockingRemediation(collection.blocking_remediation ?? null)
       poolBindingsForm.setFieldsValue({
         workflow_bindings: workflowBindingsToFormValues(collection.workflow_bindings),
       })
@@ -2220,7 +2429,7 @@ export function PoolCatalogPage() {
       const resolved = resolveApiError(err, 'Не удалось загрузить workflow bindings.')
       setLoadedPoolBindings([])
       setLoadedPoolBindingsCollectionEtag('')
-      setPoolBindingsBlockingRemediation(null)
+      setPoolBindingsBackendBlockingRemediation(null)
       setPoolBindingsLoadError(resolved.message)
       poolBindingsForm.setFieldsValue({ workflow_bindings: [] })
     } finally {
@@ -2253,7 +2462,7 @@ export function PoolCatalogPage() {
     if ((activeWorkspaceTab !== 'bindings' && activeWorkspaceTab !== 'topology') || !selectedPool) {
       setLoadedPoolBindings([])
       setLoadedPoolBindingsCollectionEtag('')
-      setPoolBindingsBlockingRemediation(null)
+      setPoolBindingsBackendBlockingRemediation(null)
       setIsPoolBindingsLoading(false)
       setPoolBindingsLoadError(null)
       setPoolBindingsSubmitError(null)
@@ -2318,7 +2527,12 @@ export function PoolCatalogPage() {
 
   const submitPoolBindings = useCallback(async () => {
     if (mutatingDisabled || isPoolBindingsLoading || isPoolBindingsSaving || !selectedPool) return
-    if (poolBindingsBlockingRemediation) return
+    if (isPoolBindingsSaveBlocked) {
+      setPoolBindingsSubmitError(
+        poolBindingsBlockingRemediations[0]?.detail || 'Bindings remediation is required before save.'
+      )
+      return
+    }
     setPoolBindingsSubmitError(null)
     try {
       const values = await poolBindingsForm.validateFields()
@@ -2359,7 +2573,8 @@ export function PoolCatalogPage() {
     message,
     mutatingDisabled,
     poolBindingsForm,
-    poolBindingsBlockingRemediation,
+    isPoolBindingsSaveBlocked,
+    poolBindingsBlockingRemediations,
     reloadBindingsWorkspace,
     selectedPool,
   ])
@@ -2390,6 +2605,12 @@ export function PoolCatalogPage() {
 
   const submitTopologySnapshot = useCallback(async () => {
     if (mutatingDisabled || !selectedPoolId) return
+    if (isTopologySaveBlocked) {
+      setTopologySubmitError(
+        topologyBlockingRemediations[0]?.detail || 'Topology remediation is required before save.'
+      )
+      return
+    }
     setTopologySubmitError(null)
     setTopologyPreflightErrors([])
     try {
@@ -2438,7 +2659,18 @@ export function PoolCatalogPage() {
     } finally {
       setIsTopologySaving(false)
     }
-  }, [graph, graphDate, loadGraph, loadTopologySnapshots, message, mutatingDisabled, selectedPoolId, topologyForm])
+  }, [
+    graph,
+    graphDate,
+    isTopologySaveBlocked,
+    loadGraph,
+    loadTopologySnapshots,
+    message,
+    mutatingDisabled,
+    selectedPoolId,
+    topologyBlockingRemediations,
+    topologyForm,
+  ])
 
   const openSyncModal = useCallback(() => {
     if (mutatingDisabled) return
@@ -2917,7 +3149,7 @@ export function PoolCatalogPage() {
                           || isPoolBindingsLoading
                           || isPoolBindingsSaving
                           || Boolean(poolBindingsLoadError)
-                          || Boolean(poolBindingsBlockingRemediation)
+                          || isPoolBindingsSaveBlocked
                           || !loadedPoolBindingsCollectionEtag
                         )}
                         data-testid="pool-catalog-save-bindings"
@@ -2928,14 +3160,25 @@ export function PoolCatalogPage() {
 
                     {poolBindingsSubmitError && <Alert type="error" message={poolBindingsSubmitError} showIcon />}
                     {poolBindingsLoadError && <Alert type="error" message={poolBindingsLoadError} showIcon />}
-                    {poolBindingsBlockingRemediation && (
+                    {poolBindingsBlockingRemediations.map((remediation) => (
                       <Alert
+                        key={remediation.code}
                         type="warning"
-                        message={poolBindingsBlockingRemediation.title}
-                        description={poolBindingsBlockingRemediation.detail}
+                        message={remediation.title}
+                        description={remediation.detail}
                         showIcon
+                        action={(
+                          <Space size={8}>
+                            <Button size="small" onClick={() => { setActiveWorkspaceTab('topology') }}>
+                              Open Topology Editor
+                            </Button>
+                            <Button size="small" onClick={() => { navigate('/decisions') }}>
+                              Open /decisions
+                            </Button>
+                          </Space>
+                        )}
                       />
-                    )}
+                    ))}
                     {isPoolBindingsLoading && (
                       <Alert type="info" message="Loading workflow bindings..." showIcon />
                     )}
@@ -2959,7 +3202,7 @@ export function PoolCatalogPage() {
                             mutatingDisabled
                             || isPoolBindingsSaving
                             || isPoolBindingsLoading
-                            || Boolean(poolBindingsBlockingRemediation)
+                            || Boolean(poolBindingsBackendBlockingRemediation)
                           }
                         />
                       </Form>
@@ -3012,6 +3255,26 @@ export function PoolCatalogPage() {
                           message="Workflow-centric authoring is the default path"
                           description="Topology editor remains for structural metadata and publication slot assignment. Author concrete document policies in /decisions and pin them in workflow bindings."
                         />
+                        {topologyBlockingRemediations.map((remediation) => (
+                          <Alert
+                            key={remediation.code}
+                            type="warning"
+                            showIcon
+                            style={{ marginBottom: 12 }}
+                            message={remediation.title}
+                            description={remediation.detail}
+                            action={(
+                              <Space size={8}>
+                                <Button size="small" onClick={() => { navigate('/decisions') }}>
+                                  Open /decisions
+                                </Button>
+                                <Button size="small" onClick={() => { setActiveWorkspaceTab('bindings') }}>
+                                  Open Bindings
+                                </Button>
+                              </Space>
+                            )}
+                          />
+                        ))}
                         <Row gutter={12} style={{ marginBottom: 12 }}>
                           <Col span={12}>
                             <Form.Item label="Coverage binding context" style={{ marginBottom: 0 }}>
@@ -4472,7 +4735,7 @@ export function PoolCatalogPage() {
                           type="primary"
                           onClick={() => { void submitTopologySnapshot() }}
                           loading={isTopologySaving}
-                          disabled={mutatingDisabled}
+                          disabled={mutatingDisabled || isTopologySaveBlocked}
                           data-testid="pool-catalog-topology-save"
                         >
                           Save topology snapshot

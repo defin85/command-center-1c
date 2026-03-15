@@ -1270,6 +1270,8 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByTestId('pool-catalog-workflow-binding-coverage-0')).toHaveTextContent('edges: 2')
     expect(screen.getByTestId('pool-catalog-workflow-binding-coverage-0')).toHaveTextContent('resolved: 1')
     expect(screen.getByTestId('pool-catalog-workflow-binding-coverage-0')).toHaveTextContent('missing slot: 1')
+    expect(screen.getByText('Binding remediation required')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-save-bindings')).toBeDisabled()
     expect(screen.getByTestId('pool-catalog-workflow-binding-slot-coverage-0-0')).toHaveTextContent('edges: 1')
     expect(screen.getByTestId('pool-catalog-workflow-binding-coverage-item-0')).toHaveTextContent(
       'Org One -> Org Three · purchase · Slot missing'
@@ -1945,6 +1947,8 @@ describe('PoolCatalogPage', () => {
 
     expect(await screen.findByTestId('pool-catalog-topology-coverage-status')).toHaveTextContent('Ambiguous context')
     expect(await screen.findByTestId('pool-catalog-topology-edge-slot-status-0')).toHaveTextContent('Coverage unavailable')
+    expect(screen.getByText('Topology remediation required')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-topology-save')).toBeDisabled()
 
     openSelectByTestId('pool-catalog-topology-coverage-binding')
     await selectDropdownOption(/binding-sale/i)
@@ -1952,6 +1956,63 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByTestId('pool-catalog-topology-coverage-status')).toHaveTextContent('Selected binding')
     expect(await screen.findByTestId('pool-catalog-topology-edge-slot-status-0')).toHaveTextContent('Resolved')
     expect(await screen.findByText(/sale-policy r2/i)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByText('Topology remediation required')).not.toBeInTheDocument()
+    })
+    expect(screen.getByTestId('pool-catalog-topology-save')).toBeEnabled()
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
+  it('enters topology blocking remediation state when graph still contains legacy document_policy payload', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-legacy',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            document_policy_key: 'sale',
+            document_policy: buildMinimalDocumentPolicy(),
+          },
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+
+    expect((await screen.findAllByText('Legacy topology remediation required')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/legacy document_policy payload/i).length).toBeGreaterThan(0)
+    expect(screen.getByTestId('pool-catalog-topology-save')).toBeDisabled()
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('sends topology version token and shows conflict error without clearing form data', async () => {
