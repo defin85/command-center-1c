@@ -231,14 +231,8 @@ async function openWorkspaceTab(
 }
 
 async function expandFirstEdgeAdvanced(user: ReturnType<typeof userEvent.setup>) {
-  const toggle = await screen.findAllByText('Advanced edge metadata / legacy document policy')
+  const toggle = await screen.findAllByText('Advanced edge metadata')
   await user.click(toggle[0] as HTMLElement)
-}
-
-async function openFirstEdgeLegacyDocumentPolicyEditor(user: ReturnType<typeof userEvent.setup>) {
-  await expandFirstEdgeAdvanced(user)
-  const openButton = await screen.findByTestId('pool-catalog-topology-edge-open-legacy-policy-editor-0')
-  await user.click(openButton)
 }
 
 const EXTENDED_UI_TEST_TIMEOUT_MS = 30000
@@ -1430,7 +1424,7 @@ describe('PoolCatalogPage', () => {
     })
   }, SYNC_MODAL_TIMEOUT_MS)
 
-  it('hides legacy edge document_policy editor behind explicit compatibility action', async () => {
+  it('shows publication slot selector and hides legacy document_policy controls', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
@@ -1454,266 +1448,92 @@ describe('PoolCatalogPage', () => {
           inn: '730000000002',
           name: 'Org Two',
           is_root: false,
-          metadata: {},
-        },
-      ],
-      edges: [
-        {
-          edge_version_id: 'edge-v1',
-          parent_node_version_id: 'node-v1',
-          child_node_version_id: 'node-v2',
-          weight: '1',
-          min_amount: null,
-          max_amount: null,
-          metadata: {
-            document_policy: {
-              version: 'document_policy.v1',
-              chains: [
-                {
-                  chain_id: 'sale_chain',
-                  documents: [
-                    {
-                      document_id: 'sale',
-                      entity_name: 'Document_Sales',
-                      document_role: 'sale',
-                    },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-      ],
-    })
-
-    renderPage()
-    expect(await screen.findByText('Org One')).toBeInTheDocument()
-
-    await openWorkspaceTab(user, 'Topology Editor')
-    await expandFirstEdgeAdvanced(user)
-
-    expect(await screen.findByText('Legacy edge document_policy compatibility')).toBeInTheDocument()
-    expect(await screen.findByTestId('pool-catalog-topology-edge-open-legacy-policy-editor-0')).toBeInTheDocument()
-    expect(await screen.findByTestId('pool-catalog-topology-edge-policy-readonly-0')).toBeDisabled()
-    expect(screen.queryByTestId('pool-catalog-topology-edge-policy-mode-0')).not.toBeInTheDocument()
-  }, EXTENDED_UI_TEST_TIMEOUT_MS)
-
-  it('imports legacy edge document_policy into /decisions and shows binding migration outcome', async () => {
-    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
-
-    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
-    mockGetPoolGraph.mockResolvedValue({
-      pool_id: '44444444-4444-4444-4444-444444444444',
-      date: '2026-01-01',
-      version: 'v1:topology-initial',
-      nodes: [
-        {
-          node_version_id: 'node-v1',
-          organization_id: '11111111-1111-1111-1111-111111111111',
-          inn: '730000000001',
-          name: 'Org One',
-          is_root: true,
-          metadata: {},
-        },
-        {
-          node_version_id: 'node-v2',
-          organization_id: '77777777-7777-7777-7777-777777777777',
-          inn: '730000000002',
-          name: 'Org Two',
-          is_root: false,
-          metadata: {},
-        },
-      ],
-      edges: [
-        {
-          edge_version_id: 'edge-v1',
-          parent_node_version_id: 'node-v1',
-          child_node_version_id: 'node-v2',
-          weight: '1',
-          min_amount: null,
-          max_amount: null,
-          metadata: {
-            document_policy: {
-              version: 'document_policy.v1',
-              chains: [
-                {
-                  chain_id: 'sale_chain',
-                  documents: [
-                    {
-                      document_id: 'sale',
-                      entity_name: 'Document_Sales',
-                      document_role: 'sale',
-                    },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-      ],
-    })
-    mockListPoolWorkflowBindings.mockResolvedValueOnce(buildPoolWorkflowBindingCollection([
-      buildPoolWorkflowBinding({
-        decisions: [
-          {
-            decision_table_id: 'services-publication-policy',
-            decision_key: 'document_policy',
-            decision_revision: 2,
-          },
-        ],
-      }),
-    ]))
-
-    renderPage()
-    expect(await screen.findByText('Org One')).toBeInTheDocument()
-
-    await openWorkspaceTab(user, 'Topology Editor')
-    await expandFirstEdgeAdvanced(user)
-    await user.click(screen.getByTestId('pool-catalog-topology-edge-migrate-legacy-policy-0'))
-
-    await waitFor(() => {
-      expect(mockMigratePoolEdgeDocumentPolicy).toHaveBeenCalledWith(
-        '44444444-4444-4444-4444-444444444444',
-        expect.objectContaining({
-          edge_version_id: 'edge-v1',
-        })
-      )
-    })
-
-    expect(await screen.findByText('Imported to /decisions')).toBeInTheDocument()
-    expect(screen.getByText('Source: edge.metadata.document_policy (edge-v1)')).toBeInTheDocument()
-    expect(screen.getByText('Decision ref: services-publication-policy r2')).toBeInTheDocument()
-    expect(screen.getByText('Updated bindings: services_publication')).toBeInTheDocument()
-  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
-
-  it('blocks topology save when edge document_policy JSON is invalid', async () => {
-    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
-
-    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
-    mockGetPoolGraph.mockResolvedValue({
-      pool_id: '44444444-4444-4444-4444-444444444444',
-      date: '2026-01-01',
-      version: 'v1:topology-initial',
-      nodes: [
-        {
-          node_version_id: 'node-v1',
-          organization_id: '11111111-1111-1111-1111-111111111111',
-          inn: '730000000001',
-          name: 'Org One',
-          is_root: true,
-          metadata: {},
-        },
-        {
-          node_version_id: 'node-v2',
-          organization_id: '77777777-7777-7777-7777-777777777777',
-          inn: '730000000002',
-          name: 'Org Two',
-          is_root: false,
-          metadata: {},
-        },
-      ],
-      edges: [
-        {
-          edge_version_id: 'edge-v1',
-          parent_node_version_id: 'node-v1',
-          child_node_version_id: 'node-v2',
-          weight: '1',
-          min_amount: null,
-          max_amount: null,
-          metadata: {
-            document_policy: {
-              version: 'document_policy.v1',
-              chains: [
-                {
-                  chain_id: 'sale_chain',
-                  documents: [
-                    {
-                      document_id: 'sale',
-                      entity_name: 'Document_Sales',
-                      document_role: 'sale',
-                    },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-      ],
-    })
-
-    renderPage()
-    expect(await screen.findByText('Org One')).toBeInTheDocument()
-
-    await openWorkspaceTab(user, 'Topology Editor')
-    await openFirstEdgeLegacyDocumentPolicyEditor(user)
-    const edgePolicyInput = screen.getByTestId('pool-catalog-topology-edge-policy-0')
-    await user.click(edgePolicyInput)
-    await user.clear(edgePolicyInput)
-    await user.paste('{invalid-json')
-    await user.click(screen.getByTestId('pool-catalog-topology-save'))
-
-    expect(await screen.findByText('Preflight validation failed')).toBeInTheDocument()
-    expect(
-      await screen.findByText('Edge #1: document_policy должен быть валидным JSON.')
-    ).toBeInTheDocument()
-    expect(mockUpsertPoolTopologySnapshot).not.toHaveBeenCalled()
-  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
-
-  it('includes edge document_policy in topology upsert payload after preflight', async () => {
-    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
-
-    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
-    mockGetPoolGraph.mockResolvedValue({
-      pool_id: '44444444-4444-4444-4444-444444444444',
-      date: '2026-01-01',
-      version: 'v1:topology-initial',
-      nodes: [
-        {
-          node_version_id: 'node-v1',
-          organization_id: '11111111-1111-1111-1111-111111111111',
-          inn: '730000000001',
-          name: 'Org One',
-          is_root: true,
-          metadata: {},
-        },
-        {
-          node_version_id: 'node-v2',
-          organization_id: '77777777-7777-7777-7777-777777777777',
-          inn: '730000000002',
-          name: 'Org Two',
-          is_root: false,
-          metadata: {},
-        },
-      ],
-      edges: [
-        {
-          edge_version_id: 'edge-v1',
-          parent_node_version_id: 'node-v1',
-          child_node_version_id: 'node-v2',
-          weight: '1',
-          min_amount: null,
-          max_amount: null,
           metadata: {
             document_policy: buildMinimalDocumentPolicy(),
           },
         },
       ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            document_policy_key: 'sale',
+            document_policy: buildMinimalDocumentPolicy(),
+            custom_edge_key: 'preserve-this',
+          },
+        },
+      ],
     })
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
     await openWorkspaceTab(user, 'Topology Editor')
-    await openFirstEdgeLegacyDocumentPolicyEditor(user)
-    const edgePolicyInput = screen.getByTestId('pool-catalog-topology-edge-policy-0')
-    await user.click(edgePolicyInput)
-    await user.clear(edgePolicyInput)
-    await user.paste(
-      '{"version":"document_policy.v1","chains":[{"chain_id":"sale_chain","documents":[{"document_id":"sale","entity_name":"Document_Sales","document_role":"sale"}]}]}'
-    )
+    expect(await screen.findByTestId('pool-catalog-topology-edge-slot-0')).toHaveValue('sale')
+    expect(screen.queryByText('Legacy edge document_policy compatibility')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('pool-catalog-topology-edge-open-legacy-policy-editor-0')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('pool-catalog-topology-edge-migrate-legacy-policy-0')).not.toBeInTheDocument()
+
+    await expandFirstEdgeAdvanced(user)
+    expect(await screen.findByTestId('pool-catalog-topology-edge-metadata-0')).toBeInTheDocument()
+    expect(screen.queryByTestId('pool-catalog-topology-edge-policy-mode-0')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('pool-catalog-topology-edge-policy-0')).not.toBeInTheDocument()
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
+  it('includes edge document_policy_key in topology upsert payload after preflight', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            custom_edge_key: 'preserve-this',
+          },
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+    const slotInput = screen.getByTestId('pool-catalog-topology-edge-slot-0')
+    await user.clear(slotInput)
+    await user.paste('sale')
     await user.click(screen.getByTestId('pool-catalog-topology-save'))
 
     await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
@@ -1725,109 +1545,9 @@ describe('PoolCatalogPage', () => {
           expect.objectContaining({
             parent_organization_id: '11111111-1111-1111-1111-111111111111',
             child_organization_id: '77777777-7777-7777-7777-777777777777',
-            metadata: {
-              document_policy: expect.objectContaining({
-                version: 'document_policy.v1',
-              }),
-            },
-          }),
-        ],
-      })
-    )
-  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
-
-  it('builds document_policy in builder mode and preserves unknown edge metadata keys', async () => {
-    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
-
-    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
-    mockGetPoolGraph.mockResolvedValue({
-      pool_id: '44444444-4444-4444-4444-444444444444',
-      date: '2026-01-01',
-      version: 'v1:topology-initial',
-      nodes: [
-        {
-          node_version_id: 'node-v1',
-          organization_id: '11111111-1111-1111-1111-111111111111',
-          inn: '730000000001',
-          name: 'Org One',
-          is_root: true,
-          metadata: {},
-        },
-        {
-          node_version_id: 'node-v2',
-          organization_id: '77777777-7777-7777-7777-777777777777',
-          inn: '730000000002',
-          name: 'Org Two',
-          is_root: false,
-          metadata: {},
-        },
-      ],
-      edges: [
-        {
-          edge_version_id: 'edge-v1',
-          parent_node_version_id: 'node-v1',
-          child_node_version_id: 'node-v2',
-          weight: '1',
-          min_amount: null,
-          max_amount: null,
-          metadata: {
-            custom_edge_key: 'preserve-this',
-            document_policy: {
-              version: 'document_policy.v1',
-              chains: [
-                {
-                  chain_id: 'sale_chain',
-                  documents: [
-                    {
-                      document_id: 'sale',
-                      entity_name: 'Document_Sales',
-                      document_role: 'sale',
-                    },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-      ],
-    })
-
-    renderPage()
-    expect(await screen.findByText('Org One')).toBeInTheDocument()
-
-    await openWorkspaceTab(user, 'Topology Editor')
-    await openFirstEdgeLegacyDocumentPolicyEditor(user)
-
-    openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
-    await selectDropdownOption(/builder/i)
-
-    expect(await screen.findByText('Add chain')).toBeInTheDocument()
-    await user.click(screen.getByTestId('pool-catalog-topology-save'))
-
-    await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
-    expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledWith(
-      '44444444-4444-4444-4444-444444444444',
-      expect.objectContaining({
-        edges: [
-          expect.objectContaining({
             metadata: expect.objectContaining({
               custom_edge_key: 'preserve-this',
-              document_policy: expect.objectContaining({
-                version: 'document_policy.v1',
-                chains: [
-                  expect.objectContaining({
-                    chain_id: 'sale_chain',
-                    documents: [
-                      expect.objectContaining({
-                        document_id: 'sale',
-                        entity_name: 'Document_Sales',
-                        document_role: 'sale',
-                      }),
-                    ],
-                  }),
-                ],
-              }),
+              document_policy_key: 'sale',
             }),
           }),
         ],
@@ -1835,7 +1555,7 @@ describe('PoolCatalogPage', () => {
     )
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
-  it('shows readonly metadata status and /databases handoff for edge builder mode', async () => {
+  it('supports edge metadata builder mode and preserves custom metadata keys with slot selector', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
@@ -1871,527 +1591,7 @@ describe('PoolCatalogPage', () => {
           min_amount: null,
           max_amount: null,
           metadata: {
-            document_policy: buildMinimalDocumentPolicy(),
-          },
-        },
-      ],
-    })
-
-    renderPage()
-    expect(await screen.findByText('Org One')).toBeInTheDocument()
-    await openWorkspaceTab(user, 'Topology Editor')
-    await openFirstEdgeLegacyDocumentPolicyEditor(user)
-
-    openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
-    await selectDropdownOption(/builder/i)
-
-    await waitFor(() => {
-      expect(mockGetPoolODataMetadataCatalog).toHaveBeenCalledWith(
-        { database_id: '88888888-8888-8888-8888-888888888888' },
-        { skipGlobalError: true }
-      )
-    })
-
-    expect(screen.getByText('каталог v1:test • документов 1')).toBeInTheDocument()
-    expect(screen.getByTestId('pool-catalog-topology-edge-policy-open-databases-0')).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        'Configuration profile и metadata snapshot управляются на странице /databases. В topology editor используется только текущий metadata context.'
-      )
-    ).toBeInTheDocument()
-    expect(screen.queryByTestId('pool-catalog-topology-edge-policy-refresh-metadata-0')).not.toBeInTheDocument()
-    expect(mockRefreshPoolODataMetadataCatalog).not.toHaveBeenCalled()
-  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
-
-  it('shows detailed metadata load error with /databases handoff', async () => {
-    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
-
-    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
-    mockGetPoolGraph.mockResolvedValue({
-      pool_id: '44444444-4444-4444-4444-444444444444',
-      date: '2026-01-01',
-      version: 'v1:topology-initial',
-      nodes: [
-        {
-          node_version_id: 'node-v1',
-          organization_id: '11111111-1111-1111-1111-111111111111',
-          inn: '730000000001',
-          name: 'Org One',
-          is_root: true,
-          metadata: {},
-        },
-        {
-          node_version_id: 'node-v2',
-          organization_id: '77777777-7777-7777-7777-777777777777',
-          inn: '730000000002',
-          name: 'Org Two',
-          is_root: false,
-          metadata: {},
-        },
-      ],
-      edges: [
-        {
-          edge_version_id: 'edge-v1',
-          parent_node_version_id: 'node-v1',
-          child_node_version_id: 'node-v2',
-          weight: '1',
-          min_amount: null,
-          max_amount: null,
-          metadata: {
-            document_policy: buildMinimalDocumentPolicy(),
-          },
-        },
-      ],
-    })
-    mockGetPoolODataMetadataCatalog.mockRejectedValueOnce({
-      response: {
-        data: {
-          type: 'about:blank',
-          title: 'Metadata Catalog Fetch Failed',
-          status: 502,
-          detail: 'OData endpoint returned HTTP 500 for $metadata.',
-          code: 'POOL_METADATA_FETCH_FAILED',
-          errors: [
-            {
-              code: 'POOL_METADATA_FETCH_FAILED',
-              path: '$metadata',
-              detail: 'На сервере 1С:Предприятия не найдена лицензия.',
-            },
-          ],
-        },
-      },
-    })
-
-    renderPage()
-    expect(await screen.findByText('Org One')).toBeInTheDocument()
-    await openWorkspaceTab(user, 'Topology Editor')
-    await openFirstEdgeLegacyDocumentPolicyEditor(user)
-
-    openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
-    await selectDropdownOption(/builder/i)
-
-    await waitFor(() => {
-      expect(mockGetPoolODataMetadataCatalog).toHaveBeenCalledWith(
-        { database_id: '88888888-8888-8888-8888-888888888888' },
-        { skipGlobalError: true }
-      )
-    })
-
-    expect(await screen.findByText(/OData endpoint returned HTTP 500 for \$metadata\./i)).toBeInTheDocument()
-    expect(await screen.findByText(/\$metadata: На сервере 1С:Предприятия не найдена лицензия\./i)).toBeInTheDocument()
-    expect(screen.getByTestId('pool-catalog-topology-edge-policy-error-open-databases-0')).toBeInTheDocument()
-    expect(screen.queryByTestId('pool-catalog-topology-edge-policy-refresh-metadata-0')).not.toBeInTheDocument()
-    expect(mockRefreshPoolODataMetadataCatalog).not.toHaveBeenCalled()
-  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
-
-  it('shows warning when selected entity has no metadata fields in builder mode', async () => {
-    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
-
-    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
-    mockGetPoolGraph.mockResolvedValue({
-      pool_id: '44444444-4444-4444-4444-444444444444',
-      date: '2026-01-01',
-      version: 'v1:topology-initial',
-      nodes: [
-        {
-          node_version_id: 'node-v1',
-          organization_id: '11111111-1111-1111-1111-111111111111',
-          inn: '730000000001',
-          name: 'Org One',
-          is_root: true,
-          metadata: {},
-        },
-        {
-          node_version_id: 'node-v2',
-          organization_id: '77777777-7777-7777-7777-777777777777',
-          inn: '730000000002',
-          name: 'Org Two',
-          is_root: false,
-          metadata: {},
-        },
-      ],
-      edges: [
-        {
-          edge_version_id: 'edge-v1',
-          parent_node_version_id: 'node-v1',
-          child_node_version_id: 'node-v2',
-          weight: '1',
-          min_amount: null,
-          max_amount: null,
-          metadata: {
-            document_policy: {
-              version: 'document_policy.v1',
-              chains: [
-                {
-                  chain_id: 'sale_chain',
-                  documents: [
-                    {
-                      document_id: 'sale',
-                      entity_name: 'Document_Sales',
-                      document_role: 'sale',
-                      field_mapping: {},
-                      table_parts_mapping: {},
-                      link_rules: {},
-                    },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-      ],
-    })
-    mockGetPoolODataMetadataCatalog.mockResolvedValue({
-      database_id: '88888888-8888-8888-8888-888888888888',
-      source: 'db',
-      fetched_at: '2026-01-01T00:00:00Z',
-      catalog_version: 'v1:test',
-      config_name: 'test',
-      config_version: '',
-      metadata_hash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      documents: [
-        {
-          entity_name: 'Document_Sales',
-          display_name: 'Sales',
-          fields: [],
-          table_parts: [],
-        },
-      ],
-    })
-
-    renderPage()
-    expect(await screen.findByText('Org One')).toBeInTheDocument()
-    await openWorkspaceTab(user, 'Topology Editor')
-    await openFirstEdgeLegacyDocumentPolicyEditor(user)
-
-    openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
-    await selectDropdownOption(/builder/i)
-
-    expect(
-      await screen.findByText('Для "Document_Sales" в metadata catalog нет fields.')
-    ).toBeInTheDocument()
-  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
-
-  it('preserves link_rules when saving document_policy from builder mode', async () => {
-    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
-
-    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
-    mockGetPoolGraph.mockResolvedValue({
-      pool_id: '44444444-4444-4444-4444-444444444444',
-      date: '2026-01-01',
-      version: 'v1:topology-initial',
-      nodes: [
-        {
-          node_version_id: 'node-v1',
-          organization_id: '11111111-1111-1111-1111-111111111111',
-          inn: '730000000001',
-          name: 'Org One',
-          is_root: true,
-          metadata: {},
-        },
-        {
-          node_version_id: 'node-v2',
-          organization_id: '77777777-7777-7777-7777-777777777777',
-          inn: '730000000002',
-          name: 'Org Two',
-          is_root: false,
-          metadata: {},
-        },
-      ],
-      edges: [
-        {
-          edge_version_id: 'edge-v1',
-          parent_node_version_id: 'node-v1',
-          child_node_version_id: 'node-v2',
-          weight: '1',
-          min_amount: null,
-          max_amount: null,
-          metadata: {
-            document_policy: {
-              version: 'document_policy.v1',
-              chains: [
-                {
-                  chain_id: 'sale_chain',
-                  documents: [
-                    {
-                      document_id: 'sale',
-                      entity_name: 'Document_Sales',
-                      document_role: 'sale',
-                      field_mapping: { Amount: 'allocation.amount' },
-                      table_parts_mapping: {},
-                      invoice_mode: 'required',
-                      link_rules: {},
-                    },
-                    {
-                      document_id: 'invoice',
-                      entity_name: 'Document_Invoice',
-                      document_role: 'invoice',
-                      field_mapping: { BaseDocument: 'sale.ref' },
-                      table_parts_mapping: {},
-                      link_to: 'sale',
-                      link_rules: { depends_on: 'sale' },
-                    },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-      ],
-    })
-
-    renderPage()
-    expect(await screen.findByText('Org One')).toBeInTheDocument()
-    await openWorkspaceTab(user, 'Topology Editor')
-    await openFirstEdgeLegacyDocumentPolicyEditor(user)
-
-    openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
-    await selectDropdownOption(/builder/i)
-
-    await user.click(screen.getByTestId('pool-catalog-topology-save'))
-
-    await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
-    expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledWith(
-      '44444444-4444-4444-4444-444444444444',
-      expect.objectContaining({
-        edges: [
-          expect.objectContaining({
-            metadata: expect.objectContaining({
-              document_policy: expect.objectContaining({
-                chains: [
-                  expect.objectContaining({
-                    documents: expect.arrayContaining([
-                      expect.objectContaining({
-                        document_id: 'invoice',
-                        link_rules: expect.objectContaining({
-                          depends_on: 'sale',
-                        }),
-                      }),
-                    ]),
-                  }),
-                ],
-              }),
-            }),
-          }),
-        ],
-      })
-    )
-  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
-
-  it('preserves canonical master_data token in field_mapping from builder mode', async () => {
-    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
-
-    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
-    mockGetPoolGraph.mockResolvedValue({
-      pool_id: '44444444-4444-4444-4444-444444444444',
-      date: '2026-01-01',
-      version: 'v1:topology-initial',
-      nodes: [
-        {
-          node_version_id: 'node-v1',
-          organization_id: '11111111-1111-1111-1111-111111111111',
-          inn: '730000000001',
-          name: 'Org One',
-          is_root: true,
-          metadata: {},
-        },
-        {
-          node_version_id: 'node-v2',
-          organization_id: '77777777-7777-7777-7777-777777777777',
-          inn: '730000000002',
-          name: 'Org Two',
-          is_root: false,
-          metadata: {},
-        },
-      ],
-      edges: [
-        {
-          edge_version_id: 'edge-v1',
-          parent_node_version_id: 'node-v1',
-          child_node_version_id: 'node-v2',
-          weight: '1',
-          min_amount: null,
-          max_amount: null,
-          metadata: {
-            document_policy: {
-              version: 'document_policy.v1',
-              chains: [
-                {
-                  chain_id: 'sale_chain',
-                  documents: [
-                    {
-                      document_id: 'sale',
-                      entity_name: 'Document_Sales',
-                      document_role: 'sale',
-                      field_mapping: { Amount: 'master_data.item.item-001.ref' },
-                      table_parts_mapping: {},
-                      link_rules: {},
-                    },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-      ],
-    })
-
-    renderPage()
-    expect(await screen.findByText('Org One')).toBeInTheDocument()
-    await openWorkspaceTab(user, 'Topology Editor')
-    await openFirstEdgeLegacyDocumentPolicyEditor(user)
-
-    openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
-    await selectDropdownOption(/builder/i)
-
-    await user.click(screen.getByTestId('pool-catalog-topology-save'))
-
-    await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
-    expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledWith(
-      '44444444-4444-4444-4444-444444444444',
-      expect.objectContaining({
-        edges: [
-          expect.objectContaining({
-            metadata: expect.objectContaining({
-              document_policy: expect.objectContaining({
-                chains: [
-                  expect.objectContaining({
-                    documents: expect.arrayContaining([
-                      expect.objectContaining({
-                        document_id: 'sale',
-                        field_mapping: expect.objectContaining({
-                          Amount: 'master_data.item.item-001.ref',
-                        }),
-                      }),
-                    ]),
-                  }),
-                ],
-              }),
-            }),
-          }),
-        ],
-      })
-    )
-  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
-
-  it('shows preflight validation error when expression source contains canonical master_data token', async () => {
-    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
-
-    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
-    mockGetPoolGraph.mockResolvedValue({
-      pool_id: '44444444-4444-4444-4444-444444444444',
-      date: '2026-01-01',
-      version: 'v1:topology-initial',
-      nodes: [
-        {
-          node_version_id: 'node-v1',
-          organization_id: '11111111-1111-1111-1111-111111111111',
-          inn: '730000000001',
-          name: 'Org One',
-          is_root: true,
-          metadata: {},
-        },
-        {
-          node_version_id: 'node-v2',
-          organization_id: '77777777-7777-7777-7777-777777777777',
-          inn: '730000000002',
-          name: 'Org Two',
-          is_root: false,
-          metadata: {},
-        },
-      ],
-      edges: [
-        {
-          edge_version_id: 'edge-v1',
-          parent_node_version_id: 'node-v1',
-          child_node_version_id: 'node-v2',
-          weight: '1',
-          min_amount: null,
-          max_amount: null,
-          metadata: {
-            document_policy: {
-              version: 'document_policy.v1',
-              chains: [
-                {
-                  chain_id: 'sale_chain',
-                  documents: [
-                    {
-                      document_id: 'sale',
-                      entity_name: 'Document_Sales',
-                      document_role: 'sale',
-                      field_mapping: { Amount: 'allocation.amount' },
-                      table_parts_mapping: {},
-                      link_rules: {},
-                    },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-      ],
-    })
-
-    renderPage()
-    expect(await screen.findByText('Org One')).toBeInTheDocument()
-    await openWorkspaceTab(user, 'Topology Editor')
-    await openFirstEdgeLegacyDocumentPolicyEditor(user)
-
-    openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
-    await selectDropdownOption(/builder/i)
-
-    const expressionInput = await screen.findByPlaceholderText('allocation.amount')
-    await user.click(expressionInput)
-    await user.clear(expressionInput)
-    await user.paste('master_data.item.item-001.ref')
-    await user.click(screen.getByTestId('pool-catalog-topology-save'))
-
-    expect(await screen.findByText(/source_type=expression/)).toBeInTheDocument()
-    expect(mockUpsertPoolTopologySnapshot).not.toHaveBeenCalled()
-  }, 30000)
-
-  it('supports edge metadata builder mode and preserves custom metadata keys', async () => {
-    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
-
-    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
-    mockGetPoolGraph.mockResolvedValue({
-      pool_id: '44444444-4444-4444-4444-444444444444',
-      date: '2026-01-01',
-      version: 'v1:topology-initial',
-      nodes: [
-        {
-          node_version_id: 'node-v1',
-          organization_id: '11111111-1111-1111-1111-111111111111',
-          inn: '730000000001',
-          name: 'Org One',
-          is_root: true,
-          metadata: {},
-        },
-        {
-          node_version_id: 'node-v2',
-          organization_id: '77777777-7777-7777-7777-777777777777',
-          inn: '730000000002',
-          name: 'Org Two',
-          is_root: false,
-          metadata: {},
-        },
-      ],
-      edges: [
-        {
-          edge_version_id: 'edge-v1',
-          parent_node_version_id: 'node-v1',
-          child_node_version_id: 'node-v2',
-          weight: '1',
-          min_amount: null,
-          max_amount: null,
-          metadata: {
-            document_policy: buildMinimalDocumentPolicy(),
+            document_policy_key: 'sale',
             custom_edge_key: 'preserve-this',
             custom_nested: { level: 2 },
           },
@@ -2402,7 +1602,9 @@ describe('PoolCatalogPage', () => {
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
     await openWorkspaceTab(user, 'Topology Editor')
-    await openFirstEdgeLegacyDocumentPolicyEditor(user)
+
+    expect(await screen.findByDisplayValue('sale')).toBeInTheDocument()
+    await expandFirstEdgeAdvanced(user)
 
     openSelectByTestId('pool-catalog-topology-edge-metadata-mode-0')
     await selectDropdownOption(/builder/i)
@@ -2417,6 +1619,7 @@ describe('PoolCatalogPage', () => {
         edges: [
           expect.objectContaining({
             metadata: expect.objectContaining({
+              document_policy_key: 'sale',
               custom_edge_key: 'preserve-this',
               custom_nested: expect.objectContaining({ level: 2 }),
             }),
@@ -2426,79 +1629,7 @@ describe('PoolCatalogPage', () => {
     )
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
-  it('does not auto-retry metadata catalog load after initial failure', async () => {
-    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
-
-    mockGetPoolODataMetadataCatalog.mockRejectedValue(new Error('metadata load failed'))
-
-    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
-    mockGetPoolGraph.mockResolvedValue({
-      pool_id: '44444444-4444-4444-4444-444444444444',
-      date: '2026-01-01',
-      version: 'v1:topology-initial',
-      nodes: [
-        {
-          node_version_id: 'node-v1',
-          organization_id: '11111111-1111-1111-1111-111111111111',
-          inn: '730000000001',
-          name: 'Org One',
-          is_root: true,
-          metadata: {},
-        },
-        {
-          node_version_id: 'node-v2',
-          organization_id: '77777777-7777-7777-7777-777777777777',
-          inn: '730000000002',
-          name: 'Org Two',
-          is_root: false,
-          metadata: {},
-        },
-      ],
-      edges: [
-        {
-          edge_version_id: 'edge-v1',
-          parent_node_version_id: 'node-v1',
-          child_node_version_id: 'node-v2',
-          weight: '1',
-          min_amount: null,
-          max_amount: null,
-          metadata: {
-            document_policy: buildMinimalDocumentPolicy(),
-          },
-        },
-      ],
-    })
-
-    renderPage()
-    expect(await screen.findByText('Org One')).toBeInTheDocument()
-    await openWorkspaceTab(user, 'Topology Editor')
-    await openFirstEdgeLegacyDocumentPolicyEditor(user)
-
-    openSelectByTestId('pool-catalog-topology-edge-policy-mode-0')
-    await selectDropdownOption(/builder/i)
-
-    await waitFor(() => {
-      expect(mockGetPoolODataMetadataCatalog).toHaveBeenCalledTimes(1)
-      expect(mockGetPoolODataMetadataCatalog).toHaveBeenCalledWith(
-        { database_id: '88888888-8888-8888-8888-888888888888' },
-        { skipGlobalError: true }
-      )
-    })
-
-    await waitFor(
-      () => {
-        expect(mockGetPoolODataMetadataCatalog).toHaveBeenCalledTimes(1)
-      },
-      { timeout: 1000 }
-    )
-
-    expect(screen.getByTestId('pool-catalog-topology-edge-policy-error-open-databases-0')).toBeInTheDocument()
-    expect(screen.queryByTestId('pool-catalog-topology-edge-policy-refresh-metadata-0')).not.toBeInTheDocument()
-    expect(mockRefreshPoolODataMetadataCatalog).not.toHaveBeenCalled()
-  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
-
-  it('preserves existing node and edge metadata when editing edge document_policy', async () => {
+  it('preserves existing node and edge metadata when editing edge slot selector', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
@@ -2534,22 +1665,9 @@ describe('PoolCatalogPage', () => {
           min_amount: '10.00',
           max_amount: '20.00',
           metadata: {
+            document_policy_key: 'legacy-sale',
             custom_edge_key: 'preserve-this',
-            document_policy: {
-              version: 'document_policy.v1',
-              chains: [
-                {
-                  chain_id: 'sale_chain',
-                  documents: [
-                    {
-                      document_id: 'sale',
-                      entity_name: 'Document_Sales',
-                      document_role: 'sale',
-                    },
-                  ],
-                },
-              ],
-            },
+            document_policy: buildMinimalDocumentPolicy(),
           },
         },
       ],
@@ -2560,13 +1678,9 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Org Two')).toBeInTheDocument()
 
     await openWorkspaceTab(user, 'Topology Editor')
-    await openFirstEdgeLegacyDocumentPolicyEditor(user)
-    const edgePolicyInput = await screen.findByTestId('pool-catalog-topology-edge-policy-0')
-    await user.click(edgePolicyInput)
-    await user.clear(edgePolicyInput)
-    await user.paste(
-      '{"version":"document_policy.v1","chains":[{"chain_id":"sale_chain","documents":[{"document_id":"sale","entity_name":"Document_Sales","document_role":"sale","invoice_mode":"required"}]}]}'
-    )
+    const slotInput = screen.getByTestId('pool-catalog-topology-edge-slot-0')
+    await user.clear(slotInput)
+    await user.paste('sale')
     await user.click(screen.getByTestId('pool-catalog-topology-save'))
 
     await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
@@ -2594,6 +1708,7 @@ describe('PoolCatalogPage', () => {
             child_organization_id: '77777777-7777-7777-7777-777777777777',
             metadata: expect.objectContaining({
               custom_edge_key: 'preserve-this',
+              document_policy_key: 'sale',
               document_policy: expect.objectContaining({
                 version: 'document_policy.v1',
               }),
@@ -2602,7 +1717,7 @@ describe('PoolCatalogPage', () => {
         ],
       })
     )
-  }, 30000)
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('sends topology version token and shows conflict error without clearing form data', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')

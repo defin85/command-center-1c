@@ -33,7 +33,6 @@ import { useMyTenants } from '../../api/queries/tenants'
 import {
   getOrganization,
   getPoolGraph,
-  migratePoolEdgeDocumentPolicy,
   listPoolWorkflowBindings,
   listMasterDataContracts,
   listMasterDataItems,
@@ -55,7 +54,6 @@ import {
   type PoolMasterItem,
   type PoolMasterParty,
   type PoolMasterTaxProfile,
-  type PoolDocumentPolicyMigrationResponse,
   type PoolWorkflowBindingBlockingRemediation,
   type PoolTopologySnapshotPeriod,
   type PoolTopologySnapshotEdgeInput,
@@ -85,10 +83,6 @@ const SYNC_MAX_ROWS = 1000
 const MASTER_DATA_TOKEN_CATALOG_LIMIT = 200
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const STATUS_OPTIONS: OrganizationStatus[] = ['active', 'inactive', 'archived']
-const LEGACY_EDGE_DOCUMENT_POLICY_COMPATIBILITY_MESSAGE = (
-  'Workflow-centric source-of-truth moved to /workflows + pool workflow bindings. '
-  + 'Open the legacy edge document_policy editor only for historical compatibility and controlled migration.'
-)
 
 const API_ERROR_MESSAGE_MAP: Record<string, string> = {
   DATABASE_ALREADY_LINKED: 'Выбранная база уже привязана к другой организации.',
@@ -155,6 +149,7 @@ type TopologyEdgeFormValue = {
   weight?: number
   min_amount?: number | null
   max_amount?: number | null
+  document_policy_key?: string
   document_policy_mode?: 'builder' | 'raw'
   document_policy_json?: string
   document_policy_builder?: DocumentPolicyBuilderChainFormValue[]
@@ -507,18 +502,6 @@ const getApiErrorCode = (error: unknown): string => {
 const appendMetadataManagementHandoff = (message: string): string => {
   const handoff = 'Metadata context недоступен для topology editor. Откройте /databases, перепроверьте configuration identity или обновите metadata snapshot и повторите.'
   return mergeMessageParts([message, handoff]) || handoff
-}
-
-const describePoolWorkflowBinding = (binding: PoolWorkflowBinding): string => {
-  const workflowName = String(binding.workflow?.workflow_name ?? '').trim()
-  if (workflowName) {
-    return workflowName
-  }
-  const bindingId = String(binding.binding_id ?? '').trim()
-  if (bindingId) {
-    return bindingId
-  }
-  return 'binding'
 }
 
 const parseSyncPayload = (input: string): SyncPreflightResult => {
@@ -1412,6 +1395,11 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
     }
     const metadata: Record<string, unknown> = { ...metadataParseResult.metadata }
     delete metadata.document_policy
+    delete metadata.document_policy_key
+    const documentPolicyKey = String(edge.document_policy_key || '').trim()
+    if (documentPolicyKey) {
+      metadata.document_policy_key = documentPolicyKey
+    }
     if (policyResult.policy) {
       metadata.document_policy = policyResult.policy
     }
@@ -1515,13 +1503,6 @@ export function PoolCatalogPage() {
   const [masterDataTaxProfiles, setMasterDataTaxProfiles] = useState<PoolMasterTaxProfile[]>([])
   const [loadingMasterDataTokenCatalog, setLoadingMasterDataTokenCatalog] = useState(false)
   const [masterDataTokenCatalogError, setMasterDataTokenCatalogError] = useState<string | null>(null)
-  const [legacyEdgePolicyEditorOpenByKey, setLegacyEdgePolicyEditorOpenByKey] = useState<Record<string, boolean>>({})
-  const [legacyEdgePolicyMigrationByEdgeId, setLegacyEdgePolicyMigrationByEdgeId] = useState<Record<string, {
-    response: PoolDocumentPolicyMigrationResponse
-    updatedBindings: PoolWorkflowBinding[]
-  }>>({})
-  const [legacyEdgePolicyMigrationLoadingByEdgeId, setLegacyEdgePolicyMigrationLoadingByEdgeId] = useState<Record<string, boolean>>({})
-  const [legacyEdgePolicyMigrationErrorByEdgeId, setLegacyEdgePolicyMigrationErrorByEdgeId] = useState<Record<string, string>>({})
   const watchedEdges = Form.useWatch('edges', topologyForm)
 
   const selectedOrganization = useMemo(
@@ -1803,53 +1784,6 @@ export function PoolCatalogPage() {
     }
   }, [hasTenantContext])
 
-  const switchEdgePolicyMode = useCallback((edgeIndex: number, nextMode: 'builder' | 'raw') => {
-    const currentMode = (
-      String(topologyForm.getFieldValue(['edges', edgeIndex, 'document_policy_mode']) || 'raw')
-        .trim()
-        .toLowerCase() === 'builder'
-        ? 'builder'
-        : 'raw'
-    )
-    if (nextMode === currentMode) return
-
-    if (nextMode === 'builder') {
-      const rawPolicy = String(
-        topologyForm.getFieldValue(['edges', edgeIndex, 'document_policy_json']) ?? ''
-      ).trim()
-      if (!rawPolicy) {
-        topologyForm.setFieldValue(['edges', edgeIndex, 'document_policy_builder'], [])
-        topologyForm.setFieldValue(['edges', edgeIndex, 'document_policy_mode'], 'builder')
-        return
-      }
-      const parsed = parseDocumentPolicyMetadata(rawPolicy, edgeIndex + 1)
-      if (parsed.errors.length > 0) {
-        message.error(parsed.errors[0] || `Edge #${edgeIndex + 1}: не удалось переключить режим на builder.`)
-        return
-      }
-      topologyForm.setFieldValue(
-        ['edges', edgeIndex, 'document_policy_builder'],
-        documentPolicyToBuilderChains(parsed.policy)
-      )
-      topologyForm.setFieldValue(['edges', edgeIndex, 'document_policy_mode'], 'builder')
-      return
-    }
-
-    const built = buildDocumentPolicyFromBuilder(
-      topologyForm.getFieldValue(['edges', edgeIndex, 'document_policy_builder']),
-      edgeIndex + 1
-    )
-    if (built.errors.length > 0) {
-      message.error(built.errors[0] || `Edge #${edgeIndex + 1}: исправьте policy в builder перед переключением.`)
-      return
-    }
-    topologyForm.setFieldValue(
-      ['edges', edgeIndex, 'document_policy_json'],
-      built.policy ? JSON.stringify(built.policy, null, 2) : ''
-    )
-    topologyForm.setFieldValue(['edges', edgeIndex, 'document_policy_mode'], 'raw')
-  }, [message, topologyForm])
-
   const switchEdgeMetadataMode = useCallback((edgeIndex: number, nextMode: 'builder' | 'raw') => {
     const currentMode = (
       String(topologyForm.getFieldValue(['edges', edgeIndex, 'edge_metadata_mode']) || 'raw')
@@ -1891,91 +1825,6 @@ export function PoolCatalogPage() {
     )
     topologyForm.setFieldValue(['edges', edgeIndex, 'edge_metadata_mode'], 'raw')
   }, [message, topologyForm])
-
-  const handleMigrateLegacyEdgePolicy = useCallback(async (
-    edgeIndex: number,
-    legacyEditorKey: string
-  ) => {
-    if (mutatingDisabled || !selectedPoolId) {
-      return
-    }
-
-    const edgeVersionId = String(
-      topologyForm.getFieldValue(['edges', edgeIndex, 'edge_version_id']) ?? ''
-    ).trim()
-    const legacyPolicyJson = String(
-      topologyForm.getFieldValue(['edges', edgeIndex, 'document_policy_json']) ?? ''
-    ).trim()
-
-    if (!edgeVersionId) {
-      message.info('Migration is available only for persisted legacy topology edges.')
-      return
-    }
-    if (!legacyPolicyJson) {
-      message.info('Legacy document_policy was not found on this topology edge.')
-      return
-    }
-
-    setLegacyEdgePolicyMigrationLoadingByEdgeId((current) => ({
-      ...current,
-      [edgeVersionId]: true,
-    }))
-    setLegacyEdgePolicyMigrationErrorByEdgeId((current) => {
-      const next = { ...current }
-      delete next[edgeVersionId]
-      return next
-    })
-
-    try {
-      const response = await migratePoolEdgeDocumentPolicy(selectedPoolId, {
-        edge_version_id: edgeVersionId,
-      })
-      const decisionRef = response.migration.decision_ref
-      let updatedBindings: PoolWorkflowBinding[] = []
-      try {
-        const collection = await listPoolWorkflowBindings(selectedPoolId)
-        updatedBindings = collection.workflow_bindings.filter((binding) => (
-          Array.isArray(binding.decisions)
-          && binding.decisions.some((decision) => (
-            decision.decision_table_id === decisionRef.decision_table_id
-            && decision.decision_revision === decisionRef.decision_revision
-          ))
-        ))
-      } catch {
-        message.warning('Legacy policy imported, but workflow bindings could not be reloaded.')
-      }
-
-      setLegacyEdgePolicyMigrationByEdgeId((current) => ({
-        ...current,
-        [edgeVersionId]: { response, updatedBindings },
-      }))
-      setLegacyEdgePolicyEditorOpenByKey((current) => ({
-        ...current,
-        [legacyEditorKey]: false,
-      }))
-      message.success(
-        response.migration.binding_update_required
-          ? 'Legacy policy imported into /decisions. Pin the new decision ref in workflow bindings.'
-          : 'Legacy policy imported into /decisions and matching workflow bindings were updated.'
-      )
-    } catch (err) {
-      const resolved = resolveApiError(
-        err,
-        'Не удалось импортировать legacy edge document_policy.',
-        { includeProblemDetail: true, includeProblemItems: true }
-      )
-      setLegacyEdgePolicyMigrationErrorByEdgeId((current) => ({
-        ...current,
-        [edgeVersionId]: resolved.message,
-      }))
-      message.error(resolved.message)
-    } finally {
-      setLegacyEdgePolicyMigrationLoadingByEdgeId((current) => ({
-        ...current,
-        [edgeVersionId]: false,
-      }))
-    }
-  }, [message, mutatingDisabled, selectedPoolId, topologyForm])
 
   useEffect(() => {
     void loadOrganizations()
@@ -2052,10 +1901,6 @@ export function PoolCatalogPage() {
   useEffect(() => {
     setTopologyPreflightErrors([])
     setTopologySubmitError(null)
-    setLegacyEdgePolicyEditorOpenByKey({})
-    setLegacyEdgePolicyMigrationByEdgeId({})
-    setLegacyEdgePolicyMigrationLoadingByEdgeId({})
-    setLegacyEdgePolicyMigrationErrorByEdgeId({})
     if (activeWorkspaceTab !== 'topology' || !selectedPool) return
     topologyForm.setFieldsValue({
       effective_from: new Date().toISOString().slice(0, 10),
@@ -2067,10 +1912,6 @@ export function PoolCatalogPage() {
 
   useEffect(() => {
     if (activeWorkspaceTab !== 'topology' || !selectedPool || !selectedPoolId || !graph) return
-    setLegacyEdgePolicyEditorOpenByKey({})
-    setLegacyEdgePolicyMigrationByEdgeId({})
-    setLegacyEdgePolicyMigrationLoadingByEdgeId({})
-    setLegacyEdgePolicyMigrationErrorByEdgeId({})
     const organizationByNodeVersion = new Map(
       graph.nodes.map((node) => [node.node_version_id, node.organization_id])
     )
@@ -2091,6 +1932,8 @@ export function PoolCatalogPage() {
       const maxAmount = edge.max_amount == null ? null : Number(edge.max_amount)
       const metadataWithoutPolicy = { ...metadata }
       delete metadataWithoutPolicy.document_policy
+      const documentPolicyKey = String(metadata.document_policy_key || '').trim()
+      delete metadataWithoutPolicy.document_policy_key
       return {
         edge_version_id: edge.edge_version_id,
         parent_organization_id: organizationByNodeVersion.get(edge.parent_node_version_id),
@@ -2098,6 +1941,7 @@ export function PoolCatalogPage() {
         weight: Number.isFinite(weight) ? weight : undefined,
         min_amount: minAmount == null || Number.isNaN(minAmount) ? null : minAmount,
         max_amount: maxAmount == null || Number.isNaN(maxAmount) ? null : maxAmount,
+        document_policy_key: documentPolicyKey,
         document_policy_mode: 'raw',
         document_policy_json: policy ? JSON.stringify(policy, null, 2) : '',
         document_policy_builder: documentPolicyToBuilderChains(policy),
@@ -3275,7 +3119,7 @@ export function PoolCatalogPage() {
                                   style={{ width: '100%' }}
                                 >
                                   <Row gutter={8} align="middle">
-                                    <Col span={6}>
+                                    <Col span={7}>
                                       <Form.Item
                                         name={[field.name, 'parent_organization_id']}
                                         label={field.name === 0 ? 'Parent' : ''}
@@ -3284,7 +3128,7 @@ export function PoolCatalogPage() {
                                         <Select options={organizationOptions} placeholder="Parent" />
                                       </Form.Item>
                                     </Col>
-                                    <Col span={6}>
+                                    <Col span={7}>
                                       <Form.Item
                                         name={[field.name, 'child_organization_id']}
                                         label={field.name === 0 ? 'Child' : ''}
@@ -3293,34 +3137,19 @@ export function PoolCatalogPage() {
                                         <Select options={organizationOptions} placeholder="Child" />
                                       </Form.Item>
                                     </Col>
-                                    <Col span={3}>
+                                    <Col span={8}>
                                       <Form.Item
-                                        name={[field.name, 'weight']}
-                                        label={field.name === 0 ? 'Weight' : ''}
+                                        name={[field.name, 'document_policy_key']}
+                                        label={field.name === 0 ? 'Publication slot' : ''}
                                         style={{ marginBottom: 0 }}
                                       >
-                                        <InputNumber min={0.000001} step={0.1} style={{ width: '100%' }} />
+                                        <Input
+                                          placeholder="sale"
+                                          data-testid={`pool-catalog-topology-edge-slot-${field.name}`}
+                                        />
                                       </Form.Item>
                                     </Col>
-                                    <Col span={3}>
-                                      <Form.Item
-                                        name={[field.name, 'min_amount']}
-                                        label={field.name === 0 ? 'Min' : ''}
-                                        style={{ marginBottom: 0 }}
-                                      >
-                                        <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
-                                      </Form.Item>
-                                    </Col>
-                                    <Col span={3}>
-                                      <Form.Item
-                                        name={[field.name, 'max_amount']}
-                                        label={field.name === 0 ? 'Max' : ''}
-                                        style={{ marginBottom: 0 }}
-                                      >
-                                        <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
-                                      </Form.Item>
-                                    </Col>
-                                    <Col span={3}>
+                                    <Col span={2}>
                                       <Space size={4}>
                                         <Button
                                           aria-label="Move edge up"
@@ -3340,170 +3169,45 @@ export function PoolCatalogPage() {
                                       </Space>
                                     </Col>
                                   </Row>
+                                  <Row gutter={8} align="middle">
+                                    <Col span={4}>
+                                      <Form.Item
+                                        name={[field.name, 'weight']}
+                                        label={field.name === 0 ? 'Weight' : ''}
+                                        style={{ marginBottom: 0 }}
+                                      >
+                                        <InputNumber min={0.000001} step={0.1} style={{ width: '100%' }} />
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={4}>
+                                      <Form.Item
+                                        name={[field.name, 'min_amount']}
+                                        label={field.name === 0 ? 'Min' : ''}
+                                        style={{ marginBottom: 0 }}
+                                      >
+                                        <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={4}>
+                                      <Form.Item
+                                        name={[field.name, 'max_amount']}
+                                        label={field.name === 0 ? 'Max' : ''}
+                                        style={{ marginBottom: 0 }}
+                                      >
+                                        <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                                      </Form.Item>
+                                    </Col>
+                                  </Row>
                                   <Collapse
                                     size="small"
                                     items={[
                                       {
                                         key: `edge-advanced-${field.key}`,
-                                        label: 'Advanced edge metadata / legacy document policy',
+                                        label: 'Advanced edge metadata',
                                         children: (
                                           <Space direction="vertical" size={8} style={{ width: '100%' }}>
                                             <Form.Item noStyle shouldUpdate>
                                               {({ getFieldValue }) => {
-                                                const legacyEditorKey = String(field.key)
-                                                const legacyPolicyJson = String(
-                                                  getFieldValue(['edges', field.name, 'document_policy_json']) ?? ''
-                                                ).trim()
-                                                const edgeVersionId = String(
-                                                  getFieldValue(['edges', field.name, 'edge_version_id']) ?? ''
-                                                ).trim()
-                                                const legacyEditorOpen = Boolean(
-                                                  legacyEdgePolicyEditorOpenByKey[legacyEditorKey]
-                                                )
-                                                const migrationOutcome = edgeVersionId
-                                                  ? legacyEdgePolicyMigrationByEdgeId[edgeVersionId]
-                                                  : undefined
-                                                const migrationLoading = edgeVersionId
-                                                  ? Boolean(legacyEdgePolicyMigrationLoadingByEdgeId[edgeVersionId])
-                                                  : false
-                                                const migrationError = edgeVersionId
-                                                  ? legacyEdgePolicyMigrationErrorByEdgeId[edgeVersionId]
-                                                  : ''
-                                                const updatedBindingLabels = migrationOutcome
-                                                  ? Array.from(new Set(
-                                                    migrationOutcome.updatedBindings.map(describePoolWorkflowBinding)
-                                                  )).filter(Boolean)
-                                                  : []
-                                                const hasPersistedLegacyPolicy = Boolean(edgeVersionId && legacyPolicyJson)
-                                                return (
-                                                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                                                    <Alert
-                                                      type={legacyEditorOpen ? 'warning' : 'info'}
-                                                      showIcon
-                                                      message="Legacy edge document_policy compatibility"
-                                                      description={(
-                                                        <Space direction="vertical" size={4}>
-                                                          <span>
-                                                            Use /decisions for net-new document_policy authoring and
-                                                            pin resulting decision refs in pool workflow bindings.
-                                                          </span>
-                                                          <span>{LEGACY_EDGE_DOCUMENT_POLICY_COMPATIBILITY_MESSAGE}</span>
-                                                        </Space>
-                                                      )}
-                                                      action={hasPersistedLegacyPolicy ? (
-                                                        <Space size={4}>
-                                                          {!legacyEditorOpen ? (
-                                                            <Button
-                                                              size="small"
-                                                              onClick={() => {
-                                                                setLegacyEdgePolicyEditorOpenByKey((current) => ({
-                                                                  ...current,
-                                                                  [legacyEditorKey]: true,
-                                                                }))
-                                                              }}
-                                                              data-testid={`pool-catalog-topology-edge-open-legacy-policy-editor-${field.name}`}
-                                                            >
-                                                              Open legacy editor
-                                                            </Button>
-                                                          ) : null}
-                                                          <Button
-                                                            size="small"
-                                                            type="primary"
-                                                            ghost
-                                                            loading={migrationLoading}
-                                                            onClick={() => {
-                                                              void handleMigrateLegacyEdgePolicy(field.name, legacyEditorKey)
-                                                            }}
-                                                            data-testid={`pool-catalog-topology-edge-migrate-legacy-policy-${field.name}`}
-                                                          >
-                                                            Import to /decisions
-                                                          </Button>
-                                                        </Space>
-                                                      ) : undefined}
-                                                    />
-                                                    {migrationError ? (
-                                                      <Alert
-                                                        type="error"
-                                                        showIcon
-                                                        message="Legacy policy import failed"
-                                                        description={migrationError}
-                                                      />
-                                                    ) : null}
-                                                    {migrationOutcome ? (
-                                                      <Alert
-                                                        type={migrationOutcome.response.migration.binding_update_required ? 'warning' : 'success'}
-                                                        showIcon
-                                                        message="Imported to /decisions"
-                                                        description={(
-                                                          <Space direction="vertical" size={4}>
-                                                            <span>
-                                                              {`Source: ${migrationOutcome.response.migration.source.source_path} (${migrationOutcome.response.migration.source.edge_version_id})`}
-                                                            </span>
-                                                            <span>
-                                                              {`Decision ref: ${migrationOutcome.response.migration.decision_ref.decision_table_id} r${migrationOutcome.response.migration.decision_ref.decision_revision}`}
-                                                            </span>
-                                                            {updatedBindingLabels.length > 0 ? (
-                                                              <span>{`Updated bindings: ${updatedBindingLabels.join(', ')}`}</span>
-                                                            ) : migrationOutcome.response.migration.binding_update_required ? (
-                                                              <span>Updated bindings: manual binding pin required</span>
-                                                            ) : (
-                                                              <span>Affected workflow bindings were updated automatically.</span>
-                                                            )}
-                                                          </Space>
-                                                        )}
-                                                      />
-                                                    ) : null}
-                                                    {legacyPolicyJson && !legacyEditorOpen ? (
-                                                      <Form.Item
-                                                        name={[field.name, 'document_policy_json']}
-                                                        label="Legacy document policy (read-only)"
-                                                        style={{ marginBottom: 0 }}
-                                                      >
-                                                        <TextArea
-                                                          autoSize={{ minRows: 2, maxRows: 8 }}
-                                                          disabled
-                                                          placeholder='{"version":"document_policy.v1","chains":[...]}'
-                                                          data-testid={`pool-catalog-topology-edge-policy-readonly-${field.name}`}
-                                                        />
-                                                      </Form.Item>
-                                                    ) : null}
-                                                  </Space>
-                                                )
-                                              }}
-                                            </Form.Item>
-                                            <Form.Item noStyle shouldUpdate>
-                                              {() => {
-                                                if (!legacyEdgePolicyEditorOpenByKey[String(field.key)]) {
-                                                  return null
-                                                }
-                                                return (
-                                                  <Form.Item
-                                                    name={[field.name, 'document_policy_mode']}
-                                                    label="Legacy document policy mode"
-                                                    style={{ marginBottom: 0 }}
-                                                  >
-                                                    <Select
-                                                      options={[
-                                                        { value: 'builder', label: 'Builder' },
-                                                        { value: 'raw', label: 'Raw JSON' },
-                                                      ]}
-                                                      onChange={(value) => {
-                                                        switchEdgePolicyMode(
-                                                          field.name,
-                                                          value === 'builder' ? 'builder' : 'raw'
-                                                        )
-                                                      }}
-                                                      data-testid={`pool-catalog-topology-edge-policy-mode-${field.name}`}
-                                                    />
-                                                  </Form.Item>
-                                                )
-                                              }}
-                                            </Form.Item>
-                                            <Form.Item noStyle shouldUpdate>
-                                              {({ getFieldValue }) => {
-                                                if (!legacyEdgePolicyEditorOpenByKey[String(field.key)]) {
-                                                  return null
-                                                }
                                                 const policyMode = (
                                                   String(getFieldValue(['edges', field.name, 'document_policy_mode']) || 'raw')
                                                     .trim()
@@ -3540,7 +3244,7 @@ export function PoolCatalogPage() {
 
                                                 return (
                                                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                                                    {policyMode === 'builder' ? (
+                                                    {policyMode === 'builder' && false ? (
                                                       <>
                                                         {!databaseId && (
                                                           <Alert
@@ -3554,7 +3258,7 @@ export function PoolCatalogPage() {
                                                             <Space size="small" wrap>
                                                               <Tag color={metadataCatalog ? 'blue' : metadataLoading ? 'processing' : 'default'}>
                                                                 {metadataCatalog
-                                                                  ? `каталог ${metadataCatalog.catalog_version} • документов ${metadataDocuments.length}`
+                                                                  ? `каталог ${metadataCatalog?.catalog_version} • документов ${metadataDocuments.length}`
                                                                   : metadataLoading
                                                                     ? 'metadata context загружается'
                                                                     : 'metadata context недоступен'}
@@ -4494,19 +4198,7 @@ export function PoolCatalogPage() {
                                                           )}
                                                         </Form.List>
                                                       </>
-                                                    ) : (
-                                                      <Form.Item
-                                                        name={[field.name, 'document_policy_json']}
-                                                        label="Document policy (JSON)"
-                                                        style={{ marginBottom: 0 }}
-                                                      >
-                                                        <TextArea
-                                                          autoSize={{ minRows: 2, maxRows: 8 }}
-                                                          placeholder='{"version":"document_policy.v1","chains":[...]}'
-                                                          data-testid={`pool-catalog-topology-edge-policy-${field.name}`}
-                                                        />
-                                                      </Form.Item>
-                                                    )}
+                                                    ) : null}
 
                                                     <Form.Item
                                                       name={[field.name, 'edge_metadata_mode']}
@@ -4599,6 +4291,7 @@ export function PoolCatalogPage() {
                                   weight: 1,
                                   min_amount: null,
                                   max_amount: null,
+                                  document_policy_key: '',
                                   document_policy_mode: 'raw',
                                   document_policy_json: '',
                                   document_policy_builder: [],
