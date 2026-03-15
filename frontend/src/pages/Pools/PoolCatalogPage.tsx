@@ -504,6 +504,130 @@ const appendMetadataManagementHandoff = (message: string): string => {
   return mergeMessageParts([message, handoff]) || handoff
 }
 
+type TopologyCoverageContext = {
+  status: 'resolved' | 'ambiguous' | 'unavailable'
+  binding: PoolWorkflowBinding | null
+  detail: string
+  source: 'selected' | 'auto' | null
+}
+
+type TopologySlotCoverage = {
+  status: 'resolved' | 'missing_selector' | 'missing_slot' | 'ambiguous_slot' | 'ambiguous_context' | 'unavailable_context'
+  label: string
+  detail: string
+}
+
+const describePoolWorkflowBindingCoverage = (binding: PoolWorkflowBinding): string => {
+  const bindingId = String(binding.binding_id || '').trim()
+  const workflowName = String(binding.workflow?.workflow_name || '').trim()
+  const selectorParts = [
+    String(binding.selector?.direction || '').trim(),
+    String(binding.selector?.mode || '').trim(),
+  ].filter((item) => item)
+  const scope = selectorParts.join(' · ')
+  return [bindingId || workflowName || 'binding', workflowName && workflowName !== bindingId ? workflowName : '', scope]
+    .filter((item) => item)
+    .join(' · ')
+}
+
+const resolveTopologyCoverageContext = (
+  bindings: PoolWorkflowBinding[],
+  selectedBindingId: string | undefined
+): TopologyCoverageContext => {
+  const normalizedSelection = String(selectedBindingId || '').trim()
+  const activeBindings = bindings.filter((binding) => binding.status === 'active')
+  if (normalizedSelection) {
+    const selectedBinding = activeBindings.find((binding) => binding.binding_id === normalizedSelection)
+    if (selectedBinding) {
+      return {
+        status: 'resolved',
+        binding: selectedBinding,
+        detail: `Coverage uses selected binding ${describePoolWorkflowBindingCoverage(selectedBinding)}.`,
+        source: 'selected',
+      }
+    }
+    return {
+      status: 'unavailable',
+      binding: null,
+      detail: 'Selected binding context is unavailable. Refresh bindings and choose an active binding again.',
+      source: null,
+    }
+  }
+  if (activeBindings.length === 1) {
+    return {
+      status: 'resolved',
+      binding: activeBindings[0] ?? null,
+      detail: `Coverage auto-resolved to ${describePoolWorkflowBindingCoverage(activeBindings[0])}.`,
+      source: 'auto',
+    }
+  }
+  if (activeBindings.length === 0) {
+    return {
+      status: 'unavailable',
+      binding: null,
+      detail: 'Coverage unavailable: no active bindings are pinned for this pool.',
+      source: null,
+    }
+  }
+  return {
+    status: 'ambiguous',
+    binding: null,
+    detail: 'Coverage context is ambiguous: select one active binding to inspect slot coverage.',
+    source: null,
+  }
+}
+
+const resolveTopologySlotCoverage = (
+  slotKey: string | undefined,
+  context: TopologyCoverageContext
+): TopologySlotCoverage => {
+  const normalizedSlotKey = String(slotKey || '').trim()
+  if (!normalizedSlotKey) {
+    return {
+      status: 'missing_selector',
+      label: 'Slot required',
+      detail: 'Set document_policy_key to verify publication slot coverage.',
+    }
+  }
+  if (context.status === 'ambiguous') {
+    return {
+      status: 'ambiguous_context',
+      label: 'Coverage unavailable',
+      detail: context.detail,
+    }
+  }
+  if (context.status === 'unavailable' || !context.binding) {
+    return {
+      status: 'unavailable_context',
+      label: 'Coverage unavailable',
+      detail: context.detail,
+    }
+  }
+  const matches = (context.binding.decisions ?? []).filter((decision) => (
+    String(decision.decision_key || '').trim() === normalizedSlotKey
+  ))
+  if (matches.length === 0) {
+    return {
+      status: 'missing_slot',
+      label: 'Slot missing',
+      detail: `${describePoolWorkflowBindingCoverage(context.binding)} does not pin slot ${normalizedSlotKey}.`,
+    }
+  }
+  if (matches.length > 1) {
+    return {
+      status: 'ambiguous_slot',
+      label: 'Ambiguous slot',
+      detail: `${describePoolWorkflowBindingCoverage(context.binding)} contains ${matches.length} refs for slot ${normalizedSlotKey}.`,
+    }
+  }
+  const resolvedDecision = matches[0]
+  return {
+    status: 'resolved',
+    label: 'Resolved',
+    detail: `${describePoolWorkflowBindingCoverage(context.binding)} -> ${resolvedDecision.decision_table_id} r${resolvedDecision.decision_revision}`,
+  }
+}
+
 const parseSyncPayload = (input: string): SyncPreflightResult => {
   let parsed: unknown
   try {
@@ -1479,7 +1603,7 @@ export function PoolCatalogPage() {
   const [isPoolBindingsSaving, setIsPoolBindingsSaving] = useState(false)
   const [poolBindingsLoadError, setPoolBindingsLoadError] = useState<string | null>(null)
   const [poolBindingsSubmitError, setPoolBindingsSubmitError] = useState<string | null>(null)
-  const [, setLoadedPoolBindings] = useState<PoolWorkflowBinding[]>([])
+  const [loadedPoolBindings, setLoadedPoolBindings] = useState<PoolWorkflowBinding[]>([])
   const [loadedPoolBindingsCollectionEtag, setLoadedPoolBindingsCollectionEtag] = useState('')
   const [poolBindingsBlockingRemediation, setPoolBindingsBlockingRemediation] = useState<PoolWorkflowBindingBlockingRemediation | null>(null)
   const [availableDecisions, setAvailableDecisions] = useState<AvailableDecisionRevision[]>([])
@@ -1494,6 +1618,7 @@ export function PoolCatalogPage() {
   const [syncResult, setSyncResult] = useState<{ stats: { created: number; updated: number; skipped: number }; total_rows: number } | null>(null)
   const [isSyncSubmitting, setIsSyncSubmitting] = useState(false)
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'organizations' | 'pools' | 'bindings' | 'topology' | 'graph'>('organizations')
+  const [topologyCoverageBindingId, setTopologyCoverageBindingId] = useState<string | undefined>(undefined)
   const [metadataCatalogByDatabase, setMetadataCatalogByDatabase] = useState<Record<string, PoolODataMetadataCatalogResponse>>({})
   const [metadataCatalogLoadingByDatabase, setMetadataCatalogLoadingByDatabase] = useState<Record<string, boolean>>({})
   const [metadataCatalogErrorByDatabase, setMetadataCatalogErrorByDatabase] = useState<Record<string, string>>({})
@@ -1520,6 +1645,19 @@ export function PoolCatalogPage() {
   const organizationById = useMemo(() => (
     Object.fromEntries(organizations.map((item) => [item.id, item]))
   ), [organizations])
+  const topologyCoverageBindingOptions = useMemo(() => (
+    loadedPoolBindings
+      .filter((binding) => binding.status === 'active')
+      .map((binding) => ({
+        value: binding.binding_id,
+        label: describePoolWorkflowBindingCoverage(binding),
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label))
+  ), [loadedPoolBindings])
+  const topologyCoverageContext = useMemo(
+    () => resolveTopologyCoverageContext(loadedPoolBindings, topologyCoverageBindingId),
+    [loadedPoolBindings, topologyCoverageBindingId]
+  )
 
   const databaseOptions = useMemo(() => {
     const databases = databasesQuery.data?.databases ?? []
@@ -2209,7 +2347,7 @@ export function PoolCatalogPage() {
   }, [isPoolDrawerOpen, poolDrawerMode, poolForm, selectedPool])
 
   useEffect(() => {
-    if (activeWorkspaceTab !== 'bindings' || !selectedPool) {
+    if ((activeWorkspaceTab !== 'bindings' && activeWorkspaceTab !== 'topology') || !selectedPool) {
       setLoadedPoolBindings([])
       setLoadedPoolBindingsCollectionEtag('')
       setPoolBindingsBlockingRemediation(null)
@@ -2222,6 +2360,18 @@ export function PoolCatalogPage() {
 
     void reloadBindingsWorkspace(selectedPool)
   }, [activeWorkspaceTab, poolBindingsForm, reloadBindingsWorkspace, selectedPool])
+
+  useEffect(() => {
+    setTopologyCoverageBindingId((current) => {
+      const normalizedCurrent = String(current || '').trim()
+      if (!normalizedCurrent) {
+        return undefined
+      }
+      return loadedPoolBindings.some((binding) => binding.binding_id === normalizedCurrent)
+        ? normalizedCurrent
+        : undefined
+    })
+  }, [loadedPoolBindings, selectedPoolId])
 
   const submitPool = useCallback(async () => {
     if (mutatingDisabled) return
@@ -2956,8 +3106,71 @@ export function PoolCatalogPage() {
                           showIcon
                           style={{ marginBottom: 12 }}
                           message="Workflow-centric authoring is the default path"
-                          description="Topology editor remains for structural metadata. Legacy edge document_policy editing now requires an explicit compatibility action."
+                          description="Topology editor remains for structural metadata and publication slot assignment. Author concrete document policies in /decisions and pin them in workflow bindings."
                         />
+                        <Row gutter={12} style={{ marginBottom: 12 }}>
+                          <Col span={12}>
+                            <Form.Item label="Coverage binding context" style={{ marginBottom: 0 }}>
+                              <Select
+                                allowClear
+                                showSearch
+                                optionFilterProp="label"
+                                placeholder="Select active binding for slot coverage"
+                                options={topologyCoverageBindingOptions}
+                                value={topologyCoverageBindingId}
+                                onChange={(value) => {
+                                  setTopologyCoverageBindingId(
+                                    typeof value === 'string' && value.trim() ? value : undefined
+                                  )
+                                }}
+                                disabled={!selectedPool || isPoolBindingsLoading || topologyCoverageBindingOptions.length === 0}
+                                notFoundContent={(
+                                  isPoolBindingsLoading
+                                    ? 'Loading bindings...'
+                                    : 'No active bindings'
+                                )}
+                                data-testid="pool-catalog-topology-coverage-binding"
+                              />
+                            </Form.Item>
+                          </Col>
+                          <Col span={12}>
+                            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                              <Text strong>Coverage status</Text>
+                              <Space wrap>
+                                <Tag
+                                  color={(
+                                    topologyCoverageContext.status === 'resolved'
+                                      ? 'success'
+                                      : topologyCoverageContext.status === 'ambiguous'
+                                        ? 'warning'
+                                        : 'default'
+                                  )}
+                                  data-testid="pool-catalog-topology-coverage-status"
+                                >
+                                  {(
+                                    topologyCoverageContext.status === 'resolved'
+                                      ? topologyCoverageContext.source === 'auto'
+                                        ? 'Auto-resolved binding'
+                                        : 'Selected binding'
+                                      : topologyCoverageContext.status === 'ambiguous'
+                                        ? 'Ambiguous context'
+                                        : 'Coverage unavailable'
+                                  )}
+                                </Tag>
+                                <Text type="secondary">{topologyCoverageContext.detail}</Text>
+                              </Space>
+                            </Space>
+                          </Col>
+                        </Row>
+                        {poolBindingsLoadError && (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            style={{ marginBottom: 12 }}
+                            message="Coverage bindings could not be loaded"
+                            description={poolBindingsLoadError}
+                          />
+                        )}
 
                         <Space direction="vertical" size={8} style={{ width: '100%', marginBottom: 12 }}>
                           <Space align="center" style={{ width: '100%', justifyContent: 'space-between' }}>
@@ -3198,6 +3411,34 @@ export function PoolCatalogPage() {
                                       </Form.Item>
                                     </Col>
                                   </Row>
+                                  <Form.Item noStyle shouldUpdate>
+                                    {({ getFieldValue }) => {
+                                      const slotCoverage = resolveTopologySlotCoverage(
+                                        getFieldValue(['edges', field.name, 'document_policy_key']),
+                                        topologyCoverageContext
+                                      )
+                                      return (
+                                        <Space wrap size={8}>
+                                          <Tag
+                                            color={(
+                                              slotCoverage.status === 'resolved'
+                                                ? 'success'
+                                                : slotCoverage.status === 'missing_selector'
+                                                  ? 'default'
+                                                  : slotCoverage.status === 'ambiguous_context'
+                                                    || slotCoverage.status === 'ambiguous_slot'
+                                                    ? 'warning'
+                                                    : 'error'
+                                            )}
+                                            data-testid={`pool-catalog-topology-edge-slot-status-${field.name}`}
+                                          >
+                                            {slotCoverage.label}
+                                          </Tag>
+                                          <Text type="secondary">{slotCoverage.detail}</Text>
+                                        </Space>
+                                      )
+                                    }}
+                                  </Form.Item>
                                   <Collapse
                                     size="small"
                                     items={[

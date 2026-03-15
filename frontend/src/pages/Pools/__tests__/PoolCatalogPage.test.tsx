@@ -1719,6 +1719,155 @@ describe('PoolCatalogPage', () => {
     )
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
+  it('auto-resolves topology slot coverage when exactly one active binding is available', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockListPoolWorkflowBindings.mockResolvedValueOnce(buildPoolWorkflowBindingCollection([
+      buildPoolWorkflowBinding({
+        decisions: [
+          {
+            decision_table_id: 'sale-policy',
+            decision_key: 'sale',
+            decision_revision: 7,
+          },
+        ],
+      }),
+    ]))
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            document_policy_key: 'sale',
+          },
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+
+    expect(await screen.findByTestId('pool-catalog-topology-coverage-status')).toHaveTextContent('Auto-resolved binding')
+    expect(await screen.findByTestId('pool-catalog-topology-edge-slot-status-0')).toHaveTextContent('Resolved')
+    expect(await screen.findByText(/sale-policy r7/i)).toBeInTheDocument()
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
+  it('shows ambiguous coverage context until operator selects an active binding', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockListPoolWorkflowBindings.mockResolvedValueOnce(buildPoolWorkflowBindingCollection([
+      buildPoolWorkflowBinding({
+        binding_id: 'binding-sale',
+        decisions: [
+          {
+            decision_table_id: 'sale-policy',
+            decision_key: 'sale',
+            decision_revision: 2,
+          },
+        ],
+      }),
+      buildPoolWorkflowBinding({
+        binding_id: 'binding-purchase',
+        workflow: {
+          workflow_definition_key: 'purchase-publication',
+          workflow_revision_id: '22222222-2222-2222-2222-222222222222',
+          workflow_revision: 4,
+          workflow_name: 'purchase_publication',
+        },
+        decisions: [
+          {
+            decision_table_id: 'purchase-policy',
+            decision_key: 'purchase',
+            decision_revision: 5,
+          },
+        ],
+      }),
+    ]))
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-initial',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            document_policy_key: 'sale',
+          },
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+
+    expect(await screen.findByTestId('pool-catalog-topology-coverage-status')).toHaveTextContent('Ambiguous context')
+    expect(await screen.findByTestId('pool-catalog-topology-edge-slot-status-0')).toHaveTextContent('Coverage unavailable')
+
+    openSelectByTestId('pool-catalog-topology-coverage-binding')
+    await selectDropdownOption(/binding-sale/i)
+
+    expect(await screen.findByTestId('pool-catalog-topology-coverage-status')).toHaveTextContent('Selected binding')
+    expect(await screen.findByTestId('pool-catalog-topology-edge-slot-status-0')).toHaveTextContent('Resolved')
+    expect(await screen.findByText(/sale-policy r2/i)).toBeInTheDocument()
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
   it('sends topology version token and shows conflict error without clearing form data', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
