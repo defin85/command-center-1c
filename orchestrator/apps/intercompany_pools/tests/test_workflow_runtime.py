@@ -10,6 +10,7 @@ from django.contrib.auth import get_user_model
 from apps.databases.models import Database, InfobaseUserMapping
 from apps.intercompany_pools.document_plan_artifact_contract import (
     POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY,
+    POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY,
     POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
     POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY,
 )
@@ -584,11 +585,17 @@ def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_bindi
     compiled_document_policy = execution.input_context.get(
         POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY
     )
+    compiled_document_policy_slots = execution.input_context.get(
+        POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY
+    )
 
     assert persisted_binding == normalized_workflow_binding
     assert isinstance(runtime_projection, dict)
     assert isinstance(compiled_document_policy, dict)
+    assert isinstance(compiled_document_policy_slots, dict)
     assert compiled_document_policy["version"] == DOCUMENT_POLICY_VERSION
+    assert set(compiled_document_policy_slots) == {"document_policy"}
+    assert compiled_document_policy_slots["document_policy"]["document_policy"] == compiled_document_policy
     assert (
         execution.input_context.get(POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY)
         .startswith("workflow_binding.decision_table:")
@@ -1284,6 +1291,9 @@ def test_retry_workflow_execution_reuses_explicit_pool_workflow_binding() -> Non
 
     assert first_execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY) == normalized_workflow_binding
     assert retry_execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY) == normalized_workflow_binding
+    assert retry_execution.input_context.get(POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY) == (
+        first_execution.input_context.get(POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY)
+    )
     assert retry_execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["workflow_binding"]["binding_id"] == (
         workflow_binding["binding_id"]
     )

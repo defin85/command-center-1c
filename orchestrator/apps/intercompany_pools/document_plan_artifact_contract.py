@@ -12,7 +12,7 @@ from .document_completeness import (
     resolve_document_completeness_requirements,
 )
 from .document_policy_contract import (
-    resolve_document_policy_with_precedence,
+    DOCUMENT_POLICY_METADATA_KEY,
     validate_document_policy_v1,
 )
 from .models import PoolEdgeVersion, PoolNodeVersion, PoolRun
@@ -21,11 +21,13 @@ from .models import PoolEdgeVersion, PoolNodeVersion, PoolRun
 DOCUMENT_PLAN_ARTIFACT_VERSION = "document_plan_artifact.v1"
 POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY = "pool_runtime_document_plan_artifact"
 POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY = "pool_runtime_compiled_document_policy"
+POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY = "pool_runtime_compiled_document_policy_slots"
 POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY = "pool_runtime_document_policy_source"
 POOL_DOCUMENT_PLAN_ARTIFACT_INVALID = "POOL_DOCUMENT_PLAN_ARTIFACT_INVALID"
 POOL_DOCUMENT_POLICY_SLOT_SELECTOR_REQUIRED = "POOL_DOCUMENT_POLICY_SLOT_SELECTOR_REQUIRED"
 POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND = "POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND"
 POOL_DOCUMENT_POLICY_SLOT_INVALID = "POOL_DOCUMENT_POLICY_SLOT_INVALID"
+POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED = "POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED"
 
 REQUIRED_DOCUMENT_PLAN_ARTIFACT_FIELDS = {
     "version",
@@ -64,7 +66,7 @@ def compile_document_plan_artifact_v1(
         return None
 
     pool_metadata = run.pool.metadata if isinstance(run.pool.metadata, Mapping) else {}
-    normalized_compiled_policy_slots = _normalize_compiled_document_policy_slots(
+    normalized_compiled_policy_slots = validate_compiled_document_policy_slots_snapshot(
         compiled_document_policy_slots
     )
     normalized_compiled_policy = (
@@ -140,10 +142,15 @@ def compile_document_plan_artifact_v1(
             policy = normalized_compiled_policy
             source = normalized_document_policy_source or "workflow_binding.decision_table"
         else:
-            policy, source = resolve_document_policy_with_precedence(
+            if _has_legacy_document_policy_payload(
                 edge_metadata=edge_metadata,
                 pool_metadata=pool_metadata,
-            )
+            ):
+                raise ValueError(
+                    f"{POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED}: legacy topology "
+                    f"document_policy is not allowed for edge {parent_node_id}->{child_node_id}"
+                )
+            policy, source = None, None
         if policy is None:
             continue
 
@@ -211,7 +218,7 @@ def compile_document_plan_artifact_v1(
     return validate_document_plan_artifact_v1(artifact=artifact)
 
 
-def _normalize_compiled_document_policy_slots(
+def validate_compiled_document_policy_slots_snapshot(
     compiled_document_policy_slots: Mapping[str, Any] | None,
 ) -> dict[str, dict[str, Any]] | None:
     if not isinstance(compiled_document_policy_slots, Mapping):
@@ -264,6 +271,14 @@ def _resolve_document_policy_key_for_edge(
         f"{str(edge_ref.get('parent_node_id') or '').strip()}->"
         f"{str(edge_ref.get('child_node_id') or '').strip()} requires metadata.document_policy_key"
     )
+
+
+def _has_legacy_document_policy_payload(
+    *,
+    edge_metadata: Mapping[str, Any],
+    pool_metadata: Mapping[str, Any],
+) -> bool:
+    return DOCUMENT_POLICY_METADATA_KEY in edge_metadata or DOCUMENT_POLICY_METADATA_KEY in pool_metadata
 
 
 def validate_document_plan_artifact_v1(*, artifact: Any) -> dict[str, Any]:

@@ -11,7 +11,9 @@ import pytest
 from apps.databases.models import Database
 from apps.intercompany_pools.document_plan_artifact_contract import (
     DOCUMENT_PLAN_ARTIFACT_VERSION,
+    POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED,
     POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY,
+    POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY,
     POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
     POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY,
 )
@@ -162,6 +164,25 @@ def _build_document_policy(*, chain_id: str = "sale_chain") -> dict[str, object]
                 ],
             }
         ],
+    }
+
+
+def _build_slot_snapshot(
+    *,
+    policy: dict[str, object],
+    slot_key: str = "document_policy",
+    decision_table_id: str = "doc-policy",
+    decision_revision: int = 4,
+) -> dict[str, object]:
+    return {
+        slot_key: {
+            "decision_table_id": decision_table_id,
+            "decision_revision": decision_revision,
+            "document_policy_source": (
+                f"workflow_binding.decision_table:{decision_table_id}:v{decision_revision}"
+            ),
+            "document_policy": policy,
+        }
     }
 
 
@@ -531,7 +552,7 @@ def test_reconciliation_without_document_policy_keeps_legacy_create_run_path() -
 
 
 @pytest.mark.django_db
-def test_reconciliation_compiles_document_plan_artifact_from_edge_policy() -> None:
+def test_reconciliation_rejects_legacy_edge_policy_in_shipped_runtime_path() -> None:
     run = _create_pool_run(
         mode=PoolRunMode.UNSAFE,
         direction=PoolRunDirection.TOP_DOWN,
@@ -545,7 +566,7 @@ def test_reconciliation_compiles_document_plan_artifact_from_edge_policy() -> No
         },
     )
     edge_policy = _build_document_policy(chain_id="edge_chain")
-    topology = _attach_active_topology(
+    _attach_active_topology(
         run=run,
         left_edge_metadata={DOCUMENT_POLICY_METADATA_KEY: edge_policy},
     )
@@ -565,66 +586,13 @@ def test_reconciliation_compiles_document_plan_artifact_from_edge_policy() -> No
         context={"pool_run_id": str(run.id)},
         execution=execution,
     )
-    reconciliation_output = execute_pool_runtime_step(
-        operation_type="pool.reconciliation_report",
-        rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
-        context={"pool_run_id": str(run.id)},
-        execution=execution,
-    )
-
-    artifact = reconciliation_output.get("document_plan_artifact")
-    assert isinstance(artifact, dict)
-    assert artifact["version"] == DOCUMENT_PLAN_ARTIFACT_VERSION
-    assert artifact["run_id"] == str(run.id)
-    assert artifact["distribution_artifact_ref"]["version"] == DISTRIBUTION_ARTIFACT_VERSION
-    assert artifact["topology_version_ref"] == reconciliation_output["distribution_artifact"]["topology_version_ref"]
-    assert any(
-        ref.get("source") == DOCUMENT_POLICY_RESOLUTION_SOURCE_EDGE
-        for ref in artifact["policy_refs"]
-        if isinstance(ref, dict)
-    )
-
-    target_ids = {
-        str(target.get("database_id") or "").strip()
-        for target in artifact["targets"]
-        if isinstance(target, dict)
-    }
-    assert topology["left_database_id"] in target_ids
-
-    left_target = next(
-        (
-            target
-            for target in artifact["targets"]
-            if isinstance(target, dict) and target.get("database_id") == topology["left_database_id"]
-        ),
-        None,
-    )
-    assert isinstance(left_target, dict)
-    documents = left_target["chains"][0]["documents"]
-    assert documents[0]["idempotency_key"].startswith("doc-plan:")
-    assert documents[0]["invoice_mode"] == "optional"
-    assert documents[1]["invoice_mode"] == "required"
-
-    publication_payload = reconciliation_output["publication_payload"]["pool_runtime"]
-    assert publication_payload["entity_name"] == "Document_Sales"
-    assert publication_payload["documents_by_database"] == {
-        topology["left_database_id"]: [{"Amount": "60.00"}]
-    }
-    assert "db-raw-bypass" not in publication_payload["documents_by_database"]
-    chains_by_database = publication_payload.get("document_chains_by_database")
-    assert isinstance(chains_by_database, dict)
-    assert topology["left_database_id"] in chains_by_database
-    chain_documents = chains_by_database[topology["left_database_id"]][0]["documents"]
-    assert [item.get("entity_name") for item in chain_documents] == [
-        "Document_Sales",
-        "Document_Invoice",
-    ]
-
-    execution.refresh_from_db(fields=["input_context"])
-    assert (
-        execution.input_context.get(POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY)
-        == artifact
-    )
+    with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED):
+        execute_pool_runtime_step(
+            operation_type="pool.reconciliation_report",
+            rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
 
 
 @pytest.mark.django_db
@@ -685,6 +653,74 @@ def test_reconciliation_prefers_compiled_document_policy_from_execution_context(
 
 
 @pytest.mark.django_db
+def test_reconciliation_prefers_compiled_document_policy_slots_from_execution_context() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={
+            "starting_amount": "100.00",
+            "entity_name": "Document_IntercompanyPoolDistribution",
+        },
+    )
+    topology = _attach_active_topology(
+        run=run,
+        left_edge_metadata={
+            DOCUMENT_POLICY_METADATA_KEY: _build_document_policy(chain_id="edge_chain"),
+            "document_policy_key": "document_policy",
+        },
+        right_edge_metadata={
+            "document_policy_key": "document_policy",
+        },
+    )
+    compiled_slot_policy = _build_document_policy(chain_id="slot_chain")
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+            POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY: {
+                "document_policy": {
+                    "decision_table_id": "doc-policy",
+                    "decision_revision": 4,
+                    "document_policy_source": "workflow_binding.decision_table:doc-policy:v4",
+                    "document_policy": compiled_slot_policy,
+                }
+            },
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: {
+                "binding_mode": "pool_workflow_binding",
+                "binding_id": str(uuid4()),
+            },
+        },
+    )
+
+    execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+    reconciliation_output = execute_pool_runtime_step(
+        operation_type="pool.reconciliation_report",
+        rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    artifact = reconciliation_output.get("document_plan_artifact")
+    assert isinstance(artifact, dict)
+    assert artifact["policy_refs"][0]["source"] == "workflow_binding.decision_table:doc-policy:v4"
+
+    left_target = next(
+        target
+        for target in artifact["targets"]
+        if isinstance(target, dict) and target.get("database_id") == topology["left_database_id"]
+    )
+    assert left_target["chains"][0]["chain_id"] == "slot_chain"
+
+
+@pytest.mark.django_db
 def test_reconciliation_fails_closed_when_workflow_binding_lacks_compiled_document_policy() -> None:
     run = _create_pool_run(
         mode=PoolRunMode.UNSAFE,
@@ -729,7 +765,7 @@ def test_reconciliation_fails_closed_when_workflow_binding_lacks_compiled_docume
 
 
 @pytest.mark.django_db
-def test_reconciliation_document_plan_uses_pool_default_policy_when_edge_policy_missing() -> None:
+def test_reconciliation_rejects_legacy_pool_default_policy_in_shipped_runtime_path() -> None:
     run = _create_pool_run(
         mode=PoolRunMode.UNSAFE,
         direction=PoolRunDirection.TOP_DOWN,
@@ -739,7 +775,7 @@ def test_reconciliation_document_plan_uses_pool_default_policy_when_edge_policy_
         },
     )
     pool_default_policy = _build_document_policy(chain_id="pool_default_chain")
-    topology = _attach_active_topology(
+    _attach_active_topology(
         run=run,
         pool_metadata={DOCUMENT_POLICY_METADATA_KEY: pool_default_policy},
     )
@@ -759,31 +795,13 @@ def test_reconciliation_document_plan_uses_pool_default_policy_when_edge_policy_
         context={"pool_run_id": str(run.id)},
         execution=execution,
     )
-    reconciliation_output = execute_pool_runtime_step(
-        operation_type="pool.reconciliation_report",
-        rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
-        context={"pool_run_id": str(run.id)},
-        execution=execution,
-    )
-
-    artifact = reconciliation_output.get("document_plan_artifact")
-    assert isinstance(artifact, dict)
-
-    sources = {
-        str(ref.get("source") or "").strip()
-        for ref in artifact["policy_refs"]
-        if isinstance(ref, dict)
-    }
-    assert DOCUMENT_POLICY_RESOLUTION_SOURCE_POOL_DEFAULT in sources
-    assert DOCUMENT_POLICY_RESOLUTION_SOURCE_EDGE not in sources
-
-    target_ids = {
-        str(target.get("database_id") or "").strip()
-        for target in artifact["targets"]
-        if isinstance(target, dict)
-    }
-    assert topology["left_database_id"] in target_ids
-    assert topology["right_database_id"] in target_ids
+    with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED):
+        execute_pool_runtime_step(
+            operation_type="pool.reconciliation_report",
+            rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
 
 
 @pytest.mark.django_db
@@ -819,7 +837,7 @@ def test_reconciliation_fail_closed_on_invalid_edge_document_policy() -> None:
         execution=execution,
     )
 
-    with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_CHAIN_INVALID):
+    with pytest.raises(ValueError, match=POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED):
         execute_pool_runtime_step(
             operation_type="pool.reconciliation_report",
             rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
@@ -853,7 +871,8 @@ def test_reconciliation_fail_closed_on_missing_required_table_part_from_complete
     }
     _attach_active_topology(
         run=run,
-        left_edge_metadata={DOCUMENT_POLICY_METADATA_KEY: policy},
+        left_edge_metadata={"document_policy_key": "document_policy"},
+        right_edge_metadata={"document_policy_key": "document_policy"},
     )
     execution = _attach_execution(
         run=run,
@@ -862,6 +881,13 @@ def test_reconciliation_fail_closed_on_missing_required_table_part_from_complete
             "approval_state": "not_required",
             "publication_step_state": "queued",
             "approved_at": None,
+            POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY: _build_slot_snapshot(
+                policy=policy
+            ),
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: {
+                "binding_mode": "pool_workflow_binding",
+                "binding_id": str(uuid4()),
+            },
         },
     )
 
@@ -912,7 +938,8 @@ def test_reconciliation_fail_closed_on_missing_required_header_field_from_comple
     }
     _attach_active_topology(
         run=run,
-        left_edge_metadata={DOCUMENT_POLICY_METADATA_KEY: policy},
+        left_edge_metadata={"document_policy_key": "document_policy"},
+        right_edge_metadata={"document_policy_key": "document_policy"},
     )
     execution = _attach_execution(
         run=run,
@@ -921,6 +948,13 @@ def test_reconciliation_fail_closed_on_missing_required_header_field_from_comple
             "approval_state": "not_required",
             "publication_step_state": "queued",
             "approved_at": None,
+            POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY: _build_slot_snapshot(
+                policy=policy
+            ),
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: {
+                "binding_mode": "pool_workflow_binding",
+                "binding_id": str(uuid4()),
+            },
         },
     )
 
@@ -995,7 +1029,8 @@ def test_reconciliation_fail_closed_on_missing_variant_specific_table_part_from_
     }
     _attach_active_topology(
         run=run,
-        left_edge_metadata={DOCUMENT_POLICY_METADATA_KEY: policy},
+        left_edge_metadata={"document_policy_key": "document_policy"},
+        right_edge_metadata={"document_policy_key": "document_policy"},
     )
     execution = _attach_execution(
         run=run,
@@ -1004,6 +1039,13 @@ def test_reconciliation_fail_closed_on_missing_variant_specific_table_part_from_
             "approval_state": "not_required",
             "publication_step_state": "queued",
             "approved_at": None,
+            POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY: _build_slot_snapshot(
+                policy=policy
+            ),
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: {
+                "binding_mode": "pool_workflow_binding",
+                "binding_id": str(uuid4()),
+            },
         },
     )
 
@@ -1056,7 +1098,8 @@ def test_reconciliation_accepts_explicit_empty_string_for_required_header_field(
     }
     _attach_active_topology(
         run=run,
-        left_edge_metadata={DOCUMENT_POLICY_METADATA_KEY: policy},
+        left_edge_metadata={"document_policy_key": "document_policy"},
+        right_edge_metadata={"document_policy_key": "document_policy"},
     )
     execution = _attach_execution(
         run=run,
@@ -1065,6 +1108,13 @@ def test_reconciliation_accepts_explicit_empty_string_for_required_header_field(
             "approval_state": "not_required",
             "publication_step_state": "queued",
             "approved_at": None,
+            POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY: _build_slot_snapshot(
+                policy=policy
+            ),
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: {
+                "binding_mode": "pool_workflow_binding",
+                "binding_id": str(uuid4()),
+            },
         },
     )
 
@@ -1102,7 +1152,8 @@ def test_reconciliation_fail_closed_on_invalid_pool_default_document_policy() ->
     invalid_pool_default_policy["chains"][0]["documents"][1]["invoice_mode"] = "always"
     _attach_active_topology(
         run=run,
-        pool_metadata={DOCUMENT_POLICY_METADATA_KEY: invalid_pool_default_policy},
+        left_edge_metadata={"document_policy_key": "document_policy"},
+        right_edge_metadata={"document_policy_key": "document_policy"},
     )
     execution = _attach_execution(
         run=run,
@@ -1111,6 +1162,13 @@ def test_reconciliation_fail_closed_on_invalid_pool_default_document_policy() ->
             "approval_state": "not_required",
             "publication_step_state": "queued",
             "approved_at": None,
+            POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY: _build_slot_snapshot(
+                policy=invalid_pool_default_policy
+            ),
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: {
+                "binding_mode": "pool_workflow_binding",
+                "binding_id": str(uuid4()),
+            },
         },
     )
 

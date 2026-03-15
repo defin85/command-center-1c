@@ -8,10 +8,12 @@ from django.utils import timezone
 
 from .document_plan_artifact_contract import (
     POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY,
+    POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY,
     POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
     POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY,
     build_publication_payload_from_document_plan_artifact,
     compile_document_plan_artifact_v1,
+    validate_compiled_document_policy_slots_snapshot,
     validate_document_plan_artifact_v1,
 )
 from .distribution_artifact_contract import (
@@ -263,13 +265,20 @@ def _execute_reconciliation(
         execution_context=execution_context
     )
     if document_plan_artifact is None:
+        compiled_document_policy_slots = _resolve_compiled_document_policy_slots_for_execution_context(
+            execution_context=execution_context
+        )
         compiled_document_policy = _resolve_compiled_document_policy_for_execution_context(
             execution_context=execution_context
         )
         document_policy_source = _resolve_document_policy_source_for_execution_context(
             execution_context=execution_context
         )
-        if _has_workflow_binding_context(execution_context) and compiled_document_policy is None:
+        if (
+            _has_workflow_binding_context(execution_context)
+            and compiled_document_policy_slots is None
+            and compiled_document_policy is None
+        ):
             raise ValueError(
                 f"{POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_REQUIRED}: "
                 "compiled document policy is required for workflow-bound reconciliation"
@@ -284,6 +293,7 @@ def _execute_reconciliation(
                 run=run,
                 distribution_artifact=distribution_artifact,
                 topology=topology,
+                compiled_document_policy_slots=compiled_document_policy_slots,
                 compiled_document_policy=compiled_document_policy,
                 document_policy_source=document_policy_source,
             )
@@ -366,6 +376,15 @@ def _resolve_compiled_document_policy_for_execution_context(
     if not isinstance(raw_policy, Mapping):
         return None
     return dict(raw_policy)
+
+
+def _resolve_compiled_document_policy_slots_for_execution_context(
+    *,
+    execution_context: dict[str, Any],
+) -> dict[str, dict[str, Any]] | None:
+    return validate_compiled_document_policy_slots_snapshot(
+        execution_context.get(POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY)
+    )
 
 
 def _resolve_document_policy_source_for_execution_context(

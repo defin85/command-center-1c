@@ -13,10 +13,12 @@ from apps.templates.workflow.models import WorkflowExecution, WorkflowTemplate
 
 from .document_plan_artifact_contract import (
     POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY,
+    POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY,
     POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
     POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY,
     build_publication_payload_from_document_plan_artifact,
     compile_document_plan_artifact_v1,
+    validate_compiled_document_policy_slots_snapshot,
     validate_document_plan_artifact_v1,
 )
 from .binding_preview import build_pool_workflow_binding_runtime_bundle
@@ -194,6 +196,7 @@ def start_pool_run_workflow_execution(
                 runtime_projection=runtime_projection,
                 workflow_binding=resolved_workflow_binding,
                 decision_outputs=decision_outputs,
+                compiled_document_policy_slots=bundle["compiled_document_policy_slots"],
                 compiled_document_policy=bundle["compiled_document_policy"],
                 document_policy_source=bundle["document_policy_source"],
                 document_plan_artifact=document_plan_artifact,
@@ -365,9 +368,13 @@ def start_pool_run_retry_workflow_execution(
             plan = retry_bundle["plan"]
             runtime_projection = retry_bundle["runtime_projection"]
             decision_outputs = retry_bundle["decision_outputs"]
+            compiled_document_policy_slots = retry_bundle["compiled_document_policy_slots"]
             compiled_document_policy = retry_bundle["compiled_document_policy"]
             document_policy_source = retry_bundle["document_policy_source"]
         else:
+            compiled_document_policy_slots = _resolve_retry_compiled_document_policy_slots(
+                parent_input_context
+            )
             compiled_document_policy = _resolve_retry_compiled_document_policy(parent_input_context)
             document_policy_source = _resolve_retry_document_policy_source(parent_input_context)
             plan = compile_pool_execution_plan(
@@ -413,6 +420,7 @@ def start_pool_run_retry_workflow_execution(
             runtime_projection=runtime_projection,
             workflow_binding=retry_workflow_binding,
             decision_outputs=decision_outputs,
+            compiled_document_policy_slots=compiled_document_policy_slots,
             compiled_document_policy=compiled_document_policy,
             document_policy_source=document_policy_source,
             document_plan_artifact=document_plan_artifact,
@@ -549,6 +557,7 @@ def _build_input_context(
     runtime_projection: dict[str, Any] | None = None,
     workflow_binding: dict[str, Any] | None = None,
     decision_outputs: Mapping[str, Any] | None = None,
+    compiled_document_policy_slots: Mapping[str, Any] | None = None,
     compiled_document_policy: Mapping[str, Any] | None = None,
     document_policy_source: str | None = None,
     document_plan_artifact: Mapping[str, Any] | None = None,
@@ -586,6 +595,13 @@ def _build_input_context(
     normalized_decision_outputs = _normalize_decision_outputs(decision_outputs)
     if normalized_decision_outputs:
         context[POOL_RUNTIME_DECISIONS_CONTEXT_KEY] = normalized_decision_outputs
+    normalized_compiled_document_policy_slots = validate_compiled_document_policy_slots_snapshot(
+        compiled_document_policy_slots
+    )
+    if normalized_compiled_document_policy_slots:
+        context[POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY] = (
+            normalized_compiled_document_policy_slots
+        )
     if isinstance(compiled_document_policy, Mapping):
         context[POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY] = dict(compiled_document_policy)
     normalized_document_policy_source = str(document_policy_source or "").strip()
@@ -644,6 +660,14 @@ def _resolve_retry_compiled_document_policy(
     if not isinstance(raw_policy, Mapping):
         return None
     return dict(raw_policy)
+
+
+def _resolve_retry_compiled_document_policy_slots(
+    parent_input_context: dict[str, Any],
+) -> dict[str, dict[str, Any]] | None:
+    return validate_compiled_document_policy_slots_snapshot(
+        parent_input_context.get(POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY)
+    )
 
 
 def _resolve_retry_document_policy_source(
@@ -738,6 +762,7 @@ def _build_atomic_compile_document_plan_artifact(
     *,
     run: PoolRun,
     run_input: dict[str, Any],
+    compiled_document_policy_slots: Mapping[str, Any] | None = None,
     compiled_document_policy: Mapping[str, Any] | None = None,
     document_policy_source: str | None = None,
 ) -> dict[str, Any] | None:
@@ -754,6 +779,7 @@ def _build_atomic_compile_document_plan_artifact(
             run=run,
             distribution_artifact=distribution_artifact,
             topology=topology,
+            compiled_document_policy_slots=compiled_document_policy_slots,
             compiled_document_policy=compiled_document_policy,
             document_policy_source=document_policy_source,
         )

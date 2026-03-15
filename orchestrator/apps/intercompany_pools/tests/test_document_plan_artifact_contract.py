@@ -13,7 +13,10 @@ from apps.intercompany_pools.document_plan_artifact_contract import (
     build_publication_payload_from_document_plan_artifact,
     validate_document_plan_artifact_v1,
 )
-from apps.intercompany_pools.document_policy_contract import DOCUMENT_POLICY_VERSION
+from apps.intercompany_pools.document_policy_contract import (
+    DOCUMENT_POLICY_METADATA_KEY,
+    DOCUMENT_POLICY_VERSION,
+)
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationPool,
@@ -519,4 +522,43 @@ def test_compile_document_plan_artifact_v1_fails_closed_when_slot_not_bound() ->
                     ),
                 )
             },
+        )
+
+
+@pytest.mark.django_db
+def test_compile_document_plan_artifact_v1_rejects_legacy_edge_policy_without_slot_resolution() -> None:
+    fixture = _create_compile_fixture(slot_keys=[None])
+    edge_model = next(iter(fixture["topology"]["edge_models"].values()))
+    edge_model.metadata = {
+        DOCUMENT_POLICY_METADATA_KEY: _build_document_policy(
+            chain_id="legacy_edge_chain",
+            document_id="sale",
+            entity_name="Document_Sales",
+        )
+    }
+
+    with pytest.raises(ValueError, match="POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED"):
+        compile_document_plan_artifact_v1(
+            run=fixture["run"],
+            distribution_artifact=fixture["distribution_artifact"],
+            topology=fixture["topology"],
+        )
+
+
+@pytest.mark.django_db
+def test_compile_document_plan_artifact_v1_rejects_legacy_pool_default_without_slot_resolution() -> None:
+    fixture = _create_compile_fixture(slot_keys=[None])
+    fixture["run"].pool.metadata = {
+        DOCUMENT_POLICY_METADATA_KEY: _build_document_policy(
+            chain_id="legacy_pool_chain",
+            document_id="sale",
+            entity_name="Document_Sales",
+        )
+    }
+
+    with pytest.raises(ValueError, match="POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED"):
+        compile_document_plan_artifact_v1(
+            run=fixture["run"],
+            distribution_artifact=fixture["distribution_artifact"],
+            topology=fixture["topology"],
         )
