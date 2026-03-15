@@ -41,6 +41,8 @@ Topology editor НЕ ДОЛЖЕН (SHALL NOT) оставаться shipped surfa
 
 Topology editor ДОЛЖЕН (SHALL) показывать status coverage для `document_policy_key` относительно выбранного canonical binding context, когда такой context доступен.
 
+Coverage НЕ ДОЛЖЕН (SHALL NOT) отображаться как resolved, если canonical binding context не выбран и не может быть auto-resolved детерминированно.
+
 #### Scenario: Новый edge получает slot selector без inline policy builder
 - **GIVEN** оператор добавляет новый edge в topology editor
 - **WHEN** UI рендерит controls для edge metadata
@@ -53,6 +55,13 @@ Topology editor ДОЛЖЕН (SHALL) показывать status coverage для
 - **WHEN** UI рендерит edge editor
 - **THEN** editor показывает, что slot coverage резолвится успешно
 - **AND** оператор видит связь между topology edge и binding slot без перехода в raw JSON
+
+#### Scenario: Coverage context ambiguous не маскируется как valid slot coverage
+- **GIVEN** для одного `pool` существует несколько active bindings
+- **AND** оператор не выбрал явный binding context для topology coverage
+- **WHEN** UI рендерит edge editor
+- **THEN** editor показывает, что coverage context ambiguous или unavailable
+- **AND** не маркирует `document_policy_key` как resolved без детерминированного binding context
 
 #### Scenario: Legacy topology переводит UI в remediation state
 - **GIVEN** выбранный pool или topology snapshot содержит legacy `edge.metadata.document_policy` или `pool.metadata.document_policy`

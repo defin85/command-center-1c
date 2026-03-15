@@ -45,6 +45,12 @@ Raw identifiers (`decision_table_id`, внутренние ids) МОГУТ (MAY)
 - **THEN** UI показывает missing coverage до запуска preview
 - **AND** normal save/run path блокируется или помечается blocking remediation diagnostic
 
+#### Scenario: Binding workspace показывает ambiguous coverage context отдельно от missing slot
+- **GIVEN** topology coverage зависит от binding context, который не выбран детерминированно
+- **WHEN** аналитик открывает binding workspace
+- **THEN** UI показывает ambiguous coverage context как отдельное состояние
+- **AND** не смешивает его с missing `decision_key` внутри выбранного binding
+
 ## MODIFIED Requirements
 
 ### Requirement: Pool workflow binding MUST предоставлять preview effective runtime projection
@@ -58,9 +64,17 @@ Raw identifiers (`decision_table_id`, внутренние ids) МОГУТ (MAY)
 
 Binding preview ДОЛЖЕН (SHALL) показывать coverage named slots относительно topology selectors выбранного пула.
 
+Canonical preview/read-model ДОЛЖЕН (SHALL) использовать slot-based projection как source-of-truth и НЕ ДОЛЖЕН (SHALL NOT) ограничиваться single `compiled_document_policy` object как единственной effective policy view.
+
 #### Scenario: Binding preview показывает slot coverage для topology edges
 - **GIVEN** binding pin-ит decisions с `decision_key=sale` и `decision_key=purchase`
 - **AND** topology использует эти keys на активных edges
 - **WHEN** аналитик или оператор открывает binding перед запуском
 - **THEN** preview показывает pinned workflow revision, linked decisions и slot coverage summary
 - **AND** пользователь видит, какие topology edges будут резолвиться каким slot'ом до старта run
+
+#### Scenario: Preview показывает slot-based projection вместо single global policy
+- **GIVEN** binding pin-ит несколько publication slots
+- **WHEN** система строит preview до запуска
+- **THEN** response/read-model показывает materialized slot projection и coverage summary
+- **AND** effective preview не сводится к одному global compiled policy blob

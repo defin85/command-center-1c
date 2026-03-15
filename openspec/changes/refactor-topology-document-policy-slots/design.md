@@ -68,6 +68,12 @@ Fail-closed случаи:
 - matching decision не materialize'ит valid `document_policy`;
 - в binding есть duplicate `decision_key`.
 
+Важное ограничение: decision evaluation не должна выполняться заново для каждого edge allocation. Binding preview/run должен один раз materialize'ить slot map `decision_key -> compiled document_policy`, а per-edge compile должен только lookup'ить нужный slot по topology selector.
+
+Это нужно по двум причинам:
+- deterministic lineage: slot map должен быть стабилен для preview, create-run и retry;
+- latency/complexity: повторная decision evaluation на каждый edge превращает simple lookup в multiplicative runtime fan-out.
+
 ### 4. Workflows остаются orchestration-only
 
 `Workflow` в этой схеме отвечает за:
@@ -121,6 +127,64 @@ Legacy становится remediation concern:
 - missing или ambiguous coverage видны до preview/create-run;
 - ручной ввод raw ids не является primary path даже в advanced mode.
 
+### 8. Coverage должен вычисляться относительно явного binding context
+
+`Topology Editor` не может показывать slot coverage “в вакууме”. Для coverage нужен canonical binding context.
+
+Правило для MVP:
+- если оператор явно выбрал binding context, coverage считается относительно него;
+- если binding context явно не выбран, coverage можно auto-resolve только когда для pool существует ровно один active canonical binding в текущем compatible scope;
+- если active binding context отсутствует или их несколько, UI должен показывать `coverage unavailable/ambiguous`, а не притворяться, что slot резолвится.
+
+То же правило должно использоваться в preview/read-model diagnostics, чтобы topology editor, bindings workspace и run preview не расходились по объяснению coverage.
+
+### 9. Preview/read-model контракт становится slot-based
+
+Текущий single-object preview contract недостаточен для новой схемы.
+
+После change canonical preview/read-model должен показывать:
+- набор materialized publication slots;
+- coverage topology selectors относительно этих slot'ов;
+- unresolved selectors;
+- per-edge/per-slot resolution summary.
+
+Single `compiled_document_policy` больше не должен быть единственным canonical preview shape. Compatibility serialization допустима только как временная производная проекция, если она не скрывает slot-based source-of-truth.
+
+### 10. Lineage и retry должны сохранять slot-based snapshot
+
+Run lineage должен сохранять не один global compiled policy blob, а как минимум:
+- selected binding provenance;
+- materialized slot map;
+- per-edge resolved slot;
+- policy source provenance для artifact compile.
+
+Retry path должен использовать persisted slot-based artifact/snapshot и не должен заново вычислять topology policy из legacy metadata или mutable latest binding state.
+
+### 11. Cutover должен быть phased и наблюдаемым
+
+Удаление legacy fallback нельзя делать как silent one-shot switch.
+
+Нужны явные стадии:
+1. remediation inventory / diagnostics only;
+2. blocking warnings в topology/binding/workflow preview surfaces;
+3. blocking preview/create-run для unresolved legacy dependencies;
+4. отключение legacy fallback в shipped runtime path;
+5. последующее удаление compatibility code/UI.
+
+Rollback допустим только как явный operational mode, а не как неявный per-request fallback к `edge.metadata.document_policy`.
+
+### 12. Error model должен быть machine-readable
+
+Новая схема вводит отдельный класс ошибок, отличных от generic invalid policy:
+- missing selector на edge;
+- missing binding slot;
+- duplicate slot key;
+- invalid slot output;
+- ambiguous coverage context;
+- legacy topology dependency after cutover.
+
+Эти состояния должны быть видимы одинаково в backend diagnostics, preview/read-model и UI remediation states.
+
 ## Альтернативы и почему они отвергнуты
 
 ### Перенести точную привязку в Workflows
@@ -143,14 +207,19 @@ Legacy становится remediation concern:
 
 Отвергнуто, потому что при slot-oriented topology такой UI заставит аналитика мысленно сопоставлять edge selectors и decision refs вручную. Это сохраняет скрытую сложность и повышает риск missing slot уже на этапе run preview.
 
+### Выполнять decision evaluation заново для каждого edge
+
+Отвергнуто, потому что это ухудшает determinism, усложняет retry/lineage и добавляет лишнюю вычислительную стоимость без архитектурной необходимости.
+
 ## Миграция
 
 Перед включением cutover для shipped operator path legacy topology policy должна быть ремедиирована:
 1. materialize legacy `document_policy` в decision revision;
 2. pin resulting revision в binding с нужным `decision_key`;
 3. проставить `edge.metadata.document_policy_key` на каждом ребре;
-4. проверить per-edge binding preview parity;
-5. только после этого отключать legacy runtime fallback.
+4. проверить slot coverage и per-edge binding preview parity;
+5. убедиться, что canonical preview/read-model больше не зависит от single legacy policy shape;
+6. только после этого отключать legacy runtime fallback.
 
 Исторические данные могут сохранять legacy payload как provenance, но default shipped authoring/runtime path не должен опираться на него после cutover.
 

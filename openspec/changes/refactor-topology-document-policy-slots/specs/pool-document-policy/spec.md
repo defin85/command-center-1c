@@ -50,6 +50,29 @@ Direct authoring `document_policy` на pool topology edges НЕ ДОЛЖЕН (S
 - **THEN** compile завершается fail-closed до OData side effects
 - **AND** diagnostics содержит machine-readable код missing slot resolution
 
+### Requirement: Document policy slot diagnostics MUST быть machine-readable и стабильными
+Система ДОЛЖНА (SHALL) возвращать стабильные machine-readable коды для topology-slot resolution ошибок и remediation state'ов.
+
+Минимальный набор кодов:
+- `POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING`
+- `POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND`
+- `POOL_DOCUMENT_POLICY_SLOT_DUPLICATE`
+- `POOL_DOCUMENT_POLICY_SLOT_OUTPUT_INVALID`
+- `POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS`
+- `POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED`
+
+#### Scenario: Missing selector возвращает стабильный slot error code
+- **GIVEN** distribution artifact содержит allocation по edge без `document_policy_key`
+- **WHEN** runtime выполняет compile document plan
+- **THEN** execution завершается fail-closed
+- **AND** diagnostics содержит `POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING`
+
+#### Scenario: Legacy topology dependency после cutover возвращает стабильный code
+- **GIVEN** topology или pool по-прежнему зависят от legacy `document_policy`
+- **WHEN** shipped preview/run path выполняется после cutover
+- **THEN** legacy payload не используется как fallback
+- **AND** diagnostics содержит `POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED`
+
 ### Requirement: Workflow-centric authoring MUST материализоваться в deterministic document policy до publication compile
 Система ДОЛЖНА (SHALL) материализовать workflow-centric authoring в deterministic concrete `document_policy.v1` до построения `document_plan_artifact.v1` и атомарного workflow compile.
 
@@ -80,6 +103,31 @@ Migration path ДОЛЖЕН (SHALL):
 - **AND** affected bindings получают pinned decision refs с явным `decision_key`
 - **AND** topology edge получает matching `document_policy_key`
 - **AND** migration report фиксирует source edge и target decision/binding provenance
+
+### Requirement: Legacy topology policy cutover MUST быть phased и наблюдаемым
+Система ДОЛЖНА (SHALL) выполнять отказ от legacy topology policy по фазам, а не как silent one-shot switch.
+
+Cutover flow ДОЛЖЕН (SHALL) включать как минимум:
+- remediation diagnostics/inventory;
+- blocking warnings в operator surfaces;
+- blocking preview/create-run для unresolved legacy dependencies;
+- явное отключение runtime fallback;
+- последующее удаление compatibility UI/code path.
+
+Rollback МОЖЕТ (MAY) существовать только как явный operational mode и НЕ ДОЛЖЕН (SHALL NOT) превращаться в silent per-request fallback к legacy topology policy.
+
+#### Scenario: Legacy dependency сначала видна как remediation backlog
+- **GIVEN** pool все еще зависит от legacy `edge.metadata.document_policy` или `pool.metadata.document_policy`
+- **WHEN** оператор открывает shipped topology/binding workspace до финального cutover
+- **THEN** UI/runtime diagnostics показывают remediation backlog
+- **AND** legacy dependency не скрывается behind generic validation error
+
+#### Scenario: После cutover shipped runtime не откатывается в legacy fallback молча
+- **GIVEN** финальная стадия cutover включена
+- **AND** для pool не завершена remediation
+- **WHEN** оператор запускает preview или create-run
+- **THEN** shipped path завершается fail-closed
+- **AND** legacy fallback не включается автоматически только ради совместимости
 
 ## REMOVED Requirements
 

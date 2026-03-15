@@ -13,6 +13,8 @@
 - `Bindings` сохраняются как canonical pinning/deployment layer и требуют analyst-friendly UI-рефакторинга: named slots, coverage matrix и remediation вместо low-level списка raw decision refs.
 - `/decisions` остается canonical authoring surface для concrete `document_policy` revisions.
 - Runtime компилирует `document_plan_artifact` per edge/per target, резолвя `document_policy_key -> binding decision ref -> compiled document_policy`.
+- Preview/read-model контракт меняется с single `compiled_document_policy` на slot-based projection с coverage и unresolved diagnostics.
+- Runtime lineage и retry переходят на slot-based snapshot вместо single policy blob.
 - `Workflows` остаются orchestration-only surface и не получают per-edge matrix "какой документ создавать в какой организации".
 - **BREAKING** `Topology Editor` перестает быть shipped surface для legacy `document_policy` authoring/import.
 - **BREAKING** runtime cutover убирает legacy fallback на `edge.metadata.document_policy` и `pool.metadata.document_policy` из штатного preview/run path.
@@ -29,5 +31,7 @@
   - topology editor и pool catalog UI
   - bindings workspace и run/binding preview UI
   - binding preview / run preview
+  - execution context / lineage / retry contract
+  - public preview/read-model API contract
   - document plan compile и runtime projection
   - legacy migration/remediation flows для `document_policy`
