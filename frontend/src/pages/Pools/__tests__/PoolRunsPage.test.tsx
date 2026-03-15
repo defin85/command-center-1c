@@ -223,6 +223,17 @@ function buildWorkflowBindingPreview(overrides: Record<string, unknown> = {}) {
         },
       ],
     }),
+    compiled_document_policy_slots: {
+      invoice_mode: {
+        decision_table_id: 'decision-1',
+        decision_revision: 2,
+        document_policy_source: 'decision_tables',
+        document_policy: {
+          version: 'document_policy.v1',
+          targets: 3,
+        },
+      },
+    },
     compiled_document_policy: {
       version: 'document_policy.v1',
       targets: 3,
@@ -279,6 +290,45 @@ function buildWorkflowBindingPreview(overrides: Record<string, unknown> = {}) {
       },
     },
     ...overrides,
+  }
+}
+
+function buildPoolGraph(slotKey = 'invoice_mode') {
+  return {
+    pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    date: '2026-01-01',
+    version: 'v1:pool-runs-graph',
+    nodes: [
+      {
+        node_version_id: 'node-root',
+        organization_id: '11111111-1111-1111-1111-111111111111',
+        inn: '730000000001',
+        name: 'Root Org',
+        is_root: true,
+        metadata: {},
+      },
+      {
+        node_version_id: 'node-child',
+        organization_id: '22222222-2222-2222-2222-222222222222',
+        inn: '730000000002',
+        name: 'Child Org',
+        is_root: false,
+        metadata: {},
+      },
+    ],
+    edges: [
+      {
+        edge_version_id: 'edge-1',
+        parent_node_version_id: 'node-root',
+        child_node_version_id: 'node-child',
+        weight: '1',
+        min_amount: null,
+        max_amount: null,
+        metadata: {
+          document_policy_key: slotKey,
+        },
+      },
+    ],
   }
 }
 
@@ -422,6 +472,7 @@ describe('PoolRunsPage', () => {
 
   it('shows run lineage as primary operator context and keeps workflow diagnostics secondary', async () => {
     const user = userEvent.setup()
+    mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph())
     const run = {
       ...buildRun({
         direction: 'top_down',
@@ -524,6 +575,8 @@ describe('PoolRunsPage', () => {
     expect(screen.getByTestId('pool-runs-lineage-workflow')).toHaveTextContent('services_publication')
     expect(screen.getByText('invoice_mode r2')).toBeInTheDocument()
     expect(screen.getByText('compiled targets: 3')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-runs-lineage-slot-coverage')).toHaveTextContent('resolved: 1')
+    expect(screen.getByText('All topology edges are covered by the persisted run lineage binding.')).toBeInTheDocument()
     const diagnosticsLink = screen.getByRole('link', { name: 'Open Workflow Diagnostics' })
     expect(diagnosticsLink).toHaveAttribute(
       'href',
@@ -1069,6 +1122,69 @@ describe('PoolRunsPage', () => {
     ).toBeInTheDocument()
   })
 
+  it('shows ambiguous binding context before preview until operator selects a binding', async () => {
+    const user = userEvent.setup()
+    const run = buildRun()
+    mockListOrganizationPools.mockResolvedValue([
+      {
+        id: run.pool_id,
+        code: 'pool-code',
+        name: 'Pool name',
+        description: 'Main pool',
+        is_active: true,
+        metadata: {},
+        workflow_bindings: [
+          buildWorkflowBinding({
+            decisions: [
+              {
+                decision_table_id: 'decision-1',
+                decision_key: 'invoice_mode',
+                decision_revision: 2,
+              },
+            ],
+          }),
+          buildWorkflowBinding({
+            binding_id: 'binding-top-down-alt',
+            workflow: {
+              workflow_definition_key: 'services-publication-alt',
+              workflow_revision_id: '99999999-9999-9999-9999-999999999999',
+              workflow_revision: 4,
+              workflow_name: 'services_publication_alt',
+            },
+            decisions: [
+              {
+                decision_table_id: 'decision-2',
+                decision_key: 'invoice_mode',
+                decision_revision: 5,
+              },
+            ],
+          }),
+        ],
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ])
+    mockGetPoolGraph.mockResolvedValue(buildPoolGraph())
+
+    renderPage()
+
+    await openRunsStage(user, 'Create')
+    expect(await screen.findByTestId('pool-runs-create-binding-ambiguity')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-runs-create-preview')).toBeDisabled()
+
+    const bindingSelect = screen.getByTestId('pool-runs-create-workflow-binding')
+    const bindingSelector = bindingSelect.querySelector('.ant-select-selector')
+    expect(bindingSelector).toBeTruthy()
+    fireEvent.mouseDown(bindingSelector as Element)
+    fireEvent.click(await screen.findByText(/services_publication_alt/i))
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('pool-runs-create-binding-ambiguity')).not.toBeInTheDocument()
+    })
+    expect(screen.getByTestId('pool-runs-create-binding-coverage')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-runs-create-slot-coverage-summary')).toHaveTextContent('edges: 1')
+    expect(screen.getByTestId('pool-runs-create-slot-coverage-summary')).toHaveTextContent('resolved: 1')
+  }, 15000)
+
   it('submits top_down create-run payload with run_input and without source_hash', async () => {
     const user = userEvent.setup()
     renderPage()
@@ -1087,6 +1203,7 @@ describe('PoolRunsPage', () => {
 
   it('previews effective workflow binding before run start', async () => {
     const user = userEvent.setup()
+    mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph())
     renderPage()
 
     await openRunsStage(user, 'Create')
@@ -1105,6 +1222,11 @@ describe('PoolRunsPage', () => {
     expect(screen.getByText('invoice_mode r2')).toBeInTheDocument()
     expect(screen.getByText('compiled targets: 3')).toBeInTheDocument()
     expect(screen.getByText('decision_tables')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-runs-binding-preview-slot-coverage')).toHaveTextContent('resolved: 1')
+    expect(screen.getByText('All topology edges are covered by this binding preview.')).toBeInTheDocument()
+    expect((screen.getByTestId('pool-runs-binding-preview-slot-projection') as HTMLTextAreaElement).value).toContain(
+      '"invoice_mode"'
+    )
   }, 15000)
 
   it('submits bottom_up create-run payload with source_payload and selected schema template', async () => {

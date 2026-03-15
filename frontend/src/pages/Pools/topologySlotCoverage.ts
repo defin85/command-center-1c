@@ -1,0 +1,208 @@
+import type { PoolWorkflowBinding } from '../../api/intercompanyPools'
+
+export type TopologyCoverageContext = {
+  status: 'resolved' | 'ambiguous' | 'unavailable'
+  bindingLabel: string | null
+  detail: string
+  source: 'selected' | 'auto' | null
+  slotRefs: Array<{
+    slotKey: string
+    refLabel: string
+  }>
+}
+
+export type TopologySlotCoverage = {
+  status: 'resolved' | 'missing_selector' | 'missing_slot' | 'ambiguous_slot' | 'ambiguous_context' | 'unavailable_context'
+  label: string
+  detail: string
+}
+
+export type TopologyEdgeSelector = {
+  edgeId: string
+  edgeLabel: string
+  slotKey?: string
+}
+
+export type TopologyCoverageSummary = {
+  totalEdges: number
+  counts: Record<TopologySlotCoverage['status'], number>
+  items: Array<{
+    edgeId: string
+    edgeLabel: string
+    slotKey: string
+    coverage: TopologySlotCoverage
+  }>
+}
+
+export const describePoolWorkflowBindingCoverage = (binding: PoolWorkflowBinding): string => {
+  const bindingId = String(binding.binding_id || '').trim()
+  const workflowName = String(binding.workflow?.workflow_name || '').trim()
+  const selectorParts = [
+    String(binding.selector?.direction || '').trim(),
+    String(binding.selector?.mode || '').trim(),
+  ].filter((item) => item)
+  const scope = selectorParts.join(' · ')
+  return [bindingId || workflowName || 'binding', workflowName && workflowName !== bindingId ? workflowName : '', scope]
+    .filter((item) => item)
+    .join(' · ')
+}
+
+export const buildTopologyCoverageContext = ({
+  bindingLabel,
+  detail,
+  slotRefs,
+  source,
+}: {
+  bindingLabel: string
+  detail: string
+  slotRefs: Array<{ slotKey: string; refLabel: string }>
+  source: 'selected' | 'auto'
+}): TopologyCoverageContext => ({
+  status: 'resolved',
+  bindingLabel,
+  detail,
+  source,
+  slotRefs,
+})
+
+const buildSlotRefsFromBinding = (
+  binding: PoolWorkflowBinding
+): Array<{ slotKey: string; refLabel: string }> => (
+  (binding.decisions ?? [])
+    .map((decision) => ({
+      slotKey: String(decision.decision_key || '').trim(),
+      refLabel: `${decision.decision_table_id} r${decision.decision_revision}`,
+    }))
+    .filter((slotRef) => slotRef.slotKey && slotRef.refLabel)
+)
+
+export const resolveTopologyCoverageContext = (
+  bindings: PoolWorkflowBinding[],
+  selectedBindingId: string | undefined
+): TopologyCoverageContext => {
+  const normalizedSelection = String(selectedBindingId || '').trim()
+  const activeBindings = bindings.filter((binding) => binding.status === 'active')
+  if (normalizedSelection) {
+    const selectedBinding = activeBindings.find((binding) => binding.binding_id === normalizedSelection)
+    if (selectedBinding) {
+      const bindingLabel = describePoolWorkflowBindingCoverage(selectedBinding)
+      return buildTopologyCoverageContext({
+        bindingLabel,
+        detail: `Coverage uses selected binding ${bindingLabel}.`,
+        slotRefs: buildSlotRefsFromBinding(selectedBinding),
+        source: 'selected',
+      })
+    }
+    return {
+      status: 'unavailable',
+      bindingLabel: null,
+      detail: 'Selected binding context is unavailable. Refresh bindings and choose an active binding again.',
+      source: null,
+      slotRefs: [],
+    }
+  }
+  if (activeBindings.length === 1) {
+    const activeBinding = activeBindings[0]
+    const bindingLabel = describePoolWorkflowBindingCoverage(activeBinding)
+    return buildTopologyCoverageContext({
+      bindingLabel,
+      detail: `Coverage auto-resolved to ${bindingLabel}.`,
+      slotRefs: buildSlotRefsFromBinding(activeBinding),
+      source: 'auto',
+    })
+  }
+  if (activeBindings.length === 0) {
+    return {
+      status: 'unavailable',
+      bindingLabel: null,
+      detail: 'Coverage unavailable: no active bindings are pinned for this pool.',
+      source: null,
+      slotRefs: [],
+    }
+  }
+  return {
+    status: 'ambiguous',
+    bindingLabel: null,
+    detail: 'Coverage context is ambiguous: select one active binding to inspect slot coverage.',
+    source: null,
+    slotRefs: [],
+  }
+}
+
+export const resolveTopologySlotCoverage = (
+  slotKey: string | undefined,
+  context: TopologyCoverageContext
+): TopologySlotCoverage => {
+  const normalizedSlotKey = String(slotKey || '').trim()
+  if (!normalizedSlotKey) {
+    return {
+      status: 'missing_selector',
+      label: 'Slot required',
+      detail: 'Set document_policy_key to verify publication slot coverage.',
+    }
+  }
+  if (context.status === 'ambiguous') {
+    return {
+      status: 'ambiguous_context',
+      label: 'Coverage unavailable',
+      detail: context.detail,
+    }
+  }
+  if (context.status === 'unavailable' || !context.bindingLabel) {
+    return {
+      status: 'unavailable_context',
+      label: 'Coverage unavailable',
+      detail: context.detail,
+    }
+  }
+  const matches = context.slotRefs.filter((slotRef) => slotRef.slotKey === normalizedSlotKey)
+  if (matches.length === 0) {
+    return {
+      status: 'missing_slot',
+      label: 'Slot missing',
+      detail: `${context.bindingLabel} does not pin slot ${normalizedSlotKey}.`,
+    }
+  }
+  if (matches.length > 1) {
+    return {
+      status: 'ambiguous_slot',
+      label: 'Ambiguous slot',
+      detail: `${context.bindingLabel} contains ${matches.length} refs for slot ${normalizedSlotKey}.`,
+    }
+  }
+  return {
+    status: 'resolved',
+    label: 'Resolved',
+    detail: `${context.bindingLabel} -> ${matches[0]?.refLabel || normalizedSlotKey}`,
+  }
+}
+
+export const summarizeTopologySlotCoverage = (
+  selectors: TopologyEdgeSelector[],
+  context: TopologyCoverageContext
+): TopologyCoverageSummary => {
+  const counts: TopologyCoverageSummary['counts'] = {
+    resolved: 0,
+    missing_selector: 0,
+    missing_slot: 0,
+    ambiguous_slot: 0,
+    ambiguous_context: 0,
+    unavailable_context: 0,
+  }
+  const items = selectors.map((selector) => {
+    const slotKey = String(selector.slotKey || '').trim()
+    const coverage = resolveTopologySlotCoverage(slotKey, context)
+    counts[coverage.status] += 1
+    return {
+      edgeId: selector.edgeId,
+      edgeLabel: selector.edgeLabel,
+      slotKey,
+      coverage,
+    }
+  })
+  return {
+    totalEdges: selectors.length,
+    counts,
+    items,
+  }
+}

@@ -75,6 +75,12 @@ import {
   type PoolWorkflowBindingFormValue,
 } from './poolWorkflowBindingsForm'
 import { syncPoolWorkflowBindings } from './poolWorkflowBindingsSync'
+import {
+  describePoolWorkflowBindingCoverage,
+  resolveTopologyCoverageContext,
+  resolveTopologySlotCoverage,
+  type TopologyEdgeSelector,
+} from './topologySlotCoverage'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -502,130 +508,6 @@ const getApiErrorCode = (error: unknown): string => {
 const appendMetadataManagementHandoff = (message: string): string => {
   const handoff = 'Metadata context недоступен для topology editor. Откройте /databases, перепроверьте configuration identity или обновите metadata snapshot и повторите.'
   return mergeMessageParts([message, handoff]) || handoff
-}
-
-type TopologyCoverageContext = {
-  status: 'resolved' | 'ambiguous' | 'unavailable'
-  binding: PoolWorkflowBinding | null
-  detail: string
-  source: 'selected' | 'auto' | null
-}
-
-type TopologySlotCoverage = {
-  status: 'resolved' | 'missing_selector' | 'missing_slot' | 'ambiguous_slot' | 'ambiguous_context' | 'unavailable_context'
-  label: string
-  detail: string
-}
-
-const describePoolWorkflowBindingCoverage = (binding: PoolWorkflowBinding): string => {
-  const bindingId = String(binding.binding_id || '').trim()
-  const workflowName = String(binding.workflow?.workflow_name || '').trim()
-  const selectorParts = [
-    String(binding.selector?.direction || '').trim(),
-    String(binding.selector?.mode || '').trim(),
-  ].filter((item) => item)
-  const scope = selectorParts.join(' · ')
-  return [bindingId || workflowName || 'binding', workflowName && workflowName !== bindingId ? workflowName : '', scope]
-    .filter((item) => item)
-    .join(' · ')
-}
-
-const resolveTopologyCoverageContext = (
-  bindings: PoolWorkflowBinding[],
-  selectedBindingId: string | undefined
-): TopologyCoverageContext => {
-  const normalizedSelection = String(selectedBindingId || '').trim()
-  const activeBindings = bindings.filter((binding) => binding.status === 'active')
-  if (normalizedSelection) {
-    const selectedBinding = activeBindings.find((binding) => binding.binding_id === normalizedSelection)
-    if (selectedBinding) {
-      return {
-        status: 'resolved',
-        binding: selectedBinding,
-        detail: `Coverage uses selected binding ${describePoolWorkflowBindingCoverage(selectedBinding)}.`,
-        source: 'selected',
-      }
-    }
-    return {
-      status: 'unavailable',
-      binding: null,
-      detail: 'Selected binding context is unavailable. Refresh bindings and choose an active binding again.',
-      source: null,
-    }
-  }
-  if (activeBindings.length === 1) {
-    return {
-      status: 'resolved',
-      binding: activeBindings[0] ?? null,
-      detail: `Coverage auto-resolved to ${describePoolWorkflowBindingCoverage(activeBindings[0])}.`,
-      source: 'auto',
-    }
-  }
-  if (activeBindings.length === 0) {
-    return {
-      status: 'unavailable',
-      binding: null,
-      detail: 'Coverage unavailable: no active bindings are pinned for this pool.',
-      source: null,
-    }
-  }
-  return {
-    status: 'ambiguous',
-    binding: null,
-    detail: 'Coverage context is ambiguous: select one active binding to inspect slot coverage.',
-    source: null,
-  }
-}
-
-const resolveTopologySlotCoverage = (
-  slotKey: string | undefined,
-  context: TopologyCoverageContext
-): TopologySlotCoverage => {
-  const normalizedSlotKey = String(slotKey || '').trim()
-  if (!normalizedSlotKey) {
-    return {
-      status: 'missing_selector',
-      label: 'Slot required',
-      detail: 'Set document_policy_key to verify publication slot coverage.',
-    }
-  }
-  if (context.status === 'ambiguous') {
-    return {
-      status: 'ambiguous_context',
-      label: 'Coverage unavailable',
-      detail: context.detail,
-    }
-  }
-  if (context.status === 'unavailable' || !context.binding) {
-    return {
-      status: 'unavailable_context',
-      label: 'Coverage unavailable',
-      detail: context.detail,
-    }
-  }
-  const matches = (context.binding.decisions ?? []).filter((decision) => (
-    String(decision.decision_key || '').trim() === normalizedSlotKey
-  ))
-  if (matches.length === 0) {
-    return {
-      status: 'missing_slot',
-      label: 'Slot missing',
-      detail: `${describePoolWorkflowBindingCoverage(context.binding)} does not pin slot ${normalizedSlotKey}.`,
-    }
-  }
-  if (matches.length > 1) {
-    return {
-      status: 'ambiguous_slot',
-      label: 'Ambiguous slot',
-      detail: `${describePoolWorkflowBindingCoverage(context.binding)} contains ${matches.length} refs for slot ${normalizedSlotKey}.`,
-    }
-  }
-  const resolvedDecision = matches[0]
-  return {
-    status: 'resolved',
-    label: 'Resolved',
-    detail: `${describePoolWorkflowBindingCoverage(context.binding)} -> ${resolvedDecision.decision_table_id} r${resolvedDecision.decision_revision}`,
-  }
 }
 
 const parseSyncPayload = (input: string): SyncPreflightResult => {
@@ -1728,6 +1610,27 @@ export function PoolCatalogPage() {
   )
 
   const flow = useMemo(() => buildFlowLayout(graph), [graph])
+  const topologyEdgeSelectors = useMemo<TopologyEdgeSelector[]>(() => {
+    if (!graph) {
+      return []
+    }
+    const nodeByVersionId = new Map(
+      graph.nodes.map((node) => [node.node_version_id, node])
+    )
+    return graph.edges.map((edge, index) => {
+      const metadata = normalizeMetadataObject(edge.metadata)
+      const slotKey = String(metadata.document_policy_key || '').trim()
+      const parentNode = nodeByVersionId.get(edge.parent_node_version_id)
+      const childNode = nodeByVersionId.get(edge.child_node_version_id)
+      const parentLabel = String(parentNode?.name || parentNode?.organization_id || edge.parent_node_version_id).trim()
+      const childLabel = String(childNode?.name || childNode?.organization_id || edge.child_node_version_id).trim()
+      return {
+        edgeId: String(edge.edge_version_id || `${edge.parent_node_version_id}:${edge.child_node_version_id}:${index}`),
+        edgeLabel: `${parentLabel} -> ${childLabel}`,
+        slotKey,
+      }
+    })
+  }, [graph])
 
   const loadOrganizations = useCallback(async () => {
     setLoadingOrganizations(true)
@@ -3051,6 +2954,7 @@ export function PoolCatalogPage() {
                           availableDecisions={availableDecisions}
                           decisionsLoading={isPoolDecisionsLoading}
                           decisionsLoadError={poolDecisionsLoadError}
+                          topologyEdgeSelectors={topologyEdgeSelectors}
                           disabled={
                             mutatingDisabled
                             || isPoolBindingsSaving

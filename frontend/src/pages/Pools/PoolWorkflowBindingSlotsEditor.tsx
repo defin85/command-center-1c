@@ -2,6 +2,7 @@ import { Button, Card, Col, Form, Input, Row, Select, Space, Tag, Typography } f
 
 import type { AvailableDecisionRevision } from '../../types/workflow'
 import { formatAvailableDecisionLabel } from '../../components/workflow/decisionOptions'
+import type { TopologyEdgeSelector } from './topologySlotCoverage'
 
 const { Text } = Typography
 
@@ -10,6 +11,7 @@ type PoolWorkflowBindingSlotsEditorProps = {
   availableDecisions: AvailableDecisionRevision[]
   decisionsLoading: boolean
   disabled: boolean
+  topologyEdgeSelectors?: TopologyEdgeSelector[]
   getFieldValue: (namePath: Array<string | number>) => unknown
   setFieldValue: (namePath: Array<string | number>, value: unknown) => void
 }
@@ -66,6 +68,7 @@ export function PoolWorkflowBindingSlotsEditor({
   availableDecisions,
   decisionsLoading,
   disabled,
+  topologyEdgeSelectors = [],
   getFieldValue,
   setFieldValue,
 }: PoolWorkflowBindingSlotsEditorProps) {
@@ -117,6 +120,7 @@ export function PoolWorkflowBindingSlotsEditor({
                 decisionRevisionRaw,
                 selectedDecisionValue,
               })
+              const matchedEdges = topologyEdgeSelectors.filter((edge) => edge.slotKey === decisionKey)
               return (
                 <Row key={decisionField.key} gutter={12} align="middle">
                   <Col span={6}>
@@ -128,6 +132,13 @@ export function PoolWorkflowBindingSlotsEditor({
                         data-testid={`pool-catalog-workflow-binding-slot-key-${bindingIndex}-${decisionField.name}`}
                       >
                         {decisionKey || 'unassigned'}
+                      </Tag>
+                      <Tag
+                        color={matchedEdges.length > 0 ? 'green' : 'default'}
+                        style={{ width: 'fit-content' }}
+                        data-testid={`pool-catalog-workflow-binding-slot-coverage-${bindingIndex}-${decisionField.name}`}
+                      >
+                        {matchedEdges.length > 0 ? `edges: ${matchedEdges.length}` : 'unused by topology'}
                       </Tag>
                       {decisionTableId ? (
                         <Text

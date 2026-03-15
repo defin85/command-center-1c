@@ -55,6 +55,13 @@ import {
   type PoolWorkflowBinding,
   type PoolWorkflowBindingPreview,
 } from '../../api/intercompanyPools'
+import {
+  buildTopologyCoverageContext,
+  describePoolWorkflowBindingCoverage,
+  summarizeTopologySlotCoverage,
+  type TopologyCoverageSummary,
+  type TopologyEdgeSelector,
+} from './topologySlotCoverage'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -902,6 +909,139 @@ const resolveWorkflowLineageName = ({
   || '-'
 )
 
+const buildTopologyEdgeSelectors = (graph: PoolGraph | null): TopologyEdgeSelector[] => {
+  if (!graph) {
+    return []
+  }
+  const nodeByVersionId = new Map(
+    graph.nodes.map((node) => [node.node_version_id, node])
+  )
+  return graph.edges.map((edge, index) => {
+    const rawMetadata = edge.metadata
+    const metadata = rawMetadata && typeof rawMetadata === 'object' && !Array.isArray(rawMetadata)
+      ? rawMetadata as Record<string, unknown>
+      : {}
+    const slotKey = typeof metadata.document_policy_key === 'string'
+      ? metadata.document_policy_key.trim()
+      : ''
+    const parentNode = nodeByVersionId.get(edge.parent_node_version_id)
+    const childNode = nodeByVersionId.get(edge.child_node_version_id)
+    const parentLabel = String(parentNode?.name || parentNode?.organization_id || edge.parent_node_version_id).trim()
+    const childLabel = String(childNode?.name || childNode?.organization_id || edge.child_node_version_id).trim()
+    return {
+      edgeId: String(edge.edge_version_id || `${edge.parent_node_version_id}:${edge.child_node_version_id}:${index}`),
+      edgeLabel: `${parentLabel} -> ${childLabel}`,
+      slotKey,
+    }
+  })
+}
+
+const buildSlotCoverageRefs = (
+  decisions: Array<{
+    decision_key?: string | null
+    decision_table_id?: string | null
+    decision_revision?: string | number | null
+  }> | null | undefined
+) => (
+  (decisions ?? [])
+    .map((decision) => {
+      const slotKey = String(decision.decision_key || '').trim()
+      const decisionTableId = String(decision.decision_table_id || '').trim()
+      const decisionRevision = String(decision.decision_revision ?? '').trim()
+      if (!slotKey || !decisionTableId || !decisionRevision) {
+        return null
+      }
+      return {
+        slotKey,
+        refLabel: `${decisionTableId} r${decisionRevision}`,
+      }
+    })
+    .filter((slotRef): slotRef is { slotKey: string; refLabel: string } => Boolean(slotRef))
+)
+
+const buildTopologyCoverageSummary = ({
+  bindingLabel,
+  decisions,
+  detail,
+  selectors,
+  source,
+}: {
+  bindingLabel: string
+  decisions: Array<{
+    decision_key?: string | null
+    decision_table_id?: string | null
+    decision_revision?: string | number | null
+  }> | null | undefined
+  detail: string
+  selectors: TopologyEdgeSelector[]
+  source: 'selected' | 'auto'
+}): TopologyCoverageSummary => summarizeTopologySlotCoverage(
+  selectors,
+  buildTopologyCoverageContext({
+    bindingLabel,
+    detail,
+    slotRefs: buildSlotCoverageRefs(decisions),
+    source,
+  })
+)
+
+function TopologySlotCoveragePanel({
+  emptyMessage,
+  itemTestIdPrefix,
+  resolvedMessage,
+  summary,
+  summaryTestId,
+}: {
+  emptyMessage: string
+  itemTestIdPrefix?: string
+  resolvedMessage: string
+  summary: TopologyCoverageSummary | null
+  summaryTestId?: string
+}) {
+  if (!summary || summary.totalEdges === 0) {
+    return <Text type="secondary">{emptyMessage}</Text>
+  }
+  const unresolvedItems = summary.items.filter((item) => item.coverage.status !== 'resolved')
+  return (
+    <Space direction="vertical" size="small" style={{ width: '100%' }}>
+      <Space size={[4, 4]} wrap data-testid={summaryTestId}>
+        <Tag>edges: {summary.totalEdges}</Tag>
+        <Tag color="success">resolved: {summary.counts.resolved}</Tag>
+        {summary.counts.missing_slot > 0 ? (
+          <Tag color="error">missing slot: {summary.counts.missing_slot}</Tag>
+        ) : null}
+        {summary.counts.missing_selector > 0 ? (
+          <Tag color="default">missing selector: {summary.counts.missing_selector}</Tag>
+        ) : null}
+        {summary.counts.ambiguous_slot > 0 ? (
+          <Tag color="warning">ambiguous slot: {summary.counts.ambiguous_slot}</Tag>
+        ) : null}
+        {summary.counts.ambiguous_context > 0 ? (
+          <Tag color="warning">ambiguous context: {summary.counts.ambiguous_context}</Tag>
+        ) : null}
+        {summary.counts.unavailable_context > 0 ? (
+          <Tag color="default">context unavailable: {summary.counts.unavailable_context}</Tag>
+        ) : null}
+      </Space>
+      {unresolvedItems.length === 0 ? (
+        <Text type="secondary">{resolvedMessage}</Text>
+      ) : (
+        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+          {unresolvedItems.map((item) => (
+            <Text
+              key={`${item.edgeId}:${item.coverage.status}`}
+              type="secondary"
+              data-testid={itemTestIdPrefix ? `${itemTestIdPrefix}-${item.edgeId}` : undefined}
+            >
+              {`${item.edgeLabel} · ${item.slotKey || 'slot not set'} · ${item.coverage.label}`}
+            </Text>
+          ))}
+        </Space>
+      )}
+    </Space>
+  )
+}
+
 export function PoolRunsPage() {
   const { message } = AntApp.useApp()
   const [pools, setPools] = useState<OrganizationPool[]>([])
@@ -947,6 +1087,10 @@ export function PoolRunsPage() {
   }, [report, selectedRun, selectedRunId])
 
   const flow = useMemo(() => buildFlowLayout(graph), [graph])
+  const topologyEdgeSelectors = useMemo(
+    () => buildTopologyEdgeSelectors(graph),
+    [graph]
+  )
   const createDirection = Form.useWatch('direction', createForm) ?? 'top_down'
   const createMode = Form.useWatch('mode', createForm) ?? 'safe'
   const createPeriodStart = Form.useWatch('period_start', createForm) ?? new Date().toISOString().slice(0, 10)
@@ -968,6 +1112,27 @@ export function PoolRunsPage() {
     })),
     [createDirection, createMode, createPeriodStart, selectedPool]
   )
+  const selectedCreateBinding = useMemo(() => {
+    const normalizedBindingId = String(createBindingId || '').trim()
+    if (!normalizedBindingId) {
+      return null
+    }
+    return matchingWorkflowBindings.find((binding) => binding.binding_id === normalizedBindingId) ?? null
+  }, [createBindingId, matchingWorkflowBindings])
+  const createBindingCoverageSummary = useMemo(() => {
+    if (!selectedCreateBinding) {
+      return null
+    }
+    const bindingLabel = describePoolWorkflowBindingCoverage(selectedCreateBinding)
+    return buildTopologyCoverageSummary({
+      bindingLabel,
+      decisions: selectedCreateBinding.decisions ?? [],
+      detail: `Coverage is evaluated against selected binding ${bindingLabel}.`,
+      selectors: topologyEdgeSelectors,
+      source: 'selected',
+    })
+  }, [selectedCreateBinding, topologyEdgeSelectors])
+  const isCreateBindingContextAmbiguous = matchingWorkflowBindings.length > 1 && !String(createBindingId || '').trim()
 
   const loadPools = useCallback(async () => {
     setLoadingPools(true)
@@ -1615,6 +1780,37 @@ export function PoolRunsPage() {
   const workflowBinding = runDetails?.workflow_binding ?? null
   const runtimeProjection = runDetails?.runtime_projection ?? null
   const workflowDecisionRefs = workflowBinding?.decisions ?? runtimeProjection?.workflow_binding.decision_refs ?? []
+  const bindingPreviewCoverageSummary = useMemo(() => {
+    if (!bindingPreview) {
+      return null
+    }
+    const bindingLabel = describePoolWorkflowBindingCoverage(bindingPreview.workflow_binding)
+    return buildTopologyCoverageSummary({
+      bindingLabel,
+      decisions: bindingPreview.workflow_binding.decisions ?? [],
+      detail: `Coverage is evaluated against preview binding ${bindingLabel}.`,
+      selectors: topologyEdgeSelectors,
+      source: 'selected',
+    })
+  }, [bindingPreview, topologyEdgeSelectors])
+  const runLineageCoverageSummary = useMemo(() => {
+    if (!workflowBinding && !runtimeProjection) {
+      return null
+    }
+    const bindingLabel = workflowBinding
+      ? describePoolWorkflowBindingCoverage(workflowBinding)
+      : [
+        String(runtimeProjection?.workflow_binding.binding_id || '').trim() || 'run binding',
+        String(runtimeProjection?.workflow_binding.workflow_name || '').trim(),
+      ].filter((item) => item).join(' · ')
+    return buildTopologyCoverageSummary({
+      bindingLabel,
+      decisions: workflowDecisionRefs,
+      detail: `Coverage is evaluated against run lineage binding ${bindingLabel}.`,
+      selectors: topologyEdgeSelectors,
+      source: 'selected',
+    })
+  }, [runtimeProjection, topologyEdgeSelectors, workflowBinding, workflowDecisionRefs])
   const workflowDiagnosticsId = runDetails?.workflow_execution_id
     ?? (retryChain.length > 0 ? retryChain[retryChain.length - 1].workflow_run_id : null)
     ?? workflowRunId
@@ -1809,6 +2005,30 @@ export function PoolRunsPage() {
                       </Form.Item>
                     </Col>
                   </Row>
+                  {isCreateBindingContextAmbiguous ? (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      data-testid="pool-runs-create-binding-ambiguity"
+                      message="Binding context is ambiguous"
+                      description="Для выбранного pool/direction/mode найдено несколько active bindings. Выберите binding явно, чтобы увидеть slot coverage и построить preview."
+                    />
+                  ) : null}
+                  {selectedCreateBinding ? (
+                    <Card
+                      size="small"
+                      title="Topology slot coverage"
+                      data-testid="pool-runs-create-binding-coverage"
+                    >
+                      <TopologySlotCoveragePanel
+                        summary={createBindingCoverageSummary}
+                        summaryTestId="pool-runs-create-slot-coverage-summary"
+                        itemTestIdPrefix="pool-runs-create-slot-coverage-item"
+                        emptyMessage="No topology edges in the selected snapshot yet."
+                        resolvedMessage="All topology edges are covered by the selected binding before preview."
+                      />
+                    </Card>
+                  ) : null}
 
                   {createDirection === 'bottom_up' && (
                     <Row gutter={12}>
@@ -1892,6 +2112,15 @@ export function PoolRunsPage() {
                             <Text type="secondary">No pinned decision refs.</Text>
                           )}
                         </Descriptions.Item>
+                        <Descriptions.Item label="Slot Coverage" span={2}>
+                          <TopologySlotCoveragePanel
+                            summary={bindingPreviewCoverageSummary}
+                            summaryTestId="pool-runs-binding-preview-slot-coverage"
+                            itemTestIdPrefix="pool-runs-binding-preview-slot-coverage-item"
+                            emptyMessage="No topology edges in the selected snapshot yet."
+                            resolvedMessage="All topology edges are covered by this binding preview."
+                          />
+                        </Descriptions.Item>
                         <Descriptions.Item label="Document Policy Source" span={1}>
                           <Text>{bindingPreview.runtime_projection.document_policy_projection.source_mode}</Text>
                         </Descriptions.Item>
@@ -1906,13 +2135,23 @@ export function PoolRunsPage() {
                             <Tag>atomic publication: {bindingPreview.runtime_projection.compile_summary.atomic_publication_steps_count}</Tag>
                           </Space>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Compiled Policy Preview" span={2}>
+                        <Descriptions.Item label="Compiled Slot Projection" span={2}>
                           <TextArea
-                            value={JSON.stringify(bindingPreview.compiled_document_policy, null, 2)}
+                            value={JSON.stringify(bindingPreview.compiled_document_policy_slots ?? {}, null, 2)}
                             rows={8}
                             readOnly
+                            data-testid="pool-runs-binding-preview-slot-projection"
                           />
                         </Descriptions.Item>
+                        {bindingPreview.compiled_document_policy ? (
+                          <Descriptions.Item label="Compatibility Policy Projection" span={2}>
+                            <TextArea
+                              value={JSON.stringify(bindingPreview.compiled_document_policy, null, 2)}
+                              rows={6}
+                              readOnly
+                            />
+                          </Descriptions.Item>
+                        ) : null}
                       </Descriptions>
                     </Card>
                   )}
@@ -2022,6 +2261,15 @@ export function PoolRunsPage() {
                             ) : (
                               <Text type="secondary">No pinned decision refs.</Text>
                             )}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Slot Coverage" span={2}>
+                            <TopologySlotCoveragePanel
+                              summary={runLineageCoverageSummary}
+                              summaryTestId="pool-runs-lineage-slot-coverage"
+                              itemTestIdPrefix="pool-runs-lineage-slot-coverage-item"
+                              emptyMessage="No topology edges in the selected snapshot yet."
+                              resolvedMessage="All topology edges are covered by the persisted run lineage binding."
+                            />
                           </Descriptions.Item>
                           <Descriptions.Item label="Compiled Runtime" span={1}>
                             <Text>{runtimeProjection?.workflow_definition.workflow_template_name ?? '-'}</Text>

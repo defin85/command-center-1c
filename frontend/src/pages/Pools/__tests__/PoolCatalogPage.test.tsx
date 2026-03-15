@@ -1190,6 +1190,92 @@ describe('PoolCatalogPage', () => {
     expect(screen.getByText('Route Documents (route_documents) · r4')).toBeInTheDocument()
   }, 30000)
 
+  it('shows topology slot coverage summary in bindings workspace', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListPoolWorkflowBindings.mockResolvedValueOnce(
+      buildPoolWorkflowBindingCollection([
+        buildPoolWorkflowBinding({
+          decisions: [
+            {
+              decision_table_id: 'sale-policy',
+              decision_key: 'sale',
+              decision_revision: 7,
+            },
+          ],
+        }),
+      ])
+    )
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:topology-with-slots',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v3',
+          organization_id: '88888888-8888-8888-8888-888888888888',
+          inn: '730000000003',
+          name: 'Org Three',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            document_policy_key: 'sale',
+          },
+        },
+        {
+          edge_version_id: 'edge-v2',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v3',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            document_policy_key: 'purchase',
+          },
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Bindings')
+    expect(await screen.findByTestId('pool-catalog-workflow-binding-coverage-0')).toHaveTextContent('edges: 2')
+    expect(screen.getByTestId('pool-catalog-workflow-binding-coverage-0')).toHaveTextContent('resolved: 1')
+    expect(screen.getByTestId('pool-catalog-workflow-binding-coverage-0')).toHaveTextContent('missing slot: 1')
+    expect(screen.getByTestId('pool-catalog-workflow-binding-slot-coverage-0-0')).toHaveTextContent('edges: 1')
+    expect(screen.getByTestId('pool-catalog-workflow-binding-coverage-item-0')).toHaveTextContent(
+      'Org One -> Org Three · purchase · Slot missing'
+    )
+  }, 30000)
+
   it('fails closed when first-class workflow bindings load fails', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()

@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Col, Form, Input, Row, Select, Space, Typography } from 'antd'
+import { Alert, Button, Card, Col, Form, Input, Row, Select, Space, Tag, Typography } from 'antd'
 import type { AvailableDecisionRevision } from '../../types/workflow'
 
 import {
@@ -8,6 +8,11 @@ import {
   type PoolWorkflowBindingFormValue,
 } from './poolWorkflowBindingsForm'
 import { PoolWorkflowBindingSlotsEditor } from './PoolWorkflowBindingSlotsEditor'
+import {
+  buildTopologyCoverageContext,
+  summarizeTopologySlotCoverage,
+  type TopologyEdgeSelector,
+} from './topologySlotCoverage'
 
 const { Text } = Typography
 const { TextArea } = Input
@@ -16,6 +21,7 @@ type PoolWorkflowBindingsEditorProps = {
   availableDecisions?: AvailableDecisionRevision[]
   decisionsLoading?: boolean
   decisionsLoadError?: string | null
+  topologyEdgeSelectors?: TopologyEdgeSelector[]
   disabled?: boolean
 }
 
@@ -29,6 +35,7 @@ export function PoolWorkflowBindingsEditor({
   availableDecisions = [],
   decisionsLoading = false,
   decisionsLoadError = null,
+  topologyEdgeSelectors = [],
   disabled = false,
 }: PoolWorkflowBindingsEditorProps) {
   return (
@@ -57,6 +64,31 @@ export function PoolWorkflowBindingsEditor({
               <Form.Item key={field.key} noStyle shouldUpdate>
                 {({ getFieldValue, setFieldValue }) => {
                   const binding = getFieldValue(['workflow_bindings', field.name]) as PoolWorkflowBindingFormValue | undefined
+                  const bindingLabel = getWorkflowBindingCardTitle(binding, field.name + 1)
+                  const slotRefs = (binding?.decisions ?? [])
+                    .map((decision) => {
+                      const slotKey = String(decision?.decision_key ?? '').trim()
+                      const decisionTableId = String(decision?.decision_table_id ?? '').trim()
+                      const decisionRevision = String(decision?.decision_revision ?? '').trim()
+                      if (!slotKey || !decisionTableId || !decisionRevision) {
+                        return null
+                      }
+                      return {
+                        slotKey,
+                        refLabel: `${decisionTableId} r${decisionRevision}`,
+                      }
+                    })
+                    .filter((slotRef): slotRef is { slotKey: string; refLabel: string } => Boolean(slotRef))
+                  const coverageSummary = summarizeTopologySlotCoverage(
+                    topologyEdgeSelectors,
+                    buildTopologyCoverageContext({
+                      bindingLabel,
+                      detail: `Coverage is evaluated against binding draft ${bindingLabel}.`,
+                      slotRefs,
+                      source: 'selected',
+                    })
+                  )
+                  const unresolvedCoverageItems = coverageSummary.items.filter((item) => item.coverage.status !== 'resolved')
                   return (
                     <Card
                       size="small"
@@ -81,6 +113,40 @@ export function PoolWorkflowBindingsEditor({
                         >
                           {getWorkflowBindingCardSummary(binding)}
                         </Text>
+                        <Card
+                          size="small"
+                          title="Topology coverage"
+                          data-testid={`pool-catalog-workflow-binding-coverage-${field.name}`}
+                        >
+                          {topologyEdgeSelectors.length === 0 ? (
+                            <Text type="secondary">No topology edges in the selected snapshot yet.</Text>
+                          ) : (
+                            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                              <Space size={[4, 4]} wrap>
+                                <Tag>edges: {coverageSummary.totalEdges}</Tag>
+                                <Tag color="success">resolved: {coverageSummary.counts.resolved}</Tag>
+                                <Tag color="error">missing slot: {coverageSummary.counts.missing_slot}</Tag>
+                                <Tag color="default">missing selector: {coverageSummary.counts.missing_selector}</Tag>
+                                <Tag color="warning">ambiguous: {coverageSummary.counts.ambiguous_slot}</Tag>
+                              </Space>
+                              {unresolvedCoverageItems.length === 0 ? (
+                                <Text type="secondary">All topology edges are covered by pinned slots in this binding.</Text>
+                              ) : (
+                                <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                                  {unresolvedCoverageItems.map((item) => (
+                                    <Text
+                                      key={`${item.edgeId}:${item.coverage.status}`}
+                                      type="secondary"
+                                      data-testid={`pool-catalog-workflow-binding-coverage-item-${field.name}`}
+                                    >
+                                      {`${item.edgeLabel} · ${item.slotKey || 'slot not set'} · ${item.coverage.label}`}
+                                    </Text>
+                                  ))}
+                                </Space>
+                              )}
+                            </Space>
+                          )}
+                        </Card>
                         <Row gutter={12}>
                           <Col span={12}>
                             <Form.Item name={[field.name, 'binding_id']} label="binding_id">
@@ -205,6 +271,7 @@ export function PoolWorkflowBindingsEditor({
                           availableDecisions={availableDecisions}
                           decisionsLoading={decisionsLoading}
                           disabled={disabled}
+                          topologyEdgeSelectors={topologyEdgeSelectors}
                           getFieldValue={getFieldValue}
                           setFieldValue={setFieldValue}
                         />
