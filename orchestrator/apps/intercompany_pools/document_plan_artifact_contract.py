@@ -23,6 +23,9 @@ POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY = "pool_runtime_document_plan_ar
 POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY = "pool_runtime_compiled_document_policy"
 POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY = "pool_runtime_document_policy_source"
 POOL_DOCUMENT_PLAN_ARTIFACT_INVALID = "POOL_DOCUMENT_PLAN_ARTIFACT_INVALID"
+POOL_DOCUMENT_POLICY_SLOT_SELECTOR_REQUIRED = "POOL_DOCUMENT_POLICY_SLOT_SELECTOR_REQUIRED"
+POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND = "POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND"
+POOL_DOCUMENT_POLICY_SLOT_INVALID = "POOL_DOCUMENT_POLICY_SLOT_INVALID"
 
 REQUIRED_DOCUMENT_PLAN_ARTIFACT_FIELDS = {
     "version",
@@ -47,6 +50,7 @@ def compile_document_plan_artifact_v1(
     run: PoolRun,
     distribution_artifact: Mapping[str, Any],
     topology: Mapping[str, Any],
+    compiled_document_policy_slots: Mapping[str, Any] | None = None,
     compiled_document_policy: Mapping[str, Any] | None = None,
     document_policy_source: str | None = None,
 ) -> dict[str, Any] | None:
@@ -60,6 +64,9 @@ def compile_document_plan_artifact_v1(
         return None
 
     pool_metadata = run.pool.metadata if isinstance(run.pool.metadata, Mapping) else {}
+    normalized_compiled_policy_slots = _normalize_compiled_document_policy_slots(
+        compiled_document_policy_slots
+    )
     normalized_compiled_policy = (
         validate_document_policy_v1(policy=compiled_document_policy)
         if isinstance(compiled_document_policy, Mapping)
@@ -110,8 +117,26 @@ def compile_document_plan_artifact_v1(
         if not database_id:
             continue
 
+        edge_ref = {
+            "parent_node_id": parent_node_id,
+            "child_node_id": child_node_id,
+        }
         edge_metadata = edge_model.metadata if isinstance(edge_model.metadata, Mapping) else {}
-        if normalized_compiled_policy is not None:
+        if normalized_compiled_policy_slots is not None:
+            slot_key = _resolve_document_policy_key_for_edge(
+                edge_metadata=edge_metadata,
+                edge_ref=edge_ref,
+            )
+            slot_projection = normalized_compiled_policy_slots.get(slot_key)
+            if slot_projection is None:
+                raise ValueError(
+                    f"{POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND}: "
+                    f"binding slot '{slot_key}' is not bound for edge "
+                    f"{parent_node_id}->{child_node_id}"
+                )
+            policy = slot_projection["document_policy"]
+            source = slot_projection["document_policy_source"]
+        elif normalized_compiled_policy is not None:
             policy = normalized_compiled_policy
             source = normalized_document_policy_source or "workflow_binding.decision_table"
         else:
@@ -122,10 +147,6 @@ def compile_document_plan_artifact_v1(
         if policy is None:
             continue
 
-        edge_ref = {
-            "parent_node_id": parent_node_id,
-            "child_node_id": child_node_id,
-        }
         policy_ref_key = (parent_node_id, child_node_id)
         if policy_ref_key not in seen_policy_refs:
             policy_refs.append(
@@ -188,6 +209,61 @@ def compile_document_plan_artifact_v1(
         },
     }
     return validate_document_plan_artifact_v1(artifact=artifact)
+
+
+def _normalize_compiled_document_policy_slots(
+    compiled_document_policy_slots: Mapping[str, Any] | None,
+) -> dict[str, dict[str, Any]] | None:
+    if not isinstance(compiled_document_policy_slots, Mapping):
+        return None
+
+    normalized: dict[str, dict[str, Any]] = {}
+    for raw_slot_key, raw_slot_projection in dict(compiled_document_policy_slots).items():
+        slot_key = str(raw_slot_key or "").strip()
+        if not slot_key:
+            raise ValueError(
+                f"{POOL_DOCUMENT_POLICY_SLOT_INVALID}: slot key must be a non-empty string"
+            )
+        if slot_key in normalized:
+            raise ValueError(
+                f"{POOL_DOCUMENT_POLICY_SLOT_INVALID}: duplicate slot key '{slot_key}'"
+            )
+        if not isinstance(raw_slot_projection, Mapping):
+            raise ValueError(
+                f"{POOL_DOCUMENT_POLICY_SLOT_INVALID}: slot '{slot_key}' must be an object"
+            )
+        slot_projection = dict(raw_slot_projection)
+        raw_document_policy = slot_projection.get("document_policy")
+        if not isinstance(raw_document_policy, Mapping):
+            raise ValueError(
+                f"{POOL_DOCUMENT_POLICY_SLOT_INVALID}: slot '{slot_key}' document_policy must be an object"
+            )
+        document_policy_source = str(slot_projection.get("document_policy_source") or "").strip()
+        if not document_policy_source:
+            raise ValueError(
+                f"{POOL_DOCUMENT_POLICY_SLOT_INVALID}: slot '{slot_key}' document_policy_source is required"
+            )
+        normalized[slot_key] = {
+            **slot_projection,
+            "document_policy": validate_document_policy_v1(policy=raw_document_policy),
+            "document_policy_source": document_policy_source,
+        }
+    return normalized
+
+
+def _resolve_document_policy_key_for_edge(
+    *,
+    edge_metadata: Mapping[str, Any],
+    edge_ref: Mapping[str, str],
+) -> str:
+    slot_key = str(edge_metadata.get("document_policy_key") or "").strip()
+    if slot_key:
+        return slot_key
+    raise ValueError(
+        f"{POOL_DOCUMENT_POLICY_SLOT_SELECTOR_REQUIRED}: edge "
+        f"{str(edge_ref.get('parent_node_id') or '').strip()}->"
+        f"{str(edge_ref.get('child_node_id') or '').strip()} requires metadata.document_policy_key"
+    )
 
 
 def validate_document_plan_artifact_v1(*, artifact: Any) -> dict[str, Any]:

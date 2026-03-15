@@ -33,7 +33,12 @@ def compile_binding_document_policy(
     period_end: date | None,
     run_input: Mapping[str, Any] | None,
 ) -> tuple[dict[str, Any], str]:
-    _decision_outputs, document_policy, document_policy_source = evaluate_binding_decisions(
+    (
+        _decision_outputs,
+        _compiled_document_policy_slots,
+        document_policy,
+        document_policy_source,
+    ) = evaluate_binding_decisions(
         binding=binding,
         pool=pool,
         direction=direction,
@@ -54,7 +59,7 @@ def evaluate_binding_decisions(
     period_start: date,
     period_end: date | None,
     run_input: Mapping[str, Any] | None,
-) -> tuple[dict[str, Any], dict[str, Any], str]:
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]], dict[str, Any], str]:
     decision_inputs = _build_decision_inputs(
         binding=binding,
         pool=pool,
@@ -65,6 +70,7 @@ def evaluate_binding_decisions(
         run_input=run_input,
     )
     decision_outputs: dict[str, Any] = {}
+    compiled_document_policy_slots: dict[str, dict[str, Any]] = {}
     compiled_document_policy: dict[str, Any] | None = None
     document_policy_source: str | None = None
     for decision_ref in binding.decisions:
@@ -87,15 +93,30 @@ def evaluate_binding_decisions(
             else dict(outputs)
         )
         document_policy = outputs.get("document_policy")
-        if document_policy is not None and compiled_document_policy is None:
-            compiled_document_policy = validate_document_policy_v1(policy=document_policy)
-            document_policy_source = (
-                "workflow_binding.decision_table:"
-                f"{decision.decision_table_id}:v{decision.version_number}"
-            )
+        if document_policy is None:
+            continue
+        validated_document_policy = validate_document_policy_v1(policy=document_policy)
+        slot_policy_source = (
+            "workflow_binding.decision_table:"
+            f"{decision.decision_table_id}:v{decision.version_number}"
+        )
+        compiled_document_policy_slots[decision_ref.decision_key] = {
+            "decision_table_id": decision.decision_table_id,
+            "decision_revision": decision.version_number,
+            "document_policy_source": slot_policy_source,
+            "document_policy": validated_document_policy,
+        }
+        if compiled_document_policy is None:
+            compiled_document_policy = validated_document_policy
+            document_policy_source = slot_policy_source
     if compiled_document_policy is None or document_policy_source is None:
         raise ValueError("No linked decision table produced a document_policy output.")
-    return decision_outputs, compiled_document_policy, document_policy_source
+    return (
+        decision_outputs,
+        compiled_document_policy_slots,
+        compiled_document_policy,
+        document_policy_source,
+    )
 
 
 def build_pool_workflow_binding_runtime_bundle(
@@ -141,7 +162,12 @@ def build_pool_workflow_binding_runtime_bundle(
         artifact=distribution_state.get("artifact"),
     )
     topology = load_runtime_topology_for_period(run=preview_run)
-    decision_outputs, compiled_document_policy, document_policy_source = evaluate_binding_decisions(
+    (
+        decision_outputs,
+        compiled_document_policy_slots,
+        compiled_document_policy,
+        document_policy_source,
+    ) = evaluate_binding_decisions(
         binding=resolved_binding,
         pool=pool,
         direction=direction,
@@ -154,6 +180,7 @@ def build_pool_workflow_binding_runtime_bundle(
         run=preview_run,
         distribution_artifact=distribution_artifact,
         topology=topology,
+        compiled_document_policy_slots=compiled_document_policy_slots,
         compiled_document_policy=compiled_document_policy,
         document_policy_source=document_policy_source,
     )
@@ -179,6 +206,7 @@ def build_pool_workflow_binding_runtime_bundle(
     return {
         "workflow_binding": resolved_binding.model_dump(mode="json"),
         "decision_outputs": decision_outputs,
+        "compiled_document_policy_slots": compiled_document_policy_slots,
         "compiled_document_policy": compiled_document_policy,
         "document_policy_source": document_policy_source,
         "document_plan_artifact": document_plan_artifact,
@@ -214,6 +242,7 @@ def build_pool_workflow_binding_preview(
     )
     return {
         "workflow_binding": bundle["workflow_binding"],
+        "compiled_document_policy_slots": bundle["compiled_document_policy_slots"],
         "compiled_document_policy": bundle["compiled_document_policy"],
         "runtime_projection": bundle["runtime_projection"],
     }

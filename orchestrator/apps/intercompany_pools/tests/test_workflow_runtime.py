@@ -148,12 +148,17 @@ def _attach_pool_target_database(
         .first()
     )
     if existing_target is not None and existing_target.organization.database is not None:
-        PoolEdgeVersion.objects.get_or_create(
+        edge, _ = PoolEdgeVersion.objects.get_or_create(
             pool=pool,
             parent_node=existing_root,
             child_node=existing_target,
             effective_from=existing_target.effective_from,
         )
+        edge_metadata = dict(edge.metadata) if isinstance(edge.metadata, dict) else {}
+        if edge_metadata.get("document_policy_key") != "document_policy":
+            edge_metadata["document_policy_key"] = "document_policy"
+            edge.metadata = edge_metadata
+            edge.save(update_fields=["metadata", "updated_at"])
         return existing_target.organization.database
 
     database = Database.objects.create(
@@ -180,6 +185,7 @@ def _attach_pool_target_database(
         parent_node=existing_root,
         child_node=target_node,
         effective_from=period_start,
+        metadata={"document_policy_key": "document_policy"},
     )
     return database
 
