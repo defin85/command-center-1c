@@ -17240,14 +17240,21 @@ components:
       properties:
         workflow_binding:
           $ref: '#/components/schemas/PoolWorkflowBindingRead'
+        compiled_document_policy_slots:
+          type: object
+          description: Canonical slot-based publication policy projection keyed by binding decision_key.
+          additionalProperties:
+            type: object
+            additionalProperties: true
         compiled_document_policy:
           type: object
+          description: Compatibility single-policy projection derived from slot-based source-of-truth.
           additionalProperties: true
         runtime_projection:
           $ref: '#/components/schemas/PoolRuntimeProjection'
       required:
         - workflow_binding
-        - compiled_document_policy
+        - compiled_document_policy_slots
         - runtime_projection
     PoolMasterDataBinding:
       type: object

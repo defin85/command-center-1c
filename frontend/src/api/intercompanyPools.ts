@@ -252,7 +252,8 @@ export type PoolRunRuntimeProjection = {
 
 export type PoolWorkflowBindingPreview = {
   workflow_binding: PoolWorkflowBinding
-  compiled_document_policy: Record<string, unknown>
+  compiled_document_policy_slots: Record<string, Record<string, unknown>>
+  compiled_document_policy?: Record<string, unknown>
   runtime_projection: PoolRunRuntimeProjection
 }
 

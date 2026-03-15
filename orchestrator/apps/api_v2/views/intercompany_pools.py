@@ -2143,7 +2143,8 @@ class PoolWorkflowBindingPreviewRequestSerializer(PoolRunCreateRequestSerializer
 
 class PoolWorkflowBindingPreviewResponseSerializer(serializers.Serializer):
     workflow_binding = serializers.JSONField()
-    compiled_document_policy = serializers.JSONField()
+    compiled_document_policy_slots = serializers.JSONField()
+    compiled_document_policy = serializers.JSONField(required=False)
     runtime_projection = serializers.JSONField()
 
 

@@ -110,6 +110,29 @@ def test_pool_workflow_bindings_preview_src_contract_uses_dedicated_request_sche
     assert content["multipart/form-data"]["schema"] == expected_schema
 
 
+def test_pool_workflow_bindings_preview_response_src_contract_exposes_slot_projection() -> None:
+    payload = _load_src_schema("PoolWorkflowBindingPreviewResponse.yaml")
+
+    properties = payload.get("properties")
+    assert isinstance(properties, dict)
+    assert properties.get("compiled_document_policy_slots") == {
+        "type": "object",
+        "description": "Canonical slot-based publication policy projection keyed by binding decision_key.",
+        "additionalProperties": {
+            "type": "object",
+            "additionalProperties": True,
+        },
+    }
+
+    required = payload.get("required")
+    assert required == [
+        "workflow_binding",
+        "compiled_document_policy_slots",
+        "runtime_projection",
+    ]
+    assert "compiled_document_policy" not in required
+
+
 def test_pool_workflow_binding_input_src_schema_includes_optional_revision_field() -> None:
     payload = _load_src_schema("PoolWorkflowBindingInput.yaml")
 

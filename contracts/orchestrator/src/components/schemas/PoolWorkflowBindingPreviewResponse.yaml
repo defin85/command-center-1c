@@ -3,12 +3,19 @@ description: Preview of effective binding lineage and compiled runtime projectio
 properties:
   workflow_binding:
     $ref: ./PoolWorkflowBindingRead.yaml
+  compiled_document_policy_slots:
+    type: object
+    description: Canonical slot-based publication policy projection keyed by binding decision_key.
+    additionalProperties:
+      type: object
+      additionalProperties: true
   compiled_document_policy:
     type: object
+    description: Compatibility single-policy projection derived from slot-based source-of-truth.
     additionalProperties: true
   runtime_projection:
     $ref: ./PoolRuntimeProjection.yaml
 required:
   - workflow_binding
-  - compiled_document_policy
+  - compiled_document_policy_slots
   - runtime_projection

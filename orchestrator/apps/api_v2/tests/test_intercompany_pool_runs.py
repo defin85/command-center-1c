@@ -4126,6 +4126,10 @@ def test_preview_pool_workflow_binding_uses_managed_default_schema_template_on_d
     assert response.status_code == 200
     payload = response.json()
     assert payload["workflow_binding"]["binding_id"] == binding["binding_id"]
+    assert set(payload["compiled_document_policy_slots"]) == {"document_policy"}
+    assert payload["compiled_document_policy_slots"]["document_policy"]["document_policy"]["version"] == (
+        "document_policy.v1"
+    )
     assert payload["runtime_projection"]["workflow_binding"]["binding_id"] == binding["binding_id"]
     assert payload["compiled_document_policy"]["version"] == "document_policy.v1"
     assert PoolSchemaTemplate.objects.filter(
