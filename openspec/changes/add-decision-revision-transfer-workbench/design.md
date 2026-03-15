@@ -48,14 +48,27 @@ Transfer workbench ДОЛЖЕН явно классифицировать эле
 
 Publish новой revision блокируется fail-closed, пока остаются `ambiguous`, `missing` или `incompatible` элементы.
 
-### Decision 4: Publish создаёт только новую concrete revision и не меняет existing consumers
+### Decision 4: Transfer использует stateless two-phase contract: server-evaluated preview + publish через existing revision publish core
+MVP transfer workbench фиксируется как два явных шага:
+- `transfer preview` принимает source revision и target database, резолвит target context на backend и возвращает transfer report/read-model для analyst UX;
+- `transfer publish` принимает результат analyst remap, повторно считает report относительно текущего target snapshot и только после этого создаёт новую revision;
+- существующий core publish/create revision переиспользуется как финальный шаг materialization новой concrete revision.
+
+MVP НЕ вводит persistent draft artifact, отдельную abstract revision или скрытый stateful transfer session.
+
+Это снимает двусмысленность между UX workbench и backend contract:
+- preview считается авторитативно на server side, а не в браузере;
+- publish не доверяет устаревшему client-side report и повторно валидирует unresolved items;
+- create/revise lifecycle для обычного `/decisions` остаётся совместимым и не перегружается transfer-only semantics.
+
+### Decision 5: Publish создаёт только новую concrete revision и не меняет existing consumers
 Transfer workbench не получает отдельный runtime artifact и не меняет semantics existing pins. Успешный publish:
 - использует `parent_version_id` source revision;
 - валидирует финальный policy против target snapshot;
 - сохраняет target metadata provenance в новой revision;
 - не перепривязывает workflow definitions, bindings и runtime projections автоматически.
 
-### Decision 5: Default compatible selection и source-selection остаются разными режимами
+### Decision 6: Default compatible selection и source-selection остаются разными режимами
 Revision вне default compatible set может быть полезной как source для transfer, но не должна становиться ready-to-pin candidate автоматически.
 
 Практически это означает:
@@ -90,8 +103,8 @@ Revision вне default compatible set может быть полезной ка
 
 ## План миграции
 1. Зафиксировать spec-level transfer contract поверх текущего rollover semantics.
-2. Определить API/read-model shape для source context, target context и transfer report.
-3. Реализовать backend remap/validation path поверх существующей publish semantics.
+2. Определить stateless two-phase API/read-model shape: `transfer preview` и `transfer publish`.
+3. Реализовать backend remap/validation path поверх существующей publish semantics, сохранив existing revision publish core как финальный шаг materialization.
 4. Добавить analyst-facing transfer UI и тесты fail-closed поведения.
 
 ## Открытые вопросы

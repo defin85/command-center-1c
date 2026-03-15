@@ -8,6 +8,7 @@
 ## Что меняется
 - `/decisions` получает first-class `transfer workbench` для concrete `decision_revision`.
 - Transfer flow стартует от существующей source revision и target database; система резолвит target `configuration profile` и `metadata snapshot`, строит явный transfer report и открывает draft новой revision на основе source revision.
+- Архитектурно transfer flow фиксируется как stateless two-phase contract: server-evaluated `transfer preview`, за которым следует `transfer publish`, повторно валидирующий report и создающий новую revision через существующий publish path.
 - Transfer report различает `matched`, `ambiguous`, `missing` и `incompatible` mapping/result items; publish новой revision остаётся fail-closed, пока аналитик не разрешит все неготовые к переносу элементы.
 - Результат transfer flow всегда остаётся новой concrete revision с `parent_version_id = source revision`, target metadata provenance и без автоматической перепривязки существующих workflow/binding consumers.
 - Default selection surfaces для workflow/binding продолжают показывать только ready-to-pin concrete revisions; abstract revisions/blueprints в этот change не входят.

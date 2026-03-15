@@ -1,12 +1,14 @@
 ## 1. Контракт и API
-- [ ] 1.1 Зафиксировать в spec и API/read-model contract transfer workbench для concrete `decision_revision`: source revision, target database, resolved configuration profile / metadata snapshot и transfer report.
-- [ ] 1.2 Зафиксировать fail-closed правила publish: новая revision создаётся только после разрешения всех `ambiguous` / `missing` / `incompatible` элементов.
-- [ ] 1.3 Зафиксировать provenance resulting revision и границу между default ready-to-pin selection и source-only transfer mode.
+- [ ] 1.1 Зафиксировать в spec и API/read-model stateless two-phase contract для transfer workbench: server-evaluated `transfer preview` и `transfer publish` для concrete `decision_revision`.
+- [ ] 1.2 Зафиксировать shape `transfer preview`: source revision, target database, resolved configuration profile / metadata snapshot и transfer report.
+- [ ] 1.3 Зафиксировать fail-closed правила `transfer publish`: publish повторно валидирует report и создаёт новую revision только после разрешения всех `ambiguous` / `missing` / `incompatible` элементов.
+- [ ] 1.4 Зафиксировать provenance resulting revision и границу между default ready-to-pin selection и source-only transfer mode.
 
 ## 2. Backend transfer semantics
 - [ ] 2.1 Реализовать построение transfer report против target metadata snapshot выбранной ИБ с классификацией `matched` / `ambiguous` / `missing` / `incompatible`.
-- [ ] 2.2 Переиспользовать существующий publish path так, чтобы transfer создавал новую concrete revision с `parent_version_id`, target metadata provenance и без auto-rebind consumers.
-- [ ] 2.3 Добавить fail-closed validation errors для unresolved transfer items и отдать их в analyst-facing API/read-model.
+- [ ] 2.2 Реализовать server-side `transfer preview` как authoring/read-model surface без отдельного persistent draft artifact.
+- [ ] 2.3 Переиспользовать существующий publish path так, чтобы `transfer publish` создавал новую concrete revision с `parent_version_id`, target metadata provenance и без auto-rebind consumers.
+- [ ] 2.4 Добавить fail-closed validation errors для unresolved transfer items и отдать их в analyst-facing API/read-model.
 
 ## 3. Frontend analyst workbench
 - [ ] 3.1 Добавить в `/decisions` явную entry point для transfer из source revision в target database context.
