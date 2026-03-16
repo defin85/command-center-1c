@@ -396,7 +396,7 @@ def _resolve_pool_workflow_binding_validation_error(exc: Exception) -> tuple[str
 
     raw_code, has_separator, raw_detail = message.partition(":")
     code = str(raw_code or "").strip().upper()
-    detail = str(raw_detail or "").strip()
+    detail = re.sub(r"\s+\[type=.*$", "", str(raw_detail or "").strip()).strip()
     if has_separator and code in _POOL_WORKFLOW_BINDING_VALIDATION_CODES:
         return code, detail or message
     for known_code in _POOL_WORKFLOW_BINDING_VALIDATION_CODES:
@@ -404,7 +404,8 @@ def _resolve_pool_workflow_binding_validation_error(exc: Exception) -> tuple[str
             continue
         match = re.search(rf"{re.escape(known_code)}:\s*([^\n]+)", message)
         if match is not None:
-            return known_code, str(match.group(1) or "").strip() or message
+            normalized_detail = re.sub(r"\s+\[type=.*$", "", str(match.group(1) or "").strip()).strip()
+            return known_code, normalized_detail or message
         return known_code, message
     return "VALIDATION_ERROR", message
 
@@ -1960,6 +1961,15 @@ def _serialize_schema_template(template: PoolSchemaTemplate) -> dict[str, Any]:
 def _serialize_organization_pool(pool: OrganizationPool) -> dict[str, Any]:
     metadata = dict(pool.metadata) if isinstance(pool.metadata, dict) else {}
     metadata.pop("workflow_bindings", None)
+    workflow_bindings: list[dict[str, Any]] = []
+    try:
+        workflow_bindings = list_stored_pool_workflow_bindings(pool=pool)
+    except PoolWorkflowBindingStoreError as exc:
+        error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
+        metadata["workflow_bindings_read_error"] = {
+            "code": error_code,
+            "detail": detail,
+        }
     return {
         "id": str(pool.id),
         "code": pool.code,
@@ -1967,7 +1977,7 @@ def _serialize_organization_pool(pool: OrganizationPool) -> dict[str, Any]:
         "description": pool.description,
         "is_active": pool.is_active,
         "metadata": metadata,
-        "workflow_bindings": list_stored_pool_workflow_bindings(pool=pool),
+        "workflow_bindings": workflow_bindings,
         "updated_at": pool.updated_at,
     }
 
@@ -3084,6 +3094,14 @@ def list_pool_workflow_bindings(request):
 
         try:
             collection = get_stored_pool_workflow_binding_collection(pool=pool)
+        except PoolWorkflowBindingStoreError as exc:
+            error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
+            return _problem(
+                code=error_code,
+                title="Validation Error",
+                detail=detail,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+            )
         except PoolWorkflowBindingResolutionError as exc:
             return _problem(
                 code=exc.code,
@@ -3294,6 +3312,14 @@ def pool_workflow_binding_detail(request, binding_id: str):
 
     try:
         binding = get_stored_pool_workflow_binding(pool=pool, binding_id=binding_id)
+    except PoolWorkflowBindingStoreError as exc:
+        error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
+        return _problem(
+            code=error_code,
+            title="Validation Error",
+            detail=detail,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
     except PoolWorkflowBindingResolutionError as exc:
         return _problem(
             code=exc.code,

@@ -18,6 +18,7 @@ import {
 
 import { getV2 } from '../../api/generated'
 import type {
+  DatabaseMetadataManagementResponse,
   DecisionMetadataCompatibility,
   DecisionRevisionMetadataContext,
   DecisionTable,
@@ -31,7 +32,7 @@ import {
   type PoolGraph,
   type PoolDocumentPolicyMigrationResponse,
 } from '../../api/intercompanyPools'
-import { useDatabases } from '../../api/queries/databases'
+import { useDatabaseMetadataManagement, useDatabases } from '../../api/queries/databases'
 import { LazyJsonCodeEditor } from '../../components/code/LazyJsonCodeEditor'
 import {
   DecisionLegacyImportPanel,
@@ -64,6 +65,7 @@ const { Title, Text } = Typography
 const api = getV2()
 
 type MetadataContextLike = PoolODataMetadataCatalogResponse | DecisionRevisionMetadataContext | null | undefined
+type DatabaseMetadataManagementLike = DatabaseMetadataManagementResponse | null | undefined
 type DecisionReadResponse = Awaited<ReturnType<typeof api.getDecisionsCollection>>
 type DecisionDetailReadResponse = Awaited<ReturnType<typeof api.getDecisionsDetail>>
 const DECISIONS_API_OPTIONS = { skipGlobalError: true } as const
@@ -296,6 +298,25 @@ const hasLegacyDocumentPolicy = (metadata: Record<string, unknown> | null | unde
   Boolean(metadata && typeof metadata === 'object' && metadata.document_policy !== undefined && metadata.document_policy !== null)
 )
 
+const shouldPreferUnscopedReadFromMetadataManagement = (
+  metadataManagement: DatabaseMetadataManagementLike
+): boolean => {
+  if (!metadataManagement) {
+    return false
+  }
+
+  const profileStatus = String(metadataManagement.configuration_profile?.status ?? '').trim()
+  const snapshotStatus = String(metadataManagement.metadata_snapshot?.status ?? '').trim()
+  const missingReason = String(metadataManagement.metadata_snapshot?.missing_reason ?? '').trim()
+
+  return (
+    profileStatus === 'missing'
+    || snapshotStatus === 'missing'
+    || missingReason === 'configuration_profile_unavailable'
+    || missingReason === 'current_snapshot_missing'
+  )
+}
+
 export function DecisionsPage() {
   const navigate = useNavigate()
   const { message } = App.useApp()
@@ -331,11 +352,26 @@ export function DecisionsPage() {
   const [detailReadFallbackUsed, setDetailReadFallbackUsed] = useState(false)
   const [snapshotFilterMode, setSnapshotFilterMode] = useState<DecisionSnapshotFilterMode>('matching_snapshot')
   const effectiveSelectedDatabaseId = selectedDatabaseId ?? undefined
+  const selectedDatabaseMetadataManagementQuery = useDatabaseMetadataManagement({
+    id: effectiveSelectedDatabaseId ?? '',
+    enabled: Boolean(effectiveSelectedDatabaseId),
+  })
   const selectedDatabase = useMemo(
     () => databases.find((database) => database.id === effectiveSelectedDatabaseId) ?? null,
     [databases, effectiveSelectedDatabaseId],
   )
   const selectedDatabaseLabel = selectedDatabase ? formatDatabaseOptionLabel(selectedDatabase) : ''
+  const selectedDatabaseMetadataManagement = selectedDatabaseMetadataManagementQuery.data
+  const selectedDatabaseMetadataManagementPending = Boolean(
+    effectiveSelectedDatabaseId
+    && selectedDatabaseMetadataManagementQuery.isLoading
+    && !selectedDatabaseMetadataManagement
+  )
+  const legacyImportOpen = Boolean(legacyImportDraft)
+  const shouldPreferUnscopedDecisionRead = Boolean(
+    effectiveSelectedDatabaseId
+    && shouldPreferUnscopedReadFromMetadataManagement(selectedDatabaseMetadataManagement),
+  )
   const rolloverTargetMetadataContext = detailContext ?? metadataContext
   const selectedDecisionRequiresRollover = Boolean(selectedDecision?.metadata_compatibility?.is_compatible === false)
   const metadataContextFallbackActive = Boolean(effectiveSelectedDatabaseId && (listReadFallbackUsed || detailReadFallbackUsed))
@@ -355,11 +391,16 @@ export function DecisionsPage() {
   }, [databases, selectedDatabaseId])
 
   useEffect(() => {
+    if (!legacyImportOpen) {
+      return
+    }
+
     let cancelled = false
 
     const load = async () => {
       setPoolsLoading(true)
       setPoolsError(null)
+      setLegacyImportError(null)
 
       try {
         const items = await listOrganizationPools()
@@ -367,8 +408,10 @@ export function DecisionsPage() {
         setPools(items)
       } catch (error) {
         if (cancelled) return
+        const errorMessage = toErrorMessage(error, 'Failed to load pools for legacy import.')
         setPools([])
-        setPoolsError(toErrorMessage(error, 'Failed to load pools for legacy import.'))
+        setPoolsError(errorMessage)
+        setLegacyImportError(errorMessage)
       } finally {
         if (!cancelled) {
           setPoolsLoading(false)
@@ -380,9 +423,14 @@ export function DecisionsPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [legacyImportOpen])
 
   useEffect(() => {
+    if (selectedDatabaseMetadataManagementPending) {
+      setListLoading(true)
+      return
+    }
+
     let cancelled = false
 
     const load = async () => {
@@ -391,7 +439,10 @@ export function DecisionsPage() {
       setListReadFallbackUsed(false)
 
       try {
-        const { response, usedFallback } = await loadDecisionsCollection(effectiveSelectedDatabaseId)
+        const databaseIdForRead = shouldPreferUnscopedDecisionRead
+          ? undefined
+          : effectiveSelectedDatabaseId
+        const { response, usedFallback } = await loadDecisionsCollection(databaseIdForRead)
         if (cancelled) return
 
         const items = filterDocumentPolicyDecisions(response.decisions ?? [])
@@ -402,7 +453,7 @@ export function DecisionsPage() {
             : items[0]?.id ?? null
         ))
         setMetadataContext(response.metadata_context ?? null)
-        setListReadFallbackUsed(usedFallback)
+        setListReadFallbackUsed(usedFallback || shouldPreferUnscopedDecisionRead)
       } catch (error) {
         if (cancelled) return
         setListError(toErrorMessage(error, 'Failed to load decision table revisions.'))
@@ -420,7 +471,12 @@ export function DecisionsPage() {
     return () => {
       cancelled = true
     }
-  }, [effectiveSelectedDatabaseId, reloadTick])
+  }, [
+    effectiveSelectedDatabaseId,
+    reloadTick,
+    selectedDatabaseMetadataManagementPending,
+    shouldPreferUnscopedDecisionRead,
+  ])
 
   const decisionSnapshotFilter = useMemo(
     () => resolveDecisionSnapshotFilter({
@@ -612,7 +668,7 @@ export function DecisionsPage() {
     setEditorError(null)
     setLegacyImportDraft(buildEmptyLegacyImportDraft(pools[0]?.id ?? ''))
     setLegacyImportGraph(null)
-    setLegacyImportError(poolsError)
+    setLegacyImportError(null)
   }
 
   const closeLegacyImport = () => {

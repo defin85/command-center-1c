@@ -11,6 +11,7 @@ const mockListOrganizationPools = vi.fn()
 const mockGetPoolGraph = vi.fn()
 const mockMigratePoolEdgeDocumentPolicy = vi.fn()
 const mockUseDatabases = vi.fn()
+const mockUseDatabaseMetadataManagement = vi.fn()
 
 vi.mock('../../../api/generated/v2/v2', () => ({
   getV2: () => ({
@@ -22,6 +23,7 @@ vi.mock('../../../api/generated/v2/v2', () => ({
 
 vi.mock('../../../api/queries/databases', () => ({
   useDatabases: (...args: unknown[]) => mockUseDatabases(...args),
+  useDatabaseMetadataManagement: (...args: unknown[]) => mockUseDatabaseMetadataManagement(...args),
 }))
 
 vi.mock('../../../api/intercompanyPools', () => ({
@@ -64,6 +66,48 @@ const defaultMetadataContext = {
   provenance_database_id: 'db-1',
   provenance_confirmed_at: '2026-03-10T11:00:00Z',
   documents: [],
+}
+
+const defaultMetadataManagementState = {
+  database_id: 'db-2',
+  configuration_profile: {
+    status: 'verified',
+    config_name: 'shared-profile',
+    config_version: '8.3.24',
+    config_generation_id: 'cfg-gen-1',
+    config_root_name: 'Accounting',
+    config_vendor: '1C',
+    config_name_source: 'manual',
+    verification_operation_id: '',
+    verified_at: '2026-03-10T11:00:00Z',
+    generation_probe_requested_at: null,
+    generation_probe_checked_at: null,
+    observed_metadata_hash: 'a'.repeat(64),
+    canonical_metadata_hash: 'a'.repeat(64),
+    publication_drift: false,
+    reverify_available: true,
+    reverify_blocker_code: '',
+    reverify_blocker_message: '',
+    reverify_blocking_action: '',
+  },
+  metadata_snapshot: {
+    status: 'available',
+    missing_reason: '',
+    snapshot_id: 'snapshot-1',
+    source: 'db',
+    fetched_at: '2026-03-10T12:00:00Z',
+    catalog_version: 'v1:shared',
+    config_name: 'shared-profile',
+    config_version: '8.3.24',
+    extensions_fingerprint: '',
+    metadata_hash: 'a'.repeat(64),
+    resolution_mode: 'shared_scope',
+    is_shared_snapshot: true,
+    provenance_database_id: 'db-1',
+    provenance_confirmed_at: '2026-03-10T11:00:00Z',
+    observed_metadata_hash: 'a'.repeat(64),
+    publication_drift: false,
+  },
 }
 
 const defaultDecision = {
@@ -256,6 +300,7 @@ describe('DecisionsPage', () => {
     mockGetPoolGraph.mockReset()
     mockMigratePoolEdgeDocumentPolicy.mockReset()
     mockUseDatabases.mockReset()
+    mockUseDatabaseMetadataManagement.mockReset()
 
     mockUseDatabases.mockReturnValue({
       data: {
@@ -269,6 +314,12 @@ describe('DecisionsPage', () => {
         ],
       },
       isLoading: false,
+    })
+    mockUseDatabaseMetadataManagement.mockReturnValue({
+      data: defaultMetadataManagementState,
+      isLoading: false,
+      isError: false,
+      error: null,
     })
 
     mockGetDecisionsCollection.mockResolvedValue({
@@ -400,6 +451,7 @@ describe('DecisionsPage', () => {
     renderPage()
 
     await screen.findByText('Decision Policy Library')
+    expect(mockListOrganizationPools).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Import legacy edge' }))
 
     expect(await screen.findByText('Import legacy edge policy')).toBeInTheDocument()
@@ -437,6 +489,80 @@ describe('DecisionsPage', () => {
     expect(screen.getByText('Decision ref: policy-imported r4')).toBeInTheDocument()
     expect(screen.getByText('Affected workflow bindings were updated automatically.')).toBeInTheDocument()
   }, 20000)
+
+  it('falls back to unscoped decisions read when selected database metadata state is unavailable', async () => {
+    mockUseDatabaseMetadataManagement.mockReturnValue({
+      data: {
+        ...defaultMetadataManagementState,
+        configuration_profile: {
+          ...defaultMetadataManagementState.configuration_profile,
+          status: 'missing',
+          config_name: '',
+          config_version: '',
+          reverify_available: false,
+          reverify_blocker_code: 'IBCMD_CONNECTION_PROFILE_REQUIRED',
+          reverify_blocker_message: 'Configure IBCMD connection profile',
+          reverify_blocking_action: 'configure_ibcmd_connection_profile',
+        },
+        metadata_snapshot: {
+          ...defaultMetadataManagementState.metadata_snapshot,
+          status: 'missing',
+          missing_reason: 'configuration_profile_unavailable',
+          snapshot_id: '',
+          source: '',
+          fetched_at: null,
+          catalog_version: '',
+          config_name: '',
+          config_version: '',
+          metadata_hash: '',
+          resolution_mode: '',
+          is_shared_snapshot: false,
+          provenance_database_id: '',
+          provenance_confirmed_at: null,
+        },
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    })
+    mockGetDecisionsCollection.mockReset()
+    mockGetDecisionsDetail.mockReset()
+    mockGetDecisionsCollection.mockResolvedValue({
+      decisions: [defaultDecision],
+      count: 1,
+    })
+    mockGetDecisionsDetail.mockResolvedValue({
+      decision: defaultDecision,
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(mockGetDecisionsCollection).toHaveBeenCalledWith(
+        {},
+        { skipGlobalError: true },
+      )
+    })
+    expect(
+      mockGetDecisionsCollection.mock.calls.some(
+        ([query]) => JSON.stringify(query) === JSON.stringify({ database_id: 'db-2' })
+      )
+    ).toBe(false)
+
+    await waitFor(() => {
+      expect(mockGetDecisionsDetail).toHaveBeenCalledWith(
+        'decision-version-2',
+        {},
+        { skipGlobalError: true },
+      )
+    })
+
+    expect(await screen.findByText(
+      'Metadata context недоступен для выбранной базы. Показываем глобальный список revisions без compatibility context этой базы; управлять configuration profile и metadata snapshot нужно через /databases.'
+    )).toBeInTheDocument()
+  })
 
   it('supports viewing and editing existing decisions through a new revision flow', async () => {
     const user = userEvent.setup()

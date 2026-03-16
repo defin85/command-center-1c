@@ -401,28 +401,31 @@ def _normalize_requested_revision(
     return normalized
 
 def _serialize_canonical_record(record: PoolWorkflowBinding) -> dict[str, Any]:
-    contract = PoolWorkflowBindingContract(
-        contract_version=record.contract_version,
-        binding_id=record.binding_id,
-        pool_id=str(record.pool_id),
-        workflow={
-            "workflow_definition_key": record.workflow_definition_key,
-            "workflow_revision_id": record.workflow_revision_id,
-            "workflow_revision": record.workflow_revision,
-            "workflow_name": record.workflow_name,
-        },
-        decisions=list(record.decisions),
-        parameters=dict(record.parameters),
-        role_mapping=dict(record.role_mapping),
-        selector={
-            "direction": record.direction,
-            "mode": record.mode,
-            "tags": list(record.selector_tags),
-        },
-        effective_from=record.effective_from,
-        effective_to=record.effective_to,
-        status=record.status,
-    )
+    try:
+        contract = PoolWorkflowBindingContract(
+            contract_version=record.contract_version,
+            binding_id=record.binding_id,
+            pool_id=str(record.pool_id),
+            workflow={
+                "workflow_definition_key": record.workflow_definition_key,
+                "workflow_revision_id": record.workflow_revision_id,
+                "workflow_revision": record.workflow_revision,
+                "workflow_name": record.workflow_name,
+            },
+            decisions=list(record.decisions),
+            parameters=dict(record.parameters),
+            role_mapping=dict(record.role_mapping),
+            selector={
+                "direction": record.direction,
+                "mode": record.mode,
+                "tags": list(record.selector_tags),
+            },
+            effective_from=record.effective_from,
+            effective_to=record.effective_to,
+            status=record.status,
+        )
+    except Exception as exc:
+        raise PoolWorkflowBindingStoreError(str(exc)) from exc
     return {
         **contract.model_dump(mode="json", exclude_none=True),
         "revision": record.revision,

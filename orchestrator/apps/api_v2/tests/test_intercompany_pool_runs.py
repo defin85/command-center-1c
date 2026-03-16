@@ -30,6 +30,7 @@ from apps.intercompany_pools.models import (
     Organization,
     OrganizationStatus,
     OrganizationPool,
+    PoolWorkflowBinding,
     PoolMasterParty,
     PoolEdgeVersion,
     PoolNodeVersion,
@@ -7488,6 +7489,51 @@ def test_list_pools_and_graph_endpoint(
     assert len(graph_payload["nodes"]) == 2
     assert len(graph_payload["edges"]) == 1
     assert any(node["is_root"] for node in graph_payload["nodes"])
+
+
+@pytest.mark.django_db
+def test_list_pools_endpoint_ignores_invalid_canonical_workflow_bindings(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    PoolWorkflowBinding.objects.create(
+        binding_id="binding-invalid-slot",
+        tenant=default_tenant,
+        pool=pool,
+        status="active",
+        effective_from=date(2026, 1, 1),
+        direction="bottom_up",
+        mode="safe",
+        selector_tags=[],
+        workflow_definition_key="wf-invalid-slot",
+        workflow_revision_id="wf-invalid-slot-r1",
+        workflow_revision=1,
+        workflow_name="Workflow Invalid Slot",
+        decisions=[
+            {
+                "decision_table_id": "baseline-services-policy",
+                "decision_key": "document_policy",
+                "decision_revision": 1,
+            }
+        ],
+        parameters={},
+        role_mapping={},
+        revision=1,
+        created_by="test",
+        updated_by="test",
+    )
+
+    pools_response = authenticated_client.get("/api/v2/pools/")
+
+    assert pools_response.status_code == 200
+    pools_payload = pools_response.json()
+    pool_payload = next(item for item in pools_payload["pools"] if item["id"] == str(pool.id))
+    assert pool_payload["workflow_bindings"] == []
+    assert pool_payload["metadata"]["workflow_bindings_read_error"] == {
+        "code": "POOL_DOCUMENT_POLICY_SLOT_REQUIRED",
+        "detail": "slot_key is required for policy-bearing document_policy decisions",
+    }
 
 
 @pytest.mark.django_db
