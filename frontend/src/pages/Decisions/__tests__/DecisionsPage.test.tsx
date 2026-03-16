@@ -494,6 +494,59 @@ describe('DecisionsPage', () => {
     })
   }, 10000)
 
+  it('filters non-document_policy revisions out of the default selection and edit flow', async () => {
+    const user = userEvent.setup()
+    const unsupportedDecision = {
+      ...defaultDecision,
+      id: 'decision-version-route',
+      decision_table_id: 'route-documents-policy',
+      decision_key: 'route_documents',
+      name: 'Route documents policy',
+      rules: [
+        {
+          ...defaultDecision.rules[0],
+          outputs: {
+            route_documents: {
+              version: 'route_documents.v1',
+              routes: [],
+            },
+          },
+        },
+      ],
+    }
+
+    mockGetDecisionsCollection.mockResolvedValue({
+      decisions: [unsupportedDecision, defaultDecision],
+      count: 2,
+      metadata_context: defaultMetadataContext,
+    })
+    mockGetDecisionsDetail.mockImplementation(async (decisionId: string) => ({
+      decision: decisionId === unsupportedDecision.id ? unsupportedDecision : defaultDecision,
+      metadata_context: defaultMetadataContext,
+    }))
+
+    renderPage()
+
+    expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(mockGetDecisionsDetail.mock.calls.some(([decisionId]) => decisionId === unsupportedDecision.id)).toBe(false)
+      expect(mockGetDecisionsDetail).toHaveBeenCalledWith(
+        defaultDecision.id,
+        { database_id: 'db-2' },
+        { skipGlobalError: true },
+      )
+    })
+
+    expect(screen.queryByText('Route documents policy')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Services publication policy').length).toBeGreaterThan(0)
+
+    await user.click(screen.getByRole('button', { name: 'Edit selected decision' }))
+
+    expect(await screen.findByRole('heading', { name: 'Edit selected decision' })).toBeInTheDocument()
+    expect(screen.queryByText('decision_key должен быть "document_policy".')).not.toBeInTheDocument()
+  })
+
   it('supports guided rollover from a revision outside the default compatible selection', async () => {
     const user = userEvent.setup()
     const previousReleaseDecision = {

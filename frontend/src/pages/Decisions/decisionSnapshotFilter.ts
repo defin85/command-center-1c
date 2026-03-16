@@ -29,6 +29,14 @@ const trimString = (value: unknown): string => (
   typeof value === 'string' ? value.trim() : ''
 )
 
+export const isDocumentPolicyDecision = (decision: DecisionTable): boolean => (
+  trimString(decision.decision_key) === 'document_policy'
+)
+
+export const filterDocumentPolicyDecisions = (decisions: DecisionTable[]): DecisionTable[] => (
+  decisions.filter(isDocumentPolicyDecision)
+)
+
 const normalizeMetadataSnapshot = (
   metadata: MetadataContextLike
 ): NormalizedMetadataSnapshot | null => {
@@ -47,15 +55,11 @@ const normalizeMetadataSnapshot = (
   }
 }
 
-const isMetadataAwareDocumentPolicy = (decision: DecisionTable): boolean => (
-  trimString(decision.decision_key) === 'document_policy'
-)
-
 export const decisionMatchesMetadataSnapshot = (
   decision: DecisionTable,
   metadataContext: MetadataContextLike
 ): boolean => {
-  if (!isMetadataAwareDocumentPolicy(decision)) {
+  if (!isDocumentPolicyDecision(decision)) {
     return true
   }
 
@@ -86,31 +90,36 @@ export const resolveDecisionSnapshotFilter = ({
   fallbackUsed: boolean
   mode: DecisionSnapshotFilterMode
 }): DecisionSnapshotFilterResult => {
+  const documentPolicyDecisions = filterDocumentPolicyDecisions(decisions)
+
   const currentSnapshot = normalizeMetadataSnapshot(metadataContext)
   if (!currentSnapshot || fallbackUsed) {
     return {
       canFilterBySnapshot: false,
-      visibleDecisions: decisions,
+      visibleDecisions: documentPolicyDecisions,
       hiddenCount: 0,
       selectedConfigurationLabel: '',
     }
   }
 
   if (mode === 'all') {
-    const hiddenCount = decisions.filter((decision) => !decisionMatchesMetadataSnapshot(decision, metadataContext)).length
+    const hiddenCount = documentPolicyDecisions
+      .filter((decision) => !decisionMatchesMetadataSnapshot(decision, metadataContext))
+      .length
     return {
       canFilterBySnapshot: true,
-      visibleDecisions: decisions,
+      visibleDecisions: documentPolicyDecisions,
       hiddenCount,
       selectedConfigurationLabel: `${currentSnapshot.configName} (${currentSnapshot.configVersion})`,
     }
   }
 
-  const visibleDecisions = decisions.filter((decision) => decisionMatchesMetadataSnapshot(decision, metadataContext))
+  const visibleDecisions = documentPolicyDecisions
+    .filter((decision) => decisionMatchesMetadataSnapshot(decision, metadataContext))
   return {
     canFilterBySnapshot: true,
     visibleDecisions,
-    hiddenCount: Math.max(decisions.length - visibleDecisions.length, 0),
+    hiddenCount: Math.max(documentPolicyDecisions.length - visibleDecisions.length, 0),
     selectedConfigurationLabel: `${currentSnapshot.configName} (${currentSnapshot.configVersion})`,
   }
 }

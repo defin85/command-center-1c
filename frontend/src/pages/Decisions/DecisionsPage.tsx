@@ -45,6 +45,7 @@ import {
   type DocumentPolicyBuilderChainFormValue,
 } from './documentPolicyBuilder'
 import {
+  filterDocumentPolicyDecisions,
   resolveDecisionSnapshotFilter,
   type DecisionSnapshotFilterMode,
 } from './decisionSnapshotFilter'
@@ -393,8 +394,13 @@ export function DecisionsPage() {
         const { response, usedFallback } = await loadDecisionsCollection(effectiveSelectedDatabaseId)
         if (cancelled) return
 
-        const items = response.decisions ?? []
+        const items = filterDocumentPolicyDecisions(response.decisions ?? [])
         setDecisions(items)
+        setSelectedDecisionId((current) => (
+          current && items.some((decision) => decision.id === current)
+            ? current
+            : items[0]?.id ?? null
+        ))
         setMetadataContext(response.metadata_context ?? null)
         setListReadFallbackUsed(usedFallback)
       } catch (error) {
@@ -416,12 +422,29 @@ export function DecisionsPage() {
     }
   }, [effectiveSelectedDatabaseId, reloadTick])
 
+  const decisionSnapshotFilter = useMemo(
+    () => resolveDecisionSnapshotFilter({
+      decisions,
+      metadataContext,
+      fallbackUsed: listReadFallbackUsed,
+      mode: snapshotFilterMode,
+    }),
+    [decisions, listReadFallbackUsed, metadataContext, snapshotFilterMode],
+  )
+
+  const visibleDecisions = decisionSnapshotFilter.visibleDecisions
+
   useEffect(() => {
     if (listLoading) {
       return
     }
 
-    if (!selectedDecisionId) {
+    const selectedDecisionIsVisible = Boolean(
+      selectedDecisionId
+      && visibleDecisions.some((decision) => decision.id === selectedDecisionId)
+    )
+
+    if (!selectedDecisionId || !selectedDecisionIsVisible) {
       setSelectedDecision(null)
       setDetailContext(null)
       setDetailError(null)
@@ -460,7 +483,7 @@ export function DecisionsPage() {
     return () => {
       cancelled = true
     }
-  }, [effectiveSelectedDatabaseId, listLoading, listReadFallbackUsed, selectedDecisionId])
+  }, [effectiveSelectedDatabaseId, listLoading, listReadFallbackUsed, selectedDecisionId, visibleDecisions])
 
   useEffect(() => {
     if (!legacyImportDraft || legacyImportDraft.poolId || pools.length === 0) return
@@ -534,18 +557,6 @@ export function DecisionsPage() {
       return null
     }
   }, [selectedDecision])
-
-  const decisionSnapshotFilter = useMemo(
-    () => resolveDecisionSnapshotFilter({
-      decisions,
-      metadataContext,
-      fallbackUsed: listReadFallbackUsed,
-      mode: snapshotFilterMode,
-    }),
-    [decisions, listReadFallbackUsed, metadataContext, snapshotFilterMode],
-  )
-
-  const visibleDecisions = decisionSnapshotFilter.visibleDecisions
   const hiddenDecisionCount = decisionSnapshotFilter.hiddenCount
   const decisionListTitle = decisionSnapshotFilter.canFilterBySnapshot
     ? `Decision revisions (${visibleDecisions.length} of ${decisions.length})`
