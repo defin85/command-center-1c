@@ -9,8 +9,8 @@ from apps.intercompany_pools.workflow_authoring_contract import (
     DecisionField,
     DecisionRule,
     DecisionTableContract,
-    DecisionTableRef,
     PoolWorkflowBindingContract,
+    PoolWorkflowBindingDecisionRef,
     PoolWorkflowBindingSelector,
     PoolWorkflowBindingStatus,
     build_pool_workflow_binding_lineage,
@@ -77,9 +77,10 @@ def test_pool_workflow_binding_contract_builds_lineage_snapshot() -> None:
         pool_id=str(uuid4()),
         workflow=build_workflow_definition_ref(workflow_template=workflow),
         decisions=[
-            DecisionTableRef(
+            PoolWorkflowBindingDecisionRef(
                 decision_table_id="decision-publication",
-                decision_key="publication_variant",
+                decision_key="document_policy",
+                slot_key="sale",
                 decision_revision=3,
             )
         ],
@@ -97,7 +98,8 @@ def test_pool_workflow_binding_contract_builds_lineage_snapshot() -> None:
     assert lineage["decisions"] == [
         {
             "decision_table_id": "decision-publication",
-            "decision_key": "publication_variant",
+            "decision_key": "document_policy",
+            "slot_key": "sale",
             "decision_revision": 3,
         }
     ]
@@ -106,7 +108,36 @@ def test_pool_workflow_binding_contract_builds_lineage_snapshot() -> None:
 
 
 @pytest.mark.django_db
-def test_pool_workflow_binding_contract_rejects_duplicate_decision_key() -> None:
+def test_pool_workflow_binding_contract_allows_reusing_document_policy_decision_key_across_slots() -> None:
+    workflow = _create_workflow_template(name=f"wf-{uuid4().hex[:6]}", version_number=1)
+
+    binding = PoolWorkflowBindingContract(
+        binding_id="binding-services-v1",
+        pool_id=str(uuid4()),
+        workflow=build_workflow_definition_ref(workflow_template=workflow),
+        decisions=[
+            PoolWorkflowBindingDecisionRef(
+                decision_table_id="decision-publication-a",
+                decision_key="document_policy",
+                slot_key="sale",
+                decision_revision=3,
+            ),
+            PoolWorkflowBindingDecisionRef(
+                decision_table_id="decision-publication-b",
+                decision_key="document_policy",
+                slot_key="purchase",
+                decision_revision=4,
+            ),
+        ],
+        effective_from=date(2026, 1, 1),
+        status=PoolWorkflowBindingStatus.ACTIVE,
+    )
+
+    assert [decision.slot_key for decision in binding.decisions] == ["sale", "purchase"]
+
+
+@pytest.mark.django_db
+def test_pool_workflow_binding_contract_rejects_duplicate_slot_key() -> None:
     workflow = _create_workflow_template(name=f"wf-{uuid4().hex[:6]}", version_number=1)
 
     with pytest.raises(ValueError, match="POOL_DOCUMENT_POLICY_SLOT_DUPLICATE"):
@@ -115,14 +146,16 @@ def test_pool_workflow_binding_contract_rejects_duplicate_decision_key() -> None
             pool_id=str(uuid4()),
             workflow=build_workflow_definition_ref(workflow_template=workflow),
             decisions=[
-                DecisionTableRef(
+                PoolWorkflowBindingDecisionRef(
                     decision_table_id="decision-publication-a",
-                    decision_key="publication_variant",
+                    decision_key="document_policy",
+                    slot_key="shared_slot",
                     decision_revision=3,
                 ),
-                DecisionTableRef(
+                PoolWorkflowBindingDecisionRef(
                     decision_table_id="decision-publication-b",
-                    decision_key="publication_variant",
+                    decision_key="document_policy",
+                    slot_key="shared_slot",
                     decision_revision=4,
                 ),
             ],

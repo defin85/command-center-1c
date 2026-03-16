@@ -27,19 +27,7 @@ properties:
         updated:
           type: boolean
         decision_ref:
-          type: object
-          properties:
-            decision_table_id:
-              type: string
-            decision_key:
-              type: string
-            decision_revision:
-              type: integer
-              minimum: 1
-          required:
-            - decision_table_id
-            - decision_key
-            - decision_revision
+          $ref: ./PoolWorkflowBindingDecisionRef.yaml
       required:
         - binding_id
         - revision

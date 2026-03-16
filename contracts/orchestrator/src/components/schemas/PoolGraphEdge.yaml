@@ -28,7 +28,7 @@ properties:
     properties:
       document_policy_key:
         type: string
-        description: Publication slot selector resolved against active binding decision_key refs.
+        description: Publication slot selector resolved against active binding slot_key refs.
     additionalProperties: true
 required:
   - child_node_version_id

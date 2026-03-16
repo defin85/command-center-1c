@@ -192,11 +192,7 @@ class PoolWorkflowCompiler:
                 "workflow_revision": binding.workflow.workflow_revision,
                 "workflow_name": binding.workflow.workflow_name,
                 "decision_refs": [
-                    {
-                        "decision_table_id": decision.decision_table_id,
-                        "decision_key": decision.decision_key,
-                        "decision_revision": decision.decision_revision,
-                    }
+                    decision.model_dump(mode="json", exclude_none=True)
                     for decision in binding.decisions
                 ],
                 "selector": binding.selector.model_dump(mode="json"),

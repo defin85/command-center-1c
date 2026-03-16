@@ -99,6 +99,15 @@ export function PoolWorkflowBindingSlotsEditor({
                   'decision_key',
                 ]) ?? ''
               ).trim()
+              const slotKey = String(
+                getFieldValue([
+                  'workflow_bindings',
+                  bindingIndex,
+                  'decisions',
+                  decisionField.name,
+                  'slot_key',
+                ]) ?? ''
+              ).trim()
               const decisionRevisionRaw = String(
                 getFieldValue([
                   'workflow_bindings',
@@ -120,19 +129,22 @@ export function PoolWorkflowBindingSlotsEditor({
                 decisionRevisionRaw,
                 selectedDecisionValue,
               })
-              const matchedEdges = topologyEdgeSelectors.filter((edge) => edge.slotKey === decisionKey)
+              const matchedEdges = topologyEdgeSelectors.filter((edge) => edge.slotKey === slotKey)
               return (
                 <Row key={decisionField.key} gutter={12} align="middle">
                   <Col span={6}>
                     <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                      <Text type="secondary">Slot name</Text>
-                      <Tag
-                        color={decisionKey ? 'blue' : 'default'}
-                        style={{ width: 'fit-content' }}
-                        data-testid={`pool-catalog-workflow-binding-slot-key-${bindingIndex}-${decisionField.name}`}
+                      <Form.Item
+                        name={[decisionField.name, 'slot_key']}
+                        label={decisionField.name === 0 ? 'Slot key' : undefined}
+                        style={{ marginBottom: 0 }}
                       >
-                        {decisionKey || 'unassigned'}
-                      </Tag>
+                        <Input
+                          disabled={disabled}
+                          placeholder="sale, purchase, return"
+                          data-testid={`pool-catalog-workflow-binding-slot-key-input-${bindingIndex}-${decisionField.name}`}
+                        />
+                      </Form.Item>
                       <Tag
                         color={matchedEdges.length > 0 ? 'green' : 'default'}
                         style={{ width: 'fit-content' }}
@@ -145,7 +157,7 @@ export function PoolWorkflowBindingSlotsEditor({
                           type="secondary"
                           data-testid={`pool-catalog-workflow-binding-slot-ref-${bindingIndex}-${decisionField.name}`}
                         >
-                          {decisionTableId}
+                          {decisionTableId} ({decisionKey})
                           {decisionRevisionRaw ? ` · r${decisionRevisionRaw}` : ''}
                         </Text>
                       ) : null}
@@ -156,7 +168,7 @@ export function PoolWorkflowBindingSlotsEditor({
                       label={decisionField.name === 0 ? 'Pinned revision' : undefined}
                       help={
                         decisionField.name === 0
-                          ? 'Select active revision from /decisions. Slot name is derived from decision_key.'
+                          ? 'Select active revision from /decisions. Slot key is managed separately from the reusable decision key.'
                           : undefined
                       }
                     >
@@ -214,7 +226,7 @@ export function PoolWorkflowBindingSlotsEditor({
               )
             })}
             <Button
-              onClick={() => decisionActions.add({ decision_table_id: '', decision_key: '', decision_revision: null })}
+              onClick={() => decisionActions.add({ decision_table_id: '', decision_key: '', slot_key: '', decision_revision: null })}
               disabled={disabled}
               data-testid={`pool-catalog-workflow-binding-add-decision-${bindingIndex}`}
             >

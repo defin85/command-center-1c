@@ -11,7 +11,12 @@ export const isDecisionAvailableByDefault = (
 export const formatAvailableDecisionLabel = (
   decision: AvailableDecisionRevision
 ): string => {
-  const baseLabel = `${decision.name} (${decision.decisionKey}) · r${decision.decisionRevision}`
+  const decisionKey = trimString(decision.decisionKey)
+  const decisionIdentity = trimString(decision.decisionTableId)
+  const decisionTypeSuffix = decisionKey && decisionKey !== 'document_policy'
+    ? ` (${decisionKey})`
+    : ''
+  const baseLabel = `${decision.name} · ${decisionIdentity}${decisionTypeSuffix} · r${decision.decisionRevision}`
   const configName = trimString(decision.metadataContext?.config_name)
   const configVersion = trimString(decision.metadataContext?.config_version)
   const configLabel = configName && configVersion

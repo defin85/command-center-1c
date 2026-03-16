@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from .document_policy_contract import DOCUMENT_POLICY_METADATA_KEY
 from apps.templates.workflow.authoring_contract import (
     DecisionField,
     DecisionRule,
@@ -40,12 +41,42 @@ class PoolWorkflowBindingSelector(BaseModel):
         return normalized or None
 
 
+class PoolWorkflowBindingDecisionRef(BaseModel):
+    decision_table_id: str = Field(..., min_length=1)
+    decision_key: str = Field(..., min_length=1)
+    decision_revision: int = Field(..., ge=1)
+    slot_key: str | None = None
+
+    @field_validator("decision_table_id", "decision_key")
+    @classmethod
+    def _normalize_required_string(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("decision ref values must not be empty")
+        return normalized
+
+    @field_validator("slot_key")
+    @classmethod
+    def _normalize_optional_slot_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    def resolved_slot_key(self) -> str | None:
+        if self.slot_key:
+            return self.slot_key
+        if self.decision_key == DOCUMENT_POLICY_METADATA_KEY:
+            return DOCUMENT_POLICY_METADATA_KEY
+        return None
+
+
 class PoolWorkflowBindingContract(BaseModel):
     contract_version: str = Field(default=POOL_WORKFLOW_BINDING_CONTRACT_VERSION)
     binding_id: str = Field(..., min_length=1)
     pool_id: str = Field(..., min_length=1)
     workflow: WorkflowDefinitionRef
-    decisions: list[DecisionTableRef] = Field(default_factory=list)
+    decisions: list[PoolWorkflowBindingDecisionRef] = Field(default_factory=list)
     parameters: dict[str, Any] = Field(default_factory=dict)
     role_mapping: dict[str, str] = Field(default_factory=dict)
     selector: PoolWorkflowBindingSelector = Field(default_factory=PoolWorkflowBindingSelector)
@@ -58,16 +89,30 @@ class PoolWorkflowBindingContract(BaseModel):
         if self.effective_to is not None and self.effective_to < self.effective_from:
             raise ValueError("effective_to must be greater than or equal to effective_from")
         decision_refs = [
-            (decision.decision_table_id, decision.decision_revision) for decision in self.decisions
+            (
+                decision.decision_table_id,
+                decision.decision_key,
+                decision.decision_revision,
+                decision.slot_key or "",
+            )
+            for decision in self.decisions
         ]
         if len(decision_refs) != len(set(decision_refs)):
-            raise ValueError("decision refs must be unique per decision_table_id/revision")
-        decision_keys = [str(decision.decision_key or "").strip() for decision in self.decisions]
+            raise ValueError("decision refs must be unique per decision_table_id/revision/slot_key")
+        decision_keys = [
+            str(decision.decision_key or "").strip()
+            for decision in self.decisions
+            if decision.decision_key != DOCUMENT_POLICY_METADATA_KEY
+        ]
         if len(decision_keys) != len(set(decision_keys)):
-            raise ValueError(
-                f"{POOL_DOCUMENT_POLICY_SLOT_DUPLICATE}: "
-                "decision_key values must be unique within binding decisions"
-            )
+            raise ValueError("decision_key values must be unique within non-slot binding decisions")
+        slot_keys = [
+            slot_key
+            for decision in self.decisions
+            if (slot_key := decision.resolved_slot_key())
+        ]
+        if len(slot_keys) != len(set(slot_keys)):
+            raise ValueError(f"{POOL_DOCUMENT_POLICY_SLOT_DUPLICATE}: slot_key values must be unique within binding decisions")
         for role, target in self.role_mapping.items():
             if not str(role or "").strip():
                 raise ValueError("role_mapping keys must not be empty")
@@ -90,11 +135,7 @@ def build_pool_workflow_binding_lineage(
             "workflow_name": binding.workflow.workflow_name,
         },
         "decisions": [
-            {
-                "decision_table_id": decision.decision_table_id,
-                "decision_key": decision.decision_key,
-                "decision_revision": decision.decision_revision,
-            }
+            decision.model_dump(mode="json", exclude_none=True)
             for decision in binding.decisions
         ],
         "selector": binding.selector.model_dump(),
@@ -108,6 +149,7 @@ __all__ = [
     "DecisionRule",
     "DecisionTableContract",
     "DecisionTableRef",
+    "PoolWorkflowBindingDecisionRef",
     "POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
     "POOL_WORKFLOW_BINDING_CONTRACT_VERSION",
     "PoolWorkflowBindingContract",

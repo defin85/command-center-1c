@@ -5,7 +5,7 @@ properties:
     $ref: ./PoolWorkflowBindingRead.yaml
   compiled_document_policy_slots:
     type: object
-    description: Canonical slot-based publication policy projection keyed by binding decision_key.
+    description: Canonical slot-based publication policy projection keyed by binding slot_key.
     additionalProperties:
       type: object
       additionalProperties: true

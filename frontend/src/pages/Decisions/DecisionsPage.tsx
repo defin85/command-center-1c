@@ -867,6 +867,9 @@ export function DecisionsPage() {
               <span>
                 {`Decision ref: ${legacyImportResult.migration.decision_ref.decision_table_id} r${legacyImportResult.migration.decision_ref.decision_revision}`}
               </span>
+              <span>
+                {`Binding slot: ${legacyImportResult.migration.slot_key}`}
+              </span>
               {legacyImportResult.migration.binding_update_required ? (
                 <span>Updated bindings: manual binding pin required</span>
               ) : (
@@ -1072,7 +1075,7 @@ export function DecisionsPage() {
                   },
                   {
                     key: 'decision-key',
-                    label: 'Decision key',
+                    label: 'Canonical key',
                     children: selectedDecision.decision_key,
                   },
                   {

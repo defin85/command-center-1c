@@ -35,6 +35,7 @@ def _build_binding_payload(*, pool: OrganizationPool) -> dict[str, object]:
             {
                 "decision_table_id": "document-policy",
                 "decision_key": "document_policy",
+                "slot_key": "document_policy",
                 "decision_revision": 2,
             }
         ],
@@ -178,7 +179,42 @@ def test_upsert_canonical_pool_workflow_binding_requires_matching_revision_for_u
 
 
 @pytest.mark.django_db
-def test_upsert_canonical_pool_workflow_binding_rejects_duplicate_decision_key() -> None:
+def test_upsert_canonical_pool_workflow_binding_allows_reusing_document_policy_across_slots() -> None:
+    tenant = Tenant.objects.create(slug=f"binding-store-shared-policy-{uuid4().hex[:8]}", name="Shared Policy Tenant")
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code=f"pool-{uuid4().hex[:6]}",
+        name="Shared Policy Pool",
+    )
+
+    saved_binding, created = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding={
+            **_build_binding_payload(pool=pool),
+            "decisions": [
+                {
+                    "decision_table_id": "document-policy-shared",
+                    "decision_key": "document_policy",
+                    "slot_key": "sale",
+                    "decision_revision": 2,
+                },
+                {
+                    "decision_table_id": "document-policy-shared",
+                    "decision_key": "document_policy",
+                    "slot_key": "purchase",
+                    "decision_revision": 2,
+                },
+            ],
+        },
+        actor_username="creator",
+    )
+
+    assert created is True
+    assert [decision["slot_key"] for decision in saved_binding["decisions"]] == ["sale", "purchase"]
+
+
+@pytest.mark.django_db
+def test_upsert_canonical_pool_workflow_binding_rejects_duplicate_slot_key() -> None:
     tenant = Tenant.objects.create(slug=f"binding-store-duplicate-slot-{uuid4().hex[:8]}", name="Duplicate Slot Tenant")
     pool = OrganizationPool.objects.create(
         tenant=tenant,
@@ -195,11 +231,13 @@ def test_upsert_canonical_pool_workflow_binding_rejects_duplicate_decision_key()
                     {
                         "decision_table_id": "document-policy-a",
                         "decision_key": "document_policy",
+                        "slot_key": "shared_slot",
                         "decision_revision": 2,
                     },
                     {
                         "decision_table_id": "document-policy-b",
                         "decision_key": "document_policy",
+                        "slot_key": "shared_slot",
                         "decision_revision": 3,
                     },
                 ],

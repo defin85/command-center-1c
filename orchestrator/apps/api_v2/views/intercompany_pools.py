@@ -2423,9 +2423,10 @@ class WorkflowDefinitionRefInputSerializer(serializers.Serializer):
     workflow_name = serializers.CharField()
 
 
-class DecisionTableRefInputSerializer(serializers.Serializer):
+class PoolWorkflowBindingDecisionRefInputSerializer(serializers.Serializer):
     decision_table_id = serializers.CharField()
     decision_key = serializers.CharField()
+    slot_key = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     decision_revision = serializers.IntegerField(min_value=1)
 
 
@@ -2441,7 +2442,7 @@ class PoolWorkflowBindingInputSerializer(serializers.Serializer):
     pool_id = serializers.UUIDField(required=False)
     revision = serializers.IntegerField(min_value=1, required=False)
     workflow = WorkflowDefinitionRefInputSerializer()
-    decisions = DecisionTableRefInputSerializer(many=True, required=False, default=list)
+    decisions = PoolWorkflowBindingDecisionRefInputSerializer(many=True, required=False, default=list)
     parameters = serializers.JSONField(required=False, default=dict)
     role_mapping = serializers.DictField(
         child=serializers.CharField(),

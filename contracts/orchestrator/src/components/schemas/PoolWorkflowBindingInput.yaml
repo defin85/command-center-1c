@@ -20,7 +20,7 @@ properties:
   decisions:
     type: array
     items:
-      $ref: ./DecisionTableRef.yaml
+      $ref: ./PoolWorkflowBindingDecisionRef.yaml
   parameters:
     type: object
     additionalProperties: true

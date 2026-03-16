@@ -14,14 +14,21 @@ from .document_plan_artifact_contract import (
     POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING,
     compile_document_plan_artifact_v1,
 )
-from .document_policy_contract import validate_document_policy_v1
+from .document_policy_contract import (
+    DOCUMENT_POLICY_METADATA_KEY,
+    validate_document_policy_v1,
+)
 from .distribution_artifact_contract import validate_distribution_artifact_v1
 from .models import OrganizationPool, PoolRun, PoolSchemaTemplate
 from .run_input_sanitizer import sanitize_run_input_for_runtime_contract
 from .runtime_distribution import compute_distribution_runtime_state, load_runtime_topology_for_period
 from .runtime_projection_contract import build_pool_runtime_projection_v1
 from .runtime_template_registry import sync_pool_runtime_template_registry
-from .workflow_authoring_contract import PoolWorkflowBindingContract
+from .workflow_authoring_contract import (
+    POOL_DOCUMENT_POLICY_SLOT_DUPLICATE,
+    PoolWorkflowBindingContract,
+    PoolWorkflowBindingDecisionRef,
+)
 from .workflow_binding_resolution import resolve_pool_workflow_binding_for_run
 from .workflow_bindings_store import list_pool_workflow_bindings
 from .workflow_compiler import PoolWorkflowRunContext, compile_pool_execution_plan
@@ -86,25 +93,36 @@ def evaluate_binding_decisions(
             decision_table=decision,
             inputs=decision_inputs,
         )
-        if decision_ref.decision_key in decision_outputs:
-            raise ValueError(
-                "Duplicate decision_key in workflow binding decisions: "
-                f"{decision_ref.decision_key}"
-            )
-        decision_outputs[decision_ref.decision_key] = (
-            outputs.get(decision_ref.decision_key)
-            if decision_ref.decision_key in outputs
-            else dict(outputs)
-        )
         document_policy = outputs.get("document_policy")
+        if decision_ref.decision_key in decision_outputs:
+            if not (
+                document_policy is not None
+                and decision_ref.decision_key == DOCUMENT_POLICY_METADATA_KEY
+            ):
+                raise ValueError(
+                    "Duplicate decision_key in workflow binding decisions: "
+                    f"{decision_ref.decision_key}"
+                )
+        else:
+            decision_outputs[decision_ref.decision_key] = (
+                outputs.get(decision_ref.decision_key)
+                if decision_ref.decision_key in outputs
+                else dict(outputs)
+            )
         if document_policy is None:
             continue
         validated_document_policy = validate_document_policy_v1(policy=document_policy)
+        slot_key = _resolve_binding_slot_key(decision_ref=decision_ref)
+        if slot_key in compiled_document_policy_slots:
+            raise ValueError(
+                f"{POOL_DOCUMENT_POLICY_SLOT_DUPLICATE}: Duplicate slot_key in workflow binding decisions: "
+                f"{slot_key}"
+            )
         slot_policy_source = (
             "workflow_binding.decision_table:"
             f"{decision.decision_table_id}:v{decision.version_number}"
         )
-        compiled_document_policy_slots[decision_ref.decision_key] = {
+        compiled_document_policy_slots[slot_key] = {
             "decision_table_id": decision.decision_table_id,
             "decision_revision": decision.version_number,
             "document_policy_source": slot_policy_source,
@@ -121,6 +139,13 @@ def evaluate_binding_decisions(
         compiled_document_policy,
         document_policy_source,
     )
+
+
+def _resolve_binding_slot_key(*, decision_ref: PoolWorkflowBindingDecisionRef) -> str:
+    resolved = decision_ref.resolved_slot_key()
+    if resolved:
+        return resolved
+    return decision_ref.decision_key
 
 
 def build_pool_workflow_binding_runtime_bundle(

@@ -8,6 +8,7 @@ import {
 type NormalizedDecisionRef = {
   decision_table_id: string
   decision_key: string
+  slot_key: string
   decision_revision: number
 }
 
@@ -32,10 +33,12 @@ const normalizeBindingForComparison = (binding: PoolWorkflowBinding | PoolWorkfl
     .map((decision) => ({
       decision_table_id: String(decision.decision_table_id ?? '').trim(),
       decision_key: String(decision.decision_key ?? '').trim(),
+      slot_key: String(decision.slot_key ?? '').trim(),
       decision_revision: Number(decision.decision_revision ?? 0),
     }) satisfies NormalizedDecisionRef)
     .sort((left, right) => (
       left.decision_table_id.localeCompare(right.decision_table_id)
+      || left.slot_key.localeCompare(right.slot_key)
       || left.decision_key.localeCompare(right.decision_key)
       || left.decision_revision - right.decision_revision
     )),

@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Binding decision evaluation MUST materialize publication slot map once per preview or run
-Система ДОЛЖНА (SHALL) materialize'ить publication slot map `decision_key -> compiled document_policy` один раз на binding preview/create-run path до compile `document_plan_artifact`.
+Система ДОЛЖНА (SHALL) materialize'ить publication slot map `slot_key -> compiled document_policy` один раз на binding preview/create-run path до compile `document_plan_artifact`.
 
 Система НЕ ДОЛЖНА (SHALL NOT) повторно исполнять decision evaluation для каждого topology edge allocation, если slot map уже materialized для данного preview/run context.
 
@@ -15,7 +15,7 @@
 ### Requirement: Document plan compile MUST резолвить document policy per topology edge
 Система ДОЛЖНА (SHALL) во время compile `document_plan_artifact` резолвить `document_policy` отдельно для каждого topology edge allocation через:
 - `edge.metadata.document_policy_key`;
-- selected `pool_workflow_binding.decisions[].decision_key`;
+- selected `pool_workflow_binding.decisions[].slot_key`;
 - concrete `document_policy` output matching decision revision.
 
 Система НЕ ДОЛЖНА (SHALL NOT) выбирать один общий `compiled_document_policy` на весь binding/run, если run содержит несколько edges с разными slot selectors.

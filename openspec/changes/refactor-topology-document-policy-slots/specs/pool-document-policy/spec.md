@@ -13,7 +13,7 @@ Direct authoring `document_policy` на pool topology edges НЕ ДОЛЖЕН (S
 Система МОЖЕТ (MAY) сохранять compiled `document_policy.v1` в runtime projection, включая metadata/read-model структуры, если это нужно для compatibility, preview, audit и downstream compile.
 
 #### Scenario: Один binding materialize'ит несколько concrete policy slots
-- **GIVEN** аналитик настроил несколько decision resources и pool binding с разными `decision_key`
+- **GIVEN** аналитик настроил несколько decision resources и pool binding с разными `slot_key`
 - **AND** topology использует разные `edge.metadata.document_policy_key` на разных рёбрах
 - **WHEN** система строит effective runtime projection для запуска
 - **THEN** document rules materialize'ятся через pinned binding decisions и topology selectors
@@ -45,7 +45,7 @@ Direct authoring `document_policy` на pool topology edges НЕ ДОЛЖЕН (S
 
 #### Scenario: Отсутствующий slot блокирует document plan compile
 - **GIVEN** topology edge участвует в allocation
-- **AND** у edge отсутствует `document_policy_key` или binding не содержит matching `decision_key`
+- **AND** у edge отсутствует `document_policy_key` или binding не содержит matching `slot_key`
 - **WHEN** runtime выполняет compile document plan
 - **THEN** compile завершается fail-closed до OData side effects
 - **AND** diagnostics содержит machine-readable код missing slot resolution
@@ -100,7 +100,7 @@ Migration path ДОЛЖЕН (SHALL):
 - **AND** для пула уже существуют workflow-centric bindings
 - **WHEN** backend migration/backfill запускается для этого pool
 - **THEN** система создаёт или резолвит versioned decision resource revision с эквивалентным `document_policy.v1`
-- **AND** affected bindings получают pinned decision refs с явным `decision_key`
+- **AND** affected bindings получают pinned decision refs с canonical `decision_key` и явным `slot_key`
 - **AND** topology edge получает matching `document_policy_key`
 - **AND** migration report фиксирует source edge и target decision/binding provenance
 

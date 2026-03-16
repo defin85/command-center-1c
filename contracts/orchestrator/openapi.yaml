@@ -16708,20 +16708,22 @@ components:
         - workflow_revision_id
         - workflow_revision
         - workflow_name
-    DecisionTableRef:
+    PoolWorkflowBindingDecisionRef:
       type: object
-      description: Pinned DMN-lite decision table reference used by pool workflow bindings.
+      description: Pool binding decision reference with reusable decision identity and binding-local slot identity.
       properties:
         decision_table_id:
           type: string
-          description: Stable decision table identifier.
         decision_key:
           type: string
-          description: Decision table key.
+          description: Canonical reusable decision identity.
+        slot_key:
+          type: string
+          nullable: true
+          description: Binding-local publication slot identity for policy-bearing decisions.
         decision_revision:
           type: integer
           minimum: 1
-          description: Pinned decision table revision number.
       required:
         - decision_table_id
         - decision_key
@@ -16766,7 +16768,7 @@ components:
         decisions:
           type: array
           items:
-            $ref: '#/components/schemas/DecisionTableRef'
+            $ref: '#/components/schemas/PoolWorkflowBindingDecisionRef'
         parameters:
           type: object
           additionalProperties: true
@@ -16942,7 +16944,7 @@ components:
         decisions:
           type: array
           items:
-            $ref: '#/components/schemas/DecisionTableRef'
+            $ref: '#/components/schemas/PoolWorkflowBindingDecisionRef'
         parameters:
           type: object
           additionalProperties: true
@@ -17169,7 +17171,7 @@ components:
             decision_refs:
               type: array
               items:
-                $ref: '#/components/schemas/DecisionTableRef'
+                $ref: '#/components/schemas/PoolWorkflowBindingDecisionRef'
             selector:
               $ref: '#/components/schemas/PoolWorkflowBindingSelector'
             status:
@@ -17210,7 +17212,7 @@ components:
                   - source
             compiled_document_policy_slots:
               type: object
-              description: Materialized publication slot projection keyed by binding decision_key.
+              description: Materialized publication slot projection keyed by binding slot_key.
               additionalProperties:
                 type: object
                 additionalProperties: true
@@ -17346,7 +17348,7 @@ components:
           $ref: '#/components/schemas/PoolWorkflowBindingRead'
         compiled_document_policy_slots:
           type: object
-          description: Canonical slot-based publication policy projection keyed by binding decision_key.
+          description: Canonical slot-based publication policy projection keyed by binding slot_key.
           additionalProperties:
             type: object
             additionalProperties: true
@@ -18586,7 +18588,7 @@ components:
           properties:
             document_policy_key:
               type: string
-              description: Publication slot selector resolved against active binding decision_key refs.
+              description: Publication slot selector resolved against active binding slot_key refs.
           additionalProperties: true
       required:
         - child_node_version_id
@@ -18659,7 +18661,7 @@ components:
           properties:
             document_policy_key:
               type: string
-              description: Publication slot selector resolved against active binding decision_key refs.
+              description: Publication slot selector resolved against active binding slot_key refs.
           additionalProperties: true
       required:
         - child_organization_id
@@ -18865,19 +18867,7 @@ components:
               updated:
                 type: boolean
               decision_ref:
-                type: object
-                properties:
-                  decision_table_id:
-                    type: string
-                  decision_key:
-                    type: string
-                  decision_revision:
-                    type: integer
-                    minimum: 1
-                required:
-                  - decision_table_id
-                  - decision_key
-                  - decision_revision
+                $ref: '#/components/schemas/PoolWorkflowBindingDecisionRef'
             required:
               - binding_id
               - revision
@@ -23023,6 +23013,24 @@ components:
           description: Pinned OperationExposure revision (required for pinned_exposure)
       required:
         - alias
+    DecisionTableRef:
+      type: object
+      description: Pinned DMN-lite decision table reference used by pool workflow bindings.
+      properties:
+        decision_table_id:
+          type: string
+          description: Stable decision table identifier.
+        decision_key:
+          type: string
+          description: Decision table key.
+        decision_revision:
+          type: integer
+          minimum: 1
+          description: Pinned decision table revision number.
+      required:
+        - decision_table_id
+        - decision_key
+        - decision_revision
     OperationIO:
       type: object
       description: Serializer for OperationIO Pydantic model.

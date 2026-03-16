@@ -42,6 +42,13 @@ export type DecisionTableRef = {
   decision_revision: number
 }
 
+export type PoolWorkflowBindingDecisionRef = {
+  decision_table_id: string
+  decision_key: string
+  slot_key?: string | null
+  decision_revision: number
+}
+
 export type PoolWorkflowBindingSelector = {
   direction?: string | null
   mode?: string | null
@@ -53,7 +60,7 @@ export type PoolWorkflowBindingStatus = 'draft' | 'active' | 'inactive'
 type PoolWorkflowBindingBase = {
   contract_version?: string
   workflow: WorkflowDefinitionRef
-  decisions?: DecisionTableRef[]
+  decisions?: PoolWorkflowBindingDecisionRef[]
   parameters?: Record<string, unknown>
   role_mapping?: Record<string, string>
   selector?: PoolWorkflowBindingSelector
@@ -213,7 +220,7 @@ export type PoolRunRuntimeProjectionWorkflowBinding = {
   workflow_revision_id?: string
   workflow_revision?: number
   workflow_name?: string
-  decision_refs?: DecisionTableRef[]
+  decision_refs?: PoolWorkflowBindingDecisionRef[]
   selector?: PoolWorkflowBindingSelector
   status?: string
 }
@@ -469,11 +476,7 @@ export type PoolDocumentPolicyMigrationDecisionRef = {
   decision_revision: number
 }
 
-export type PoolDocumentPolicyMigrationBindingDecisionRef = {
-  decision_table_id: string
-  decision_key: string
-  decision_revision: number
-}
+export type PoolDocumentPolicyMigrationBindingDecisionRef = PoolWorkflowBindingDecisionRef
 
 export type PoolDocumentPolicyMigrationAffectedBinding = {
   binding_id: string

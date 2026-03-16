@@ -71,8 +71,8 @@ const buildSlotRefsFromBinding = (
 ): Array<{ slotKey: string; refLabel: string }> => (
   (binding.decisions ?? [])
     .map((decision) => ({
-      slotKey: String(decision.decision_key || '').trim(),
-      refLabel: `${decision.decision_table_id} r${decision.decision_revision}`,
+      slotKey: String(decision.slot_key || decision.decision_key || '').trim(),
+      refLabel: `${decision.decision_table_id} (${decision.decision_key}) r${decision.decision_revision}`,
     }))
     .filter((slotRef) => slotRef.slotKey && slotRef.refLabel)
 )

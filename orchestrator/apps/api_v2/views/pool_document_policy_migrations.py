@@ -39,6 +39,7 @@ class PoolDocumentPolicyMigrationDecisionRefSerializer(serializers.Serializer):
 class PoolDocumentPolicyMigrationBindingDecisionRefSerializer(serializers.Serializer):
     decision_table_id = serializers.CharField()
     decision_key = serializers.CharField()
+    slot_key = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     decision_revision = serializers.IntegerField(min_value=1)
 
 

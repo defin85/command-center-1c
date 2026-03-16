@@ -1,0 +1,19 @@
+type: object
+description: Pool binding decision reference with reusable decision identity and binding-local slot identity.
+properties:
+  decision_table_id:
+    type: string
+  decision_key:
+    type: string
+    description: Canonical reusable decision identity.
+  slot_key:
+    type: string
+    nullable: true
+    description: Binding-local publication slot identity for policy-bearing decisions.
+  decision_revision:
+    type: integer
+    minimum: 1
+required:
+  - decision_table_id
+  - decision_key
+  - decision_revision

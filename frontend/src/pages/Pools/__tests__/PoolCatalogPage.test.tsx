@@ -987,7 +987,10 @@ describe('PoolCatalogPage', () => {
     })
     await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-decision-0'))
     openSelectByTestId('pool-catalog-workflow-binding-decision-select-0-0')
-    await selectDropdownOption('Route Documents (route_documents) · r4')
+    await selectDropdownOption('Route Documents · decision-1 (route_documents) · r4')
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-slot-key-input-0-0'), {
+      target: { value: 'route_documents' },
+    })
     await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-role-0'))
     fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-role-source-0-0'), {
       target: { value: 'owner' },
@@ -1019,6 +1022,7 @@ describe('PoolCatalogPage', () => {
           expect.objectContaining({
             decision_table_id: 'decision-1',
             decision_key: 'route_documents',
+            slot_key: 'route_documents',
             decision_revision: 4,
           }),
         ],
@@ -1120,14 +1124,18 @@ describe('PoolCatalogPage', () => {
 
     openSelectByTestId('pool-catalog-workflow-binding-decision-select-0-0')
     expect(mockGetDecisionsCollection).toHaveBeenCalledWith({ database_id: baseOrganization.database_id })
-    const activeOption = await screen.findByText('Route Documents (route_documents) · r4 · shared-profile 8.3.24')
+    const activeOption = await screen.findByText(
+      'Route Documents · decision-1 (route_documents) · r4 · shared-profile 8.3.24'
+    )
     expect(activeOption).toBeInTheDocument()
-    expect(screen.getByText('Route Documents Drift (route_documents_drift) · r5 · shared-profile 8.3.24 · drift')).toBeInTheDocument()
-    expect(screen.queryByText('Incompatible Route (route_documents_incompatible) · r6')).not.toBeInTheDocument()
-    expect(screen.queryByText('Legacy Route (legacy_route) · r3')).not.toBeInTheDocument()
+    expect(
+      screen.getByText('Route Documents Drift · decision-2 (route_documents_drift) · r5 · shared-profile 8.3.24 · drift')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Incompatible Route · decision-3 (route_documents_incompatible) · r6')).not.toBeInTheDocument()
+    expect(screen.queryByText('Legacy Route · decision-legacy (legacy_route) · r3')).not.toBeInTheDocument()
 
     await user.click(activeOption)
-    expect(await screen.findByTestId('pool-catalog-workflow-binding-slot-key-0-0')).toHaveTextContent('route_documents')
+    expect(await screen.findByTestId('pool-catalog-workflow-binding-slot-key-input-0-0')).toHaveValue('')
   }, 30000)
 
   it('keeps inactive pinned decision refs visible for existing workflow bindings', async () => {
@@ -1181,13 +1189,13 @@ describe('PoolCatalogPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('pool-catalog-workflow-binding-decision-select-0-0')).toBeInTheDocument()
     })
-    expect(screen.getByTestId('pool-catalog-workflow-binding-slot-key-0-0')).toHaveTextContent('legacy_route')
+    expect(screen.getByTestId('pool-catalog-workflow-binding-slot-key-input-0-0')).toHaveValue('legacy_route')
 
     openSelectByTestId('pool-catalog-workflow-binding-decision-select-0-0')
     expect(
       await screen.findAllByText('decision-legacy (legacy_route) · r3 [inactive]')
     ).not.toHaveLength(0)
-    expect(screen.getByText('Route Documents (route_documents) · r4')).toBeInTheDocument()
+    expect(screen.getByText('Route Documents · decision-1 (route_documents) · r4')).toBeInTheDocument()
   }, 30000)
 
   it('shows topology slot coverage summary in bindings workspace', async () => {
@@ -1200,7 +1208,8 @@ describe('PoolCatalogPage', () => {
           decisions: [
             {
               decision_table_id: 'sale-policy',
-              decision_key: 'sale',
+              decision_key: 'document_policy',
+              slot_key: 'sale',
               decision_revision: 7,
             },
           ],
@@ -1584,7 +1593,8 @@ describe('PoolCatalogPage', () => {
           decisions: [
             {
               decision_table_id: 'decision-1',
-              decision_key: 'sale',
+              decision_key: 'document_policy',
+              slot_key: 'sale',
               decision_revision: 4,
             },
           ],
@@ -1667,7 +1677,8 @@ describe('PoolCatalogPage', () => {
           decisions: [
             {
               decision_table_id: 'decision-1',
-              decision_key: 'sale',
+              decision_key: 'document_policy',
+              slot_key: 'sale',
               decision_revision: 4,
             },
           ],
@@ -1754,7 +1765,8 @@ describe('PoolCatalogPage', () => {
           decisions: [
             {
               decision_table_id: 'decision-1',
-              decision_key: 'sale',
+              decision_key: 'document_policy',
+              slot_key: 'sale',
               decision_revision: 4,
             },
           ],
@@ -1852,7 +1864,8 @@ describe('PoolCatalogPage', () => {
         decisions: [
           {
             decision_table_id: 'sale-policy',
-            decision_key: 'sale',
+            decision_key: 'document_policy',
+            slot_key: 'sale',
             decision_revision: 7,
           },
         ],
@@ -1902,7 +1915,9 @@ describe('PoolCatalogPage', () => {
 
     expect(await screen.findByTestId('pool-catalog-topology-coverage-status')).toHaveTextContent('Auto-resolved binding')
     expect(await screen.findByTestId('pool-catalog-topology-edge-slot-status-0')).toHaveTextContent('Resolved')
-    expect(await screen.findByText(/sale-policy r7/i)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/binding-top-down .*sale-policy \(document_policy\) r7/i)
+    ).toBeInTheDocument()
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('shows ambiguous coverage context until operator selects an active binding', async () => {
@@ -1916,7 +1931,8 @@ describe('PoolCatalogPage', () => {
         decisions: [
           {
             decision_table_id: 'sale-policy',
-            decision_key: 'sale',
+            decision_key: 'document_policy',
+            slot_key: 'sale',
             decision_revision: 2,
           },
         ],
@@ -1932,7 +1948,8 @@ describe('PoolCatalogPage', () => {
         decisions: [
           {
             decision_table_id: 'purchase-policy',
-            decision_key: 'purchase',
+            decision_key: 'document_policy',
+            slot_key: 'purchase',
             decision_revision: 5,
           },
         ],
@@ -1990,7 +2007,9 @@ describe('PoolCatalogPage', () => {
 
     expect(await screen.findByTestId('pool-catalog-topology-coverage-status')).toHaveTextContent('Selected binding')
     expect(await screen.findByTestId('pool-catalog-topology-edge-slot-status-0')).toHaveTextContent('Resolved')
-    expect(await screen.findByText(/sale-policy r2/i)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/binding-sale .*sale-policy \(document_policy\) r2/i)
+    ).toBeInTheDocument()
     await waitFor(() => {
       expect(screen.queryByText('Topology remediation required')).not.toBeInTheDocument()
     })

@@ -940,21 +940,23 @@ const buildTopologyEdgeSelectors = (graph: PoolGraph | null): TopologyEdgeSelect
 const buildSlotCoverageRefs = (
   decisions: Array<{
     decision_key?: string | null
+    slot_key?: string | null
     decision_table_id?: string | null
     decision_revision?: string | number | null
   }> | null | undefined
 ) => (
   (decisions ?? [])
     .map((decision) => {
-      const slotKey = String(decision.decision_key || '').trim()
+      const slotKey = String(decision.slot_key || decision.decision_key || '').trim()
       const decisionTableId = String(decision.decision_table_id || '').trim()
+      const decisionKey = String(decision.decision_key || '').trim()
       const decisionRevision = String(decision.decision_revision ?? '').trim()
       if (!slotKey || !decisionTableId || !decisionRevision) {
         return null
       }
       return {
         slotKey,
-        refLabel: `${decisionTableId} r${decisionRevision}`,
+        refLabel: `${decisionTableId} (${decisionKey || 'decision'}) r${decisionRevision}`,
       }
     })
     .filter((slotRef): slotRef is { slotKey: string; refLabel: string } => Boolean(slotRef))
@@ -970,6 +972,7 @@ const buildTopologyCoverageSummary = ({
   bindingLabel: string
   decisions: Array<{
     decision_key?: string | null
+    slot_key?: string | null
     decision_table_id?: string | null
     decision_revision?: string | number | null
   }> | null | undefined
@@ -2135,11 +2138,13 @@ export function PoolRunsPage() {
                         <Descriptions.Item label="Decision Snapshot" span={2}>
                           {(bindingPreview.workflow_binding.decisions ?? []).length > 0 ? (
                             <Space size={[4, 4]} wrap>
-                              {(bindingPreview.workflow_binding.decisions ?? []).map((decision) => (
-                                <Tag key={`${decision.decision_table_id}:${decision.decision_revision}`}>
-                                  {decision.decision_key} r{decision.decision_revision}
-                                </Tag>
-                              ))}
+                                {(bindingPreview.workflow_binding.decisions ?? []).map((decision) => (
+                                  <Tag key={`${decision.decision_table_id}:${decision.decision_revision}`}>
+                                    {decision.slot_key
+                                      ? `${decision.slot_key} -> ${decision.decision_key} r${decision.decision_revision}`
+                                      : `${decision.decision_key} r${decision.decision_revision}`}
+                                  </Tag>
+                                ))}
                             </Space>
                           ) : (
                             <Text type="secondary">No pinned decision refs.</Text>
@@ -2287,7 +2292,9 @@ export function PoolRunsPage() {
                               <Space size={[4, 4]} wrap>
                                 {workflowDecisionRefs.map((decision) => (
                                   <Tag key={`${decision.decision_table_id}:${decision.decision_revision}`}>
-                                    {decision.decision_key} r{decision.decision_revision}
+                                    {decision.slot_key
+                                      ? `${decision.slot_key} -> ${decision.decision_key} r${decision.decision_revision}`
+                                      : `${decision.decision_key} r${decision.decision_revision}`}
                                   </Tag>
                                 ))}
                               </Space>

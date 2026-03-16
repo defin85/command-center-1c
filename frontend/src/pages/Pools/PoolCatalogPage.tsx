@@ -547,15 +547,16 @@ const buildBindingSlotRefsFromForm = (
 ): Array<{ slotKey: string; refLabel: string }> => (
   (binding?.decisions ?? [])
     .map((decision) => {
-      const slotKey = String(decision?.decision_key || '').trim()
+      const slotKey = String(decision?.slot_key || decision?.decision_key || '').trim()
       const decisionTableId = String(decision?.decision_table_id || '').trim()
+      const decisionKey = String(decision?.decision_key || '').trim()
       const decisionRevision = String(decision?.decision_revision ?? '').trim()
       if (!slotKey || !decisionTableId || !decisionRevision) {
         return null
       }
       return {
         slotKey,
-        refLabel: `${decisionTableId} r${decisionRevision}`,
+        refLabel: `${decisionTableId} (${decisionKey || 'decision'}) r${decisionRevision}`,
       }
     })
     .filter((slotRef): slotRef is { slotKey: string; refLabel: string } => Boolean(slotRef))

@@ -211,10 +211,11 @@ def test_generated_models_cover_document_policy_migration_schemas() -> None:
         / "api"
         / "generated"
         / "model"
-        / "poolDocumentPolicyMigrationReportAffectedBindingsItemDecisionRef.ts"
+        / "poolWorkflowBindingDecisionRef.ts"
     ).read_text(encoding="utf-8")
     assert re.search(r"decision_table_id: string;", affected_binding_content)
     assert re.search(r"decision_key: string;", affected_binding_content)
+    assert re.search(r"slot_key\?: string \| null;", affected_binding_content)
     assert re.search(r"decision_revision: number;", affected_binding_content)
 
 

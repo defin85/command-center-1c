@@ -75,7 +75,7 @@ Coverage НЕ ДОЛЖЕН (SHALL NOT) отображаться как resolved,
 ### Requirement: Topology document-policy mutating MUST валидироваться fail-closed до persistence
 **Reason**: topology mutating path больше не принимает full `document_policy` payload как штатный authoring contract.
 
-**Migration**: использовать `/decisions` для authoring concrete policy, `pool_workflow_binding.decisions[].decision_key` для pinning slot'ов и `edge.metadata.document_policy_key` для привязки slot к edge.
+**Migration**: использовать `/decisions` для authoring concrete policy, `pool_workflow_binding.decisions[].slot_key` для pinning slot'ов и `edge.metadata.document_policy_key` для привязки slot к edge.
 
 ### Requirement: Topology mutating validation MUST проверять соответствие policy актуальному metadata catalog
 **Reason**: metadata-aware validation полного `document_policy` переносится в decision-resource lifecycle и binding/runtime preview, а не остается в topology save path.

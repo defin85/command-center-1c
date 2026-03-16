@@ -786,7 +786,8 @@ test('Pools browser-flow: token authoring -> failed gate diagnostics -> remediat
             decisions: [
               {
                 decision_table_id: 'decision-purchase',
-                decision_key: 'purchase',
+                decision_key: 'document_policy',
+                slot_key: 'purchase',
                 decision_revision: 3,
               },
             ],

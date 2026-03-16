@@ -117,7 +117,7 @@ def test_pool_workflow_bindings_preview_response_src_contract_exposes_slot_proje
     assert isinstance(properties, dict)
     assert properties.get("compiled_document_policy_slots") == {
         "type": "object",
-        "description": "Canonical slot-based publication policy projection keyed by binding decision_key.",
+        "description": "Canonical slot-based publication policy projection keyed by binding slot_key.",
         "additionalProperties": {
             "type": "object",
             "additionalProperties": True,
@@ -141,6 +141,24 @@ def test_pool_workflow_bindings_preview_response_src_contract_exposes_slot_proje
         "runtime_projection",
     ]
     assert "compiled_document_policy" not in required
+
+
+def test_pool_workflow_binding_decision_ref_src_schema_splits_slot_key_from_decision_key() -> None:
+    payload = _load_src_schema("PoolWorkflowBindingDecisionRef.yaml")
+
+    properties = payload.get("properties")
+    assert isinstance(properties, dict)
+    assert properties["decision_table_id"] == {"type": "string"}
+    assert properties["decision_key"]["type"] == "string"
+    assert properties["slot_key"] == {
+        "type": "string",
+        "nullable": True,
+        "description": "Binding-local publication slot identity for policy-bearing decisions.",
+    }
+    assert properties["decision_revision"] == {"type": "integer", "minimum": 1}
+
+    required = payload.get("required")
+    assert required == ["decision_table_id", "decision_key", "decision_revision"]
 
 
 def test_pool_workflow_binding_input_src_schema_includes_optional_revision_field() -> None:

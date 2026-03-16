@@ -20,8 +20,8 @@ from apps.intercompany_pools.models import (
 )
 from apps.intercompany_pools.binding_preview import build_pool_workflow_binding_preview
 from apps.intercompany_pools.workflow_authoring_contract import (
-    DecisionTableRef,
     PoolWorkflowBindingContract,
+    PoolWorkflowBindingDecisionRef,
     PoolWorkflowBindingSelector,
     PoolWorkflowBindingStatus,
     build_workflow_definition_ref,
@@ -248,6 +248,7 @@ def test_build_pool_workflow_binding_preview_returns_compiled_projection_and_dec
             {
                 "decision_table_id": decision.decision_table_id,
                 "decision_key": decision.decision_key,
+                "slot_key": "document_policy",
                 "decision_revision": decision.version_number,
             }
         ],
@@ -297,6 +298,7 @@ def test_build_pool_workflow_binding_preview_returns_compiled_projection_and_dec
         {
             "decision_table_id": decision.decision_table_id,
             "decision_key": decision.decision_key,
+            "slot_key": "document_policy",
             "decision_revision": decision.version_number,
         }
     ]
@@ -314,7 +316,6 @@ def test_build_pool_workflow_binding_preview_materializes_slots_once_per_decisio
     sale_decision = create_decision_table_revision(
         contract=_build_decision_payload(
             decision_table_id="sale-slot",
-            decision_key="sale",
             chain_id="sale_chain",
             base_document_id="sale",
             base_entity_name="Document_Sales",
@@ -323,7 +324,6 @@ def test_build_pool_workflow_binding_preview_materializes_slots_once_per_decisio
     purchase_decision = create_decision_table_revision(
         contract=_build_decision_payload(
             decision_table_id="purchase-slot",
-            decision_key="purchase",
             chain_id="purchase_chain",
             base_document_id="purchase",
             base_entity_name="Document_Purchase",
@@ -339,11 +339,13 @@ def test_build_pool_workflow_binding_preview_materializes_slots_once_per_decisio
             {
                 "decision_table_id": sale_decision.decision_table_id,
                 "decision_key": sale_decision.decision_key,
+                "slot_key": "sale",
                 "decision_revision": sale_decision.version_number,
             },
             {
                 "decision_table_id": purchase_decision.decision_table_id,
                 "decision_key": purchase_decision.decision_key,
+                "slot_key": "purchase",
                 "decision_revision": purchase_decision.version_number,
             },
         ],
@@ -392,21 +394,19 @@ def test_build_pool_workflow_binding_preview_materializes_slots_once_per_decisio
 
 
 @pytest.mark.django_db
-def test_build_pool_workflow_binding_preview_fails_closed_on_duplicate_decision_key() -> None:
+def test_build_pool_workflow_binding_preview_fails_closed_on_duplicate_slot_key() -> None:
     fixture = _create_preview_fixture()
     pool = fixture["pool"]
 
     first_decision = create_decision_table_revision(
         contract=_build_decision_payload(
             decision_table_id="duplicate-a",
-            decision_key="shared_slot",
             chain_id="slot_a_chain",
         )
     )
     second_decision = create_decision_table_revision(
         contract=_build_decision_payload(
             decision_table_id="duplicate-b",
-            decision_key="shared_slot",
             chain_id="slot_b_chain",
         )
     )
@@ -417,14 +417,16 @@ def test_build_pool_workflow_binding_preview_fails_closed_on_duplicate_decision_
         pool_id=str(pool.id),
         workflow=build_workflow_definition_ref(workflow_template=workflow),
         decisions=[
-            DecisionTableRef(
+            PoolWorkflowBindingDecisionRef(
                 decision_table_id=first_decision.decision_table_id,
                 decision_key=first_decision.decision_key,
+                slot_key="shared_slot",
                 decision_revision=first_decision.version_number,
             ),
-            DecisionTableRef(
+            PoolWorkflowBindingDecisionRef(
                 decision_table_id=second_decision.decision_table_id,
                 decision_key=second_decision.decision_key,
+                slot_key="shared_slot",
                 decision_revision=second_decision.version_number,
             ),
         ],
@@ -440,7 +442,7 @@ def test_build_pool_workflow_binding_preview_fails_closed_on_duplicate_decision_
         status=PoolWorkflowBindingStatus.ACTIVE,
     )
 
-    with pytest.raises(ValueError, match="Duplicate decision_key in workflow binding decisions"):
+    with pytest.raises(ValueError, match="POOL_DOCUMENT_POLICY_SLOT_DUPLICATE"):
         binding_preview.evaluate_binding_decisions(
             binding=binding,
             pool=pool,

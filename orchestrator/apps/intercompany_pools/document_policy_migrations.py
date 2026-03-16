@@ -333,7 +333,7 @@ def _update_affected_pool_workflow_bindings(
     canonical_bindings = list_canonical_pool_workflow_bindings(pool=pool)
     migrated_decision_ref = {
         **build_decision_table_ref(decision_table=decision).model_dump(mode="json"),
-        "decision_key": slot_key,
+        "slot_key": slot_key,
     }
     outcomes: list[DocumentPolicyMigrationBindingOutcome] = []
 
@@ -404,7 +404,9 @@ def _rewrite_document_policy_binding_decisions(
 
     for decision_ref in existing_decisions:
         decision_key = str(decision_ref.get("decision_key") or "").strip()
-        if decision_key == slot_key:
+        raw_slot_key = str(decision_ref.get("slot_key") or "").strip()
+        existing_slot_key = _resolve_binding_slot_key_from_payload(decision_ref=decision_ref)
+        if existing_slot_key == slot_key:
             if not document_policy_pinned:
                 if not _decision_refs_match(
                     left=decision_ref,
@@ -420,7 +422,7 @@ def _rewrite_document_policy_binding_decisions(
                 rewritten_decisions.append(dict(migrated_decision_ref))
                 document_policy_pinned = True
             continue
-        if decision_key == DOCUMENT_POLICY_METADATA_KEY:
+        if decision_key == DOCUMENT_POLICY_METADATA_KEY and not raw_slot_key:
             continue
         rewritten_decisions.append(decision_ref)
 
@@ -435,7 +437,19 @@ def _decision_refs_match(*, left: Mapping[str, Any], right: Mapping[str, Any]) -
         == str(right.get("decision_table_id") or "").strip()
         and int(left.get("decision_revision") or 0) == int(right.get("decision_revision") or 0)
         and str(left.get("decision_key") or "").strip() == str(right.get("decision_key") or "").strip()
+        and _resolve_binding_slot_key_from_payload(decision_ref=left)
+        == _resolve_binding_slot_key_from_payload(decision_ref=right)
     )
+
+
+def _resolve_binding_slot_key_from_payload(*, decision_ref: Mapping[str, Any]) -> str:
+    slot_key = str(decision_ref.get("slot_key") or "").strip()
+    if slot_key:
+        return slot_key
+    decision_key = str(decision_ref.get("decision_key") or "").strip()
+    if decision_key != DOCUMENT_POLICY_METADATA_KEY:
+        return decision_key
+    return DOCUMENT_POLICY_METADATA_KEY
 
 
 def _update_edge_document_policy_slot(

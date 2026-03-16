@@ -1950,7 +1950,7 @@ def test_pool_workflow_bindings_collection_put_returns_conflict_without_partial_
 
 
 @pytest.mark.django_db
-def test_pool_workflow_bindings_collection_put_rejects_duplicate_decision_key_without_partial_apply(
+def test_pool_workflow_bindings_collection_put_rejects_duplicate_slot_key_without_partial_apply(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
@@ -1980,12 +1980,14 @@ def test_pool_workflow_bindings_collection_put_rejects_duplicate_decision_key_wi
                     "decisions": [
                         {
                             "decision_table_id": "decision-a",
-                            "decision_key": "shared_slot",
+                            "decision_key": "document_policy",
+                            "slot_key": "shared_slot",
                             "decision_revision": 1,
                         },
                         {
                             "decision_table_id": "decision-b",
-                            "decision_key": "shared_slot",
+                            "decision_key": "document_policy",
+                            "slot_key": "shared_slot",
                             "decision_revision": 2,
                         },
                     ],
@@ -2000,7 +2002,7 @@ def test_pool_workflow_bindings_collection_put_rejects_duplicate_decision_key_wi
         status_code=400,
         code="POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
     )
-    assert "decision_key" in payload["detail"]
+    assert "slot_key" in payload["detail"]
 
     current_response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
     assert current_response.status_code == 200
@@ -2080,7 +2082,7 @@ def test_pool_workflow_binding_upsert_creates_and_updates_first_class_binding(
 
 
 @pytest.mark.django_db
-def test_pool_workflow_binding_upsert_rejects_duplicate_decision_key(
+def test_pool_workflow_binding_upsert_rejects_duplicate_slot_key(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
@@ -2098,12 +2100,14 @@ def test_pool_workflow_binding_upsert_rejects_duplicate_decision_key(
                 "decisions": [
                     {
                         "decision_table_id": "decision-a",
-                        "decision_key": "shared_slot",
+                        "decision_key": "document_policy",
+                        "slot_key": "shared_slot",
                         "decision_revision": 1,
                     },
                     {
                         "decision_table_id": "decision-b",
-                        "decision_key": "shared_slot",
+                        "decision_key": "document_policy",
+                        "slot_key": "shared_slot",
                         "decision_revision": 2,
                     },
                 ],
@@ -2120,7 +2124,7 @@ def test_pool_workflow_binding_upsert_rejects_duplicate_decision_key(
         status_code=400,
         code="POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
     )
-    assert "decision_key" in payload["detail"]
+    assert "slot_key" in payload["detail"]
     assert list_pool_workflow_bindings(pool=pool) == []
 
 
@@ -2761,7 +2765,8 @@ def test_migrate_pool_edge_document_policy_updates_canonical_binding_runtime_pat
 
     migrated_decision_ref = {
         "decision_table_id": decision_payload["decision_table_id"],
-        "decision_key": migrated_slot_key,
+        "decision_key": "document_policy",
+        "slot_key": migrated_slot_key,
         "decision_revision": decision_payload["decision_revision"],
     }
     updated_bindings_by_id = {

@@ -43,14 +43,23 @@
 
 `Topology` отвечает на вопрос "какой slot применять на этом ребре", но не на вопрос "как устроен сам policy".
 
-### 2. Binding decisions становятся именованными publication slots
+### 2. Binding decisions разделяют identity decision и identity slot
 
-`pool_workflow_binding.decisions[]` уже хранит `decision_key`. Этот change закрепляет его как canonical slot name для policy-bearing decisions внутри binding.
+`pool_workflow_binding.decisions[]` уже хранит `decision_key`, но в текущем change оно было перегружено двумя разными ролями:
+- canonical identity reusable decision resource;
+- slot name, against которого topology резолвит `document_policy_key`.
+
+Эта связка ломает reuse `/decisions` и делает impossible canonical editing document policy revisions.
+
+Новая модель закрепляет:
+- `decision_key` как identity самой decision revision/resource;
+- `slot_key` как binding-local publication slot для policy-bearing decisions.
 
 Требования к binding slot layer:
-- `decision_key` уникален в пределах binding;
-- binding может pin-ить несколько policy-bearing decisions;
-- topology edge selector резолвится только против pinned decisions выбранного binding.
+- `slot_key` уникален в пределах binding;
+- binding может pin-ить несколько policy-bearing decisions одновременно;
+- topology edge selector резолвится только против `slot_key`, а не против `decision_key`;
+- reusable decision revision может переиспользоваться в разных bindings и, при необходимости, в нескольких binding slots без подмены canonical `decision_key`.
 
 Это означает и UI-сдвиг: binding workspace больше не должен выглядеть как низкоуровневый редактор raw decision refs. Для аналитика binding должен читаться как набор именованных publication slots, покрывающих topology edges.
 
@@ -58,17 +67,17 @@
 
 Во время compile `document_plan_artifact` runtime:
 1. берет `edge.metadata.document_policy_key`;
-2. ищет matching `decision_key` в selected binding;
+2. ищет matching `slot_key` в selected binding;
 3. получает concrete `document_policy` из соответствующего decision output;
 4. применяет этот policy только к данному edge allocation / target database.
 
 Fail-closed случаи:
 - у ребра нет `document_policy_key`;
-- в binding нет matching `decision_key`;
+- в binding нет matching `slot_key`;
 - matching decision не materialize'ит valid `document_policy`;
-- в binding есть duplicate `decision_key`.
+- в binding есть duplicate `slot_key`.
 
-Важное ограничение: decision evaluation не должна выполняться заново для каждого edge allocation. Binding preview/run должен один раз materialize'ить slot map `decision_key -> compiled document_policy`, а per-edge compile должен только lookup'ить нужный slot по topology selector.
+Важное ограничение: decision evaluation не должна выполняться заново для каждого edge allocation. Binding preview/run должен один раз materialize'ить slot map `slot_key -> compiled document_policy`, а per-edge compile должен только lookup'ить нужный slot по topology selector.
 
 Это нужно по двум причинам:
 - deterministic lineage: slot map должен быть стабилен для preview, create-run и retry;
@@ -215,7 +224,7 @@ Rollback допустим только как явный operational mode, а н
 
 Перед включением cutover для shipped operator path legacy topology policy должна быть ремедиирована:
 1. materialize legacy `document_policy` в decision revision;
-2. pin resulting revision в binding с нужным `decision_key`;
+2. pin resulting revision в binding с canonical `decision_key=document_policy` и нужным `slot_key`;
 3. проставить `edge.metadata.document_policy_key` на каждом ребре;
 4. проверить slot coverage и per-edge binding preview parity;
 5. убедиться, что canonical preview/read-model больше не зависит от single legacy policy shape;

@@ -50,7 +50,7 @@ properties:
       decision_refs:
         type: array
         items:
-          $ref: ./DecisionTableRef.yaml
+          $ref: ./PoolWorkflowBindingDecisionRef.yaml
       selector:
         $ref: ./PoolWorkflowBindingSelector.yaml
       status:
@@ -91,7 +91,7 @@ properties:
             - source
       compiled_document_policy_slots:
         type: object
-        description: Materialized publication slot projection keyed by binding decision_key.
+        description: Materialized publication slot projection keyed by binding slot_key.
         additionalProperties:
           type: object
           additionalProperties: true

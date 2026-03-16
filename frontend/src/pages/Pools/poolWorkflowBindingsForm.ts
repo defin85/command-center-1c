@@ -8,6 +8,7 @@ import type {
 export type PoolWorkflowBindingDecisionFormValue = {
   decision_table_id?: string
   decision_key?: string
+  slot_key?: string
   decision_revision?: number | string | null
 }
 
@@ -187,6 +188,7 @@ export const workflowBindingsToFormValues = (
     decisions: (binding.decisions ?? []).map((decision) => ({
       decision_table_id: decision.decision_table_id,
       decision_key: decision.decision_key,
+      slot_key: decision.slot_key ?? decision.decision_key ?? '',
       decision_revision: decision.decision_revision,
     })),
     parameters: Object.entries(binding.parameters ?? {})
@@ -247,6 +249,7 @@ const buildDecisions = (
   const normalized: Array<{
     decision_table_id: string
     decision_key: string
+    slot_key?: string
     decision_revision: number
   }> = []
 
@@ -254,13 +257,14 @@ const buildDecisions = (
     const decisionLabel = `${bindingLabel} decision #${index + 1}`
     const decisionTableId = String(decision?.decision_table_id ?? '').trim()
     const decisionKey = String(decision?.decision_key ?? '').trim()
+    const slotKey = String(decision?.slot_key ?? '').trim()
     const decisionRevisionRaw = String(decision?.decision_revision ?? '').trim()
 
-    if (!decisionTableId && !decisionKey && !decisionRevisionRaw) {
+    if (!decisionTableId && !decisionKey && !slotKey && !decisionRevisionRaw) {
       return
     }
-    if (!decisionTableId || !decisionKey || !decisionRevisionRaw) {
-      errors.push(`${decisionLabel}: required fields are decision_table_id, decision_key, decision_revision.`)
+    if (!decisionTableId || !decisionKey || !slotKey || !decisionRevisionRaw) {
+      errors.push(`${decisionLabel}: required fields are decision_table_id, decision_key, slot_key, decision_revision.`)
       return
     }
     const decisionRevision = Number(decisionRevisionRaw)
@@ -268,14 +272,15 @@ const buildDecisions = (
       errors.push(`${decisionLabel}: decision_revision должен быть положительным integer.`)
       return
     }
-    if (seenDecisionKeys.has(decisionKey)) {
-      errors.push(`${bindingLabel}: decisions.decision_key должен быть уникальным внутри binding.`)
+    if (seenDecisionKeys.has(slotKey)) {
+      errors.push(`${bindingLabel}: decisions.slot_key должен быть уникальным внутри binding.`)
       return
     }
-    seenDecisionKeys.add(decisionKey)
+    seenDecisionKeys.add(slotKey)
     normalized.push({
       decision_table_id: decisionTableId,
       decision_key: decisionKey,
+      slot_key: slotKey,
       decision_revision: decisionRevision,
     })
   })
