@@ -6,6 +6,11 @@ import type {
 
 export type DecisionSnapshotFilterMode = 'matching_snapshot' | 'all'
 
+export type PinnedDecisionRefs = {
+  decisionIds: readonly string[]
+  decisionTableKeys: readonly string[]
+}
+
 type MetadataContextLike =
   | PoolODataMetadataCatalogResponse
   | DecisionRevisionMetadataContext
@@ -22,6 +27,7 @@ export type DecisionSnapshotFilterResult = {
   canFilterBySnapshot: boolean
   visibleDecisions: DecisionTable[]
   hiddenCount: number
+  pinnedVisibleCount: number
   selectedConfigurationLabel: string
 }
 
@@ -33,9 +39,33 @@ export const isDocumentPolicyDecision = (decision: DecisionTable): boolean => (
   trimString(decision.decision_key) === 'document_policy'
 )
 
-export const filterDocumentPolicyDecisions = (decisions: DecisionTable[]): DecisionTable[] => (
-  decisions.filter(isDocumentPolicyDecision)
-)
+export const buildDecisionBindingRefKey = (
+  decisionKey: string | null | undefined,
+  decisionTableId: string | null | undefined,
+): string => {
+  const normalizedDecisionKey = trimString(decisionKey)
+  const normalizedDecisionTableId = trimString(decisionTableId)
+  if (!normalizedDecisionKey || !normalizedDecisionTableId) {
+    return ''
+  }
+  return `${normalizedDecisionKey}::${normalizedDecisionTableId}`
+}
+
+export const isDecisionPinnedInBinding = (
+  decision: DecisionTable,
+  pinnedDecisionRefs: PinnedDecisionRefs,
+): boolean => {
+  const decisionId = trimString(decision.id)
+  if (decisionId && pinnedDecisionRefs.decisionIds.some((value) => trimString(value) === decisionId)) {
+    return true
+  }
+
+  const bindingRefKey = buildDecisionBindingRefKey(decision.decision_key, decision.decision_table_id)
+  if (!bindingRefKey) {
+    return false
+  }
+  return pinnedDecisionRefs.decisionTableKeys.some((value) => trimString(value) === bindingRefKey)
+}
 
 const normalizeMetadataSnapshot = (
   metadata: MetadataContextLike
@@ -84,42 +114,59 @@ export const resolveDecisionSnapshotFilter = ({
   metadataContext,
   fallbackUsed,
   mode,
+  pinnedDecisionRefs,
 }: {
   decisions: DecisionTable[]
   metadataContext: MetadataContextLike
   fallbackUsed: boolean
   mode: DecisionSnapshotFilterMode
+  pinnedDecisionRefs: PinnedDecisionRefs
 }): DecisionSnapshotFilterResult => {
-  const documentPolicyDecisions = filterDocumentPolicyDecisions(decisions)
+  const isVisibleInMatchingMode = (decision: DecisionTable): boolean => {
+    if (isDecisionPinnedInBinding(decision, pinnedDecisionRefs)) {
+      return true
+    }
+    if (!isDocumentPolicyDecision(decision)) {
+      return false
+    }
+    return decisionMatchesMetadataSnapshot(decision, metadataContext)
+  }
+
+  const pinnedVisibleCount = decisions.filter((decision) => (
+    isDecisionPinnedInBinding(decision, pinnedDecisionRefs)
+  )).length
 
   const currentSnapshot = normalizeMetadataSnapshot(metadataContext)
   if (!currentSnapshot || fallbackUsed) {
     return {
       canFilterBySnapshot: false,
-      visibleDecisions: documentPolicyDecisions,
+      visibleDecisions: decisions,
       hiddenCount: 0,
+      pinnedVisibleCount,
       selectedConfigurationLabel: '',
     }
   }
 
   if (mode === 'all') {
-    const hiddenCount = documentPolicyDecisions
-      .filter((decision) => !decisionMatchesMetadataSnapshot(decision, metadataContext))
+    const hiddenCount = decisions
+      .filter((decision) => !isVisibleInMatchingMode(decision))
       .length
     return {
       canFilterBySnapshot: true,
-      visibleDecisions: documentPolicyDecisions,
+      visibleDecisions: decisions,
       hiddenCount,
+      pinnedVisibleCount,
       selectedConfigurationLabel: `${currentSnapshot.configName} (${currentSnapshot.configVersion})`,
     }
   }
 
-  const visibleDecisions = documentPolicyDecisions
-    .filter((decision) => decisionMatchesMetadataSnapshot(decision, metadataContext))
+  const visibleDecisions = decisions
+    .filter((decision) => isVisibleInMatchingMode(decision))
   return {
     canFilterBySnapshot: true,
     visibleDecisions,
-    hiddenCount: Math.max(documentPolicyDecisions.length - visibleDecisions.length, 0),
+    hiddenCount: Math.max(decisions.length - visibleDecisions.length, 0),
+    pinnedVisibleCount,
     selectedConfigurationLabel: `${currentSnapshot.configName} (${currentSnapshot.configVersion})`,
   }
 }

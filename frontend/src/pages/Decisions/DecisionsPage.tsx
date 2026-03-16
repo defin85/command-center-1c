@@ -46,9 +46,12 @@ import {
   type DocumentPolicyBuilderChainFormValue,
 } from './documentPolicyBuilder'
 import {
-  filterDocumentPolicyDecisions,
+  buildDecisionBindingRefKey,
+  isDecisionPinnedInBinding,
+  isDocumentPolicyDecision,
   resolveDecisionSnapshotFilter,
   type DecisionSnapshotFilterMode,
+  type PinnedDecisionRefs,
 } from './decisionSnapshotFilter'
 import {
   DecisionEditorPanel,
@@ -135,6 +138,7 @@ const METADATA_CONTEXT_FALLBACK_CODES = new Set([
 const METADATA_CONTEXT_FALLBACK_MESSAGE = 'Metadata context недоступен для выбранной базы. Показываем глобальный список revisions без compatibility context этой базы; управлять configuration profile и metadata snapshot нужно через /databases.'
 const METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE = 'Metadata context недоступен для выбранной базы. Чтобы восстановить configuration profile и metadata snapshot, откройте /databases.'
 const METADATA_CONTEXT_ROLLOVER_BLOCKED_MESSAGE = 'Resolved target metadata context недоступен. Откройте /databases и обновите metadata snapshot перед guided rollover.'
+const LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE = 'This revision is still pinned in workflow bindings, but /decisions editing supports only document_policy. Update the binding to a document_policy revision before editing here.'
 
 const shouldFallbackToUnscopedDecisionRead = (error: unknown): boolean => {
   const { code, status } = getApiErrorInfo(error)
@@ -317,6 +321,43 @@ const shouldPreferUnscopedReadFromMetadataManagement = (
   )
 }
 
+const EMPTY_PINNED_DECISION_REFS: PinnedDecisionRefs = {
+  decisionIds: [],
+  decisionTableKeys: [],
+}
+
+const collectPinnedDecisionRefs = (pools: OrganizationPool[]): PinnedDecisionRefs => {
+  const decisionIds = new Set<string>()
+  const decisionTableKeys = new Set<string>()
+
+  for (const pool of pools) {
+    for (const binding of pool.workflow_bindings ?? []) {
+      for (const decisionRef of binding.decisions ?? []) {
+        const decisionRefRecord = decisionRef as { decision_id?: string | null } | null
+        const decisionId = typeof decisionRefRecord?.decision_id === 'string'
+          ? decisionRefRecord.decision_id.trim()
+          : ''
+        if (decisionId) {
+          decisionIds.add(decisionId)
+        }
+
+        const refKey = buildDecisionBindingRefKey(
+          decisionRef.decision_key,
+          decisionRef.decision_table_id,
+        )
+        if (refKey) {
+          decisionTableKeys.add(refKey)
+        }
+      }
+    }
+  }
+
+  return {
+    decisionIds: [...decisionIds],
+    decisionTableKeys: [...decisionTableKeys],
+  }
+}
+
 export function DecisionsPage() {
   const navigate = useNavigate()
   const { message } = App.useApp()
@@ -351,6 +392,8 @@ export function DecisionsPage() {
   const [listReadFallbackUsed, setListReadFallbackUsed] = useState(false)
   const [detailReadFallbackUsed, setDetailReadFallbackUsed] = useState(false)
   const [snapshotFilterMode, setSnapshotFilterMode] = useState<DecisionSnapshotFilterMode>('matching_snapshot')
+  const [bindingUsagePools, setBindingUsagePools] = useState<OrganizationPool[]>([])
+  const [bindingUsageError, setBindingUsageError] = useState<string | null>(null)
   const effectiveSelectedDatabaseId = selectedDatabaseId ?? undefined
   const selectedDatabaseMetadataManagementQuery = useDatabaseMetadataManagement({
     id: effectiveSelectedDatabaseId ?? '',
@@ -368,15 +411,32 @@ export function DecisionsPage() {
     && !selectedDatabaseMetadataManagement
   )
   const legacyImportOpen = Boolean(legacyImportDraft)
+  const pinnedDecisionRefs = useMemo(
+    () => collectPinnedDecisionRefs(bindingUsagePools),
+    [bindingUsagePools],
+  )
+  const hasNonDocumentPolicyDecisions = useMemo(
+    () => decisions.some((decision) => !isDocumentPolicyDecision(decision)),
+    [decisions],
+  )
   const shouldPreferUnscopedDecisionRead = Boolean(
     effectiveSelectedDatabaseId
     && shouldPreferUnscopedReadFromMetadataManagement(selectedDatabaseMetadataManagement),
   )
   const rolloverTargetMetadataContext = detailContext ?? metadataContext
-  const selectedDecisionRequiresRollover = Boolean(selectedDecision?.metadata_compatibility?.is_compatible === false)
+  const selectedDecisionSupportsDocumentPolicyAuthoring = Boolean(
+    selectedDecision && isDocumentPolicyDecision(selectedDecision),
+  )
+  const selectedDecisionPinnedInBinding = Boolean(
+    selectedDecision && isDecisionPinnedInBinding(selectedDecision, pinnedDecisionRefs),
+  )
+  const selectedDecisionRequiresRollover = Boolean(
+    selectedDecisionSupportsDocumentPolicyAuthoring
+    && selectedDecision?.metadata_compatibility?.is_compatible === false,
+  )
   const metadataContextFallbackActive = Boolean(effectiveSelectedDatabaseId && (listReadFallbackUsed || detailReadFallbackUsed))
   const canOpenRollover = Boolean(
-    selectedDecision
+    selectedDecisionSupportsDocumentPolicyAuthoring
     && effectiveSelectedDatabaseId
     && !metadataContextFallbackActive
     && buildEditorTargetSummary(rolloverTargetMetadataContext, {
@@ -445,12 +505,12 @@ export function DecisionsPage() {
         const { response, usedFallback } = await loadDecisionsCollection(databaseIdForRead)
         if (cancelled) return
 
-        const items = filterDocumentPolicyDecisions(response.decisions ?? [])
+        const items = response.decisions ?? []
         setDecisions(items)
         setSelectedDecisionId((current) => (
           current && items.some((decision) => decision.id === current)
             ? current
-            : items[0]?.id ?? null
+            : null
         ))
         setMetadataContext(response.metadata_context ?? null)
         setListReadFallbackUsed(usedFallback || shouldPreferUnscopedDecisionRead)
@@ -478,14 +538,46 @@ export function DecisionsPage() {
     shouldPreferUnscopedDecisionRead,
   ])
 
+  useEffect(() => {
+    if (!hasNonDocumentPolicyDecisions) {
+      setBindingUsagePools([])
+      setBindingUsageError(null)
+      return
+    }
+
+    let cancelled = false
+
+    const load = async () => {
+      setBindingUsageError(null)
+
+      try {
+        const items = await listOrganizationPools()
+        if (cancelled) return
+        setBindingUsagePools(items)
+      } catch (error) {
+        if (cancelled) return
+        setBindingUsagePools([])
+        setBindingUsageError(
+          toErrorMessage(error, 'Failed to load workflow binding usage. Decisions pinned in bindings may be hidden.')
+        )
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [hasNonDocumentPolicyDecisions, reloadTick])
+
   const decisionSnapshotFilter = useMemo(
     () => resolveDecisionSnapshotFilter({
       decisions,
       metadataContext,
       fallbackUsed: listReadFallbackUsed,
       mode: snapshotFilterMode,
+      pinnedDecisionRefs,
     }),
-    [decisions, listReadFallbackUsed, metadataContext, snapshotFilterMode],
+    [decisions, listReadFallbackUsed, metadataContext, pinnedDecisionRefs, snapshotFilterMode],
   )
 
   const visibleDecisions = decisionSnapshotFilter.visibleDecisions
@@ -614,6 +706,7 @@ export function DecisionsPage() {
     }
   }, [selectedDecision])
   const hiddenDecisionCount = decisionSnapshotFilter.hiddenCount
+  const pinnedVisibleDecisionCount = decisionSnapshotFilter.pinnedVisibleCount
   const decisionListTitle = decisionSnapshotFilter.canFilterBySnapshot
     ? `Decision revisions (${visibleDecisions.length} of ${decisions.length})`
     : `Decision revisions (${decisions.length})`
@@ -622,10 +715,14 @@ export function DecisionsPage() {
       snapshotFilterMode === 'all'
         ? (
           hiddenDecisionCount > 0
-            ? `Showing all ${decisions.length} revisions for diagnostics. ${hiddenDecisionCount} ${hiddenDecisionCount === 1 ? 'revision does' : 'revisions do'} not match the selected configuration.`
+            ? `Showing all ${decisions.length} revisions for diagnostics. ${hiddenDecisionCount} ${hiddenDecisionCount === 1 ? 'revision is' : 'revisions are'} outside the selected configuration and not pinned in workflow bindings.`
             : `Showing all ${decisions.length} revisions for diagnostics. All revisions match the selected configuration.`
         )
-        : `Showing ${visibleDecisions.length} of ${decisions.length} revisions matching the selected configuration.`
+        : (
+          pinnedVisibleDecisionCount > 0
+            ? `Showing ${visibleDecisions.length} of ${decisions.length} revisions matching the selected configuration or pinned in workflow bindings.`
+            : `Showing ${visibleDecisions.length} of ${decisions.length} revisions matching the selected configuration.`
+        )
     )
     : null
 
@@ -645,7 +742,11 @@ export function DecisionsPage() {
     setSelectedDecisionId((current) => (
       current && visibleDecisions.some((decision) => decision.id === current)
         ? current
-        : visibleDecisions[0]?.id ?? null
+        : (
+          visibleDecisions.find((decision) => isDocumentPolicyDecision(decision))?.id
+          ?? visibleDecisions[0]?.id
+          ?? null
+        )
     ))
   }, [listLoading, visibleDecisions])
 
@@ -684,6 +785,18 @@ export function DecisionsPage() {
 
   const handleOpenSelectedDecisionForEdit = () => {
     if (!selectedDecision) return
+    if (!selectedDecisionSupportsDocumentPolicyAuthoring) {
+      setEditorDraft(null)
+      setEditorError(
+        selectedDecisionPinnedInBinding
+          ? LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE
+          : `This revision uses decision_key "${selectedDecision.decision_key}". /decisions editing supports only document_policy.`
+      )
+      setLegacyImportDraft(null)
+      setLegacyImportGraph(null)
+      setLegacyImportError(null)
+      return
+    }
     if (metadataContextFallbackActive) {
       setEditorDraft(null)
       setEditorError(METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE)
@@ -714,6 +827,18 @@ export function DecisionsPage() {
 
   const handleOpenSelectedDecisionForRollover = () => {
     if (!selectedDecision) return
+    if (!selectedDecisionSupportsDocumentPolicyAuthoring) {
+      setEditorDraft(null)
+      setEditorError(
+        selectedDecisionPinnedInBinding
+          ? LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE
+          : `This revision uses decision_key "${selectedDecision.decision_key}". /decisions rollover supports only document_policy.`
+      )
+      setLegacyImportDraft(null)
+      setLegacyImportGraph(null)
+      setLegacyImportError(null)
+      return
+    }
     if (!effectiveSelectedDatabaseId || !selectedDatabaseLabel) {
       setEditorDraft(null)
       setEditorError('Select a target database before starting guided rollover.')
@@ -818,6 +943,14 @@ export function DecisionsPage() {
 
   const handleDeactivateSelected = async () => {
     if (!selectedDecision) return
+    if (!selectedDecisionSupportsDocumentPolicyAuthoring) {
+      setEditorError(
+        selectedDecisionPinnedInBinding
+          ? LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE
+          : `This revision uses decision_key "${selectedDecision.decision_key}". /decisions deactivation supports only document_policy.`
+      )
+      return
+    }
     if (metadataContextFallbackActive) {
       setEditorError(METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE)
       return
@@ -979,14 +1112,20 @@ export function DecisionsPage() {
                 <Button
                   icon={<EditOutlined />}
                   onClick={handleOpenSelectedDecisionForEdit}
-                  disabled={!selectedDecision || saving || selectedDecisionRequiresRollover || metadataContextFallbackActive}
+                  disabled={
+                    !selectedDecision
+                    || !selectedDecisionSupportsDocumentPolicyAuthoring
+                    || saving
+                    || selectedDecisionRequiresRollover
+                    || metadataContextFallbackActive
+                  }
                   aria-label="Edit selected decision"
                 >
                   Edit selected decision
               </Button>
               <Button
                 onClick={handleOpenSelectedDecisionForRollover}
-                disabled={!selectedDecision || saving || !canOpenRollover}
+                disabled={!selectedDecision || !selectedDecisionSupportsDocumentPolicyAuthoring || saving || !canOpenRollover}
                 aria-label="Rollover selected revision"
               >
                 Rollover selected revision
@@ -995,7 +1134,13 @@ export function DecisionsPage() {
                   danger
                   icon={<MinusCircleOutlined />}
                   onClick={() => void handleDeactivateSelected()}
-                  disabled={!selectedDecision || saving || selectedDecisionRequiresRollover || metadataContextFallbackActive}
+                  disabled={
+                    !selectedDecision
+                    || !selectedDecisionSupportsDocumentPolicyAuthoring
+                    || saving
+                    || selectedDecisionRequiresRollover
+                    || metadataContextFallbackActive
+                  }
                   aria-label="Deactivate selected decision"
                 >
                 Deactivate selected decision
@@ -1047,6 +1192,7 @@ export function DecisionsPage() {
       </Card>
 
       {listError ? <Alert type="error" showIcon message={listError} /> : null}
+      {bindingUsageError ? <Alert type="warning" showIcon message={bindingUsageError} /> : null}
 
       <div
         style={{
@@ -1110,6 +1256,9 @@ export function DecisionsPage() {
                       <Tag color={decision.is_active ? 'green' : 'default'}>
                         {decision.is_active ? 'active' : 'inactive'}
                       </Tag>
+                      {isDecisionPinnedInBinding(decision, pinnedDecisionRefs) ? (
+                        <Tag color="gold">Pinned in binding</Tag>
+                      ) : null}
                       {renderCompatibilityTag(decision.metadata_compatibility)}
                     </Space>
                     <Text type="secondary">{decision.decision_table_id}</Text>
@@ -1181,6 +1330,18 @@ export function DecisionsPage() {
                 />
               ) : null}
 
+              {!selectedDecisionSupportsDocumentPolicyAuthoring ? (
+                <Alert
+                  type={selectedDecisionPinnedInBinding ? 'warning' : 'info'}
+                  showIcon
+                  message={
+                    selectedDecisionPinnedInBinding
+                      ? LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE
+                      : `This revision uses decision_key "${selectedDecision.decision_key}". /decisions editing supports only document_policy.`
+                  }
+                />
+              ) : null}
+
               {selectedDecisionRequiresRollover ? (
                 <Alert
                   type="info"
@@ -1189,28 +1350,32 @@ export function DecisionsPage() {
                 />
               ) : null}
 
-              <div>
-                <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                  <Text strong>Structured policy view</Text>
-                  <Text type="secondary">
-                    Browse the selected decision as chains, documents, field mappings, and table-part mappings.
-                    Use Edit selected decision to save any changes as a new revision.
-                  </Text>
-                </Space>
-                <div style={{ marginTop: 12 }}>
-                  <DocumentPolicyViewer policy={selectedPolicy} />
+              {selectedDecisionSupportsDocumentPolicyAuthoring ? (
+                <div>
+                  <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                    <Text strong>Structured policy view</Text>
+                    <Text type="secondary">
+                      Browse the selected decision as chains, documents, field mappings, and table-part mappings.
+                      Use Edit selected decision to save any changes as a new revision.
+                    </Text>
+                  </Space>
+                  <div style={{ marginTop: 12 }}>
+                    <DocumentPolicyViewer policy={selectedPolicy} />
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               <div>
-                <Text strong>Compiled document_policy JSON</Text>
+                <Text strong>{selectedDecisionSupportsDocumentPolicyAuthoring ? 'Compiled document_policy JSON' : 'Decision rules JSON'}</Text>
                 <div style={{ marginTop: 12 }}>
                   <LazyJsonCodeEditor
-                    value={selectedPolicy ? formatJson(selectedPolicy) : '{}'}
+                    value={selectedDecisionSupportsDocumentPolicyAuthoring
+                      ? (selectedPolicy ? formatJson(selectedPolicy) : '{}')
+                      : formatJson(selectedDecision.rules ?? [])}
                     onChange={() => {}}
                     readOnly
                     height={320}
-                    title="Document policy output"
+                    title={selectedDecisionSupportsDocumentPolicyAuthoring ? 'Document policy output' : 'Decision rules output'}
                     enableCopy
                   />
                 </div>

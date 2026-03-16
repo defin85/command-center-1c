@@ -620,7 +620,7 @@ describe('DecisionsPage', () => {
     })
   }, 10000)
 
-  it('filters non-document_policy revisions out of the default selection and edit flow', async () => {
+  it('keeps unbound non-document_policy revisions out of the default selection and edit flow', async () => {
     const user = userEvent.setup()
     const unsupportedDecision = {
       ...defaultDecision,
@@ -654,6 +654,7 @@ describe('DecisionsPage', () => {
     renderPage()
 
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
+    await waitFor(() => expect(mockListOrganizationPools).toHaveBeenCalledTimes(1))
 
     await waitFor(() => {
       expect(mockGetDecisionsDetail.mock.calls.some(([decisionId]) => decisionId === unsupportedDecision.id)).toBe(false)
@@ -671,6 +672,96 @@ describe('DecisionsPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Edit selected decision' })).toBeInTheDocument()
     expect(screen.queryByText('decision_key должен быть "document_policy".')).not.toBeInTheDocument()
+  })
+
+  it('keeps binding-pinned legacy decisions visible but read-only', async () => {
+    const user = userEvent.setup()
+    const legacyBoundDecision = {
+      ...defaultDecision,
+      id: 'decision-version-sale-only',
+      decision_table_id: 'sale-only-policy',
+      decision_key: 'sale_only',
+      name: 'Sale only policy',
+      decision_revision: 5,
+      rules: [
+        {
+          ...defaultDecision.rules[0],
+          outputs: {
+            sale_only: {
+              version: 'sale_only.v1',
+              routes: [],
+            },
+          },
+        },
+      ],
+    }
+
+    mockGetDecisionsCollection.mockResolvedValue({
+      decisions: [legacyBoundDecision, defaultDecision],
+      count: 2,
+      metadata_context: defaultMetadataContext,
+    })
+    mockGetDecisionsDetail.mockImplementation(async (decisionId: string) => ({
+      decision: decisionId === legacyBoundDecision.id ? legacyBoundDecision : defaultDecision,
+      metadata_context: defaultMetadataContext,
+    }))
+    mockListOrganizationPools.mockResolvedValue([
+      {
+        ...defaultPool,
+        workflow_bindings: [
+          {
+            binding_id: 'binding-sale-only',
+            pool_id: defaultPool.id,
+            revision: 3,
+            status: 'active',
+            effective_from: '2026-03-10',
+            effective_to: null,
+            workflow: {
+              workflow_definition_key: 'wf-sale-only',
+              workflow_revision_id: 'wf-sale-only-r3',
+              workflow_revision: 3,
+              workflow_name: 'Sale only workflow',
+            },
+            decisions: [
+              {
+                decision_table_id: legacyBoundDecision.decision_table_id,
+                decision_key: legacyBoundDecision.decision_key,
+                decision_revision: legacyBoundDecision.decision_revision,
+              },
+            ],
+          },
+        ],
+      },
+    ])
+
+    renderPage()
+
+    expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
+    await waitFor(() => expect(mockListOrganizationPools).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('Sale only policy')).toBeInTheDocument()
+    expect(screen.getByText('Pinned in binding')).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(mockGetDecisionsDetail).toHaveBeenCalledWith(
+        defaultDecision.id,
+        { database_id: 'db-2' },
+        { skipGlobalError: true },
+      )
+    })
+
+    await user.click(screen.getByText('Sale only policy'))
+
+    await waitFor(() => {
+      expect(mockGetDecisionsDetail).toHaveBeenCalledWith(
+        legacyBoundDecision.id,
+        { database_id: 'db-2' },
+        { skipGlobalError: true },
+      )
+    })
+
+    expect(await screen.findByText('This revision is still pinned in workflow bindings, but /decisions editing supports only document_policy. Update the binding to a document_policy revision before editing here.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit selected decision' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Deactivate selected decision' })).toBeDisabled()
   })
 
   it('supports guided rollover from a revision outside the default compatible selection', async () => {
@@ -926,7 +1017,7 @@ describe('DecisionsPage', () => {
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Show all revisions' }))
 
-    expect(await screen.findByText('Showing all 2 revisions for diagnostics. 1 revision does not match the selected configuration.')).toBeInTheDocument()
+    expect(await screen.findByText('Showing all 2 revisions for diagnostics. 1 revision is outside the selected configuration and not pinned in workflow bindings.')).toBeInTheDocument()
     expect(screen.getByText('Transfer publication policy')).toBeInTheDocument()
 
     openSelect('decisions-database-select')
