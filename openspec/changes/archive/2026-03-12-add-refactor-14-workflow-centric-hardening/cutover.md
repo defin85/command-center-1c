@@ -113,7 +113,7 @@ Shared registry потом гидратируется через refresh/probe p
 1. Предпочтительный operator path:
    - `/decisions` -> `Import legacy edge`
    - explicit compatibility-only fallback: `/decisions` -> `Import raw JSON`
-   - compatibility shortcut: `/pools/catalog` -> `Import to /decisions`
+   - compatibility handoff: `/pools/catalog` -> remediation alert -> `Open /decisions`
 2. Deterministic API path:
    - `POST /api/v2/pools/<pool_id>/document-policy-migrations/`
 3. Зафиксировать outcome:
@@ -139,7 +139,7 @@ Shared registry потом гидратируется через refresh/probe p
    - `/decisions` показывает metadata provenance;
    - `/decisions` остаётся canonical legacy import surface;
    - `/decisions` -> `Import raw JSON` остаётся explicit compatibility-only fallback;
-   - `/pools/catalog` даёт только compatibility shortcut/handoff для legacy policy migration;
+   - `/pools/catalog` даёт только remediation handoff в `/decisions` для legacy policy migration;
    - `/pools/runs` показывает pinned decision refs и workflow diagnostics link.
 4. Выполнить pilot canary run и inspect.
    Следующий run должен стартовать только через явный `pool_workflow_binding_id`.

@@ -560,6 +560,7 @@ def _prepare_pool_runtime_bindings(
     decision_ref = {
         "decision_table_id": decision.decision_table_id,
         "decision_key": decision.decision_key,
+        "slot_key": decision.decision_key,
         "decision_revision": decision.version_number,
     }
 
@@ -2010,6 +2011,59 @@ def test_pool_workflow_bindings_collection_put_rejects_duplicate_slot_key_withou
 
 
 @pytest.mark.django_db
+def test_pool_workflow_bindings_collection_put_rejects_document_policy_without_slot_key_without_partial_apply(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    created_binding, _ = upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding=_build_pool_workflow_binding_payload(
+            pool=pool,
+            workflow_definition_key="services-publication",
+            workflow_revision=3,
+            direction=PoolRunDirection.TOP_DOWN,
+            mode=PoolRunMode.SAFE,
+        ),
+        actor_username="collection-slot-required-test",
+    )
+    initial_response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
+    assert initial_response.status_code == 200
+    initial_payload = initial_response.json()
+
+    response = authenticated_client.put(
+        "/api/v2/pools/workflow-bindings/",
+        {
+            "pool_id": str(pool.id),
+            "expected_collection_etag": initial_payload["collection_etag"],
+            "workflow_bindings": [
+                {
+                    **created_binding,
+                    "decisions": [
+                        {
+                            "decision_table_id": "decision-a",
+                            "decision_key": "document_policy",
+                            "decision_revision": 1,
+                        }
+                    ],
+                }
+            ],
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_DOCUMENT_POLICY_SLOT_REQUIRED",
+    )
+    assert "slot_key" in payload["detail"]
+
+    current_response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
+    assert current_response.status_code == 200
+    assert current_response.json() == initial_payload
+
+
+@pytest.mark.django_db
 def test_pool_workflow_binding_upsert_creates_and_updates_first_class_binding(
     authenticated_client: APIClient,
     pool: OrganizationPool,
@@ -2123,6 +2177,46 @@ def test_pool_workflow_binding_upsert_rejects_duplicate_slot_key(
         response,
         status_code=400,
         code="POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
+    )
+    assert "slot_key" in payload["detail"]
+    assert list_pool_workflow_bindings(pool=pool) == []
+
+
+@pytest.mark.django_db
+def test_pool_workflow_binding_upsert_rejects_document_policy_without_slot_key(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": {
+                "workflow": {
+                    "workflow_definition_key": "services-publication",
+                    "workflow_revision_id": "11111111-1111-1111-1111-111111111111",
+                    "workflow_revision": 3,
+                    "workflow_name": "services_publication",
+                },
+                "decisions": [
+                    {
+                        "decision_table_id": "decision-a",
+                        "decision_key": "document_policy",
+                        "decision_revision": 1,
+                    }
+                ],
+                "selector": {"direction": "top_down", "mode": "safe", "tags": ["baseline"]},
+                "effective_from": "2026-01-01",
+                "status": "active",
+            },
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_DOCUMENT_POLICY_SLOT_REQUIRED",
     )
     assert "slot_key" in payload["detail"]
     assert list_pool_workflow_bindings(pool=pool) == []
@@ -3938,6 +4032,76 @@ def test_preview_pool_workflow_binding_surfaces_missing_selector_in_slot_coverag
 
 
 @pytest.mark.django_db
+def test_preview_pool_workflow_binding_rejects_legacy_edge_document_policy_after_cutover(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    decision = create_decision_table_revision(
+        contract=_build_document_policy_decision_payload(
+            decision_table_id=f"preview-legacy-cutover-{uuid4().hex[:8]}"
+        )
+    )
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    binding["decisions"] = [
+        {
+            "decision_table_id": decision.decision_table_id,
+            "decision_key": decision.decision_key,
+            "slot_key": "sale",
+            "decision_revision": decision.version_number,
+        }
+    ]
+    bindings, target_database = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    _attach_pool_slot_edge(
+        tenant=pool.tenant,
+        pool=pool,
+        database=target_database,
+        period_start=date(2026, 1, 1),
+        slot_key="sale",
+    )
+    edge = PoolEdgeVersion.objects.filter(pool=pool, effective_from=date(2026, 1, 1)).order_by("created_at").last()
+    assert edge is not None
+    edge.metadata = {
+        "document_policy_key": "sale",
+        "document_policy": _build_document_policy_payload(),
+    }
+    edge.save(update_fields=["metadata", "updated_at"])
+
+    response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/preview/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": bindings[0]["binding_id"],
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code=POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED,
+    )
+    assert "legacy topology document_policy" in problem["detail"]
+
+
+@pytest.mark.django_db
 def test_create_pool_run_returns_slot_not_bound_problem_code_on_default_path(
     authenticated_client: APIClient,
     user: User,
@@ -3984,6 +4148,75 @@ def test_create_pool_run_returns_slot_not_bound_problem_code_on_default_path(
     )
     assert problem["title"] == "Pool Runtime Configuration Error"
     assert "sale" in problem["detail"]
+
+
+@pytest.mark.django_db
+def test_create_pool_run_rejects_legacy_pool_document_policy_after_cutover(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    decision = create_decision_table_revision(
+        contract=_build_document_policy_decision_payload(
+            decision_table_id=f"run-legacy-cutover-{uuid4().hex[:8]}"
+        )
+    )
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    binding["decisions"] = [
+        {
+            "decision_table_id": decision.decision_table_id,
+            "decision_key": decision.decision_key,
+            "slot_key": "sale",
+            "decision_revision": decision.version_number,
+        }
+    ]
+    bindings, target_database = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    _attach_pool_slot_edge(
+        tenant=pool.tenant,
+        pool=pool,
+        database=target_database,
+        period_start=date(2026, 1, 1),
+        slot_key="sale",
+    )
+    pool.metadata = {
+        **(pool.metadata if isinstance(pool.metadata, dict) else {}),
+        "document_policy": _build_document_policy_payload(),
+    }
+    pool.save(update_fields=["metadata", "updated_at"])
+
+    response = authenticated_client.post(
+        "/api/v2/pools/runs/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": bindings[0]["binding_id"],
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code=POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED,
+    )
+    assert problem["title"] == "Pool Runtime Configuration Error"
+    assert "legacy topology document_policy" in problem["detail"]
 
 
 @pytest.mark.django_db

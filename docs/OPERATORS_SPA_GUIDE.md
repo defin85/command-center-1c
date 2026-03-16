@@ -108,7 +108,7 @@
   - `master_data.item.<canonical_id>.ref`
   - `master_data.contract.<canonical_id>.<owner_counterparty_canonical_id>.ref`
   - `master_data.tax_profile.<canonical_id>.ref`
-- Во вкладке `Bindings` pin decision revision в named publication slot (`decision_key`), а в `Topology Editor` укажи соответствующий `edge.metadata.document_policy_key`.
+- Во вкладке `Bindings` pin decision revision в named publication slot (`slot_key`), а в `Topology Editor` укажи соответствующий `edge.metadata.document_policy_key`.
 - На исполнении gate резолвит token в конкретный `ib_ref_key` по target database из concrete slot-selected decision policy.
 
 #### Частые ошибки

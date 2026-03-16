@@ -77,6 +77,15 @@ def compile_document_plan_artifact_v1(
         else None
     )
     normalized_document_policy_source = str(document_policy_source or "").strip() or None
+    legacy_dependency = _find_legacy_document_policy_dependency(
+        edge_models=edge_models_raw,
+        pool_metadata=pool_metadata,
+    )
+    if legacy_dependency is not None:
+        raise ValueError(
+            f"{POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED}: "
+            f"legacy topology document_policy is not allowed for {legacy_dependency}"
+        )
     targets_by_database: dict[str, dict[str, Any]] = {}
     policy_refs: list[dict[str, Any]] = []
     seen_policy_refs: set[tuple[str, str]] = set()
@@ -144,14 +153,6 @@ def compile_document_plan_artifact_v1(
             policy = normalized_compiled_policy
             source = normalized_document_policy_source or "workflow_binding.decision_table"
         else:
-            if _has_legacy_document_policy_payload(
-                edge_metadata=edge_metadata,
-                pool_metadata=pool_metadata,
-            ):
-                raise ValueError(
-                    f"{POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED}: legacy topology "
-                    f"document_policy is not allowed for edge {parent_node_id}->{child_node_id}"
-                )
             policy, source = None, None
         if policy is None:
             continue
@@ -278,12 +279,25 @@ def _resolve_document_policy_key_for_edge(
     )
 
 
-def _has_legacy_document_policy_payload(
+def _find_legacy_document_policy_dependency(
     *,
-    edge_metadata: Mapping[str, Any],
+    edge_models: Mapping[Any, Any],
     pool_metadata: Mapping[str, Any],
-) -> bool:
-    return DOCUMENT_POLICY_METADATA_KEY in edge_metadata or DOCUMENT_POLICY_METADATA_KEY in pool_metadata
+) -> str | None:
+    if DOCUMENT_POLICY_METADATA_KEY in pool_metadata:
+        return "pool.metadata.document_policy"
+    sorted_edges = sorted(
+        (
+            (str(parent_node_id), str(child_node_id), edge_model)
+            for (parent_node_id, child_node_id), edge_model in edge_models.items()
+        ),
+        key=lambda item: (item[0], item[1]),
+    )
+    for parent_node_id, child_node_id, edge_model in sorted_edges:
+        edge_metadata = edge_model.metadata if isinstance(getattr(edge_model, "metadata", None), Mapping) else {}
+        if DOCUMENT_POLICY_METADATA_KEY in edge_metadata:
+            return f"edge {parent_node_id}->{child_node_id}"
+    return None
 
 
 def validate_document_plan_artifact_v1(*, artifact: Any) -> dict[str, Any]:

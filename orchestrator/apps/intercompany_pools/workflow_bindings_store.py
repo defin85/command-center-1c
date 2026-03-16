@@ -8,7 +8,10 @@ from uuid import uuid4
 from django.db import transaction
 
 from apps.intercompany_pools.models import OrganizationPool, PoolWorkflowBinding
-from apps.intercompany_pools.workflow_authoring_contract import PoolWorkflowBindingContract
+from apps.intercompany_pools.workflow_authoring_contract import (
+    PoolWorkflowBindingContract,
+    PoolWorkflowBindingDecisionRef,
+)
 
 
 class PoolWorkflowBindingStoreError(ValueError):
@@ -113,7 +116,7 @@ def upsert_canonical_pool_workflow_binding(
                 workflow_revision_id=contract.workflow.workflow_revision_id,
                 workflow_revision=contract.workflow.workflow_revision,
                 workflow_name=contract.workflow.workflow_name,
-                decisions=[decision.model_dump(mode="json") for decision in contract.decisions],
+                decisions=_serialize_decision_refs(contract.decisions),
                 parameters=dict(contract.parameters),
                 role_mapping=dict(contract.role_mapping),
                 revision=1,
@@ -143,7 +146,7 @@ def upsert_canonical_pool_workflow_binding(
         existing.workflow_revision_id = contract.workflow.workflow_revision_id
         existing.workflow_revision = contract.workflow.workflow_revision
         existing.workflow_name = contract.workflow.workflow_name
-        existing.decisions = [decision.model_dump(mode="json") for decision in contract.decisions]
+        existing.decisions = _serialize_decision_refs(contract.decisions)
         existing.parameters = dict(contract.parameters)
         existing.role_mapping = dict(contract.role_mapping)
         existing.revision += 1
@@ -246,7 +249,7 @@ def replace_canonical_pool_workflow_bindings_collection(
                     workflow_revision_id=contract.workflow.workflow_revision_id,
                     workflow_revision=contract.workflow.workflow_revision,
                     workflow_name=contract.workflow.workflow_name,
-                    decisions=[decision.model_dump(mode="json") for decision in contract.decisions],
+                    decisions=_serialize_decision_refs(contract.decisions),
                     parameters=dict(contract.parameters),
                     role_mapping=dict(contract.role_mapping),
                     revision=1,
@@ -269,7 +272,7 @@ def replace_canonical_pool_workflow_bindings_collection(
             existing.workflow_revision_id = contract.workflow.workflow_revision_id
             existing.workflow_revision = contract.workflow.workflow_revision
             existing.workflow_name = contract.workflow.workflow_name
-            existing.decisions = [decision.model_dump(mode="json") for decision in contract.decisions]
+            existing.decisions = _serialize_decision_refs(contract.decisions)
             existing.parameters = dict(contract.parameters)
             existing.role_mapping = dict(contract.role_mapping)
             existing.revision += 1
@@ -321,7 +324,7 @@ def normalize_pool_workflow_bindings_for_storage(
         except Exception as exc:
             raise PoolWorkflowBindingStoreError(str(exc)) from exc
 
-        normalized_bindings.append(contract.model_dump(mode="json"))
+        normalized_bindings.append(contract.model_dump(mode="json", exclude_none=True))
 
     return normalized_bindings
 
@@ -421,7 +424,7 @@ def _serialize_canonical_record(record: PoolWorkflowBinding) -> dict[str, Any]:
         status=record.status,
     )
     return {
-        **contract.model_dump(mode="json"),
+        **contract.model_dump(mode="json", exclude_none=True),
         "revision": record.revision,
     }
 
@@ -443,10 +446,31 @@ def _record_matches_contract(
         and existing.workflow_revision_id == contract.workflow.workflow_revision_id
         and existing.workflow_revision == contract.workflow.workflow_revision
         and existing.workflow_name == contract.workflow.workflow_name
-        and list(existing.decisions) == [decision.model_dump(mode="json") for decision in contract.decisions]
+        and _normalize_stored_decision_refs(existing.decisions) == _serialize_decision_refs(contract.decisions)
         and dict(existing.parameters) == dict(contract.parameters)
         and dict(existing.role_mapping) == dict(contract.role_mapping)
     )
+
+
+def _serialize_decision_refs(
+    decisions: list[PoolWorkflowBindingDecisionRef],
+) -> list[dict[str, Any]]:
+    return [decision.model_dump(mode="json", exclude_none=True) for decision in decisions]
+
+
+def _normalize_stored_decision_refs(
+    decisions: object,
+) -> list[dict[str, Any]]:
+    if not isinstance(decisions, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    for decision in decisions:
+        if not isinstance(decision, dict):
+            continue
+        normalized.append(
+            PoolWorkflowBindingDecisionRef(**decision).model_dump(mode="json", exclude_none=True)
+        )
+    return normalized
 
 
 def _serialize_canonical_collection(

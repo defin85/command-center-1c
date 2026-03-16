@@ -32,7 +32,7 @@
    - в `Metadata management` при необходимости запустить `Re-verify configuration identity`, затем `Refresh metadata snapshot`
 4. Для pool-ов с legacy edge policies выполнить import в `/decisions`:
    - UI: `/decisions` -> `Import legacy edge`
-   - Compatibility UI shortcut: `/pools/catalog` -> `Import to /decisions`
+   - Compatibility handoff: `/pools/catalog` -> remediation alert -> `Open /decisions`
    - explicit compatibility-only fallback: `/decisions` -> `Import raw JSON`
    - API: `POST /api/v2/pools/{pool_id}/document-policy-migrations/`
    - migration report должен зафиксировать `slot_key`, `legacy_payload_removed` и `affected_bindings[].decision_ref`

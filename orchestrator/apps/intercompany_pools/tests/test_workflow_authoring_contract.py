@@ -137,6 +137,27 @@ def test_pool_workflow_binding_contract_allows_reusing_document_policy_decision_
 
 
 @pytest.mark.django_db
+def test_pool_workflow_binding_contract_requires_slot_key_for_document_policy_decisions() -> None:
+    workflow = _create_workflow_template(name=f"wf-{uuid4().hex[:6]}", version_number=1)
+
+    with pytest.raises(ValueError, match="slot_key"):
+        PoolWorkflowBindingContract(
+            binding_id="binding-services-v1",
+            pool_id=str(uuid4()),
+            workflow=build_workflow_definition_ref(workflow_template=workflow),
+            decisions=[
+                PoolWorkflowBindingDecisionRef(
+                    decision_table_id="decision-publication",
+                    decision_key="document_policy",
+                    decision_revision=3,
+                )
+            ],
+            effective_from=date(2026, 1, 1),
+            status=PoolWorkflowBindingStatus.ACTIVE,
+        )
+
+
+@pytest.mark.django_db
 def test_pool_workflow_binding_contract_rejects_duplicate_slot_key() -> None:
     workflow = _create_workflow_template(name=f"wf-{uuid4().hex[:6]}", version_number=1)
 

@@ -19,6 +19,7 @@ from apps.templates.workflow.authoring_contract import (
 
 POOL_WORKFLOW_BINDING_CONTRACT_VERSION = "pool_workflow_binding.v1"
 POOL_DOCUMENT_POLICY_SLOT_DUPLICATE = "POOL_DOCUMENT_POLICY_SLOT_DUPLICATE"
+POOL_DOCUMENT_POLICY_SLOT_REQUIRED = "POOL_DOCUMENT_POLICY_SLOT_REQUIRED"
 
 
 class PoolWorkflowBindingStatus(str, Enum):
@@ -63,12 +64,17 @@ class PoolWorkflowBindingDecisionRef(BaseModel):
         normalized = value.strip()
         return normalized or None
 
+    @model_validator(mode="after")
+    def validate_slot_requirements(self) -> "PoolWorkflowBindingDecisionRef":
+        if self.decision_key == DOCUMENT_POLICY_METADATA_KEY and not self.slot_key:
+            raise ValueError(
+                f"{POOL_DOCUMENT_POLICY_SLOT_REQUIRED}: "
+                "slot_key is required for policy-bearing document_policy decisions"
+            )
+        return self
+
     def resolved_slot_key(self) -> str | None:
-        if self.slot_key:
-            return self.slot_key
-        if self.decision_key == DOCUMENT_POLICY_METADATA_KEY:
-            return DOCUMENT_POLICY_METADATA_KEY
-        return None
+        return self.slot_key
 
 
 class PoolWorkflowBindingContract(BaseModel):
@@ -149,6 +155,7 @@ __all__ = [
     "DecisionRule",
     "DecisionTableContract",
     "DecisionTableRef",
+    "POOL_DOCUMENT_POLICY_SLOT_REQUIRED",
     "PoolWorkflowBindingDecisionRef",
     "POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
     "POOL_WORKFLOW_BINDING_CONTRACT_VERSION",

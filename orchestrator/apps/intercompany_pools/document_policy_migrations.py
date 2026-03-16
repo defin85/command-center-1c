@@ -76,8 +76,36 @@ def migrate_legacy_edge_document_policy(
             status_code=404,
         )
 
+    slot_key = _resolve_slot_key(pool=pool, edge_version=edge_version)
+    normalized_decision_table_id = str(decision_table_id or "").strip() or _build_decision_table_id(
+        pool=pool,
+        edge_version=edge_version,
+    )
+    latest = (
+        DecisionTable.objects.filter(decision_table_id=normalized_decision_table_id)
+        .order_by("-version_number", "-created_at")
+        .first()
+    )
+    if latest is not None and latest.decision_key != DOCUMENT_POLICY_METADATA_KEY:
+        raise DocumentPolicyMigrationError(
+            code="DECISION_TABLE_KEY_CONFLICT",
+            detail=(
+                f"Decision table '{normalized_decision_table_id}' already exists with "
+                f"decision_key '{latest.decision_key}'."
+            ),
+        )
+
     policy = resolve_document_policy_from_edge_metadata(metadata=edge_version.metadata)
     if policy is None:
+        reused_result = _reuse_existing_migration_without_legacy_payload(
+            pool=pool,
+            edge_version=edge_version,
+            decision=latest,
+            slot_key=slot_key,
+            actor_username=actor_username,
+        )
+        if reused_result is not None:
+            return reused_result
         raise DocumentPolicyMigrationError(
             code="POOL_DOCUMENT_POLICY_NOT_FOUND",
             detail="edge.metadata.document_policy is missing for the requested edge.",
@@ -131,25 +159,6 @@ def migrate_legacy_edge_document_policy(
     stored_source_provenance = (
         build_decision_table_source_provenance(source_provenance=source_provenance) or {}
     )
-    slot_key = _resolve_slot_key(pool=pool, edge_version=edge_version)
-
-    normalized_decision_table_id = str(decision_table_id or "").strip() or _build_decision_table_id(
-        pool=pool,
-        edge_version=edge_version,
-    )
-    latest = (
-        DecisionTable.objects.filter(decision_table_id=normalized_decision_table_id)
-        .order_by("-version_number", "-created_at")
-        .first()
-    )
-    if latest is not None and latest.decision_key != DOCUMENT_POLICY_METADATA_KEY:
-        raise DocumentPolicyMigrationError(
-            code="DECISION_TABLE_KEY_CONFLICT",
-            detail=(
-                f"Decision table '{normalized_decision_table_id}' already exists with "
-                f"decision_key '{latest.decision_key}'."
-            ),
-        )
 
     with transaction.atomic():
         if latest is not None and _can_reuse_existing_revision(
@@ -227,6 +236,63 @@ def migrate_legacy_edge_document_policy(
             legacy_payload_removed=legacy_payload_removed,
         ),
         created=created,
+    )
+
+
+def _reuse_existing_migration_without_legacy_payload(
+    *,
+    pool: OrganizationPool,
+    edge_version: PoolEdgeVersion,
+    decision: DecisionTable | None,
+    slot_key: str,
+    actor_username: str,
+) -> DocumentPolicyMigrationResult | None:
+    if decision is None or not _matches_existing_edge_migration_source(
+        decision_table=decision,
+        pool=pool,
+        edge_version=edge_version,
+    ):
+        return None
+
+    metadata_context = build_decision_table_metadata_context(
+        metadata_context=decision.metadata_context
+        if isinstance(decision.metadata_context, Mapping)
+        else None
+    ) or {}
+    source_provenance = build_decision_table_source_provenance(
+        source_provenance=decision.source_provenance
+        if isinstance(decision.source_provenance, Mapping)
+        else None
+    ) or {}
+
+    with transaction.atomic():
+        affected_bindings = _update_affected_pool_workflow_bindings(
+            pool=pool,
+            decision=decision,
+            slot_key=slot_key,
+            actor_username=actor_username,
+        )
+        legacy_payload_removed = _update_edge_document_policy_slot(
+            edge_version=edge_version,
+            slot_key=slot_key,
+        )
+
+    return DocumentPolicyMigrationResult(
+        decision=decision,
+        metadata_context=metadata_context,
+        migration_report=_build_migration_report(
+            pool=pool,
+            edge_version=edge_version,
+            decision=decision,
+            slot_key=slot_key,
+            source_provenance=source_provenance,
+            created=False,
+            reused_existing_revision=True,
+            binding_update_required=not affected_bindings,
+            affected_bindings=affected_bindings,
+            legacy_payload_removed=legacy_payload_removed,
+        ),
+        created=False,
     )
 
 
@@ -308,6 +374,31 @@ def _can_reuse_existing_revision(
         else None
     )
     return stored_source_provenance == dict(source_provenance)
+
+
+def _matches_existing_edge_migration_source(
+    *,
+    decision_table: DecisionTable,
+    pool: OrganizationPool,
+    edge_version: PoolEdgeVersion,
+) -> bool:
+    stored_source_provenance = build_decision_table_source_provenance(
+        source_provenance=decision_table.source_provenance
+        if isinstance(decision_table.source_provenance, Mapping)
+        else None
+    )
+    if stored_source_provenance is None:
+        return False
+    return (
+        str(stored_source_provenance.get("kind") or "") == "legacy_edge_document_policy"
+        and str(stored_source_provenance.get("source_path") or "") == "edge.metadata.document_policy"
+        and str(stored_source_provenance.get("pool_id") or "") == str(pool.id)
+        and str(stored_source_provenance.get("edge_version_id") or "") == str(edge_version.id)
+        and str(stored_source_provenance.get("parent_node_version_id") or "")
+        == str(edge_version.parent_node_id)
+        and str(stored_source_provenance.get("child_node_version_id") or "")
+        == str(edge_version.child_node_id)
+    )
 
 
 def _extract_document_policy(*, decision_table: DecisionTable) -> dict[str, Any] | None:
@@ -422,7 +513,9 @@ def _rewrite_document_policy_binding_decisions(
                 rewritten_decisions.append(dict(migrated_decision_ref))
                 document_policy_pinned = True
             continue
-        if decision_key == DOCUMENT_POLICY_METADATA_KEY and not raw_slot_key:
+        if decision_key == DOCUMENT_POLICY_METADATA_KEY and (
+            not raw_slot_key or raw_slot_key == DOCUMENT_POLICY_METADATA_KEY
+        ):
             continue
         rewritten_decisions.append(decision_ref)
 

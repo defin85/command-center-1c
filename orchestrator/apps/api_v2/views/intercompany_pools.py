@@ -97,7 +97,10 @@ from apps.intercompany_pools.workflow_runtime import (
     start_pool_run_retry_workflow_execution,
     start_pool_run_workflow_execution,
 )
-from apps.intercompany_pools.workflow_authoring_contract import PoolWorkflowBindingContract
+from apps.intercompany_pools.workflow_authoring_contract import (
+    POOL_DOCUMENT_POLICY_SLOT_REQUIRED,
+    PoolWorkflowBindingContract,
+)
 from apps.intercompany_pools.workflow_binding_resolution import (
     PoolWorkflowBindingResolutionError,
     resolve_pool_workflow_binding_for_run,
@@ -166,6 +169,7 @@ _POOL_RUNTIME_START_FAIL_CLOSED_CODES = {
     "POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING",
     "POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND",
     "POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
+    "POOL_DOCUMENT_POLICY_SLOT_REQUIRED",
     "POOL_DOCUMENT_POLICY_SLOT_OUTPUT_INVALID",
     "POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS",
     "POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED",
@@ -176,6 +180,7 @@ _POOL_RUNTIME_START_FAIL_CLOSED_CODES = {
 }
 _POOL_WORKFLOW_BINDING_VALIDATION_CODES = {
     "POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
+    "POOL_DOCUMENT_POLICY_SLOT_REQUIRED",
 }
 POOL_PROJECTION_HARDENING_CUTOFF_KEY = "pools.projection.publication_hardening_cutoff_utc"
 POOL_PUBLICATION_STEP_INCOMPLETE_CODE = "POOL_PUBLICATION_STEP_INCOMPLETE"
@@ -1529,14 +1534,20 @@ def _resolve_workflow_binding_read_model(
     raw_binding = run.workflow_binding_snapshot
     if isinstance(raw_binding, Mapping) and raw_binding:
         try:
-            return PoolWorkflowBindingContract(**dict(raw_binding)).model_dump(mode="json")
+            return PoolWorkflowBindingContract(**dict(raw_binding)).model_dump(
+                mode="json",
+                exclude_none=True,
+            )
         except Exception:
             pass
     raw_binding = workflow_input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)
     if not isinstance(raw_binding, Mapping):
         return None
     try:
-        return PoolWorkflowBindingContract(**dict(raw_binding)).model_dump(mode="json")
+        return PoolWorkflowBindingContract(**dict(raw_binding)).model_dump(
+            mode="json",
+            exclude_none=True,
+        )
     except Exception:
         return None
 
@@ -2826,7 +2837,7 @@ def create_pool_run(request):
         )
 
     resolved_workflow_binding_payload = (
-        resolved_workflow_binding.model_dump(mode="json")
+        resolved_workflow_binding.model_dump(mode="json", exclude_none=True)
         if resolved_workflow_binding is not None
         else None
     )

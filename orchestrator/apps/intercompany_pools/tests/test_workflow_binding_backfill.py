@@ -37,7 +37,19 @@ def _create_pool(*, tenant: Tenant, code_prefix: str, metadata: dict | None = No
     )
 
 
-def _build_binding_payload(*, pool: OrganizationPool, binding_id: str | None = None) -> dict[str, object]:
+def _build_binding_payload(
+    *,
+    pool: OrganizationPool,
+    binding_id: str | None = None,
+    slot_key: str | None = None,
+) -> dict[str, object]:
+    decision_ref: dict[str, object] = {
+        "decision_table_id": "document-policy",
+        "decision_key": "document_policy",
+        "decision_revision": 2,
+    }
+    if slot_key is not None:
+        decision_ref["slot_key"] = slot_key
     return {
         "binding_id": binding_id or str(uuid4()),
         "pool_id": str(pool.id),
@@ -48,11 +60,7 @@ def _build_binding_payload(*, pool: OrganizationPool, binding_id: str | None = N
             "workflow_name": "services_publication",
         },
         "decisions": [
-            {
-                "decision_table_id": "document-policy",
-                "decision_key": "document_policy",
-                "decision_revision": 2,
-            }
+            decision_ref
         ],
         "parameters": {"publication_variant": "full"},
         "role_mapping": {"initiator": "finance"},
@@ -84,6 +92,7 @@ def test_workflow_binding_backfill_imports_legacy_metadata_into_canonical_store(
     assert len(canonical_bindings) == 1
     assert canonical_bindings[0]["binding_id"] == legacy_binding["binding_id"]
     assert canonical_bindings[0]["workflow"]["workflow_revision"] == 3
+    assert canonical_bindings[0]["decisions"][0]["slot_key"] == "document_policy"
 
     pool.refresh_from_db(fields=["metadata"])
     assert pool.metadata["workflow_bindings"][0]["binding_id"] == legacy_binding["binding_id"]
@@ -146,13 +155,15 @@ def test_workflow_binding_backfill_reports_conflicting_existing_canonical_bindin
     tenant = _create_tenant(slug_prefix="wf-binding-conflict")
     pool = _create_pool(tenant=tenant, code_prefix="wf-binding-conflict")
     legacy_binding = _build_binding_payload(pool=pool, binding_id=str(uuid4()))
-    conflicting_binding = {
-        **legacy_binding,
-        "workflow": {
-            **legacy_binding["workflow"],
-            "workflow_revision": 4,
-            "workflow_revision_id": str(uuid4()),
-        },
+    conflicting_binding = _build_binding_payload(
+        pool=pool,
+        binding_id=str(legacy_binding["binding_id"]),
+        slot_key="document_policy",
+    )
+    conflicting_binding["workflow"] = {
+        **legacy_binding["workflow"],
+        "workflow_revision": 4,
+        "workflow_revision_id": str(uuid4()),
     }
     pool.metadata = {"workflow_bindings": [legacy_binding]}
     pool.save(update_fields=["metadata", "updated_at"])
@@ -182,7 +193,7 @@ def test_workflow_binding_backfill_reports_canonical_only_bindings() -> None:
     legacy_binding = _build_binding_payload(pool=pool)
     pool.metadata = {"workflow_bindings": [legacy_binding]}
     pool.save(update_fields=["metadata", "updated_at"])
-    extra_canonical_binding = _build_binding_payload(pool=pool)
+    extra_canonical_binding = _build_binding_payload(pool=pool, slot_key="document_policy")
     upsert_canonical_pool_workflow_binding(
         pool=pool,
         workflow_binding=extra_canonical_binding,

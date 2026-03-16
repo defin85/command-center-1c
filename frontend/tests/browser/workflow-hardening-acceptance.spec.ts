@@ -1131,7 +1131,7 @@ test('Workflow hardening: /decisions supports guided rollover from a previous-re
   await expect.poll(() => String((state.decisions[0]?.metadata_context as AnyRecord | undefined)?.config_version || '')).toBe('8.3.24')
 })
 
-test('Workflow hardening: /templates and /pools/catalog expose compatibility guidance and legacy migration outcome', async ({ page }) => {
+test('Workflow hardening: /templates, /pools/catalog, and /decisions expose compatibility guidance and legacy migration outcome', async ({ page }) => {
   const state = createAcceptanceState()
 
   await setupAuth(page)
@@ -1154,22 +1154,33 @@ test('Workflow hardening: /templates and /pools/catalog expose compatibility gui
   await expect(page.getByTestId('pool-catalog-save-bindings')).toBeVisible()
   await expect(page.getByTestId('pool-catalog-workflow-binding-workflow-key-0')).toHaveValue('services-publication')
   await page.getByRole('tab', { name: 'Topology Editor' }).click()
-  await expect(page.getByText('Topology snapshots by date')).toBeVisible()
-  await page.getByText('Advanced edge metadata / legacy document policy').first().click()
+  const topologyEditorPanel = page.getByLabel('Topology Editor')
+  await expect(topologyEditorPanel.getByText('Topology snapshots by date')).toBeVisible()
+  await expect(topologyEditorPanel.getByText('Workflow-centric authoring is the default path')).toBeVisible()
+  await expect(topologyEditorPanel.getByText('Legacy topology remediation required')).toBeVisible()
+  await expect(
+    topologyEditorPanel.getByText('Move concrete policy authoring to /decisions, pin named slots in Bindings, then keep only document_policy_key on topology edges.')
+  ).toBeVisible()
 
-  await expect(page.getByText('Legacy edge document_policy compatibility')).toBeVisible()
-  await expect(page.getByTestId('pool-catalog-topology-edge-policy-readonly-0')).toBeDisabled()
-  await expect(page.getByTestId('pool-catalog-topology-edge-open-legacy-policy-editor-0')).toBeVisible()
-  await expect(page.getByTestId('pool-catalog-topology-edge-migrate-legacy-policy-0')).toBeVisible()
+  await topologyEditorPanel.getByRole('button', { name: 'Open /decisions' }).first().click()
 
-  await page.getByTestId('pool-catalog-topology-edge-migrate-legacy-policy-0').click()
+  await expect(page.getByRole('heading', { name: 'Decision Policy Library' })).toBeVisible()
+  await page.getByRole('button', { name: 'Import legacy edge' }).click()
+  await expect(page.getByText('Import legacy edge policy')).toBeVisible()
+  await page.getByLabel('Decision table ID').fill('browser-imported-policy')
+  await page.getByLabel('Decision name').fill('Browser imported policy')
+  await page.getByLabel('Decision description').fill('Imported from browser legacy edge')
+  await page.getByRole('button', { name: 'Import to /decisions' }).click()
 
   await expect.poll(() => state.migrationCalls).toBe(1)
   await expect.poll(() => String(state.lastMigrationPayload?.edge_version_id || '')).toBe('edge-v1')
+  await expect.poll(() => String(state.lastMigrationPayload?.decision_table_id || '')).toBe('browser-imported-policy')
+  await expect.poll(() => String(state.lastMigrationPayload?.name || '')).toBe('Browser imported policy')
+  await expect.poll(() => String(state.lastMigrationPayload?.description || '')).toBe('Imported from browser legacy edge')
   await expect(page.getByText('Imported to /decisions', { exact: true })).toBeVisible()
   await expect(page.getByText('Source: edge.metadata.document_policy (edge-v1)')).toBeVisible()
   await expect(page.getByText('Decision ref: services-publication-policy r2')).toBeVisible()
-  await expect(page.getByText('Updated bindings: services_publication')).toBeVisible()
+  await expect(page.getByText('Affected workflow bindings were updated automatically.')).toBeVisible()
 })
 
 test('Workflow hardening: /pools/catalog preserves edited binding fields on stale revision conflict', async ({ page }) => {

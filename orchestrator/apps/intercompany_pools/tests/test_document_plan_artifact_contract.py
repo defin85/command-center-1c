@@ -581,3 +581,67 @@ def test_compile_document_plan_artifact_v1_rejects_legacy_pool_default_without_s
             distribution_artifact=fixture["distribution_artifact"],
             topology=fixture["topology"],
         )
+
+
+@pytest.mark.django_db
+def test_compile_document_plan_artifact_v1_rejects_legacy_edge_policy_even_with_slot_resolution() -> None:
+    fixture = _create_compile_fixture(slot_keys=["sale"])
+    edge_model = next(iter(fixture["topology"]["edge_models"].values()))
+    edge_model.metadata = {
+        "document_policy_key": "sale",
+        DOCUMENT_POLICY_METADATA_KEY: _build_document_policy(
+            chain_id="legacy_edge_chain",
+            document_id="sale",
+            entity_name="Document_Sales",
+        ),
+    }
+
+    with pytest.raises(ValueError, match="POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED"):
+        compile_document_plan_artifact_v1(
+            run=fixture["run"],
+            distribution_artifact=fixture["distribution_artifact"],
+            topology=fixture["topology"],
+            compiled_document_policy_slots={
+                "sale": _build_compiled_slot_entry(
+                    slot_key="sale",
+                    decision_table_id="sale-slot",
+                    decision_revision=3,
+                    document_policy=_build_document_policy(
+                        chain_id="sale_chain",
+                        document_id="sale",
+                        entity_name="Document_Sales",
+                    ),
+                )
+            },
+        )
+
+
+@pytest.mark.django_db
+def test_compile_document_plan_artifact_v1_rejects_legacy_pool_default_even_with_slot_resolution() -> None:
+    fixture = _create_compile_fixture(slot_keys=["sale"])
+    fixture["run"].pool.metadata = {
+        DOCUMENT_POLICY_METADATA_KEY: _build_document_policy(
+            chain_id="legacy_pool_chain",
+            document_id="sale",
+            entity_name="Document_Sales",
+        )
+    }
+
+    with pytest.raises(ValueError, match="POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED"):
+        compile_document_plan_artifact_v1(
+            run=fixture["run"],
+            distribution_artifact=fixture["distribution_artifact"],
+            topology=fixture["topology"],
+            compiled_document_policy_slots={
+                "sale": _build_compiled_slot_entry(
+                    slot_key="sale",
+                    decision_table_id="sale-slot",
+                    decision_revision=3,
+                    document_policy=_build_document_policy(
+                        chain_id="sale_chain",
+                        document_id="sale",
+                        entity_name="Document_Sales",
+                    ),
+                )
+            },
+        )

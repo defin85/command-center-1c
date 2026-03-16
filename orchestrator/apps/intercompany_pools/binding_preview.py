@@ -26,6 +26,7 @@ from .runtime_projection_contract import build_pool_runtime_projection_v1
 from .runtime_template_registry import sync_pool_runtime_template_registry
 from .workflow_authoring_contract import (
     POOL_DOCUMENT_POLICY_SLOT_DUPLICATE,
+    POOL_DOCUMENT_POLICY_SLOT_REQUIRED,
     PoolWorkflowBindingContract,
     PoolWorkflowBindingDecisionRef,
 )
@@ -145,7 +146,10 @@ def _resolve_binding_slot_key(*, decision_ref: PoolWorkflowBindingDecisionRef) -
     resolved = decision_ref.resolved_slot_key()
     if resolved:
         return resolved
-    return decision_ref.decision_key
+    raise ValueError(
+        f"{POOL_DOCUMENT_POLICY_SLOT_REQUIRED}: "
+        "slot_key is required for policy-bearing workflow binding decisions"
+    )
 
 
 def build_pool_workflow_binding_runtime_bundle(
@@ -227,7 +231,7 @@ def build_pool_workflow_binding_runtime_bundle(
             mode=mode,
             run_input=sanitized_run_input,
             document_plan_artifact=document_plan_artifact,
-            workflow_binding=resolved_binding.model_dump(mode="json"),
+            workflow_binding=resolved_binding.model_dump(mode="json", exclude_none=True),
         ),
     )
     runtime_projection = build_pool_runtime_projection_v1(
@@ -239,7 +243,7 @@ def build_pool_workflow_binding_runtime_bundle(
         slot_coverage_summary=slot_coverage_summary,
     )
     return {
-        "workflow_binding": resolved_binding.model_dump(mode="json"),
+        "workflow_binding": resolved_binding.model_dump(mode="json", exclude_none=True),
         "decision_outputs": decision_outputs,
         "compiled_document_policy_slots": compiled_document_policy_slots,
         "compiled_document_policy": compiled_document_policy,

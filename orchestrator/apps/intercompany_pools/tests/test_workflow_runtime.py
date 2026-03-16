@@ -346,6 +346,7 @@ def _ensure_runtime_test_workflow_binding(*, run: PoolRun) -> dict[str, object]:
             {
                 "decision_table_id": decision.decision_table_id,
                 "decision_key": decision.decision_key,
+                "slot_key": decision.decision_key,
                 "decision_revision": decision.version_number,
             }
         ],
@@ -566,7 +567,10 @@ def test_start_pool_run_workflow_execution_requires_explicit_pool_workflow_bindi
 def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_binding() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
     workflow_binding = _ensure_runtime_test_workflow_binding(run=run)
-    normalized_workflow_binding = PoolWorkflowBindingContract(**workflow_binding).model_dump(mode="json")
+    normalized_workflow_binding = PoolWorkflowBindingContract(**workflow_binding).model_dump(
+        mode="json",
+        exclude_none=True,
+    )
 
     with patch(
         "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
@@ -644,14 +648,21 @@ def test_start_pool_run_workflow_execution_reloads_binding_snapshot_from_canonic
                 {
                     "decision_table_id": updated_decision.decision_table_id,
                     "decision_key": updated_decision.decision_key,
+                    "slot_key": updated_decision.decision_key,
                     "decision_revision": updated_decision.version_number,
                 }
             ],
         },
         actor_username="pool-runtime-test",
     )
-    expected_binding = PoolWorkflowBindingContract(**updated_binding).model_dump(mode="json")
-    stale_normalized_binding = PoolWorkflowBindingContract(**stale_binding).model_dump(mode="json")
+    expected_binding = PoolWorkflowBindingContract(**updated_binding).model_dump(
+        mode="json",
+        exclude_none=True,
+    )
+    stale_normalized_binding = PoolWorkflowBindingContract(**stale_binding).model_dump(
+        mode="json",
+        exclude_none=True,
+    )
     assert stale_normalized_binding["decisions"] != expected_binding["decisions"]
 
     with patch(
@@ -817,10 +828,6 @@ def test_start_pool_run_workflow_execution_reconciliation_uses_persisted_documen
             }
         ],
     }
-    edge = PoolEdgeVersion.objects.filter(pool=run.pool).first()
-    assert edge is not None
-    edge.metadata = {"document_policy": invalid_edge_policy}
-    edge.save(update_fields=["metadata", "updated_at"])
 
     with patch(
         "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
@@ -847,6 +854,10 @@ def test_start_pool_run_workflow_execution_reconciliation_uses_persisted_documen
     assert execution.input_context.get("decisions", {}).get("document_policy", {}).get("version") == (
         DOCUMENT_POLICY_VERSION
     )
+    edge = PoolEdgeVersion.objects.filter(pool=run.pool).first()
+    assert edge is not None
+    edge.metadata = {"document_policy": invalid_edge_policy}
+    edge.save(update_fields=["metadata", "updated_at"])
 
     execute_pool_runtime_step(
         operation_type="pool.distribution_calculation.bottom_up",
@@ -1278,7 +1289,10 @@ def test_retry_workflow_execution_keeps_operation_binding_snapshot() -> None:
 def test_retry_workflow_execution_reuses_explicit_pool_workflow_binding() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
     workflow_binding = _ensure_runtime_test_workflow_binding(run=run)
-    normalized_workflow_binding = PoolWorkflowBindingContract(**workflow_binding).model_dump(mode="json")
+    normalized_workflow_binding = PoolWorkflowBindingContract(**workflow_binding).model_dump(
+        mode="json",
+        exclude_none=True,
+    )
 
     with patch(
         "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from apps.intercompany_pools.document_policy_contract import DOCUMENT_POLICY_METADATA_KEY
 from apps.intercompany_pools.models import OrganizationPool
 from apps.intercompany_pools.workflow_bindings_store import (
     PoolWorkflowBindingStoreError,
@@ -86,7 +87,9 @@ def run_pool_workflow_binding_backfill(
     for pool in pools.iterator():
         stats.pools_scanned += 1
         metadata = pool.metadata if isinstance(pool.metadata, dict) else {}
-        raw_bindings = extract_pool_workflow_bindings(metadata)
+        raw_bindings = _upgrade_legacy_document_policy_slots(
+            extract_pool_workflow_bindings(metadata)
+        )
         if not raw_bindings:
             continue
 
@@ -150,6 +153,33 @@ def run_pool_workflow_binding_backfill(
     return stats
 
 
+def _upgrade_legacy_document_policy_slots(
+    raw_bindings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    upgraded_bindings: list[dict[str, Any]] = []
+    for binding in raw_bindings:
+        payload = dict(binding)
+        decisions = payload.get("decisions")
+        if not isinstance(decisions, list):
+            upgraded_bindings.append(payload)
+            continue
+        upgraded_decisions: list[Any] = []
+        for raw_decision in decisions:
+            if not isinstance(raw_decision, dict):
+                upgraded_decisions.append(raw_decision)
+                continue
+            decision = dict(raw_decision)
+            if (
+                str(decision.get("decision_key") or "").strip() == DOCUMENT_POLICY_METADATA_KEY
+                and not str(decision.get("slot_key") or "").strip()
+            ):
+                decision["slot_key"] = DOCUMENT_POLICY_METADATA_KEY
+            upgraded_decisions.append(decision)
+        payload["decisions"] = upgraded_decisions
+        upgraded_bindings.append(payload)
+    return upgraded_bindings
+
+
 def _collect_pool_conflicts(
     *,
     stats: PoolWorkflowBindingBackfillStats,
@@ -172,7 +202,10 @@ def _collect_pool_conflicts(
                 canonical_binding=canonical_binding,
             )
             continue
-        if canonical_binding != legacy_binding:
+        if not _bindings_match_ignoring_revision(
+            canonical_binding=canonical_binding,
+            legacy_binding=legacy_binding,
+        ):
             conflicted = True
             _append_remediation(
                 stats=stats,
@@ -185,6 +218,16 @@ def _collect_pool_conflicts(
             )
 
     return conflicted
+
+
+def _bindings_match_ignoring_revision(
+    *,
+    canonical_binding: dict[str, Any],
+    legacy_binding: dict[str, Any],
+) -> bool:
+    normalized_canonical = dict(canonical_binding)
+    normalized_canonical.pop("revision", None)
+    return normalized_canonical == legacy_binding
 
 
 def _append_remediation(

@@ -28,6 +28,7 @@ def _build_binding_payload(
             {
                 "decision_table_id": f"decision-{uuid4().hex[:8]}",
                 "decision_key": "document_policy",
+                "slot_key": "document_policy",
                 "decision_revision": 1,
             }
         ],

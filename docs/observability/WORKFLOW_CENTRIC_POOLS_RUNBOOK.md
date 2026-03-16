@@ -84,7 +84,7 @@ Marker влияет на phase summary и rollout communication. Он не пе�
    Save topology snapshot block'ится, если pool всё ещё зависит от legacy `document_policy` или coverage неполный.
 6. Если topology/binding workspace показывает remediation backlog из-за legacy `document_policy`, выполни canonical import в `/decisions`:
    - UI: `/decisions` -> `Import legacy edge`
-   - compatibility shortcut: `/pools/catalog` -> `Import to /decisions`
+   - compatibility handoff: `/pools/catalog` -> remediation alert -> `Open /decisions`
    - explicit compatibility-only fallback: `/decisions` -> `Import raw JSON`
    - deterministic API: `POST /api/v2/pools/<pool_id>/document-policy-migrations/`
    После migration проверь `migration.slot_key`, `migration.legacy_payload_removed=true`, updated `affected_bindings[].decision_ref` и `document_policy_key` на affected edges.
@@ -211,7 +211,7 @@ Preview и runtime start должны использовать один и то�
 - что после import binding list действительно содержит новый decision ref.
 
 Если import прошёл с `binding_update_required=true`, не продолжай rollout вслепую: сначала перепроверь binding refs и pin decision revision явно.
-Если import прошёл успешно, но `legacy_payload_removed=false` или `affected_bindings[]` не содержит ожидаемый slot-specific `decision_key`, remediation для этого edge не завершена.
+Если import прошёл успешно, но `legacy_payload_removed=false` или `affected_bindings[]` не содержит ожидаемый `decision_ref.slot_key`, remediation для этого edge не завершена.
 
 ### 6. Pinned subworkflow ведёт себя как latest revision
 

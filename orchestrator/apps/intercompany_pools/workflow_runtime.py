@@ -621,7 +621,7 @@ def _normalize_runtime_workflow_binding(
     if not isinstance(workflow_binding, dict) or not workflow_binding:
         return None
     binding = PoolWorkflowBindingContract(**workflow_binding)
-    return binding.model_dump(mode="json")
+    return binding.model_dump(mode="json", exclude_none=True)
 
 
 def _resolve_retry_workflow_binding(
