@@ -105,17 +105,21 @@ from apps.intercompany_pools.workflow_binding_resolution import (
     PoolWorkflowBindingResolutionError,
     resolve_pool_workflow_binding_for_run,
 )
+from apps.intercompany_pools.workflow_binding_attachments_store import (
+    PoolWorkflowBindingAttachmentLifecycleConflictError,
+    delete_pool_workflow_binding_attachment as delete_attached_pool_workflow_binding,
+    get_pool_workflow_binding_attachment as get_attached_pool_workflow_binding,
+    get_pool_workflow_binding_attachments_collection as get_attached_pool_workflow_binding_collection,
+    list_pool_workflow_binding_attachments as list_attached_pool_workflow_bindings,
+    replace_pool_workflow_binding_attachments_collection as replace_attached_pool_workflow_bindings_collection,
+    upsert_pool_workflow_binding_attachment as upsert_attached_pool_workflow_binding,
+)
 from apps.intercompany_pools.workflow_bindings_store import (
     PoolWorkflowBindingCollectionConflictError,
     PoolWorkflowBindingNotFoundError,
     PoolWorkflowBindingRevisionConflictError,
     PoolWorkflowBindingStoreError,
-    delete_pool_workflow_binding as delete_stored_pool_workflow_binding,
-    get_pool_workflow_binding_collection as get_stored_pool_workflow_binding_collection,
-    get_pool_workflow_binding as get_stored_pool_workflow_binding,
-    list_pool_workflow_bindings as list_stored_pool_workflow_bindings,
-    replace_pool_workflow_bindings_collection as replace_stored_pool_workflow_bindings_collection,
-    upsert_pool_workflow_binding as upsert_stored_pool_workflow_binding,
+    list_pool_workflow_bindings as list_runtime_pool_workflow_bindings,
 )
 from apps.templates.workflow.models import WorkflowExecution
 from apps.runtime_settings.effective import get_effective_runtime_setting
@@ -181,6 +185,7 @@ _POOL_RUNTIME_START_FAIL_CLOSED_CODES = {
 _POOL_WORKFLOW_BINDING_VALIDATION_CODES = {
     "POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
     "POOL_DOCUMENT_POLICY_SLOT_REQUIRED",
+    "POOL_WORKFLOW_BINDING_PROFILE_REVISION_NOT_FOUND",
 }
 POOL_PROJECTION_HARDENING_CUTOFF_KEY = "pools.projection.publication_hardening_cutoff_utc"
 POOL_PUBLICATION_STEP_INCOMPLETE_CODE = "POOL_PUBLICATION_STEP_INCOMPLETE"
@@ -339,6 +344,27 @@ def _binding_collection_conflict_problem(exc: PoolWorkflowBindingCollectionConfl
             {
                 "expected_collection_etag": exc.expected_collection_etag,
                 "actual_collection_etag": exc.actual_collection_etag,
+            }
+        ],
+    )
+
+
+def _binding_profile_lifecycle_conflict_problem(
+    exc: PoolWorkflowBindingAttachmentLifecycleConflictError,
+) -> Response:
+    return _problem(
+        code="POOL_WORKFLOW_BINDING_PROFILE_LIFECYCLE_CONFLICT",
+        title="Pool Workflow Binding Profile Lifecycle Conflict",
+        detail=(
+            "Pinned binding profile revision is deactivated and cannot be attached via the default "
+            "workflow binding path."
+        ),
+        status_code=http_status.HTTP_409_CONFLICT,
+        errors=[
+            {
+                "binding_profile_revision_id": exc.binding_profile_revision_id,
+                "profile_status": exc.profile_status,
+                "operation": exc.operation,
             }
         ],
     )
@@ -1963,7 +1989,7 @@ def _serialize_organization_pool(pool: OrganizationPool) -> dict[str, Any]:
     metadata.pop("workflow_bindings", None)
     workflow_bindings: list[dict[str, Any]] = []
     try:
-        workflow_bindings = list_stored_pool_workflow_bindings(pool=pool)
+        workflow_bindings = list_attached_pool_workflow_bindings(pool=pool)
     except PoolWorkflowBindingStoreError as exc:
         error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
         metadata["workflow_bindings_read_error"] = {
@@ -2457,11 +2483,19 @@ class PoolWorkflowBindingSelectorInputSerializer(serializers.Serializer):
     tags = serializers.ListField(child=serializers.CharField(), required=False, default=list)
 
 
-class PoolWorkflowBindingInputSerializer(serializers.Serializer):
-    contract_version = serializers.CharField(required=False, allow_blank=False, default="pool_workflow_binding.v1")
-    binding_id = serializers.CharField(required=False, allow_blank=False)
-    pool_id = serializers.UUIDField(required=False)
-    revision = serializers.IntegerField(min_value=1, required=False)
+class PoolWorkflowBindingProfileLifecycleWarningSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    title = serializers.CharField()
+    detail = serializers.CharField()
+
+
+class PoolWorkflowBindingResolvedProfileSerializer(serializers.Serializer):
+    binding_profile_id = serializers.CharField()
+    code = serializers.CharField()
+    name = serializers.CharField()
+    status = serializers.CharField()
+    binding_profile_revision_id = serializers.CharField()
+    binding_profile_revision_number = serializers.IntegerField(min_value=1)
     workflow = WorkflowDefinitionRefInputSerializer()
     decisions = PoolWorkflowBindingDecisionRefInputSerializer(many=True, required=False, default=list)
     parameters = serializers.JSONField(required=False, default=dict)
@@ -2470,6 +2504,14 @@ class PoolWorkflowBindingInputSerializer(serializers.Serializer):
         required=False,
         default=dict,
     )
+
+
+class PoolWorkflowBindingInputSerializer(serializers.Serializer):
+    contract_version = serializers.CharField(required=False, allow_blank=False, default="pool_workflow_binding.v2")
+    binding_id = serializers.CharField(required=False, allow_blank=False)
+    pool_id = serializers.UUIDField(required=False)
+    revision = serializers.IntegerField(min_value=1, required=False)
+    binding_profile_revision_id = serializers.CharField(required=True, allow_blank=False)
     selector = PoolWorkflowBindingSelectorInputSerializer(required=False, default=dict)
     effective_from = serializers.DateField()
     effective_to = serializers.DateField(required=False, allow_null=True)
@@ -2479,15 +2521,42 @@ class PoolWorkflowBindingInputSerializer(serializers.Serializer):
         default="draft",
     )
 
+    def to_internal_value(self, data):
+        if isinstance(data, Mapping):
+            forbidden_fields = [
+                key
+                for key in ("workflow", "decisions", "parameters", "role_mapping")
+                if key in data
+            ]
+            if forbidden_fields:
+                raise serializers.ValidationError(
+                    {
+                        key: [
+                            "Attachment contract does not support local workflow logic overrides. "
+                            "Create or revise a reusable binding profile instead."
+                        ]
+                        for key in forbidden_fields
+                    }
+                )
+        return super().to_internal_value(data)
+
 
 class PoolWorkflowBindingReadSerializer(PoolWorkflowBindingInputSerializer):
     contract_version = serializers.CharField(required=True, allow_blank=False)
     binding_id = serializers.CharField(required=True, allow_blank=False)
     pool_id = serializers.UUIDField(required=True)
+    binding_profile_id = serializers.CharField(required=True, allow_blank=False)
+    binding_profile_revision_id = serializers.CharField(required=True, allow_blank=False)
+    binding_profile_revision_number = serializers.IntegerField(min_value=1, required=True)
     revision = serializers.IntegerField(min_value=1, required=True)
     status = serializers.ChoiceField(
         choices=["draft", "active", "inactive"],
         required=True,
+    )
+    resolved_profile = PoolWorkflowBindingResolvedProfileSerializer(required=True)
+    profile_lifecycle_warning = PoolWorkflowBindingProfileLifecycleWarningSerializer(
+        required=False,
+        allow_null=True,
     )
 
 
@@ -2831,7 +2900,7 @@ def create_pool_run(request):
 
     try:
         resolved_workflow_binding = resolve_pool_workflow_binding_for_run(
-            raw_bindings=list_stored_pool_workflow_bindings(pool=pool),
+            raw_bindings=list_runtime_pool_workflow_bindings(pool=pool),
             requested_binding_id=str(data.get("pool_workflow_binding_id") or "").strip() or None,
             direction=data["direction"],
             mode=data.get("mode", PoolRunMode.SAFE),
@@ -3029,6 +3098,14 @@ def preview_pool_workflow_binding(request):
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
+    try:
+        preview["workflow_binding"] = get_attached_pool_workflow_binding(
+            pool=pool,
+            binding_id=str(data["pool_workflow_binding_id"]),
+        )
+    except (PoolWorkflowBindingNotFoundError, PoolWorkflowBindingStoreError):
+        pass
+
     return Response(preview, status=http_status.HTTP_200_OK)
 
 
@@ -3093,7 +3170,7 @@ def list_pool_workflow_bindings(request):
             )
 
         try:
-            collection = get_stored_pool_workflow_binding_collection(pool=pool)
+            collection = get_attached_pool_workflow_binding_collection(pool=pool)
         except PoolWorkflowBindingStoreError as exc:
             error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
             return _problem(
@@ -3132,7 +3209,7 @@ def list_pool_workflow_bindings(request):
         )
 
     try:
-        collection = replace_stored_pool_workflow_bindings_collection(
+        collection = replace_attached_pool_workflow_bindings_collection(
             pool=pool,
             expected_collection_etag=data["expected_collection_etag"],
             workflow_bindings=[dict(item) for item in data["workflow_bindings"]],
@@ -3144,6 +3221,8 @@ def list_pool_workflow_bindings(request):
         )
     except PoolWorkflowBindingCollectionConflictError as exc:
         return _binding_collection_conflict_problem(exc)
+    except PoolWorkflowBindingAttachmentLifecycleConflictError as exc:
+        return _binding_profile_lifecycle_conflict_problem(exc)
     except PoolWorkflowBindingStoreError as exc:
         error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
         return _problem(
@@ -3175,6 +3254,7 @@ def list_pool_workflow_bindings(request):
         (400, "application/problem+json"): ProblemDetailsErrorSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+        (409, "application/problem+json"): ProblemDetailsErrorSerializer,
     },
 )
 @api_view(["POST"])
@@ -3209,7 +3289,7 @@ def upsert_pool_workflow_binding(request):
         )
 
     try:
-        workflow_binding, created = upsert_stored_pool_workflow_binding(
+        workflow_binding, created = upsert_attached_pool_workflow_binding(
             pool=pool,
             workflow_binding=dict(data["workflow_binding"]),
             actor_username=(
@@ -3220,6 +3300,8 @@ def upsert_pool_workflow_binding(request):
         )
     except PoolWorkflowBindingRevisionConflictError as exc:
         return _binding_revision_conflict_problem(exc)
+    except PoolWorkflowBindingAttachmentLifecycleConflictError as exc:
+        return _binding_profile_lifecycle_conflict_problem(exc)
     except PoolWorkflowBindingStoreError as exc:
         error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
         return _problem(
@@ -3269,6 +3351,7 @@ def upsert_pool_workflow_binding(request):
         (400, "application/problem+json"): ProblemDetailsErrorSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+        (409, "application/problem+json"): ProblemDetailsErrorSerializer,
     },
     methods=["DELETE"],
 )
@@ -3311,7 +3394,14 @@ def pool_workflow_binding_detail(request, binding_id: str):
         )
 
     try:
-        binding = get_stored_pool_workflow_binding(pool=pool, binding_id=binding_id)
+        binding = get_attached_pool_workflow_binding(pool=pool, binding_id=binding_id)
+    except PoolWorkflowBindingNotFoundError:
+        return _problem(
+            code="POOL_WORKFLOW_BINDING_NOT_FOUND",
+            title="Pool Workflow Binding Not Found",
+            detail="Workflow binding not found for the specified pool.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
     except PoolWorkflowBindingStoreError as exc:
         error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
         return _problem(
@@ -3328,13 +3418,6 @@ def pool_workflow_binding_detail(request, binding_id: str):
             status_code=http_status.HTTP_400_BAD_REQUEST,
             errors=exc.errors,
         )
-    except PoolWorkflowBindingNotFoundError:
-        return _problem(
-            code="POOL_WORKFLOW_BINDING_NOT_FOUND",
-            title="Pool Workflow Binding Not Found",
-            detail="Workflow binding not found for the specified pool.",
-            status_code=http_status.HTTP_404_NOT_FOUND,
-        )
 
     if request.method == "GET":
         return Response(
@@ -3346,13 +3429,20 @@ def pool_workflow_binding_detail(request, binding_id: str):
         )
 
     try:
-        deleted_binding = delete_stored_pool_workflow_binding(
+        deleted_binding = delete_attached_pool_workflow_binding(
             pool=pool,
             binding_id=binding_id,
             revision=serializer.validated_data["revision"],
         )
     except PoolWorkflowBindingRevisionConflictError as exc:
         return _binding_revision_conflict_problem(exc)
+    except PoolWorkflowBindingNotFoundError:
+        return _problem(
+            code="POOL_WORKFLOW_BINDING_NOT_FOUND",
+            title="Pool Workflow Binding Not Found",
+            detail="Workflow binding not found for the specified pool.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
     except PoolWorkflowBindingResolutionError as exc:
         return _problem(
             code=exc.code,
@@ -3360,13 +3450,6 @@ def pool_workflow_binding_detail(request, binding_id: str):
             detail=str(exc),
             status_code=http_status.HTTP_400_BAD_REQUEST,
             errors=exc.errors,
-        )
-    except PoolWorkflowBindingNotFoundError:
-        return _problem(
-            code="POOL_WORKFLOW_BINDING_NOT_FOUND",
-            title="Pool Workflow Binding Not Found",
-            detail="Workflow binding not found for the specified pool.",
-            status_code=http_status.HTTP_404_NOT_FOUND,
         )
     return Response(
         {

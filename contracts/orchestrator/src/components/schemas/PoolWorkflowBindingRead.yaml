@@ -1,5 +1,5 @@
 type: object
-description: Workflow binding read-model assigned to an organization pool.
+description: Workflow binding attachment read-model assigned to an organization pool.
 properties:
   contract_version:
     type: string
@@ -15,21 +15,16 @@ properties:
     type: integer
     minimum: 1
     description: Server-managed optimistic concurrency revision for update/delete operations.
-  workflow:
-    $ref: ./WorkflowDefinitionRef.yaml
-  decisions:
-    type: array
-    items:
-      $ref: ./PoolWorkflowBindingDecisionRef.yaml
-  parameters:
-    type: object
-    additionalProperties: true
-    description: Arbitrary workflow parameter overrides for this binding.
-  role_mapping:
-    type: object
-    additionalProperties:
-      type: string
-    description: Mapping from workflow roles to concrete pool-scoped targets.
+  binding_profile_id:
+    type: string
+    description: Reusable binding profile identifier pinned by this attachment.
+  binding_profile_revision_id:
+    type: string
+    description: Opaque pinned reusable binding profile revision identifier.
+  binding_profile_revision_number:
+    type: integer
+    minimum: 1
+    description: Read-only display revision number of the pinned reusable profile revision.
   selector:
     $ref: ./PoolWorkflowBindingSelector.yaml
   effective_from:
@@ -48,10 +43,19 @@ properties:
       - active
       - inactive
     description: Binding lifecycle status.
+  resolved_profile:
+    $ref: ./PoolWorkflowBindingResolvedProfile.yaml
+  profile_lifecycle_warning:
+    allOf:
+      - $ref: ./PoolWorkflowBindingProfileLifecycleWarning.yaml
+    nullable: true
 required:
   - binding_id
   - pool_id
+  - binding_profile_id
+  - binding_profile_revision_id
+  - binding_profile_revision_number
   - revision
-  - workflow
   - effective_from
   - status
+  - resolved_profile

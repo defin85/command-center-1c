@@ -26,6 +26,7 @@ from apps.intercompany_pools.document_plan_artifact_contract import (
     POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY,
 )
 from apps.intercompany_pools.document_policy_contract import resolve_document_policy_from_edge_metadata
+from apps.intercompany_pools.binding_profiles_store import create_canonical_binding_profile
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationStatus,
@@ -461,6 +462,109 @@ def _build_pool_workflow_binding_payload(
         "effective_to": effective_to,
         "status": status,
     }
+
+
+def _build_binding_profile_revision_payload(
+    *,
+    workflow_definition_key: str,
+    workflow_revision: int,
+    decisions: list[dict[str, object]] | None = None,
+    parameters: dict[str, object] | None = None,
+    role_mapping: dict[str, str] | None = None,
+) -> dict[str, object]:
+    return {
+        "workflow": {
+            "workflow_definition_key": workflow_definition_key,
+            "workflow_revision_id": str(uuid4()),
+            "workflow_revision": workflow_revision,
+            "workflow_name": workflow_definition_key.replace("-", "_"),
+        },
+        "decisions": list(decisions or []),
+        "parameters": dict(parameters or {}),
+        "role_mapping": dict(role_mapping or {}),
+        "metadata": {
+            "source": "test",
+        },
+    }
+
+
+def _create_binding_profile_revision(
+    *,
+    tenant: Tenant,
+    workflow_definition_key: str,
+    workflow_revision: int,
+    decisions: list[dict[str, object]] | None = None,
+    parameters: dict[str, object] | None = None,
+    role_mapping: dict[str, str] | None = None,
+) -> dict[str, object]:
+    profile = create_canonical_binding_profile(
+        tenant=tenant,
+        binding_profile={
+            "code": f"{workflow_definition_key}-{uuid4().hex[:8]}",
+            "name": workflow_definition_key.replace("-", " ").title(),
+            "revision": _build_binding_profile_revision_payload(
+                workflow_definition_key=workflow_definition_key,
+                workflow_revision=workflow_revision,
+                decisions=decisions,
+                parameters=parameters,
+                role_mapping=role_mapping,
+            ),
+        },
+        actor_username="binding-profile-test",
+    )
+    latest_revision = profile["latest_revision"]
+    assert isinstance(latest_revision, dict)
+    return latest_revision
+
+
+def _build_pool_workflow_binding_attachment_payload(
+    *,
+    binding_profile_revision_id: str,
+    direction: str | None = None,
+    mode: str | None = None,
+    effective_from: str = "2026-01-01",
+    effective_to: str | None = None,
+    status: str = "active",
+    tags: list[str] | None = None,
+    binding_id: str | None = None,
+    revision: int | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "binding_profile_revision_id": binding_profile_revision_id,
+        "selector": {
+            "direction": direction,
+            "mode": mode,
+            "tags": list(tags or []),
+        },
+        "effective_from": effective_from,
+        "effective_to": effective_to,
+        "status": status,
+    }
+    if binding_id is not None:
+        payload["binding_id"] = binding_id
+    if revision is not None:
+        payload["revision"] = revision
+    return payload
+
+
+def _attachment_payload_from_read_model(
+    binding: dict[str, object],
+    **overrides: object,
+) -> dict[str, object]:
+    selector = binding.get("selector")
+    payload = _build_pool_workflow_binding_attachment_payload(
+        binding_profile_revision_id=str(binding["binding_profile_revision_id"]),
+        direction=selector.get("direction") if isinstance(selector, dict) else None,
+        mode=selector.get("mode") if isinstance(selector, dict) else None,
+        effective_from=str(binding["effective_from"]),
+        effective_to=str(binding.get("effective_to") or "") or None,
+        status=str(binding["status"]),
+        tags=list(selector.get("tags") or []) if isinstance(selector, dict) else [],
+        binding_id=str(binding["binding_id"]),
+        revision=int(binding["revision"]),
+    )
+    payload.update(overrides)
+    return payload
 
 
 def _create_pool_runtime_workflow_revision(
@@ -1738,6 +1842,8 @@ def test_upsert_pool_metadata_preserves_existing_workflow_bindings(
     assert payload["pool"]["metadata"]["owner"] == "finance"
     assert len(payload["pool"]["workflow_bindings"]) == 1
     assert payload["pool"]["workflow_bindings"][0]["binding_id"] == binding["binding_id"]
+    assert payload["pool"]["workflow_bindings"][0]["binding_profile_revision_id"]
+    assert payload["pool"]["workflow_bindings"][0]["resolved_profile"]["workflow"]["workflow_revision"] == 3
 
     pool.refresh_from_db()
     assert pool.metadata["owner"] == "finance"
@@ -1787,8 +1893,10 @@ def test_pool_workflow_bindings_list_exposes_multiple_pinned_bindings(
     ]
     assert payload["workflow_bindings"][0]["revision"] == 1
     assert payload["workflow_bindings"][1]["revision"] == 1
-    assert payload["workflow_bindings"][0]["workflow"]["workflow_revision"] == 3
-    assert payload["workflow_bindings"][1]["workflow"]["workflow_revision"] == 5
+    assert payload["workflow_bindings"][0]["binding_profile_revision_id"]
+    assert payload["workflow_bindings"][1]["binding_profile_revision_id"]
+    assert payload["workflow_bindings"][0]["resolved_profile"]["workflow"]["workflow_revision"] == 3
+    assert payload["workflow_bindings"][1]["resolved_profile"]["workflow"]["workflow_revision"] == 5
 
 
 @pytest.mark.django_db
@@ -1821,6 +1929,17 @@ def test_pool_workflow_bindings_collection_put_applies_atomic_replace_and_return
     initial_response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
     assert initial_response.status_code == 200
     initial_payload = initial_response.json()
+    first_attachment = initial_payload["workflow_bindings"][0]
+    updated_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
+        workflow_definition_key="services-publication",
+        workflow_revision=4,
+    )
+    replacement_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
+        workflow_definition_key="services-publication-v2",
+        workflow_revision=8,
+    )
 
     put_response = authenticated_client.put(
         "/api/v2/pools/workflow-bindings/",
@@ -1828,24 +1947,17 @@ def test_pool_workflow_bindings_collection_put_applies_atomic_replace_and_return
             "pool_id": str(pool.id),
             "expected_collection_etag": initial_payload["collection_etag"],
             "workflow_bindings": [
-                {
-                    **first_binding,
-                    "workflow": {
-                        **first_binding["workflow"],
-                        "workflow_revision": 4,
-                    },
-                    "status": "inactive",
-                },
-                {
-                    **_build_pool_workflow_binding_payload(
-                        pool=pool,
-                        workflow_definition_key="services-publication-v2",
-                        workflow_revision=8,
-                        direction=PoolRunDirection.TOP_DOWN,
-                        mode=PoolRunMode.UNSAFE,
-                    ),
-                    "binding_id": "replacement-binding",
-                },
+                _attachment_payload_from_read_model(
+                    first_attachment,
+                    binding_profile_revision_id=updated_revision["binding_profile_revision_id"],
+                    status="inactive",
+                ),
+                _build_pool_workflow_binding_attachment_payload(
+                    binding_profile_revision_id=str(replacement_revision["binding_profile_revision_id"]),
+                    binding_id="replacement-binding",
+                    direction=PoolRunDirection.TOP_DOWN,
+                    mode=PoolRunMode.UNSAFE,
+                ),
             ],
         },
         format="json",
@@ -1861,7 +1973,10 @@ def test_pool_workflow_bindings_collection_put_applies_atomic_replace_and_return
     ]
     assert payload["workflow_bindings"][0]["revision"] == 2
     assert payload["workflow_bindings"][0]["status"] == "inactive"
-    assert payload["workflow_bindings"][0]["workflow"]["workflow_revision"] == 4
+    assert payload["workflow_bindings"][0]["binding_profile_revision_id"] == (
+        updated_revision["binding_profile_revision_id"]
+    )
+    assert payload["workflow_bindings"][0]["resolved_profile"]["workflow"]["workflow_revision"] == 4
     assert payload["workflow_bindings"][1]["revision"] == 1
 
     stored_bindings = list_pool_workflow_bindings(pool=pool)
@@ -1869,6 +1984,7 @@ def test_pool_workflow_bindings_collection_put_applies_atomic_replace_and_return
         first_binding["binding_id"],
         "replacement-binding",
     ]
+    assert stored_bindings[0]["workflow"]["workflow_revision"] == 4
     assert second_binding["binding_id"] not in {item["binding_id"] for item in stored_bindings}
 
 
@@ -1891,23 +2007,24 @@ def test_pool_workflow_bindings_collection_put_returns_conflict_without_partial_
     stale_response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
     assert stale_response.status_code == 200
     stale_payload = stale_response.json()
+    stale_attachment = stale_payload["workflow_bindings"][0]
 
     winner_response = authenticated_client.put(
         "/api/v2/pools/workflow-bindings/",
         {
             "pool_id": str(pool.id),
             "expected_collection_etag": stale_payload["collection_etag"],
-            "workflow_bindings": [
-                {
-                    **created_binding,
-                    "status": "inactive",
-                }
-            ],
+            "workflow_bindings": [_attachment_payload_from_read_model(stale_attachment, status="inactive")],
         },
         format="json",
     )
     assert winner_response.status_code == 200
     winner_payload = winner_response.json()
+    late_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
+        workflow_definition_key="late-binding",
+        workflow_revision=9,
+    )
 
     conflict_response = authenticated_client.put(
         "/api/v2/pools/workflow-bindings/",
@@ -1915,20 +2032,13 @@ def test_pool_workflow_bindings_collection_put_returns_conflict_without_partial_
             "pool_id": str(pool.id),
             "expected_collection_etag": stale_payload["collection_etag"],
             "workflow_bindings": [
-                {
-                    **created_binding,
-                    "status": "draft",
-                },
-                {
-                    **_build_pool_workflow_binding_payload(
-                        pool=pool,
-                        workflow_definition_key="late-binding",
-                        workflow_revision=9,
-                        direction=PoolRunDirection.TOP_DOWN,
-                        mode=PoolRunMode.UNSAFE,
-                    ),
-                    "binding_id": "late-binding",
-                },
+                _attachment_payload_from_read_model(stale_attachment, status="draft"),
+                _build_pool_workflow_binding_attachment_payload(
+                    binding_profile_revision_id=str(late_revision["binding_profile_revision_id"]),
+                    binding_id="late-binding",
+                    direction=PoolRunDirection.TOP_DOWN,
+                    mode=PoolRunMode.UNSAFE,
+                ),
             ],
         },
         format="json",
@@ -1952,11 +2062,11 @@ def test_pool_workflow_bindings_collection_put_returns_conflict_without_partial_
 
 
 @pytest.mark.django_db
-def test_pool_workflow_bindings_collection_put_rejects_duplicate_slot_key_without_partial_apply(
+def test_pool_workflow_bindings_collection_put_rejects_inline_workflow_override_without_partial_apply(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
-    created_binding, _ = upsert_canonical_pool_workflow_binding(
+    upsert_canonical_pool_workflow_binding(
         pool=pool,
         workflow_binding=_build_pool_workflow_binding_payload(
             pool=pool,
@@ -1978,21 +2088,13 @@ def test_pool_workflow_bindings_collection_put_rejects_duplicate_slot_key_withou
             "expected_collection_etag": initial_payload["collection_etag"],
             "workflow_bindings": [
                 {
-                    **created_binding,
-                    "decisions": [
-                        {
-                            "decision_table_id": "decision-a",
-                            "decision_key": "document_policy",
-                            "slot_key": "shared_slot",
-                            "decision_revision": 1,
-                        },
-                        {
-                            "decision_table_id": "decision-b",
-                            "decision_key": "document_policy",
-                            "slot_key": "shared_slot",
-                            "decision_revision": 2,
-                        },
-                    ],
+                    **_attachment_payload_from_read_model(initial_payload["workflow_bindings"][0]),
+                    "workflow": {
+                        "workflow_definition_key": "services-publication",
+                        "workflow_revision_id": str(uuid4()),
+                        "workflow_revision": 9,
+                        "workflow_name": "services_publication",
+                    },
                 }
             ],
         },
@@ -2002,9 +2104,9 @@ def test_pool_workflow_bindings_collection_put_rejects_duplicate_slot_key_withou
     payload = _assert_problem_details_response(
         response,
         status_code=400,
-        code="POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
+        code="VALIDATION_ERROR",
     )
-    assert "slot_key" in payload["detail"]
+    assert "workflow" in payload["detail"]
 
     current_response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
     assert current_response.status_code == 200
@@ -2012,11 +2114,11 @@ def test_pool_workflow_bindings_collection_put_rejects_duplicate_slot_key_withou
 
 
 @pytest.mark.django_db
-def test_pool_workflow_bindings_collection_put_rejects_document_policy_without_slot_key_without_partial_apply(
+def test_pool_workflow_bindings_collection_put_rejects_inline_decisions_override_without_partial_apply(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
-    created_binding, _ = upsert_canonical_pool_workflow_binding(
+    upsert_canonical_pool_workflow_binding(
         pool=pool,
         workflow_binding=_build_pool_workflow_binding_payload(
             pool=pool,
@@ -2038,11 +2140,12 @@ def test_pool_workflow_bindings_collection_put_rejects_document_policy_without_s
             "expected_collection_etag": initial_payload["collection_etag"],
             "workflow_bindings": [
                 {
-                    **created_binding,
+                    **_attachment_payload_from_read_model(initial_payload["workflow_bindings"][0]),
                     "decisions": [
                         {
                             "decision_table_id": "decision-a",
                             "decision_key": "document_policy",
+                            "slot_key": "document_policy",
                             "decision_revision": 1,
                         }
                     ],
@@ -2055,9 +2158,9 @@ def test_pool_workflow_bindings_collection_put_rejects_document_policy_without_s
     payload = _assert_problem_details_response(
         response,
         status_code=400,
-        code="POOL_DOCUMENT_POLICY_SLOT_REQUIRED",
+        code="VALIDATION_ERROR",
     )
-    assert "slot_key" in payload["detail"]
+    assert "decisions" in payload["detail"]
 
     current_response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
     assert current_response.status_code == 200
@@ -2069,21 +2172,23 @@ def test_pool_workflow_binding_upsert_creates_and_updates_first_class_binding(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
+    initial_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        parameters={"publication_variant": "full"},
+        role_mapping={"initiator": "finance"},
+    )
     create_response = authenticated_client.post(
         "/api/v2/pools/workflow-bindings/upsert/",
         {
             "pool_id": str(pool.id),
-            "workflow_binding": {
-                "workflow": {
-                    "workflow_definition_key": "services-publication",
-                    "workflow_revision_id": "11111111-1111-1111-1111-111111111111",
-                    "workflow_revision": 3,
-                    "workflow_name": "services_publication",
-                },
-                "selector": {"direction": "top_down", "mode": "safe", "tags": ["baseline"]},
-                "effective_from": "2026-01-01",
-                "status": "active",
-            },
+            "workflow_binding": _build_pool_workflow_binding_attachment_payload(
+                binding_profile_revision_id=str(initial_revision["binding_profile_revision_id"]),
+                direction="top_down",
+                mode="safe",
+                tags=["baseline"],
+            ),
         },
         format="json",
     )
@@ -2095,26 +2200,34 @@ def test_pool_workflow_binding_upsert_creates_and_updates_first_class_binding(
     assert binding_id
     assert created_payload["workflow_binding"]["pool_id"] == str(pool.id)
     assert created_payload["workflow_binding"]["revision"] == 1
-    assert created_payload["workflow_binding"]["workflow"]["workflow_definition_key"] == "services-publication"
+    assert created_payload["workflow_binding"]["binding_profile_revision_id"] == (
+        initial_revision["binding_profile_revision_id"]
+    )
+    assert created_payload["workflow_binding"]["resolved_profile"]["workflow"]["workflow_definition_key"] == (
+        "services-publication"
+    )
+    updated_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
+        workflow_definition_key="services-publication",
+        workflow_revision=4,
+        parameters={"publication_variant": "delta"},
+        role_mapping={"initiator": "ops"},
+    )
 
     update_response = authenticated_client.post(
         "/api/v2/pools/workflow-bindings/upsert/",
         {
             "pool_id": str(pool.id),
-            "workflow_binding": {
-                "binding_id": binding_id,
-                "revision": created_payload["workflow_binding"]["revision"],
-                "workflow": {
-                    "workflow_definition_key": "services-publication",
-                    "workflow_revision_id": "11111111-1111-1111-1111-111111111111",
-                    "workflow_revision": 4,
-                    "workflow_name": "services_publication",
-                },
-                "selector": {"direction": "top_down", "mode": "safe", "tags": ["baseline", "monthly"]},
-                "effective_from": "2026-01-01",
-                "effective_to": "2026-12-31",
-                "status": "inactive",
-            },
+            "workflow_binding": _build_pool_workflow_binding_attachment_payload(
+                binding_profile_revision_id=str(updated_revision["binding_profile_revision_id"]),
+                binding_id=binding_id,
+                revision=created_payload["workflow_binding"]["revision"],
+                direction="top_down",
+                mode="safe",
+                tags=["baseline", "monthly"],
+                effective_to="2026-12-31",
+                status="inactive",
+            ),
         },
         format="json",
     )
@@ -2124,7 +2237,10 @@ def test_pool_workflow_binding_upsert_creates_and_updates_first_class_binding(
     assert updated_payload["created"] is False
     assert updated_payload["workflow_binding"]["binding_id"] == binding_id
     assert updated_payload["workflow_binding"]["revision"] == 2
-    assert updated_payload["workflow_binding"]["workflow"]["workflow_revision"] == 4
+    assert updated_payload["workflow_binding"]["binding_profile_revision_id"] == (
+        updated_revision["binding_profile_revision_id"]
+    )
+    assert updated_payload["workflow_binding"]["resolved_profile"]["workflow"]["workflow_revision"] == 4
     assert updated_payload["workflow_binding"]["effective_to"] == "2026-12-31"
     assert updated_payload["workflow_binding"]["status"] == "inactive"
 
@@ -2134,38 +2250,31 @@ def test_pool_workflow_binding_upsert_creates_and_updates_first_class_binding(
     assert bindings[0]["binding_id"] == binding_id
     assert bindings[0]["revision"] == 2
     assert bindings[0]["selector"]["tags"] == ["baseline", "monthly"]
+    assert bindings[0]["workflow"]["workflow_revision"] == 4
 
 
 @pytest.mark.django_db
-def test_pool_workflow_binding_upsert_rejects_duplicate_slot_key(
+def test_pool_workflow_binding_upsert_rejects_inline_workflow_override_payload(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
+    profile_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+    )
     response = authenticated_client.post(
         "/api/v2/pools/workflow-bindings/upsert/",
         {
             "pool_id": str(pool.id),
             "workflow_binding": {
+                "binding_profile_revision_id": profile_revision["binding_profile_revision_id"],
                 "workflow": {
                     "workflow_definition_key": "services-publication",
-                    "workflow_revision_id": "11111111-1111-1111-1111-111111111111",
-                    "workflow_revision": 3,
+                    "workflow_revision_id": str(uuid4()),
+                    "workflow_revision": 9,
                     "workflow_name": "services_publication",
                 },
-                "decisions": [
-                    {
-                        "decision_table_id": "decision-a",
-                        "decision_key": "document_policy",
-                        "slot_key": "shared_slot",
-                        "decision_revision": 1,
-                    },
-                    {
-                        "decision_table_id": "decision-b",
-                        "decision_key": "document_policy",
-                        "slot_key": "shared_slot",
-                        "decision_revision": 2,
-                    },
-                ],
                 "selector": {"direction": "top_down", "mode": "safe", "tags": ["baseline"]},
                 "effective_from": "2026-01-01",
                 "status": "active",
@@ -2177,32 +2286,33 @@ def test_pool_workflow_binding_upsert_rejects_duplicate_slot_key(
     payload = _assert_problem_details_response(
         response,
         status_code=400,
-        code="POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
+        code="VALIDATION_ERROR",
     )
-    assert "slot_key" in payload["detail"]
+    assert "workflow" in payload["detail"]
     assert list_pool_workflow_bindings(pool=pool) == []
 
 
 @pytest.mark.django_db
-def test_pool_workflow_binding_upsert_rejects_document_policy_without_slot_key(
+def test_pool_workflow_binding_upsert_rejects_inline_decisions_override_payload(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
+    profile_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+    )
     response = authenticated_client.post(
         "/api/v2/pools/workflow-bindings/upsert/",
         {
             "pool_id": str(pool.id),
             "workflow_binding": {
-                "workflow": {
-                    "workflow_definition_key": "services-publication",
-                    "workflow_revision_id": "11111111-1111-1111-1111-111111111111",
-                    "workflow_revision": 3,
-                    "workflow_name": "services_publication",
-                },
+                "binding_profile_revision_id": profile_revision["binding_profile_revision_id"],
                 "decisions": [
                     {
                         "decision_table_id": "decision-a",
                         "decision_key": "document_policy",
+                        "slot_key": "document_policy",
                         "decision_revision": 1,
                     }
                 ],
@@ -2217,9 +2327,9 @@ def test_pool_workflow_binding_upsert_rejects_document_policy_without_slot_key(
     payload = _assert_problem_details_response(
         response,
         status_code=400,
-        code="POOL_DOCUMENT_POLICY_SLOT_REQUIRED",
+        code="VALIDATION_ERROR",
     )
-    assert "slot_key" in payload["detail"]
+    assert "decisions" in payload["detail"]
     assert list_pool_workflow_bindings(pool=pool) == []
 
 
@@ -2228,27 +2338,37 @@ def test_pool_workflow_binding_upsert_requires_revision_for_update(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
-    binding = _build_pool_workflow_binding_payload(
-        pool=pool,
+    profile_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
         workflow_definition_key="services-publication",
         workflow_revision=3,
-        direction=PoolRunDirection.TOP_DOWN,
-        mode=PoolRunMode.SAFE,
     )
-    upsert_canonical_pool_workflow_binding(
-        pool=pool,
-        workflow_binding=binding,
-        actor_username="pool-update-revision-test",
+    create_response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": _build_pool_workflow_binding_attachment_payload(
+                binding_profile_revision_id=str(profile_revision["binding_profile_revision_id"]),
+                direction=PoolRunDirection.TOP_DOWN,
+                mode=PoolRunMode.SAFE,
+            ),
+        },
+        format="json",
     )
+    assert create_response.status_code == 201
+    created_binding = create_response.json()["workflow_binding"]
 
     response = authenticated_client.post(
         "/api/v2/pools/workflow-bindings/upsert/",
         {
             "pool_id": str(pool.id),
-            "workflow_binding": {
-                **binding,
-                "status": "inactive",
-            },
+            "workflow_binding": _build_pool_workflow_binding_attachment_payload(
+                binding_profile_revision_id=str(profile_revision["binding_profile_revision_id"]),
+                binding_id=created_binding["binding_id"],
+                direction=PoolRunDirection.TOP_DOWN,
+                mode=PoolRunMode.SAFE,
+                status="inactive",
+            ),
         },
         format="json",
     )
@@ -2266,37 +2386,59 @@ def test_pool_workflow_binding_upsert_returns_conflict_for_stale_revision(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
-    binding = _build_pool_workflow_binding_payload(
-        pool=pool,
+    initial_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
         workflow_definition_key="services-publication",
         workflow_revision=3,
-        direction=PoolRunDirection.TOP_DOWN,
-        mode=PoolRunMode.SAFE,
     )
-    created_binding, _ = upsert_canonical_pool_workflow_binding(
-        pool=pool,
-        workflow_binding=binding,
-        actor_username="pool-update-stale-test",
-    )
-    upsert_canonical_pool_workflow_binding(
-        pool=pool,
-        workflow_binding={
-            **created_binding,
-            "revision": created_binding["revision"],
-            "status": "inactive",
+    create_response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": _build_pool_workflow_binding_attachment_payload(
+                binding_profile_revision_id=str(initial_revision["binding_profile_revision_id"]),
+                direction=PoolRunDirection.TOP_DOWN,
+                mode=PoolRunMode.SAFE,
+            ),
         },
-        actor_username="pool-update-winner-test",
+        format="json",
     )
+    assert create_response.status_code == 201
+    created_binding = create_response.json()["workflow_binding"]
+    winner_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
+        workflow_definition_key="services-publication",
+        workflow_revision=4,
+    )
+    winner_response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": _build_pool_workflow_binding_attachment_payload(
+                binding_profile_revision_id=str(winner_revision["binding_profile_revision_id"]),
+                binding_id=created_binding["binding_id"],
+                revision=created_binding["revision"],
+                direction=PoolRunDirection.TOP_DOWN,
+                mode=PoolRunMode.SAFE,
+                status="inactive",
+            ),
+        },
+        format="json",
+    )
+    assert winner_response.status_code == 200
 
     response = authenticated_client.post(
         "/api/v2/pools/workflow-bindings/upsert/",
         {
             "pool_id": str(pool.id),
-            "workflow_binding": {
-                **created_binding,
-                "revision": created_binding["revision"],
-                "status": "draft",
-            },
+            "workflow_binding": _build_pool_workflow_binding_attachment_payload(
+                binding_profile_revision_id=str(winner_revision["binding_profile_revision_id"]),
+                binding_id=created_binding["binding_id"],
+                revision=created_binding["revision"],
+                direction=PoolRunDirection.TOP_DOWN,
+                mode=PoolRunMode.SAFE,
+                status="draft",
+            ),
         },
         format="json",
     )
@@ -2309,7 +2451,7 @@ def test_pool_workflow_binding_upsert_returns_conflict_for_stale_revision(
     assert "latest revision" in payload["detail"]
     assert payload["errors"] == [
         {
-            "binding_id": binding["binding_id"],
+            "binding_id": created_binding["binding_id"],
             "expected_revision": 1,
             "actual_revision": 2,
             "operation": "update",
@@ -2345,6 +2487,7 @@ def test_pool_workflow_binding_delete_removes_binding_from_pool(
     assert payload["deleted"] is True
     assert payload["workflow_binding"]["binding_id"] == binding["binding_id"]
     assert payload["workflow_binding"]["revision"] == 1
+    assert payload["workflow_binding"]["binding_profile_revision_id"]
 
     pool.refresh_from_db()
     assert list_pool_workflow_bindings(pool=pool) == []
@@ -2385,30 +2528,50 @@ def test_pool_workflow_binding_delete_returns_conflict_for_stale_revision(
     authenticated_client: APIClient,
     pool: OrganizationPool,
 ) -> None:
-    binding = _build_pool_workflow_binding_payload(
-        pool=pool,
+    initial_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
         workflow_definition_key="services-publication",
         workflow_revision=3,
-        direction=PoolRunDirection.TOP_DOWN,
-        mode=PoolRunMode.SAFE,
     )
-    created_binding, _ = upsert_canonical_pool_workflow_binding(
-        pool=pool,
-        workflow_binding=binding,
-        actor_username="pool-delete-stale-test",
-    )
-    updated_binding, _ = upsert_canonical_pool_workflow_binding(
-        pool=pool,
-        workflow_binding={
-            **created_binding,
-            "revision": created_binding["revision"],
-            "status": "inactive",
+    create_response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": _build_pool_workflow_binding_attachment_payload(
+                binding_profile_revision_id=str(initial_revision["binding_profile_revision_id"]),
+                direction=PoolRunDirection.TOP_DOWN,
+                mode=PoolRunMode.SAFE,
+            ),
         },
-        actor_username="pool-delete-winner-test",
+        format="json",
     )
+    assert create_response.status_code == 201
+    created_binding = create_response.json()["workflow_binding"]
+    updated_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
+        workflow_definition_key="services-publication",
+        workflow_revision=4,
+    )
+    update_response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": _build_pool_workflow_binding_attachment_payload(
+                binding_profile_revision_id=str(updated_revision["binding_profile_revision_id"]),
+                binding_id=created_binding["binding_id"],
+                revision=created_binding["revision"],
+                direction=PoolRunDirection.TOP_DOWN,
+                mode=PoolRunMode.SAFE,
+                status="inactive",
+            ),
+        },
+        format="json",
+    )
+    assert update_response.status_code == 200
+    updated_binding = update_response.json()["workflow_binding"]
 
     response = authenticated_client.delete(
-        f"/api/v2/pools/workflow-bindings/{binding['binding_id']}/?pool_id={pool.id}&revision={created_binding['revision']}"
+        f"/api/v2/pools/workflow-bindings/{created_binding['binding_id']}/?pool_id={pool.id}&revision={created_binding['revision']}"
     )
 
     payload = _assert_problem_details_response(
@@ -2419,7 +2582,7 @@ def test_pool_workflow_binding_delete_returns_conflict_for_stale_revision(
     assert "latest revision" in payload["detail"]
     assert payload["errors"] == [
         {
-            "binding_id": binding["binding_id"],
+            "binding_id": created_binding["binding_id"],
             "expected_revision": 1,
             "actual_revision": updated_binding["revision"],
             "operation": "delete",
@@ -2454,7 +2617,8 @@ def test_pool_workflow_binding_detail_reads_first_class_binding(
     assert payload["workflow_binding"]["binding_id"] == binding["binding_id"]
     assert payload["workflow_binding"]["pool_id"] == str(pool.id)
     assert payload["workflow_binding"]["revision"] == 1
-    assert payload["workflow_binding"]["workflow"]["workflow_revision"] == 3
+    assert payload["workflow_binding"]["binding_profile_revision_id"]
+    assert payload["workflow_binding"]["resolved_profile"]["workflow"]["workflow_revision"] == 3
 
 
 @pytest.mark.django_db

@@ -1,5 +1,5 @@
 type: object
-description: Deprecated alias for the workflow binding input payload. Use PoolWorkflowBindingInput.yaml in mutating contracts.
+description: Deprecated alias for the workflow binding attachment input payload. Use PoolWorkflowBindingInput.yaml in mutating contracts.
 properties:
   contract_version:
     type: string
@@ -15,21 +15,9 @@ properties:
     type: integer
     minimum: 1
     description: Server-managed optimistic concurrency revision for update/delete operations.
-  workflow:
-    $ref: ./WorkflowDefinitionRef.yaml
-  decisions:
-    type: array
-    items:
-      $ref: ./PoolWorkflowBindingDecisionRef.yaml
-  parameters:
-    type: object
-    additionalProperties: true
-    description: Arbitrary workflow parameter overrides for this binding.
-  role_mapping:
-    type: object
-    additionalProperties:
-      type: string
-    description: Mapping from workflow roles to concrete pool-scoped targets.
+  binding_profile_revision_id:
+    type: string
+    description: Opaque pinned reusable binding profile revision identifier.
   selector:
     $ref: ./PoolWorkflowBindingSelector.yaml
   effective_from:
@@ -49,5 +37,5 @@ properties:
       - inactive
     description: Binding lifecycle status.
 required:
-  - workflow
+  - binding_profile_revision_id
   - effective_from

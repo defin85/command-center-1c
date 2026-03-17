@@ -171,6 +171,12 @@ def test_pool_workflow_binding_input_src_schema_includes_optional_revision_field
         "minimum": 1,
         "description": "Server-managed optimistic concurrency revision for update/delete operations.",
     }
+    assert properties.get("binding_profile_revision_id") == {
+        "type": "string",
+        "description": "Opaque pinned reusable binding profile revision identifier.",
+    }
+    assert "workflow" not in properties
+    assert "decisions" not in properties
 
 
 def test_pool_workflow_binding_read_src_schema_requires_server_managed_fields() -> None:
@@ -178,9 +184,29 @@ def test_pool_workflow_binding_read_src_schema_requires_server_managed_fields() 
 
     required = payload.get("required")
     assert isinstance(required, list)
-    assert {"binding_id", "pool_id", "revision", "workflow", "effective_from", "status"}.issubset(
+    assert {
+        "binding_id",
+        "pool_id",
+        "binding_profile_id",
+        "binding_profile_revision_id",
+        "binding_profile_revision_number",
+        "revision",
+        "effective_from",
+        "status",
+        "resolved_profile",
+    }.issubset(
         set(required)
     )
+
+    properties = payload.get("properties")
+    assert isinstance(properties, dict)
+    assert properties["resolved_profile"] == {
+        "$ref": "./PoolWorkflowBindingResolvedProfile.yaml",
+    }
+    assert properties["profile_lifecycle_warning"] == {
+        "allOf": [{"$ref": "./PoolWorkflowBindingProfileLifecycleWarning.yaml"}],
+        "nullable": True,
+    }
 
 
 def test_pool_workflow_binding_collection_response_src_schema_requires_etag_and_bindings() -> None:

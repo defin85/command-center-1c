@@ -1,0 +1,37 @@
+type: object
+description: Read-only summary of the reusable binding profile revision pinned by a pool attachment.
+properties:
+  binding_profile_id:
+    type: string
+  code:
+    type: string
+  name:
+    type: string
+  status:
+    type: string
+  binding_profile_revision_id:
+    type: string
+  binding_profile_revision_number:
+    type: integer
+    minimum: 1
+  workflow:
+    $ref: ./WorkflowDefinitionRef.yaml
+  decisions:
+    type: array
+    items:
+      $ref: ./PoolWorkflowBindingDecisionRef.yaml
+  parameters:
+    type: object
+    additionalProperties: true
+  role_mapping:
+    type: object
+    additionalProperties:
+      type: string
+required:
+  - binding_profile_id
+  - code
+  - name
+  - status
+  - binding_profile_revision_id
+  - binding_profile_revision_number
+  - workflow

@@ -181,7 +181,7 @@ def test_pool_workflow_binding_write_schema_keeps_server_managed_fields_optional
     assert isinstance(properties, dict)
     required = binding_schema.get("required")
     assert isinstance(required, list)
-    assert set(required) == {"workflow", "effective_from"}
+    assert set(required) == {"binding_profile_revision_id", "effective_from"}
 
     revision_schema = properties.get("revision")
     assert isinstance(revision_schema, dict)
@@ -201,6 +201,13 @@ def test_pool_workflow_binding_write_schema_keeps_server_managed_fields_optional
     assert isinstance(pool_id_field, serializers.UUIDField)
     assert pool_id_field.required is False
 
+    binding_profile_revision_id_field = pools_view.PoolWorkflowBindingInputSerializer().fields.get(
+        "binding_profile_revision_id"
+    )
+    assert isinstance(binding_profile_revision_id_field, serializers.CharField)
+    assert binding_profile_revision_id_field.required is True
+    assert "workflow" not in properties
+
     status_field = pools_view.PoolWorkflowBindingInputSerializer().fields.get("status")
     assert isinstance(status_field, serializers.ChoiceField)
     assert status_field.required is False
@@ -213,9 +220,17 @@ def test_pool_workflow_binding_read_schema_requires_server_managed_fields() -> N
     assert isinstance(properties, dict)
     required = binding_schema.get("required", [])
     assert isinstance(required, list)
-    assert {"binding_id", "pool_id", "revision", "workflow", "effective_from", "status"}.issubset(
-        set(required)
-    )
+    assert {
+        "binding_id",
+        "pool_id",
+        "binding_profile_id",
+        "binding_profile_revision_id",
+        "binding_profile_revision_number",
+        "revision",
+        "effective_from",
+        "status",
+        "resolved_profile",
+    }.issubset(set(required))
 
     revision_schema = properties.get("revision")
     assert isinstance(revision_schema, dict)
@@ -225,8 +240,12 @@ def test_pool_workflow_binding_read_schema_requires_server_managed_fields() -> N
     runtime_fields = pools_view.PoolWorkflowBindingReadSerializer().fields
     assert runtime_fields["binding_id"].required is True
     assert runtime_fields["pool_id"].required is True
+    assert runtime_fields["binding_profile_id"].required is True
+    assert runtime_fields["binding_profile_revision_id"].required is True
+    assert runtime_fields["binding_profile_revision_number"].required is True
     assert runtime_fields["revision"].required is True
     assert runtime_fields["status"].required is True
+    assert runtime_fields["resolved_profile"].required is True
 
 
 def test_pool_workflow_binding_preview_schema_exposes_slot_coverage_summary() -> None:

@@ -1024,6 +1024,20 @@ class PoolWorkflowBinding(models.Model):
         on_delete=models.CASCADE,
         related_name="workflow_bindings",
     )
+    binding_profile = models.ForeignKey(
+        "intercompany_pools.BindingProfile",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="workflow_attachments",
+    )
+    binding_profile_revision = models.ForeignKey(
+        "intercompany_pools.BindingProfileRevision",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="workflow_attachments",
+    )
     contract_version = models.CharField(max_length=64, default="pool_workflow_binding.v1")
     status = models.CharField(
         max_length=16,
@@ -1058,6 +1072,7 @@ class PoolWorkflowBinding(models.Model):
         indexes = [
             models.Index(fields=["tenant", "pool", "status"]),
             models.Index(fields=["tenant", "pool", "direction", "mode", "status"]),
+            models.Index(fields=["tenant", "pool", "binding_profile_revision"]),
             models.Index(fields=["tenant", "workflow_definition_key", "workflow_revision"]),
             models.Index(fields=["pool", "-updated_at"]),
         ]
@@ -1087,6 +1102,28 @@ class PoolWorkflowBinding(models.Model):
     def clean(self) -> None:
         if self.pool_id and self.tenant_id and self.pool.tenant_id != self.tenant_id:
             raise ValidationError({"pool": "Workflow binding pool must belong to the same tenant."})
+        if self.binding_profile_id and self.binding_profile.tenant_id != self.tenant_id:
+            raise ValidationError({"binding_profile": "Workflow binding profile must belong to the same tenant."})
+        if self.binding_profile_revision_id and self.binding_profile_revision.tenant_id != self.tenant_id:
+            raise ValidationError(
+                {"binding_profile_revision": "Workflow binding profile revision must belong to the same tenant."}
+            )
+        if bool(self.binding_profile_id) != bool(self.binding_profile_revision_id):
+            raise ValidationError(
+                {
+                    "binding_profile_revision": (
+                        "binding_profile and binding_profile_revision must be set together for attachment mode."
+                    )
+                }
+            )
+        if (
+            self.binding_profile_id
+            and self.binding_profile_revision_id
+            and self.binding_profile_revision.profile_id != self.binding_profile_id
+        ):
+            raise ValidationError(
+                {"binding_profile_revision": "Workflow binding profile revision must belong to the selected profile."}
+            )
 
     def save(self, *args, **kwargs):
         self.full_clean()

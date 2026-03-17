@@ -1,0 +1,13 @@
+type: object
+description: Lifecycle warning surfaced when an attachment stays pinned to a deactivated reusable profile.
+properties:
+  code:
+    type: string
+  title:
+    type: string
+  detail:
+    type: string
+required:
+  - code
+  - title
+  - detail

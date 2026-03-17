@@ -103,18 +103,24 @@ def test_generated_pool_workflow_binding_revision_contract_is_present() -> None:
 
     assert re.search(r"binding_id: string;", content)
     assert re.search(r"pool_id: string;", content)
+    assert re.search(r"binding_profile_id: string;", content)
+    assert re.search(r"binding_profile_revision_id: string;", content)
+    assert re.search(r"binding_profile_revision_number: number;", content)
     assert re.search(r"revision: number;", content)
     assert re.search(r"status: PoolWorkflowBindingReadStatus;", content)
+    assert re.search(r"resolved_profile: ", content)
 
 
 def test_generated_pool_workflow_binding_input_keeps_mutating_fields_optional() -> None:
     model_path = _repo_root() / "frontend" / "src" / "api" / "generated" / "model" / "poolWorkflowBindingInput.ts"
     content = model_path.read_text(encoding="utf-8")
 
+    assert re.search(r"binding_profile_revision_id: string;", content)
     assert re.search(r"binding_id\?: string;", content)
     assert re.search(r"pool_id\?: string;", content)
     assert re.search(r"revision\?: number;", content)
     assert re.search(r"status\?: PoolWorkflowBindingInputStatus;", content)
+    assert "workflow?" not in content
 
 
 def test_generated_pool_workflow_binding_preview_response_covers_slot_projection_contract() -> None:
