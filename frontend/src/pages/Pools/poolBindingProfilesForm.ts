@@ -1,4 +1,10 @@
-import type { BindingProfileCreateRequest, BindingProfileRevision, BindingProfileRevisionCreateRequest } from '../../api/poolBindingProfiles'
+import type {
+  BindingProfileCreateRequest,
+  BindingProfileRevision,
+  BindingProfileRevisionCreateRequest,
+} from '../../api/poolBindingProfiles'
+import type { BindingProfileRevisionWriteRoleMapping } from '../../api/generated/model/bindingProfileRevisionWriteRoleMapping'
+import type { PoolWorkflowBindingDecisionRef } from '../../api/intercompanyPools'
 
 export type BindingProfileEditorMode = 'create' | 'revise'
 
@@ -105,7 +111,7 @@ export function buildBindingProfileCreateRequest(
 export function buildBindingProfileRevisionCreateRequest(
   values: BindingProfileEditorFormValues,
 ): { request?: BindingProfileRevisionCreateRequest; errors: FormError[] } {
-  const decisions = parseJsonField<unknown[]>(values.decisions_json, {
+  const decisions = parseJsonField<PoolWorkflowBindingDecisionRef[]>(values.decisions_json, {
     field: 'decisions_json',
     emptyValue: [],
     kind: 'array',
@@ -115,9 +121,9 @@ export function buildBindingProfileRevisionCreateRequest(
     emptyValue: {},
     kind: 'object',
   })
-  const roleMapping = parseJsonField<Record<string, unknown>>(values.role_mapping_json, {
+  const roleMapping = parseJsonField<BindingProfileRevisionWriteRoleMapping>(values.role_mapping_json, {
     field: 'role_mapping_json',
-    emptyValue: {},
+    emptyValue: {} as BindingProfileRevisionWriteRoleMapping,
     kind: 'object',
   })
   const metadata = parseJsonField<Record<string, unknown>>(values.metadata_json, {

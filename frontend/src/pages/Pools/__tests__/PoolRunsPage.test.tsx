@@ -305,6 +305,7 @@ function buildWorkflowBindingPreview(overrides: Record<string, unknown> = {}) {
           edge_label: 'Root Org -> Child Org',
           slot_key: 'invoice_mode',
           coverage: {
+            code: null,
             status: 'resolved',
             label: 'Resolved',
             detail: 'invoice_mode -> decision-1 r2',
@@ -386,6 +387,7 @@ function buildWorkflowBindingPreview(overrides: Record<string, unknown> = {}) {
               edge_label: 'Root Org -> Child Org',
               slot_key: 'invoice_mode',
               coverage: {
+                code: null,
                 status: 'resolved',
                 label: 'Resolved',
                 detail: 'invoice_mode -> decision-1 r2',
@@ -717,6 +719,7 @@ describe('PoolRunsPage', () => {
                 edge_label: 'Root Org -> Child Org',
                 slot_key: 'invoice_mode',
                 coverage: {
+                  code: null,
                   status: 'resolved',
                   label: 'Resolved',
                   detail: 'invoice_mode -> decision-1 r2',
@@ -1439,6 +1442,7 @@ describe('PoolRunsPage', () => {
             edge_label: 'Root Org -> Child Org',
             slot_key: 'invoice_mode',
             coverage: {
+              code: null,
               status: 'resolved',
               label: 'Resolved',
               detail: 'invoice_mode -> decision-1 r2',

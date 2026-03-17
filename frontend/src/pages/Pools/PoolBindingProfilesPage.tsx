@@ -25,7 +25,6 @@ import {
 } from '../../api/queries/poolBindingProfiles'
 import type {
   BindingProfileCreateRequest,
-  BindingProfileDetail,
   BindingProfileRevision,
   BindingProfileRevisionCreateRequest,
   BindingProfileSummary,

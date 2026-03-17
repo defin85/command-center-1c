@@ -17,6 +17,11 @@ import {
 
 const { TextArea } = Input
 
+type BindingProfileFormFieldError = {
+  name: keyof BindingProfileEditorFormValues
+  errors: string[]
+}
+
 type PoolBindingProfilesEditorModalProps = {
   open: boolean
   mode: BindingProfileEditorMode
@@ -44,11 +49,11 @@ const toFormFieldErrors = (fieldErrors: Record<string, string[]>) => (
     .map(([name, errors]) => {
       if (!errors.length) return null
       return {
-        name,
+        name: name as keyof BindingProfileEditorFormValues,
         errors,
       }
     })
-    .filter(Boolean) as Array<{ name: string; errors: string[] }>
+    .filter(Boolean) as BindingProfileFormFieldError[]
 )
 
 export function PoolBindingProfilesEditorModal({
@@ -89,7 +94,7 @@ export function PoolBindingProfilesEditorModal({
     )
 
     if (!builtRequest.request) {
-      form.setFields(builtRequest.errors.map((item) => ({
+      form.setFields(builtRequest.errors.map((item): BindingProfileFormFieldError => ({
         name: item.field,
         errors: [item.message],
       })))

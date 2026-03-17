@@ -321,11 +321,6 @@ const shouldPreferUnscopedReadFromMetadataManagement = (
   )
 }
 
-const EMPTY_PINNED_DECISION_REFS: PinnedDecisionRefs = {
-  decisionIds: [],
-  decisionTableKeys: [],
-}
-
 const collectPinnedDecisionRefs = (pools: OrganizationPool[]): PinnedDecisionRefs => {
   const decisionIds = new Set<string>()
   const decisionTableKeys = new Set<string>()
@@ -379,7 +374,7 @@ export function DecisionsPage() {
   const [detailError, setDetailError] = useState<string | null>(null)
   const [pools, setPools] = useState<OrganizationPool[]>([])
   const [poolsLoading, setPoolsLoading] = useState(false)
-  const [poolsError, setPoolsError] = useState<string | null>(null)
+  const [, setPoolsError] = useState<string | null>(null)
   const [editorDraft, setEditorDraft] = useState<DecisionEditorState | null>(null)
   const [editorError, setEditorError] = useState<string | null>(null)
   const [legacyImportDraft, setLegacyImportDraft] = useState<DecisionLegacyImportState | null>(null)

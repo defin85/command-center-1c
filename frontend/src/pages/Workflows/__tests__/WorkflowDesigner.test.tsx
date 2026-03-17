@@ -489,7 +489,7 @@ describe('WorkflowDesigner', () => {
     renderPage('/workflows/runtime-1?surface=runtime_diagnostics&database_id=22222222-2222-2222-2222-222222222222')
 
     await waitFor(() => {
-      const lastCall = mockPropertyEditor.mock.calls.at(-1)?.[0]
+      const lastCall = mockPropertyEditor.mock.calls[mockPropertyEditor.mock.calls.length - 1]?.[0]
       expect(lastCall?.availableDecisions).toEqual([
         expect.objectContaining({ id: 'decision-compatible' }),
         expect.objectContaining({ id: 'decision-drifted' }),

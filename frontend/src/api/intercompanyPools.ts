@@ -303,7 +303,7 @@ export type PoolRunRuntimeProjection = {
 }
 
 export type PoolWorkflowBindingPreviewSlotCoverage = {
-  code?: string | null
+  code: string | null
   status: 'resolved' | 'missing_selector' | 'missing_slot' | 'ambiguous_slot' | 'ambiguous_context' | 'unavailable_context'
   label: string
   detail: string

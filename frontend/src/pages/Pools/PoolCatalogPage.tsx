@@ -2348,7 +2348,7 @@ export function PoolCatalogPage() {
       setPoolBindingsBackendBlockingRemediation(collection.blocking_remediation ?? null)
       poolBindingsForm.setFieldsValue({
         workflow_bindings: workflowBindingsToFormValues(collection.workflow_bindings),
-      } as PoolBindingsFormValues)
+      } as unknown as Parameters<typeof poolBindingsForm.setFieldsValue>[0])
     } catch (err) {
       const resolved = resolveApiError(err, 'Не удалось загрузить workflow bindings.')
       setLoadedPoolBindings([])

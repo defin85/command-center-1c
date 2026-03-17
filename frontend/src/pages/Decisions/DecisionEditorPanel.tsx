@@ -1,4 +1,5 @@
 import { Alert, Button, Card, Descriptions, Input, Space, Typography } from 'antd'
+import type { DescriptionsProps } from 'antd'
 
 import { LazyJsonCodeEditorFormField } from '../../components/code/LazyJsonCodeEditor'
 import type { DocumentPolicyBuilderChainFormValue } from './documentPolicyBuilder'
@@ -79,52 +80,57 @@ export function DecisionEditorPanel({
 }: DecisionEditorPanelProps) {
   const copy = PANEL_COPY[value.mode]
   const saveButtonLabel = value.mode === 'rollover' ? 'Publish rollover revision' : 'Save decision'
-  const summaryItems = [
-    value.sourceSummary
-      ? {
-        key: 'source-revision',
-        label: 'Source revision',
-        children: `${value.sourceSummary.name} (${value.sourceSummary.decisionTableId} r${value.sourceSummary.decisionRevision})`,
-      }
-      : null,
-    value.sourceSummary?.compatibilityStatus
-      ? {
-        key: 'source-compatibility',
-        label: 'Source compatibility',
-        children: value.sourceSummary.compatibilityReason
-          ? `${value.sourceSummary.compatibilityStatus} · ${value.sourceSummary.compatibilityReason}`
-          : value.sourceSummary.compatibilityStatus,
-      }
-      : null,
-    value.targetSummary
-      ? {
+  type SummaryItem = NonNullable<DescriptionsProps['items']>[number]
+  const summaryItems: SummaryItem[] = []
+
+  if (value.sourceSummary) {
+    summaryItems.push({
+      key: 'source-revision',
+      label: 'Source revision',
+      children: `${value.sourceSummary.name} (${value.sourceSummary.decisionTableId} r${value.sourceSummary.decisionRevision})`,
+    })
+  }
+
+  if (value.sourceSummary?.compatibilityStatus) {
+    summaryItems.push({
+      key: 'source-compatibility',
+      label: 'Source compatibility',
+      children: value.sourceSummary.compatibilityReason
+        ? `${value.sourceSummary.compatibilityStatus} · ${value.sourceSummary.compatibilityReason}`
+        : value.sourceSummary.compatibilityStatus,
+    })
+  }
+
+  if (value.targetSummary) {
+    summaryItems.push(
+      {
         key: 'target-database',
         label: 'Target database',
         children: value.targetSummary.databaseLabel,
-      }
-      : null,
-    value.targetSummary
-      ? {
+      },
+      {
         key: 'target-configuration',
         label: 'Target metadata snapshot',
         children: value.targetSummary.configurationLabel,
       }
-      : null,
-    value.targetSummary?.snapshotId
-      ? {
-        key: 'target-snapshot-id',
-        label: 'Target snapshot ID',
-        children: value.targetSummary.snapshotId,
-      }
-      : null,
-    value.targetSummary?.resolutionMode
-      ? {
-        key: 'target-resolution-mode',
-        label: 'Target resolution mode',
-        children: value.targetSummary.resolutionMode,
-      }
-      : null,
-  ].filter(Boolean)
+    )
+  }
+
+  if (value.targetSummary?.snapshotId) {
+    summaryItems.push({
+      key: 'target-snapshot-id',
+      label: 'Target snapshot ID',
+      children: value.targetSummary.snapshotId,
+    })
+  }
+
+  if (value.targetSummary?.resolutionMode) {
+    summaryItems.push({
+      key: 'target-resolution-mode',
+      label: 'Target resolution mode',
+      children: value.targetSummary.resolutionMode,
+    })
+  }
 
   return (
     <Card>

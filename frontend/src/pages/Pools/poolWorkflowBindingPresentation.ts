@@ -9,15 +9,18 @@ import type {
 
 export type PoolWorkflowBindingPresentationValue = {
   binding_id?: string | null
+  pool_id?: string | null
   revision?: number | null
   status?: string | null
   selector?: PoolWorkflowBindingSelector | null
+  effective_from?: string | null
+  effective_to?: string | null
   workflow?: WorkflowDefinitionRef | null
   decisions?: PoolWorkflowBindingDecisionRef[] | null
   binding_profile_id?: string | null
   binding_profile_revision_id?: string | null
   binding_profile_revision_number?: number | null
-  resolved_profile?: Partial<PoolWorkflowBindingResolvedProfile> | null
+  resolved_profile?: PoolWorkflowBindingResolvedProfile | null
   profile_lifecycle_warning?: PoolWorkflowBindingProfileLifecycleWarning | null
 }
 
