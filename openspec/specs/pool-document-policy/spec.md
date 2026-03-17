@@ -6,20 +6,21 @@ TBD - created by archiving change add-02-pool-document-policy. Update Purpose af
 ### Requirement: Document policy MUST быть декларативным и пользовательски управляемым в tenant scope
 Система ДОЛЖНА (SHALL) поддерживать versioned domain contract `document_policy.v1` как concrete compiled runtime contract, используемый downstream publication/runtime слоями.
 
-После workflow-centric cutover analyst-facing source-of-truth для document rules ДОЛЖЕН (SHALL) формироваться через:
-- workflow definitions;
+После topology-slot cutover analyst-facing source-of-truth для document rules ДОЛЖЕН (SHALL) формироваться через:
 - decision resources;
-- pool workflow bindings.
+- pool workflow bindings;
+- topology edge selectors `edge.metadata.document_policy_key`.
 
 Direct authoring `document_policy` на pool topology edges НЕ ДОЛЖЕН (SHALL NOT) оставаться primary путем моделирования для новых analyst-facing схем.
 
 Система МОЖЕТ (MAY) сохранять compiled `document_policy.v1` в runtime projection, включая metadata/read-model структуры, если это нужно для compatibility, preview, audit и downstream compile.
 
-#### Scenario: Workflow binding компилируется в concrete document policy
-- **GIVEN** аналитик настроил workflow definition, decisions и pool binding
+#### Scenario: Один binding materialize'ит несколько concrete policy slots
+- **GIVEN** аналитик настроил несколько decision resources и pool binding с разными `slot_key`
+- **AND** topology использует разные `edge.metadata.document_policy_key` на разных рёбрах
 - **WHEN** система строит effective runtime projection для запуска
-- **THEN** формируется concrete `document_policy.v1`
-- **AND** downstream runtime использует именно этот compiled contract, а не raw analyst authoring objects
+- **THEN** document rules materialize'ятся через pinned binding decisions и topology selectors
+- **AND** downstream runtime использует concrete `document_policy.v1` per edge, а не raw topology authoring payload
 
 ### Requirement: Document policy mapping MUST поддерживать реквизиты и табличные части
 Система ДОЛЖНА (SHALL) поддерживать в policy явный mapping реквизитов документа (`field_mapping`) и табличных частей (`table_parts_mapping`).
@@ -51,7 +52,7 @@ Direct authoring `document_policy` на pool topology edges НЕ ДОЛЖЕН (S
 - **AND** возвращается machine-readable код `POOL_DOCUMENT_POLICY_MISSING_REQUIRED_INVOICE`
 
 ### Requirement: Runtime MUST строить детерминированный document plan artifact из policy
-Система ДОЛЖНА (SHALL) компилировать `document_plan_artifact` детерминированно из active topology version за период run, distribution artifact run и `document_policy`.
+Система ДОЛЖНА (SHALL) компилировать `document_plan_artifact` детерминированно из active topology version за период run, distribution artifact run и per-edge `document_policy`, резолвимого через `edge.metadata.document_policy_key` и selected binding decisions.
 
 Система ДОЛЖНА (SHALL) использовать этот artifact как source-of-truth для create-run publication и retry semantics.
 
@@ -66,17 +67,20 @@ Direct authoring `document_policy` на pool topology edges НЕ ДОЛЖЕН (S
 
 Система НЕ ДОЛЖНА (SHALL NOT) формировать create-run publication chain напрямую из raw `run_input`, если `document_plan_artifact.v1` успешно построен и сохранён.
 
-#### Scenario: Одинаковый вход и policy дают идентичный document plan artifact
-- **GIVEN** одинаковые distribution artifact, topology version и document-policy
-- **WHEN** runtime выполняет compile document plan повторно
-- **THEN** структура и порядок `document_plan_artifact` совпадают
-- **AND** idempotency ключи документов совпадают
+#### Scenario: Разные edges одного run получают разные document chains
+- **GIVEN** один run содержит два allocation на разных topology edges
+- **AND** у edges указаны разные `document_policy_key`
+- **AND** selected binding pin-ит matching decisions для обоих slot'ов
+- **WHEN** runtime выполняет compile document plan
+- **THEN** artifact содержит разные document chains для этих targets/edges
+- **AND** каждая chain materialize'ится из matching slot policy
 
-#### Scenario: Неполный document plan artifact блокирует публикацию
-- **GIVEN** runtime сформировал artifact без одного из обязательных полей `document_plan_artifact.v1`
-- **WHEN** выполняется pre-publication gate
-- **THEN** run завершается fail-closed до OData side effects
-- **AND** diagnostics содержит machine-readable код нарушения artifact-контракта
+#### Scenario: Отсутствующий slot блокирует document plan compile
+- **GIVEN** topology edge участвует в allocation
+- **AND** у edge отсутствует `document_policy_key` или binding не содержит matching `slot_key`
+- **WHEN** runtime выполняет compile document plan
+- **THEN** compile завершается fail-closed до OData side effects
+- **AND** diagnostics содержит machine-readable код missing slot resolution
 
 ### Requirement: Document plan artifact MUST быть downstream execution-контрактом для атомарного workflow compile
 Система ДОЛЖНА (SHALL) публиковать versioned `document_plan_artifact` как downstream input-контракт для атомарного workflow compiler.
@@ -89,37 +93,53 @@ Direct authoring `document_policy` на pool topology edges НЕ ДОЛЖЕН (S
 - **THEN** compiler использует сохранённый artifact без повторной policy-компиляции
 - **AND** шаги документа/счёт-фактуры соответствуют сохранённому плану
 
-### Requirement: Document policy errors MUST быть machine-readable и диагностируемыми
-Система ДОЛЖНА (SHALL) возвращать стабильные machine-readable коды для policy-ошибок до OData side effects.
+### Requirement: Document policy slot diagnostics MUST быть machine-readable и стабильными
+Система ДОЛЖНА (SHALL) возвращать стабильные machine-readable коды для topology-slot resolution ошибок и remediation state'ов.
 
 Минимальный набор кодов:
-- `POOL_DOCUMENT_POLICY_INVALID`
-- `POOL_DOCUMENT_POLICY_CHAIN_INVALID`
-- `POOL_DOCUMENT_POLICY_MAPPING_INVALID`
-- `POOL_DOCUMENT_POLICY_MISSING_REQUIRED_INVOICE`
+- `POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING`
+- `POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND`
+- `POOL_DOCUMENT_POLICY_SLOT_DUPLICATE`
+- `POOL_DOCUMENT_POLICY_SLOT_OUTPUT_INVALID`
+- `POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS`
+- `POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED`
 
-#### Scenario: Невалидный mapping policy возвращает стабильный код ошибки
-- **GIVEN** policy содержит некорректный mapping реквизита или табличной части
-- **WHEN** runtime выполняет policy validation/compile
-- **THEN** run останавливается fail-closed до публикации
-- **AND** diagnostics содержит machine-readable код `POOL_DOCUMENT_POLICY_MAPPING_INVALID`
+#### Scenario: Missing selector возвращает стабильный slot error code
+- **GIVEN** distribution artifact содержит allocation по edge без `document_policy_key`
+- **WHEN** runtime выполняет compile document plan
+- **THEN** execution завершается fail-closed
+- **AND** diagnostics содержит `POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING`
 
-#### Scenario: Невалидная структура цепочки возвращает стабильный код ошибки
-- **GIVEN** policy содержит некорректную структуру chain (например, duplicate `chain_id` или invalid `invoice_mode`)
-- **WHEN** runtime выполняет policy validation/compile
-- **THEN** run останавливается fail-closed до публикации
-- **AND** diagnostics содержит machine-readable код `POOL_DOCUMENT_POLICY_CHAIN_INVALID`
+#### Scenario: Legacy topology dependency после cutover возвращает стабильный code
+- **GIVEN** topology или pool по-прежнему зависят от legacy `document_policy`
+- **WHEN** shipped preview/run path выполняется после cutover
+- **THEN** legacy payload не используется как fallback
+- **AND** diagnostics содержит `POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED`
 
-### Requirement: Migration path MUST быть backward-compatible для run-ов без document policy
-Система ДОЛЖНА (SHALL) поддерживать переходный режим, в котором существующие run-ы без `metadata.document_policy` продолжают выполняться по legacy create-run path без policy compile ошибки.
+### Requirement: Legacy topology policy cutover MUST быть phased и наблюдаемым
+Система ДОЛЖНА (SHALL) выполнять отказ от legacy topology policy по фазам, а не как silent one-shot switch.
 
-Система НЕ ДОЛЖНА (SHALL NOT) требовать retroactive миграции исторических run-ов или topology версий только для сохранения текущего поведения публикации.
+Cutover flow ДОЛЖЕН (SHALL) включать как минимум:
+- remediation diagnostics/inventory;
+- blocking warnings в operator surfaces;
+- blocking preview/create-run для unresolved legacy dependencies;
+- явное отключение runtime fallback;
+- последующее удаление compatibility UI/code path.
 
-#### Scenario: Legacy run без document policy выполняется без policy compile шага
-- **GIVEN** run создан для topology версии, где отсутствует `edge.metadata.document_policy`
-- **WHEN** runtime выполняет distribution/reconciliation create-run path
-- **THEN** run не завершается ошибкой policy-missing
-- **AND** legacy publication payload семантика сохраняется до включения policy
+Rollback МОЖЕТ (MAY) существовать только как явный operational mode и НЕ ДОЛЖЕН (SHALL NOT) превращаться в silent per-request fallback к legacy topology policy.
+
+#### Scenario: Legacy dependency сначала видна как remediation backlog
+- **GIVEN** pool все еще зависит от legacy `edge.metadata.document_policy` или `pool.metadata.document_policy`
+- **WHEN** оператор открывает shipped topology/binding workspace до финального cutover
+- **THEN** UI/runtime diagnostics показывают remediation backlog
+- **AND** legacy dependency не скрывается behind generic validation error
+
+#### Scenario: После cutover shipped runtime не откатывается в legacy fallback молча
+- **GIVEN** финальная стадия cutover включена
+- **AND** для pool не завершена remediation
+- **WHEN** оператор запускает preview или create-run
+- **THEN** shipped path завершается fail-closed
+- **AND** legacy fallback не включается автоматически только ради совместимости
 
 ### Requirement: Document policy completeness profile MUST задавать обязательные реквизиты и табличные части per entity
 Document policy MUST поддерживать декларативный completeness profile для каждого `entity_name`, включая обязательные реквизиты шапки и обязательные табличные части с минимально допустимым количеством строк.
@@ -144,34 +164,31 @@ Document policy MUST поддерживать декларативный complet
 
 Система НЕ ДОЛЖНА (SHALL NOT) выполнять publication compile напрямую из raw workflow/decision authoring без промежуточного concrete policy contract.
 
-#### Scenario: Одинаковый binding и decisions дают одинаковый compiled document policy
-- **GIVEN** одинаковые workflow revision, decision revisions, binding parameters и pool context
-- **WHEN** система повторно компилирует effective document policy
-- **THEN** структура compiled `document_policy.v1` совпадает
+Для topology-slot scheme concrete policy resolution ДОЛЖЕН (SHALL) выполняться per edge через `document_policy_key -> binding decision`.
+
+#### Scenario: Один и тот же binding дает одинаковый per-edge policy map
+- **GIVEN** одинаковые workflow revision, decision revisions, binding parameters, topology version и pool context
+- **WHEN** система повторно компилирует effective per-edge document policy map
+- **THEN** структура compiled `document_policy.v1` для каждого slot совпадает
 - **AND** downstream `document_plan_artifact` получает один и тот же source contract
 
 ### Requirement: Legacy edge document policy MUST мигрировать в decision resources и binding refs
-Система ДОЛЖНА (SHALL) предоставлять deterministic migration path `edge.metadata.document_policy -> decision resource + pool_workflow_binding.decisions` для workflow-centric source-of-truth.
+Система ДОЛЖНА (SHALL) предоставлять deterministic migration path `edge.metadata.document_policy -> decision resource + pool_workflow_binding.decisions + edge.metadata.document_policy_key`.
 
 Migration path ДОЛЖЕН (SHALL):
 - materialize versioned decision resource revision, который возвращает совместимый `document_policy.v1`;
-- сохранять provenance от legacy topology edge к resulting decision revision и affected binding refs;
-- позволять backend backfill/import и operator-driven frontend migration использовать один и тот же deterministic contract;
-- не требовать ручного внешнего API-клиента как обязательного шага migration для штатного UI flow.
+- сохранять provenance от legacy topology edge к resulting decision revision, slot key и affected binding refs;
+- позволять backend backfill/import и operator-driven remediation использовать один и тот же deterministic contract;
+- не требовать ручного внешнего API-клиента как обязательного шага migration для штатного remediation flow.
 
-#### Scenario: Backend backfill materializes legacy edge policy в decision resource
+#### Scenario: Backend remediation materializes legacy edge policy в decision resource и topology slot
 - **GIVEN** topology edge содержит валидный `edge.metadata.document_policy`
 - **AND** для пула уже существуют workflow-centric bindings
 - **WHEN** backend migration/backfill запускается для этого pool
 - **THEN** система создаёт или резолвит versioned decision resource revision с эквивалентным `document_policy.v1`
-- **AND** affected bindings получают pinned decision refs на resulting revision
+- **AND** affected bindings получают pinned decision refs с canonical `decision_key` и явным `slot_key`
+- **AND** topology edge получает matching `document_policy_key`
 - **AND** migration report фиксирует source edge и target decision/binding provenance
-
-#### Scenario: Frontend migration flow переносит legacy edge policy без потери compiled parity
-- **GIVEN** оператор открыл explicit compatibility action для legacy edge policy
-- **WHEN** он подтверждает import в decision-resource surface
-- **THEN** UI показывает resulting decision revision и updated binding refs
-- **AND** binding preview подтверждает compiled `document_policy` parity для migrated path
 
 ### Requirement: Net-new document policy authoring MUST использовать decision-resource surface
 Система ДОЛЖНА (SHALL) предоставлять frontend surface на отдельном route `/decisions` для net-new `document_policy.v1` authoring через decision resources, а не через direct topology-edge editing как primary path.
