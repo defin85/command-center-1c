@@ -63,6 +63,17 @@ import {
   type TopologyCoverageSummary,
   type TopologyEdgeSelector,
 } from './topologySlotCoverage'
+import {
+  resolvePoolWorkflowBindingAttachmentRevision,
+  resolvePoolWorkflowBindingDecisionRefs,
+  resolvePoolWorkflowBindingLifecycleWarning,
+  resolvePoolWorkflowBindingProfileId,
+  resolvePoolWorkflowBindingProfileLabel,
+  resolvePoolWorkflowBindingProfileRevisionId,
+  resolvePoolWorkflowBindingProfileRevisionNumber,
+  resolvePoolWorkflowBindingProfileStatus,
+  resolvePoolWorkflowBindingWorkflow,
+} from './poolWorkflowBindingPresentation'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -129,8 +140,8 @@ const CREATE_RUN_PROBLEM_CODE_MESSAGES: Record<string, string> = {
   TENANT_CONTEXT_REQUIRED: 'Для запуска run требуется активный tenant context.',
   POOL_NOT_FOUND: 'Пул не найден в текущем tenant context.',
   POOL_WORKFLOW_BINDING_REQUIRED: 'Перед продолжением выберите workflow binding.',
-  POOL_WORKFLOW_BINDING_NOT_FOUND: 'Выбранный workflow binding не найден для текущего пула.',
-  POOL_WORKFLOW_BINDING_NOT_RESOLVED: 'Для выбранного pool не найден подходящий активный workflow binding.',
+  POOL_WORKFLOW_BINDING_NOT_FOUND: 'Выбранный attachment больше не найден в текущем пуле.',
+  POOL_WORKFLOW_BINDING_NOT_RESOLVED: 'Выбранный attachment неактивен или не попадает в effective scope для текущего запуска.',
   POOL_WORKFLOW_BINDING_AMBIGUOUS: 'Найдено несколько подходящих workflow bindings. Нужен явный выбор binding.',
   POOL_WORKFLOW_BINDING_INVALID: 'Сохранённые workflow bindings невалидны и не могут быть использованы для запуска.',
   SCHEMA_TEMPLATE_NOT_FOUND: 'Выбранный schema template недоступен в текущем tenant context.',
@@ -866,9 +877,16 @@ const matchesWorkflowBindingForCreateRun = ({
 const formatWorkflowBindingOptionLabel = (
   binding: NonNullable<OrganizationPool['workflow_bindings']>[number]
 ): string => {
-  const workflowName = binding.workflow.workflow_name || binding.workflow.workflow_definition_key
+  const workflow = resolvePoolWorkflowBindingWorkflow(binding)
+  const workflowName = workflow?.workflow_name || workflow?.workflow_definition_key || 'workflow'
   const bindingId = binding.binding_id || 'binding'
-  return `${workflowName} · r${binding.workflow.workflow_revision} · ${bindingId.slice(0, 8)}`
+  const profileRevision = binding.binding_profile_revision_number != null
+    ? `profile r${binding.binding_profile_revision_number}`
+    : ''
+  const attachmentRevision = binding.revision != null ? `attach r${binding.revision}` : ''
+  return [workflowName, profileRevision, attachmentRevision, bindingId.slice(0, 8)]
+    .filter((part) => part && part.trim().length > 0)
+    .join(' · ')
 }
 
 const formatWorkflowBindingScope = (binding: PoolWorkflowBinding | null | undefined): string => {
@@ -904,7 +922,7 @@ const resolveWorkflowLineageName = ({
   runtimeProjection: PoolRunRuntimeProjection | null | undefined
   workflowTemplateName: string | null | undefined
 }): string => (
-  binding?.workflow.workflow_name
+  resolvePoolWorkflowBindingWorkflow(binding)?.workflow_name
   || runtimeProjection?.workflow_binding.workflow_name
   || workflowTemplateName
   || '-'
@@ -1155,6 +1173,14 @@ export function PoolRunsPage() {
     }
     return matchingWorkflowBindings.find((binding) => binding.binding_id === normalizedBindingId) ?? null
   }, [createBindingId, matchingWorkflowBindings])
+  const selectedCreateBindingWorkflow = useMemo(
+    () => resolvePoolWorkflowBindingWorkflow(selectedCreateBinding),
+    [selectedCreateBinding]
+  )
+  const selectedCreateBindingLifecycleWarning = useMemo(
+    () => resolvePoolWorkflowBindingLifecycleWarning(selectedCreateBinding),
+    [selectedCreateBinding]
+  )
   const createBindingCoverageSummary = useMemo(() => {
     if (!selectedCreateBinding) {
       return null
@@ -1162,7 +1188,7 @@ export function PoolRunsPage() {
     const bindingLabel = describePoolWorkflowBindingCoverage(selectedCreateBinding)
     return buildTopologyCoverageSummary({
       bindingLabel,
-      decisions: selectedCreateBinding.decisions ?? [],
+      decisions: resolvePoolWorkflowBindingDecisionRefs(selectedCreateBinding),
       detail: `Coverage is evaluated against selected binding ${bindingLabel}.`,
       selectors: topologyEdgeSelectors,
       source: 'selected',
@@ -1815,7 +1841,48 @@ export function PoolRunsPage() {
   const retryChain = runDetails?.provenance?.retry_chain ?? []
   const workflowBinding = runDetails?.workflow_binding ?? null
   const runtimeProjection = runDetails?.runtime_projection ?? null
-  const workflowDecisionRefs = workflowBinding?.decisions ?? runtimeProjection?.workflow_binding.decision_refs ?? []
+  const previewWorkflowBinding = bindingPreview?.workflow_binding ?? null
+  const previewBindingWorkflow = useMemo(
+    () => resolvePoolWorkflowBindingWorkflow(previewWorkflowBinding),
+    [previewWorkflowBinding]
+  )
+  const previewBindingDecisionRefs = useMemo(
+    () => resolvePoolWorkflowBindingDecisionRefs(previewWorkflowBinding),
+    [previewWorkflowBinding]
+  )
+  const previewBindingLifecycleWarning = useMemo(
+    () => resolvePoolWorkflowBindingLifecycleWarning(previewWorkflowBinding),
+    [previewWorkflowBinding]
+  )
+  const workflowBindingWorkflow = useMemo(
+    () => resolvePoolWorkflowBindingWorkflow(workflowBinding),
+    [workflowBinding]
+  )
+  const workflowBindingLifecycleWarning = useMemo(
+    () => resolvePoolWorkflowBindingLifecycleWarning(workflowBinding),
+    [workflowBinding]
+  )
+  const workflowBindingAttachmentRevision = resolvePoolWorkflowBindingAttachmentRevision({
+    binding: workflowBinding,
+    runtimeProjection,
+  })
+  const workflowBindingProfileId = resolvePoolWorkflowBindingProfileId({
+    binding: workflowBinding,
+    runtimeProjection,
+  })
+  const workflowBindingProfileRevisionId = resolvePoolWorkflowBindingProfileRevisionId({
+    binding: workflowBinding,
+    runtimeProjection,
+  })
+  const workflowBindingProfileRevisionNumber = resolvePoolWorkflowBindingProfileRevisionNumber({
+    binding: workflowBinding,
+    runtimeProjection,
+  })
+  const workflowBindingProfileStatus = resolvePoolWorkflowBindingProfileStatus(workflowBinding)
+  const bindingDecisionRefs = resolvePoolWorkflowBindingDecisionRefs(workflowBinding)
+  const workflowDecisionRefs = bindingDecisionRefs.length > 0
+    ? bindingDecisionRefs
+    : (runtimeProjection?.workflow_binding.decision_refs ?? [])
   const bindingPreviewCoverageSummary = useMemo(() => {
     if (!bindingPreview) {
       return null
@@ -2050,6 +2117,71 @@ export function PoolRunsPage() {
                       description="Для выбранного pool/direction/mode найдено несколько active bindings. Выберите binding явно, чтобы увидеть slot coverage и построить preview."
                     />
                   ) : null}
+                  {selectedCreateBinding ? (
+                    <Card
+                      size="small"
+                      title="Selected Attachment"
+                      data-testid="pool-runs-create-selected-binding"
+                      style={{ marginBottom: 12 }}
+                    >
+                      <Descriptions bordered size="small" column={2}>
+                        <Descriptions.Item label="Attachment ID" span={1}>
+                          <Text code>{selectedCreateBinding.binding_id ?? '-'}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Attachment Revision" span={1}>
+                          <Text data-testid="pool-runs-create-attachment-revision">
+                            {selectedCreateBinding.revision != null ? `r${selectedCreateBinding.revision}` : '-'}
+                          </Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Binding Profile" span={1}>
+                          <Text data-testid="pool-runs-create-profile">{resolvePoolWorkflowBindingProfileLabel(selectedCreateBinding)}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Pinned Profile Revision" span={1}>
+                          <Text data-testid="pool-runs-create-profile-revision">
+                            {selectedCreateBinding.binding_profile_revision_number != null
+                              ? `r${selectedCreateBinding.binding_profile_revision_number}`
+                              : '-'}
+                          </Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Workflow Scheme" span={1}>
+                          <Text>
+                            {selectedCreateBindingWorkflow?.workflow_name
+                              || selectedCreateBindingWorkflow?.workflow_definition_key
+                              || '-'}
+                          </Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Workflow Revision" span={1}>
+                          <Text>
+                            {selectedCreateBindingWorkflow?.workflow_revision != null
+                              ? `r${selectedCreateBindingWorkflow.workflow_revision}`
+                              : '-'}
+                          </Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Binding Scope" span={1}>
+                          <Text>{formatWorkflowBindingScope(selectedCreateBinding)}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Effective Period" span={1}>
+                          <Text>{formatWorkflowBindingEffectivePeriod(selectedCreateBinding)}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Profile Status" span={1}>
+                          <Text>{resolvePoolWorkflowBindingProfileStatus(selectedCreateBinding) ?? '-'}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Pinned Revision ID" span={1}>
+                          <Text code>{selectedCreateBinding.binding_profile_revision_id ?? '-'}</Text>
+                        </Descriptions.Item>
+                        {selectedCreateBindingLifecycleWarning ? (
+                          <Descriptions.Item label="Lifecycle Warning" span={2}>
+                            <Alert
+                              type="warning"
+                              showIcon
+                              message={selectedCreateBindingLifecycleWarning.title}
+                              description={selectedCreateBindingLifecycleWarning.detail}
+                            />
+                          </Descriptions.Item>
+                        ) : null}
+                      </Descriptions>
+                    </Card>
+                  ) : null}
                   {selectedCreateBinding && !bindingPreview ? (
                     <Card
                       size="small"
@@ -2120,25 +2252,55 @@ export function PoolRunsPage() {
                       style={{ marginTop: 16 }}
                     >
                       <Descriptions bordered size="small" column={2}>
-                        <Descriptions.Item label="Binding ID" span={1}>
+                        <Descriptions.Item label="Attachment ID" span={1}>
                           <Text code>{bindingPreview.workflow_binding.binding_id ?? '-'}</Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Attachment Revision" span={1}>
+                          <Text data-testid="pool-runs-binding-preview-attachment-revision">
+                            {bindingPreview.workflow_binding.revision != null
+                              ? `r${bindingPreview.workflow_binding.revision}`
+                              : '-'}
+                          </Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Binding Profile" span={1}>
+                          <Text data-testid="pool-runs-binding-preview-profile">
+                            {resolvePoolWorkflowBindingProfileLabel(bindingPreview.workflow_binding)}
+                          </Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Pinned Profile Revision" span={1}>
+                          <Text data-testid="pool-runs-binding-preview-profile-revision">
+                            {bindingPreview.workflow_binding.binding_profile_revision_number != null
+                              ? `r${bindingPreview.workflow_binding.binding_profile_revision_number}`
+                              : '-'}
+                          </Text>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Pinned Revision ID" span={2}>
+                          <Text code>{bindingPreview.workflow_binding.binding_profile_revision_id ?? '-'}</Text>
                         </Descriptions.Item>
                         <Descriptions.Item label="Workflow Scheme" span={1}>
                           <Text>
-                            {bindingPreview.workflow_binding.workflow.workflow_name
-                              || bindingPreview.workflow_binding.workflow.workflow_definition_key}
+                            {previewBindingWorkflow?.workflow_name
+                              || previewBindingWorkflow?.workflow_definition_key
+                              || '-'}
                           </Text>
                         </Descriptions.Item>
                         <Descriptions.Item label="Workflow Revision" span={1}>
-                          <Text>r{bindingPreview.workflow_binding.workflow.workflow_revision}</Text>
+                          <Text>
+                            {previewBindingWorkflow?.workflow_revision != null
+                              ? `r${previewBindingWorkflow.workflow_revision}`
+                              : '-'}
+                          </Text>
                         </Descriptions.Item>
                         <Descriptions.Item label="Binding Scope" span={1}>
                           <Text>{formatWorkflowBindingScope(bindingPreview.workflow_binding)}</Text>
                         </Descriptions.Item>
+                        <Descriptions.Item label="Profile Status" span={1}>
+                          <Text>{resolvePoolWorkflowBindingProfileStatus(bindingPreview.workflow_binding) ?? '-'}</Text>
+                        </Descriptions.Item>
                         <Descriptions.Item label="Decision Snapshot" span={2}>
-                          {(bindingPreview.workflow_binding.decisions ?? []).length > 0 ? (
+                          {previewBindingDecisionRefs.length > 0 ? (
                             <Space size={[4, 4]} wrap>
-                                {(bindingPreview.workflow_binding.decisions ?? []).map((decision) => (
+                                {previewBindingDecisionRefs.map((decision) => (
                                   <Tag key={`${decision.decision_table_id}:${decision.decision_revision}`}>
                                     {decision.slot_key
                                       ? `${decision.slot_key} -> ${decision.decision_key} r${decision.decision_revision}`
@@ -2150,6 +2312,16 @@ export function PoolRunsPage() {
                             <Text type="secondary">No pinned decision refs.</Text>
                           )}
                         </Descriptions.Item>
+                        {previewBindingLifecycleWarning ? (
+                          <Descriptions.Item label="Lifecycle Warning" span={2}>
+                            <Alert
+                              type="warning"
+                              showIcon
+                              message={previewBindingLifecycleWarning.title}
+                              description={previewBindingLifecycleWarning.detail}
+                            />
+                          </Descriptions.Item>
+                        ) : null}
                         <Descriptions.Item label="Slot Coverage" span={2}>
                           <TopologySlotCoveragePanel
                             summary={bindingPreviewCoverageSummary}
@@ -2257,11 +2429,30 @@ export function PoolRunsPage() {
 
                       <Card size="small" title="Run Lineage">
                         <Descriptions bordered size="small" column={2}>
-                          <Descriptions.Item label="Pool" span={1}>
+                        <Descriptions.Item label="Pool" span={1}>
                             <Text data-testid="pool-runs-lineage-pool">{selectedPoolLabel}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Binding ID" span={1}>
-                            <Text code data-testid="pool-runs-lineage-binding-id">{workflowBinding?.binding_id ?? '-'}</Text>
+                          <Descriptions.Item label="Attachment ID" span={1}>
+                            <Text code data-testid="pool-runs-lineage-binding-id">
+                              {workflowBinding?.binding_id ?? runtimeProjection?.workflow_binding.binding_id ?? '-'}
+                            </Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Attachment Revision" span={1}>
+                            <Text data-testid="pool-runs-lineage-attachment-revision">
+                              {workflowBindingAttachmentRevision != null ? `r${workflowBindingAttachmentRevision}` : '-'}
+                            </Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Binding Profile" span={1}>
+                            <Text data-testid="pool-runs-lineage-profile">
+                              {resolvePoolWorkflowBindingProfileLabel(workflowBinding) !== '-'
+                                ? resolvePoolWorkflowBindingProfileLabel(workflowBinding)
+                                : (workflowBindingProfileId ?? '-')}
+                            </Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Pinned Profile Revision" span={1}>
+                            <Text data-testid="pool-runs-lineage-profile-revision">
+                              {workflowBindingProfileRevisionNumber != null ? `r${workflowBindingProfileRevisionNumber}` : '-'}
+                            </Text>
                           </Descriptions.Item>
                           <Descriptions.Item label="Workflow Scheme" span={1}>
                             <Text data-testid="pool-runs-lineage-workflow">
@@ -2274,8 +2465,8 @@ export function PoolRunsPage() {
                           </Descriptions.Item>
                           <Descriptions.Item label="Workflow Revision" span={1}>
                             <Text>
-                              {workflowBinding?.workflow.workflow_revision != null
-                                ? `r${workflowBinding.workflow.workflow_revision}`
+                              {workflowBindingWorkflow?.workflow_revision != null
+                                ? `r${workflowBindingWorkflow.workflow_revision}`
                                 : runtimeProjection?.workflow_binding.workflow_revision != null
                                   ? `r${runtimeProjection.workflow_binding.workflow_revision}`
                                   : '-'}
@@ -2286,6 +2477,15 @@ export function PoolRunsPage() {
                           </Descriptions.Item>
                           <Descriptions.Item label="Effective Period" span={1}>
                             <Text>{formatWorkflowBindingEffectivePeriod(workflowBinding)}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Profile Status" span={1}>
+                            <Text>{workflowBindingProfileStatus ?? '-'}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Pinned Revision ID" span={1}>
+                            <Text code>{workflowBindingProfileRevisionId ?? '-'}</Text>
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Profile ID" span={1}>
+                            <Text code>{workflowBindingProfileId ?? '-'}</Text>
                           </Descriptions.Item>
                           <Descriptions.Item label="Decision Snapshot" span={2}>
                             {workflowDecisionRefs.length > 0 ? (
@@ -2302,6 +2502,16 @@ export function PoolRunsPage() {
                               <Text type="secondary">No pinned decision refs.</Text>
                             )}
                           </Descriptions.Item>
+                          {workflowBindingLifecycleWarning ? (
+                            <Descriptions.Item label="Lifecycle Warning" span={2}>
+                              <Alert
+                                type="warning"
+                                showIcon
+                                message={workflowBindingLifecycleWarning.title}
+                                description={workflowBindingLifecycleWarning.detail}
+                              />
+                            </Descriptions.Item>
+                          ) : null}
                           <Descriptions.Item label="Slot Coverage" span={2}>
                             <TopologySlotCoveragePanel
                               summary={runLineageCoverageSummary}

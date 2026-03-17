@@ -189,17 +189,66 @@ function buildReport(
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
 function buildWorkflowBinding(overrides: Record<string, unknown> = {}) {
+  const workflow = {
+    workflow_definition_key: 'services-publication',
+    workflow_revision_id: '77777777-7777-7777-7777-777777777777',
+    workflow_revision: 3,
+    workflow_name: 'services_publication',
+    ...(isRecord(overrides.workflow) ? overrides.workflow : {}),
+  }
+  const decisions = Array.isArray(overrides.decisions)
+    ? overrides.decisions
+    : [
+      {
+        decision_table_id: 'decision-1',
+        decision_key: 'invoice_mode',
+        decision_revision: 2,
+      },
+    ]
+  const parameters = isRecord(overrides.parameters)
+    ? overrides.parameters
+    : { publication_variant: 'full' }
+  const roleMapping = isRecord(overrides.role_mapping)
+    ? overrides.role_mapping
+    : { initiator: 'finance' }
+  const bindingProfileId = typeof overrides.binding_profile_id === 'string'
+    ? overrides.binding_profile_id
+    : 'binding-profile-services'
+  const bindingProfileRevisionId = typeof overrides.binding_profile_revision_id === 'string'
+    ? overrides.binding_profile_revision_id
+    : 'binding-profile-revision-services-v2'
+  const bindingProfileRevisionNumber = typeof overrides.binding_profile_revision_number === 'number'
+    ? overrides.binding_profile_revision_number
+    : 2
+  const resolvedProfile = {
+    binding_profile_id: bindingProfileId,
+    code: 'services-publication',
+    name: 'Services Publication',
+    status: 'active',
+    binding_profile_revision_id: bindingProfileRevisionId,
+    binding_profile_revision_number: bindingProfileRevisionNumber,
+    workflow,
+    decisions,
+    parameters,
+    role_mapping: roleMapping,
+    ...(isRecord(overrides.resolved_profile) ? overrides.resolved_profile : {}),
+  }
   return {
     binding_id: 'binding-top-down',
     pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
     revision: 3,
-    workflow: {
-      workflow_definition_key: 'services-publication',
-      workflow_revision_id: '77777777-7777-7777-7777-777777777777',
-      workflow_revision: 3,
-      workflow_name: 'services_publication',
-    },
+    binding_profile_id: bindingProfileId,
+    binding_profile_revision_id: bindingProfileRevisionId,
+    binding_profile_revision_number: bindingProfileRevisionNumber,
+    workflow,
+    decisions,
+    parameters,
+    role_mapping: roleMapping,
     selector: {
       direction: 'top_down',
       mode: 'safe',
@@ -208,6 +257,8 @@ function buildWorkflowBinding(overrides: Record<string, unknown> = {}) {
     effective_from: '2026-01-01',
     effective_to: null,
     status: 'active',
+    resolved_profile: resolvedProfile,
+    profile_lifecycle_warning: null,
     ...overrides,
   }
 }
@@ -276,7 +327,11 @@ function buildWorkflowBindingPreview(overrides: Record<string, unknown> = {}) {
       workflow_binding: {
         binding_mode: 'pool_workflow_binding',
         binding_id: 'binding-top-down',
+        binding_profile_id: 'binding-profile-services',
         pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        binding_profile_revision_id: 'binding-profile-revision-services-v2',
+        binding_profile_revision_number: 2,
+        attachment_revision: 3,
         workflow_definition_key: 'services-publication',
         workflow_revision_id: '77777777-7777-7777-7777-777777777777',
         workflow_revision: 3,
@@ -536,14 +591,26 @@ describe('PoolRunsPage', () => {
   it('shows run lineage as primary operator context and keeps workflow diagnostics secondary', async () => {
     const user = userEvent.setup()
     mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph('unexpected_slot'))
-    const run = {
-      ...buildRun({
+    const workflowBinding = buildWorkflowBinding({
+      revision: 7,
+      selector: {
         direction: 'top_down',
-      }),
-      workflow_binding: {
-        binding_id: 'binding-top-down',
-        pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-        revision: 7,
+        mode: 'safe',
+        tags: ['quarter-close'],
+      },
+      workflow: {
+        workflow_definition_key: 'services-publication',
+        workflow_revision_id: '77777777-7777-7777-7777-777777777777',
+        workflow_revision: 7,
+        workflow_name: 'services_publication',
+      },
+      resolved_profile: {
+        binding_profile_id: 'binding-profile-services',
+        code: 'services-publication',
+        name: 'Services Publication',
+        status: 'active',
+        binding_profile_revision_id: 'binding-profile-revision-services-v7',
+        binding_profile_revision_number: 7,
         workflow: {
           workflow_definition_key: 'services-publication',
           workflow_revision_id: '77777777-7777-7777-7777-777777777777',
@@ -563,15 +630,15 @@ describe('PoolRunsPage', () => {
         role_mapping: {
           initiator: 'finance',
         },
-        selector: {
-          direction: 'top_down',
-          mode: 'safe',
-          tags: ['quarter-close'],
-        },
-        effective_from: '2026-01-01',
-        effective_to: null,
-        status: 'active',
       },
+      binding_profile_revision_id: 'binding-profile-revision-services-v7',
+      binding_profile_revision_number: 7,
+    })
+    const run = {
+      ...buildRun({
+        direction: 'top_down',
+      }),
+      workflow_binding: workflowBinding,
       runtime_projection: {
         version: 'pool_runtime_projection.v1',
         run_id: '11111111-1111-1111-1111-111111111111',
@@ -587,7 +654,11 @@ describe('PoolRunsPage', () => {
         workflow_binding: {
           binding_mode: 'pool_workflow_binding',
           binding_id: 'binding-top-down',
+          binding_profile_id: 'binding-profile-services',
           pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+          binding_profile_revision_id: 'binding-profile-revision-services-v7',
+          binding_profile_revision_number: 7,
+          attachment_revision: 7,
           workflow_definition_key: 'services-publication',
           workflow_revision_id: '77777777-7777-7777-7777-777777777777',
           workflow_revision: 7,
@@ -679,6 +750,9 @@ describe('PoolRunsPage', () => {
     expect(await screen.findByText('Run Lineage')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-lineage-pool')).toHaveTextContent('pool-code')
     expect(screen.getByTestId('pool-runs-lineage-binding-id')).toHaveTextContent('binding-top-down')
+    expect(screen.getByTestId('pool-runs-lineage-attachment-revision')).toHaveTextContent('r7')
+    expect(screen.getByTestId('pool-runs-lineage-profile')).toHaveTextContent('services-publication')
+    expect(screen.getByTestId('pool-runs-lineage-profile-revision')).toHaveTextContent('r7')
     expect(screen.getByTestId('pool-runs-lineage-workflow')).toHaveTextContent('services_publication')
     expect(screen.getByText('invoice_mode r2')).toBeInTheDocument()
     expect(screen.getByText('compiled targets: 3')).toBeInTheDocument()
@@ -1290,6 +1364,9 @@ describe('PoolRunsPage', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('pool-runs-create-binding-ambiguity')).not.toBeInTheDocument()
     })
+    expect(screen.getByTestId('pool-runs-create-selected-binding')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-runs-create-attachment-revision')).toHaveTextContent('r3')
+    expect(screen.getByTestId('pool-runs-create-profile-revision')).toHaveTextContent('r2')
     expect(screen.getByTestId('pool-runs-create-binding-coverage')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-create-slot-coverage-summary')).toHaveTextContent('edges: 1')
     expect(screen.getByTestId('pool-runs-create-slot-coverage-summary')).toHaveTextContent('resolved: 1')
@@ -1329,6 +1406,9 @@ describe('PoolRunsPage', () => {
       })
     )
     expect(await screen.findByTestId('pool-runs-binding-preview')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-runs-binding-preview-attachment-revision')).toHaveTextContent('r3')
+    expect(screen.getByTestId('pool-runs-binding-preview-profile')).toHaveTextContent('services-publication')
+    expect(screen.getByTestId('pool-runs-binding-preview-profile-revision')).toHaveTextContent('r2')
     expect(screen.getByText('invoice_mode r2')).toBeInTheDocument()
     expect(screen.getByText('compiled targets: 3')).toBeInTheDocument()
     expect(screen.getByText('decision_tables')).toBeInTheDocument()

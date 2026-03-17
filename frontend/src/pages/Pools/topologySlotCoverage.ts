@@ -1,4 +1,8 @@
 import type { PoolWorkflowBinding } from '../../api/intercompanyPools'
+import {
+  resolvePoolWorkflowBindingDecisionRefs,
+  resolvePoolWorkflowBindingWorkflow,
+} from './poolWorkflowBindingPresentation'
 
 export type TopologyCoverageContext = {
   status: 'resolved' | 'ambiguous' | 'unavailable'
@@ -37,7 +41,7 @@ export type TopologyCoverageSummary = {
 
 export const describePoolWorkflowBindingCoverage = (binding: PoolWorkflowBinding): string => {
   const bindingId = String(binding.binding_id || '').trim()
-  const workflowName = String(binding.workflow?.workflow_name || '').trim()
+  const workflowName = String(resolvePoolWorkflowBindingWorkflow(binding)?.workflow_name || '').trim()
   const selectorParts = [
     String(binding.selector?.direction || '').trim(),
     String(binding.selector?.mode || '').trim(),
@@ -69,7 +73,7 @@ export const buildTopologyCoverageContext = ({
 const buildSlotRefsFromBinding = (
   binding: PoolWorkflowBinding
 ): Array<{ slotKey: string; refLabel: string }> => (
-  (binding.decisions ?? [])
+  resolvePoolWorkflowBindingDecisionRefs(binding)
     .map((decision) => ({
       slotKey: String(decision.slot_key || decision.decision_key || '').trim(),
       refLabel: `${decision.decision_table_id} (${decision.decision_key}) r${decision.decision_revision}`,
