@@ -29,6 +29,7 @@ import 'reactflow/dist/style.css'
 
 import { useDatabases } from '../../api/queries/databases'
 import { useMe } from '../../api/queries/me'
+import { useBindingProfiles } from '../../api/queries/poolBindingProfiles'
 import { useMyTenants } from '../../api/queries/tenants'
 import {
   getOrganization,
@@ -65,8 +66,6 @@ import type {
   PoolODataMetadataCatalogDocument,
   PoolODataMetadataCatalogResponse,
 } from '../../api/generated/model'
-import type { AvailableDecisionRevision } from '../../types/workflow'
-import { isDecisionAvailableByDefault } from '../../components/workflow/decisionOptions'
 import { PoolWorkflowBindingsEditor } from './PoolWorkflowBindingsEditor'
 import {
   buildWorkflowBindingsFromForm,
@@ -92,6 +91,7 @@ const SYNC_MAX_ROWS = 1000
 const MASTER_DATA_TOKEN_CATALOG_LIMIT = 200
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const STATUS_OPTIONS: OrganizationStatus[] = ['active', 'inactive', 'archived']
+const TOPOLOGY_DOCUMENT_POLICY_BUILDER_ENABLED = false
 
 const API_ERROR_MESSAGE_MAP: Record<string, string> = {
   DATABASE_ALREADY_LINKED: 'Выбранная база уже привязана к другой организации.',
@@ -545,7 +545,7 @@ const buildDraftTopologyEdgeSelectors = (
 const buildBindingSlotRefsFromForm = (
   binding: PoolWorkflowBindingFormValue | undefined
 ): Array<{ slotKey: string; refLabel: string }> => (
-  (binding?.decisions ?? [])
+  (binding?.resolved_profile?.decisions ?? [])
     .map((decision) => {
       const slotKey = String(decision?.slot_key || decision?.decision_key || '').trim()
       const decisionTableId = String(decision?.decision_table_id || '').trim()
@@ -1612,9 +1612,6 @@ export function PoolCatalogPage() {
   const [loadedPoolBindings, setLoadedPoolBindings] = useState<PoolWorkflowBinding[]>([])
   const [loadedPoolBindingsCollectionEtag, setLoadedPoolBindingsCollectionEtag] = useState('')
   const [poolBindingsBackendBlockingRemediation, setPoolBindingsBackendBlockingRemediation] = useState<PoolWorkflowBindingBlockingRemediation | null>(null)
-  const [availableDecisions, setAvailableDecisions] = useState<AvailableDecisionRevision[]>([])
-  const [isPoolDecisionsLoading, setIsPoolDecisionsLoading] = useState(false)
-  const [poolDecisionsLoadError, setPoolDecisionsLoadError] = useState<string | null>(null)
   const [topologyPreflightErrors, setTopologyPreflightErrors] = useState<string[]>([])
   const [topologySubmitError, setTopologySubmitError] = useState<string | null>(null)
   const [isTopologySaving, setIsTopologySaving] = useState(false)
@@ -1641,14 +1638,11 @@ export function PoolCatalogPage() {
     () => organizations.find((item) => item.id === selectedOrganizationId) ?? null,
     [organizations, selectedOrganizationId]
   )
-  const selectedOrganizationDatabaseId = useMemo(
-    () => String(selectedOrganization?.database_id || '').trim(),
-    [selectedOrganization]
-  )
   const selectedPool = useMemo(
     () => pools.find((item) => item.id === selectedPoolId) ?? null,
     [pools, selectedPoolId]
   )
+  const bindingProfilesQuery = useBindingProfiles({ enabled: activeWorkspaceTab === 'bindings' })
   const organizationById = useMemo(() => (
     Object.fromEntries(organizations.map((item) => [item.id, item]))
   ), [organizations])
@@ -2341,78 +2335,7 @@ export function PoolCatalogPage() {
     if (isPoolSaving) return
     setIsPoolDrawerOpen(false)
     setPoolSubmitError(null)
-    setPoolDecisionsLoadError(null)
   }, [isPoolSaving])
-
-  useEffect(() => {
-    let cancelled = false
-    if (activeWorkspaceTab !== 'bindings' || !selectedPool) {
-      setAvailableDecisions([])
-      setIsPoolDecisionsLoading(false)
-      setPoolDecisionsLoadError(null)
-      return () => {
-        cancelled = true
-      }
-    }
-    if (!selectedOrganizationDatabaseId) {
-      setAvailableDecisions([])
-      setIsPoolDecisionsLoading(false)
-      setPoolDecisionsLoadError('У выбранной организации не настроена database_id, поэтому compatible decision revisions недоступны.')
-      return () => {
-        cancelled = true
-      }
-    }
-
-    setIsPoolDecisionsLoading(true)
-    setPoolDecisionsLoadError(null)
-    void api.getDecisionsCollection({ database_id: selectedOrganizationDatabaseId })
-      .then((response) => {
-        if (cancelled) {
-          return
-        }
-        const nextDecisions = (response.decisions ?? [])
-          .filter((decision) => decision.is_active !== false)
-          .filter((decision) => isDecisionAvailableByDefault({
-            id: decision.id,
-            name: decision.name,
-            decisionTableId: decision.decision_table_id,
-            decisionKey: decision.decision_key,
-            decisionRevision: decision.decision_revision,
-            metadataContext: decision.metadata_context,
-            metadataCompatibility: decision.metadata_compatibility,
-          }))
-          .map((decision) => ({
-            id: decision.id,
-            name: decision.name,
-            decisionTableId: decision.decision_table_id,
-            decisionKey: decision.decision_key,
-            decisionRevision: decision.decision_revision,
-            metadataContext: decision.metadata_context,
-            metadataCompatibility: decision.metadata_compatibility,
-          }))
-          .sort((left, right) => (
-            left.name.localeCompare(right.name) || left.decisionRevision - right.decisionRevision
-          ))
-        setAvailableDecisions(nextDecisions)
-      })
-      .catch((err) => {
-        if (cancelled) {
-          return
-        }
-        const resolved = resolveApiError(err, 'Не удалось загрузить decision revisions из /decisions.')
-        setAvailableDecisions([])
-        setPoolDecisionsLoadError(resolved.message)
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsPoolDecisionsLoading(false)
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [activeWorkspaceTab, api, selectedOrganizationDatabaseId, selectedPool])
 
   const reloadBindingsWorkspace = useCallback(async (pool: OrganizationPool) => {
     setIsPoolBindingsLoading(true)
@@ -2425,7 +2348,7 @@ export function PoolCatalogPage() {
       setPoolBindingsBackendBlockingRemediation(collection.blocking_remediation ?? null)
       poolBindingsForm.setFieldsValue({
         workflow_bindings: workflowBindingsToFormValues(collection.workflow_bindings),
-      })
+      } as PoolBindingsFormValues)
     } catch (err) {
       const resolved = resolveApiError(err, 'Не удалось загрузить workflow bindings.')
       setLoadedPoolBindings([])
@@ -3078,7 +3001,7 @@ export function PoolCatalogPage() {
               label: 'Bindings',
               forceRender: true,
               children: (
-                <Card title="Workflow bindings workspace" loading={loadingPools}>
+                <Card title="Workflow attachment workspace" loading={loadingPools}>
                   <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                     {mutatingDisabled && (
                       <Alert
@@ -3091,8 +3014,8 @@ export function PoolCatalogPage() {
                     <Alert
                       type="info"
                       showIcon
-                      message="Workflow bindings are managed separately from pool fields"
-                      description="Use the Pools tab to create or edit pool code/name/status. Save bindings here through first-class binding CRUD only."
+                      message="Workflow attachments are managed separately from pool fields"
+                      description="Use the Pools tab to create or edit pool code/name/status. Save attachments here through the canonical collection-level CRUD only."
                     />
                     <Space size="small" wrap>
                       <Select
@@ -3181,11 +3104,11 @@ export function PoolCatalogPage() {
                       />
                     ))}
                     {isPoolBindingsLoading && (
-                      <Alert type="info" message="Loading workflow bindings..." showIcon />
+                      <Alert type="info" message="Loading workflow attachments..." showIcon />
                     )}
 
                     {!selectedPool ? (
-                      <Text type="secondary">Выберите пул, чтобы управлять workflow bindings.</Text>
+                      <Text type="secondary">Выберите пул, чтобы управлять workflow attachments.</Text>
                     ) : (
                       <Form form={poolBindingsForm} layout="vertical">
                         <Descriptions size="small" column={1} bordered style={{ marginBottom: 16 }}>
@@ -3195,9 +3118,11 @@ export function PoolCatalogPage() {
                           </Descriptions.Item>
                         </Descriptions>
                         <PoolWorkflowBindingsEditor
-                          availableDecisions={availableDecisions}
-                          decisionsLoading={isPoolDecisionsLoading}
-                          decisionsLoadError={poolDecisionsLoadError}
+                          availableBindingProfiles={bindingProfilesQuery.data?.binding_profiles ?? []}
+                          bindingProfilesLoading={bindingProfilesQuery.isLoading}
+                          bindingProfilesLoadError={bindingProfilesQuery.isError
+                            ? resolveApiError(bindingProfilesQuery.error, 'Не удалось загрузить binding profiles catalog.').message
+                            : null}
                           topologyEdgeSelectors={topologyEdgeSelectors}
                           disabled={
                             mutatingDisabled
@@ -3653,7 +3578,7 @@ export function PoolCatalogPage() {
 
                                                 return (
                                                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                                                    {policyMode === 'builder' && false ? (
+                                                    {policyMode === 'builder' && TOPOLOGY_DOCUMENT_POLICY_BUILDER_ENABLED ? (
                                                       <>
                                                         {!databaseId && (
                                                           <Alert

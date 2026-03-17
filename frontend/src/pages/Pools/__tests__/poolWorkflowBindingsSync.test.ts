@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { PoolWorkflowBinding } from '../../../api/intercompanyPools'
+import type { PoolWorkflowBindingInput } from '../../../api/intercompanyPools'
 import { syncPoolWorkflowBindings } from '../poolWorkflowBindingsSync'
 
 const mockReplacePoolWorkflowBindingsCollection = vi.fn()
@@ -11,17 +11,12 @@ vi.mock('../../../api/intercompanyPools', () => ({
   ),
 }))
 
-function buildBinding(overrides: Partial<PoolWorkflowBinding> = {}): PoolWorkflowBinding {
+function buildBinding(overrides: Partial<PoolWorkflowBindingInput> = {}): PoolWorkflowBindingInput {
   return {
     binding_id: 'binding-existing',
     pool_id: 'pool-1',
     revision: 3,
-    workflow: {
-      workflow_definition_key: 'services-publication',
-      workflow_revision_id: '11111111-1111-1111-1111-111111111111',
-      workflow_revision: 5,
-      workflow_name: 'services_publication',
-    },
+    binding_profile_revision_id: 'bp-rev-services-r2',
     selector: {
       direction: 'top_down',
       mode: 'safe',
@@ -67,9 +62,10 @@ describe('syncPoolWorkflowBindings', () => {
 
   it('keeps existing binding revisions inside the atomic replace payload', async () => {
     const changedBinding = buildBinding({
-      workflow: {
-        ...buildBinding().workflow,
-        workflow_name: 'services_publication_v2',
+      selector: {
+        direction: 'top_down',
+        mode: 'unsafe',
+        tags: ['baseline'],
       },
     })
 

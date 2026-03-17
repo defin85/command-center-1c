@@ -4,17 +4,16 @@ import {
   type PoolWorkflowBindingCollection,
   type PoolWorkflowBindingInput,
 } from '../../api/intercompanyPools'
-
-type NormalizedDecisionRef = {
-  decision_table_id: string
-  decision_key: string
-  slot_key: string
-  decision_revision: number
-}
-
 const normalizeBindingForComparison = (binding: PoolWorkflowBinding | PoolWorkflowBindingInput) => ({
   contract_version: String(binding.contract_version ?? '').trim() || 'pool_workflow_binding.v1',
   binding_id: String(binding.binding_id ?? '').trim(),
+  binding_profile_revision_id: String(
+    ('binding_profile_revision_id' in binding
+      ? binding.binding_profile_revision_id
+      : undefined)
+    ?? ('resolved_profile' in binding ? binding.resolved_profile?.binding_profile_revision_id : undefined)
+    ?? ''
+  ).trim(),
   status: String(binding.status ?? '').trim(),
   effective_from: String(binding.effective_from ?? '').trim(),
   effective_to: binding.effective_to ? String(binding.effective_to).trim() : null,
@@ -23,35 +22,6 @@ const normalizeBindingForComparison = (binding: PoolWorkflowBinding | PoolWorkfl
     mode: String(binding.selector?.mode ?? '').trim(),
     tags: Array.from(new Set((binding.selector?.tags ?? []).map((tag) => String(tag).trim()).filter(Boolean))).sort(),
   },
-  workflow: {
-    workflow_definition_key: String(binding.workflow?.workflow_definition_key ?? '').trim(),
-    workflow_revision_id: String(binding.workflow?.workflow_revision_id ?? '').trim(),
-    workflow_revision: Number(binding.workflow?.workflow_revision ?? 0),
-    workflow_name: String(binding.workflow?.workflow_name ?? '').trim(),
-  },
-  decisions: (binding.decisions ?? [])
-    .map((decision) => ({
-      decision_table_id: String(decision.decision_table_id ?? '').trim(),
-      decision_key: String(decision.decision_key ?? '').trim(),
-      slot_key: String(decision.slot_key ?? '').trim(),
-      decision_revision: Number(decision.decision_revision ?? 0),
-    }) satisfies NormalizedDecisionRef)
-    .sort((left, right) => (
-      left.decision_table_id.localeCompare(right.decision_table_id)
-      || left.slot_key.localeCompare(right.slot_key)
-      || left.decision_key.localeCompare(right.decision_key)
-      || left.decision_revision - right.decision_revision
-    )),
-  parameters: Object.fromEntries(
-    (Object.entries(binding.parameters ?? {}) as Array<[string, unknown]>)
-      .map(([key, value]): [string, unknown] => [String(key).trim(), value])
-      .sort(([left], [right]) => left.localeCompare(right))
-  ),
-  role_mapping: Object.fromEntries(
-    (Object.entries(binding.role_mapping ?? {}) as Array<[string, string]>)
-      .map(([key, value]): [string, string] => [String(key).trim(), String(value ?? '').trim()])
-      .sort(([left], [right]) => left.localeCompare(right))
-  ),
 })
 
 const areBindingsEquivalent = (

@@ -1,18 +1,33 @@
 import type {
   PoolRunRuntimeProjection,
-  PoolWorkflowBinding,
   PoolWorkflowBindingDecisionRef,
   PoolWorkflowBindingProfileLifecycleWarning,
+  PoolWorkflowBindingResolvedProfile,
+  PoolWorkflowBindingSelector,
   WorkflowDefinitionRef,
 } from '../../api/intercompanyPools'
 
+export type PoolWorkflowBindingPresentationValue = {
+  binding_id?: string | null
+  revision?: number | null
+  status?: string | null
+  selector?: PoolWorkflowBindingSelector | null
+  workflow?: WorkflowDefinitionRef | null
+  decisions?: PoolWorkflowBindingDecisionRef[] | null
+  binding_profile_id?: string | null
+  binding_profile_revision_id?: string | null
+  binding_profile_revision_number?: number | null
+  resolved_profile?: Partial<PoolWorkflowBindingResolvedProfile> | null
+  profile_lifecycle_warning?: PoolWorkflowBindingProfileLifecycleWarning | null
+}
+
 type BindingLineageContext = {
-  binding: PoolWorkflowBinding | null | undefined
+  binding: PoolWorkflowBindingPresentationValue | null | undefined
   runtimeProjection: PoolRunRuntimeProjection | null | undefined
 }
 
 export const resolvePoolWorkflowBindingWorkflow = (
-  binding: PoolWorkflowBinding | null | undefined
+  binding: PoolWorkflowBindingPresentationValue | null | undefined
 ): WorkflowDefinitionRef | null => (
   binding?.resolved_profile?.workflow
   ?? binding?.workflow
@@ -20,7 +35,7 @@ export const resolvePoolWorkflowBindingWorkflow = (
 )
 
 export const resolvePoolWorkflowBindingDecisionRefs = (
-  binding: PoolWorkflowBinding | null | undefined
+  binding: PoolWorkflowBindingPresentationValue | null | undefined
 ): PoolWorkflowBindingDecisionRef[] => (
   binding?.resolved_profile?.decisions
   ?? binding?.decisions
@@ -28,7 +43,7 @@ export const resolvePoolWorkflowBindingDecisionRefs = (
 )
 
 export const resolvePoolWorkflowBindingProfileLabel = (
-  binding: PoolWorkflowBinding | null | undefined
+  binding: PoolWorkflowBindingPresentationValue | null | undefined
 ): string => {
   const profile = binding?.resolved_profile
   if (!profile) {
@@ -38,11 +53,11 @@ export const resolvePoolWorkflowBindingProfileLabel = (
 }
 
 export const resolvePoolWorkflowBindingProfileStatus = (
-  binding: PoolWorkflowBinding | null | undefined
+  binding: PoolWorkflowBindingPresentationValue | null | undefined
 ): string | null => binding?.resolved_profile?.status ?? null
 
 export const resolvePoolWorkflowBindingLifecycleWarning = (
-  binding: PoolWorkflowBinding | null | undefined
+  binding: PoolWorkflowBindingPresentationValue | null | undefined
 ): PoolWorkflowBindingProfileLifecycleWarning | null => (
   binding?.profile_lifecycle_warning
   ?? null

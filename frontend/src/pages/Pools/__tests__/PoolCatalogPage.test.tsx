@@ -34,6 +34,7 @@ const mockListMasterDataContracts = vi.fn()
 const mockListMasterDataTaxProfiles = vi.fn()
 const mockUseMe = vi.fn()
 const mockUseDatabases = vi.fn()
+const mockUseBindingProfiles = vi.fn()
 const mockUseMyTenants = vi.fn()
 const mockSyncPoolWorkflowBindings = vi.fn()
 
@@ -58,6 +59,10 @@ vi.mock('../../../api/queries/me', () => ({
 
 vi.mock('../../../api/queries/databases', () => ({
   useDatabases: (...args: unknown[]) => mockUseDatabases(...args),
+}))
+
+vi.mock('../../../api/queries/poolBindingProfiles', () => ({
+  useBindingProfiles: (...args: unknown[]) => mockUseBindingProfiles(...args),
 }))
 
 vi.mock('../../../api/queries/tenants', () => ({
@@ -121,16 +126,47 @@ const secondOrganization: Organization = {
 let initialCatalogLoadPromise: Promise<void> | null = null
 
 function buildPoolWorkflowBinding(overrides: Partial<PoolWorkflowBinding> = {}): PoolWorkflowBinding {
+  const workflow = overrides.workflow ?? {
+    workflow_definition_key: 'services-publication',
+    workflow_revision_id: '11111111-1111-1111-1111-111111111111',
+    workflow_revision: 3,
+    workflow_name: 'services_publication',
+  }
+  const decisions = overrides.decisions ?? [
+    {
+      decision_table_id: 'decision-1',
+      decision_key: 'document_policy',
+      slot_key: 'document_policy',
+      decision_revision: 4,
+    },
+  ]
+  const parameters = overrides.parameters ?? { publication_variant: 'full' }
+  const roleMapping = overrides.role_mapping ?? { initiator: 'finance' }
+
   return {
     binding_id: 'binding-top-down',
     pool_id: 'pool-1',
     revision: 1,
-    workflow: {
-      workflow_definition_key: 'services-publication',
-      workflow_revision_id: '11111111-1111-1111-1111-111111111111',
-      workflow_revision: 3,
-      workflow_name: 'services_publication',
+    workflow,
+    decisions,
+    parameters,
+    role_mapping: roleMapping,
+    binding_profile_id: 'bp-services',
+    binding_profile_revision_id: 'bp-rev-services-r2',
+    binding_profile_revision_number: 2,
+    resolved_profile: {
+      binding_profile_id: 'bp-services',
+      code: 'services-publication-profile',
+      name: 'Services Publication Profile',
+      status: 'active',
+      binding_profile_revision_id: 'bp-rev-services-r2',
+      binding_profile_revision_number: 2,
+      workflow,
+      decisions,
+      parameters,
+      role_mapping: roleMapping,
     },
+    profile_lifecycle_warning: null,
     selector: {
       direction: 'top_down',
       mode: 'safe',
@@ -139,6 +175,51 @@ function buildPoolWorkflowBinding(overrides: Partial<PoolWorkflowBinding> = {}):
     effective_from: '2026-01-01',
     effective_to: null,
     status: 'active',
+    ...overrides,
+  }
+}
+
+function buildBindingProfileSummary(overrides: Record<string, unknown> = {}) {
+  const workflow = {
+    workflow_definition_key: 'services-publication',
+    workflow_revision_id: 'wf-services-r2',
+    workflow_revision: 4,
+    workflow_name: 'services_publication',
+  }
+
+  return {
+    binding_profile_id: 'bp-services',
+    code: 'services-publication-profile',
+    name: 'Services Publication Profile',
+    description: 'Reusable publication scheme',
+    status: 'active',
+    latest_revision_number: 2,
+    latest_revision: {
+      binding_profile_revision_id: 'bp-rev-services-r2',
+      binding_profile_id: 'bp-services',
+      revision_number: 2,
+      workflow,
+      decisions: [
+        {
+          decision_table_id: 'decision-1',
+          decision_key: 'document_policy',
+          slot_key: 'document_policy',
+          decision_revision: 4,
+        },
+      ],
+      parameters: {
+        publication_variant: 'full',
+      },
+      role_mapping: {
+        initiator: 'finance',
+      },
+      metadata: {
+        source: 'manual',
+      },
+      created_at: '2026-01-01T00:00:00Z',
+    },
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-02T00:00:00Z',
     ...overrides,
   }
 }
@@ -221,7 +302,7 @@ async function openWorkspaceTab(
     return
   }
   if (tabLabel === 'Bindings') {
-    await screen.findByText('Workflow bindings workspace')
+    await screen.findByText('Workflow attachment workspace')
     return
   }
   await screen.findByText('Topology snapshots by date')
@@ -266,6 +347,7 @@ describe('PoolCatalogPage', () => {
     mockListMasterDataTaxProfiles.mockReset()
     mockUseMe.mockReset()
     mockUseDatabases.mockReset()
+    mockUseBindingProfiles.mockReset()
     mockUseMyTenants.mockReset()
     mockSyncPoolWorkflowBindings.mockReset()
 
@@ -281,6 +363,15 @@ describe('PoolCatalogPage', () => {
         ],
       },
       isLoading: false,
+    })
+    mockUseBindingProfiles.mockReturnValue({
+      data: {
+        binding_profiles: [buildBindingProfileSummary()],
+        count: 1,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
     })
 
     mockListOrganizations.mockResolvedValue([baseOrganization])
@@ -718,7 +809,7 @@ describe('PoolCatalogPage', () => {
     )
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
-  it('renders existing workflow bindings in isolated workspace and keeps pool drawer focused on pool fields', async () => {
+  it('renders existing workflow attachments in isolated workspace and keeps pool drawer focused on pool fields', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
@@ -777,11 +868,18 @@ describe('PoolCatalogPage', () => {
     await waitFor(() => {
       expect(mockListPoolWorkflowBindings).toHaveBeenCalledWith('44444444-4444-4444-4444-444444444444')
     })
-    expect(screen.getByText('Workflow bindings workspace')).toBeInTheDocument()
+    expect(screen.getByText('Workflow attachment workspace')).toBeInTheDocument()
     expect(screen.getByTestId('pool-catalog-workflow-binding-card-0')).toBeInTheDocument()
     expect(screen.getByTestId('pool-catalog-workflow-binding-card-1')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('services-publication')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('bottom-up-import')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-workflow-binding-profile-summary-0')).toHaveTextContent(
+      'services-publication-profile'
+    )
+    expect(screen.getByTestId('pool-catalog-workflow-binding-workflow-key-0')).toHaveTextContent(
+      'services-publication'
+    )
+    expect(screen.getByTestId('pool-catalog-workflow-binding-workflow-key-1')).toHaveTextContent(
+      'bottom-up-import'
+    )
     expect(screen.getByTestId('pool-catalog-workflow-binding-summary-0')).toHaveTextContent(
       'direction=top_down'
     )
@@ -872,7 +970,7 @@ describe('PoolCatalogPage', () => {
     expect(mockUpsertPoolWorkflowBinding).not.toHaveBeenCalled()
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
-  it('shows stale binding revision conflict without clearing edited workflow binding form', async () => {
+  it('shows stale collection conflict without clearing edited workflow attachment form', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
@@ -917,13 +1015,13 @@ describe('PoolCatalogPage', () => {
       expect(mockListPoolWorkflowBindings).toHaveBeenCalledWith('44444444-4444-4444-4444-444444444444')
     })
     await waitFor(() => {
-      expect(screen.getByTestId('pool-catalog-workflow-binding-workflow-name-0')).toHaveValue('services_publication')
+      expect(screen.getByTestId('pool-catalog-workflow-binding-selector-tags-0')).toHaveValue('baseline')
     })
     await waitFor(() => {
       expect(screen.getByTestId('pool-catalog-save-bindings')).toBeEnabled()
     })
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-name-0'), {
-      target: { value: 'services_publication_conflicted' },
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-selector-tags-0'), {
+      target: { value: 'baseline, conflicted' },
     })
 
     await user.click(screen.getByTestId('pool-catalog-save-bindings'))
@@ -937,19 +1035,22 @@ describe('PoolCatalogPage', () => {
         expect.objectContaining({
           binding_id: 'binding-existing',
           revision: 3,
-          workflow: expect.objectContaining({
-            workflow_name: 'services_publication_conflicted',
+          binding_profile_revision_id: 'bp-rev-services-r2',
+          selector: expect.objectContaining({
+            direction: 'top_down',
+            mode: 'safe',
+            tags: ['baseline', 'conflicted'],
           }),
         }),
       ],
     })
     expect(
-      screen.getByTestId('pool-catalog-workflow-binding-workflow-name-0')
-    ).toHaveValue('services_publication_conflicted')
-    expect(screen.getByText('Workflow bindings workspace')).toBeInTheDocument()
+      screen.getByTestId('pool-catalog-workflow-binding-selector-tags-0')
+    ).toHaveValue('baseline, conflicted')
+    expect(screen.getByText('Workflow attachment workspace')).toBeInTheDocument()
   }, 30000)
 
-  it('submits workflow bindings from isolated workspace via structured editor', async () => {
+  it('submits workflow attachments from isolated workspace via profile revision selection', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
@@ -958,18 +1059,8 @@ describe('PoolCatalogPage', () => {
 
     await openWorkspaceTab(user, 'Bindings')
     await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-key-0'), {
-      target: { value: 'services-publication' },
-    })
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-revision-id-0'), {
-      target: { value: '11111111-1111-1111-1111-111111111111' },
-    })
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-revision-0'), {
-      target: { value: '3' },
-    })
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-name-0'), {
-      target: { value: 'services_publication' },
-    })
+    openSelectByTestId('pool-catalog-workflow-binding-profile-revision-0')
+    await selectDropdownOption('services-publication-profile · Services Publication Profile · r2 · active')
     fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-effective-from-0'), {
       target: { value: '2026-01-01' },
     })
@@ -985,26 +1076,6 @@ describe('PoolCatalogPage', () => {
     fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-selector-tags-0'), {
       target: { value: 'baseline, monthly' },
     })
-    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-decision-0'))
-    openSelectByTestId('pool-catalog-workflow-binding-decision-select-0-0')
-    await selectDropdownOption('Route Documents · decision-1 (route_documents) · r4')
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-slot-key-input-0-0'), {
-      target: { value: 'route_documents' },
-    })
-    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-role-0'))
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-role-source-0-0'), {
-      target: { value: 'owner' },
-    })
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-role-target-0-0'), {
-      target: { value: 'publisher' },
-    })
-    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-parameter-0'))
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-parameter-key-0-0'), {
-      target: { value: 'strategy' },
-    })
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-parameter-value-0-0'), {
-      target: { value: '"strict"' },
-    })
     await user.click(screen.getByTestId('pool-catalog-save-bindings'))
 
     expect(mockUpsertOrganizationPool).not.toHaveBeenCalled()
@@ -1014,105 +1085,57 @@ describe('PoolCatalogPage', () => {
       collectionEtag: 'sha256:test-etag',
       nextBindings: [
         expect.objectContaining({
-          workflow: expect.objectContaining({
-            workflow_definition_key: 'services-publication',
-            workflow_revision: 3,
+          binding_profile_revision_id: 'bp-rev-services-r2',
+          selector: {
+            direction: 'top_down',
+            mode: 'safe',
+            tags: ['baseline', 'monthly'],
+          },
+          effective_to: '2026-12-31',
+          status: 'draft',
         }),
-        decisions: [
-          expect.objectContaining({
-            decision_table_id: 'decision-1',
-            decision_key: 'route_documents',
-            slot_key: 'route_documents',
-            decision_revision: 4,
-          }),
-        ],
-        role_mapping: {
-          owner: 'publisher',
-        },
-        parameters: {
-          strategy: 'strict',
-        },
-        selector: {
-          direction: 'top_down',
-          mode: 'safe',
-          tags: ['baseline', 'monthly'],
-        },
-        effective_to: '2026-12-31',
-        status: 'draft',
-      }),
       ],
     })
     expect(mockDeletePoolWorkflowBinding).not.toHaveBeenCalled()
   }, 30000)
 
-  it('uses active /decisions revisions in pool binding editor and hides inactive revisions by default', async () => {
+  it('lists reusable profile revisions from dedicated catalog and offers handoff for reusable logic edits', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
-    mockGetDecisionsCollection.mockResolvedValueOnce({
-      decisions: [
-        {
-          id: 'decision-version-4',
-          decision_table_id: 'decision-1',
-          decision_key: 'route_documents',
-          decision_revision: 4,
-          name: 'Route Documents',
-          is_active: true,
-          metadata_context: {
-            config_name: 'shared-profile',
-            config_version: '8.3.24',
-          },
-          metadata_compatibility: {
-            status: 'compatible',
-            reason: null,
-            is_compatible: true,
-          },
-        },
-        {
-          id: 'decision-version-5',
-          decision_table_id: 'decision-2',
-          decision_key: 'route_documents_drift',
-          decision_revision: 5,
-          name: 'Route Documents Drift',
-          is_active: true,
-          metadata_context: {
-            config_name: 'shared-profile',
-            config_version: '8.3.24',
-            publication_drift: true,
-          },
-          metadata_compatibility: {
-            status: 'compatible',
-            reason: 'metadata_surface_diverged',
-            is_compatible: true,
-          },
-        },
-        {
-          id: 'decision-version-6',
-          decision_table_id: 'decision-3',
-          decision_key: 'route_documents_incompatible',
-          decision_revision: 6,
-          name: 'Incompatible Route',
-          is_active: true,
-          metadata_context: {
-            config_name: 'other-profile',
-            config_version: '1.0.0',
-          },
-          metadata_compatibility: {
-            status: 'incompatible',
-            reason: 'configuration_scope_mismatch',
-            is_compatible: false,
-          },
-        },
-        {
-          id: 'decision-version-3',
-          decision_table_id: 'decision-legacy',
-          decision_key: 'legacy_route',
-          decision_revision: 3,
-          name: 'Legacy Route',
-          is_active: false,
-        },
-      ],
-      count: 2,
+    mockUseBindingProfiles.mockReturnValue({
+      data: {
+        binding_profiles: [
+          buildBindingProfileSummary(),
+          buildBindingProfileSummary({
+            binding_profile_id: 'bp-legacy',
+            code: 'legacy-archive-profile',
+            name: 'Legacy Archive Profile',
+            status: 'deactivated',
+            latest_revision_number: 1,
+            latest_revision: {
+              binding_profile_revision_id: 'bp-rev-legacy-r1',
+              binding_profile_id: 'bp-legacy',
+              revision_number: 1,
+              workflow: {
+                workflow_definition_key: 'legacy-publication',
+                workflow_revision_id: 'wf-legacy-r1',
+                workflow_revision: 1,
+                workflow_name: 'legacy_publication',
+              },
+              decisions: [],
+              parameters: {},
+              role_mapping: {},
+              metadata: { source: 'manual' },
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          }),
+        ],
+        count: 2,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
     })
 
     renderPage()
@@ -1120,36 +1143,42 @@ describe('PoolCatalogPage', () => {
 
     await openWorkspaceTab(user, 'Bindings')
     await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
-    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-decision-0'))
+    openSelectByTestId('pool-catalog-workflow-binding-profile-revision-0')
+    expect(await screen.findByText('services-publication-profile · Services Publication Profile · r2 · active')).toBeInTheDocument()
+    expect(screen.getByText('legacy-archive-profile · Legacy Archive Profile · r1 · deactivated')).toBeInTheDocument()
 
-    openSelectByTestId('pool-catalog-workflow-binding-decision-select-0-0')
-    expect(mockGetDecisionsCollection).toHaveBeenCalledWith({ database_id: baseOrganization.database_id })
-    const activeOption = await screen.findByText(
-      'Route Documents · decision-1 (route_documents) · r4 · shared-profile 8.3.24'
+    await selectDropdownOption('services-publication-profile · Services Publication Profile · r2 · active')
+    expect(await screen.findByTestId('pool-catalog-workflow-binding-profile-summary-0')).toHaveTextContent(
+      'services-publication-profile'
     )
-    expect(activeOption).toBeInTheDocument()
-    expect(
-      screen.getByText('Route Documents Drift · decision-2 (route_documents_drift) · r5 · shared-profile 8.3.24 · drift')
-    ).toBeInTheDocument()
-    expect(screen.queryByText('Incompatible Route · decision-3 (route_documents_incompatible) · r6')).not.toBeInTheDocument()
-    expect(screen.queryByText('Legacy Route · decision-legacy (legacy_route) · r3')).not.toBeInTheDocument()
-
-    await user.click(activeOption)
-    expect(await screen.findByTestId('pool-catalog-workflow-binding-slot-key-input-0-0')).toHaveValue('')
+    expect(screen.getByTestId('pool-catalog-workflow-binding-handoff-0')).toHaveAttribute('href', '/pools/binding-profiles')
   }, 30000)
 
-  it('keeps inactive pinned decision refs visible for existing workflow bindings', async () => {
+  it('keeps pinned reusable profile visible even when it is no longer the catalog latest revision', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
     const existingBinding = buildPoolWorkflowBinding({
-      decisions: [
-        {
-          decision_table_id: 'decision-legacy',
-          decision_key: 'legacy_route',
-          decision_revision: 3,
+      binding_profile_id: 'bp-legacy',
+      binding_profile_revision_id: 'bp-rev-legacy-r1',
+      binding_profile_revision_number: 1,
+      resolved_profile: {
+        binding_profile_id: 'bp-legacy',
+        code: 'legacy-archive-profile',
+        name: 'Legacy Archive Profile',
+        status: 'deactivated',
+        binding_profile_revision_id: 'bp-rev-legacy-r1',
+        binding_profile_revision_number: 1,
+        workflow: {
+          workflow_definition_key: 'legacy-publication',
+          workflow_revision_id: 'wf-legacy-r1',
+          workflow_revision: 1,
+          workflow_name: 'legacy_publication',
         },
-      ],
+        decisions: [],
+        parameters: {},
+        role_mapping: {},
+      },
     })
     mockListOrganizationPools.mockResolvedValueOnce([
       {
@@ -1168,34 +1197,26 @@ describe('PoolCatalogPage', () => {
         collection_etag: 'sha256:inactive-binding-etag',
       })
     )
-    mockGetDecisionsCollection.mockResolvedValueOnce({
-      decisions: [
-        {
-          id: 'decision-version-4',
-          decision_table_id: 'decision-1',
-          decision_key: 'route_documents',
-          decision_revision: 4,
-          name: 'Route Documents',
-          is_active: true,
-        },
-      ],
-      count: 1,
+    mockUseBindingProfiles.mockReturnValue({
+      data: {
+        binding_profiles: [buildBindingProfileSummary()],
+        count: 1,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
     })
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
     await openWorkspaceTab(user, 'Bindings')
-    await waitFor(() => {
-      expect(screen.getByTestId('pool-catalog-workflow-binding-decision-select-0-0')).toBeInTheDocument()
-    })
-    expect(screen.getByTestId('pool-catalog-workflow-binding-slot-key-input-0-0')).toHaveValue('legacy_route')
-
-    openSelectByTestId('pool-catalog-workflow-binding-decision-select-0-0')
-    expect(
-      await screen.findAllByText('decision-legacy (legacy_route) · r3 [inactive]')
-    ).not.toHaveLength(0)
-    expect(screen.getByText('Route Documents · decision-1 (route_documents) · r4')).toBeInTheDocument()
+    expect(await screen.findByTestId('pool-catalog-workflow-binding-profile-summary-0')).toHaveTextContent(
+      'legacy-archive-profile'
+    )
+    expect(screen.getByTestId('pool-catalog-workflow-binding-profile-status-0')).toHaveTextContent('deactivated')
+    openSelectByTestId('pool-catalog-workflow-binding-profile-revision-0')
+    expect(await screen.findAllByText('legacy-archive-profile · Legacy Archive Profile · r1 · current')).not.toHaveLength(0)
   }, 30000)
 
   it('shows topology slot coverage summary in bindings workspace', async () => {
@@ -1282,7 +1303,7 @@ describe('PoolCatalogPage', () => {
     expect(screen.getByText('Binding remediation required')).toBeInTheDocument()
     expect(screen.getByTestId('pool-catalog-save-bindings')).toBeDisabled()
     expect(screen.getByTestId('pool-catalog-workflow-binding-slot-coverage-0-0')).toHaveTextContent('edges: 1')
-    expect(screen.getByTestId('pool-catalog-workflow-binding-coverage-item-0')).toHaveTextContent(
+    expect(screen.getByTestId('pool-catalog-workflow-binding-coverage-item-0-0')).toHaveTextContent(
       'Org One -> Org Three · purchase · Slot missing'
     )
   }, 30000)
@@ -1353,7 +1374,7 @@ describe('PoolCatalogPage', () => {
     expect(screen.getByTestId('pool-catalog-save-bindings')).toBeDisabled()
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
-  it('blocks save when structured workflow binding contains invalid parameter JSON', async () => {
+  it('blocks save when workflow attachment is missing binding_profile_revision_id', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
 
@@ -1362,33 +1383,14 @@ describe('PoolCatalogPage', () => {
 
     await openWorkspaceTab(user, 'Bindings')
     await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-key-0'), {
-      target: { value: 'services-publication' },
-    })
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-revision-id-0'), {
-      target: { value: '11111111-1111-1111-1111-111111111111' },
-    })
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-revision-0'), {
-      target: { value: '3' },
-    })
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-workflow-name-0'), {
-      target: { value: 'services_publication' },
-    })
     fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-effective-from-0'), {
       target: { value: '2026-01-01' },
-    })
-    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add-parameter-0'))
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-parameter-key-0-0'), {
-      target: { value: 'strategy' },
-    })
-    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-parameter-value-0-0'), {
-      target: { value: '{bad json}' },
     })
 
     await user.click(screen.getByTestId('pool-catalog-save-bindings'))
 
     expect(
-      await screen.findByText('Binding #1: parameters.strategy должен быть валидным JSON.')
+      await screen.findByText('Attachment #1: binding_profile_revision_id обязателен.')
     ).toBeInTheDocument()
     expect(mockUpsertOrganizationPool).not.toHaveBeenCalled()
   }, SYNC_MODAL_TIMEOUT_MS)

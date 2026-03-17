@@ -2,25 +2,16 @@ import type {
   OrganizationPool,
   PoolWorkflowBinding,
   PoolWorkflowBindingInput,
+  PoolWorkflowBindingProfileLifecycleWarning,
+  PoolWorkflowBindingResolvedProfile,
   PoolWorkflowBindingStatus,
 } from '../../api/intercompanyPools'
-
-export type PoolWorkflowBindingDecisionFormValue = {
-  decision_table_id?: string
-  decision_key?: string
-  slot_key?: string
-  decision_revision?: number | string | null
-}
-
-export type PoolWorkflowBindingRoleMappingFormValue = {
-  source_role?: string
-  target_role?: string
-}
-
-export type PoolWorkflowBindingParameterFormValue = {
-  key?: string
-  value_json?: string
-}
+import {
+  type PoolWorkflowBindingPresentationValue,
+  resolvePoolWorkflowBindingProfileLabel,
+  resolvePoolWorkflowBindingProfileRevisionNumber,
+  resolvePoolWorkflowBindingWorkflow,
+} from './poolWorkflowBindingPresentation'
 
 export type PoolWorkflowBindingSelectorFormValue = {
   direction?: string
@@ -33,13 +24,11 @@ export type PoolWorkflowBindingFormValue = {
   binding_id?: string
   pool_id?: string
   revision?: number | string | null
-  workflow_definition_key?: string
-  workflow_revision_id?: string
-  workflow_revision?: number | string | null
-  workflow_name?: string
-  decisions?: PoolWorkflowBindingDecisionFormValue[]
-  parameters?: PoolWorkflowBindingParameterFormValue[]
-  role_mapping?: PoolWorkflowBindingRoleMappingFormValue[]
+  binding_profile_id?: string
+  binding_profile_revision_id?: string
+  binding_profile_revision_number?: number | string | null
+  resolved_profile?: PoolWorkflowBindingResolvedProfile | null
+  profile_lifecycle_warning?: PoolWorkflowBindingProfileLifecycleWarning | null
   selector?: PoolWorkflowBindingSelectorFormValue
   effective_from?: string
   effective_to?: string
@@ -55,26 +44,6 @@ const normalizeWorkflowBindingsArray = (rawBindings: unknown): PoolWorkflowBindi
   return rawBindings.filter((item) => item && typeof item === 'object' && !Array.isArray(item)) as PoolWorkflowBinding[]
 }
 
-const formatJsonValue = (value: unknown): string => {
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return JSON.stringify(String(value))
-  }
-}
-
-const toSortedRecord = (pairs: Array<[string, string]>): Record<string, string> => (
-  Object.fromEntries(
-    pairs.sort(([left], [right]) => left.localeCompare(right))
-  )
-)
-
-const toSortedJsonRecord = (pairs: Array<[string, unknown]>): Record<string, unknown> => (
-  Object.fromEntries(
-    pairs.sort(([left], [right]) => left.localeCompare(right))
-  )
-)
-
 const parseTagsCsv = (value: string | undefined): string[] => (
   Array.from(new Set(
     String(value ?? '')
@@ -85,7 +54,7 @@ const parseTagsCsv = (value: string | undefined): string[] => (
 )
 
 const formatWorkflowBindingScope = (
-  selector: PoolWorkflowBindingSelectorFormValue | undefined
+  selector: PoolWorkflowBindingSelectorFormValue | undefined,
 ): string => {
   const parts: string[] = []
   const direction = String(selector?.direction ?? '').trim()
@@ -105,7 +74,7 @@ const formatWorkflowBindingScope = (
 
 const formatWorkflowBindingPeriod = (
   effectiveFrom: string | undefined,
-  effectiveTo: string | undefined
+  effectiveTo: string | undefined,
 ): string => {
   const normalizedFrom = String(effectiveFrom ?? '').trim()
   const normalizedTo = String(effectiveTo ?? '').trim()
@@ -117,44 +86,56 @@ const formatWorkflowBindingPeriod = (
 
 export const getWorkflowBindingCardTitle = (
   value: PoolWorkflowBindingFormValue | undefined,
-  index: number
+  index: number,
 ): string => {
-  const workflowKey = String(value?.workflow_definition_key ?? '').trim()
-  const workflowName = String(value?.workflow_name ?? '').trim()
-  const effectiveFrom = String(value?.effective_from ?? '').trim()
-  if (workflowKey) {
-    return `Binding #${index}: ${workflowKey}`
+  const profileLabel = resolvePoolWorkflowBindingProfileLabel(
+    value?.resolved_profile
+      ? {
+        binding_profile_id: value.binding_profile_id,
+        binding_profile_revision_id: value.binding_profile_revision_id,
+        binding_profile_revision_number: typeof value.binding_profile_revision_number === 'number'
+          ? value.binding_profile_revision_number
+          : undefined,
+        resolved_profile: value.resolved_profile,
+      } satisfies PoolWorkflowBindingPresentationValue
+      : null,
+  )
+  const revisionNumber = String(value?.binding_profile_revision_number ?? '').trim()
+  if (profileLabel !== '-') {
+    return revisionNumber
+      ? `Attachment #${index}: ${profileLabel} · r${revisionNumber}`
+      : `Attachment #${index}: ${profileLabel}`
   }
-  if (workflowName) {
-    return `Binding #${index}: ${workflowName}`
+  const bindingId = String(value?.binding_id ?? '').trim()
+  if (bindingId) {
+    return `Attachment #${index}: ${bindingId}`
   }
-  if (effectiveFrom) {
-    return `Binding #${index}: ${effectiveFrom}`
-  }
-  return `Binding #${index}`
+  return `Attachment #${index}`
 }
 
 export const getWorkflowBindingCardSummary = (
-  value: PoolWorkflowBindingFormValue | undefined
+  value: PoolWorkflowBindingFormValue | undefined,
 ): string => {
   const status = String(value?.status ?? DEFAULT_BINDING_STATUS).trim() || DEFAULT_BINDING_STATUS
+  const revisionNumber = String(value?.binding_profile_revision_number ?? '').trim()
   return [
     status,
+    revisionNumber ? `profile r${revisionNumber}` : null,
     formatWorkflowBindingScope(value?.selector),
     formatWorkflowBindingPeriod(value?.effective_from, value?.effective_to),
-  ].join(' · ')
+  ]
+    .filter((item): item is string => Boolean(item))
+    .join(' · ')
 }
 
 export const createEmptyWorkflowBindingFormValue = (): PoolWorkflowBindingFormValue => ({
   binding_id: '',
   revision: null,
-  workflow_definition_key: '',
-  workflow_revision_id: '',
-  workflow_revision: null,
-  workflow_name: '',
-  decisions: [],
-  parameters: [],
-  role_mapping: [],
+  binding_profile_id: '',
+  binding_profile_revision_id: '',
+  binding_profile_revision_number: null,
+  resolved_profile: null,
+  profile_lifecycle_warning: null,
   selector: {
     direction: '',
     mode: '',
@@ -166,7 +147,7 @@ export const createEmptyWorkflowBindingFormValue = (): PoolWorkflowBindingFormVa
 })
 
 export const extractWorkflowBindingsFromPool = (
-  pool: OrganizationPool | null | undefined
+  pool: OrganizationPool | null | undefined,
 ): PoolWorkflowBinding[] => {
   return Array.isArray(pool?.workflow_bindings)
     ? normalizeWorkflowBindingsArray(pool.workflow_bindings)
@@ -174,35 +155,22 @@ export const extractWorkflowBindingsFromPool = (
 }
 
 export const workflowBindingsToFormValues = (
-  bindings: PoolWorkflowBinding[]
+  bindings: PoolWorkflowBinding[],
 ): PoolWorkflowBindingFormValue[] => (
   bindings.map((binding) => ({
     contract_version: binding.contract_version,
     binding_id: binding.binding_id ?? '',
     pool_id: binding.pool_id ?? '',
     revision: binding.revision ?? null,
-    workflow_definition_key: binding.workflow.workflow_definition_key,
-    workflow_revision_id: binding.workflow.workflow_revision_id,
-    workflow_revision: binding.workflow.workflow_revision,
-    workflow_name: binding.workflow.workflow_name,
-    decisions: (binding.decisions ?? []).map((decision) => ({
-      decision_table_id: decision.decision_table_id,
-      decision_key: decision.decision_key,
-      slot_key: decision.slot_key ?? decision.decision_key ?? '',
-      decision_revision: decision.decision_revision,
-    })),
-    parameters: Object.entries(binding.parameters ?? {})
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, value]) => ({
-        key,
-        value_json: formatJsonValue(value),
-      })),
-    role_mapping: Object.entries(binding.role_mapping ?? {})
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([source_role, target_role]) => ({
-        source_role,
-        target_role,
-      })),
+    binding_profile_id: binding.binding_profile_id ?? binding.resolved_profile?.binding_profile_id ?? '',
+    binding_profile_revision_id: binding.binding_profile_revision_id ?? binding.resolved_profile?.binding_profile_revision_id ?? '',
+    binding_profile_revision_number: (
+      binding.binding_profile_revision_number
+      ?? binding.resolved_profile?.binding_profile_revision_number
+      ?? null
+    ),
+    resolved_profile: binding.resolved_profile ?? null,
+    profile_lifecycle_warning: binding.profile_lifecycle_warning ?? null,
     selector: {
       direction: binding.selector?.direction ?? '',
       mode: binding.selector?.mode ?? '',
@@ -215,7 +183,7 @@ export const workflowBindingsToFormValues = (
 )
 
 export const summarizeWorkflowBindings = (
-  pool: OrganizationPool
+  pool: OrganizationPool,
 ): { primary: string; secondary: string | null } => {
   const bindings = extractWorkflowBindingsFromPool(pool)
   if (bindings.length === 0) {
@@ -224,14 +192,17 @@ export const summarizeWorkflowBindings = (
 
   const activeCount = bindings.filter((binding) => binding.status === 'active').length
   const firstBinding = bindings[0]
-  const workflowKey = String(
-    firstBinding?.workflow?.workflow_definition_key || firstBinding?.workflow?.workflow_name || ''
-  ).trim()
+  const workflow = resolvePoolWorkflowBindingWorkflow(firstBinding)
+  const profileRevisionNumber = resolvePoolWorkflowBindingProfileRevisionNumber({
+    binding: firstBinding,
+    runtimeProjection: null,
+  })
 
   return {
     primary: `${bindings.length} ${bindings.length === 1 ? 'binding' : 'bindings'}`,
     secondary: [
-      workflowKey,
+      workflow?.workflow_definition_key || workflow?.workflow_name || '',
+      profileRevisionNumber ? `profile r${profileRevisionNumber}` : null,
       activeCount > 0 ? `${activeCount} active` : null,
     ]
       .filter((item): item is string => Boolean(item))
@@ -239,159 +210,38 @@ export const summarizeWorkflowBindings = (
   }
 }
 
-const buildDecisions = (
-  rawDecisions: PoolWorkflowBindingDecisionFormValue[] | undefined,
-  bindingLabel: string,
-  errors: string[]
-) => {
-  const decisions = Array.isArray(rawDecisions) ? rawDecisions : []
-  const seenDecisionKeys = new Set<string>()
-  const normalized: Array<{
-    decision_table_id: string
-    decision_key: string
-    slot_key?: string
-    decision_revision: number
-  }> = []
-
-  decisions.forEach((decision, index) => {
-    const decisionLabel = `${bindingLabel} decision #${index + 1}`
-    const decisionTableId = String(decision?.decision_table_id ?? '').trim()
-    const decisionKey = String(decision?.decision_key ?? '').trim()
-    const slotKey = String(decision?.slot_key ?? '').trim()
-    const decisionRevisionRaw = String(decision?.decision_revision ?? '').trim()
-
-    if (!decisionTableId && !decisionKey && !slotKey && !decisionRevisionRaw) {
-      return
-    }
-    if (!decisionTableId || !decisionKey || !slotKey || !decisionRevisionRaw) {
-      errors.push(`${decisionLabel}: required fields are decision_table_id, decision_key, slot_key, decision_revision.`)
-      return
-    }
-    const decisionRevision = Number(decisionRevisionRaw)
-    if (!Number.isInteger(decisionRevision) || decisionRevision <= 0) {
-      errors.push(`${decisionLabel}: decision_revision должен быть положительным integer.`)
-      return
-    }
-    if (seenDecisionKeys.has(slotKey)) {
-      errors.push(`${bindingLabel}: decisions.slot_key должен быть уникальным внутри binding.`)
-      return
-    }
-    seenDecisionKeys.add(slotKey)
-    normalized.push({
-      decision_table_id: decisionTableId,
-      decision_key: decisionKey,
-      slot_key: slotKey,
-      decision_revision: decisionRevision,
-    })
-  })
-
-  return normalized
-}
-
-const buildRoleMapping = (
-  rawRoles: PoolWorkflowBindingRoleMappingFormValue[] | undefined,
-  bindingLabel: string,
-  errors: string[]
-) => {
-  const roles = Array.isArray(rawRoles) ? rawRoles : []
-  const pairs: Array<[string, string]> = []
-
-  roles.forEach((role, index) => {
-    const sourceRole = String(role?.source_role ?? '').trim()
-    const targetRole = String(role?.target_role ?? '').trim()
-    if (!sourceRole && !targetRole) {
-      return
-    }
-    if (!sourceRole || !targetRole) {
-      errors.push(`${bindingLabel} role mapping #${index + 1}: both source_role and target_role are required.`)
-      return
-    }
-    pairs.push([sourceRole, targetRole])
-  })
-
-  return toSortedRecord(pairs)
-}
-
-const buildParameters = (
-  rawParameters: PoolWorkflowBindingParameterFormValue[] | undefined,
-  bindingLabel: string,
-  errors: string[]
-) => {
-  const parameters = Array.isArray(rawParameters) ? rawParameters : []
-  const pairs: Array<[string, unknown]> = []
-
-  parameters.forEach((parameter, index) => {
-    const key = String(parameter?.key ?? '').trim()
-    const valueJson = String(parameter?.value_json ?? '').trim()
-    if (!key && !valueJson) {
-      return
-    }
-    if (!key || !valueJson) {
-      errors.push(`${bindingLabel} parameter #${index + 1}: both key and JSON value are required.`)
-      return
-    }
-    try {
-      pairs.push([key, JSON.parse(valueJson)])
-    } catch {
-      errors.push(`${bindingLabel}: parameters.${key} должен быть валидным JSON.`)
-    }
-  })
-
-  return toSortedJsonRecord(pairs)
-}
-
 export const buildWorkflowBindingsFromForm = (
-  rawBindings: PoolWorkflowBindingFormValue[] | undefined
+  rawBindings: PoolWorkflowBindingFormValue[] | undefined,
 ): { bindings: PoolWorkflowBindingInput[]; errors: string[] } => {
   const bindings = Array.isArray(rawBindings) ? rawBindings : []
   const errors: string[] = []
   const normalized: PoolWorkflowBindingInput[] = []
 
   bindings.forEach((binding, index) => {
-    const bindingLabel = `Binding #${index + 1}`
-    const workflowDefinitionKey = String(binding?.workflow_definition_key ?? '').trim()
-    const workflowRevisionId = String(binding?.workflow_revision_id ?? '').trim()
-    const workflowRevisionRaw = String(binding?.workflow_revision ?? '').trim()
+    const bindingLabel = `Attachment #${index + 1}`
+    const bindingProfileRevisionId = String(binding?.binding_profile_revision_id ?? '').trim()
     const revisionRaw = String(binding?.revision ?? '').trim()
-    const workflowName = String(binding?.workflow_name ?? '').trim()
     const effectiveFrom = String(binding?.effective_from ?? '').trim()
     const effectiveTo = String(binding?.effective_to ?? '').trim()
     const bindingId = String(binding?.binding_id ?? '').trim()
 
-    if (!workflowDefinitionKey) {
-      errors.push(`${bindingLabel}: workflow_definition_key обязателен.`)
-    }
-    if (!workflowRevisionId) {
-      errors.push(`${bindingLabel}: workflow_revision_id обязателен.`)
-    }
-    if (!workflowRevisionRaw) {
-      errors.push(`${bindingLabel}: workflow_revision обязателен.`)
-    }
-    if (!workflowName) {
-      errors.push(`${bindingLabel}: workflow_name обязателен.`)
+    if (!bindingProfileRevisionId) {
+      errors.push(`${bindingLabel}: binding_profile_revision_id обязателен.`)
     }
     if (!effectiveFrom) {
       errors.push(`${bindingLabel}: effective_from обязателен.`)
     }
     if (bindingId && !revisionRaw) {
-      errors.push(`${bindingLabel}: revision обязателен для обновления существующего binding.`)
+      errors.push(`${bindingLabel}: revision обязателен для обновления существующего attachment.`)
     }
     if (effectiveTo && effectiveFrom && effectiveTo < effectiveFrom) {
       errors.push(`${bindingLabel}: effective_to не может быть раньше effective_from.`)
     }
 
-    const workflowRevision = Number(workflowRevisionRaw)
-    if (workflowRevisionRaw && (!Number.isInteger(workflowRevision) || workflowRevision <= 0)) {
-      errors.push(`${bindingLabel}: workflow_revision должен быть положительным integer.`)
-    }
     const revision = Number(revisionRaw)
     if (revisionRaw && (!Number.isInteger(revision) || revision <= 0)) {
       errors.push(`${bindingLabel}: revision должен быть положительным integer.`)
     }
-
-    const decisions = buildDecisions(binding?.decisions, bindingLabel, errors)
-    const roleMapping = buildRoleMapping(binding?.role_mapping, bindingLabel, errors)
-    const parameters = buildParameters(binding?.parameters, bindingLabel, errors)
 
     if (errors.length > 0) {
       return
@@ -414,22 +264,12 @@ export const buildWorkflowBindingsFromForm = (
       ...(String(binding?.contract_version ?? '').trim()
         ? { contract_version: String(binding?.contract_version).trim() }
         : {}),
-      ...(String(binding?.binding_id ?? '').trim()
-        ? { binding_id: String(binding?.binding_id).trim() }
-        : {}),
+      ...(bindingId ? { binding_id: bindingId } : {}),
       ...(String(binding?.pool_id ?? '').trim()
         ? { pool_id: String(binding?.pool_id).trim() }
         : {}),
       ...(revisionRaw ? { revision } : {}),
-      workflow: {
-        workflow_definition_key: workflowDefinitionKey,
-        workflow_revision_id: workflowRevisionId,
-        workflow_revision: workflowRevision,
-        workflow_name: workflowName,
-      },
-      ...(decisions.length > 0 ? { decisions } : {}),
-      ...(Object.keys(parameters).length > 0 ? { parameters } : {}),
-      ...(Object.keys(roleMapping).length > 0 ? { role_mapping: roleMapping } : {}),
+      binding_profile_revision_id: bindingProfileRevisionId,
       ...(selector ? { selector } : {}),
       effective_from: effectiveFrom,
       ...(effectiveTo ? { effective_to: effectiveTo } : {}),

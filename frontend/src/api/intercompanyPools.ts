@@ -92,17 +92,22 @@ export type PoolWorkflowBinding = PoolWorkflowBindingBase & {
   pool_id: string
   revision: number
   status: PoolWorkflowBindingStatus
-  binding_profile_id?: string
-  binding_profile_revision_id?: string
-  binding_profile_revision_number?: number
-  resolved_profile?: PoolWorkflowBindingResolvedProfile
+  binding_profile_id: string
+  binding_profile_revision_id: string
+  binding_profile_revision_number: number
+  resolved_profile: PoolWorkflowBindingResolvedProfile
   profile_lifecycle_warning?: PoolWorkflowBindingProfileLifecycleWarning | null
 }
 
-export type PoolWorkflowBindingInput = PoolWorkflowBindingBase & {
+export type PoolWorkflowBindingInput = {
+  contract_version?: string
   binding_id?: string
   pool_id?: string
   revision?: number
+  binding_profile_revision_id: string
+  selector?: PoolWorkflowBindingSelector
+  effective_from: string
+  effective_to?: string | null
   status?: PoolWorkflowBindingStatus
 }
 
