@@ -1,0 +1,6 @@
+type: object
+properties:
+  revision:
+    $ref: ./BindingProfileRevisionWrite.yaml
+required:
+  - revision

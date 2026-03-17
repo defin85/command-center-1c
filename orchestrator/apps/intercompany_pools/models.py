@@ -896,6 +896,122 @@ class OrganizationPool(models.Model):
         validate_pool_graph_for_date(self, target_date or timezone.localdate())
 
 
+class BindingProfileStatus(models.TextChoices):
+    ACTIVE = "active", "Active"
+    DEACTIVATED = "deactivated", "Deactivated"
+
+
+class BindingProfile(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="binding_profiles",
+    )
+    code = models.SlugField(max_length=128)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=16,
+        choices=BindingProfileStatus.choices,
+        default=BindingProfileStatus.ACTIVE,
+        db_index=True,
+    )
+    created_by = models.CharField(max_length=255, blank=True, default="")
+    updated_by = models.CharField(max_length=255, blank=True, default="")
+    deactivated_by = models.CharField(max_length=255, blank=True, default="")
+    deactivated_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "binding_profiles"
+        indexes = [
+            models.Index(fields=["tenant", "status"]),
+            models.Index(fields=["tenant", "-updated_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "code"], name="uniq_binding_profile_tenant_code"),
+            models.CheckConstraint(
+                condition=~Q(code=""),
+                name="chk_binding_profile_code_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(name=""),
+                name="chk_binding_profile_name_nonempty",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.code}:{self.name}"
+
+
+class BindingProfileRevision(models.Model):
+    binding_profile_revision_id = models.CharField(primary_key=True, max_length=128, serialize=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="binding_profile_revisions",
+    )
+    profile = models.ForeignKey(
+        "intercompany_pools.BindingProfile",
+        on_delete=models.CASCADE,
+        related_name="revisions",
+    )
+    contract_version = models.CharField(max_length=64, default="binding_profile_revision.v1")
+    revision_number = models.PositiveIntegerField()
+    workflow_definition_key = models.CharField(max_length=255, db_index=True)
+    workflow_revision_id = models.CharField(max_length=255)
+    workflow_revision = models.PositiveIntegerField(db_index=True)
+    workflow_name = models.CharField(max_length=255)
+    decisions = models.JSONField(default=list, blank=True)
+    parameters = models.JSONField(default=dict, blank=True)
+    role_mapping = models.JSONField(default=dict, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_by = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        db_table = "binding_profile_revisions"
+        indexes = [
+            models.Index(fields=["tenant", "profile", "-revision_number"]),
+            models.Index(fields=["tenant", "workflow_definition_key", "workflow_revision"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["profile", "revision_number"],
+                name="uniq_binding_profile_revision_number",
+            ),
+            models.CheckConstraint(
+                condition=~Q(binding_profile_revision_id=""),
+                name="chk_binding_profile_revision_id_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(workflow_definition_key=""),
+                name="chk_binding_profile_revision_definition_key_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(workflow_revision_id=""),
+                name="chk_binding_profile_revision_workflow_revision_id_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(workflow_name=""),
+                name="chk_binding_profile_revision_workflow_name_nonempty",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.profile_id and self.tenant_id and self.profile.tenant_id != self.tenant_id:
+            raise ValidationError({"profile": "Binding profile revision must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.profile_id}:{self.binding_profile_revision_id}:r{self.revision_number}"
+
+
 class PoolWorkflowBinding(models.Model):
     binding_id = models.CharField(primary_key=True, max_length=128, serialize=False)
     tenant = models.ForeignKey(

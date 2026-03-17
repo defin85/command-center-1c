@@ -1,0 +1,45 @@
+type: object
+properties:
+  contract_version:
+    type: string
+  binding_profile_revision_id:
+    type: string
+    description: Opaque immutable runtime pin for a reusable binding profile revision.
+  binding_profile_id:
+    type: string
+    format: uuid
+  revision_number:
+    type: integer
+    minimum: 1
+    description: Human-readable monotonic revision number within the profile.
+  workflow:
+    $ref: ./WorkflowDefinitionRef.yaml
+  decisions:
+    type: array
+    items:
+      $ref: ./PoolWorkflowBindingDecisionRef.yaml
+  parameters:
+    type: object
+    additionalProperties: true
+  role_mapping:
+    type: object
+    additionalProperties:
+      type: string
+  metadata:
+    type: object
+    additionalProperties: true
+  created_by:
+    type: string
+  created_at:
+    type: string
+    format: date-time
+required:
+  - binding_profile_revision_id
+  - binding_profile_id
+  - revision_number
+  - workflow
+  - decisions
+  - parameters
+  - role_mapping
+  - metadata
+  - created_at

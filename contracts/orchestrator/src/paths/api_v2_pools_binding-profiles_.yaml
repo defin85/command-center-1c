@@ -1,0 +1,84 @@
+get:
+  operationId: v2_pools_binding_profiles_list
+  summary: List reusable binding profiles
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  responses:
+    '200':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BindingProfileListResponse.yaml
+    '400':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+    '401':
+      description: Unauthorized
+post:
+  operationId: v2_pools_binding_profiles_create
+  summary: Create reusable binding profile
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/BindingProfileCreateRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/BindingProfileCreateRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/BindingProfileCreateRequest.yaml
+  responses:
+    '201':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BindingProfileMutationResponse.yaml
+    '400':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+    '401':
+      description: Unauthorized
+    '409':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml

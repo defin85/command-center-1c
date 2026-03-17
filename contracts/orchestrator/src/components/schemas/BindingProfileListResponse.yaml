@@ -1,0 +1,11 @@
+type: object
+properties:
+  binding_profiles:
+    type: array
+    items:
+      $ref: ./BindingProfileSummary.yaml
+  count:
+    type: integer
+required:
+  - binding_profiles
+  - count

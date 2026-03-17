@@ -1,0 +1,6 @@
+type: object
+properties:
+  binding_profile:
+    $ref: ./BindingProfileDetail.yaml
+required:
+  - binding_profile

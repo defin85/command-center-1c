@@ -1,0 +1,46 @@
+type: object
+properties:
+  binding_profile_id:
+    type: string
+    format: uuid
+  code:
+    type: string
+  name:
+    type: string
+  description:
+    type: string
+  status:
+    type: string
+    enum:
+      - active
+      - deactivated
+  latest_revision_number:
+    type: integer
+    minimum: 1
+  latest_revision:
+    $ref: ./BindingProfileRevision.yaml
+  created_by:
+    type: string
+  updated_by:
+    type: string
+  deactivated_by:
+    type: string
+  deactivated_at:
+    type: string
+    format: date-time
+    nullable: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - binding_profile_id
+  - code
+  - name
+  - status
+  - latest_revision_number
+  - latest_revision
+  - created_at
+  - updated_at

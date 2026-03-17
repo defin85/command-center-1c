@@ -37,6 +37,7 @@ from .views import (
     decisions,
     pool_document_policy_migrations,
     intercompany_pools,
+    intercompany_pools_binding_profiles,
     intercompany_pools_master_data,
     intercompany_pools_master_data_bootstrap,
     intercompany_pools_master_data_sync,
@@ -135,6 +136,26 @@ urlpatterns = [
     # ========================================================================
     path('pools/', intercompany_pools.list_organization_pools, name='pools-list'),
     path('pools/upsert/', intercompany_pools.upsert_organization_pool, name='pools-upsert'),
+    path(
+        'pools/binding-profiles/',
+        intercompany_pools_binding_profiles.binding_profiles_collection,
+        name='pools-binding-profiles-collection',
+    ),
+    path(
+        'pools/binding-profiles/<uuid:binding_profile_id>/',
+        intercompany_pools_binding_profiles.binding_profile_detail,
+        name='pools-binding-profiles-detail',
+    ),
+    path(
+        'pools/binding-profiles/<uuid:binding_profile_id>/revisions/',
+        intercompany_pools_binding_profiles.binding_profile_revisions,
+        name='pools-binding-profiles-revisions',
+    ),
+    path(
+        'pools/binding-profiles/<uuid:binding_profile_id>/deactivate/',
+        intercompany_pools_binding_profiles.deactivate_binding_profile,
+        name='pools-binding-profiles-deactivate',
+    ),
     path(
         'pools/workflow-bindings/',
         intercompany_pools.list_pool_workflow_bindings,

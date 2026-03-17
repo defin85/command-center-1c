@@ -200,6 +200,14 @@ paths:
     $ref: paths/api_v2_operations_stream-unsubscribe_.yaml
   /api/v2/pools/:
     $ref: paths/api_v2_pools_.yaml
+  /api/v2/pools/binding-profiles/:
+    $ref: paths/api_v2_pools_binding-profiles_.yaml
+  /api/v2/pools/binding-profiles/{binding_profile_id}/:
+    $ref: paths/api_v2_pools_binding-profiles_{binding_profile_id}_.yaml
+  /api/v2/pools/binding-profiles/{binding_profile_id}/revisions/:
+    $ref: paths/api_v2_pools_binding-profiles_{binding_profile_id}_revisions_.yaml
+  /api/v2/pools/binding-profiles/{binding_profile_id}/deactivate/:
+    $ref: paths/api_v2_pools_binding-profiles_{binding_profile_id}_deactivate_.yaml
   /api/v2/pools/workflow-bindings/:
     $ref: paths/api_v2_pools_workflow-bindings_.yaml
   /api/v2/pools/workflow-bindings/upsert/:

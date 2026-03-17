@@ -1,0 +1,23 @@
+type: object
+properties:
+  contract_version:
+    type: string
+    description: Binding profile revision contract version.
+  workflow:
+    $ref: ./WorkflowDefinitionRef.yaml
+  decisions:
+    type: array
+    items:
+      $ref: ./PoolWorkflowBindingDecisionRef.yaml
+  parameters:
+    type: object
+    additionalProperties: true
+  role_mapping:
+    type: object
+    additionalProperties:
+      type: string
+  metadata:
+    type: object
+    additionalProperties: true
+required:
+  - workflow
