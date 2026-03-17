@@ -455,6 +455,69 @@ def _ensure_runtime_test_workflow_binding_attachment(*, run: PoolRun) -> dict[st
     return binding
 
 
+def _create_runtime_legacy_workflow_binding_attachment(*, run: PoolRun) -> dict[str, object]:
+    _attach_pool_target_database(
+        tenant=run.tenant,
+        pool=run.pool,
+        period_start=run.period_start,
+    )
+    decision = create_decision_table_revision(
+        contract=_build_document_policy_decision_payload(
+            decision_table_id=f"runtime-doc-policy-legacy-{uuid4().hex[:8]}"
+        )
+    )
+    workflow_root, workflow = _create_runtime_workflow_template(direction=run.direction)
+    binding_id = str(uuid4())
+    legacy_binding = PoolWorkflowBinding.objects.create(
+        binding_id=binding_id,
+        tenant=run.tenant,
+        pool=run.pool,
+        status="active",
+        effective_from=run.period_start,
+        effective_to=None,
+        direction=run.direction,
+        mode=run.mode,
+        selector_tags=[],
+        workflow_definition_key=str(workflow_root.id),
+        workflow_revision_id=str(workflow.id),
+        workflow_revision=workflow.version_number,
+        workflow_name=workflow.name,
+        decisions=[
+            {
+                "decision_table_id": decision.decision_table_id,
+                "decision_key": decision.decision_key,
+                "slot_key": decision.decision_key,
+                "decision_revision": decision.version_number,
+            }
+        ],
+        parameters={"publication_variant": "legacy"},
+        role_mapping={"initiator": "finance"},
+        revision=1,
+        created_by="legacy-import",
+        updated_by="legacy-import",
+    )
+    return {
+        "binding_id": legacy_binding.binding_id,
+        "pool_id": str(run.pool_id),
+        "workflow": {
+            "workflow_definition_key": legacy_binding.workflow_definition_key,
+            "workflow_revision_id": legacy_binding.workflow_revision_id,
+            "workflow_revision": legacy_binding.workflow_revision,
+            "workflow_name": legacy_binding.workflow_name,
+        },
+        "decisions": list(legacy_binding.decisions),
+        "parameters": dict(legacy_binding.parameters),
+        "role_mapping": dict(legacy_binding.role_mapping),
+        "selector": {
+            "direction": legacy_binding.direction,
+            "mode": legacy_binding.mode,
+            "tags": list(legacy_binding.selector_tags),
+        },
+        "effective_from": legacy_binding.effective_from.isoformat(),
+        "status": legacy_binding.status,
+    }
+
+
 def _ensure_service_mapping(*, database: Database) -> None:
     if InfobaseUserMapping.objects.filter(database=database, is_service=True).exists():
         return
@@ -713,6 +776,54 @@ def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_bindi
     persisted_run = PoolRun.objects.get(id=run.id)
     assert persisted_run.workflow_binding_snapshot == persisted_binding
     assert persisted_run.runtime_projection_snapshot == runtime_projection
+
+
+@pytest.mark.django_db
+def test_start_pool_run_workflow_execution_materializes_legacy_attachment_for_default_runtime_path() -> None:
+    run = _create_pool_run(mode=PoolRunMode.SAFE)
+    legacy_binding = _create_runtime_legacy_workflow_binding_attachment(run=run)
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-binding-legacy-backfill",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        result = _start_runtime_workflow_execution(run=run, workflow_binding=legacy_binding)
+
+    execution = WorkflowExecution.objects.get(id=result.execution_id)
+    persisted_binding = execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)
+    runtime_projection = execution.input_context.get(POOL_RUNTIME_PROJECTION_CONTEXT_KEY)
+    assert isinstance(persisted_binding, dict)
+    assert isinstance(runtime_projection, dict)
+    assert persisted_binding["binding_id"] == legacy_binding["binding_id"]
+    assert persisted_binding["binding_profile_revision_id"]
+    assert persisted_binding["binding_profile_revision_number"] == 1
+    assert persisted_binding["resolved_profile"]["workflow"]["workflow_revision"] == (
+        legacy_binding["workflow"]["workflow_revision"]
+    )
+    assert persisted_binding["resolved_profile"]["workflow"]["workflow_revision_id"] == (
+        legacy_binding["workflow"]["workflow_revision_id"]
+    )
+    assert runtime_projection["workflow_binding"]["binding_profile_revision_id"] == (
+        persisted_binding["binding_profile_revision_id"]
+    )
+    assert runtime_projection["workflow_binding"]["attachment_revision"] == persisted_binding["revision"]
+
+    persisted_record = (
+        PoolWorkflowBinding.objects.select_related("binding_profile", "binding_profile_revision")
+        .get(binding_id=str(legacy_binding["binding_id"]))
+    )
+    assert persisted_record.binding_profile_id is not None
+    assert persisted_record.binding_profile_revision_id is not None
+    assert persisted_record.updated_by == "system-backfill"
+    assert persisted_record.binding_profile_revision.metadata["source"] == "generated_from_pool_workflow_binding"
+    assert persisted_record.binding_profile_revision.metadata["generated_from_binding_id"] == legacy_binding["binding_id"]
+    assert persisted_record.binding_profile_revision.metadata["generated_from_pool_id"] == str(run.pool_id)
 
 
 @pytest.mark.django_db

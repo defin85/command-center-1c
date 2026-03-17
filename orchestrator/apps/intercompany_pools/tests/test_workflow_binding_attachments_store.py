@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from uuid import uuid4
 
 import pytest
@@ -15,6 +16,9 @@ from apps.intercompany_pools.workflow_binding_attachments_store import (
     get_pool_workflow_binding_attachment,
     list_pool_workflow_binding_attachments,
     upsert_pool_workflow_binding_attachment,
+)
+from apps.intercompany_pools.workflow_binding_attachments_contract import (
+    POOL_WORKFLOW_BINDING_ATTACHMENT_CONTRACT_VERSION,
 )
 from apps.tenancy.models import Tenant
 
@@ -202,6 +206,78 @@ def test_existing_attachment_on_deactivated_profile_remains_readable_but_new_att
             },
             actor_username="operator",
         )
+
+
+@pytest.mark.django_db
+def test_list_pool_workflow_binding_attachments_materializes_generated_profile_for_legacy_rows() -> None:
+    tenant = Tenant.objects.create(slug=f"binding-attachment-legacy-{uuid4().hex[:8]}", name="Binding Attachment Legacy")
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code=f"pool-{uuid4().hex[:6]}",
+        name="Binding Attachment Legacy Pool",
+    )
+    legacy_binding = PoolWorkflowBinding.objects.create(
+        binding_id=str(uuid4()),
+        tenant=tenant,
+        pool=pool,
+        contract_version="pool_workflow_binding.v1",
+        status="active",
+        effective_from=date(2026, 1, 1),
+        effective_to=None,
+        direction="top_down",
+        mode="safe",
+        selector_tags=["baseline"],
+        workflow_definition_key="services-publication",
+        workflow_revision_id=str(uuid4()),
+        workflow_revision=3,
+        workflow_name="services_publication",
+        decisions=[
+            {
+                "decision_table_id": "document-policy",
+                "decision_key": "document_policy",
+                "slot_key": "document_policy",
+                "decision_revision": 2,
+            }
+        ],
+        parameters={"publication_variant": "full"},
+        role_mapping={"initiator": "finance"},
+        revision=1,
+        created_by="legacy-import",
+        updated_by="legacy-import",
+    )
+
+    listed = list_pool_workflow_binding_attachments(pool=pool)
+
+    assert len(listed) == 1
+    attachment = listed[0]
+    assert attachment["binding_id"] == legacy_binding.binding_id
+    assert attachment["binding_profile_id"]
+    assert attachment["binding_profile_revision_id"]
+    assert attachment["binding_profile_revision_number"] == 1
+    assert attachment["contract_version"] == POOL_WORKFLOW_BINDING_ATTACHMENT_CONTRACT_VERSION
+    assert attachment["resolved_profile"]["workflow"]["workflow_revision"] == 3
+    assert attachment["resolved_profile"]["parameters"] == {"publication_variant": "full"}
+    assert attachment["resolved_profile"]["role_mapping"] == {"initiator": "finance"}
+
+    persisted = (
+        PoolWorkflowBinding.objects.select_related("binding_profile", "binding_profile_revision")
+        .get(binding_id=legacy_binding.binding_id)
+    )
+    assert persisted.binding_profile_id is not None
+    assert persisted.binding_profile_revision_id is not None
+    assert persisted.updated_by == "system-backfill"
+    assert persisted.contract_version == POOL_WORKFLOW_BINDING_ATTACHMENT_CONTRACT_VERSION
+
+    profile = persisted.binding_profile
+    profile_revision = persisted.binding_profile_revision
+    assert profile is not None
+    assert profile_revision is not None
+    assert profile.created_by == "system-backfill"
+    assert profile.code.startswith(f"generated-{pool.code}-")
+    assert profile_revision.created_by == "system-backfill"
+    assert profile_revision.metadata["source"] == "generated_from_pool_workflow_binding"
+    assert profile_revision.metadata["generated_from_binding_id"] == legacy_binding.binding_id
+    assert profile_revision.metadata["generated_from_pool_id"] == str(pool.id)
 
 
 @pytest.mark.django_db
