@@ -468,6 +468,8 @@ def _build_binding_profile_revision_payload(
     *,
     workflow_definition_key: str,
     workflow_revision: int,
+    workflow_revision_id: str | None = None,
+    workflow_name: str | None = None,
     decisions: list[dict[str, object]] | None = None,
     parameters: dict[str, object] | None = None,
     role_mapping: dict[str, str] | None = None,
@@ -475,9 +477,9 @@ def _build_binding_profile_revision_payload(
     return {
         "workflow": {
             "workflow_definition_key": workflow_definition_key,
-            "workflow_revision_id": str(uuid4()),
+            "workflow_revision_id": workflow_revision_id or str(uuid4()),
             "workflow_revision": workflow_revision,
-            "workflow_name": workflow_definition_key.replace("-", "_"),
+            "workflow_name": workflow_name or workflow_definition_key.replace("-", "_"),
         },
         "decisions": list(decisions or []),
         "parameters": dict(parameters or {}),
@@ -493,18 +495,34 @@ def _create_binding_profile_revision(
     tenant: Tenant,
     workflow_definition_key: str,
     workflow_revision: int,
+    direction: str | None = None,
+    materialize_runtime_workflow: bool = False,
     decisions: list[dict[str, object]] | None = None,
     parameters: dict[str, object] | None = None,
     role_mapping: dict[str, str] | None = None,
 ) -> dict[str, object]:
+    workflow_revision_id: str | None = None
+    workflow_name: str | None = None
+    if materialize_runtime_workflow:
+        materialized_workflow_name = f"{workflow_definition_key.replace('-', '_')}_{uuid4().hex[:8]}"
+        workflow_root, workflow = _create_pool_runtime_workflow_revision(
+            workflow_name=materialized_workflow_name,
+            direction=direction,
+            workflow_revision=workflow_revision,
+        )
+        workflow_definition_key = str(workflow_root.id)
+        workflow_revision_id = str(workflow.id)
+        workflow_name = workflow.name
     profile = create_canonical_binding_profile(
         tenant=tenant,
         binding_profile={
             "code": f"{workflow_definition_key}-{uuid4().hex[:8]}",
-            "name": workflow_definition_key.replace("-", " ").title(),
+            "name": (workflow_name or workflow_definition_key).replace("-", " ").title(),
             "revision": _build_binding_profile_revision_payload(
                 workflow_definition_key=workflow_definition_key,
                 workflow_revision=workflow_revision,
+                workflow_revision_id=workflow_revision_id,
+                workflow_name=workflow_name,
                 decisions=decisions,
                 parameters=parameters,
                 role_mapping=role_mapping,
@@ -3862,13 +3880,34 @@ def test_create_pool_run_endpoint_requires_explicit_binding_and_reuses_idempoten
     assert workflow_execution.input_context.get("publication_step_state") == "not_enqueued"
     assert workflow_execution.input_context.get("run_input") == payload["run_input"]
     assert workflow_execution.input_context.get("pool_run_idempotency_key") == run.idempotency_key
-    assert workflow_execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)["binding_id"] == binding["binding_id"]
+    binding_lineage = workflow_execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)
+    assert binding_lineage["binding_id"] == binding["binding_id"]
+    assert binding_lineage["binding_profile_revision_id"]
+    assert binding_lineage["binding_profile_revision_number"] >= 1
+    assert binding_lineage["revision"] >= 1
+    assert binding_lineage["resolved_profile"]["workflow"]["workflow_revision"] == 3
     assert workflow_execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["workflow_binding"]["binding_id"] == binding["binding_id"]
+    assert workflow_execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["workflow_binding"][
+        "binding_profile_revision_id"
+    ] == binding_lineage["binding_profile_revision_id"]
+    assert workflow_execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["workflow_binding"][
+        "attachment_revision"
+    ] == binding_lineage["revision"]
     assert workflow_execution.input_context.get("workflow_run_id") == str(workflow_execution.id)
     assert workflow_execution.input_context.get("root_workflow_run_id") == str(workflow_execution.id)
     assert workflow_execution.input_context.get("parent_workflow_run_id") is None
     assert workflow_execution.input_context.get("attempt_number") == 1
     assert workflow_execution.input_context.get("attempt_kind") == "initial"
+    assert first_payload["run"]["workflow_binding"]["binding_id"] == binding["binding_id"]
+    assert (
+        first_payload["run"]["workflow_binding"]["binding_profile_revision_id"]
+        == binding_lineage["binding_profile_revision_id"]
+    )
+    assert first_payload["run"]["workflow_binding"]["revision"] == binding_lineage["revision"]
+    assert (
+        first_payload["run"]["workflow_binding"]["resolved_profile"]["workflow"]["workflow_revision"]
+        == 3
+    )
 
 
 @pytest.mark.django_db
@@ -3925,6 +3964,166 @@ def test_create_pool_run_endpoint_uses_binding_in_idempotency_key(
         )
 
     assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["run"]["id"] != second.json()["run"]["id"]
+
+
+@pytest.mark.django_db
+def test_create_pool_run_endpoint_uses_attachment_revision_in_idempotency_key(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    bindings, _ = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[
+            _build_pool_workflow_binding_payload(
+                pool=pool,
+                workflow_definition_key="services-publication",
+                workflow_revision=3,
+                direction=PoolRunDirection.BOTTOM_UP,
+                mode=PoolRunMode.SAFE,
+            )
+        ],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    binding = bindings[0]
+    list_response = authenticated_client.get(
+        "/api/v2/pools/workflow-bindings/",
+        {"pool_id": str(pool.id)},
+    )
+    assert list_response.status_code == 200
+    created_binding = next(
+        item
+        for item in list_response.json()["workflow_bindings"]
+        if item["binding_id"] == binding["binding_id"]
+    )
+    base_payload = {
+        "pool_id": str(pool.id),
+        "pool_workflow_binding_id": created_binding["binding_id"],
+        "direction": PoolRunDirection.BOTTOM_UP,
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-31",
+        "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+        "mode": PoolRunMode.SAFE,
+    }
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="op-attachment-key", status="queued"),
+    ):
+        first = authenticated_client.post("/api/v2/pools/runs/", base_payload, format="json")
+
+    assert first.status_code == 201
+
+    update_response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": _attachment_payload_from_read_model(
+                created_binding,
+                selector={
+                    "direction": PoolRunDirection.BOTTOM_UP,
+                    "mode": PoolRunMode.SAFE,
+                    "tags": ["attachment-rev-2"],
+                },
+            ),
+        },
+        format="json",
+    )
+    assert update_response.status_code == 200
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="op-attachment-key-2", status="queued"),
+    ):
+        second = authenticated_client.post("/api/v2/pools/runs/", base_payload, format="json")
+
+    assert second.status_code == 201
+    assert first.json()["run"]["id"] != second.json()["run"]["id"]
+
+
+@pytest.mark.django_db
+def test_create_pool_run_endpoint_uses_pinned_profile_revision_in_idempotency_key(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    bindings, _ = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[
+            _build_pool_workflow_binding_payload(
+                pool=pool,
+                workflow_definition_key="services-publication",
+                workflow_revision=3,
+                direction=PoolRunDirection.BOTTOM_UP,
+                mode=PoolRunMode.SAFE,
+            )
+        ],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    binding = bindings[0]
+    list_response = authenticated_client.get(
+        "/api/v2/pools/workflow-bindings/",
+        {"pool_id": str(pool.id)},
+    )
+    assert list_response.status_code == 200
+    created_binding = next(
+        item
+        for item in list_response.json()["workflow_bindings"]
+        if item["binding_id"] == binding["binding_id"]
+    )
+    base_payload = {
+        "pool_id": str(pool.id),
+        "pool_workflow_binding_id": created_binding["binding_id"],
+        "direction": PoolRunDirection.BOTTOM_UP,
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-31",
+        "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+        "mode": PoolRunMode.SAFE,
+    }
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="op-profile-key", status="queued"),
+    ):
+        first = authenticated_client.post("/api/v2/pools/runs/", base_payload, format="json")
+
+    assert first.status_code == 201
+
+    replacement_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
+        workflow_definition_key="services-publication",
+        workflow_revision=4,
+        direction=PoolRunDirection.BOTTOM_UP,
+        materialize_runtime_workflow=True,
+        decisions=list(created_binding["resolved_profile"]["decisions"]),
+        parameters=dict(created_binding["resolved_profile"]["parameters"]),
+        role_mapping=dict(created_binding["resolved_profile"]["role_mapping"]),
+    )
+    repin_response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": _attachment_payload_from_read_model(
+                created_binding,
+                binding_profile_revision_id=str(replacement_revision["binding_profile_revision_id"]),
+            ),
+        },
+        format="json",
+    )
+    assert repin_response.status_code == 200
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(success=True, operation_id="op-profile-key-2", status="queued"),
+    ):
+        second = authenticated_client.post("/api/v2/pools/runs/", base_payload, format="json")
+
     assert second.status_code == 201
     assert first.json()["run"]["id"] != second.json()["run"]["id"]
 
@@ -4124,6 +4323,10 @@ def test_preview_pool_workflow_binding_uses_managed_default_schema_template_on_d
     assert response.status_code == 200
     payload = response.json()
     assert payload["workflow_binding"]["binding_id"] == binding["binding_id"]
+    assert payload["workflow_binding"]["binding_profile_revision_id"]
+    assert payload["workflow_binding"]["binding_profile_revision_number"] >= 1
+    assert payload["workflow_binding"]["revision"] >= 1
+    assert payload["workflow_binding"]["resolved_profile"]["workflow"]["workflow_revision"] == 3
     assert set(payload["compiled_document_policy_slots"]) == {"document_policy"}
     assert payload["compiled_document_policy_slots"]["document_policy"]["document_policy"]["version"] == (
         "document_policy.v1"
@@ -4133,6 +4336,14 @@ def test_preview_pool_workflow_binding_uses_managed_default_schema_template_on_d
     assert payload["slot_coverage_summary"]["items"][0]["slot_key"] == "document_policy"
     assert payload["slot_coverage_summary"]["items"][0]["coverage"]["code"] is None
     assert payload["runtime_projection"]["workflow_binding"]["binding_id"] == binding["binding_id"]
+    assert (
+        payload["runtime_projection"]["workflow_binding"]["binding_profile_revision_id"]
+        == payload["workflow_binding"]["binding_profile_revision_id"]
+    )
+    assert (
+        payload["runtime_projection"]["workflow_binding"]["attachment_revision"]
+        == payload["workflow_binding"]["revision"]
+    )
     assert payload["runtime_projection"]["document_policy_projection"]["compiled_document_policy_slots"] == (
         payload["compiled_document_policy_slots"]
     )
@@ -5690,23 +5901,44 @@ def test_get_pool_run_report_exposes_binding_lineage_and_runtime_projection(
     pool: OrganizationPool,
 ) -> None:
     run = _create_validated_run(tenant=default_tenant, pool=pool)
-    binding = _build_pool_workflow_binding_payload(
-        pool=pool,
-        workflow_definition_key="services-publication",
-        workflow_revision=7,
-        direction=PoolRunDirection.TOP_DOWN,
-        mode=PoolRunMode.SAFE,
-        tags=["quarter-close"],
-    )
-    binding["decisions"] = [
-        {
-            "decision_table_id": "decision-1",
-            "decision_key": "invoice_mode",
-            "decision_revision": 2,
-        }
-    ]
-    binding["parameters"] = {"publication_variant": "full"}
-    binding["role_mapping"] = {"initiator": "finance"}
+    binding = {
+        "binding_id": str(uuid4()),
+        "pool_id": str(pool.id),
+        "binding_profile_id": str(uuid4()),
+        "binding_profile_revision_id": "binding-profile-revision-7",
+        "binding_profile_revision_number": 2,
+        "revision": 4,
+        "selector": {
+            "direction": PoolRunDirection.TOP_DOWN,
+            "mode": PoolRunMode.SAFE,
+            "tags": ["quarter-close"],
+        },
+        "effective_from": "2026-01-01",
+        "status": "active",
+        "resolved_profile": {
+            "binding_profile_id": str(uuid4()),
+            "code": "services-publication",
+            "name": "Services Publication",
+            "status": "active",
+            "binding_profile_revision_id": "binding-profile-revision-7",
+            "binding_profile_revision_number": 2,
+            "workflow": {
+                "workflow_definition_key": "services-publication",
+                "workflow_revision_id": "workflow-revision-7",
+                "workflow_revision": 7,
+                "workflow_name": "compiled-services-publication",
+            },
+            "decisions": [
+                {
+                    "decision_table_id": "decision-1",
+                    "decision_key": "invoice_mode",
+                    "decision_revision": 2,
+                }
+            ],
+            "parameters": {"publication_variant": "full"},
+            "role_mapping": {"initiator": "finance"},
+        },
+    }
     projection = {
         "version": "pool_runtime_projection.v1",
         "run_id": str(run.id),
@@ -5723,10 +5955,14 @@ def test_get_pool_run_report_exposes_binding_lineage_and_runtime_projection(
             "binding_mode": "pool_workflow_binding",
             "binding_id": binding["binding_id"],
             "pool_id": str(pool.id),
-            "workflow_definition_key": binding["workflow"]["workflow_definition_key"],
-            "workflow_revision_id": binding["workflow"]["workflow_revision_id"],
-            "workflow_revision": binding["workflow"]["workflow_revision"],
-            "workflow_name": binding["workflow"]["workflow_name"],
+            "binding_profile_id": binding["binding_profile_id"],
+            "binding_profile_revision_id": binding["binding_profile_revision_id"],
+            "binding_profile_revision_number": binding["binding_profile_revision_number"],
+            "attachment_revision": binding["revision"],
+            "workflow_definition_key": binding["resolved_profile"]["workflow"]["workflow_definition_key"],
+            "workflow_revision_id": binding["resolved_profile"]["workflow"]["workflow_revision_id"],
+            "workflow_revision": binding["resolved_profile"]["workflow"]["workflow_revision"],
+            "workflow_name": binding["resolved_profile"]["workflow"]["workflow_name"],
             "decision_refs": [
                 {
                     "decision_table_id": "decision-1",
@@ -5816,8 +6052,12 @@ def test_get_pool_run_report_exposes_binding_lineage_and_runtime_projection(
     payload = report_response.json()
     run_payload = payload["run"]
     assert run_payload["workflow_binding"]["binding_id"] == binding["binding_id"]
-    assert run_payload["workflow_binding"]["workflow"]["workflow_revision"] == 7
-    assert run_payload["workflow_binding"]["decisions"] == [
+    assert run_payload["workflow_binding"]["binding_profile_revision_id"] == (
+        binding["binding_profile_revision_id"]
+    )
+    assert run_payload["workflow_binding"]["revision"] == binding["revision"]
+    assert run_payload["workflow_binding"]["resolved_profile"]["workflow"]["workflow_revision"] == 7
+    assert run_payload["workflow_binding"]["resolved_profile"]["decisions"] == [
         {
             "decision_table_id": "decision-1",
             "decision_key": "invoice_mode",
@@ -5826,6 +6066,14 @@ def test_get_pool_run_report_exposes_binding_lineage_and_runtime_projection(
     ]
     assert run_payload["runtime_projection"]["workflow_definition"]["plan_key"] == "plan-services-v7"
     assert run_payload["runtime_projection"]["workflow_binding"]["binding_id"] == binding["binding_id"]
+    assert (
+        run_payload["runtime_projection"]["workflow_binding"]["binding_profile_revision_id"]
+        == binding["binding_profile_revision_id"]
+    )
+    assert (
+        run_payload["runtime_projection"]["workflow_binding"]["attachment_revision"]
+        == binding["revision"]
+    )
     assert (
         run_payload["runtime_projection"]["document_policy_projection"]["compiled_document_policy_slots"][
             "invoice_mode"

@@ -183,3 +183,51 @@ def test_pool_workflow_binding_contract_rejects_duplicate_slot_key() -> None:
             effective_from=date(2026, 1, 1),
             status=PoolWorkflowBindingStatus.ACTIVE,
         )
+
+
+@pytest.mark.django_db
+def test_pool_workflow_binding_contract_hydrates_runtime_fields_from_attachment_read_model() -> None:
+    workflow = _create_workflow_template(name=f"wf-{uuid4().hex[:6]}", version_number=1)
+
+    binding = PoolWorkflowBindingContract(
+        binding_id="binding-services-v1",
+        pool_id=str(uuid4()),
+        binding_profile_id=str(uuid4()),
+        binding_profile_revision_id="binding-profile-revision-1",
+        binding_profile_revision_number=2,
+        revision=4,
+        selector=PoolWorkflowBindingSelector(direction="top_down", mode="safe", tags=["baseline"]),
+        effective_from=date(2026, 1, 1),
+        status=PoolWorkflowBindingStatus.ACTIVE,
+        resolved_profile={
+            "binding_profile_id": str(uuid4()),
+            "code": "services-publication",
+            "name": "Services Publication",
+            "status": "active",
+            "binding_profile_revision_id": "binding-profile-revision-1",
+            "binding_profile_revision_number": 2,
+            "workflow": build_workflow_definition_ref(workflow_template=workflow).model_dump(
+                mode="json",
+                exclude_none=True,
+            ),
+            "decisions": [
+                {
+                    "decision_table_id": "decision-publication",
+                    "decision_key": "document_policy",
+                    "slot_key": "sale",
+                    "decision_revision": 3,
+                }
+            ],
+            "parameters": {"publication_variant": "full"},
+            "role_mapping": {"seller": "organization:stroygrupp"},
+        },
+    )
+
+    assert binding.workflow.workflow_definition_key == str(workflow.id)
+    assert binding.workflow.workflow_revision == 1
+    assert binding.binding_profile_revision_id == "binding-profile-revision-1"
+    assert binding.binding_profile_revision_number == 2
+    assert binding.revision == 4
+    assert binding.decisions[0].slot_key == "sale"
+    assert binding.parameters == {"publication_variant": "full"}
+    assert binding.role_mapping == {"seller": "organization:stroygrupp"}

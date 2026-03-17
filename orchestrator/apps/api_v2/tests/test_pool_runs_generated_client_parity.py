@@ -234,6 +234,20 @@ def test_generated_pool_runtime_projection_model_covers_slot_lineage_contract() 
     generated_fields = _generated_model_fields("poolRuntimeProjection.ts")
     assert set(properties.keys()).issubset(generated_fields)
 
+    workflow_binding_content = (
+        _repo_root()
+        / "frontend"
+        / "src"
+        / "api"
+        / "generated"
+        / "model"
+        / "poolRuntimeProjectionWorkflowBinding.ts"
+    ).read_text(encoding="utf-8")
+    assert re.search(r"binding_profile_id\?: string;", workflow_binding_content)
+    assert re.search(r"binding_profile_revision_id\?: string;", workflow_binding_content)
+    assert re.search(r"binding_profile_revision_number\?: number;", workflow_binding_content)
+    assert re.search(r"attachment_revision\?: number;", workflow_binding_content)
+
     projection_content = (
         _repo_root()
         / "frontend"

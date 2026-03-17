@@ -31,7 +31,7 @@ from .workflow_authoring_contract import (
     PoolWorkflowBindingDecisionRef,
 )
 from .workflow_binding_resolution import resolve_pool_workflow_binding_for_run
-from .workflow_bindings_store import list_pool_workflow_bindings
+from .workflow_binding_attachments_store import list_pool_workflow_binding_attachments
 from .workflow_compiler import PoolWorkflowRunContext, compile_pool_execution_plan
 
 
@@ -318,7 +318,7 @@ def _resolve_runtime_workflow_binding(
         return explicit_binding
 
     resolved_binding = resolve_pool_workflow_binding_for_run(
-        raw_bindings=list_pool_workflow_bindings(pool=pool),
+        raw_bindings=list_pool_workflow_binding_attachments(pool=pool),
         requested_binding_id=requested_binding_id,
         direction=direction,
         mode=mode,

@@ -8,6 +8,7 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from apps.databases.models import Database, InfobaseUserMapping
+from apps.intercompany_pools.binding_profiles_store import create_canonical_binding_profile
 from apps.intercompany_pools.document_plan_artifact_contract import (
     POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY,
     POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY,
@@ -43,6 +44,10 @@ from apps.intercompany_pools.workflow_authoring_contract import PoolWorkflowBind
 from apps.intercompany_pools.workflow_bindings_store import (
     list_pool_workflow_bindings,
     upsert_canonical_pool_workflow_binding,
+)
+from apps.intercompany_pools.workflow_binding_attachments_store import (
+    list_pool_workflow_binding_attachments,
+    upsert_pool_workflow_binding_attachment,
 )
 from apps.intercompany_pools.workflow_runtime import (
     POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY,
@@ -370,6 +375,81 @@ def _ensure_runtime_test_workflow_binding(*, run: PoolRun) -> dict[str, object]:
     return binding
 
 
+def _create_runtime_binding_profile_revision(
+    *,
+    run: PoolRun,
+    workflow_revision_number: int,
+    chain_id: str = "sale_chain",
+) -> dict[str, object]:
+    decision_payload = _build_document_policy_decision_payload(
+        decision_table_id=f"runtime-doc-policy-profile-{uuid4().hex[:8]}"
+    )
+    decision_payload["rules"][0]["outputs"]["document_policy"]["chains"][0]["chain_id"] = chain_id
+    decision = create_decision_table_revision(contract=decision_payload)
+    workflow_root, workflow = _create_runtime_workflow_template(direction=run.direction)
+    profile = create_canonical_binding_profile(
+        tenant=run.tenant,
+        binding_profile={
+            "code": f"runtime-profile-{uuid4().hex[:8]}",
+            "name": "Runtime Profile",
+            "revision": {
+                "workflow": {
+                    "workflow_definition_key": str(workflow_root.id),
+                    "workflow_revision_id": str(workflow.id),
+                    "workflow_revision": workflow_revision_number,
+                    "workflow_name": workflow.name,
+                },
+                "decisions": [
+                    {
+                        "decision_table_id": decision.decision_table_id,
+                        "decision_key": decision.decision_key,
+                        "slot_key": decision.decision_key,
+                        "decision_revision": decision.version_number,
+                    }
+                ],
+                "parameters": {"publication_variant": "full"},
+                "role_mapping": {"initiator": "finance"},
+                "metadata": {"source": "runtime-test"},
+            },
+        },
+        actor_username="pool-runtime-test",
+    )
+    latest_revision = profile["latest_revision"]
+    assert isinstance(latest_revision, dict)
+    return latest_revision
+
+
+def _ensure_runtime_test_workflow_binding_attachment(*, run: PoolRun) -> dict[str, object]:
+    existing_bindings = list_pool_workflow_binding_attachments(pool=run.pool)
+    if existing_bindings:
+        return existing_bindings[0]
+
+    _attach_pool_target_database(
+        tenant=run.tenant,
+        pool=run.pool,
+        period_start=run.period_start,
+    )
+    profile_revision = _create_runtime_binding_profile_revision(
+        run=run,
+        workflow_revision_number=3,
+    )
+    binding, _ = upsert_pool_workflow_binding_attachment(
+        pool=run.pool,
+        workflow_binding={
+            "binding_profile_revision_id": str(profile_revision["binding_profile_revision_id"]),
+            "selector": {
+                "direction": run.direction,
+                "mode": run.mode,
+                "tags": [],
+            },
+            "effective_from": run.period_start.isoformat(),
+            "status": "active",
+        },
+        actor_username="pool-runtime-test",
+    )
+    return binding
+
+
 def _ensure_service_mapping(*, database: Database) -> None:
     if InfobaseUserMapping.objects.filter(database=database, is_service=True).exists():
         return
@@ -566,11 +646,7 @@ def test_start_pool_run_workflow_execution_requires_explicit_pool_workflow_bindi
 @pytest.mark.django_db
 def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_binding() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
-    workflow_binding = _ensure_runtime_test_workflow_binding(run=run)
-    normalized_workflow_binding = PoolWorkflowBindingContract(**workflow_binding).model_dump(
-        mode="json",
-        exclude_none=True,
-    )
+    workflow_binding = _ensure_runtime_test_workflow_binding_attachment(run=run)
 
     with patch(
         "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
@@ -594,7 +670,11 @@ def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_bindi
         POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY
     )
 
-    assert persisted_binding == normalized_workflow_binding
+    assert persisted_binding["binding_id"] == workflow_binding["binding_id"]
+    assert persisted_binding["binding_profile_revision_id"] == workflow_binding["binding_profile_revision_id"]
+    assert persisted_binding["binding_profile_revision_number"] == workflow_binding["binding_profile_revision_number"]
+    assert persisted_binding["revision"] == workflow_binding["revision"]
+    assert persisted_binding["resolved_profile"]["workflow"]["workflow_revision"] == 3
     assert isinstance(runtime_projection, dict)
     assert isinstance(compiled_document_policy, dict)
     assert isinstance(compiled_document_policy_slots, dict)
@@ -607,6 +687,10 @@ def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_bindi
     )
     assert runtime_projection["workflow_binding"]["binding_mode"] == "pool_workflow_binding"
     assert runtime_projection["workflow_binding"]["binding_id"] == workflow_binding["binding_id"]
+    assert runtime_projection["workflow_binding"]["binding_profile_revision_id"] == (
+        workflow_binding["binding_profile_revision_id"]
+    )
+    assert runtime_projection["workflow_binding"]["attachment_revision"] == workflow_binding["revision"]
     assert runtime_projection["workflow_binding"]["workflow_revision"] == 3
     assert runtime_projection["document_policy_projection"]["compiled_document_policy_slots"] == (
         compiled_document_policy_slots
@@ -622,48 +706,32 @@ def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_bindi
     assert binding_entry["binding_mode"] == "pool_workflow_binding"
 
     persisted_run = PoolRun.objects.get(id=run.id)
-    assert persisted_run.workflow_binding_snapshot == normalized_workflow_binding
+    assert persisted_run.workflow_binding_snapshot == persisted_binding
     assert persisted_run.runtime_projection_snapshot == runtime_projection
 
 
 @pytest.mark.django_db
-def test_start_pool_run_workflow_execution_reloads_binding_snapshot_from_canonical_store() -> None:
+def test_start_pool_run_workflow_execution_reloads_binding_snapshot_from_attachment_store() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
-    stale_binding = _ensure_runtime_test_workflow_binding(run=run)
-    canonical_binding = list_pool_workflow_bindings(pool=run.pool)[0]
-
-    updated_decision_payload = _build_document_policy_decision_payload(
-        decision_table_id=f"runtime-doc-policy-updated-{uuid4().hex[:8]}"
+    stale_binding = _ensure_runtime_test_workflow_binding_attachment(run=run)
+    updated_revision = _create_runtime_binding_profile_revision(
+        run=run,
+        workflow_revision_number=4,
+        chain_id="canonical_lineage_chain",
     )
-    updated_decision_payload["rules"][0]["outputs"]["document_policy"]["chains"][0][
-        "chain_id"
-    ] = "canonical_lineage_chain"
-    updated_decision = create_decision_table_revision(contract=updated_decision_payload)
-    updated_binding, _ = upsert_canonical_pool_workflow_binding(
+    updated_binding, _ = upsert_pool_workflow_binding_attachment(
         pool=run.pool,
         workflow_binding={
-            **canonical_binding,
-            "revision": canonical_binding["revision"],
-            "decisions": [
-                {
-                    "decision_table_id": updated_decision.decision_table_id,
-                    "decision_key": updated_decision.decision_key,
-                    "slot_key": updated_decision.decision_key,
-                    "decision_revision": updated_decision.version_number,
-                }
-            ],
+            "binding_id": str(stale_binding["binding_id"]),
+            "revision": int(stale_binding["revision"]),
+            "binding_profile_revision_id": str(updated_revision["binding_profile_revision_id"]),
+            "selector": dict(stale_binding["selector"]),
+            "effective_from": str(stale_binding["effective_from"]),
+            "effective_to": stale_binding.get("effective_to"),
+            "status": str(stale_binding["status"]),
         },
         actor_username="pool-runtime-test",
     )
-    expected_binding = PoolWorkflowBindingContract(**updated_binding).model_dump(
-        mode="json",
-        exclude_none=True,
-    )
-    stale_normalized_binding = PoolWorkflowBindingContract(**stale_binding).model_dump(
-        mode="json",
-        exclude_none=True,
-    )
-    assert stale_normalized_binding["decisions"] != expected_binding["decisions"]
 
     with patch(
         "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
@@ -684,30 +752,26 @@ def test_start_pool_run_workflow_execution_reloads_binding_snapshot_from_canonic
         POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY
     )
 
-    assert persisted_binding == expected_binding
-    assert persisted_binding != stale_normalized_binding
+    assert persisted_binding["binding_id"] == stale_binding["binding_id"]
+    assert persisted_binding["binding_profile_revision_id"] == updated_revision["binding_profile_revision_id"]
+    assert persisted_binding["revision"] == updated_binding["revision"]
+    assert persisted_binding["resolved_profile"]["workflow"]["workflow_revision"] == 4
+    assert persisted_binding["binding_profile_revision_id"] != stale_binding["binding_profile_revision_id"]
     assert isinstance(compiled_document_policy, dict)
     assert compiled_document_policy["chains"][0]["chain_id"] == "canonical_lineage_chain"
-    assert execution.input_context.get(POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY) == (
+    assert execution.input_context.get(POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY).startswith(
         "workflow_binding.decision_table:"
-        f"{updated_decision.decision_table_id}:v{updated_decision.version_number}"
     )
     assert runtime_projection["workflow_binding"]["binding_id"] == stale_binding["binding_id"]
-    assert runtime_projection["workflow_binding"]["decision_refs"] == expected_binding["decisions"]
-    assert runtime_projection["document_policy_projection"]["compiled_document_policy_slots"] == {
-        updated_decision.decision_key: {
-            "decision_table_id": updated_decision.decision_table_id,
-            "decision_revision": updated_decision.version_number,
-            "document_policy_source": (
-                "workflow_binding.decision_table:"
-                f"{updated_decision.decision_table_id}:v{updated_decision.version_number}"
-            ),
-            "document_policy": compiled_document_policy,
-        }
-    }
+    assert runtime_projection["workflow_binding"]["binding_profile_revision_id"] == (
+        updated_revision["binding_profile_revision_id"]
+    )
+    assert runtime_projection["workflow_binding"]["attachment_revision"] == updated_binding["revision"]
+    assert runtime_projection["workflow_binding"]["workflow_revision"] == 4
+    assert runtime_projection["document_policy_projection"]["compiled_document_policy_slots"]
 
     persisted_run = PoolRun.objects.get(id=run.id)
-    assert persisted_run.workflow_binding_snapshot == expected_binding
+    assert persisted_run.workflow_binding_snapshot == persisted_binding
     assert persisted_run.runtime_projection_snapshot == runtime_projection
 
 

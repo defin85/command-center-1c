@@ -77,6 +77,25 @@ class PoolWorkflowBindingDecisionRef(BaseModel):
         return self.slot_key
 
 
+class PoolWorkflowBindingProfileLifecycleWarning(BaseModel):
+    code: str = Field(..., min_length=1)
+    title: str = Field(..., min_length=1)
+    detail: str = Field(..., min_length=1)
+
+
+class PoolWorkflowBindingResolvedProfile(BaseModel):
+    binding_profile_id: str = Field(..., min_length=1)
+    code: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1)
+    status: str = Field(..., min_length=1)
+    binding_profile_revision_id: str = Field(..., min_length=1)
+    binding_profile_revision_number: int = Field(..., ge=1)
+    workflow: WorkflowDefinitionRef
+    decisions: list[PoolWorkflowBindingDecisionRef] = Field(default_factory=list)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    role_mapping: dict[str, str] = Field(default_factory=dict)
+
+
 class PoolWorkflowBindingContract(BaseModel):
     contract_version: str = Field(default=POOL_WORKFLOW_BINDING_CONTRACT_VERSION)
     binding_id: str = Field(..., min_length=1)
@@ -89,6 +108,44 @@ class PoolWorkflowBindingContract(BaseModel):
     effective_from: date
     effective_to: date | None = None
     status: PoolWorkflowBindingStatus = PoolWorkflowBindingStatus.DRAFT
+    binding_profile_id: str | None = Field(default=None, min_length=1)
+    binding_profile_revision_id: str | None = Field(default=None, min_length=1)
+    binding_profile_revision_number: int | None = Field(default=None, ge=1)
+    revision: int | None = Field(default=None, ge=1)
+    resolved_profile: PoolWorkflowBindingResolvedProfile | None = None
+    profile_lifecycle_warning: PoolWorkflowBindingProfileLifecycleWarning | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def hydrate_runtime_fields_from_resolved_profile(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        resolved_profile = payload.get("resolved_profile")
+        if not isinstance(resolved_profile, dict):
+            return payload
+
+        workflow = resolved_profile.get("workflow")
+        if "workflow" not in payload and isinstance(workflow, dict):
+            payload["workflow"] = dict(workflow)
+        for field_name in ("decisions", "parameters", "role_mapping"):
+            if field_name not in payload and field_name in resolved_profile:
+                payload[field_name] = resolved_profile[field_name]
+        if not payload.get("binding_profile_id"):
+            binding_profile_id = str(resolved_profile.get("binding_profile_id") or "").strip()
+            if binding_profile_id:
+                payload["binding_profile_id"] = binding_profile_id
+        if not payload.get("binding_profile_revision_id"):
+            binding_profile_revision_id = str(
+                resolved_profile.get("binding_profile_revision_id") or ""
+            ).strip()
+            if binding_profile_revision_id:
+                payload["binding_profile_revision_id"] = binding_profile_revision_id
+        if payload.get("binding_profile_revision_number") in {None, ""}:
+            revision_number = resolved_profile.get("binding_profile_revision_number")
+            if revision_number is not None:
+                payload["binding_profile_revision_number"] = revision_number
+        return payload
 
     @model_validator(mode="after")
     def validate_effective_range_and_decisions(self) -> "PoolWorkflowBindingContract":
@@ -127,6 +184,37 @@ class PoolWorkflowBindingContract(BaseModel):
         return self
 
 
+def build_pool_workflow_binding_read_model(
+    *,
+    binding: PoolWorkflowBindingContract,
+) -> dict[str, Any]:
+    if binding.binding_profile_revision_id and binding.resolved_profile is not None:
+        payload: dict[str, Any] = {
+            "contract_version": binding.contract_version,
+            "binding_id": binding.binding_id,
+            "pool_id": binding.pool_id,
+            "binding_profile_id": binding.binding_profile_id,
+            "binding_profile_revision_id": binding.binding_profile_revision_id,
+            "binding_profile_revision_number": binding.binding_profile_revision_number,
+            "selector": binding.selector.model_dump(mode="json"),
+            "effective_from": binding.effective_from.isoformat(),
+            "effective_to": binding.effective_to.isoformat() if binding.effective_to else None,
+            "status": binding.status.value,
+            "revision": binding.revision,
+            "resolved_profile": binding.resolved_profile.model_dump(
+                mode="json",
+                exclude_none=True,
+            ),
+        }
+        if binding.profile_lifecycle_warning is not None:
+            payload["profile_lifecycle_warning"] = binding.profile_lifecycle_warning.model_dump(
+                mode="json",
+                exclude_none=True,
+            )
+        return payload
+    return binding.model_dump(mode="json", exclude_none=True)
+
+
 def build_pool_workflow_binding_lineage(
     *, binding: PoolWorkflowBindingContract
 ) -> dict[str, Any]:
@@ -157,11 +245,14 @@ __all__ = [
     "DecisionTableRef",
     "POOL_DOCUMENT_POLICY_SLOT_REQUIRED",
     "PoolWorkflowBindingDecisionRef",
+    "PoolWorkflowBindingProfileLifecycleWarning",
+    "PoolWorkflowBindingResolvedProfile",
     "POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
     "POOL_WORKFLOW_BINDING_CONTRACT_VERSION",
     "PoolWorkflowBindingContract",
     "PoolWorkflowBindingSelector",
     "PoolWorkflowBindingStatus",
+    "build_pool_workflow_binding_read_model",
     "WorkflowDefinitionRef",
     "build_pool_workflow_binding_lineage",
     "build_workflow_definition_ref",

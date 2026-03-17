@@ -152,6 +152,62 @@ def test_build_pool_run_idempotency_key_changes_with_workflow_binding() -> None:
 
 
 @pytest.mark.django_db
+def test_build_pool_run_idempotency_key_changes_with_attachment_revision() -> None:
+    tenant = Tenant.objects.create(slug="pool-run-attachment-revision", name="Pool Run Attachment Revision")
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code="pool-attachment-revision",
+        name="Pool Attachment Revision",
+    )
+
+    base_kwargs = {
+        "pool_id": str(pool.id),
+        "period_start": date(2026, 1, 1),
+        "period_end": date(2026, 1, 31),
+        "direction": PoolRunDirection.BOTTOM_UP,
+        "workflow_binding_id": "binding-a",
+        "binding_profile_revision_id": "profile-revision-a",
+        "run_input": {"source_payload": [{"inn": "770000000001", "amount": "10.00"}]},
+    }
+
+    first = build_pool_run_idempotency_key(workflow_binding_revision=1, **base_kwargs)
+    second = build_pool_run_idempotency_key(workflow_binding_revision=2, **base_kwargs)
+
+    assert first != second
+
+
+@pytest.mark.django_db
+def test_build_pool_run_idempotency_key_changes_with_profile_revision_pin() -> None:
+    tenant = Tenant.objects.create(slug="pool-run-profile-revision", name="Pool Run Profile Revision")
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code="pool-profile-revision",
+        name="Pool Profile Revision",
+    )
+
+    base_kwargs = {
+        "pool_id": str(pool.id),
+        "period_start": date(2026, 1, 1),
+        "period_end": date(2026, 1, 31),
+        "direction": PoolRunDirection.BOTTOM_UP,
+        "workflow_binding_id": "binding-a",
+        "workflow_binding_revision": 3,
+        "run_input": {"source_payload": [{"inn": "770000000001", "amount": "10.00"}]},
+    }
+
+    first = build_pool_run_idempotency_key(
+        binding_profile_revision_id="profile-revision-a",
+        **base_kwargs,
+    )
+    second = build_pool_run_idempotency_key(
+        binding_profile_revision_id="profile-revision-b",
+        **base_kwargs,
+    )
+
+    assert first != second
+
+
+@pytest.mark.django_db
 def test_upsert_pool_run_reuses_existing_run(run_fixture: PoolRun) -> None:
     run = run_fixture
     first = upsert_pool_run(

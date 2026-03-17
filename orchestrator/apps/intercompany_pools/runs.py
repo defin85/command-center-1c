@@ -27,6 +27,8 @@ def build_pool_run_idempotency_key(
     period_end: date | None,
     direction: str,
     workflow_binding_id: str | None = None,
+    workflow_binding_revision: int | None = None,
+    binding_profile_revision_id: str | None = None,
     run_input: dict[str, Any] | None,
 ) -> str:
     normalized_run_input = _canonicalize_run_input(run_input)
@@ -39,6 +41,8 @@ def build_pool_run_idempotency_key(
             period_signature,
             str(direction),
             f"workflow_binding={str(workflow_binding_id or '').strip()}",
+            f"workflow_binding_revision={workflow_binding_revision if workflow_binding_revision is not None else ''}",
+            f"binding_profile_revision_id={str(binding_profile_revision_id or '').strip()}",
             normalized_run_input,
         ]
     )
@@ -102,6 +106,8 @@ def upsert_pool_run(
     period_start: date,
     period_end: date | None,
     workflow_binding_id: str | None = None,
+    workflow_binding_revision: int | None = None,
+    binding_profile_revision_id: str | None = None,
     run_input: dict[str, Any] | None,
     mode: str = PoolRunMode.SAFE,
     schema_template: PoolSchemaTemplate | None = None,
@@ -121,6 +127,8 @@ def upsert_pool_run(
         period_end=period_end,
         direction=direction,
         workflow_binding_id=workflow_binding_id,
+        workflow_binding_revision=workflow_binding_revision,
+        binding_profile_revision_id=binding_profile_revision_id,
         run_input=run_input,
     )
 
@@ -156,6 +164,10 @@ def upsert_pool_run(
                     "direction": direction,
                     "mode": mode,
                     "pool_workflow_binding_id": str(workflow_binding_id or "").strip() or None,
+                    "pool_workflow_binding_revision": workflow_binding_revision,
+                    "binding_profile_revision_id": (
+                        str(binding_profile_revision_id or "").strip() or None
+                    ),
                 },
             )
             return PoolRunUpsertResult(run=run, created=True)
@@ -191,6 +203,10 @@ def upsert_pool_run(
                     "updated_fields": changed_fields,
                     "idempotency_key": idempotency_key,
                     "pool_workflow_binding_id": str(workflow_binding_id or "").strip() or None,
+                    "pool_workflow_binding_revision": workflow_binding_revision,
+                    "binding_profile_revision_id": (
+                        str(binding_profile_revision_id or "").strip() or None
+                    ),
                 },
             )
 

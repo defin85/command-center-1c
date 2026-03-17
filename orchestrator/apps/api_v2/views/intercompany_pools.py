@@ -100,6 +100,7 @@ from apps.intercompany_pools.workflow_runtime import (
 from apps.intercompany_pools.workflow_authoring_contract import (
     POOL_DOCUMENT_POLICY_SLOT_REQUIRED,
     PoolWorkflowBindingContract,
+    build_pool_workflow_binding_read_model,
 )
 from apps.intercompany_pools.workflow_binding_resolution import (
     PoolWorkflowBindingResolutionError,
@@ -119,7 +120,6 @@ from apps.intercompany_pools.workflow_bindings_store import (
     PoolWorkflowBindingNotFoundError,
     PoolWorkflowBindingRevisionConflictError,
     PoolWorkflowBindingStoreError,
-    list_pool_workflow_bindings as list_runtime_pool_workflow_bindings,
 )
 from apps.templates.workflow.models import WorkflowExecution
 from apps.runtime_settings.effective import get_effective_runtime_setting
@@ -1561,9 +1561,9 @@ def _resolve_workflow_binding_read_model(
     raw_binding = run.workflow_binding_snapshot
     if isinstance(raw_binding, Mapping) and raw_binding:
         try:
-            return PoolWorkflowBindingContract(**dict(raw_binding)).model_dump(
-                mode="json",
-                exclude_none=True,
+            binding = PoolWorkflowBindingContract(**dict(raw_binding))
+            return build_pool_workflow_binding_read_model(
+                binding=binding,
             )
         except Exception:
             pass
@@ -1571,9 +1571,9 @@ def _resolve_workflow_binding_read_model(
     if not isinstance(raw_binding, Mapping):
         return None
     try:
-        return PoolWorkflowBindingContract(**dict(raw_binding)).model_dump(
-            mode="json",
-            exclude_none=True,
+        binding = PoolWorkflowBindingContract(**dict(raw_binding))
+        return build_pool_workflow_binding_read_model(
+            binding=binding,
         )
     except Exception:
         return None
@@ -2108,6 +2108,104 @@ class PoolRunVerificationSummarySerializer(serializers.Serializer):
     mismatches = PoolRunVerificationMismatchSerializer(many=True)
 
 
+class WorkflowDefinitionRefInputSerializer(serializers.Serializer):
+    contract_version = serializers.CharField(required=False)
+    workflow_definition_key = serializers.CharField()
+    workflow_revision_id = serializers.CharField()
+    workflow_revision = serializers.IntegerField(min_value=1)
+    workflow_name = serializers.CharField()
+
+
+class PoolWorkflowBindingDecisionRefInputSerializer(serializers.Serializer):
+    decision_table_id = serializers.CharField()
+    decision_key = serializers.CharField()
+    slot_key = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    decision_revision = serializers.IntegerField(min_value=1)
+
+
+class PoolWorkflowBindingSelectorInputSerializer(serializers.Serializer):
+    direction = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    mode = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    tags = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+
+
+class PoolWorkflowBindingProfileLifecycleWarningSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    title = serializers.CharField()
+    detail = serializers.CharField()
+
+
+class PoolWorkflowBindingResolvedProfileSerializer(serializers.Serializer):
+    binding_profile_id = serializers.CharField()
+    code = serializers.CharField()
+    name = serializers.CharField()
+    status = serializers.CharField()
+    binding_profile_revision_id = serializers.CharField()
+    binding_profile_revision_number = serializers.IntegerField(min_value=1)
+    workflow = WorkflowDefinitionRefInputSerializer()
+    decisions = PoolWorkflowBindingDecisionRefInputSerializer(many=True, required=False, default=list)
+    parameters = serializers.JSONField(required=False, default=dict)
+    role_mapping = serializers.DictField(
+        child=serializers.CharField(),
+        required=False,
+        default=dict,
+    )
+
+
+class PoolWorkflowBindingInputSerializer(serializers.Serializer):
+    contract_version = serializers.CharField(required=False, allow_blank=False, default="pool_workflow_binding.v2")
+    binding_id = serializers.CharField(required=False, allow_blank=False)
+    pool_id = serializers.UUIDField(required=False)
+    revision = serializers.IntegerField(min_value=1, required=False)
+    binding_profile_revision_id = serializers.CharField(required=True, allow_blank=False)
+    selector = PoolWorkflowBindingSelectorInputSerializer(required=False, default=dict)
+    effective_from = serializers.DateField()
+    effective_to = serializers.DateField(required=False, allow_null=True)
+    status = serializers.ChoiceField(
+        choices=["draft", "active", "inactive"],
+        required=False,
+        default="draft",
+    )
+
+    def to_internal_value(self, data):
+        if isinstance(data, Mapping):
+            forbidden_fields = [
+                key
+                for key in ("workflow", "decisions", "parameters", "role_mapping")
+                if key in data
+            ]
+            if forbidden_fields:
+                raise serializers.ValidationError(
+                    {
+                        key: [
+                            "Attachment contract does not support local workflow logic overrides. "
+                            "Create or revise a reusable binding profile instead."
+                        ]
+                        for key in forbidden_fields
+                    }
+                )
+        return super().to_internal_value(data)
+
+
+class PoolWorkflowBindingReadSerializer(PoolWorkflowBindingInputSerializer):
+    contract_version = serializers.CharField(required=True, allow_blank=False)
+    binding_id = serializers.CharField(required=True, allow_blank=False)
+    pool_id = serializers.UUIDField(required=True)
+    binding_profile_id = serializers.CharField(required=True, allow_blank=False)
+    binding_profile_revision_id = serializers.CharField(required=True, allow_blank=False)
+    binding_profile_revision_number = serializers.IntegerField(min_value=1, required=True)
+    revision = serializers.IntegerField(min_value=1, required=True)
+    status = serializers.ChoiceField(
+        choices=["draft", "active", "inactive"],
+        required=True,
+    )
+    resolved_profile = PoolWorkflowBindingResolvedProfileSerializer(required=True)
+    profile_lifecycle_warning = PoolWorkflowBindingProfileLifecycleWarningSerializer(
+        required=False,
+        allow_null=True,
+    )
+
+
 class PoolRunSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     tenant_id = serializers.UUIDField()
@@ -2144,7 +2242,7 @@ class PoolRunSerializer(serializers.Serializer):
     terminal_reason = serializers.CharField(required=False, allow_null=True)
     execution_backend = serializers.CharField(required=False, allow_null=True)
     provenance = PoolRunProvenanceSerializer(required=False)
-    workflow_binding = serializers.JSONField(required=False, allow_null=True)
+    workflow_binding = PoolWorkflowBindingReadSerializer(required=False, allow_null=True)
     runtime_projection = serializers.JSONField(required=False, allow_null=True)
     workflow_template_name = serializers.CharField(required=False, allow_null=True)
     seed = serializers.IntegerField(required=False, allow_null=True)
@@ -2271,7 +2369,7 @@ class PoolWorkflowBindingPreviewRequestSerializer(PoolRunCreateRequestSerializer
 
 
 class PoolWorkflowBindingPreviewResponseSerializer(serializers.Serializer):
-    workflow_binding = serializers.JSONField()
+    workflow_binding = PoolWorkflowBindingReadSerializer()
     compiled_document_policy_slots = serializers.JSONField()
     compiled_document_policy = serializers.JSONField(required=False)
     slot_coverage_summary = serializers.JSONField()
@@ -2460,104 +2558,6 @@ class OrganizationPoolSerializer(serializers.Serializer):
 class OrganizationPoolListResponseSerializer(serializers.Serializer):
     pools = OrganizationPoolSerializer(many=True)
     count = serializers.IntegerField()
-
-
-class WorkflowDefinitionRefInputSerializer(serializers.Serializer):
-    contract_version = serializers.CharField(required=False)
-    workflow_definition_key = serializers.CharField()
-    workflow_revision_id = serializers.CharField()
-    workflow_revision = serializers.IntegerField(min_value=1)
-    workflow_name = serializers.CharField()
-
-
-class PoolWorkflowBindingDecisionRefInputSerializer(serializers.Serializer):
-    decision_table_id = serializers.CharField()
-    decision_key = serializers.CharField()
-    slot_key = serializers.CharField(required=False, allow_null=True, allow_blank=True)
-    decision_revision = serializers.IntegerField(min_value=1)
-
-
-class PoolWorkflowBindingSelectorInputSerializer(serializers.Serializer):
-    direction = serializers.CharField(required=False, allow_null=True, allow_blank=True)
-    mode = serializers.CharField(required=False, allow_null=True, allow_blank=True)
-    tags = serializers.ListField(child=serializers.CharField(), required=False, default=list)
-
-
-class PoolWorkflowBindingProfileLifecycleWarningSerializer(serializers.Serializer):
-    code = serializers.CharField()
-    title = serializers.CharField()
-    detail = serializers.CharField()
-
-
-class PoolWorkflowBindingResolvedProfileSerializer(serializers.Serializer):
-    binding_profile_id = serializers.CharField()
-    code = serializers.CharField()
-    name = serializers.CharField()
-    status = serializers.CharField()
-    binding_profile_revision_id = serializers.CharField()
-    binding_profile_revision_number = serializers.IntegerField(min_value=1)
-    workflow = WorkflowDefinitionRefInputSerializer()
-    decisions = PoolWorkflowBindingDecisionRefInputSerializer(many=True, required=False, default=list)
-    parameters = serializers.JSONField(required=False, default=dict)
-    role_mapping = serializers.DictField(
-        child=serializers.CharField(),
-        required=False,
-        default=dict,
-    )
-
-
-class PoolWorkflowBindingInputSerializer(serializers.Serializer):
-    contract_version = serializers.CharField(required=False, allow_blank=False, default="pool_workflow_binding.v2")
-    binding_id = serializers.CharField(required=False, allow_blank=False)
-    pool_id = serializers.UUIDField(required=False)
-    revision = serializers.IntegerField(min_value=1, required=False)
-    binding_profile_revision_id = serializers.CharField(required=True, allow_blank=False)
-    selector = PoolWorkflowBindingSelectorInputSerializer(required=False, default=dict)
-    effective_from = serializers.DateField()
-    effective_to = serializers.DateField(required=False, allow_null=True)
-    status = serializers.ChoiceField(
-        choices=["draft", "active", "inactive"],
-        required=False,
-        default="draft",
-    )
-
-    def to_internal_value(self, data):
-        if isinstance(data, Mapping):
-            forbidden_fields = [
-                key
-                for key in ("workflow", "decisions", "parameters", "role_mapping")
-                if key in data
-            ]
-            if forbidden_fields:
-                raise serializers.ValidationError(
-                    {
-                        key: [
-                            "Attachment contract does not support local workflow logic overrides. "
-                            "Create or revise a reusable binding profile instead."
-                        ]
-                        for key in forbidden_fields
-                    }
-                )
-        return super().to_internal_value(data)
-
-
-class PoolWorkflowBindingReadSerializer(PoolWorkflowBindingInputSerializer):
-    contract_version = serializers.CharField(required=True, allow_blank=False)
-    binding_id = serializers.CharField(required=True, allow_blank=False)
-    pool_id = serializers.UUIDField(required=True)
-    binding_profile_id = serializers.CharField(required=True, allow_blank=False)
-    binding_profile_revision_id = serializers.CharField(required=True, allow_blank=False)
-    binding_profile_revision_number = serializers.IntegerField(min_value=1, required=True)
-    revision = serializers.IntegerField(min_value=1, required=True)
-    status = serializers.ChoiceField(
-        choices=["draft", "active", "inactive"],
-        required=True,
-    )
-    resolved_profile = PoolWorkflowBindingResolvedProfileSerializer(required=True)
-    profile_lifecycle_warning = PoolWorkflowBindingProfileLifecycleWarningSerializer(
-        required=False,
-        allow_null=True,
-    )
 
 
 class PoolWorkflowBindingScopeQuerySerializer(serializers.Serializer):
@@ -2900,7 +2900,7 @@ def create_pool_run(request):
 
     try:
         resolved_workflow_binding = resolve_pool_workflow_binding_for_run(
-            raw_bindings=list_runtime_pool_workflow_bindings(pool=pool),
+            raw_bindings=list_attached_pool_workflow_bindings(pool=pool),
             requested_binding_id=str(data.get("pool_workflow_binding_id") or "").strip() or None,
             direction=data["direction"],
             mode=data.get("mode", PoolRunMode.SAFE),
@@ -2950,6 +2950,14 @@ def create_pool_run(request):
             period_end=data.get("period_end"),
             workflow_binding_id=(
                 resolved_workflow_binding.binding_id if resolved_workflow_binding is not None else None
+            ),
+            workflow_binding_revision=(
+                resolved_workflow_binding.revision if resolved_workflow_binding is not None else None
+            ),
+            binding_profile_revision_id=(
+                resolved_workflow_binding.binding_profile_revision_id
+                if resolved_workflow_binding is not None
+                else None
             ),
             run_input=data.get("run_input"),
             mode=data.get("mode", PoolRunMode.SAFE),

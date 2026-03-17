@@ -183,7 +183,7 @@ class PoolWorkflowCompiler:
     ) -> dict[str, Any] | None:
         if isinstance(workflow_binding, dict) and workflow_binding:
             binding = PoolWorkflowBindingContract(**workflow_binding)
-            return {
+            snapshot = {
                 "binding_mode": "pool_workflow_binding",
                 "binding_id": binding.binding_id,
                 "pool_id": binding.pool_id,
@@ -198,6 +198,15 @@ class PoolWorkflowCompiler:
                 "selector": binding.selector.model_dump(mode="json"),
                 "status": binding.status.value,
             }
+            if binding.binding_profile_id is not None:
+                snapshot["binding_profile_id"] = binding.binding_profile_id
+            if binding.binding_profile_revision_id is not None:
+                snapshot["binding_profile_revision_id"] = binding.binding_profile_revision_id
+            if binding.binding_profile_revision_number is not None:
+                snapshot["binding_profile_revision_number"] = binding.binding_profile_revision_number
+            if binding.revision is not None:
+                snapshot["attachment_revision"] = binding.revision
+            return snapshot
         return None
 
     @staticmethod

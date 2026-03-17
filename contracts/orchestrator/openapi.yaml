@@ -17644,9 +17644,19 @@ components:
               type: string
             binding_id:
               type: string
+            binding_profile_id:
+              type: string
             pool_id:
               type: string
               format: uuid
+            binding_profile_revision_id:
+              type: string
+            binding_profile_revision_number:
+              type: integer
+              minimum: 1
+            attachment_revision:
+              type: integer
+              minimum: 1
             workflow_definition_key:
               type: string
             workflow_revision_id:

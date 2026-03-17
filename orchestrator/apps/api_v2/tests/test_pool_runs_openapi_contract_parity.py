@@ -275,6 +275,21 @@ def test_pool_runtime_projection_schema_exposes_slot_lineage_contract() -> None:
     runtime_projection_properties = runtime_projection_schema.get("properties")
     assert isinstance(runtime_projection_properties, dict)
 
+    workflow_binding = runtime_projection_properties.get("workflow_binding")
+    assert isinstance(workflow_binding, dict)
+    workflow_binding_properties = workflow_binding.get("properties")
+    assert isinstance(workflow_binding_properties, dict)
+    assert workflow_binding_properties["binding_profile_id"] == {"type": "string"}
+    assert workflow_binding_properties["binding_profile_revision_id"] == {"type": "string"}
+    assert workflow_binding_properties["binding_profile_revision_number"] == {
+        "type": "integer",
+        "minimum": 1,
+    }
+    assert workflow_binding_properties["attachment_revision"] == {
+        "type": "integer",
+        "minimum": 1,
+    }
+
     document_policy_projection = runtime_projection_properties.get("document_policy_projection")
     assert isinstance(document_policy_projection, dict)
     projection_properties = document_policy_projection.get("properties")
