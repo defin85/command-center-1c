@@ -12,6 +12,7 @@ import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { setAuthToken } from '../../api/client'
 import { notifyAuthChanged } from '../../lib/authState'
 import { resetQueryClient } from '../../lib/queryClient'
+import { POOL_BINDING_PROFILES_ROUTE } from '../../pages/Pools/routes'
 
 const { Header, Content, Sider } = Layout
 
@@ -143,6 +144,11 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       key: '/pools/catalog',
       icon: <FileTextOutlined />,
       label: 'Pool Catalog',
+    },
+    {
+      key: POOL_BINDING_PROFILES_ROUTE,
+      icon: <FileTextOutlined />,
+      label: 'Pool Binding Profiles',
     },
     {
       key: '/pools/master-data',
