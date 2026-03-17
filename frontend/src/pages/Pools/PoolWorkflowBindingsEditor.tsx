@@ -1,6 +1,6 @@
 import { Alert, Button, Card, Col, Form, Input, Row, Select, Space, Tag, Typography } from 'antd'
 
-import type { BindingProfileSummary } from '../../api/poolBindingProfiles'
+import type { BindingProfileDetail, BindingProfileSummary } from '../../api/poolBindingProfiles'
 import type {
   PoolWorkflowBinding,
   PoolWorkflowBindingResolvedProfile,
@@ -30,7 +30,9 @@ const { Text } = Typography
 
 type PoolWorkflowBindingsEditorProps = {
   availableBindingProfiles?: BindingProfileSummary[]
+  availableBindingProfileDetails?: Record<string, BindingProfileDetail>
   bindingProfilesLoading?: boolean
+  bindingProfileDetailsLoading?: boolean
   bindingProfilesLoadError?: string | null
   topologyEdgeSelectors?: TopologyEdgeSelector[]
   disabled?: boolean
@@ -80,27 +82,52 @@ type RevisionOption = {
 
 const buildRevisionOptions = (
   availableBindingProfiles: BindingProfileSummary[],
+  availableBindingProfileDetails: Record<string, BindingProfileDetail>,
   binding: PoolWorkflowBindingPresentationValue | null,
 ): RevisionOption[] => {
-  const catalogOptions = availableBindingProfiles.map((profile) => ({
-    value: profile.latest_revision.binding_profile_revision_id,
-    label: `${profile.code} · ${profile.name} · r${profile.latest_revision_number} · ${profile.status}`,
-    bindingProfileId: profile.binding_profile_id,
-    bindingProfileRevisionNumber: profile.latest_revision_number,
-    resolvedProfile: {
-      binding_profile_id: profile.binding_profile_id,
-      code: profile.code,
-      name: profile.name,
-      status: profile.status,
-      binding_profile_revision_id: profile.latest_revision.binding_profile_revision_id,
-      binding_profile_revision_number: profile.latest_revision.revision_number,
-      workflow: profile.latest_revision.workflow,
-      decisions: profile.latest_revision.decisions,
-      parameters: profile.latest_revision.parameters,
-      role_mapping: profile.latest_revision.role_mapping as Record<string, string>,
-    },
-    profileLifecycleWarning: null,
-  }))
+  const revisionIds = new Set<string>()
+  const catalogOptions = availableBindingProfiles.flatMap((profile) => {
+    const detail = availableBindingProfileDetails[profile.binding_profile_id]
+    const detailRevisions = detail?.revisions?.length
+      ? detail.revisions.filter(
+        (revision) => revision.binding_profile_revision_id !== profile.latest_revision.binding_profile_revision_id,
+      )
+      : []
+    const revisions = [profile.latest_revision, ...detailRevisions]
+      .sort((left, right) => right.revision_number - left.revision_number)
+    const profileCode = profile.code
+    const profileName = profile.name
+    const profileStatus = profile.status
+
+    return revisions
+      .filter((revision) => {
+        const revisionId = String(revision.binding_profile_revision_id)
+        if (!revisionId || revisionIds.has(revisionId)) {
+          return false
+        }
+        revisionIds.add(revisionId)
+        return true
+      })
+      .map((revision) => ({
+        value: revision.binding_profile_revision_id,
+        label: `${profileCode} · ${profileName} · r${revision.revision_number} · ${profileStatus}`,
+        bindingProfileId: profile.binding_profile_id,
+        bindingProfileRevisionNumber: revision.revision_number,
+        resolvedProfile: {
+          binding_profile_id: profile.binding_profile_id,
+          code: profileCode,
+          name: profileName,
+          status: profileStatus,
+          binding_profile_revision_id: revision.binding_profile_revision_id,
+          binding_profile_revision_number: revision.revision_number,
+          workflow: revision.workflow,
+          decisions: revision.decisions,
+          parameters: revision.parameters,
+          role_mapping: revision.role_mapping as Record<string, string>,
+        },
+        profileLifecycleWarning: null,
+      }))
+  })
 
   const currentRevisionId = String(binding?.binding_profile_revision_id ?? '').trim()
   const hasCurrentOption = currentRevisionId
@@ -126,7 +153,9 @@ const buildRevisionOptions = (
 
 export function PoolWorkflowBindingsEditor({
   availableBindingProfiles = [],
+  availableBindingProfileDetails = {},
   bindingProfilesLoading = false,
+  bindingProfileDetailsLoading = false,
   bindingProfilesLoadError = null,
   topologyEdgeSelectors = [],
   disabled = false,
@@ -158,7 +187,11 @@ export function PoolWorkflowBindingsEditor({
                 {({ getFieldValue, setFieldValue }) => {
                   const binding = getFieldValue(['workflow_bindings', field.name]) as PoolWorkflowBindingFormValue | undefined
                   const syntheticBinding = toSyntheticBinding(binding)
-                  const revisionOptions = buildRevisionOptions(availableBindingProfiles, syntheticBinding)
+                  const revisionOptions = buildRevisionOptions(
+                    availableBindingProfiles,
+                    availableBindingProfileDetails,
+                    syntheticBinding,
+                  )
                   const workflow = resolvePoolWorkflowBindingWorkflow(syntheticBinding)
                   const decisions = resolvePoolWorkflowBindingDecisionRefs(syntheticBinding)
                   const slotRefs = decisions
@@ -310,13 +343,13 @@ export function PoolWorkflowBindingsEditor({
                               name={[field.name, 'binding_profile_revision_id']}
                               label="binding_profile_revision_id"
                             >
-                              <Select
-                                showSearch
-                                optionFilterProp="label"
-                                loading={bindingProfilesLoading}
-                                options={revisionOptions}
-                                disabled={disabled}
-                                placeholder="Select reusable profile revision"
+                                <Select
+                                  showSearch
+                                  optionFilterProp="label"
+                                  loading={bindingProfilesLoading || bindingProfileDetailsLoading}
+                                  options={revisionOptions}
+                                  disabled={disabled}
+                                  placeholder="Select reusable profile revision"
                                 data-testid={`pool-catalog-workflow-binding-profile-revision-${field.name}`}
                                 onChange={(value) => {
                                   const option = revisionOptions.find((item) => item.value === value)
@@ -435,7 +468,12 @@ export function PoolWorkflowBindingsEditor({
             <Button
               type="dashed"
               onClick={() => add(createEmptyWorkflowBindingFormValue())}
-              disabled={disabled || bindingProfilesLoading || availableBindingProfiles.length === 0}
+              disabled={
+                disabled
+                || bindingProfilesLoading
+                || bindingProfileDetailsLoading
+                || availableBindingProfiles.length === 0
+              }
               data-testid="pool-catalog-workflow-binding-add"
             >
               Attach profile revision

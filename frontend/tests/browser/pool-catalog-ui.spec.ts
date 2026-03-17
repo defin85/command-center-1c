@@ -37,6 +37,7 @@ async function setupApiMocks(page: Page, state: {
   organizations?: AnyRecord[]
   databases?: AnyRecord[]
   pools?: AnyRecord[]
+  bindingProfiles?: AnyRecord[]
   bindingUpsertCalls?: number
   bindingDeleteCalls?: number
   lastBindingPayload?: AnyRecord | null
@@ -69,6 +70,38 @@ async function setupApiMocks(page: Page, state: {
       is_active: true,
       metadata: {},
       workflow_bindings: [],
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+  ])]
+  const bindingProfiles: AnyRecord[] = [...(state.bindingProfiles ?? [
+    {
+      binding_profile_id: 'bp-services',
+      code: 'services-publication-profile',
+      name: 'Services Publication Profile',
+      description: 'Reusable profile for services publication',
+      status: 'active',
+      latest_revision_number: 2,
+      latest_revision: {
+        binding_profile_revision_id: 'bp-rev-services-r2',
+        binding_profile_id: 'bp-services',
+        revision_number: 2,
+        workflow: {
+          workflow_definition_key: 'services-publication',
+          workflow_revision_id: '11111111-1111-1111-1111-111111111111',
+          workflow_revision: 3,
+          workflow_name: 'services_publication',
+        },
+        decisions: [],
+        parameters: {},
+        role_mapping: {},
+        metadata: { source: 'manual' },
+        created_at: '2026-01-01T00:00:00Z',
+      },
+      created_by: 'test',
+      updated_by: 'test',
+      deactivated_by: null,
+      deactivated_at: null,
+      created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
     },
   ])]
@@ -228,6 +261,13 @@ async function setupApiMocks(page: Page, state: {
       return fulfillJson(route, {
         pools,
         count: pools.length,
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/binding-profiles/') {
+      return fulfillJson(route, {
+        binding_profiles: bindingProfiles,
+        count: bindingProfiles.length,
       })
     }
 
@@ -452,17 +492,12 @@ test('Pool Catalog: workflow bindings editor saves through canonical collection 
   await expect(page.getByLabel('Workflow bindings JSON')).toHaveCount(0)
 
   await page.getByTestId('pool-catalog-workflow-binding-add').click()
-  await page.getByTestId('pool-catalog-workflow-binding-workflow-key-0').fill('services-publication')
-  await page.getByTestId('pool-catalog-workflow-binding-workflow-revision-id-0').fill('11111111-1111-1111-1111-111111111111')
-  await page.getByTestId('pool-catalog-workflow-binding-workflow-revision-0').fill('3')
-  await page.getByTestId('pool-catalog-workflow-binding-workflow-name-0').fill('services_publication')
+  await page.getByTestId('pool-catalog-workflow-binding-profile-revision-0').click()
+  await page.getByText('services-publication-profile · Services Publication Profile · r2 · active', { exact: true }).click()
   await page.getByTestId('pool-catalog-workflow-binding-effective-from-0').fill('2026-01-01')
   await page.getByTestId('pool-catalog-workflow-binding-selector-direction-0').fill('top_down')
   await page.getByTestId('pool-catalog-workflow-binding-selector-mode-0').fill('safe')
   await page.getByTestId('pool-catalog-workflow-binding-selector-tags-0').fill('baseline, monthly')
-  await page.getByTestId('pool-catalog-workflow-binding-add-parameter-0').click()
-  await page.getByTestId('pool-catalog-workflow-binding-parameter-key-0-0').fill('strategy')
-  await page.getByTestId('pool-catalog-workflow-binding-parameter-value-0-0').fill('"strict"')
   await page.getByTestId('pool-catalog-save-bindings').click()
 
   await expect.poll(() => state.bindingUpsertCalls).toBe(1)
@@ -471,20 +506,14 @@ test('Pool Catalog: workflow bindings editor saves through canonical collection 
     pool_id: '99999999-9999-9999-9999-999999999999',
     workflow_bindings: [
       {
-        workflow: {
-          workflow_definition_key: 'services-publication',
-          workflow_revision: 3,
-          workflow_name: 'services_publication',
-        },
+        binding_profile_revision_id: 'bp-rev-services-r2',
         selector: {
           direction: 'top_down',
           mode: 'safe',
           tags: ['baseline', 'monthly'],
         },
-        parameters: {
-          strategy: 'strict',
-        },
         effective_from: '2026-01-01',
+        status: 'draft',
       },
     ],
   })

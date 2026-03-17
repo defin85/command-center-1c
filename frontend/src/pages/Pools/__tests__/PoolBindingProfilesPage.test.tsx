@@ -15,6 +15,7 @@ const mockUseBindingProfileDetail = vi.fn()
 const mockUseCreateBindingProfile = vi.fn()
 const mockUseReviseBindingProfile = vi.fn()
 const mockUseDeactivateBindingProfile = vi.fn()
+const mockListOrganizationPools = vi.fn()
 
 vi.mock('../../../api/queries/poolBindingProfiles', () => ({
   useBindingProfiles: (...args: unknown[]) => mockUseBindingProfiles(...args),
@@ -22,6 +23,10 @@ vi.mock('../../../api/queries/poolBindingProfiles', () => ({
   useCreateBindingProfile: (...args: unknown[]) => mockUseCreateBindingProfile(...args),
   useReviseBindingProfile: (...args: unknown[]) => mockUseReviseBindingProfile(...args),
   useDeactivateBindingProfile: (...args: unknown[]) => mockUseDeactivateBindingProfile(...args),
+}))
+
+vi.mock('../../../api/intercompanyPools', () => ({
+  listOrganizationPools: (...args: unknown[]) => mockListOrganizationPools(...args),
 }))
 
 const ROUTER_FUTURE = {
@@ -186,6 +191,7 @@ describe('PoolBindingProfilesPage', () => {
     mockUseCreateBindingProfile.mockReset()
     mockUseReviseBindingProfile.mockReset()
     mockUseDeactivateBindingProfile.mockReset()
+    mockListOrganizationPools.mockReset()
 
     mockUseBindingProfiles.mockReturnValue({
       data: {
@@ -214,6 +220,7 @@ describe('PoolBindingProfilesPage', () => {
       isPending: false,
       mutateAsync: vi.fn().mockResolvedValue({ binding_profile: deactivatedDetail }),
     })
+    mockListOrganizationPools.mockResolvedValue([])
   })
 
   it('renders a dedicated reusable profile catalog with list and detail states on a separate authoring surface', async () => {
@@ -405,5 +412,78 @@ describe('PoolBindingProfilesPage', () => {
     await waitFor(() => {
       expect(deactivateMutateAsync).toHaveBeenCalledWith(activeDetail.binding_profile_id)
     })
+  })
+
+  it('shows pool attachment usage for selected profile revisions', async () => {
+    mockListOrganizationPools.mockResolvedValue([
+      {
+        id: 'pool-1',
+        code: 'pool-main',
+        name: 'Pool Main',
+        description: '',
+        is_active: true,
+        metadata: {},
+        workflow_bindings: [
+          {
+            binding_id: 'binding-1',
+            pool_id: 'pool-1',
+            revision: 4,
+            status: 'active',
+            binding_profile_id: activeDetail.binding_profile_id,
+            binding_profile_revision_id: 'bp-rev-services-r2',
+            binding_profile_revision_number: 2,
+            resolved_profile: {
+              binding_profile_id: activeDetail.binding_profile_id,
+              code: activeDetail.code,
+              name: activeDetail.name,
+              status: activeDetail.status,
+              binding_profile_revision_id: 'bp-rev-services-r2',
+              binding_profile_revision_number: 2,
+              workflow: activeDetail.latest_revision.workflow,
+              decisions: activeDetail.latest_revision.decisions,
+              parameters: activeDetail.latest_revision.parameters,
+              role_mapping: activeDetail.latest_revision.role_mapping,
+            },
+            selector: { direction: 'top_down', mode: 'safe', tags: ['baseline'] },
+            effective_from: '2026-01-01',
+            effective_to: null,
+          },
+          {
+            binding_id: 'binding-2',
+            pool_id: 'pool-1',
+            revision: 2,
+            status: 'draft',
+            binding_profile_id: activeDetail.binding_profile_id,
+            binding_profile_revision_id: 'bp-rev-services-r1',
+            binding_profile_revision_number: 1,
+            resolved_profile: {
+              binding_profile_id: activeDetail.binding_profile_id,
+              code: activeDetail.code,
+              name: activeDetail.name,
+              status: activeDetail.status,
+              binding_profile_revision_id: 'bp-rev-services-r1',
+              binding_profile_revision_number: 1,
+              workflow: activeDetail.revisions[1].workflow,
+              decisions: activeDetail.revisions[1].decisions,
+              parameters: activeDetail.revisions[1].parameters,
+              role_mapping: activeDetail.revisions[1].role_mapping,
+            },
+            selector: { direction: 'bottom_up', mode: 'safe', tags: [] },
+            effective_from: '2026-02-01',
+            effective_to: null,
+          },
+        ],
+        updated_at: '2026-03-16T12:00:00Z',
+      },
+    ])
+
+    renderPage()
+
+    expect(await screen.findByText('Pool attachment usage')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-binding-profiles-usage-total')).toHaveTextContent('2')
+    expect(screen.getByTestId('pool-binding-profiles-usage-revisions')).toHaveTextContent('2')
+    expect(screen.getAllByText('pool-main')).toHaveLength(2)
+    expect(screen.getByText('binding-1')).toBeInTheDocument()
+    expect(screen.getByText('binding-2')).toBeInTheDocument()
   })
 })

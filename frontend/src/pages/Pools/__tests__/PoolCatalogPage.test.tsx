@@ -37,6 +37,7 @@ const mockUseDatabases = vi.fn()
 const mockUseBindingProfiles = vi.fn()
 const mockUseMyTenants = vi.fn()
 const mockSyncPoolWorkflowBindings = vi.fn()
+const mockGetBindingProfileDetail = vi.fn()
 
 vi.mock('reactflow', () => ({
   default: ({ children }: { children?: ReactNode }) => <div data-testid="mock-reactflow">{children}</div>,
@@ -67,6 +68,10 @@ vi.mock('../../../api/queries/poolBindingProfiles', () => ({
 
 vi.mock('../../../api/queries/tenants', () => ({
   useMyTenants: (...args: unknown[]) => mockUseMyTenants(...args),
+}))
+
+vi.mock('../../../api/poolBindingProfiles', () => ({
+  getBindingProfileDetail: (...args: unknown[]) => mockGetBindingProfileDetail(...args),
 }))
 
 vi.mock('../../../api/intercompanyPools', () => ({
@@ -224,6 +229,28 @@ function buildBindingProfileSummary(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function buildBindingProfileDetail(overrides: Record<string, unknown> = {}) {
+  const summary = buildBindingProfileSummary(overrides)
+  const latestRevision = summary.latest_revision as Record<string, unknown>
+  const revisions = [
+    latestRevision,
+    {
+      ...latestRevision,
+      binding_profile_revision_id: 'bp-rev-services-r1',
+      revision_number: 1,
+      workflow: {
+        ...(latestRevision.workflow as Record<string, unknown>),
+        workflow_revision: 3,
+        workflow_revision_id: 'wf-services-r1',
+      },
+    },
+  ]
+  return {
+    ...summary,
+    revisions,
+  }
+}
+
 function buildPoolWorkflowBindingCollection(
   workflowBindings: PoolWorkflowBinding[] = [],
   overrides: Partial<PoolWorkflowBindingCollection> = {}
@@ -350,6 +377,7 @@ describe('PoolCatalogPage', () => {
     mockUseBindingProfiles.mockReset()
     mockUseMyTenants.mockReset()
     mockSyncPoolWorkflowBindings.mockReset()
+    mockGetBindingProfileDetail.mockReset()
 
     mockUseMe.mockReturnValue({ data: { is_staff: false } })
     mockUseMyTenants.mockReturnValue({
@@ -373,6 +401,9 @@ describe('PoolCatalogPage', () => {
       isError: false,
       error: null,
     })
+    mockGetBindingProfileDetail.mockImplementation(async (bindingProfileId: string) => ({
+      binding_profile: buildBindingProfileDetail({ binding_profile_id: bindingProfileId }),
+    }))
 
     mockListOrganizations.mockResolvedValue([baseOrganization])
     mockGetOrganization.mockResolvedValue({
@@ -1102,41 +1133,120 @@ describe('PoolCatalogPage', () => {
   it('lists reusable profile revisions from dedicated catalog and offers handoff for reusable logic edits', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      mockUseBindingProfiles.mockReturnValue({
+        data: {
+          binding_profiles: [
+            buildBindingProfileSummary(),
+            buildBindingProfileSummary({
+              binding_profile_id: 'bp-legacy',
+              code: 'legacy-archive-profile',
+              name: 'Legacy Archive Profile',
+              status: 'deactivated',
+              latest_revision_number: 1,
+              latest_revision: {
+                binding_profile_revision_id: 'bp-rev-legacy-r1',
+                binding_profile_id: 'bp-legacy',
+                revision_number: 1,
+                workflow: {
+                  workflow_definition_key: 'legacy-publication',
+                  workflow_revision_id: 'wf-legacy-r1',
+                  workflow_revision: 1,
+                  workflow_name: 'legacy_publication',
+                },
+                decisions: [],
+                parameters: {},
+                role_mapping: {},
+                metadata: { source: 'manual' },
+                created_at: '2026-01-01T00:00:00Z',
+              },
+            }),
+          ],
+          count: 2,
+        },
+        isLoading: false,
+        isError: false,
+        error: null,
+      })
+
+      renderPage()
+      expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+      await openWorkspaceTab(user, 'Bindings')
+      await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
+      openSelectByTestId('pool-catalog-workflow-binding-profile-revision-0')
+      expect(await screen.findByText('services-publication-profile · Services Publication Profile · r2 · active')).toBeInTheDocument()
+      expect(screen.getByText('legacy-archive-profile · Legacy Archive Profile · r1 · deactivated')).toBeInTheDocument()
+
+      await selectDropdownOption('services-publication-profile · Services Publication Profile · r2 · active')
+      expect(await screen.findByTestId('pool-catalog-workflow-binding-profile-summary-0')).toHaveTextContent(
+        'services-publication-profile'
+      )
+      expect(screen.getByTestId('pool-catalog-workflow-binding-handoff-0')).toHaveAttribute('href', '/pools/binding-profiles')
+      expect(
+        consoleErrorSpy.mock.calls.some((call) => (
+          call.some((argument) => typeof argument === 'string' && argument.includes('Encountered two children with the same key'))
+        )),
+      ).toBe(false)
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
+  }, 30000)
+
+  it('allows attaching an explicit non-latest profile revision from catalog detail', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
 
     mockUseBindingProfiles.mockReturnValue({
       data: {
-        binding_profiles: [
-          buildBindingProfileSummary(),
-          buildBindingProfileSummary({
-            binding_profile_id: 'bp-legacy',
-            code: 'legacy-archive-profile',
-            name: 'Legacy Archive Profile',
-            status: 'deactivated',
-            latest_revision_number: 1,
-            latest_revision: {
-              binding_profile_revision_id: 'bp-rev-legacy-r1',
-              binding_profile_id: 'bp-legacy',
-              revision_number: 1,
-              workflow: {
-                workflow_definition_key: 'legacy-publication',
-                workflow_revision_id: 'wf-legacy-r1',
-                workflow_revision: 1,
-                workflow_name: 'legacy_publication',
-              },
-              decisions: [],
-              parameters: {},
-              role_mapping: {},
-              metadata: { source: 'manual' },
-              created_at: '2026-01-01T00:00:00Z',
-            },
-          }),
-        ],
-        count: 2,
+        binding_profiles: [buildBindingProfileSummary()],
+        count: 1,
       },
       isLoading: false,
       isError: false,
       error: null,
     })
+    mockGetBindingProfileDetail.mockImplementation(async () => ({
+      binding_profile: {
+        ...buildBindingProfileDetail(),
+        revisions: [
+          {
+            binding_profile_revision_id: 'bp-rev-services-r2',
+            binding_profile_id: 'bp-services',
+            revision_number: 2,
+            workflow: {
+              workflow_definition_key: 'services-publication',
+              workflow_revision_id: 'wf-services-r2',
+              workflow_revision: 4,
+              workflow_name: 'services_publication',
+            },
+            decisions: [],
+            parameters: {},
+            role_mapping: {},
+            metadata: { source: 'manual' },
+            created_at: '2026-01-02T00:00:00Z',
+          },
+          {
+            binding_profile_revision_id: 'bp-rev-services-r1',
+            binding_profile_id: 'bp-services',
+            revision_number: 1,
+            workflow: {
+              workflow_definition_key: 'services-publication',
+              workflow_revision_id: 'wf-services-r1',
+              workflow_revision: 3,
+              workflow_name: 'services_publication',
+            },
+            decisions: [],
+            parameters: {},
+            role_mapping: {},
+            metadata: { source: 'manual' },
+            created_at: '2026-01-01T00:00:00Z',
+          },
+        ],
+      },
+    }))
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
@@ -1144,14 +1254,24 @@ describe('PoolCatalogPage', () => {
     await openWorkspaceTab(user, 'Bindings')
     await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
     openSelectByTestId('pool-catalog-workflow-binding-profile-revision-0')
-    expect(await screen.findByText('services-publication-profile · Services Publication Profile · r2 · active')).toBeInTheDocument()
-    expect(screen.getByText('legacy-archive-profile · Legacy Archive Profile · r1 · deactivated')).toBeInTheDocument()
+    expect(await screen.findByText('services-publication-profile · Services Publication Profile · r1 · active')).toBeInTheDocument()
 
-    await selectDropdownOption('services-publication-profile · Services Publication Profile · r2 · active')
-    expect(await screen.findByTestId('pool-catalog-workflow-binding-profile-summary-0')).toHaveTextContent(
-      'services-publication-profile'
-    )
-    expect(screen.getByTestId('pool-catalog-workflow-binding-handoff-0')).toHaveAttribute('href', '/pools/binding-profiles')
+    await selectDropdownOption('services-publication-profile · Services Publication Profile · r1 · active')
+    fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-effective-from-0'), {
+      target: { value: '2026-01-01' },
+    })
+    await user.click(screen.getByTestId('pool-catalog-save-bindings'))
+
+    await waitFor(() => expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledTimes(1))
+    expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledWith({
+      poolId: '44444444-4444-4444-4444-444444444444',
+      collectionEtag: 'sha256:test-etag',
+      nextBindings: [
+        expect.objectContaining({
+          binding_profile_revision_id: 'bp-rev-services-r1',
+        }),
+      ],
+    })
   }, 30000)
 
   it('keeps pinned reusable profile visible even when it is no longer the catalog latest revision', async () => {

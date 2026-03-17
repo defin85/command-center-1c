@@ -304,6 +304,29 @@ def test_generated_gateway_routes_include_document_policy_migration_path() -> No
     assert 'OperationID: "v2_pools_document_policy_migrate"' in content
 
 
+def test_generated_gateway_routes_include_binding_profile_catalog_paths() -> None:
+    routes_path = (
+        _repo_root()
+        / "go-services"
+        / "api-gateway"
+        / "internal"
+        / "routes"
+        / "generated"
+        / "orchestrator_routes.go"
+    )
+    content = routes_path.read_text(encoding="utf-8")
+
+    assert 'Path: "/pools/binding-profiles/"' in content
+    assert 'OperationID: "v2_pools_binding_profiles_list"' in content
+    assert 'OperationID: "v2_pools_binding_profiles_create"' in content
+    assert 'Path: "/pools/binding-profiles/:binding_profile_id/"' in content
+    assert 'OperationID: "v2_pools_binding_profiles_detail"' in content
+    assert 'Path: "/pools/binding-profiles/:binding_profile_id/revisions/"' in content
+    assert 'OperationID: "v2_pools_binding_profiles_revise"' in content
+    assert 'Path: "/pools/binding-profiles/:binding_profile_id/deactivate/"' in content
+    assert 'OperationID: "v2_pools_binding_profiles_deactivate"' in content
+
+
 def test_generated_retry_chain_attempt_kind_enum_matches_contract() -> None:
     contract = _load_openapi_contract()
     retry_chain_schema = _schema(contract, "PoolRunRetryChainAttempt")

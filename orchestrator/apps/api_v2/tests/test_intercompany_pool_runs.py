@@ -1869,6 +1869,38 @@ def test_upsert_pool_metadata_preserves_existing_workflow_bindings(
 
 
 @pytest.mark.django_db
+def test_upsert_pool_metadata_drops_transient_workflow_bindings_read_error(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "code": pool.code,
+            "name": pool.name,
+            "metadata": {
+                "owner": "finance",
+                "workflow_bindings_read_error": {
+                    "code": "POOL_WORKFLOW_BINDING_INVALID",
+                    "detail": "synthetic",
+                },
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["pool"]["metadata"]["owner"] == "finance"
+    assert "workflow_bindings_read_error" not in payload["pool"]["metadata"]
+
+    pool.refresh_from_db()
+    assert pool.metadata["owner"] == "finance"
+    assert "workflow_bindings_read_error" not in pool.metadata
+
+
+@pytest.mark.django_db
 def test_pool_workflow_bindings_list_exposes_multiple_pinned_bindings(
     authenticated_client: APIClient,
     pool: OrganizationPool,

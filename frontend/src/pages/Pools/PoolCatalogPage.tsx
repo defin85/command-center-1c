@@ -24,9 +24,10 @@ import {
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import ReactFlow, { Background, Controls, MiniMap, type Edge, type Node } from 'reactflow'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import 'reactflow/dist/style.css'
 
+import { getBindingProfileDetail, type BindingProfileDetail } from '../../api/poolBindingProfiles'
 import { useDatabases } from '../../api/queries/databases'
 import { useMe } from '../../api/queries/me'
 import { useBindingProfiles } from '../../api/queries/poolBindingProfiles'
@@ -245,6 +246,30 @@ type SyncPreflightResult = {
 const formatDate = (value: string | null | undefined) => {
   if (!value) return '-'
   return new Date(value).toLocaleString()
+}
+
+const isValidBindingProfileDetailResponse = (
+  requestedBindingProfileId: string,
+  detail: BindingProfileDetail,
+): boolean => {
+  if (detail.binding_profile_id !== requestedBindingProfileId) {
+    return false
+  }
+  if (detail.latest_revision.binding_profile_id !== requestedBindingProfileId) {
+    return false
+  }
+  const revisionIds = new Set<string>()
+  return detail.revisions.every((revision) => {
+    if (revision.binding_profile_id !== requestedBindingProfileId) {
+      return false
+    }
+    const revisionId = String(revision.binding_profile_revision_id || '').trim()
+    if (!revisionId || revisionIds.has(revisionId)) {
+      return false
+    }
+    revisionIds.add(revisionId)
+    return true
+  })
 }
 
 const buildFlowLayout = (graph: PoolGraph | null): { nodes: Node[]; edges: Edge[] } => {
@@ -1561,6 +1586,7 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
 export function PoolCatalogPage() {
   const { message } = AntApp.useApp()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const api = useMemo(() => getV2(), [])
   const meQuery = useMe()
   const hasAuthToken = Boolean(localStorage.getItem('auth_token'))
@@ -1621,6 +1647,9 @@ export function PoolCatalogPage() {
   const [syncResult, setSyncResult] = useState<{ stats: { created: number; updated: number; skipped: number }; total_rows: number } | null>(null)
   const [isSyncSubmitting, setIsSyncSubmitting] = useState(false)
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'organizations' | 'pools' | 'bindings' | 'topology' | 'graph'>('organizations')
+  const [bindingProfileDetailsById, setBindingProfileDetailsById] = useState<Record<string, BindingProfileDetail>>({})
+  const [bindingProfileDetailFallbackIds, setBindingProfileDetailFallbackIds] = useState<Record<string, true>>({})
+  const [bindingProfileDetailsError, setBindingProfileDetailsError] = useState<string | null>(null)
   const [topologyCoverageBindingId, setTopologyCoverageBindingId] = useState<string | undefined>(undefined)
   const [metadataCatalogByDatabase, setMetadataCatalogByDatabase] = useState<Record<string, PoolODataMetadataCatalogResponse>>({})
   const [metadataCatalogLoadingByDatabase, setMetadataCatalogLoadingByDatabase] = useState<Record<string, boolean>>({})
@@ -1642,6 +1671,17 @@ export function PoolCatalogPage() {
     () => pools.find((item) => item.id === selectedPoolId) ?? null,
     [pools, selectedPoolId]
   )
+  const requestedPoolId = useMemo(() => {
+    const value = String(searchParams.get('pool_id') ?? '').trim()
+    return value || null
+  }, [searchParams])
+  const requestedWorkspaceTab = useMemo(() => {
+    const value = String(searchParams.get('tab') ?? '').trim()
+    if (value === 'organizations' || value === 'pools' || value === 'bindings' || value === 'topology' || value === 'graph') {
+      return value
+    }
+    return null
+  }, [searchParams])
   const bindingProfilesQuery = useBindingProfiles({ enabled: activeWorkspaceTab === 'bindings' })
   const organizationById = useMemo(() => (
     Object.fromEntries(organizations.map((item) => [item.id, item]))
@@ -1659,6 +1699,110 @@ export function PoolCatalogPage() {
     () => resolveTopologyCoverageContext(loadedPoolBindings, topologyCoverageBindingId),
     [loadedPoolBindings, topologyCoverageBindingId]
   )
+  useEffect(() => {
+    if (!requestedWorkspaceTab) {
+      return
+    }
+    setActiveWorkspaceTab((previous) => (previous === requestedWorkspaceTab ? previous : requestedWorkspaceTab))
+  }, [requestedWorkspaceTab])
+
+  useEffect(() => {
+    if (!requestedPoolId || !pools.some((item) => item.id === requestedPoolId)) {
+      return
+    }
+    setSelectedPoolId((previous) => (previous === requestedPoolId ? previous : requestedPoolId))
+  }, [pools, requestedPoolId])
+
+  useEffect(() => {
+    if (activeWorkspaceTab !== 'bindings' || bindingProfilesQuery.isLoading || bindingProfilesQuery.isError) {
+      return
+    }
+
+    const profiles = bindingProfilesQuery.data?.binding_profiles ?? []
+    const profileIds = new Set(profiles.map((profile) => profile.binding_profile_id))
+    setBindingProfileDetailFallbackIds((previous) => {
+      const nextEntries = Object.entries(previous).filter(([bindingProfileId]) => profileIds.has(bindingProfileId))
+      if (
+        nextEntries.length === Object.keys(previous).length
+        && nextEntries.every(([bindingProfileId, value]) => previous[bindingProfileId] === value)
+      ) {
+        return previous
+      }
+      return Object.fromEntries(nextEntries)
+    })
+    const missingProfileIds = profiles
+      .map((profile) => profile.binding_profile_id)
+      .filter((bindingProfileId) => (
+        !bindingProfileDetailsById[bindingProfileId]
+        && !bindingProfileDetailFallbackIds[bindingProfileId]
+      ))
+    if (!missingProfileIds.length) {
+      if (bindingProfileDetailsError && Object.keys(bindingProfileDetailFallbackIds).length === 0) {
+        setBindingProfileDetailsError(null)
+      }
+      return
+    }
+
+    let isCancelled = false
+
+    void Promise.all(
+      missingProfileIds.map(async (bindingProfileId) => {
+        try {
+          const response = await getBindingProfileDetail(bindingProfileId)
+          return {
+            bindingProfileId,
+            bindingProfile: isValidBindingProfileDetailResponse(bindingProfileId, response.binding_profile)
+              ? response.binding_profile
+              : null,
+          }
+        } catch {
+          return {
+            bindingProfileId,
+            bindingProfile: null,
+          }
+        }
+      }),
+    )
+      .then((results) => {
+        if (isCancelled) {
+          return
+        }
+        const validDetails = results
+          .map((item) => item.bindingProfile)
+          .filter((detail): detail is BindingProfileDetail => Boolean(detail))
+        const fallbackProfileIds = results
+          .filter((item) => !item.bindingProfile)
+          .map((item) => item.bindingProfileId)
+        setBindingProfileDetailsById((previous) => ({
+          ...previous,
+          ...Object.fromEntries(validDetails.map((detail) => [detail.binding_profile_id, detail])),
+        }))
+        if (fallbackProfileIds.length > 0) {
+          setBindingProfileDetailFallbackIds((previous) => ({
+            ...previous,
+            ...Object.fromEntries(fallbackProfileIds.map((bindingProfileId) => [bindingProfileId, true])),
+          }))
+        }
+        setBindingProfileDetailsError(
+          validDetails.length === results.length
+            ? null
+            : 'Некоторые binding profiles вернули неконсистентную историю revisions; используется latest revision из summary catalog.',
+        )
+      })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [
+    activeWorkspaceTab,
+    bindingProfileDetailFallbackIds,
+    bindingProfileDetailsById,
+    bindingProfileDetailsError,
+    bindingProfilesQuery.data?.binding_profiles,
+    bindingProfilesQuery.isError,
+    bindingProfilesQuery.isLoading,
+  ])
+
   const topologyEdgeSelectors = useMemo<TopologyEdgeSelector[]>(() => {
     if (!graph) {
       return []
@@ -3119,10 +3263,13 @@ export function PoolCatalogPage() {
                         </Descriptions>
                         <PoolWorkflowBindingsEditor
                           availableBindingProfiles={bindingProfilesQuery.data?.binding_profiles ?? []}
+                          availableBindingProfileDetails={bindingProfileDetailsById}
                           bindingProfilesLoading={bindingProfilesQuery.isLoading}
-                          bindingProfilesLoadError={bindingProfilesQuery.isError
-                            ? resolveApiError(bindingProfilesQuery.error, 'Не удалось загрузить binding profiles catalog.').message
-                            : null}
+                          bindingProfilesLoadError={
+                            bindingProfilesQuery.isError
+                              ? resolveApiError(bindingProfilesQuery.error, 'Не удалось загрузить binding profiles catalog.').message
+                              : bindingProfileDetailsError
+                          }
                           topologyEdgeSelectors={topologyEdgeSelectors}
                           disabled={
                             mutatingDisabled

@@ -4075,6 +4075,7 @@ def upsert_organization_pool(request):
     description_value = data.get("description", pool.description if pool else "")
     metadata_value = dict(data.get("metadata", existing_metadata) or {})
     metadata_value.pop("workflow_bindings", None)
+    metadata_value.pop("workflow_bindings_read_error", None)
     is_active_value = data.get("is_active", pool.is_active if pool else True)
     pool_uuid = pool.id if pool else uuid4()
     legacy_write_errors = _collect_legacy_document_policy_write_errors(pool_metadata=metadata_value)
