@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react'
-import { Alert, Form, Input, Modal } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { Alert, Button, Card, Descriptions, Form, Input, Modal, Space, Typography } from 'antd'
 
 import type {
   BindingProfileCreateRequest,
   BindingProfileDetail,
   BindingProfileRevisionCreateRequest,
 } from '../../api/poolBindingProfiles'
+import { useAuthoringReferences } from '../../api/queries/authoringReferences'
+import { WorkflowRevisionSelect } from '../../components/workflow/WorkflowRevisionSelect'
 import { resolveApiError } from './masterData/errorUtils'
+import { BindingProfileDecisionRefsEditor } from './BindingProfileDecisionRefsEditor'
 import {
   buildBindingProfileCreateRequest,
   buildBindingProfileEditorInitialValues,
@@ -16,6 +19,7 @@ import {
 } from './poolBindingProfilesForm'
 
 const { TextArea } = Input
+const { Text } = Typography
 
 type BindingProfileFormFieldError = {
   name: keyof BindingProfileEditorFormValues
@@ -66,6 +70,21 @@ export function PoolBindingProfilesEditorModal({
   const [form] = Form.useForm<BindingProfileEditorFormValues>()
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [advancedMode, setAdvancedMode] = useState(false)
+  const authoringReferencesQuery = useAuthoringReferences({
+    enabled: open,
+  })
+  const availableWorkflows = authoringReferencesQuery.data?.availableWorkflows ?? []
+  const availableDecisions = authoringReferencesQuery.data?.availableDecisions ?? []
+  const currentWorkflow = Form.useWatch([
+    'workflow_revision_id',
+  ], form)
+  const currentWorkflowSelection = useMemo(() => ({
+    workflowDefinitionKey: form.getFieldValue('workflow_definition_key'),
+    workflowRevisionId: currentWorkflow,
+    workflowRevision: form.getFieldValue('workflow_revision'),
+    workflowName: form.getFieldValue('workflow_name'),
+  }), [currentWorkflow, form])
 
   useEffect(() => {
     if (!open) return
@@ -83,6 +102,7 @@ export function PoolBindingProfilesEditorModal({
       ),
     )
     setSubmitError(null)
+    setAdvancedMode(false)
   }, [form, open, profile])
 
   const handleSubmit = async () => {
@@ -136,6 +156,21 @@ export function PoolBindingProfilesEditorModal({
           style={{ marginBottom: 16 }}
         />
       ) : null}
+      <Alert
+        type="info"
+        showIcon
+        message="Canonical reference catalogs"
+        description={(
+          <Space wrap size={[8, 8]}>
+            <Text>
+              Author workflow revisions in `/workflows` and decision revisions in `/decisions`, then pin them here without copying opaque ids manually.
+            </Text>
+            <Button href="/workflows">Open /workflows</Button>
+            <Button href="/decisions">Open /decisions</Button>
+          </Space>
+        )}
+        style={{ marginBottom: 16 }}
+      />
       <Form form={form} layout="vertical">
         {mode === 'create' ? (
           <>
@@ -159,33 +194,111 @@ export function PoolBindingProfilesEditorModal({
           </>
         ) : null}
 
-        <Form.Item name="workflow_definition_key" label="Workflow definition key" rules={[{ required: true }]}>
-          <Input data-testid={buildFieldTestId(mode, 'workflow_definition_key')} />
+        <Form.Item
+          label="Workflow revision"
+          required
+          help="Select pinned workflow revision from /workflows. Reusable workflow fields are derived from the selected revision."
+        >
+          <WorkflowRevisionSelect
+            workflows={availableWorkflows}
+            currentWorkflow={currentWorkflowSelection}
+            loading={authoringReferencesQuery.isLoading}
+            disabled={submitting}
+            placeholder="Select workflow revision from /workflows"
+            testId={`pool-binding-profiles-${mode}-workflow-revision-select`}
+            onChange={(workflow) => {
+              form.setFieldsValue({
+                workflow_definition_key: workflow?.workflowDefinitionKey ?? '',
+                workflow_revision_id: workflow?.workflowRevisionId ?? '',
+                workflow_revision: workflow?.workflowRevision ?? 1,
+                workflow_name: workflow?.name ?? '',
+              })
+            }}
+          />
         </Form.Item>
-        <Form.Item name="workflow_revision_id" label="Workflow revision ID" rules={[{ required: true }]}>
-          <Input data-testid={buildFieldTestId(mode, 'workflow_revision_id')} />
+        <Form.Item name="workflow_definition_key" hidden rules={[{ required: true, message: 'Workflow definition key is required.' }]}>
+          <Input />
         </Form.Item>
-        <Form.Item name="workflow_revision" label="Workflow revision" rules={[{ required: true }]}>
-          <Input type="number" min={1} data-testid={buildFieldTestId(mode, 'workflow_revision')} />
+        <Form.Item name="workflow_revision_id" hidden rules={[{ required: true, message: 'Workflow revision is required.' }]}>
+          <Input />
         </Form.Item>
-        <Form.Item name="workflow_name" label="Workflow name" rules={[{ required: true }]}>
-          <Input data-testid={buildFieldTestId(mode, 'workflow_name')} />
+        <Form.Item name="workflow_revision" hidden rules={[{ required: true, message: 'Workflow revision number is required.' }]}>
+          <Input />
         </Form.Item>
+        <Form.Item name="workflow_name" hidden>
+          <Input />
+        </Form.Item>
+
+        {currentWorkflowSelection.workflowRevisionId ? (
+          <Card size="small" title="Pinned workflow lineage" style={{ marginBottom: 16 }}>
+            <Descriptions
+              size="small"
+              column={1}
+              items={[
+                {
+                  key: 'workflow-name',
+                  label: 'Workflow',
+                  children: currentWorkflowSelection.workflowName || '—',
+                },
+                {
+                  key: 'workflow-definition-key',
+                  label: 'Definition key',
+                  children: currentWorkflowSelection.workflowDefinitionKey || '—',
+                },
+                {
+                  key: 'workflow-revision-id',
+                  label: 'Revision ID',
+                  children: currentWorkflowSelection.workflowRevisionId || '—',
+                },
+                {
+                  key: 'workflow-revision',
+                  label: 'Revision',
+                  children: currentWorkflowSelection.workflowRevision || '—',
+                },
+              ]}
+            />
+          </Card>
+        ) : null}
+
         <Form.Item name="contract_version" label="Contract version">
           <Input placeholder="binding_profile.v1" data-testid={buildFieldTestId(mode, 'contract_version')} />
         </Form.Item>
-        <Form.Item name="decisions_json" label="Decision refs JSON">
-          <TextArea rows={6} data-testid={buildFieldTestId(mode, 'decisions_json')} />
-        </Form.Item>
-        <Form.Item name="parameters_json" label="Default parameters JSON">
-          <TextArea rows={6} data-testid={buildFieldTestId(mode, 'parameters_json')} />
-        </Form.Item>
-        <Form.Item name="role_mapping_json" label="Role mapping JSON">
-          <TextArea rows={6} data-testid={buildFieldTestId(mode, 'role_mapping_json')} />
-        </Form.Item>
-        <Form.Item name="metadata_json" label="Revision metadata JSON">
-          <TextArea rows={6} data-testid={buildFieldTestId(mode, 'metadata_json')} />
-        </Form.Item>
+
+        <BindingProfileDecisionRefsEditor
+          form={form}
+          availableDecisions={availableDecisions}
+          decisionsLoading={authoringReferencesQuery.isLoading}
+          disabled={submitting}
+          mode={mode}
+        />
+
+        <Space direction="vertical" size={4} style={{ width: '100%', marginTop: 16 }}>
+          <Button
+            type="link"
+            onClick={() => setAdvancedMode((current) => !current)}
+            style={{ paddingInline: 0 }}
+            data-testid={`pool-binding-profiles-${mode}-advanced-toggle`}
+          >
+            {advancedMode ? 'Hide advanced JSON fields' : 'Show advanced JSON fields'}
+          </Button>
+          <Text type="secondary">
+            Advanced mode keeps compatibility/debugging access to raw parameters, role mapping and metadata payloads.
+          </Text>
+        </Space>
+
+        {advancedMode ? (
+          <Space direction="vertical" size="middle" style={{ display: 'flex', marginTop: 12 }}>
+            <Form.Item name="parameters_json" label="Default parameters JSON">
+              <TextArea rows={6} data-testid={buildFieldTestId(mode, 'parameters_json')} />
+            </Form.Item>
+            <Form.Item name="role_mapping_json" label="Role mapping JSON">
+              <TextArea rows={6} data-testid={buildFieldTestId(mode, 'role_mapping_json')} />
+            </Form.Item>
+            <Form.Item name="metadata_json" label="Revision metadata JSON">
+              <TextArea rows={6} data-testid={buildFieldTestId(mode, 'metadata_json')} />
+            </Form.Item>
+          </Space>
+        ) : null}
       </Form>
     </Modal>
   )

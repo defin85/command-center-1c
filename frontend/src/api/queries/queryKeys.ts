@@ -113,6 +113,10 @@ export const queryKeys = {
     list: () => [...queryKeys.poolBindingProfiles.all, 'list'] as const,
     detail: (bindingProfileId: string) => [...queryKeys.poolBindingProfiles.all, 'detail', bindingProfileId] as const,
   },
+  authoringReferences: {
+    all: ['authoring-references'] as const,
+    list: (databaseId?: string) => [...queryKeys.authoringReferences.all, 'list', databaseId ?? null] as const,
+  },
 } as const
 
 export type { OperationFilters, DatabaseFilters, ClusterFilters, ArtifactFilters } from './types'

@@ -8,6 +8,13 @@ import type { PoolWorkflowBindingDecisionRef } from '../../api/intercompanyPools
 
 export type BindingProfileEditorMode = 'create' | 'revise'
 
+export type BindingProfileDecisionRefFormValue = {
+  decision_table_id: string
+  decision_key: string
+  slot_key: string
+  decision_revision?: number | null
+}
+
 export type BindingProfileEditorFormValues = {
   code: string
   name: string
@@ -17,7 +24,7 @@ export type BindingProfileEditorFormValues = {
   workflow_revision: number
   workflow_name: string
   contract_version: string
-  decisions_json: string
+  decisions: BindingProfileDecisionRefFormValue[]
   parameters_json: string
   role_mapping_json: string
   metadata_json: string
@@ -28,7 +35,6 @@ type FormError = {
   message: string
 }
 
-const DEFAULT_DECISIONS_JSON = '[]'
 const DEFAULT_OBJECT_JSON = '{}'
 
 export function buildBindingProfileEditorInitialValues(
@@ -48,7 +54,12 @@ export function buildBindingProfileEditorInitialValues(
     workflow_revision: revision?.workflow.workflow_revision ?? 1,
     workflow_name: revision?.workflow.workflow_name ?? '',
     contract_version: revision?.contract_version ?? '',
-    decisions_json: JSON.stringify(revision?.decisions ?? [], null, 2),
+    decisions: (revision?.decisions ?? []).map((decision) => ({
+      decision_table_id: decision.decision_table_id,
+      decision_key: decision.decision_key,
+      slot_key: String(decision.slot_key ?? ''),
+      decision_revision: decision.decision_revision,
+    })),
     parameters_json: JSON.stringify(revision?.parameters ?? {}, null, 2),
     role_mapping_json: JSON.stringify(revision?.role_mapping ?? {}, null, 2),
     metadata_json: JSON.stringify(revision?.metadata ?? {}, null, 2),
@@ -111,11 +122,6 @@ export function buildBindingProfileCreateRequest(
 export function buildBindingProfileRevisionCreateRequest(
   values: BindingProfileEditorFormValues,
 ): { request?: BindingProfileRevisionCreateRequest; errors: FormError[] } {
-  const decisions = parseJsonField<PoolWorkflowBindingDecisionRef[]>(values.decisions_json, {
-    field: 'decisions_json',
-    emptyValue: [],
-    kind: 'array',
-  })
   const parameters = parseJsonField<Record<string, unknown>>(values.parameters_json, {
     field: 'parameters_json',
     emptyValue: {},
@@ -132,7 +138,35 @@ export function buildBindingProfileRevisionCreateRequest(
     kind: 'object',
   })
 
-  const errors = [decisions.error, parameters.error, roleMapping.error, metadata.error].filter(Boolean) as FormError[]
+  const normalizedDecisions: PoolWorkflowBindingDecisionRef[] = values.decisions
+    .map((decision) => ({
+      decision_table_id: decision.decision_table_id.trim(),
+      decision_key: decision.decision_key.trim(),
+      slot_key: decision.slot_key.trim(),
+      decision_revision: Number(decision.decision_revision),
+    }))
+    .filter((decision) => (
+      decision.decision_table_id
+      || decision.decision_key
+      || decision.slot_key
+      || Number.isFinite(decision.decision_revision)
+    ))
+
+  const decisionErrors = normalizedDecisions.flatMap((decision) => {
+    if (
+      decision.decision_table_id
+      && decision.decision_key
+      && decision.slot_key
+      && Number.isFinite(decision.decision_revision)
+      && decision.decision_revision > 0
+    ) {
+      return []
+    }
+    return [{ field: 'decisions' as const, message: 'Each publication slot requires slot_key and pinned decision revision.' }]
+  })
+
+  const errors = [parameters.error, roleMapping.error, metadata.error, ...decisionErrors]
+    .filter(Boolean) as FormError[]
   if (errors.length > 0) {
     return { errors }
   }
@@ -147,7 +181,7 @@ export function buildBindingProfileRevisionCreateRequest(
           workflow_revision: Number(values.workflow_revision),
           workflow_name: values.workflow_name.trim(),
         },
-        decisions: decisions.value,
+        decisions: normalizedDecisions,
         parameters: parameters.value,
         role_mapping: roleMapping.value,
         metadata: metadata.value,
@@ -158,5 +192,4 @@ export function buildBindingProfileRevisionCreateRequest(
 }
 
 export const DEFAULT_BINDING_PROFILE_EDITOR_VALUES = buildBindingProfileEditorInitialValues(undefined)
-export const DEFAULT_BINDING_PROFILE_DECISIONS_JSON = DEFAULT_DECISIONS_JSON
 export const DEFAULT_BINDING_PROFILE_OBJECT_JSON = DEFAULT_OBJECT_JSON

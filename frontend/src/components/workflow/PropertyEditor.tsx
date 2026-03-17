@@ -40,7 +40,8 @@ import type {
 } from '../../types/workflow'
 import { NODE_TYPE_INFO } from '../../types/workflow'
 import { LazyJsonCodeEditor } from '../code/LazyJsonCodeEditor'
-import { formatAvailableDecisionLabel } from './decisionOptions'
+import { DecisionRevisionSelect } from './DecisionRevisionSelect'
+import { WorkflowRevisionSelect } from './WorkflowRevisionSelect'
 import './PropertyEditor.css'
 
 const { Text } = Typography
@@ -441,9 +442,6 @@ const ConditionForm = ({
   readOnly: boolean
   idPrefix: string
 }) => {
-  const selectedDecisionValue = decisionRef
-    ? `${decisionRef.decision_table_id}:${decisionRef.decision_revision}`
-    : undefined
   const legacyExpression = typeof config.expression === 'string'
     ? config.expression.trim()
     : ''
@@ -456,16 +454,6 @@ const ConditionForm = ({
         )
       )
     : undefined
-  const decisionOptions = availableDecisions.map((decision) => ({
-    value: `${decision.decisionTableId}:${decision.decisionRevision}`,
-    label: formatAvailableDecisionLabel(decision),
-  }))
-  if (decisionRef && !selectedDecision) {
-    decisionOptions.unshift({
-      value: `${decisionRef.decision_table_id}:${decisionRef.decision_revision}`,
-      label: `${decisionRef.decision_table_id} (${decisionRef.decision_key}) · r${decisionRef.decision_revision} [inactive]`,
-    })
-  }
   const compiledExpression = decisionRef
     ? `{{ decisions.${decisionRef.decision_key} }}`
     : ''
@@ -477,32 +465,15 @@ const ConditionForm = ({
         htmlFor={`${idPrefix}-condition-decision`}
         help="Pin a fail-closed decision table for analyst-facing routing. Leave empty only for legacy expression mode."
       >
-        <Select
+        <DecisionRevisionSelect
           id={`${idPrefix}-condition-decision`}
-          data-testid={`${idPrefix}-condition-decision`}
-          value={selectedDecisionValue}
+          testId={`${idPrefix}-condition-decision`}
+          currentDecision={decisionRef}
+          availableDecisions={availableDecisions}
           placeholder="Select decision table"
           disabled={readOnly}
-          showSearch
           allowClear
-          optionFilterProp="label"
-          onChange={(value) => {
-            if (!value) {
-              onDecisionChange(undefined)
-              return
-            }
-            const selected = availableDecisions.find(
-              (decision) => `${decision.decisionTableId}:${decision.decisionRevision}` === value
-            )
-            onDecisionChange(selected
-              ? {
-                  decision_table_id: selected.decisionTableId,
-                  decision_key: selected.decisionKey,
-                  decision_revision: selected.decisionRevision,
-                }
-              : undefined)
-          }}
-          options={decisionOptions}
+          onChange={onDecisionChange}
         />
       </Form.Item>
 
@@ -810,22 +781,22 @@ const SubWorkflowForm = ({
         required
         help="Analyst-facing subworkflow calls pin an explicit workflow revision by default."
       >
-        <Select
+        <WorkflowRevisionSelect
           id={`${idPrefix}-subworkflow`}
-          data-testid={`${idPrefix}-subworkflow`}
-          value={config.subworkflow_ref?.workflow_revision_id ?? config.subworkflow_id}
+          testId={`${idPrefix}-subworkflow`}
+          currentWorkflow={{
+            workflowDefinitionKey: config.subworkflow_ref?.workflow_definition_key,
+            workflowRevisionId: config.subworkflow_ref?.workflow_revision_id ?? config.subworkflow_id,
+            workflowRevision: config.subworkflow_ref?.workflow_revision,
+          }}
+          workflows={workflows}
           placeholder="Select workflow"
           disabled={readOnly}
-          showSearch
-          optionFilterProp="label"
-          onChange={(value) => {
-            const selectedWorkflow = workflows.find(
-              (workflow) => workflow.workflowRevisionId === value
-            )
+          onChange={(selectedWorkflow) => {
             if (!selectedWorkflow) {
               onChange({
                 ...config,
-                subworkflow_id: value,
+                subworkflow_id: undefined,
                 subworkflow_ref: undefined,
               })
               return
@@ -841,10 +812,6 @@ const SubWorkflowForm = ({
               },
             })
           }}
-          options={workflows.map((w) => ({
-            value: w.workflowRevisionId,
-            label: `${w.name} · r${w.workflowRevision}`
-          }))}
         />
       </Form.Item>
 

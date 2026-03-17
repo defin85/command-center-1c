@@ -374,6 +374,8 @@ describe('DecisionsPage', () => {
 
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
     expect(screen.getByText('/decisions is the primary surface for document_policy authoring.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open workflow catalog' })).toHaveAttribute('href', '/workflows')
+    expect(screen.getByRole('link', { name: 'Open binding profile catalog' })).toHaveAttribute('href', '/pools/binding-profiles')
     expect(screen.getByText('shared-profile')).toBeInTheDocument()
     expect(screen.getByText('shared_scope')).toBeInTheDocument()
     expect(screen.getByText('Services publication policy')).toBeInTheDocument()

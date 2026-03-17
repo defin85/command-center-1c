@@ -106,7 +106,7 @@ describe('PropertyEditor', () => {
     })
 
     await openSelect('workflow-decision-node-condition-decision')
-    fireEvent.click(await screen.findByText('Invoice Mode (invoice_mode) · r2'))
+    fireEvent.click(await screen.findByText('Invoice Mode · decision-table-1 (invoice_mode) · r2'))
 
     await waitFor(() => {
       expect(onNodeUpdate).toHaveBeenCalledWith(
@@ -157,7 +157,7 @@ describe('PropertyEditor', () => {
     expect(
       await screen.findAllByText('decision-table-1 (invoice_mode) · r1 [inactive]')
     ).not.toHaveLength(0)
-    expect(screen.getByText('Invoice Mode (invoice_mode) · r2')).toBeInTheDocument()
+    expect(screen.getByText('Invoice Mode · decision-table-1 (invoice_mode) · r2')).toBeInTheDocument()
   })
 
   it('shows legacy condition editor as read-only compatibility surface', async () => {

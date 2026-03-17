@@ -35,7 +35,7 @@ import {
 } from '@ant-design/icons'
 import { WorkflowCanvas, NodePalette, PropertyEditor } from '../../components/workflow'
 import { LazyJsonCodeEditor } from '../../components/code/LazyJsonCodeEditor'
-import { isDecisionAvailableByDefault } from '../../components/workflow/decisionOptions'
+import { useAuthoringReferences } from '../../api/queries/authoringReferences'
 
 // Types from types/workflow (legacy format for UI components)
 import type {
@@ -44,8 +44,6 @@ import type {
   WorkflowTemplate,
   ValidationResult,
   OperationTemplateListItem,
-  AvailableWorkflowRevision,
-  AvailableDecisionRevision,
 } from '../../types/workflow'
 
 // Generated API
@@ -97,8 +95,6 @@ interface WorkflowDesignerState {
   isValidating: boolean
   validationResult: ValidationResult | null
   operationTemplates: OperationTemplateListItem[]
-  availableWorkflows: AvailableWorkflowRevision[]
-  availableDecisions: AvailableDecisionRevision[]
 }
 
 const initialDagStructure: DAGStructure = {
@@ -246,8 +242,6 @@ const WorkflowDesigner = () => {
     isValidating: false,
     validationResult: null,
     operationTemplates: [],
-    availableWorkflows: [],
-    availableDecisions: [],
   })
 
   const [saveModalVisible, setSaveModalVisible] = useState(false)
@@ -256,6 +250,11 @@ const WorkflowDesigner = () => {
   const dagStructureRef = useRef<DAGStructure>(initialDagStructure)
   const isSystemManagedProjection = state.template?.is_system_managed === true
   const decisionDatabaseId = String(searchParams.get('database_id') || '').trim()
+  const authoringReferencesQuery = useAuthoringReferences({
+    databaseId: decisionDatabaseId || undefined,
+  })
+  const availableWorkflows = authoringReferencesQuery.data?.availableWorkflows ?? []
+  const availableDecisions = authoringReferencesQuery.data?.availableDecisions ?? []
   const isRuntimeDiagnosticsSurface =
     searchParams.get('surface') === 'runtime_diagnostics' || isSystemManagedProjection
   const backTarget = buildRouteWithWorkflowContext({
@@ -296,89 +295,10 @@ const WorkflowDesigner = () => {
   }, [api, templateId, form, message])
 
   useEffect(() => {
-    const loadAuthoringReferences = async () => {
-      try {
-        const [workflowResponse, decisionResponse] = await Promise.all([
-          api.getWorkflowsListWorkflows({ surface: 'workflow_library', limit: 1000 }),
-          api.getDecisionsCollection(
-            decisionDatabaseId
-              ? { database_id: decisionDatabaseId }
-              : undefined
-          ),
-        ])
-
-        const workflowsById = new Map(
-          (workflowResponse.workflows ?? []).map((workflow) => [workflow.id, workflow])
-        )
-        const workflowDefinitionKeyCache = new Map<string, string>()
-        const resolveWorkflowDefinitionKey = (workflowId: string): string => {
-          const cached = workflowDefinitionKeyCache.get(workflowId)
-          if (cached) {
-            return cached
-          }
-          const workflow = workflowsById.get(workflowId)
-          if (!workflow?.parent_version) {
-            workflowDefinitionKeyCache.set(workflowId, workflowId)
-            return workflowId
-          }
-          if (!workflowsById.has(workflow.parent_version)) {
-            workflowDefinitionKeyCache.set(workflowId, workflow.parent_version)
-            return workflow.parent_version
-          }
-          const resolved = resolveWorkflowDefinitionKey(workflow.parent_version)
-          workflowDefinitionKeyCache.set(workflowId, resolved)
-          return resolved
-        }
-
-        const availableWorkflows = (workflowResponse.workflows ?? [])
-          .filter((workflow) => workflow.is_system_managed !== true)
-          .map((workflow) => ({
-            id: workflow.id,
-            name: workflow.name,
-            workflowDefinitionKey: resolveWorkflowDefinitionKey(workflow.id),
-            workflowRevisionId: workflow.id,
-            workflowRevision: workflow.version_number,
-          }))
-          .sort((left, right) => (
-            left.name.localeCompare(right.name) || left.workflowRevision - right.workflowRevision
-          ))
-
-        const availableDecisions = (decisionResponse.decisions ?? [])
-          .filter((decision) => decision.is_active !== false)
-          .filter((decision) => isDecisionAvailableByDefault({
-            id: decision.id,
-            name: decision.name,
-            decisionTableId: decision.decision_table_id,
-            decisionKey: decision.decision_key,
-            decisionRevision: decision.decision_revision,
-            metadataContext: decision.metadata_context,
-            metadataCompatibility: decision.metadata_compatibility,
-          }))
-          .map((decision) => ({
-            id: decision.id,
-            name: decision.name,
-            decisionTableId: decision.decision_table_id,
-            decisionKey: decision.decision_key,
-            decisionRevision: decision.decision_revision,
-            metadataContext: decision.metadata_context,
-            metadataCompatibility: decision.metadata_compatibility,
-          }))
-          .sort((left, right) => (
-            left.name.localeCompare(right.name) || left.decisionRevision - right.decisionRevision
-          ))
-
-        setState((prev) => ({
-          ...prev,
-          availableWorkflows,
-          availableDecisions,
-        }))
-      } catch (error) {
-        console.error('Failed to load workflow authoring references:', error)
-      }
+    if (authoringReferencesQuery.isError) {
+      console.error('Failed to load workflow authoring references:', authoringReferencesQuery.error)
     }
-
-    void loadAuthoringReferences()
-  }, [api, decisionDatabaseId])
+  }, [authoringReferencesQuery.error, authoringReferencesQuery.isError])
 
   // Load operation templates
   useEffect(() => {
@@ -801,8 +721,8 @@ const WorkflowDesigner = () => {
             onNodeUpdate={handleNodeUpdate}
             onNodeDelete={handleNodeDelete}
             operationTemplates={state.operationTemplates}
-            availableWorkflows={state.availableWorkflows}
-            availableDecisions={state.availableDecisions}
+            availableWorkflows={availableWorkflows}
+            availableDecisions={availableDecisions}
             readOnly={isSystemManagedProjection}
           />
         </Sider>

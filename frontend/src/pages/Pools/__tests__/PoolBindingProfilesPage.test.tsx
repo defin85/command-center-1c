@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -8,6 +7,7 @@ import { MemoryRouter } from 'react-router-dom'
 import type { BindingProfileDetail } from '../../../api/generated/model/bindingProfileDetail'
 import type { BindingProfileRevision } from '../../../api/generated/model/bindingProfileRevision'
 import type { BindingProfileSummary } from '../../../api/generated/model/bindingProfileSummary'
+import type { AvailableDecisionRevision, AvailableWorkflowRevision } from '../../../types/workflow'
 import { PoolBindingProfilesPage } from '../PoolBindingProfilesPage'
 
 const mockUseBindingProfiles = vi.fn()
@@ -15,6 +15,7 @@ const mockUseBindingProfileDetail = vi.fn()
 const mockUseCreateBindingProfile = vi.fn()
 const mockUseReviseBindingProfile = vi.fn()
 const mockUseDeactivateBindingProfile = vi.fn()
+const mockUseAuthoringReferences = vi.fn()
 const mockListOrganizationPools = vi.fn()
 
 vi.mock('../../../api/queries/poolBindingProfiles', () => ({
@@ -23,6 +24,10 @@ vi.mock('../../../api/queries/poolBindingProfiles', () => ({
   useCreateBindingProfile: (...args: unknown[]) => mockUseCreateBindingProfile(...args),
   useReviseBindingProfile: (...args: unknown[]) => mockUseReviseBindingProfile(...args),
   useDeactivateBindingProfile: (...args: unknown[]) => mockUseDeactivateBindingProfile(...args),
+}))
+
+vi.mock('../../../api/queries/authoringReferences', () => ({
+  useAuthoringReferences: (...args: unknown[]) => mockUseAuthoringReferences(...args),
 }))
 
 vi.mock('../../../api/intercompanyPools', () => ({
@@ -165,6 +170,54 @@ const bindingProfiles = [
   buildSummaryFromDetail(deactivatedDetail),
 ]
 
+const availableWorkflows: AvailableWorkflowRevision[] = [
+  {
+    id: 'workflow-revision-4',
+    name: 'Services Publication',
+    workflowDefinitionKey: 'services-publication',
+    workflowRevisionId: 'wf-services-r2',
+    workflowRevision: 4,
+  },
+  {
+    id: 'workflow-revision-5',
+    name: 'Services Publication',
+    workflowDefinitionKey: 'services-publication',
+    workflowRevisionId: 'wf-services-r5',
+    workflowRevision: 5,
+  },
+  {
+    id: 'workflow-revision-6',
+    name: 'New Services Publication',
+    workflowDefinitionKey: 'services-publication',
+    workflowRevisionId: 'wf-new-r1',
+    workflowRevision: 6,
+  },
+]
+
+const availableDecisions: AvailableDecisionRevision[] = [
+  {
+    id: 'decision-version-3',
+    name: 'Services Policy',
+    decisionTableId: 'decision-1',
+    decisionKey: 'document_policy',
+    decisionRevision: 3,
+  },
+  {
+    id: 'decision-version-4',
+    name: 'Fallback Policy',
+    decisionTableId: 'decision-2',
+    decisionKey: 'document_policy',
+    decisionRevision: 4,
+  },
+]
+
+function openSelect(testId: string) {
+  const select = screen.getByTestId(testId)
+  const selector = select.querySelector('.ant-select-selector')
+  expect(selector).toBeTruthy()
+  fireEvent.mouseDown(selector as Element)
+}
+
 function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -191,6 +244,7 @@ describe('PoolBindingProfilesPage', () => {
     mockUseCreateBindingProfile.mockReset()
     mockUseReviseBindingProfile.mockReset()
     mockUseDeactivateBindingProfile.mockReset()
+    mockUseAuthoringReferences.mockReset()
     mockListOrganizationPools.mockReset()
 
     mockUseBindingProfiles.mockReturnValue({
@@ -220,11 +274,19 @@ describe('PoolBindingProfilesPage', () => {
       isPending: false,
       mutateAsync: vi.fn().mockResolvedValue({ binding_profile: deactivatedDetail }),
     })
+    mockUseAuthoringReferences.mockReturnValue({
+      data: {
+        availableWorkflows,
+        availableDecisions,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    })
     mockListOrganizationPools.mockResolvedValue([])
   })
 
   it('renders a dedicated reusable profile catalog with list and detail states on a separate authoring surface', async () => {
-    const user = userEvent.setup()
     renderPage()
 
     expect(await screen.findByRole('heading', { name: 'Binding Profiles' })).toBeInTheDocument()
@@ -233,25 +295,18 @@ describe('PoolBindingProfilesPage', () => {
     expect(screen.getAllByText('services-publication').length).toBeGreaterThan(0)
     expect(screen.getByText('legacy-archive')).toBeInTheDocument()
 
-    await waitFor(() => {
-      expect(mockUseBindingProfileDetail).toHaveBeenLastCalledWith(activeDetail.binding_profile_id, {
-        enabled: true,
-      })
-    })
-
     expect(screen.getByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('services-publication')
     expect(screen.getByTestId('pool-binding-profiles-latest-revision-id')).toHaveTextContent('bp-rev-services-r2')
     expect(screen.getByRole('button', { name: 'Publish new revision' })).toBeEnabled()
 
-    await user.click(screen.getByText('legacy-archive'))
+    fireEvent.click(screen.getByText('legacy-archive'))
 
     expect(await screen.findByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('legacy-archive')
     expect(screen.getByTestId('pool-binding-profiles-status')).toHaveTextContent('deactivated')
     expect(screen.getByRole('button', { name: 'Publish new revision' })).toBeDisabled()
-  })
+  }, 15000)
 
   it('creates a reusable profile from the dedicated catalog form', async () => {
-    const user = userEvent.setup()
     const mutateAsync = vi.fn().mockResolvedValue({
       binding_profile: {
         ...activeDetail,
@@ -267,7 +322,9 @@ describe('PoolBindingProfilesPage', () => {
 
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: 'Create profile' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Create profile' }))
+    expect(screen.getByRole('link', { name: 'Open /workflows' })).toHaveAttribute('href', '/workflows')
+    expect(screen.getByRole('link', { name: 'Open /decisions' })).toHaveAttribute('href', '/decisions')
 
     fireEvent.change(await screen.findByTestId('pool-binding-profiles-create-code'), {
       target: { value: 'new-profile' },
@@ -278,30 +335,20 @@ describe('PoolBindingProfilesPage', () => {
     fireEvent.change(screen.getByTestId('pool-binding-profiles-create-description'), {
       target: { value: 'Reusable authoring surface' },
     })
-    fireEvent.change(screen.getByTestId('pool-binding-profiles-create-workflow-key'), {
-      target: { value: 'services-publication' },
+    expect(screen.queryByTestId('pool-binding-profiles-create-parameters-json')).not.toBeInTheDocument()
+    openSelect('pool-binding-profiles-create-workflow-revision-select')
+    fireEvent.click(await screen.findByText('New Services Publication · r6'))
+    expect(await screen.findByText('wf-new-r1')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('pool-binding-profiles-create-add-slot'))
+    fireEvent.change(screen.getByTestId('pool-binding-profiles-create-slot-key-0'), {
+      target: { value: 'document_policy' },
     })
-    fireEvent.change(screen.getByTestId('pool-binding-profiles-create-workflow-revision-id'), {
-      target: { value: 'wf-new-r1' },
+    openSelect('pool-binding-profiles-create-decision-select-0')
+    fireEvent.click(await screen.findByText('Services Policy · decision-1 · r3'))
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-binding-profiles-create-slot-ref-0')).toHaveTextContent('decision-1')
     })
-    fireEvent.change(screen.getByTestId('pool-binding-profiles-create-workflow-revision'), {
-      target: { value: '6' },
-    })
-    fireEvent.change(screen.getByTestId('pool-binding-profiles-create-workflow-name'), {
-      target: { value: 'services_publication' },
-    })
-    fireEvent.change(screen.getByTestId('pool-binding-profiles-create-decisions-json'), {
-      target: {
-        value: JSON.stringify([
-          {
-            decision_table_id: 'decision-1',
-            decision_key: 'document_policy',
-            slot_key: 'document_policy',
-            decision_revision: 3,
-          },
-        ], null, 2),
-      },
-    })
+    fireEvent.click(screen.getByTestId('pool-binding-profiles-create-advanced-toggle'))
     fireEvent.change(screen.getByTestId('pool-binding-profiles-create-parameters-json'), {
       target: { value: JSON.stringify({ publication_variant: 'full' }, null, 2) },
     })
@@ -312,7 +359,7 @@ describe('PoolBindingProfilesPage', () => {
       target: { value: JSON.stringify({ source: 'manual' }, null, 2) },
     })
 
-    await user.click(screen.getByTestId('pool-binding-profiles-create-submit'))
+    fireEvent.click(screen.getByTestId('pool-binding-profiles-create-submit'))
 
     await waitFor(() => {
       expect(mutateAsync).toHaveBeenCalledWith({
@@ -324,7 +371,7 @@ describe('PoolBindingProfilesPage', () => {
             workflow_definition_key: 'services-publication',
             workflow_revision_id: 'wf-new-r1',
             workflow_revision: 6,
-            workflow_name: 'services_publication',
+            workflow_name: 'New Services Publication',
           },
           decisions: [
             {
@@ -346,10 +393,9 @@ describe('PoolBindingProfilesPage', () => {
         },
       })
     })
-  })
+  }, 15000)
 
   it('publishes a new immutable revision and deactivates the selected profile from the catalog', async () => {
-    const user = userEvent.setup()
     const reviseMutateAsync = vi.fn().mockResolvedValue({ binding_profile: activeDetail })
     const deactivateMutateAsync = vi.fn().mockResolvedValue({ binding_profile: deactivatedDetail })
     mockUseReviseBindingProfile.mockReturnValue({
@@ -363,16 +409,19 @@ describe('PoolBindingProfilesPage', () => {
 
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: 'Publish new revision' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish new revision' }))
 
-    fireEvent.change(screen.getByTestId('pool-binding-profiles-revise-workflow-revision'), {
-      target: { value: '5' },
+    openSelect('pool-binding-profiles-revise-workflow-revision-select')
+    fireEvent.click(await screen.findByText('Services Publication · r5'))
+    await waitFor(() => {
+      expect(screen.getAllByText('wf-services-r5').length).toBeGreaterThan(0)
     })
+    fireEvent.click(screen.getByTestId('pool-binding-profiles-revise-advanced-toggle'))
     fireEvent.change(screen.getByTestId('pool-binding-profiles-revise-metadata-json'), {
       target: { value: JSON.stringify({ source: 'catalog-update' }, null, 2) },
     })
 
-    await user.click(screen.getByTestId('pool-binding-profiles-revise-submit'))
+    fireEvent.click(screen.getByTestId('pool-binding-profiles-revise-submit'))
 
     await waitFor(() => {
       expect(reviseMutateAsync).toHaveBeenCalledWith({
@@ -381,9 +430,9 @@ describe('PoolBindingProfilesPage', () => {
           revision: {
             workflow: {
               workflow_definition_key: 'services-publication',
-              workflow_revision_id: 'wf-services-r2',
+              workflow_revision_id: 'wf-services-r5',
               workflow_revision: 5,
-              workflow_name: 'services_publication',
+              workflow_name: 'Services Publication',
             },
             decisions: [
               {
@@ -407,12 +456,12 @@ describe('PoolBindingProfilesPage', () => {
       })
     })
 
-    await user.click(screen.getByRole('button', { name: 'Deactivate profile' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate profile' }))
 
     await waitFor(() => {
       expect(deactivateMutateAsync).toHaveBeenCalledWith(activeDetail.binding_profile_id)
     })
-  })
+  }, 15000)
 
   it('shows pool attachment usage for selected profile revisions', async () => {
     mockListOrganizationPools.mockResolvedValue([

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp } from 'antd'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 const mockGetWorkflowsGetWorkflow = vi.fn()
@@ -47,19 +48,28 @@ vi.mock('../../../components/code/LazyJsonCodeEditor', () => ({
 const { default: WorkflowDesigner } = await import('../WorkflowDesigner')
 
 function renderPage(initialEntry = '/workflows/runtime-1?surface=runtime_diagnostics') {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  })
+
   return render(
-    <MemoryRouter initialEntries={[initialEntry]} future={ROUTER_FUTURE}>
-      <Routes>
-        <Route
-          path="/workflows/:id"
-          element={(
-            <AntApp>
-              <WorkflowDesigner />
-            </AntApp>
-          )}
-        />
-      </Routes>
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[initialEntry]} future={ROUTER_FUTURE}>
+        <Routes>
+          <Route
+            path="/workflows/:id"
+            element={(
+              <AntApp>
+                <WorkflowDesigner />
+              </AntApp>
+            )}
+          />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
   )
 }
 

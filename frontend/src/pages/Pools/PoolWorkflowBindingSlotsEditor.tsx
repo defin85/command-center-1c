@@ -1,7 +1,7 @@
-import { Button, Card, Col, Form, Input, Row, Select, Space, Tag, Typography } from 'antd'
+import { Button, Card, Col, Form, Input, Row, Space, Tag, Typography } from 'antd'
 
 import type { AvailableDecisionRevision } from '../../types/workflow'
-import { formatAvailableDecisionLabel } from '../../components/workflow/decisionOptions'
+import { DecisionRevisionSelect } from '../../components/workflow/DecisionRevisionSelect'
 import type { TopologyEdgeSelector } from './topologySlotCoverage'
 
 const { Text } = Typography
@@ -14,53 +14,6 @@ type PoolWorkflowBindingSlotsEditorProps = {
   topologyEdgeSelectors?: TopologyEdgeSelector[]
   getFieldValue: (namePath: Array<string | number>) => unknown
   setFieldValue: (namePath: Array<string | number>, value: unknown) => void
-}
-
-type DecisionOption = {
-  value: string
-  label: string
-  decisionTableId: string
-  decisionKey: string
-  decisionRevision: number
-}
-
-function buildDecisionOptions({
-  availableDecisions,
-  decisionTableId,
-  decisionKey,
-  decisionRevisionRaw,
-  selectedDecisionValue,
-}: {
-  availableDecisions: AvailableDecisionRevision[]
-  decisionTableId: string
-  decisionKey: string
-  decisionRevisionRaw: string
-  selectedDecisionValue: string | undefined
-}): DecisionOption[] {
-  const decisionOptions: DecisionOption[] = availableDecisions.map((decision) => ({
-    value: `${decision.decisionTableId}:${decision.decisionRevision}`,
-    label: formatAvailableDecisionLabel(decision),
-    decisionTableId: decision.decisionTableId,
-    decisionKey: decision.decisionKey,
-    decisionRevision: decision.decisionRevision,
-  }))
-
-  if (
-    decisionTableId
-    && decisionKey
-    && decisionRevisionRaw
-    && !decisionOptions.some((option) => option.value === selectedDecisionValue)
-  ) {
-    decisionOptions.unshift({
-      value: selectedDecisionValue ?? '',
-      label: `${decisionTableId} (${decisionKey}) · r${decisionRevisionRaw} [inactive]`,
-      decisionTableId,
-      decisionKey,
-      decisionRevision: Number(decisionRevisionRaw),
-    })
-  }
-
-  return decisionOptions
 }
 
 export function PoolWorkflowBindingSlotsEditor({
@@ -117,18 +70,6 @@ export function PoolWorkflowBindingSlotsEditor({
                   'decision_revision',
                 ]) ?? ''
               ).trim()
-              const selectedDecisionValue = (
-                decisionTableId && decisionRevisionRaw
-                  ? `${decisionTableId}:${decisionRevisionRaw}`
-                  : undefined
-              )
-              const decisionOptions = buildDecisionOptions({
-                availableDecisions,
-                decisionTableId,
-                decisionKey,
-                decisionRevisionRaw,
-                selectedDecisionValue,
-              })
               const matchedEdges = topologyEdgeSelectors.filter((edge) => edge.slotKey === slotKey)
               return (
                 <Row key={decisionField.key} gutter={12} align="middle">
@@ -172,32 +113,34 @@ export function PoolWorkflowBindingSlotsEditor({
                           : undefined
                       }
                     >
-                      <Select
-                        showSearch
+                      <DecisionRevisionSelect
                         allowClear
-                        optionFilterProp="label"
                         disabled={disabled}
                         loading={decisionsLoading}
                         placeholder="Select decision revision from /decisions"
-                        value={selectedDecisionValue}
-                        data-testid={`pool-catalog-workflow-binding-decision-select-${bindingIndex}-${decisionField.name}`}
-                        options={decisionOptions.map((option) => ({
-                          value: option.value,
-                          label: option.label,
-                        }))}
-                        onChange={(value) => {
-                          const selected = decisionOptions.find((option) => option.value === value)
+                        testId={`pool-catalog-workflow-binding-decision-select-${bindingIndex}-${decisionField.name}`}
+                        availableDecisions={availableDecisions}
+                        currentDecision={(
+                          decisionTableId && decisionKey && decisionRevisionRaw
+                            ? {
+                                decision_table_id: decisionTableId,
+                                decision_key: decisionKey,
+                                decision_revision: Number(decisionRevisionRaw),
+                              }
+                            : undefined
+                        )}
+                        onChange={(selected) => {
                           setFieldValue(
                             ['workflow_bindings', bindingIndex, 'decisions', decisionField.name, 'decision_table_id'],
-                            selected?.decisionTableId ?? ''
+                            selected?.decision_table_id ?? ''
                           )
                           setFieldValue(
                             ['workflow_bindings', bindingIndex, 'decisions', decisionField.name, 'decision_key'],
-                            selected?.decisionKey ?? ''
+                            selected?.decision_key ?? ''
                           )
                           setFieldValue(
                             ['workflow_bindings', bindingIndex, 'decisions', decisionField.name, 'decision_revision'],
-                            selected?.decisionRevision ?? null
+                            selected?.decision_revision ?? null
                           )
                         }}
                       />
