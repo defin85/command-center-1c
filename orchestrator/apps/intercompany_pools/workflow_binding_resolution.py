@@ -30,12 +30,17 @@ def resolve_pool_workflow_binding_for_run(
     period_start: date,
 ) -> PoolWorkflowBindingContract | None:
     bindings = parse_pool_workflow_bindings(raw_bindings)
-    if not bindings:
-        return None
 
     # Selector matching is assistive-only and must not auto-resolve a runtime binding.
     if not requested_binding_id:
         return None
+
+    if not bindings:
+        raise PoolWorkflowBindingResolutionError(
+            code=ERROR_CODE_POOL_WORKFLOW_BINDING_NOT_FOUND,
+            detail=f"Requested pool_workflow_binding_id '{requested_binding_id}' was not found.",
+            errors=[{"binding_id": requested_binding_id}],
+        )
 
     if requested_binding_id:
         selected = next((binding for binding in bindings if binding.binding_id == requested_binding_id), None)

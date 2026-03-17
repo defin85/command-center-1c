@@ -37,10 +37,15 @@ from apps.intercompany_pools.models import (
     PoolRunMode,
     PoolSchemaTemplate,
     PoolSchemaTemplateFormat,
+    PoolWorkflowBinding,
 )
 from apps.intercompany_pools.pool_domain_steps import execute_pool_runtime_step
 from apps.intercompany_pools.runs import build_pool_run_idempotency_key
 from apps.intercompany_pools.workflow_authoring_contract import PoolWorkflowBindingContract
+from apps.intercompany_pools.workflow_binding_resolution import (
+    ERROR_CODE_POOL_WORKFLOW_BINDING_NOT_FOUND,
+    PoolWorkflowBindingResolutionError,
+)
 from apps.intercompany_pools.workflow_bindings_store import (
     list_pool_workflow_bindings,
     upsert_canonical_pool_workflow_binding,
@@ -773,6 +778,19 @@ def test_start_pool_run_workflow_execution_reloads_binding_snapshot_from_attachm
     persisted_run = PoolRun.objects.get(id=run.id)
     assert persisted_run.workflow_binding_snapshot == persisted_binding
     assert persisted_run.runtime_projection_snapshot == runtime_projection
+
+
+@pytest.mark.django_db
+def test_start_pool_run_workflow_execution_fails_closed_when_attachment_is_deleted() -> None:
+    run = _create_pool_run(mode=PoolRunMode.SAFE)
+    workflow_binding = _ensure_runtime_test_workflow_binding_attachment(run=run)
+    PoolWorkflowBinding.objects.filter(pool=run.pool, binding_id=workflow_binding["binding_id"]).delete()
+
+    with pytest.raises(PoolWorkflowBindingResolutionError) as exc_info:
+        _start_runtime_workflow_execution(run=run, workflow_binding=workflow_binding)
+
+    assert exc_info.value.code == ERROR_CODE_POOL_WORKFLOW_BINDING_NOT_FOUND
+    assert exc_info.value.errors == [{"binding_id": workflow_binding["binding_id"]}]
 
 
 @pytest.mark.django_db

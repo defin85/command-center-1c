@@ -3649,6 +3649,37 @@ def test_create_pool_run_rejects_missing_binding_reference_even_with_single_cand
 
 
 @pytest.mark.django_db
+def test_preview_pool_workflow_binding_returns_not_found_for_unknown_attachment_reference(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    missing_binding_id = f"missing-{uuid4().hex[:8]}"
+
+    response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/preview/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": missing_binding_id,
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_WORKFLOW_BINDING_NOT_FOUND",
+    )
+    assert payload["detail"] == (
+        f"Requested pool_workflow_binding_id '{missing_binding_id}' was not found."
+    )
+    assert payload["errors"] == [{"binding_id": missing_binding_id}]
+
+
+@pytest.mark.django_db
 def test_create_pool_run_does_not_fallback_to_legacy_metadata_workflow_bindings(
     authenticated_client: APIClient,
     pool: OrganizationPool,
@@ -3684,6 +3715,97 @@ def test_create_pool_run_does_not_fallback_to_legacy_metadata_workflow_bindings(
     )
     assert payload["detail"] == "No pool workflow bindings are configured for this pool."
     assert payload.get("errors", []) == []
+    assert not PoolRun.objects.filter(pool=pool).exists()
+
+
+@pytest.mark.django_db
+def test_create_pool_run_does_not_fallback_from_out_of_scope_attachment_to_matching_candidate(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    out_of_scope_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
+        workflow_definition_key="out-of-scope-binding",
+        workflow_revision=1,
+        direction=PoolRunDirection.BOTTOM_UP,
+    )
+    matching_revision = _create_binding_profile_revision(
+        tenant=pool.tenant,
+        workflow_definition_key="matching-binding",
+        workflow_revision=1,
+        direction=PoolRunDirection.BOTTOM_UP,
+    )
+
+    out_of_scope_response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": _build_pool_workflow_binding_attachment_payload(
+                binding_profile_revision_id=str(out_of_scope_revision["binding_profile_revision_id"]),
+                direction=PoolRunDirection.BOTTOM_UP,
+                mode=PoolRunMode.SAFE,
+                effective_from="2025-01-01",
+                effective_to="2025-12-31",
+            ),
+        },
+        format="json",
+    )
+    assert out_of_scope_response.status_code == 201
+    requested_binding_id = out_of_scope_response.json()["workflow_binding"]["binding_id"]
+
+    matching_response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/upsert/",
+        {
+            "pool_id": str(pool.id),
+            "workflow_binding": _build_pool_workflow_binding_attachment_payload(
+                binding_profile_revision_id=str(matching_revision["binding_profile_revision_id"]),
+                direction=PoolRunDirection.BOTTOM_UP,
+                mode=PoolRunMode.SAFE,
+                effective_from="2026-01-01",
+            ),
+        },
+        format="json",
+    )
+    assert matching_response.status_code == 201
+
+    response = authenticated_client.post(
+        "/api/v2/pools/runs/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": requested_binding_id,
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_WORKFLOW_BINDING_NOT_RESOLVED",
+    )
+    assert payload["detail"] == (
+        f"Requested pool_workflow_binding_id '{requested_binding_id}' is inactive "
+        "or outside the effective period."
+    )
+    assert payload["errors"] == [
+        {
+            "binding_id": requested_binding_id,
+            "pool_id": str(pool.id),
+            "workflow_definition_key": str(out_of_scope_revision["workflow"]["workflow_definition_key"]),
+            "workflow_revision": int(out_of_scope_revision["workflow"]["workflow_revision"]),
+            "status": "active",
+            "effective_from": "2025-01-01",
+            "effective_to": "2025-12-31",
+            "selector": {
+                "direction": PoolRunDirection.BOTTOM_UP,
+                "mode": PoolRunMode.SAFE,
+                "tags": [],
+            },
+        }
+    ]
     assert not PoolRun.objects.filter(pool=pool).exists()
 
 
