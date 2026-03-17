@@ -61,22 +61,23 @@ def test_binding_profile_detail_schema_covers_runtime_serializer_fields() -> Non
 
     runtime_fields = set(binding_profiles_view.BindingProfileDetailSerializer().fields.keys())
     assert runtime_fields.issubset(set(properties.keys()))
-    assert properties["latest_revision"] == {"$ref": "#/components/schemas/BindingProfileRevisionRead"}
+    assert properties["latest_revision"] == {"$ref": "#/components/schemas/BindingProfileRevision"}
     assert properties["revisions"] == {
         "type": "array",
-        "items": {"$ref": "#/components/schemas/BindingProfileRevisionRead"},
+        "items": {"$ref": "#/components/schemas/BindingProfileRevision"},
     }
     assert properties["status"]["enum"] == ["active", "deactivated"]
 
 
 def test_binding_profile_revision_schema_uses_opaque_revision_identity_and_runtime_serializer_shape() -> None:
     contract = _load_openapi_contract()
-    revision_schema = _schema(contract, "BindingProfileRevisionRead")
+    revision_schema = _schema(contract, "BindingProfileRevision")
     properties = revision_schema.get("properties")
     assert isinstance(properties, dict)
 
     runtime_fields = set(binding_profiles_view.BindingProfileRevisionReadSerializer().fields.keys())
     assert runtime_fields.issubset(set(properties.keys()))
-    assert properties["binding_profile_revision_id"] == {"type": "string"}
-    assert properties["binding_profile_id"] == {"type": "string", "format": "uuid"}
+    assert properties["binding_profile_revision_id"]["type"] == "string"
+    assert properties["binding_profile_id"]["type"] == "string"
+    assert properties["binding_profile_id"]["format"] == "uuid"
     assert properties["revision_number"]["minimum"] == 1

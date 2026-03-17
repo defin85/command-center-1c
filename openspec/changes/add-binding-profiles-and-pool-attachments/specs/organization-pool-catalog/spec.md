@@ -9,6 +9,8 @@ Pool upsert contract НЕ ДОЛЖЕН (SHALL NOT) нести canonical attachme
 
 Attachment read path ДОЛЖЕН (SHALL) возвращать server-managed `revision`, pinned `binding_profile_revision_id`, optional display `binding_profile_revision_number` и достаточный read-only summary resolved profile для lineage visibility и topology slot coverage diagnostics.
 
+Attachment workspace ДОЛЖЕН (SHALL) показывать read-only resolved profile summary с pinned workflow lineage и topology slot coverage diagnostics, не разрешая inline mutation reusable workflow/slot/parameter/role-mapping payload.
+
 UI ДОЛЖЕН (SHALL) разделять:
 - mutating операции над базовыми полями `pool`;
 - mutating операции над `pool_workflow_binding` как attachment;
@@ -21,6 +23,10 @@ Default collection-save UI ДОЛЖЕН (SHALL) использовать `collec
 При collection conflict UI ДОЛЖЕН (SHALL) сохранять введённые данные формы, показывать причину конфликта и предлагать reload canonical collection без потери локального edit state.
 
 Если оператору требуется изменить reusable workflow/slot logic pinned profile revision, `/pools/catalog` НЕ ДОЛЖЕН (SHALL NOT) quietly редактировать эту логику inline внутри attachment workspace и ДОЛЖЕН (SHALL) направлять на отдельный route `/pools/binding-profiles`.
+
+Если currently pinned reusable profile revision больше не присутствует в latest profile catalog (например, profile deactivated или catalog уже указывает на более новую revision), attachment workspace ДОЛЖЕН (SHALL) сохранять видимость этого pinned revision как `current` context и НЕ ДОЛЖЕН (SHALL NOT) silently re-pin attachment на latest revision.
+
+Если canonical attachment collection пуста, но backend сообщает blocking remediation из-за legacy metadata/document_policy residue, attachment workspace ДОЛЖЕН (SHALL) показывать blocking remediation и отключать default collection save до устранения legacy state.
 
 #### Scenario: Сохранение базовых полей пула не переписывает workflow attachments
 - **GIVEN** оператор редактирует `code` или `name` пула в `/pools/catalog`
@@ -41,6 +47,27 @@ Default collection-save UI ДОЛЖЕН (SHALL) использовать `collec
 - **WHEN** оператору нужно изменить workflow/slot mapping этой схемы
 - **THEN** UI направляет его на `/pools/binding-profiles`
 - **AND** attachment workspace сохраняет только pool-local scope и profile reference
+
+#### Scenario: Attachment workspace показывает resolved profile lineage и slot coverage diagnostics
+- **GIVEN** у выбранного пула есть topology edges с publication slot selectors
+- **AND** attachment pinned на reusable profile revision с resolved decision refs
+- **WHEN** оператор открывает binding workspace на `/pools/catalog`
+- **THEN** UI показывает read-only resolved profile summary, pinned workflow lineage и slot coverage diagnostics для topology edges
+- **AND** unresolved slot coverage блокирует default attachment save до исправления pinned profile reference или topology slot selectors
+
+#### Scenario: Pinned revision остаётся видимой вне latest profile catalog
+- **GIVEN** pool attachment pinned на reusable profile revision, которая уже не является latest revision в profile catalog
+- **WHEN** оператор открывает attachment editor в `/pools/catalog`
+- **THEN** UI продолжает показывать эту pinned revision как current lineage context
+- **AND** attachment не перепривязывается автоматически на latest revision без явного выбора оператора
+
+#### Scenario: Legacy metadata residue переводит workspace в blocking remediation state
+- **GIVEN** backend вернул canonical attachment collection для пула
+- **AND** collection пуста
+- **AND** backend указал blocking remediation из-за legacy metadata/document_policy residue
+- **WHEN** оператор открывает binding workspace в `/pools/catalog`
+- **THEN** UI показывает blocking remediation
+- **AND** default collection save disabled до устранения legacy state
 
 #### Scenario: Stale collection etag в catalog editor возвращает conflict без потери формы
 - **GIVEN** оператор редактирует workflow attachments в `/pools/catalog`
