@@ -1,0 +1,55 @@
+import { Drawer, Grid, Space, Typography } from 'antd'
+import type { ReactNode } from 'react'
+
+const { useBreakpoint } = Grid
+const { Text } = Typography
+const DESKTOP_BREAKPOINT_PX = 992
+
+type DrawerFormShellProps = {
+  open: boolean
+  onClose: () => void
+  title?: ReactNode
+  subtitle?: ReactNode
+  width?: number
+  children: ReactNode
+}
+
+export function DrawerFormShell({
+  open,
+  onClose,
+  title,
+  subtitle,
+  width = 880,
+  children,
+}: DrawerFormShellProps) {
+  const screens = useBreakpoint()
+  const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
+  const isNarrow = hasMatchedBreakpoint
+    ? !screens.lg
+    : (
+      typeof window !== 'undefined'
+        ? window.innerWidth < DESKTOP_BREAKPOINT_PX
+        : false
+    )
+
+  const drawerTitle = title || subtitle
+    ? (
+      <Space direction="vertical" size={0}>
+        {title}
+        {subtitle ? <Text type="secondary">{subtitle}</Text> : null}
+      </Space>
+    )
+    : undefined
+
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title={drawerTitle}
+      width={isNarrow ? '100%' : width}
+      destroyOnClose
+    >
+      {children}
+    </Drawer>
+  )
+}

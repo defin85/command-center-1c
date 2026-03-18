@@ -2,20 +2,22 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Button,
-  Card,
-  Col,
   Descriptions,
-  Empty,
   Input,
-  Row,
   Space,
-  Spin,
-  Table,
-  Tag,
   Typography,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
+import {
+  EntityDetails,
+  EntityTable,
+  JsonBlock,
+  MasterDetailShell,
+  PageHeader,
+  StatusBadge,
+  WorkspacePage,
+} from '../../components/platform'
 import {
   useBindingProfileDetail,
   useBindingProfiles,
@@ -40,12 +42,6 @@ const formatDateTime = (value?: string | null) => {
   if (!value) return '-'
   return new Date(value).toLocaleString()
 }
-
-const formatJson = (value: unknown) => JSON.stringify(value ?? {}, null, 2)
-
-const renderStatusTag = (status: string) => (
-  <Tag color={status === 'deactivated' ? 'default' : 'green'}>{status}</Tag>
-)
 
 type BindingProfileUsageRow = {
   key: string
@@ -74,6 +70,7 @@ const formatBindingScope = (binding: PoolWorkflowBinding) => {
 export function PoolBindingProfilesPage() {
   const [search, setSearch] = useState('')
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
+  const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isReviseOpen, setIsReviseOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -87,7 +84,10 @@ export function PoolBindingProfilesPage() {
   const reviseBindingProfileMutation = useReviseBindingProfile()
   const deactivateBindingProfileMutation = useDeactivateBindingProfile()
 
-  const bindingProfiles = bindingProfilesQuery.data?.binding_profiles ?? []
+  const bindingProfiles = useMemo(
+    () => bindingProfilesQuery.data?.binding_profiles ?? [],
+    [bindingProfilesQuery.data?.binding_profiles],
+  )
   const normalizedSearch = deferredSearch.trim().toLowerCase()
   const filteredProfiles = bindingProfiles.filter((profile) => {
     if (!normalizedSearch) return true
@@ -159,7 +159,7 @@ export function PoolBindingProfilesPage() {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      render: (value: string) => renderStatusTag(value),
+      render: (value: string) => <StatusBadge status={value} />,
     },
     {
       title: 'Latest revision',
@@ -230,7 +230,7 @@ export function PoolBindingProfilesPage() {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      render: (value: string) => renderStatusTag(value),
+      render: (value: string) => <StatusBadge status={value} />,
     },
     {
       title: 'Scope',
@@ -256,6 +256,7 @@ export function PoolBindingProfilesPage() {
     const created = response.binding_profile
     setActionError(null)
     setSelectedProfileId(created.binding_profile_id)
+    setIsDetailDrawerOpen(true)
   }
 
   const handleReviseProfile = async (request: BindingProfileCreateRequest | BindingProfileRevisionCreateRequest) => {
@@ -273,6 +274,7 @@ export function PoolBindingProfilesPage() {
       const response = await deactivateBindingProfileMutation.mutateAsync(selectedProfile.binding_profile_id)
       setActionError(null)
       setSelectedProfileId(response.binding_profile.binding_profile_id)
+      setIsDetailDrawerOpen(true)
     } catch (error) {
       const resolved = resolveApiError(error, 'Failed to deactivate binding profile.')
       setActionError(resolved.message)
@@ -285,6 +287,11 @@ export function PoolBindingProfilesPage() {
   const detailError = selectedProfileQuery.isError
     ? resolveApiError(selectedProfileQuery.error, 'Failed to load binding profile detail.').message
     : null
+
+  const handleSelectProfile = (profileId: string) => {
+    setSelectedProfileId(profileId)
+    setIsDetailDrawerOpen(true)
+  }
 
   useEffect(() => {
     let isCancelled = false
@@ -316,18 +323,26 @@ export function PoolBindingProfilesPage() {
   }, [])
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <div>
-        <Title level={2} style={{ marginBottom: 8 }}>
-          Binding Profiles
-        </Title>
-        <Text type="secondary">
-          Primary authoring catalog for reusable workflow/slot logic. Pool-local attachments remain in
-          {' '}
-          {POOL_CATALOG_ROUTE}
-          .
-        </Text>
-      </div>
+    <WorkspacePage
+      header={(
+        <PageHeader
+          title="Binding Profiles"
+          subtitle={(
+            <>
+              Primary authoring catalog for reusable workflow/slot logic. Pool-local attachments remain in
+              {' '}
+              {POOL_CATALOG_ROUTE}
+              .
+            </>
+          )}
+          actions={(
+            <Button type="primary" onClick={() => setIsCreateOpen(true)}>
+              Create profile
+            </Button>
+          )}
+        />
+      )}
+    >
 
       <Alert
         type="info"
@@ -344,13 +359,8 @@ export function PoolBindingProfilesPage() {
               <Text code>{POOL_CATALOG_ROUTE}</Text>
               .
             </Text>
-            <Space>
-              <Button type="primary" onClick={() => setIsCreateOpen(true)}>
-                Create profile
-              </Button>
-              <Button href={POOL_CATALOG_ROUTE}>
-                Open attachment workspace
-              </Button>
+            <Space wrap>
+              <Button href={POOL_CATALOG_ROUTE}>Open attachment workspace</Button>
             </Space>
           </Space>
         )}
@@ -360,9 +370,12 @@ export function PoolBindingProfilesPage() {
         <Alert type="error" showIcon message={actionError} />
       ) : null}
 
-      <Row gutter={16} align="top">
-        <Col span={10}>
-          <Card
+      <MasterDetailShell
+        detailOpen={isDetailDrawerOpen}
+        onCloseDetail={() => setIsDetailDrawerOpen(false)}
+        detailDrawerTitle={selectedProfile?.name || 'Profile detail'}
+        list={(
+          <EntityTable
             title="Catalog"
             extra={(
               <Input
@@ -373,36 +386,23 @@ export function PoolBindingProfilesPage() {
                 style={{ width: 240 }}
               />
             )}
-          >
-            {listError ? (
-              <Alert type="error" showIcon message={listError} />
-            ) : bindingProfilesQuery.isLoading ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: '32px 0' }}>
-                <Spin />
-              </div>
-            ) : filteredProfiles.length === 0 ? (
-              <Empty description="No binding profiles found." />
-            ) : (
-              <Table
-                rowKey="binding_profile_id"
-                size="small"
-                pagination={false}
-                columns={listColumns}
-                dataSource={filteredProfiles}
-                onRow={(record) => ({
-                  onClick: () => setSelectedProfileId(record.binding_profile_id),
-                  style: { cursor: 'pointer' },
-                })}
-                rowClassName={(record) => (
-                  record.binding_profile_id === selectedProfileId ? 'ant-table-row-selected' : ''
-                )}
-              />
+            error={listError}
+            loading={bindingProfilesQuery.isLoading}
+            emptyDescription="No binding profiles found."
+            dataSource={filteredProfiles}
+            columns={listColumns}
+            rowKey="binding_profile_id"
+            onRow={(record) => ({
+              onClick: () => handleSelectProfile(record.binding_profile_id),
+              style: { cursor: 'pointer' },
+            })}
+            rowClassName={(record) => (
+              record.binding_profile_id === selectedProfileId ? 'ant-table-row-selected' : ''
             )}
-          </Card>
-        </Col>
-
-        <Col span={14}>
-          <Card
+          />
+        )}
+        detail={(
+          <EntityDetails
             title="Profile detail"
             extra={(
               <Space>
@@ -422,16 +422,12 @@ export function PoolBindingProfilesPage() {
                 </Button>
               </Space>
             )}
+            error={detailError}
+            loading={selectedProfileQuery.isLoading}
+            empty={!selectedProfileId || (!selectedProfile && !selectedProfileQuery.isLoading)}
+            emptyDescription="Select a profile from the catalog."
           >
-            {detailError ? (
-              <Alert type="error" showIcon message={detailError} />
-            ) : !selectedProfileId ? (
-              <Empty description="Select a profile from the catalog." />
-            ) : selectedProfileQuery.isLoading || !selectedProfile ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: '32px 0' }}>
-                <Spin />
-              </div>
-            ) : (
+            {selectedProfile ? (
               <Space direction="vertical" size={16} style={{ width: '100%' }}>
                 <Descriptions bordered size="small" column={1}>
                   <Descriptions.Item label="Code">
@@ -442,7 +438,7 @@ export function PoolBindingProfilesPage() {
                   <Descriptions.Item label="Name">{selectedProfile.name}</Descriptions.Item>
                   <Descriptions.Item label="Status">
                     <span data-testid="pool-binding-profiles-status">
-                      {renderStatusTag(selectedProfile.status)}
+                      <StatusBadge status={selectedProfile.status} />
                     </span>
                   </Descriptions.Item>
                   <Descriptions.Item label="Latest immutable revision">
@@ -472,7 +468,10 @@ export function PoolBindingProfilesPage() {
                   />
                 ) : null}
 
-                <Card title="Latest revision payload" size="small">
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  <Title level={5} style={{ margin: 0 }}>
+                    Latest revision payload
+                  </Title>
                   <Descriptions bordered size="small" column={1}>
                     <Descriptions.Item label="Workflow">
                       {`${selectedProfile.latest_revision.workflow.workflow_name} · ${selectedProfile.latest_revision.workflow.workflow_definition_key}`}
@@ -481,74 +480,55 @@ export function PoolBindingProfilesPage() {
                       {`${selectedProfile.latest_revision.workflow.workflow_revision_id} · rev ${selectedProfile.latest_revision.workflow.workflow_revision}`}
                     </Descriptions.Item>
                   </Descriptions>
-                  <Row gutter={12} style={{ marginTop: 12 }}>
-                    <Col span={12}>
-                      <Text strong>Decision refs</Text>
-                      <pre style={{ marginTop: 8 }}>{formatJson(selectedProfile.latest_revision.decisions)}</pre>
-                    </Col>
-                    <Col span={12}>
-                      <Text strong>Parameters</Text>
-                      <pre style={{ marginTop: 8 }}>{formatJson(selectedProfile.latest_revision.parameters)}</pre>
-                    </Col>
-                    <Col span={12}>
-                      <Text strong>Role mapping</Text>
-                      <pre style={{ marginTop: 8 }}>{formatJson(selectedProfile.latest_revision.role_mapping)}</pre>
-                    </Col>
-                    <Col span={12}>
-                      <Text strong>Revision metadata</Text>
-                      <pre style={{ marginTop: 8 }}>{formatJson(selectedProfile.latest_revision.metadata)}</pre>
-                    </Col>
-                  </Row>
-                </Card>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                      gap: 16,
+                    }}
+                  >
+                    <JsonBlock title="Decision refs" value={selectedProfile.latest_revision.decisions} />
+                    <JsonBlock title="Parameters" value={selectedProfile.latest_revision.parameters} />
+                    <JsonBlock title="Role mapping" value={selectedProfile.latest_revision.role_mapping} />
+                    <JsonBlock title="Revision metadata" value={selectedProfile.latest_revision.metadata} />
+                  </div>
+                </Space>
 
-                <Table
+                <EntityTable
+                  title="Revision history"
                   rowKey="binding_profile_revision_id"
-                  size="small"
-                  pagination={false}
                   columns={revisionColumns}
                   dataSource={selectedProfile.revisions}
                 />
 
-                <Card title="Pool attachment usage" size="small">
-                  {usageError ? (
-                    <Alert type="warning" showIcon message={usageError} />
-                  ) : usageLoading ? (
-                    <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
-                      <Spin />
-                    </div>
-                  ) : (
-                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                      <Space size={16}>
-                        <Text>
-                          Attachments:
-                          {' '}
-                          <Text strong data-testid="pool-binding-profiles-usage-total">{selectedProfileUsage.length}</Text>
-                        </Text>
-                        <Text>
-                          Revisions in use:
-                          {' '}
-                          <Text strong data-testid="pool-binding-profiles-usage-revisions">{selectedProfileUsageRevisionCount}</Text>
-                        </Text>
-                      </Space>
-                      {selectedProfileUsage.length === 0 ? (
-                        <Empty description="No pool attachments are pinned on this profile yet." />
-                      ) : (
-                        <Table
-                          rowKey="key"
-                          size="small"
-                          pagination={false}
-                          columns={usageColumns}
-                          dataSource={selectedProfileUsage}
-                        />
-                      )}
+                <EntityTable
+                  title="Pool attachment usage"
+                  error={usageError}
+                  loading={usageLoading}
+                  emptyDescription="No pool attachments are pinned on this profile yet."
+                  dataSource={selectedProfileUsage}
+                  columns={usageColumns}
+                  rowKey="key"
+                  toolbar={(
+                    <Space size={16} style={{ marginBottom: 16 }}>
+                      <Text>
+                        Attachments:
+                        {' '}
+                        <Text strong data-testid="pool-binding-profiles-usage-total">{selectedProfileUsage.length}</Text>
+                      </Text>
+                      <Text>
+                        Revisions in use:
+                        {' '}
+                        <Text strong data-testid="pool-binding-profiles-usage-revisions">{selectedProfileUsageRevisionCount}</Text>
+                      </Text>
                     </Space>
                   )}
-                </Card>
+                />
               </Space>
-            )}
-          </Card>
-        </Col>
-      </Row>
+            ) : null}
+          </EntityDetails>
+        )}
+      />
 
       <PoolBindingProfilesEditorModal
         open={isCreateOpen}
@@ -570,6 +550,6 @@ export function PoolBindingProfilesPage() {
           setIsReviseOpen(false)
         }}
       />
-    </Space>
+    </WorkspacePage>
   )
 }

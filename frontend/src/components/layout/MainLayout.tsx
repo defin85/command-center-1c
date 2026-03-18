@@ -1,4 +1,4 @@
-import { Layout, Menu, Button, Dropdown, Tag, Tooltip, Space, Popover, Typography, Select } from 'antd'
+import { Layout, Menu, Button, Dropdown, Tag, Tooltip, Space, Popover, Typography, Select, Grid } from 'antd'
 import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined, SafetyCertificateOutlined, FileTextOutlined, WarningOutlined, LoadingOutlined, SettingOutlined, InboxOutlined, AppstoreOutlined } from '@ant-design/icons'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useEffect, type ReactNode, type MouseEvent } from 'react'
@@ -15,12 +15,14 @@ import { resetQueryClient } from '../../lib/queryClient'
 import { POOL_BINDING_PROFILES_ROUTE } from '../../pages/Pools/routes'
 
 const { Header, Content, Sider } = Layout
+const { useBreakpoint } = Grid
 
 interface MainLayoutProps {
   children: ReactNode
 }
 
 export const MainLayout = ({ children }: MainLayoutProps) => {
+  const screens = useBreakpoint()
   const navigate = useNavigate()
   const location = useLocation()
   const meQuery = useMe()
@@ -219,8 +221,19 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       <a href="#main-content" className="cc-skip-link" onClick={handleSkipToContent}>
         Skip to content
       </a>
-      <Header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Space size="middle">
+      <Header
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          rowGap: 12,
+          columnGap: 16,
+          height: 'auto',
+          paddingBlock: 12,
+        }}
+      >
+        <Space size="middle" wrap>
           <Link to="/" style={{ color: 'white', fontSize: '20px', fontWeight: 'bold', textDecoration: 'none' }}>
             CommandCenter1C
           </Link>
@@ -262,14 +275,14 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
             </Tooltip>
           </Popover>
         </Space>
-        <Space size="small">
+        <Space size="small" wrap>
           {tenants.length > 1 && (
             <Select
               size="small"
               loading={myTenantsQuery.isFetching}
               disabled={setActiveTenantMutation.isPending}
               value={activeTenantId}
-              style={{ width: 220 }}
+              style={{ width: screens.sm ? 220 : 'min(220px, 100%)' }}
               options={tenants.map((t) => ({ value: t.id, label: t.name }))}
               onChange={(tenantId) => {
                 setActiveTenantMutation.mutate(tenantId, {
@@ -293,7 +306,12 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
         </Space>
       </Header>
       <Layout>
-        <Sider width={200} theme="light">
+        <Sider
+          width={200}
+          theme="light"
+          breakpoint="lg"
+          collapsedWidth={0}
+        >
           <Menu
             mode="inline"
             selectedKeys={[location.pathname]}
@@ -302,13 +320,13 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
             style={{ height: '100%', borderRight: 0 }}
           />
         </Sider>
-        <Layout style={{ padding: '24px' }}>
+        <Layout style={{ padding: screens.lg ? '24px' : '16px' }}>
           <Content
             id="main-content"
             role="main"
             tabIndex={-1}
             style={{
-              padding: 24,
+              padding: screens.lg ? 24 : 16,
               margin: 0,
               minHeight: 280,
               background: '#fff',

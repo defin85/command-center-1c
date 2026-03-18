@@ -4,6 +4,22 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 
+const contextAwareAntdImports = [
+  {
+    name: 'antd',
+    importNames: ['message', 'notification'],
+    message: 'Use `const { message, notification } = App.useApp()` from `antd` instead of static imports.',
+  },
+]
+
+const canonicalPageContainerImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Empty', 'Row', 'Col', 'Spin', 'Table', 'Tag'],
+    message: 'Canonical pilot pages must compose through `src/components/platform` primitives instead of raw Ant layout/data containers.',
+  },
+]
+
 export default tseslint.config(
   { ignores: ['dist', 'src/api/generated/**'] },
   {
@@ -63,17 +79,25 @@ export default tseslint.config(
       // Ant Design context-aware APIs:
       // forbid static imports that bypass dynamic theme/context; use `App.useApp()` instead.
       'no-restricted-imports': ['error', {
-        paths: [
-          {
-            name: 'antd',
-            importNames: ['message', 'notification'],
-            message: 'Use `const { message, notification } = App.useApp()` from `antd` instead of static imports.',
-          },
-        ],
+        paths: contextAwareAntdImports,
       }],
       'no-restricted-syntax': ['error', {
         selector: "MemberExpression[object.name='Modal'][property.name=/^(confirm|info|success|error|warning)$/]",
         message: 'Use `const { modal } = App.useApp()` and call `modal.confirm/info/...` instead of `Modal.*` static methods.',
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Decisions/DecisionsPage.tsx',
+      'src/pages/Pools/PoolBindingProfilesPage.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...canonicalPageContainerImports,
+        ],
       }],
     },
   },

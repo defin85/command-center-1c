@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Descriptions, Input, Space, Typography } from 'antd'
+import { Alert, Button, Descriptions, Input, Space, Typography } from 'antd'
 import type { DescriptionsProps } from 'antd'
 
 import { LazyJsonCodeEditorFormField } from '../../components/code/LazyJsonCodeEditor'
@@ -133,139 +133,137 @@ export function DecisionEditorPanel({
   }
 
   return (
-    <Card>
-      <Space direction="vertical" size="large" style={{ display: 'flex' }}>
-        <div>
-          <Typography.Title level={4} style={{ marginBottom: 4 }}>
-            {copy.title}
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            {copy.subtitle}
-          </Typography.Text>
-        </div>
+    <Space direction="vertical" size="large" style={{ display: 'flex' }}>
+      <div>
+        <Typography.Title level={4} style={{ marginBottom: 4 }}>
+          {copy.title}
+        </Typography.Title>
+        <Typography.Text type="secondary">
+          {copy.subtitle}
+        </Typography.Text>
+      </div>
 
-        {error ? (
-          <Alert type="error" showIcon message={error} />
-        ) : null}
+      {error ? (
+        <Alert type="error" showIcon message={error} />
+      ) : null}
 
-        {summaryItems.length > 0 ? (
-          <Descriptions
-            size="small"
-            column={1}
-            items={summaryItems}
-          />
-        ) : null}
+      {summaryItems.length > 0 ? (
+        <Descriptions
+          size="small"
+          column={1}
+          items={summaryItems}
+        />
+      ) : null}
 
-        {value.mode === 'rollover' ? (
-          <Alert
-            type="info"
-            showIcon
-            message="Publishing a rollover creates a new revision only. Existing workflows, bindings, and runtime projections stay pinned until you update them explicitly."
-          />
-        ) : null}
+      {value.mode === 'rollover' ? (
+        <Alert
+          type="info"
+          showIcon
+          message="Publishing a rollover creates a new revision only. Existing workflows, bindings, and runtime projections stay pinned until you update them explicitly."
+        />
+      ) : null}
 
-        <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-          <Typography.Text strong>Decision table ID</Typography.Text>
-          <Input
-            aria-label="Decision table ID"
-            disabled={saving || Boolean(value.parentVersionId)}
-            value={value.decisionTableId}
-            onChange={(event) => onChange({
-              ...value,
-              decisionTableId: event.target.value,
-            })}
-          />
-        </Space>
-
-        <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-          <Typography.Text strong>Decision name</Typography.Text>
-          <Input
-            aria-label="Decision name"
-            disabled={saving}
-            value={value.name}
-            onChange={(event) => onChange({
-              ...value,
-              name: event.target.value,
-            })}
-          />
-        </Space>
-
-        <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-          <Typography.Text strong>Description</Typography.Text>
-          <Input.TextArea
-            aria-label="Decision description"
-            autoSize={{ minRows: 2, maxRows: 4 }}
-            disabled={saving}
-            value={value.description}
-            onChange={(event) => onChange({
-              ...value,
-              description: event.target.value,
-            })}
-          />
-        </Space>
-
-        <div role="tablist" aria-label="Decision editor mode">
-          <Space wrap>
-            <Button
-              role="tab"
-              aria-selected={value.activeTab === 'builder'}
-              type={value.activeTab === 'builder' ? 'primary' : 'default'}
-              onClick={() => onTabChange('builder')}
-              disabled={saving}
-            >
-              Builder
-            </Button>
-            <Button
-              role="tab"
-              aria-selected={value.activeTab === 'raw'}
-              type={value.activeTab === 'raw' ? 'primary' : 'default'}
-              onClick={() => onTabChange('raw')}
-              disabled={saving}
-            >
-              Raw JSON
-            </Button>
-          </Space>
-        </div>
-
-        {value.activeTab === 'builder' ? (
-          <DocumentPolicyBuilderEditor
-            disabled={saving}
-            value={value.chains}
-            onChange={(chains) => onChange({ ...value, chains })}
-          />
-        ) : (
-          <Space direction="vertical" size="middle" style={{ display: 'flex' }}>
-            <Typography.Text type="secondary">
-              Use raw JSON only for compatibility imports or to paste an already validated
-              {' '}
-              <code>document_policy.v1</code>
-              {' '}
-              payload.
-            </Typography.Text>
-            <LazyJsonCodeEditorFormField
-              value={value.rawJson}
-              onChange={(nextValue) => onChange({
-                ...value,
-                rawJson: nextValue,
-              })}
-              height={320}
-              title="Document policy JSON"
-              enableFormat
-              enableCopy
-              readOnly={saving}
-            />
-          </Space>
-        )}
-
-        <Space wrap>
-          <Button type="primary" loading={saving} onClick={onSave}>
-            {saveButtonLabel}
-          </Button>
-          <Button disabled={saving} onClick={onCancel}>
-            Cancel
-          </Button>
-        </Space>
+      <Space direction="vertical" size="small" style={{ display: 'flex' }}>
+        <Typography.Text strong>Decision table ID</Typography.Text>
+        <Input
+          aria-label="Decision table ID"
+          disabled={saving || Boolean(value.parentVersionId)}
+          value={value.decisionTableId}
+          onChange={(event) => onChange({
+            ...value,
+            decisionTableId: event.target.value,
+          })}
+        />
       </Space>
-    </Card>
+
+      <Space direction="vertical" size="small" style={{ display: 'flex' }}>
+        <Typography.Text strong>Decision name</Typography.Text>
+        <Input
+          aria-label="Decision name"
+          disabled={saving}
+          value={value.name}
+          onChange={(event) => onChange({
+            ...value,
+            name: event.target.value,
+          })}
+        />
+      </Space>
+
+      <Space direction="vertical" size="small" style={{ display: 'flex' }}>
+        <Typography.Text strong>Description</Typography.Text>
+        <Input.TextArea
+          aria-label="Decision description"
+          autoSize={{ minRows: 2, maxRows: 4 }}
+          disabled={saving}
+          value={value.description}
+          onChange={(event) => onChange({
+            ...value,
+            description: event.target.value,
+          })}
+        />
+      </Space>
+
+      <div role="tablist" aria-label="Decision editor mode">
+        <Space wrap>
+          <Button
+            role="tab"
+            aria-selected={value.activeTab === 'builder'}
+            type={value.activeTab === 'builder' ? 'primary' : 'default'}
+            onClick={() => onTabChange('builder')}
+            disabled={saving}
+          >
+            Builder
+          </Button>
+          <Button
+            role="tab"
+            aria-selected={value.activeTab === 'raw'}
+            type={value.activeTab === 'raw' ? 'primary' : 'default'}
+            onClick={() => onTabChange('raw')}
+            disabled={saving}
+          >
+            Raw JSON
+          </Button>
+        </Space>
+      </div>
+
+      {value.activeTab === 'builder' ? (
+        <DocumentPolicyBuilderEditor
+          disabled={saving}
+          value={value.chains}
+          onChange={(chains) => onChange({ ...value, chains })}
+        />
+      ) : (
+        <Space direction="vertical" size="middle" style={{ display: 'flex' }}>
+          <Typography.Text type="secondary">
+            Use raw JSON only for compatibility imports or to paste an already validated
+            {' '}
+            <code>document_policy.v1</code>
+            {' '}
+            payload.
+          </Typography.Text>
+          <LazyJsonCodeEditorFormField
+            value={value.rawJson}
+            onChange={(nextValue) => onChange({
+              ...value,
+              rawJson: nextValue,
+            })}
+            height={320}
+            title="Document policy JSON"
+            enableFormat
+            enableCopy
+            readOnly={saving}
+          />
+        </Space>
+      )}
+
+      <Space wrap>
+        <Button type="primary" loading={saving} onClick={onSave}>
+          {saveButtonLabel}
+        </Button>
+        <Button disabled={saving} onClick={onCancel}>
+          Cancel
+        </Button>
+      </Space>
+    </Space>
   )
 }

@@ -1,16 +1,22 @@
 import { EditOutlined, ImportOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Alert,
   App,
   Button,
-  Card,
-  Descriptions,
   Select,
   Space,
   Typography,
 } from 'antd'
 
+import {
+  DrawerFormShell,
+  EntityDetails,
+  MasterDetailShell,
+  PageHeader,
+  WorkspacePage,
+} from '../../components/platform'
 import {
   DecisionLegacyImportPanel,
 } from './DecisionLegacyImportPanel'
@@ -26,16 +32,18 @@ import { useDecisionEditor } from './useDecisionEditor'
 import { useDecisionLegacyImport } from './useDecisionLegacyImport'
 import { useDecisionsCatalog } from './useDecisionsCatalog'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 
 export function DecisionsPage() {
   const navigate = useNavigate()
   const { message } = App.useApp()
+  const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false)
   const catalog = useDecisionsCatalog()
   const legacyImport = useDecisionLegacyImport({
     message,
     onImportComplete: (decisionId) => {
       catalog.setSelectedDecisionId(decisionId)
+      setIsDetailDrawerOpen(true)
       catalog.reloadCatalog()
     },
   })
@@ -51,6 +59,7 @@ export function DecisionsPage() {
     message,
     onDecisionSaved: (nextDecisionId) => {
       catalog.setSelectedDecisionId(nextDecisionId)
+      setIsDetailDrawerOpen(true)
       catalog.reloadCatalog()
     },
   })
@@ -59,36 +68,63 @@ export function DecisionsPage() {
 
   const openEditor = (mode: DecisionEditorMode, draft: DecisionEditorState) => {
     editor.openEditor(mode, draft)
+    setIsDetailDrawerOpen(false)
     legacyImport.resetLegacyImport()
   }
 
   const openLegacyImport = () => {
+    setIsDetailDrawerOpen(false)
     editor.resetEditor()
     legacyImport.openLegacyImport()
   }
 
   const openRawImport = () => {
+    setIsDetailDrawerOpen(false)
     legacyImport.resetLegacyImport()
     editor.openRawImport()
   }
 
   const handleOpenSelectedDecisionForEdit = () => {
+    setIsDetailDrawerOpen(false)
     legacyImport.resetLegacyImport()
     editor.handleOpenSelectedDecisionForEdit()
   }
 
   const handleOpenSelectedDecisionForRollover = () => {
+    setIsDetailDrawerOpen(false)
     legacyImport.resetLegacyImport()
     editor.handleOpenSelectedDecisionForRollover()
   }
 
-  return (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Space direction="vertical" size={4}>
-        <Title level={2} style={{ marginBottom: 0 }}>Decision Policy Library</Title>
-        <Text type="secondary">/decisions is the primary surface for document_policy authoring.</Text>
-      </Space>
+  const handleSelectDecision = (decisionId: string) => {
+    catalog.setSelectedDecisionId(decisionId)
+    setIsDetailDrawerOpen(true)
+  }
 
+  return (
+    <WorkspacePage
+      header={(
+        <PageHeader
+          title="Decision Policy Library"
+          subtitle="/decisions is the primary surface for document_policy authoring."
+          actions={(
+            <Select
+              allowClear
+              data-testid="decisions-database-select"
+              placeholder="Select database"
+              value={catalog.effectiveSelectedDatabaseId}
+              style={{ width: 'min(320px, 100%)', minWidth: 240 }}
+              options={catalog.databases.map((database) => ({
+                value: database.id,
+                label: `${database.name} (${database.base_name ?? database.version ?? database.id})`,
+              }))}
+              onChange={(nextValue) => catalog.setSelectedDatabaseId(nextValue ?? null)}
+              loading={catalog.databasesQuery.isLoading}
+            />
+          )}
+        />
+      )}
+    >
       <Alert
         type="info"
         showIcon
@@ -152,101 +188,100 @@ export function DecisionsPage() {
         />
       ) : null}
 
-      <Card>
+      <EntityDetails title="Authoring workspace">
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Space wrap align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
-            <Space wrap>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => openEditor('create', buildEmptyDraft('create', 'builder'))}
-                disabled={saving}
-                aria-label="New policy"
-              >
-                New policy
-              </Button>
-              <Button
-                icon={<ImportOutlined />}
-                onClick={openLegacyImport}
-                disabled={saving}
-                aria-label="Import legacy edge"
-              >
-                Import legacy edge
-              </Button>
-              <Button
-                onClick={openRawImport}
-                disabled={saving}
-                aria-label="Import raw JSON"
-              >
-                Import raw JSON
-              </Button>
-              <Button
-                icon={<EditOutlined />}
-                onClick={handleOpenSelectedDecisionForEdit}
-                disabled={
-                  !catalog.selectedDecision
-                  || !catalog.selectedDecisionSupportsDocumentPolicyAuthoring
-                  || saving
-                  || catalog.selectedDecisionRequiresRollover
-                  || catalog.metadataContextFallbackActive
-                }
-                aria-label="Edit selected decision"
-              >
-                Edit selected decision
-              </Button>
-              <Button
-                onClick={handleOpenSelectedDecisionForRollover}
-                disabled={
-                  !catalog.selectedDecision
-                  || !catalog.selectedDecisionSupportsDocumentPolicyAuthoring
-                  || saving
-                  || !catalog.canOpenRollover
-                }
-                aria-label="Rollover selected revision"
-              >
-                Rollover selected revision
-              </Button>
-              <Button
-                danger
-                icon={<MinusCircleOutlined />}
-                onClick={() => void editor.handleDeactivateSelected()}
-                disabled={
-                  !catalog.selectedDecision
-                  || !catalog.selectedDecisionSupportsDocumentPolicyAuthoring
-                  || saving
-                  || catalog.selectedDecisionRequiresRollover
-                  || catalog.metadataContextFallbackActive
-                }
-                aria-label="Deactivate selected decision"
-              >
-                Deactivate selected decision
-              </Button>
-            </Space>
-
-            <Select
-              allowClear
-              data-testid="decisions-database-select"
-              placeholder="Select database"
-              value={catalog.effectiveSelectedDatabaseId}
-              style={{ minWidth: 260 }}
-              options={catalog.databases.map((database) => ({
-                value: database.id,
-                label: `${database.name} (${database.base_name ?? database.version ?? database.id})`,
-              }))}
-              onChange={(nextValue) => catalog.setSelectedDatabaseId(nextValue ?? null)}
-              loading={catalog.databasesQuery.isLoading}
-            />
+          <Space wrap>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => openEditor('create', buildEmptyDraft('create', 'builder'))}
+              disabled={saving}
+              aria-label="New policy"
+            >
+              New policy
+            </Button>
+            <Button
+              icon={<ImportOutlined />}
+              onClick={openLegacyImport}
+              disabled={saving}
+              aria-label="Import legacy edge"
+            >
+              Import legacy edge
+            </Button>
+            <Button
+              onClick={openRawImport}
+              disabled={saving}
+              aria-label="Import raw JSON"
+            >
+              Import raw JSON
+            </Button>
+            <Button
+              icon={<EditOutlined />}
+              onClick={handleOpenSelectedDecisionForEdit}
+              disabled={
+                !catalog.selectedDecision
+                || !catalog.selectedDecisionSupportsDocumentPolicyAuthoring
+                || saving
+                || catalog.selectedDecisionRequiresRollover
+                || catalog.metadataContextFallbackActive
+              }
+              aria-label="Edit selected decision"
+            >
+              Edit selected decision
+            </Button>
+            <Button
+              onClick={handleOpenSelectedDecisionForRollover}
+              disabled={
+                !catalog.selectedDecision
+                || !catalog.selectedDecisionSupportsDocumentPolicyAuthoring
+                || saving
+                || !catalog.canOpenRollover
+              }
+              aria-label="Rollover selected revision"
+            >
+              Rollover selected revision
+            </Button>
+            <Button
+              danger
+              icon={<MinusCircleOutlined />}
+              onClick={() => void editor.handleDeactivateSelected()}
+              disabled={
+                !catalog.selectedDecision
+                || !catalog.selectedDecisionSupportsDocumentPolicyAuthoring
+                || saving
+                || catalog.selectedDecisionRequiresRollover
+                || catalog.metadataContextFallbackActive
+              }
+              aria-label="Deactivate selected decision"
+            >
+              Deactivate selected decision
+            </Button>
           </Space>
 
-          <Descriptions
-            size="small"
-            column={{ xs: 1, md: 3 }}
-            items={normalizeMetadataItems(catalog.metadataContext).map((item) => ({
-              key: item.key,
-              label: item.label,
-              children: item.value,
-            }))}
-          />
+          <dl
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: 12,
+              margin: 0,
+            }}
+          >
+            {normalizeMetadataItems(catalog.metadataContext).map((item) => (
+              <div key={item.key} style={{ minWidth: 0 }}>
+                <dt style={{ fontSize: 12, color: '#8c8c8c' }}>{item.label}</dt>
+                <dd
+                  style={{
+                    margin: '4px 0 0',
+                    minWidth: 0,
+                    overflowWrap: 'anywhere',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {item.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
 
           {catalog.metadataContextWarning ? (
             <Alert
@@ -265,79 +300,88 @@ export function DecisionsPage() {
             />
           ) : null}
         </Space>
-      </Card>
+      </EntityDetails>
 
       {catalog.listError ? <Alert type="error" showIcon message={catalog.listError} /> : null}
       {catalog.bindingUsageError ? <Alert type="warning" showIcon message={catalog.bindingUsageError} /> : null}
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(320px, 420px) minmax(0, 1fr)',
-          gap: 24,
-          alignItems: 'start',
-        }}
+      <MasterDetailShell
+        detailOpen={isDetailDrawerOpen}
+        onCloseDetail={() => setIsDetailDrawerOpen(false)}
+        detailDrawerTitle={catalog.selectedDecision?.name || 'Decision detail'}
+        list={(
+          <DecisionCatalogPanel
+            title={catalog.decisionListTitle}
+            decisions={catalog.visibleDecisions}
+            loading={catalog.listLoading}
+            selectedDecisionId={catalog.selectedDecisionId}
+            pinnedDecisionRefs={catalog.pinnedDecisionRefs}
+            hiddenDecisionCount={catalog.hiddenDecisionCount}
+            snapshotFilterMode={catalog.snapshotFilterMode}
+            snapshotFilterMessage={catalog.snapshotFilterMessage}
+            selectedConfigurationLabel={catalog.selectedConfigurationLabel}
+            canFilterBySnapshot={catalog.canFilterBySnapshot}
+            onToggleSnapshotMode={() => catalog.setSnapshotFilterMode((current) => (
+              current === 'matching_snapshot' ? 'all' : 'matching_snapshot'
+            ))}
+            onSelectDecision={handleSelectDecision}
+          />
+        )}
+        detail={(
+          <DecisionDetailPanel
+            selectedDecision={catalog.selectedDecision}
+            detailLoading={catalog.detailLoading}
+            detailError={catalog.detailError}
+            detailContext={catalog.detailContext}
+            selectedPolicy={catalog.selectedPolicy}
+            selectedDecisionSupportsDocumentPolicyAuthoring={catalog.selectedDecisionSupportsDocumentPolicyAuthoring}
+            selectedDecisionPinnedInBinding={catalog.selectedDecisionPinnedInBinding}
+            selectedDecisionRequiresRollover={catalog.selectedDecisionRequiresRollover}
+          />
+        )}
+      />
+
+      <DrawerFormShell
+        open={Boolean(legacyImport.legacyImportDraft)}
+        onClose={legacyImport.closeLegacyImport}
       >
-        <DecisionCatalogPanel
-          title={catalog.decisionListTitle}
-          decisions={catalog.visibleDecisions}
-          loading={catalog.listLoading}
-          selectedDecisionId={catalog.selectedDecisionId}
-          pinnedDecisionRefs={catalog.pinnedDecisionRefs}
-          hiddenDecisionCount={catalog.hiddenDecisionCount}
-          snapshotFilterMode={catalog.snapshotFilterMode}
-          snapshotFilterMessage={catalog.snapshotFilterMessage}
-          selectedConfigurationLabel={catalog.selectedConfigurationLabel}
-          canFilterBySnapshot={catalog.canFilterBySnapshot}
-          onToggleSnapshotMode={() => catalog.setSnapshotFilterMode((current) => (
-            current === 'matching_snapshot' ? 'all' : 'matching_snapshot'
-          ))}
-          onSelectDecision={catalog.setSelectedDecisionId}
-        />
+        {legacyImport.legacyImportDraft ? (
+          <DecisionLegacyImportPanel
+            value={legacyImport.legacyImportDraft}
+            pools={legacyImport.pools}
+            poolsLoading={legacyImport.poolsLoading}
+            graph={legacyImport.legacyImportGraph}
+            graphLoading={legacyImport.legacyImportGraphLoading}
+            error={legacyImport.legacyImportError}
+            saving={saving}
+            onCancel={legacyImport.closeLegacyImport}
+            onOpenRawImport={openRawImport}
+            onChange={(nextValue) => {
+              legacyImport.setLegacyImportDraft(nextValue)
+              legacyImport.setLegacyImportError(null)
+            }}
+            onImport={() => void legacyImport.handleImportLegacyEdge()}
+          />
+        ) : null}
+      </DrawerFormShell>
 
-        <DecisionDetailPanel
-          selectedDecision={catalog.selectedDecision}
-          detailLoading={catalog.detailLoading}
-          detailError={catalog.detailError}
-          detailContext={catalog.detailContext}
-          selectedPolicy={catalog.selectedPolicy}
-          selectedDecisionSupportsDocumentPolicyAuthoring={catalog.selectedDecisionSupportsDocumentPolicyAuthoring}
-          selectedDecisionPinnedInBinding={catalog.selectedDecisionPinnedInBinding}
-          selectedDecisionRequiresRollover={catalog.selectedDecisionRequiresRollover}
-        />
-      </div>
-
-      {legacyImport.legacyImportDraft ? (
-        <DecisionLegacyImportPanel
-          value={legacyImport.legacyImportDraft}
-          pools={legacyImport.pools}
-          poolsLoading={legacyImport.poolsLoading}
-          graph={legacyImport.legacyImportGraph}
-          graphLoading={legacyImport.legacyImportGraphLoading}
-          error={legacyImport.legacyImportError}
-          saving={saving}
-          onCancel={legacyImport.closeLegacyImport}
-          onOpenRawImport={openRawImport}
-          onChange={(nextValue) => {
-            legacyImport.setLegacyImportDraft(nextValue)
-            legacyImport.setLegacyImportError(null)
-          }}
-          onImport={() => void legacyImport.handleImportLegacyEdge()}
-        />
-      ) : null}
-
-      {editor.editorDraft ? (
-        <DecisionEditorPanel
-          value={editor.editorDraft}
-          error={editor.editorError}
-          saving={saving}
-          onCancel={editor.closeEditor}
-          onSave={() => void editor.handleSaveDecision()}
-          onChange={editor.setEditorDraft}
-          onTabChange={editor.handleEditorTabChange}
-        />
-      ) : null}
-    </Space>
+      <DrawerFormShell
+        open={Boolean(editor.editorDraft)}
+        onClose={editor.closeEditor}
+      >
+        {editor.editorDraft ? (
+          <DecisionEditorPanel
+            value={editor.editorDraft}
+            error={editor.editorError}
+            saving={saving}
+            onCancel={editor.closeEditor}
+            onSave={() => void editor.handleSaveDecision()}
+            onChange={editor.setEditorDraft}
+            onTabChange={editor.handleEditorTabChange}
+          />
+        ) : null}
+      </DrawerFormShell>
+    </WorkspacePage>
   )
 }
 

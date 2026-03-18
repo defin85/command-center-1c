@@ -70,156 +70,154 @@ export function DecisionLegacyImportPanel({
   const selectedEdgeLabel = edgeOptions.find((option) => option.value === value.edgeVersionId)?.label ?? null
 
   return (
-    <Card>
-      <Space direction="vertical" size="large" style={{ display: 'flex' }}>
-        <div>
-          <Title level={4} style={{ marginBottom: 4 }}>
-            Import legacy edge policy
-          </Title>
-          <Text type="secondary">
-            Canonical migration flow: select a pool topology edge with legacy
-            {' '}
-            <code>document_policy</code>
-            {' '}
-            metadata and materialize it into the versioned
-            {' '}
-            <code>/decisions</code>
-            {' '}
-            lifecycle.
-          </Text>
-        </div>
+    <Space direction="vertical" size="large" style={{ display: 'flex' }}>
+      <div>
+        <Title level={4} style={{ marginBottom: 4 }}>
+          Import legacy edge policy
+        </Title>
+        <Text type="secondary">
+          Canonical migration flow: select a pool topology edge with legacy
+          {' '}
+          <code>document_policy</code>
+          {' '}
+          metadata and materialize it into the versioned
+          {' '}
+          <code>/decisions</code>
+          {' '}
+          lifecycle.
+        </Text>
+      </div>
 
-        {error ? (
-          <Alert type="error" showIcon message={error} />
-        ) : null}
+      {error ? (
+        <Alert type="error" showIcon message={error} />
+      ) : null}
 
-        <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-          <Text strong>Pool</Text>
-          <Select
-            aria-label="Legacy import pool"
-            data-testid="decision-legacy-import-pool-select"
-            disabled={saving || poolsLoading}
-            loading={poolsLoading}
-            placeholder="Select a pool"
-            value={value.poolId || undefined}
-            options={pools.map((pool) => ({
-              value: pool.id,
-              label: `${pool.name} (${pool.code})`,
-            }))}
-            onChange={(poolId) => onChange({
-              ...value,
-              poolId,
-              edgeVersionId: '',
-            })}
-          />
-        </Space>
-
-        <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-          <Text strong>Legacy edge</Text>
-          <Select
-            aria-label="Legacy import edge"
-            data-testid="decision-legacy-import-edge-select"
-            disabled={saving || !value.poolId || graphLoading || poolsLoading || edgeOptions.length === 0}
-            loading={graphLoading}
-            placeholder="Select a topology edge"
-            value={value.edgeVersionId || undefined}
-            options={edgeOptions}
-            onChange={(edgeVersionId) => onChange({
-              ...value,
-              edgeVersionId,
-            })}
-          />
-          {graphLoading ? (
-            <Space size="small">
-              <Spin size="small" />
-              <Text type="secondary">Loading topology snapshot…</Text>
-            </Space>
-          ) : null}
-          {!graphLoading && value.poolId && edgeOptions.length === 0 ? (
-            <Empty
-              description="No legacy document_policy edges found for the selected pool."
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-            />
-          ) : null}
-        </Space>
-
-        {selectedEdgeLabel ? (
-          <Card size="small" title="Selected legacy source">
-            <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-              <Text>{selectedEdgeLabel}</Text>
-              <Text type="secondary">Source path: edge.metadata.document_policy</Text>
-            </Space>
-          </Card>
-        ) : null}
-
-        <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-          <Text strong>Decision table ID</Text>
-          <Input
-            aria-label="Decision table ID"
-            disabled={saving}
-            value={value.decisionTableId}
-            onChange={(event) => onChange({
-              ...value,
-              decisionTableId: event.target.value,
-            })}
-          />
-        </Space>
-
-        <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-          <Text strong>Decision name</Text>
-          <Input
-            aria-label="Decision name"
-            disabled={saving}
-            value={value.name}
-            onChange={(event) => onChange({
-              ...value,
-              name: event.target.value,
-            })}
-          />
-        </Space>
-
-        <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-          <Text strong>Decision description</Text>
-          <Input.TextArea
-            aria-label="Decision description"
-            autoSize={{ minRows: 2, maxRows: 4 }}
-            disabled={saving}
-            value={value.description}
-            onChange={(event) => onChange({
-              ...value,
-              description: event.target.value,
-            })}
-          />
-        </Space>
-
-        <Alert
-          type="info"
-          showIcon
-          message="Raw JSON remains compatibility-only"
-          description={(
-            <Space direction="vertical" size={4}>
-              <span>Use this flow for legacy topology edges. Raw JSON stays available only as an explicit compatibility path.</span>
-              <Button type="link" style={{ paddingInline: 0 }} disabled={saving} onClick={onOpenRawImport}>
-                Open raw JSON compatibility import
-              </Button>
-            </Space>
-          )}
+      <Space direction="vertical" size="small" style={{ display: 'flex' }}>
+        <Text strong>Pool</Text>
+        <Select
+          aria-label="Legacy import pool"
+          data-testid="decision-legacy-import-pool-select"
+          disabled={saving || poolsLoading}
+          loading={poolsLoading}
+          placeholder="Select a pool"
+          value={value.poolId || undefined}
+          options={pools.map((pool) => ({
+            value: pool.id,
+            label: `${pool.name} (${pool.code})`,
+          }))}
+          onChange={(poolId) => onChange({
+            ...value,
+            poolId,
+            edgeVersionId: '',
+          })}
         />
-
-        <Space wrap>
-          <Button
-            type="primary"
-            loading={saving}
-            disabled={!value.poolId || !value.edgeVersionId}
-            onClick={onImport}
-          >
-            Import to /decisions
-          </Button>
-          <Button disabled={saving} onClick={onCancel}>
-            Cancel
-          </Button>
-        </Space>
       </Space>
-    </Card>
+
+      <Space direction="vertical" size="small" style={{ display: 'flex' }}>
+        <Text strong>Legacy edge</Text>
+        <Select
+          aria-label="Legacy import edge"
+          data-testid="decision-legacy-import-edge-select"
+          disabled={saving || !value.poolId || graphLoading || poolsLoading || edgeOptions.length === 0}
+          loading={graphLoading}
+          placeholder="Select a topology edge"
+          value={value.edgeVersionId || undefined}
+          options={edgeOptions}
+          onChange={(edgeVersionId) => onChange({
+            ...value,
+            edgeVersionId,
+          })}
+        />
+        {graphLoading ? (
+          <Space size="small">
+            <Spin size="small" />
+            <Text type="secondary">Loading topology snapshot…</Text>
+          </Space>
+        ) : null}
+        {!graphLoading && value.poolId && edgeOptions.length === 0 ? (
+          <Empty
+            description="No legacy document_policy edges found for the selected pool."
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+        ) : null}
+      </Space>
+
+      {selectedEdgeLabel ? (
+        <Card size="small" title="Selected legacy source">
+          <Space direction="vertical" size="small" style={{ display: 'flex' }}>
+            <Text>{selectedEdgeLabel}</Text>
+            <Text type="secondary">Source path: edge.metadata.document_policy</Text>
+          </Space>
+        </Card>
+      ) : null}
+
+      <Space direction="vertical" size="small" style={{ display: 'flex' }}>
+        <Text strong>Decision table ID</Text>
+        <Input
+          aria-label="Decision table ID"
+          disabled={saving}
+          value={value.decisionTableId}
+          onChange={(event) => onChange({
+            ...value,
+            decisionTableId: event.target.value,
+          })}
+        />
+      </Space>
+
+      <Space direction="vertical" size="small" style={{ display: 'flex' }}>
+        <Text strong>Decision name</Text>
+        <Input
+          aria-label="Decision name"
+          disabled={saving}
+          value={value.name}
+          onChange={(event) => onChange({
+            ...value,
+            name: event.target.value,
+          })}
+        />
+      </Space>
+
+      <Space direction="vertical" size="small" style={{ display: 'flex' }}>
+        <Text strong>Decision description</Text>
+        <Input.TextArea
+          aria-label="Decision description"
+          autoSize={{ minRows: 2, maxRows: 4 }}
+          disabled={saving}
+          value={value.description}
+          onChange={(event) => onChange({
+            ...value,
+            description: event.target.value,
+          })}
+        />
+      </Space>
+
+      <Alert
+        type="info"
+        showIcon
+        message="Raw JSON remains compatibility-only"
+        description={(
+          <Space direction="vertical" size={4}>
+            <span>Use this flow for legacy topology edges. Raw JSON stays available only as an explicit compatibility path.</span>
+            <Button type="link" style={{ paddingInline: 0 }} disabled={saving} onClick={onOpenRawImport}>
+              Open raw JSON compatibility import
+            </Button>
+          </Space>
+        )}
+      />
+
+      <Space wrap>
+        <Button
+          type="primary"
+          loading={saving}
+          disabled={!value.poolId || !value.edgeVersionId}
+          onClick={onImport}
+        >
+          Import to /decisions
+        </Button>
+        <Button disabled={saving} onClick={onCancel}>
+          Cancel
+        </Button>
+      </Space>
+    </Space>
   )
 }

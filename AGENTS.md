@@ -25,6 +25,22 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - Планы, спеки и описания change ведём на русском языке.
 - Общепринятые термины, названия сущностей, API/эндпоинты, ключи настроек и code identifiers можно оставлять на английском.
 
+## UI Platform Contract
+
+- Основной UI stack проекта: `antd` + `@ant-design/pro-components` + project-owned thin design layer в `frontend/src/components/platform`.
+- Для catalog/detail/authoring surfaces сначала использовать platform primitives:
+  - `WorkspacePage`
+  - `PageHeader`
+  - `MasterDetailShell`
+  - `EntityTable`
+  - `EntityDetails`
+  - `DrawerFormShell`
+  - `StatusBadge`
+  - `JsonBlock`
+- `MasterDetail` на узких viewport обязан деградировать в `list + Drawer`; horizontal overflow как основной режим недопустим.
+- Для `/decisions` и `/pools/binding-profiles` page-level композиция должна идти через platform layer; обход raw `antd` containers на уровне route-page считается нарушением governance и ловится линтером.
+- Не вводить вторую primary design system (`shadcn/ui`, `MUI`, Radix-first page shells и т.п.) без отдельного одобренного OpenSpec change.
+
 # Unified Workflow
 
 We operate in a cycle: **OpenSpec (What) → Beads (How) → Code (Implementation)**.
