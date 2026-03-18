@@ -169,6 +169,14 @@ command-center-1c/
 - **WebSocket** - Real-time updates
 - **Axios** - HTTP client
 
+### UI-platform validation baseline
+
+- `antd`: `5.29.3`
+- `@ant-design/pro-components`: `2.8.10`
+- Default delivery path: `cd frontend && npm run build`
+- Validation order: `generate:api` -> `lint` -> `test:run` -> `test:browser:ui-platform` -> `build:assets`
+- Runbook: [docs/deployment/frontend-ui-platform-validation-runbook.md](docs/deployment/frontend-ui-platform-validation-runbook.md)
+
 ### Data & Infrastructure
 
 - **PostgreSQL** - Primary database

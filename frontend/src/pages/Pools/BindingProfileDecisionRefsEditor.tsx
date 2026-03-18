@@ -1,6 +1,7 @@
-import { Button, Card, Form, Input, Space, Typography } from 'antd'
+import { Button, Form, Input, Space, Typography } from 'antd'
 import type { FormInstance } from 'antd'
 
+import { EntityDetails } from '../../components/platform'
 import type { AvailableDecisionRevision } from '../../types/workflow'
 import { DecisionRevisionSelect } from '../../components/workflow/DecisionRevisionSelect'
 import type { BindingProfileEditorFormValues } from './poolBindingProfilesForm'
@@ -25,7 +26,7 @@ export function BindingProfileDecisionRefsEditor({
   const decisionValues = Form.useWatch('decisions', form) ?? []
 
   return (
-    <Card size="small" title="Publication slots">
+    <EntityDetails title="Publication slots">
       <Form.List name="decisions">
         {(decisionFields, decisionActions) => (
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
@@ -136,6 +137,6 @@ export function BindingProfileDecisionRefsEditor({
           </Space>
         )}
       </Form.List>
-    </Card>
+    </EntityDetails>
   )
 }

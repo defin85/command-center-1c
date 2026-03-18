@@ -1,5 +1,6 @@
-import { Card, Descriptions, Empty, Space, Typography } from 'antd'
+import { Descriptions, Space, Typography } from 'antd'
 
+import { EmptyState, EntityDetails } from '../../components/platform'
 import type {
   DocumentPolicyChainOutput,
   DocumentPolicyDocumentOutput,
@@ -21,11 +22,13 @@ const renderText = (value: string | undefined): string => {
 
 function MappingViewer({ title, entries, emptyLabel }: MappingViewerProps) {
   return (
-    <Card size="small" title={title}>
+    <EntityDetails
+      title={title}
+      empty={entries.length === 0}
+      emptyDescription={emptyLabel}
+    >
       <Space direction="vertical" size="small" style={{ width: '100%' }}>
-        {entries.length === 0 ? (
-          <Text type="secondary">{emptyLabel}</Text>
-        ) : entries.map(([target, source]) => (
+        {entries.map(([target, source]) => (
           <div
             key={`${title}:${target}`}
             style={{
@@ -40,7 +43,7 @@ function MappingViewer({ title, entries, emptyLabel }: MappingViewerProps) {
           </div>
         ))}
       </Space>
-    </Card>
+    </EntityDetails>
   )
 }
 
@@ -56,11 +59,7 @@ function DocumentViewer({
   const tableParts = Object.entries(document.table_parts_mapping ?? {})
 
   return (
-    <Card
-      size="small"
-      type="inner"
-      title={`Document ${index + 1}: ${renderText(document.document_id)}`}
-    >
+    <EntityDetails title={`Document ${index + 1}: ${renderText(document.document_id)}`}>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Descriptions
           size="small"
@@ -115,7 +114,7 @@ function DocumentViewer({
           emptyLabel="No link rules configured."
         />
       </Space>
-    </Card>
+    </EntityDetails>
   )
 }
 
@@ -129,14 +128,13 @@ function ChainViewer({
   const documents = Array.isArray(chain.documents) ? chain.documents : []
 
   return (
-    <Card
-      size="small"
+    <EntityDetails
       title={`Chain ${index + 1}: ${renderText(chain.chain_id)}`}
+      empty={documents.length === 0}
+      emptyDescription="No documents configured for this chain."
     >
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        {documents.length === 0 ? (
-          <Text type="secondary">No documents configured for this chain.</Text>
-        ) : documents.map((document, documentIndex) => (
+        {documents.map((document, documentIndex) => (
           <DocumentViewer
             key={`${chain.chain_id}:${document.document_id}:${documentIndex}`}
             document={document}
@@ -144,7 +142,7 @@ function ChainViewer({
           />
         ))}
       </Space>
-    </Card>
+    </EntityDetails>
   )
 }
 
@@ -160,7 +158,7 @@ export function DocumentPolicyViewer({
   )
 
   if (!policy || chains.length === 0) {
-    return <Empty description="No structured document policy data available." />
+    return <EmptyState description="No structured document policy data available." />
   }
 
   return (

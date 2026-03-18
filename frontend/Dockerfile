@@ -12,7 +12,7 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Build the application
+# Full UI-platform gate; do not bypass with build:assets.
 RUN npm run build
 
 # Stage 2: Runtime

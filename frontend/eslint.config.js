@@ -27,6 +27,14 @@ const canonicalPageContainerImports = [
   },
 ]
 
+const canonicalPilotModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Empty', 'Row', 'Col', 'Table', 'Tag'],
+    message: 'Migrated Decisions and Binding Profile modules must compose through `src/components/platform` primitives instead of raw Ant layout/data containers.',
+  },
+]
+
 export default tseslint.config(
   { ignores: ['dist', 'src/api/generated/**'] },
   {
@@ -107,6 +115,23 @@ export default tseslint.config(
         paths: [
           ...contextAwareAntdImports,
           ...canonicalPageContainerImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Decisions/*Panel.tsx',
+      'src/pages/Decisions/*Viewer.tsx',
+      'src/pages/Pools/PoolBindingProfiles*.tsx',
+      'src/pages/Pools/BindingProfile*.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...canonicalPilotModuleImports,
         ],
         patterns: competingFoundationImportPatterns,
       }],

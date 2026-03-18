@@ -1,6 +1,7 @@
-import { Alert, Button, Card, Empty, Input, Select, Space, Spin, Typography } from 'antd'
+import { Alert, Button, Input, Select, Space, Spin, Typography } from 'antd'
 
 import type { OrganizationPool, PoolGraph } from '../../api/intercompanyPools'
+import { EmptyState, EntityDetails } from '../../components/platform'
 
 const { Text, Title } = Typography
 
@@ -135,20 +136,17 @@ export function DecisionLegacyImportPanel({
           </Space>
         ) : null}
         {!graphLoading && value.poolId && edgeOptions.length === 0 ? (
-          <Empty
-            description="No legacy document_policy edges found for the selected pool."
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-          />
+          <EmptyState description="No legacy document_policy edges found for the selected pool." />
         ) : null}
       </Space>
 
       {selectedEdgeLabel ? (
-        <Card size="small" title="Selected legacy source">
+        <EntityDetails title="Selected legacy source">
           <Space direction="vertical" size="small" style={{ display: 'flex' }}>
             <Text>{selectedEdgeLabel}</Text>
             <Text type="secondary">Source path: edge.metadata.document_policy</Text>
           </Space>
-        </Card>
+        </EntityDetails>
       ) : null}
 
       <Space direction="vertical" size="small" style={{ display: 'flex' }}>

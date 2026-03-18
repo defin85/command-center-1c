@@ -123,5 +123,6 @@ Ant-based platform в рамках этого change считается един
 5. Провести pilot migration на `/pools/binding-profiles`.
 6. После успешных pilot surfaces масштабировать подход на остальные CRUD/admin surfaces.
 
-## Open Questions
-- Какой именно target baseline внутри современной `antd 5.x` линии проект принимает как минимально обязательный для implementation этого change?
+## Resolved Baseline
+- Target dependency baseline for this change is `antd 5.29.3` with `@ant-design/pro-components 2.8.10`.
+- Default frontend delivery path is `cd frontend && npm run build`, which runs the full UI-platform validation gate before `build:assets`.

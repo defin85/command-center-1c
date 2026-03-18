@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Descriptions, Form, Input, Space, Typography } from 'antd'
+import { Alert, Button, Descriptions, Form, Input, Space, Typography } from 'antd'
 
 import type {
   BindingProfileCreateRequest,
@@ -7,7 +7,7 @@ import type {
   BindingProfileRevisionCreateRequest,
 } from '../../api/poolBindingProfiles'
 import { useAuthoringReferences } from '../../api/queries/authoringReferences'
-import { ModalFormShell } from '../../components/platform'
+import { EntityDetails, ModalFormShell } from '../../components/platform'
 import { WorkflowRevisionSelect } from '../../components/workflow/WorkflowRevisionSelect'
 import { resolveApiError } from './masterData/errorUtils'
 import { BindingProfileDecisionRefsEditor } from './BindingProfileDecisionRefsEditor'
@@ -230,34 +230,36 @@ export function PoolBindingProfilesEditorModal({
         </Form.Item>
 
         {currentWorkflowSelection.workflowRevisionId ? (
-          <Card size="small" title="Pinned workflow lineage" style={{ marginBottom: 16 }}>
-            <Descriptions
-              size="small"
-              column={1}
-              items={[
-                {
-                  key: 'workflow-name',
-                  label: 'Workflow',
-                  children: currentWorkflowSelection.workflowName || '—',
-                },
-                {
-                  key: 'workflow-definition-key',
-                  label: 'Definition key',
-                  children: currentWorkflowSelection.workflowDefinitionKey || '—',
-                },
-                {
-                  key: 'workflow-revision-id',
-                  label: 'Revision ID',
-                  children: currentWorkflowSelection.workflowRevisionId || '—',
-                },
-                {
-                  key: 'workflow-revision',
-                  label: 'Revision',
-                  children: currentWorkflowSelection.workflowRevision || '—',
-                },
-              ]}
-            />
-          </Card>
+          <div style={{ marginBottom: 16 }}>
+            <EntityDetails title="Pinned workflow lineage">
+              <Descriptions
+                size="small"
+                column={1}
+                items={[
+                  {
+                    key: 'workflow-name',
+                    label: 'Workflow',
+                    children: currentWorkflowSelection.workflowName || '—',
+                  },
+                  {
+                    key: 'workflow-definition-key',
+                    label: 'Definition key',
+                    children: currentWorkflowSelection.workflowDefinitionKey || '—',
+                  },
+                  {
+                    key: 'workflow-revision-id',
+                    label: 'Revision ID',
+                    children: currentWorkflowSelection.workflowRevisionId || '—',
+                  },
+                  {
+                    key: 'workflow-revision',
+                    label: 'Revision',
+                    children: currentWorkflowSelection.workflowRevision || '—',
+                  },
+                ]}
+              />
+            </EntityDetails>
+          </div>
         ) : null}
 
         <Form.Item name="contract_version" label="Contract version">
