@@ -1,0 +1,62 @@
+import { describe, expect, it, vi } from 'vitest'
+import { App as AntApp, Input } from 'antd'
+import { render, screen } from '@testing-library/react'
+
+import {
+  DashboardPage,
+  EntityList,
+  ModalFormShell,
+  PageHeader,
+} from '..'
+
+describe('platform primitives', () => {
+  it('renders EntityList as the canonical list pattern', () => {
+    render(
+      <AntApp>
+        <EntityList
+          title="Catalog"
+          dataSource={[{ id: 'decision-1', name: 'Services publication policy' }]}
+          renderItem={(item) => <div>{item.name}</div>}
+        />
+      </AntApp>
+    )
+
+    expect(screen.getByText('Catalog')).toBeInTheDocument()
+    expect(screen.getByText('Services publication policy')).toBeInTheDocument()
+  })
+
+  it('renders ModalFormShell as the canonical modal authoring pattern', () => {
+    render(
+      <AntApp>
+        <ModalFormShell
+          open
+          onClose={vi.fn()}
+          onSubmit={vi.fn()}
+          title="Create reusable profile"
+          submitText="Create profile"
+        >
+          <label htmlFor="profile-code">Profile code</label>
+          <Input id="profile-code" />
+        </ModalFormShell>
+      </AntApp>
+    )
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByLabelText('Profile code')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create profile' })).toBeInTheDocument()
+  })
+
+  it('renders DashboardPage as the canonical dashboard shell', () => {
+    render(
+      <AntApp>
+        <DashboardPage header={<PageHeader title="Dashboard" subtitle="Last updated: now" />}>
+          <div>Cluster overview</div>
+        </DashboardPage>
+      </AntApp>
+    )
+
+    expect(screen.getByText('Dashboard')).toBeInTheDocument()
+    expect(screen.getByText('Last updated: now')).toBeInTheDocument()
+    expect(screen.getByText('Cluster overview')).toBeInTheDocument()
+  })
+})

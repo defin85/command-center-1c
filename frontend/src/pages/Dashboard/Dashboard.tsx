@@ -10,7 +10,7 @@
  * - Clusters overview
  */
 import React, { useState, useCallback } from 'react'
-import { Row, Col, Alert, Typography, Space, Divider, Button, Tooltip } from 'antd'
+import { Row, Col, Divider, Button, Tooltip } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 
@@ -26,6 +26,7 @@ import { useDashboardStats } from './hooks'
 // Reusable components from service-mesh
 import SystemHealthCard from '../../components/service-mesh/SystemHealthCard'
 import RecentOperationsTable from '../../components/service-mesh/RecentOperationsTable'
+import { DashboardPage, ErrorState, PageHeader } from '../../components/platform'
 
 // Hooks
 import { useServiceMesh } from '../../hooks/useServiceMesh'
@@ -33,8 +34,6 @@ import { useServiceMesh } from '../../hooks/useServiceMesh'
 // Operations components
 import { NewOperationWizard } from '../Operations/components/NewOperationWizard'
 import type { NewOperationData } from '../Operations/components/NewOperationWizard/types'
-
-const { Title, Text } = Typography
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate()
@@ -84,43 +83,36 @@ export const Dashboard: React.FC = () => {
   // Error state
   if (error && !loading) {
     return (
-      <div style={{ padding: 24 }}>
-        <Alert
+      <DashboardPage
+        header={(
+          <PageHeader title="Dashboard" />
+        )}
+      >
+        <ErrorState
           message="Error loading dashboard"
           description={error}
-          type="error"
-          showIcon
-          action={
-            <Space>
-              <Tooltip title="Refresh dashboard">
-                <Button
-                  type="text"
-                  icon={<ReloadOutlined />}
-                  onClick={refresh}
-                  aria-label="Refresh dashboard"
-                />
-              </Tooltip>
-            </Space>
-          }
+          action={(
+            <Tooltip title="Refresh dashboard">
+              <Button
+                type="text"
+                icon={<ReloadOutlined />}
+                onClick={refresh}
+                aria-label="Refresh dashboard"
+              />
+            </Tooltip>
+          )}
         />
-      </div>
+      </DashboardPage>
     )
   }
 
   return (
-    <div style={{ padding: 24 }}>
-      {/* Header */}
-      <Row justify="space-between" align="middle" style={{ marginBottom: 24 }}>
-        <Col>
-          <Title level={2} style={{ margin: 0 }}>Dashboard</Title>
-          {lastUpdated && (
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              Last updated: {lastUpdated.toLocaleTimeString('ru-RU')}
-            </Text>
-          )}
-        </Col>
-        <Col>
-          <Space>
+    <DashboardPage
+      header={(
+        <PageHeader
+          title="Dashboard"
+          subtitle={lastUpdated ? `Last updated: ${lastUpdated.toLocaleTimeString('ru-RU')}` : undefined}
+          actions={(
             <Tooltip title="Refresh dashboard">
               <Button
                 type="text"
@@ -130,9 +122,10 @@ export const Dashboard: React.FC = () => {
                 disabled={loading}
               />
             </Tooltip>
-          </Space>
-        </Col>
-      </Row>
+          )}
+        />
+      )}
+    >
 
       {/* Quick Actions */}
       <QuickActionsBar onNewOperation={handleNewOperation} />
@@ -191,7 +184,7 @@ export const Dashboard: React.FC = () => {
         onClose={handleWizardClose}
         onSubmit={handleWizardSubmit}
       />
-    </div>
+    </DashboardPage>
   )
 }
 

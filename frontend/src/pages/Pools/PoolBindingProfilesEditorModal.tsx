@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Descriptions, Form, Input, Modal, Space, Typography } from 'antd'
+import { Alert, Button, Card, Descriptions, Form, Input, Space, Typography } from 'antd'
 
 import type {
   BindingProfileCreateRequest,
@@ -7,6 +7,7 @@ import type {
   BindingProfileRevisionCreateRequest,
 } from '../../api/poolBindingProfiles'
 import { useAuthoringReferences } from '../../api/queries/authoringReferences'
+import { ModalFormShell } from '../../components/platform'
 import { WorkflowRevisionSelect } from '../../components/workflow/WorkflowRevisionSelect'
 import { resolveApiError } from './masterData/errorUtils'
 import { BindingProfileDecisionRefsEditor } from './BindingProfileDecisionRefsEditor'
@@ -137,15 +138,14 @@ export function PoolBindingProfilesEditorModal({
   }
 
   return (
-    <Modal
+    <ModalFormShell
       open={open}
       title={mode === 'create' ? 'Create reusable profile' : 'Publish immutable revision'}
-      onCancel={onCancel}
-      onOk={() => { void handleSubmit() }}
-      okText={mode === 'create' ? 'Create profile' : 'Publish revision'}
+      onClose={onCancel}
+      onSubmit={() => { void handleSubmit() }}
+      submitText={mode === 'create' ? 'Create profile' : 'Publish revision'}
       confirmLoading={submitting}
-      destroyOnHidden
-      okButtonProps={{ 'data-testid': buildFieldTestId(mode, 'submit') } as Record<string, string>}
+      submitButtonTestId={buildFieldTestId(mode, 'submit')}
       width={880}
     >
       {submitError ? (
@@ -300,6 +300,6 @@ export function PoolBindingProfilesEditorModal({
           </Space>
         ) : null}
       </Form>
-    </Modal>
+    </ModalFormShell>
   )
 }

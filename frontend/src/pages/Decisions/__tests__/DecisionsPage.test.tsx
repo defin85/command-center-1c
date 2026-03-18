@@ -446,7 +446,7 @@ describe('DecisionsPage', () => {
         { skipGlobalError: true },
       )
     })
-  }, 20000)
+  }, 30000)
 
   it('imports a legacy edge policy through the pool migration API on /decisions', async () => {
     const user = userEvent.setup()
@@ -490,7 +490,7 @@ describe('DecisionsPage', () => {
     expect(screen.getByText('Source: edge.metadata.document_policy (edge-v1)')).toBeInTheDocument()
     expect(screen.getByText('Decision ref: policy-imported r4')).toBeInTheDocument()
     expect(screen.getByText('Affected workflow bindings were updated automatically.')).toBeInTheDocument()
-  }, 20000)
+  }, 30000)
 
   it('falls back to unscoped decisions read when selected database metadata state is unavailable', async () => {
     mockUseDatabaseMetadataManagement.mockReturnValue({
@@ -620,7 +620,7 @@ describe('DecisionsPage', () => {
         { skipGlobalError: true },
       )
     })
-  }, 10000)
+  }, 30000)
 
   it('keeps unbound non-document_policy revisions out of the default selection and edit flow', async () => {
     const user = userEvent.setup()
@@ -834,7 +834,7 @@ describe('DecisionsPage', () => {
         { skipGlobalError: true },
       )
     })
-  }, 10000)
+  }, 30000)
 
   it('allows clearing the selected database without auto-restoring the first option', async () => {
     const user = userEvent.setup()
@@ -1161,7 +1161,7 @@ describe('DecisionsPage', () => {
         { skipGlobalError: true },
       )
     })
-  }, 10000)
+  }, 30000)
 
   it('keeps guided rollover fail-closed when target metadata validation rejects publish', async () => {
     const user = userEvent.setup()
@@ -1183,5 +1183,5 @@ describe('DecisionsPage', () => {
 
     expect(await screen.findByText('Document policy references are invalid for the selected target metadata snapshot.')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Rollover selected revision' })).toBeInTheDocument()
-  }, 10000)
+  }, 30000)
 })

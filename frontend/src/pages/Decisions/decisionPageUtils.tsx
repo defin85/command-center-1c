@@ -1,6 +1,5 @@
-import { Tag } from 'antd'
-
 import { getV2 } from '../../api/generated'
+import { StatusBadge } from '../../components/platform'
 import type {
   DatabaseMetadataManagementResponse,
   DecisionMetadataCompatibility,
@@ -251,9 +250,13 @@ export const normalizeMetadataItems = (metadata: MetadataContextLike) => (
 )
 
 export const renderCompatibilityTag = (compatibility?: DecisionMetadataCompatibility | null) => {
-  if (!compatibility) return <Tag>unknown</Tag>
-  const color = compatibility.is_compatible ? 'green' : 'red'
-  return <Tag color={color}>{compatibility.status}</Tag>
+  if (!compatibility) return <StatusBadge status="unknown" />
+  return (
+    <StatusBadge
+      status={compatibility.status}
+      colorMap={compatibility.is_compatible ? undefined : { [compatibility.status]: 'volcano' }}
+    />
+  )
 }
 
 export const buildChainsFromDraft = (draft: DecisionEditorState): DocumentPolicyBuilderChainFormValue[] => {

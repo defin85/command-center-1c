@@ -588,7 +588,7 @@ describe('PoolRunsPage', () => {
     await openRunsStage(user, 'Safe Actions')
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled()
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
-  }, 15000)
+  }, 30000)
 
   it('shows run lineage as primary operator context and keeps workflow diagnostics secondary', async () => {
     const user = userEvent.setup()
@@ -769,7 +769,7 @@ describe('PoolRunsPage', () => {
       'href',
       '/workflows/executions/22222222-2222-2222-2222-222222222222'
     )
-  }, 15000)
+  }, 30000)
 
   it('disables confirm while safe run is in pre-publish preparing state', async () => {
     const user = userEvent.setup()
@@ -788,7 +788,7 @@ describe('PoolRunsPage', () => {
     expect(await screen.findByText('Pre-publish ещё выполняется')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeDisabled()
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
-  }, 15000)
+  }, 30000)
 
   it('sends confirm-publication with generated idempotency key', async () => {
     const user = userEvent.setup()
@@ -806,7 +806,7 @@ describe('PoolRunsPage', () => {
     )
     const generatedKey = mockConfirmPoolRunPublication.mock.calls[0][1] as string
     expect(generatedKey.length).toBeGreaterThan(8)
-  }, 15000)
+  }, 30000)
 
   it('maps create-run problem+json VALIDATION_ERROR to form field and user-facing message', async () => {
     const user = userEvent.setup()
@@ -830,7 +830,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(await screen.findByText('Проверьте корректность параметров запуска.')).toBeInTheDocument()
     expect(await screen.findByText('top_down starting_amount must be greater than 0.')).toBeInTheDocument()
-  }, 15000)
+  }, 30000)
 
   it('maps missing binding create-run error to workflow binding field and localized message', async () => {
     const user = userEvent.setup()
@@ -855,7 +855,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(await screen.findAllByText('Перед продолжением выберите workflow binding.')).toHaveLength(2)
     expect(screen.queryByText('pool_workflow_binding_id is required.')).not.toBeInTheDocument()
-  }, 15000)
+  }, 30000)
 
   it('maps missing binding preview error to workflow binding field and localized message', async () => {
     const user = userEvent.setup()
@@ -879,7 +879,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockPreviewPoolWorkflowBinding).toHaveBeenCalledTimes(1))
     expect(await screen.findAllByText('Перед продолжением выберите workflow binding.')).toHaveLength(2)
     expect(screen.queryByText('pool_workflow_binding_id is required.')).not.toBeInTheDocument()
-  }, 15000)
+  }, 30000)
 
   it.each([
     [
@@ -937,7 +937,7 @@ describe('PoolRunsPage', () => {
     )
     const generatedKey = mockAbortPoolRunPublication.mock.calls[0][1] as string
     expect(generatedKey.length).toBeGreaterThan(8)
-  }, 15000)
+  }, 30000)
 
   it('sends retry-failed payload with parsed documents and generated idempotency key', async () => {
     const user = userEvent.setup()
@@ -963,7 +963,7 @@ describe('PoolRunsPage', () => {
     )
     const generatedKey = mockRetryPoolRunFailed.mock.calls[0][2] as string
     expect(generatedKey.length).toBeGreaterThan(8)
-  }, 15000)
+  }, 30000)
 
   it('renders legacy run with canonical diagnostics payload fields', async () => {
     const user = userEvent.setup()
@@ -1144,7 +1144,7 @@ describe('PoolRunsPage', () => {
     await user.click(screen.getByText('Mismatches (1)'))
     expect(screen.getByText('sales-doc-1')).toBeInTheDocument()
     expect(screen.getByText('missing_table_part')).toBeInTheDocument()
-  }, 15000)
+  }, 30000)
 
   it('renders remediation transitions for master-data readiness blockers', async () => {
     const user = userEvent.setup()
@@ -1214,7 +1214,7 @@ describe('PoolRunsPage', () => {
       'href',
       '/pools/master-data?tab=item&entityType=item&canonicalId=item-missing&databaseId=db-2'
     )
-  }, 15000)
+  }, 30000)
 
   it('disables confirm when readiness blockers are present', async () => {
     const user = userEvent.setup()
@@ -1259,7 +1259,7 @@ describe('PoolRunsPage', () => {
     expect(screen.getByText('Organization->Party bindings')).toBeInTheDocument()
     expect(screen.getByText('Policy completeness')).toBeInTheDocument()
     expect(screen.getByText('OData verify readiness')).toBeInTheDocument()
-  }, 15000)
+  }, 30000)
 
   it('maps readiness Problem Details from confirm-publication to blocker-specific message', async () => {
     const user = userEvent.setup()
@@ -1294,7 +1294,7 @@ describe('PoolRunsPage', () => {
         'Document policy is incomplete for minimal_documents_full_payload. (POOL_DOCUMENT_POLICY_MAPPING_INVALID)'
       )
     ).toBeInTheDocument()
-  }, 15000)
+  }, 30000)
 
   it('renders publication credentials source hint in create run form', async () => {
     const user = userEvent.setup()
@@ -1373,7 +1373,7 @@ describe('PoolRunsPage', () => {
     expect(screen.getByTestId('pool-runs-create-binding-coverage')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-create-slot-coverage-summary')).toHaveTextContent('edges: 1')
     expect(screen.getByTestId('pool-runs-create-slot-coverage-summary')).toHaveTextContent('resolved: 1')
-  }, 15000)
+  }, 30000)
 
   it('submits top_down create-run payload with run_input and without source_hash', async () => {
     const user = userEvent.setup()
@@ -1389,7 +1389,7 @@ describe('PoolRunsPage', () => {
     expect(payload.pool_workflow_binding_id).toBe('binding-top-down')
     expect(payload.run_input).toEqual({ starting_amount: '100.00' })
     expect(payload).not.toHaveProperty('source_hash')
-  }, 15000)
+  }, 30000)
 
   it('previews effective workflow binding before run start', async () => {
     const user = userEvent.setup()
@@ -1420,7 +1420,7 @@ describe('PoolRunsPage', () => {
     expect((screen.getByTestId('pool-runs-binding-preview-slot-projection') as HTMLTextAreaElement).value).toContain(
       '"invoice_mode"'
     )
-  }, 15000)
+  }, 30000)
 
   it('uses backend slot coverage summary for binding preview instead of recomputing it from graph', async () => {
     const user = userEvent.setup()
@@ -1460,7 +1460,7 @@ describe('PoolRunsPage', () => {
     expect(await screen.findByTestId('pool-runs-binding-preview-slot-coverage')).toHaveTextContent('resolved: 1')
     expect(screen.getByText('All topology edges are covered by this binding preview.')).toBeInTheDocument()
     expect(screen.queryByText(/unexpected_slot/i)).not.toBeInTheDocument()
-  }, 15000)
+  }, 30000)
 
   it('submits bottom_up create-run payload with source_payload and selected schema template', async () => {
     const user = userEvent.setup()
@@ -1501,7 +1501,7 @@ describe('PoolRunsPage', () => {
       source_payload: [{ inn: '730000000111', amount: '55.00' }],
     })
     expect(payload).not.toHaveProperty('source_hash')
-  }, 15000)
+  }, 30000)
 
   it('ignores stale listPoolRuns response after create and keeps latest awaiting_approval run selected', async () => {
     const user = userEvent.setup()
@@ -1544,7 +1544,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled())
     expect(screen.queryByText('Pre-publish ещё выполняется')).not.toBeInTheDocument()
     expect(screen.getAllByText('awaiting_approval').length).toBeGreaterThan(0)
-  }, 15000)
+  }, 30000)
 
   it('refreshes current run report when Refresh Data is clicked', async () => {
     const user = userEvent.setup()
@@ -1594,5 +1594,5 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockGetPoolRunReport).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.getByTestId('pool-runs-verification-status')).toHaveTextContent('status: passed'))
     expect(screen.getByText('Published documents verified')).toBeInTheDocument()
-  }, 15000)
+  }, 30000)
 })

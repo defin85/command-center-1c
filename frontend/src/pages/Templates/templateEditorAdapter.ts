@@ -170,7 +170,7 @@ export const buildTemplateWritePayloadFromEditor = (
   if (executorKind === 'workflow') {
     const workflowId = typeof values.executor.workflow_id === 'string' ? values.executor.workflow_id.trim() : ''
     if (!workflowId) {
-      return { ok: false, error: 'workflow_id is required' }
+      return { ok: false, error: 'Workflow is required' }
     }
     templateData.kind = 'workflow'
     templateData.workflow_id = workflowId
@@ -178,7 +178,7 @@ export const buildTemplateWritePayloadFromEditor = (
   } else {
     const command = typeof values.executor.command_id === 'string' ? values.executor.command_id.trim() : ''
     if (!command) {
-      return { ok: false, error: 'command_id is required' }
+      return { ok: false, error: 'Command is required' }
     }
 
     const driver = executorKind === 'designer_cli' ? 'cli' : 'ibcmd'

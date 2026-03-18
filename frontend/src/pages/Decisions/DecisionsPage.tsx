@@ -344,6 +344,8 @@ export function DecisionsPage() {
       <DrawerFormShell
         open={Boolean(legacyImport.legacyImportDraft)}
         onClose={legacyImport.closeLegacyImport}
+        title={<Typography.Title level={4} style={{ marginBottom: 0 }}>Import legacy edge</Typography.Title>}
+        subtitle="Migrate a legacy edge document policy into /decisions and optionally update workflow bindings."
       >
         {legacyImport.legacyImportDraft ? (
           <DecisionLegacyImportPanel

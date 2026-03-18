@@ -1086,7 +1086,7 @@ test('Workflow hardening: /decisions shows shared metadata provenance, canonical
   await expect.poll(() => Boolean(state.decisionWrites[2]?.is_active)).toBe(false)
 
   await page.getByTestId('decisions-database-select').hover()
-  await page.locator('[data-testid=\"decisions-database-select\"] .ant-select-clear').click()
+  await page.locator('[data-testid="decisions-database-select"] .ant-select-clear').click()
   await expect.poll(() => state.decisionListQueries.at(-1)).toBe('')
   await expect(page.getByText('Select database')).toBeVisible()
 })

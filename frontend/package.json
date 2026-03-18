@@ -8,10 +8,10 @@
     "dev": "vite",
     "predev": "npm run generate:api",
     "analyze": "ANALYZE_BUNDLE=1 npm run build",
-    "build": "tsc && vite build",
-    "prebuild": "npm run generate:api && npm run lint:ui-platform",
+    "build:assets": "tsc && vite build",
+    "build": "npm run generate:api && npm run lint && npm run build:assets",
     "lint": "eslint .",
-    "lint:ui-platform": "eslint eslint.config.js src/components/platform/*.tsx src/components/layout/MainLayout.tsx src/pages/Decisions/DecisionsPage.tsx src/pages/Decisions/DecisionEditorPanel.tsx src/pages/Decisions/DecisionLegacyImportPanel.tsx src/pages/Pools/PoolBindingProfilesPage.tsx tests/browser/ui-platform-contract.spec.ts",
+    "lint:ui-platform": "eslint eslint.config.js src/components/platform/*.tsx src/components/platform/__tests__/PlatformPrimitives.test.tsx src/components/layout/MainLayout.tsx src/pages/Dashboard/Dashboard.tsx src/pages/Decisions/*.tsx src/pages/Pools/PoolBindingProfiles*.tsx tests/browser/ui-platform-contract.spec.ts",
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",
@@ -24,7 +24,7 @@
     "test:browser:forms": "playwright test tests/browser/form-field-ids.spec.ts",
     "test:browser:pools-full-flow": "playwright test tests/browser/pools-full-flow-ui.spec.ts",
     "test:browser:ui-platform": "playwright test tests/browser/ui-platform-contract.spec.ts",
-    "validate:ui-platform": "vitest run src/pages/Decisions/__tests__/DecisionsPage.test.tsx src/pages/Pools/__tests__/PoolBindingProfilesPage.test.tsx && npm run test:browser:ui-platform && npm run build"
+    "validate:ui-platform": "npm run generate:api && npm run lint && npm run test:run && npm run test:browser:ui-platform && npm run build:assets"
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",

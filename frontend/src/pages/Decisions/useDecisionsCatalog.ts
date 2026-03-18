@@ -17,6 +17,7 @@ import {
   loadDecisionDetail,
   loadDecisionsCollection,
   METADATA_CONTEXT_FALLBACK_MESSAGE,
+  type MetadataContextLike,
   shouldPreferUnscopedReadFromMetadataManagement,
   toErrorMessage,
 } from './decisionPageUtils'
@@ -29,7 +30,7 @@ type DecisionsCatalogState = {
   effectiveSelectedDatabaseId: string | undefined
   selectedDatabaseLabel: string
   metadataContext: PoolODataMetadataCatalogResponse | null
-  detailContext: PoolODataMetadataCatalogResponse | null
+  detailContext: MetadataContextLike
   listLoading: boolean
   detailLoading: boolean
   listError: string | null
@@ -54,7 +55,7 @@ type DecisionsCatalogState = {
   metadataContextFallbackActive: boolean
   metadataContextWarning: string | null
   canOpenRollover: boolean
-  rolloverTargetMetadataContext: PoolODataMetadataCatalogResponse | null
+  rolloverTargetMetadataContext: MetadataContextLike
   reloadCatalog: () => void
 }
 
@@ -69,7 +70,7 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
   const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(null)
   const [selectedDecision, setSelectedDecision] = useState<DecisionTable | null>(null)
   const [metadataContext, setMetadataContext] = useState<PoolODataMetadataCatalogResponse | null>(null)
-  const [detailContext, setDetailContext] = useState<PoolODataMetadataCatalogResponse | null>(null)
+  const [detailContext, setDetailContext] = useState<MetadataContextLike>(null)
   const [listLoading, setListLoading] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
@@ -247,6 +248,10 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
       setDetailLoading(false)
       return
     }
+
+    const summaryDecision = visibleDecisions.find((decision) => decision.id === selectedDecisionId) ?? null
+    setSelectedDecision(summaryDecision)
+    setDetailContext(summaryDecision?.metadata_context ?? null)
 
     let cancelled = false
 

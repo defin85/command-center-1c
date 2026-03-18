@@ -29,16 +29,21 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 - Основной UI stack проекта: `antd` + `@ant-design/pro-components` + project-owned thin design layer в `frontend/src/components/platform`.
 - Для catalog/detail/authoring surfaces сначала использовать platform primitives:
+  - `DashboardPage`
   - `WorkspacePage`
   - `PageHeader`
   - `MasterDetailShell`
+  - `EntityList`
   - `EntityTable`
   - `EntityDetails`
   - `DrawerFormShell`
+  - `ModalFormShell`
   - `StatusBadge`
   - `JsonBlock`
 - `MasterDetail` на узких viewport обязан деградировать в `list + Drawer`; horizontal overflow как основной режим недопустим.
+- `ModalFormShell` и `DrawerFormShell` являются canonical entry points для authoring/edit flows; raw `Modal`/inline page reflow не использовать как primary path.
 - Для `/decisions` и `/pools/binding-profiles` page-level композиция должна идти через platform layer; обход raw `antd` containers на уровне route-page считается нарушением governance и ловится линтером.
+- Blocking frontend gate для platform migrations: `npm run lint`, `npm run test:run`, `npm run test:browser:ui-platform`, затем production build.
 - Не вводить вторую primary design system (`shadcn/ui`, `MUI`, Radix-first page shells и т.п.) без отдельного одобренного OpenSpec change.
 
 # Unified Workflow

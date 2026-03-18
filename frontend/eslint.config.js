@@ -12,6 +12,13 @@ const contextAwareAntdImports = [
   },
 ]
 
+const competingFoundationImportPatterns = [
+  {
+    group: ['@mui/*', '@radix-ui/*', '@headlessui/react'],
+    message: 'Ant-based UI platform is the only approved primary foundation for platform migrations in this repository.',
+  },
+]
+
 const canonicalPageContainerImports = [
   {
     name: 'antd',
@@ -80,6 +87,7 @@ export default tseslint.config(
       // forbid static imports that bypass dynamic theme/context; use `App.useApp()` instead.
       'no-restricted-imports': ['error', {
         paths: contextAwareAntdImports,
+        patterns: competingFoundationImportPatterns,
       }],
       'no-restricted-syntax': ['error', {
         selector: "MemberExpression[object.name='Modal'][property.name=/^(confirm|info|success|error|warning)$/]",
@@ -90,6 +98,8 @@ export default tseslint.config(
   {
     files: [
       'src/pages/Decisions/DecisionsPage.tsx',
+      'src/pages/Decisions/DecisionCatalogPanel.tsx',
+      'src/pages/Decisions/DecisionDetailPanel.tsx',
       'src/pages/Pools/PoolBindingProfilesPage.tsx',
     ],
     rules: {
@@ -98,6 +108,25 @@ export default tseslint.config(
           ...contextAwareAntdImports,
           ...canonicalPageContainerImports,
         ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Pools/PoolBindingProfilesEditorModal.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          {
+            name: 'antd',
+            importNames: ['Modal'],
+            message: 'Binding profile authoring must use `ModalFormShell` from `src/components/platform` instead of raw `Modal`.',
+          },
+        ],
+        patterns: competingFoundationImportPatterns,
       }],
     },
   },

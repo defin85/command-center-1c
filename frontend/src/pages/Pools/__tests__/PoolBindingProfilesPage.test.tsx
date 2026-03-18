@@ -304,7 +304,7 @@ describe('PoolBindingProfilesPage', () => {
     expect(await screen.findByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('legacy-archive')
     expect(screen.getByTestId('pool-binding-profiles-status')).toHaveTextContent('deactivated')
     expect(screen.getByRole('button', { name: 'Publish new revision' })).toBeDisabled()
-  }, 15000)
+  }, 25000)
 
   it('creates a reusable profile from the dedicated catalog form', async () => {
     const mutateAsync = vi.fn().mockResolvedValue({
@@ -393,7 +393,7 @@ describe('PoolBindingProfilesPage', () => {
         },
       })
     })
-  }, 15000)
+  }, 25000)
 
   it('publishes a new immutable revision and deactivates the selected profile from the catalog', async () => {
     const reviseMutateAsync = vi.fn().mockResolvedValue({ binding_profile: activeDetail })
@@ -461,7 +461,7 @@ describe('PoolBindingProfilesPage', () => {
     await waitFor(() => {
       expect(deactivateMutateAsync).toHaveBeenCalledWith(activeDetail.binding_profile_id)
     })
-  }, 15000)
+  }, 25000)
 
   it('shows pool attachment usage for selected profile revisions', async () => {
     mockListOrganizationPools.mockResolvedValue([

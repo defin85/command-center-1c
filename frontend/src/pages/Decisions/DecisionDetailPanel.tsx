@@ -1,7 +1,8 @@
-import { Alert, Card, Descriptions, Empty, Space, Spin, Typography } from 'antd'
+import { Alert, Descriptions, Space, Typography } from 'antd'
 
 import type { DecisionTable } from '../../api/generated/model'
 import { LazyJsonCodeEditor } from '../../components/code/LazyJsonCodeEditor'
+import { EntityDetails } from '../../components/platform'
 import type { DocumentPolicyOutput } from './documentPolicyBuilder'
 import { DocumentPolicyViewer } from './DocumentPolicyViewer'
 import { normalizeMetadataItems, renderCompatibilityTag, formatJson, LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE, type MetadataContextLike } from './decisionPageUtils'
@@ -30,15 +31,14 @@ export function DecisionDetailPanel({
   selectedDecisionRequiresRollover,
 }: DecisionDetailPanelProps) {
   return (
-    <Card title={selectedDecision?.name || 'Decision detail'}>
-      {detailError ? <Alert type="error" showIcon message={detailError} /> : null}
-      {detailLoading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '32px 0' }}>
-          <Spin />
-        </div>
-      ) : !selectedDecision ? (
-        <Empty description="Select a decision revision to inspect metadata and output" />
-      ) : (
+    <EntityDetails
+      title={selectedDecision?.name || 'Decision detail'}
+      error={detailError}
+      loading={detailLoading}
+      empty={!selectedDecision}
+      emptyDescription="Select a decision revision to inspect metadata and output"
+    >
+      {selectedDecision ? (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           <Descriptions
             size="small"
@@ -141,7 +141,7 @@ export function DecisionDetailPanel({
             </div>
           </div>
         </Space>
-      )}
-    </Card>
+      ) : null}
+    </EntityDetails>
   )
 }

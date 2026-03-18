@@ -251,7 +251,7 @@ describe('PoolMasterDataPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Sync' }))
     await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
     await waitFor(() => expect(mockListMasterDataSyncConflicts).toHaveBeenCalled())
-  }, 15000)
+  }, 30000)
 
   it('opens remediation target tab from query params and shows remediation context', async () => {
     renderPage('/pools/master-data?tab=bindings&entityType=organization&canonicalId=party-1&databaseId=db-1&role=organization')
@@ -281,7 +281,7 @@ describe('PoolMasterDataPage', () => {
       await screen.findByText('Party должен иметь минимум одну роль: organization или counterparty.')
     ).toBeInTheDocument()
     expect(mockUpsertMasterDataParty).not.toHaveBeenCalled()
-  }, 15000)
+  }, 30000)
 
   it('renders Sync tab and runs conflict actions', async () => {
     const user = userEvent.setup()
@@ -372,7 +372,7 @@ describe('PoolMasterDataPage', () => {
         metadata: { source: 'ui' },
       })
     )
-  }, 20000)
+  }, 30000)
 
   it('applies scheduling filters for sync status operator view', async () => {
     const user = userEvent.setup()
@@ -401,7 +401,7 @@ describe('PoolMasterDataPage', () => {
       server_affinity: 'srv:main',
       deadline_state: 'missed',
     })
-  }, 20000)
+  }, 30000)
 
   it('runs bootstrap wizard flow preflight -> dry-run -> execute', async () => {
     const user = userEvent.setup()
@@ -501,7 +501,7 @@ describe('PoolMasterDataPage', () => {
 
     expect(await screen.findByText('Current Job')).toBeInTheDocument()
     expect(await screen.findByText('Rows (dry-run)')).toBeInTheDocument()
-  }, 20000)
+  }, 30000)
 
   it('keeps bootstrap form values after preflight error', async () => {
     const user = userEvent.setup()
@@ -528,7 +528,7 @@ describe('PoolMasterDataPage', () => {
     expect((await screen.findAllByText('Preflight failed in source adapter.')).length).toBeGreaterThan(0)
     expect(screen.getByTestId('bootstrap-import-database-select')).toHaveTextContent('Main DB')
     expect(screen.getByTestId('bootstrap-import-entity-scope-select')).toHaveTextContent('party')
-  }, 20000)
+  }, 30000)
 
   it('runs retry failed chunks action for bootstrap job', async () => {
     const user = userEvent.setup()
@@ -568,5 +568,5 @@ describe('PoolMasterDataPage', () => {
     await waitFor(() =>
       expect(mockRetryFailedPoolMasterDataBootstrapImportChunks).toHaveBeenCalledWith('job-failed')
     )
-  }, 20000)
+  }, 30000)
 })

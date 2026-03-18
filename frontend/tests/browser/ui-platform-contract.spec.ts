@@ -9,6 +9,7 @@ declare global {
 const TENANT_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const DATABASE_ID = '10101010-1010-1010-1010-101010101010'
 const NOW = '2026-03-10T12:00:00Z'
+const WORKFLOW_REVISION_ID = 'wf-services-r4'
 
 const METADATA_CONTEXT = {
   database_id: DATABASE_ID,
@@ -134,6 +135,28 @@ const DECISION = {
     reason: null,
     is_compatible: true,
   },
+  created_at: NOW,
+  updated_at: NOW,
+}
+
+const WORKFLOW = {
+  id: WORKFLOW_REVISION_ID,
+  name: 'Services Publication',
+  description: 'Reusable workflow for service publication.',
+  workflow_type: 'complex',
+  category: 'custom',
+  is_valid: true,
+  is_active: true,
+  is_system_managed: false,
+  management_mode: 'user_authored',
+  visibility_surface: 'workflow_library',
+  read_only_reason: null,
+  version_number: 4,
+  parent_version: null,
+  created_by: null,
+  created_by_username: 'analyst',
+  node_count: 2,
+  execution_count: 0,
   created_at: NOW,
   updated_at: NOW,
 }
@@ -349,6 +372,15 @@ async function setupUiPlatformMocks(page: Page) {
       })
     }
 
+    if (method === 'GET' && path === '/api/v2/workflows/list-workflows/') {
+      return fulfillJson(route, {
+        workflows: [WORKFLOW],
+        count: 1,
+        total: 1,
+        authoring_phase: null,
+      })
+    }
+
     const decisionDetailMatch = path.match(/^\/api\/v2\/decisions\/([^/]+)\/$/)
     if (method === 'GET' && decisionDetailMatch) {
       return fulfillJson(route, {
@@ -408,6 +440,23 @@ test('UI platform: /decisions keeps mobile list stable and opens detail in a dra
   await expectNoHorizontalOverflow(page)
 })
 
+test('UI platform: /decisions opens authoring in a mobile-safe drawer with labeled fields', async ({ page }) => {
+  await setupAuth(page)
+  await setupUiPlatformMocks(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/decisions', { waitUntil: 'domcontentloaded' })
+
+  await page.getByRole('button', { name: 'New policy' }).click()
+
+  const authoringDrawer = page.getByRole('dialog')
+  await expect(authoringDrawer).toBeVisible()
+  await expect(authoringDrawer.getByLabel('Decision table ID')).toBeVisible()
+  await expect(authoringDrawer.getByLabel('Decision name')).toBeVisible()
+  await expect(authoringDrawer.getByRole('button', { name: 'Save decision' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
 test('UI platform: /pools/binding-profiles keeps mobile catalog readable and opens detail in a drawer', async ({ page }) => {
   await setupAuth(page)
   await setupUiPlatformMocks(page)
@@ -425,5 +474,23 @@ test('UI platform: /pools/binding-profiles keeps mobile catalog readable and ope
   await expect(detailDrawer).toBeVisible()
   await expect(detailDrawer.getByTestId('pool-binding-profiles-selected-code')).toHaveText('services-publication')
   await expect(detailDrawer.getByText('Latest revision payload')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /pools/binding-profiles opens create-profile authoring in a mobile-safe modal shell', async ({ page }) => {
+  await setupAuth(page)
+  await setupUiPlatformMocks(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/pools/binding-profiles', { waitUntil: 'domcontentloaded' })
+
+  await page.getByRole('button', { name: 'Create profile' }).click()
+
+  const authoringModal = page.getByRole('dialog')
+  await expect(authoringModal).toBeVisible()
+  await expect(authoringModal.getByLabel('Profile code')).toBeVisible()
+  await expect(authoringModal.getByLabel('Profile name')).toBeVisible()
+  await expect(authoringModal.getByTestId('pool-binding-profiles-create-workflow-revision-select')).toBeVisible()
+  await expect(authoringModal.getByRole('button', { name: 'Create profile' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })

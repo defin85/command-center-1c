@@ -56,6 +56,19 @@ describe('templateEditorAdapter', () => {
     }
   })
 
+  it('returns validation error when workflow is missing', () => {
+    const values = buildTemplateEditorValues(null)
+    values.name = 'No workflow'
+    values.executor.kind = 'workflow'
+    values.executor.workflow_id = ' '
+
+    const result = buildTemplateWritePayloadFromEditor(values)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toBe('Workflow is required')
+    }
+  })
+
   it('serializes editor values to template write payload', () => {
     const values: ActionFormValues = {
       id: 'tpl-custom-2',
@@ -94,4 +107,3 @@ describe('templateEditorAdapter', () => {
     expect(payload.template_data.kind).toBe('designer_cli')
   })
 })
-
