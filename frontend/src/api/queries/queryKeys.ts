@@ -76,6 +76,10 @@ export const queryKeys = {
     all: ['me'] as const,
     current: () => [...queryKeys.me.all, 'current'] as const,
   },
+  shell: {
+    all: ['shell'] as const,
+    bootstrap: () => [...queryKeys.shell.all, 'bootstrap'] as const,
+  },
   commandSchemas: {
     all: ['command-schemas'] as const,
     canManage: () => [...queryKeys.commandSchemas.all, 'can-manage'] as const,

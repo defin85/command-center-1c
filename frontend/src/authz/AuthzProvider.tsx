@@ -1,28 +1,21 @@
 import type { ReactNode } from 'react'
 import { useMemo } from 'react'
 
-import { useMe } from '../api/queries/me'
-import { useEffectiveAccess } from '../api/queries/rbac'
+import { useShellBootstrap } from '../api/queries/shellBootstrap'
 import { AuthzContext, hasLevel, normalizeLevel, type AccessLevel, type AuthzContextValue } from './context'
 
 export const AuthzProvider = ({ children }: { children: ReactNode }) => {
   const hasToken = Boolean(localStorage.getItem('auth_token'))
-  const meQuery = useMe({ enabled: hasToken })
-  const accessQuery = useEffectiveAccess(undefined, {
-    includeDatabases: true,
-    includeClusters: true,
-    includeTemplates: true,
-    enabled: hasToken,
-  })
+  const shellBootstrapQuery = useShellBootstrap({ enabled: hasToken })
 
-  const isStaff = Boolean(meQuery.data?.is_staff)
-  const isLoading = Boolean(hasToken && (meQuery.isLoading || accessQuery.isLoading))
+  const isStaff = Boolean(shellBootstrapQuery.data?.me.is_staff)
+  const isLoading = Boolean(hasToken && shellBootstrapQuery.isLoading)
 
   const { databaseLevels, clusterLevels, templateLevels } = useMemo(() => {
     const dbLevels = new Map<string, AccessLevel>()
     const clLevels = new Map<string, AccessLevel>()
     const tplLevels = new Map<string, AccessLevel>()
-    const data = accessQuery.data
+    const data = shellBootstrapQuery.data?.access
     if (!data) {
       return { databaseLevels: dbLevels, clusterLevels: clLevels, templateLevels: tplLevels }
     }
@@ -50,7 +43,7 @@ export const AuthzProvider = ({ children }: { children: ReactNode }) => {
     })
 
     return { databaseLevels: dbLevels, clusterLevels: clLevels, templateLevels: tplLevels }
-  }, [accessQuery.data])
+  }, [shellBootstrapQuery.data?.access])
 
   const getDatabaseLevel = (databaseId: string | null | undefined): AccessLevel | null => {
     if (!databaseId) return null

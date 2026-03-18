@@ -16,6 +16,11 @@
 
 Подробности по workflow: [native-github-actions.md](./native-github-actions.md)
 
+Отдельные frontend runbooks:
+
+- [frontend-ui-platform-validation-runbook.md](./frontend-ui-platform-validation-runbook.md)
+- [frontend-query-stream-runtime-runbook.md](./frontend-query-stream-runtime-runbook.md)
+
 ## 1) Одноразовая подготовка деплой-хелпера
 
 Из корня репозитория:

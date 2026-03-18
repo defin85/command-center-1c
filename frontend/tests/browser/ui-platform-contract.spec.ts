@@ -306,6 +306,32 @@ async function fulfillJson(route: Route, data: unknown, status = 200) {
   })
 }
 
+type RequestCounts = {
+  bootstrap: number
+  streamTickets: number
+  databaseLists: number
+  metadataManagementReads: number
+  decisionsScoped: number
+  decisionsUnscoped: number
+  bindingProfilesList: number
+  bindingProfileDetails: number
+  organizationPools: number
+}
+
+function createRequestCounts(): RequestCounts {
+  return {
+    bootstrap: 0,
+    streamTickets: 0,
+    databaseLists: 0,
+    metadataManagementReads: 0,
+    decisionsScoped: 0,
+    decisionsUnscoped: 0,
+    bindingProfilesList: 0,
+    bindingProfileDetails: 0,
+    organizationPools: 0,
+  }
+}
+
 async function setupAuth(page: Page) {
   await page.addInitScript((tenantId: string) => {
     window.__CC1C_ENV__ = {
@@ -318,33 +344,85 @@ async function setupAuth(page: Page) {
   }, TENANT_ID)
 }
 
-async function setupUiPlatformMocks(page: Page) {
+async function setupPersistentDatabaseStream(page: Page) {
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window)
+    const encoder = new TextEncoder()
+
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
+
+      if (url.includes('/api/v2/databases/stream/')) {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode(`id: ready-1\ndata: ${JSON.stringify({
+              version: '1.0',
+              type: 'database_stream_connected',
+            })}\n\n`))
+          },
+        })
+
+        return new Response(stream, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-store',
+          },
+        })
+      }
+
+      return originalFetch(input, init)
+    }
+  })
+}
+
+async function setupUiPlatformMocks(
+  page: Page,
+  options?: {
+    isStaff?: boolean
+    counts?: RequestCounts
+  },
+) {
+  const counts = options?.counts
+  const isStaff = options?.isStaff ?? false
+
   await page.route('**/api/v2/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
     const path = url.pathname
     const method = request.method()
 
-    if (method === 'GET' && path === '/api/v2/system/me/') {
-      return fulfillJson(route, { id: 1, username: 'ui-platform', is_staff: false })
-    }
-
-    if (method === 'GET' && path === '/api/v2/rbac/get-effective-access/') {
-      return fulfillJson(route, { clusters: [], databases: [] })
-    }
-
-    if (method === 'GET' && path === '/api/v2/settings/command-schemas/audit/') {
-      return fulfillJson(route, { items: [], count: 0, total: 0 })
-    }
-
-    if (method === 'GET' && path === '/api/v2/tenants/list-my-tenants/') {
+    if (method === 'GET' && path === '/api/v2/system/bootstrap/') {
+      if (counts) {
+        counts.bootstrap += 1
+      }
       return fulfillJson(route, {
-        active_tenant_id: TENANT_ID,
-        tenants: [{ id: TENANT_ID, slug: 'default', name: 'Default', role: 'owner' }],
+        me: { id: 1, username: 'ui-platform', is_staff: isStaff },
+        tenant_context: {
+          active_tenant_id: TENANT_ID,
+          tenants: [{ id: TENANT_ID, slug: 'default', name: 'Default', role: 'owner' }],
+        },
+        access: {
+          user: { id: 1, username: 'ui-platform' },
+          clusters: [],
+          databases: [],
+          operation_templates: [],
+        },
+        capabilities: {
+          can_manage_rbac: isStaff,
+          can_manage_driver_catalogs: false,
+        },
       })
     }
 
     if (method === 'GET' && path === '/api/v2/databases/list-databases/') {
+      if (counts) {
+        counts.databaseLists += 1
+      }
       return fulfillJson(route, {
         databases: [
           {
@@ -360,11 +438,37 @@ async function setupUiPlatformMocks(page: Page) {
     }
 
     if (method === 'GET' && path === '/api/v2/databases/get-metadata-management/') {
+      if (counts) {
+        counts.metadataManagementReads += 1
+      }
       return fulfillJson(route, METADATA_MANAGEMENT)
+    }
+
+    if (method === 'POST' && path === '/api/v2/databases/stream-ticket/') {
+      if (counts) {
+        counts.streamTickets += 1
+      }
+      return fulfillJson(route, {
+        ticket: `ticket-${counts?.streamTickets ?? 1}`,
+        expires_in: 30,
+        stream_url: `/api/v2/databases/stream/?ticket=ticket-${counts?.streamTickets ?? 1}`,
+        session_id: 'browser-session',
+        lease_id: `lease-${counts?.streamTickets ?? 1}`,
+        client_instance_id: 'browser-instance',
+        scope: '__all__',
+        message: 'Database stream ticket issued',
+      })
     }
 
     if (method === 'GET' && path === '/api/v2/decisions/') {
       const databaseId = url.searchParams.get('database_id') || ''
+      if (databaseId) {
+        if (counts) {
+          counts.decisionsScoped += 1
+        }
+      } else if (counts) {
+        counts.decisionsUnscoped += 1
+      }
       return fulfillJson(route, {
         decisions: [DECISION],
         count: 1,
@@ -390,6 +494,9 @@ async function setupUiPlatformMocks(page: Page) {
     }
 
     if (method === 'GET' && path === '/api/v2/pools/binding-profiles/') {
+      if (counts) {
+        counts.bindingProfilesList += 1
+      }
       return fulfillJson(route, {
         binding_profiles: [BINDING_PROFILE_SUMMARY],
         count: 1,
@@ -398,12 +505,18 @@ async function setupUiPlatformMocks(page: Page) {
 
     const bindingProfileMatch = path.match(/^\/api\/v2\/pools\/binding-profiles\/([^/]+)\/$/)
     if (method === 'GET' && bindingProfileMatch) {
+      if (counts) {
+        counts.bindingProfileDetails += 1
+      }
       return fulfillJson(route, {
         binding_profile: BINDING_PROFILE_DETAIL,
       })
     }
 
     if (method === 'GET' && path === '/api/v2/pools/') {
+      if (counts) {
+        counts.organizationPools += 1
+      }
       return fulfillJson(route, {
         pools: [POOL_WITH_ATTACHMENT],
         count: 1,
@@ -423,6 +536,7 @@ async function expectNoHorizontalOverflow(page: Page) {
 
 test('UI platform: /decisions keeps mobile list stable and opens detail in a drawer', async ({ page }) => {
   await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page)
   await page.setViewportSize({ width: 390, height: 844 })
 
@@ -442,6 +556,7 @@ test('UI platform: /decisions keeps mobile list stable and opens detail in a dra
 
 test('UI platform: /decisions opens authoring in a mobile-safe drawer with labeled fields', async ({ page }) => {
   await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page)
   await page.setViewportSize({ width: 390, height: 844 })
 
@@ -459,6 +574,7 @@ test('UI platform: /decisions opens authoring in a mobile-safe drawer with label
 
 test('UI platform: /pools/binding-profiles keeps mobile catalog readable and opens detail in a drawer', async ({ page }) => {
   await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page)
   await page.setViewportSize({ width: 390, height: 844 })
 
@@ -479,6 +595,7 @@ test('UI platform: /pools/binding-profiles keeps mobile catalog readable and ope
 
 test('UI platform: /pools/binding-profiles opens create-profile authoring in a mobile-safe modal shell', async ({ page }) => {
   await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page)
   await page.setViewportSize({ width: 390, height: 844 })
 
@@ -493,4 +610,68 @@ test('UI platform: /pools/binding-profiles opens create-profile authoring in a m
   await expect(authoringModal.getByTestId('pool-binding-profiles-create-workflow-revision-select')).toBeVisible()
   await expect(authoringModal.getByRole('button', { name: 'Create profile' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
+})
+
+test('Runtime contract: /decisions avoids mount-time waterfall and duplicate notifications on the default path', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/decisions', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByText('Decision Policy Library')).toBeVisible()
+  await expect(page.getByText('Services publication policy').first()).toBeVisible()
+
+  await expect.poll(() => counts.bootstrap).toBe(1)
+  await expect.poll(() => counts.streamTickets).toBe(1)
+  await expect.poll(() => counts.databaseLists).toBe(1)
+  await expect.poll(() => counts.metadataManagementReads).toBe(1)
+  await expect.poll(() => counts.decisionsScoped).toBe(1)
+  await expect.poll(() => counts.decisionsUnscoped).toBe(0)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: /pools/binding-profiles defers usage reads until the user requests them', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/pools/binding-profiles', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByText('Binding Profiles')).toBeVisible()
+  await expect.poll(() => counts.organizationPools).toBe(0)
+
+  await page.getByRole('button', { name: 'Load attachment usage' }).click()
+
+  await expect.poll(() => counts.organizationPools).toBe(1)
+  await expect(page.getByText('Main Pool')).toBeVisible()
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: one browser instance keeps a single database stream owner across tabs', async ({ context }) => {
+  const counts = createRequestCounts()
+  const firstPage = await context.newPage()
+
+  await setupAuth(firstPage)
+  await setupPersistentDatabaseStream(firstPage)
+  await setupUiPlatformMocks(firstPage, { isStaff: true, counts })
+
+  await firstPage.goto('/decisions', { waitUntil: 'domcontentloaded' })
+  await expect(firstPage.getByText('Decision Policy Library')).toBeVisible()
+  await expect.poll(() => counts.streamTickets).toBe(1)
+
+  const secondPage = await context.newPage()
+  await setupAuth(secondPage)
+  await setupPersistentDatabaseStream(secondPage)
+  await setupUiPlatformMocks(secondPage, { isStaff: true, counts })
+
+  await secondPage.goto('/pools/binding-profiles', { waitUntil: 'domcontentloaded' })
+  await expect(secondPage.getByText('Binding Profiles')).toBeVisible()
+  await expect.poll(() => counts.streamTickets).toBe(1)
+  await expect(firstPage.getByText('Request Error')).toHaveCount(0)
+  await expect(secondPage.getByText('Request Error')).toHaveCount(0)
 })

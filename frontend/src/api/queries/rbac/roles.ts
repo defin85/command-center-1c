@@ -2,15 +2,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { queryKeys } from '../queryKeys'
 import { apiClient } from '../../client'
+import { withQueryPolicy } from '../../../lib/queryRuntime'
 
 const RBAC_STALE_TIME_MS = 5 * 60_000
 
 export function useCanManageRbac(options?: { enabled?: boolean }) {
-  return useQuery({
+  return useQuery(withQueryPolicy('capability', {
     queryKey: queryKeys.rbac.canManage(),
     queryFn: async (): Promise<boolean> => {
       try {
-        await apiClient.get('/api/v2/rbac/list-roles/', { params: { limit: 1, offset: 0 } })
+        await apiClient.get('/api/v2/rbac/list-roles/', {
+          params: { limit: 1, offset: 0 },
+          errorPolicy: 'background',
+        })
         return true
       } catch (error) {
         const status = (error as { response?: { status?: number } })?.response?.status
@@ -21,10 +25,8 @@ export function useCanManageRbac(options?: { enabled?: boolean }) {
       }
     },
     staleTime: RBAC_STALE_TIME_MS,
-    refetchOnWindowFocus: false,
-    retry: false,
     enabled: options?.enabled ?? true,
-  })
+  }))
 }
 
 export type RbacGroupRef = {

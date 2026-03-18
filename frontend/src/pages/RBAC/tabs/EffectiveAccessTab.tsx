@@ -464,7 +464,7 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
           />
         )}
 
-        {effectiveAccessQuery.error && selectedEffectiveUserId && (
+        {Boolean(effectiveAccessQuery.error) && Boolean(selectedEffectiveUserId) && (
           <Alert
             style={{ marginTop: 12 }}
             type="warning"

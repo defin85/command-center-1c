@@ -82,6 +82,7 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
   const [snapshotFilterMode, setSnapshotFilterMode] = useState<DecisionSnapshotFilterMode>('matching_snapshot')
   const [reloadTick, setReloadTick] = useState(0)
   const effectiveSelectedDatabaseId = selectedDatabaseId ?? undefined
+  const databaseSelectionPending = selectedDatabaseId === undefined
 
   const selectedDatabaseMetadataManagementQuery = useDatabaseMetadataManagement({
     id: effectiveSelectedDatabaseId ?? '',
@@ -104,11 +105,16 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
   )
 
   useEffect(() => {
-    if (selectedDatabaseId !== undefined || databases.length === 0) return
-    setSelectedDatabaseId(databases[0].id)
-  }, [databases, selectedDatabaseId])
+    if (selectedDatabaseId !== undefined || databasesQuery.isLoading) return
+    setSelectedDatabaseId(databases[0]?.id ?? null)
+  }, [databases, databasesQuery.isLoading, selectedDatabaseId])
 
   useEffect(() => {
+    if (databaseSelectionPending) {
+      setListLoading(true)
+      return
+    }
+
     if (selectedDatabaseMetadataManagementPending) {
       setListLoading(true)
       return
@@ -155,6 +161,8 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
       cancelled = true
     }
   }, [
+    databaseSelectionPending,
+    databasesQuery.isLoading,
     effectiveSelectedDatabaseId,
     reloadTick,
     selectedDatabaseMetadataManagementPending,

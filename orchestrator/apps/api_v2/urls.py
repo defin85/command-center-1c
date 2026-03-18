@@ -52,6 +52,7 @@ urlpatterns = [
     path('system/health/', system.SystemHealthView.as_view(), name='system-health'),
     path('system/config/', system.system_config, name='system-config'),
     path('system/me/', system.system_me, name='system-me'),
+    path('system/bootstrap/', system.system_bootstrap, name='system-bootstrap'),
 
     # ========================================================================
     # UI Metadata

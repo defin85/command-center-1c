@@ -33,58 +33,17 @@ from apps.artifacts.models import Artifact, ArtifactGroupPermission, ArtifactPer
 from .common import _cluster_ref, _database_ref, _ensure_manage_rbac, _level_code, _parse_pagination, _user_ref
 from .serializers_effective_access import EffectiveAccessResponseSerializer
 
-@extend_schema(
-    tags=["v2"],
-    summary="Get effective access",
-    parameters=[
-        OpenApiParameter(
-            name="user_id",
-            type=int,
-            required=False,
-            description="Optional (default: current user). Requires databases.manage_rbac for other users.",
-        ),
-        OpenApiParameter(name="include_databases", type=bool, required=False, default=True),
-        OpenApiParameter(name="include_clusters", type=bool, required=False, default=True),
-        OpenApiParameter(name="include_templates", type=bool, required=False, default=False),
-        OpenApiParameter(name="include_workflows", type=bool, required=False, default=False),
-        OpenApiParameter(name="include_artifacts", type=bool, required=False, default=False),
-        OpenApiParameter(name="limit", type=int, required=False, description="Optional pagination for databases"),
-        OpenApiParameter(name="offset", type=int, required=False, description="Optional pagination for databases"),
-    ],
-    responses={
-        200: EffectiveAccessResponseSerializer,
-        401: OpenApiResponse(description="Unauthorized"),
-        403: OpenApiResponse(description="Forbidden"),
-    },
-)
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def get_effective_access(request):
-    requested_user_id = request.query_params.get("user_id")
-    if requested_user_id and int(requested_user_id) != request.user.id:
-        denied = _ensure_manage_rbac(request)
-        if denied:
-            return denied
 
-    target_user = request.user
-    if requested_user_id:
-        try:
-            target_user = User.objects.get(id=requested_user_id)
-        except User.DoesNotExist:
-            return Response(
-                {"success": False, "error": {"code": "USER_NOT_FOUND", "message": "User not found"}},
-                status=404,
-            )
-
-    include_clusters = str(request.query_params.get("include_clusters", "true")).lower() != "false"
-    include_databases = str(request.query_params.get("include_databases", "true")).lower() != "false"
-    include_templates = str(request.query_params.get("include_templates", "false")).lower() == "true"
-    include_workflows = str(request.query_params.get("include_workflows", "false")).lower() == "true"
-    include_artifacts = str(request.query_params.get("include_artifacts", "false")).lower() == "true"
-
-    use_db_pagination = include_databases and ("limit" in request.query_params or "offset" in request.query_params)
-    db_pagination = _parse_pagination(request) if use_db_pagination else None
-
+def build_effective_access_payload(
+    *,
+    target_user: User,
+    include_clusters: bool,
+    include_databases: bool,
+    include_templates: bool,
+    include_workflows: bool,
+    include_artifacts: bool,
+    db_pagination=None,
+) -> dict[str, Any]:
     direct_cluster_perms = []
     direct_cluster_level_map: dict[str, int] = {}
     direct_cluster_obj_map: dict[str, Cluster] = {}
@@ -392,4 +351,67 @@ def get_effective_access(request):
         response_payload["databases_limit"] = db_pagination.limit
         response_payload["databases_offset"] = db_pagination.offset
 
+    return response_payload
+
+@extend_schema(
+    tags=["v2"],
+    summary="Get effective access",
+    parameters=[
+        OpenApiParameter(
+            name="user_id",
+            type=int,
+            required=False,
+            description="Optional (default: current user). Requires databases.manage_rbac for other users.",
+        ),
+        OpenApiParameter(name="include_databases", type=bool, required=False, default=True),
+        OpenApiParameter(name="include_clusters", type=bool, required=False, default=True),
+        OpenApiParameter(name="include_templates", type=bool, required=False, default=False),
+        OpenApiParameter(name="include_workflows", type=bool, required=False, default=False),
+        OpenApiParameter(name="include_artifacts", type=bool, required=False, default=False),
+        OpenApiParameter(name="limit", type=int, required=False, description="Optional pagination for databases"),
+        OpenApiParameter(name="offset", type=int, required=False, description="Optional pagination for databases"),
+    ],
+    responses={
+        200: EffectiveAccessResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden"),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_effective_access(request):
+    requested_user_id = request.query_params.get("user_id")
+    if requested_user_id and int(requested_user_id) != request.user.id:
+        denied = _ensure_manage_rbac(request)
+        if denied:
+            return denied
+
+    target_user = request.user
+    if requested_user_id:
+        try:
+            target_user = User.objects.get(id=requested_user_id)
+        except User.DoesNotExist:
+            return Response(
+                {"success": False, "error": {"code": "USER_NOT_FOUND", "message": "User not found"}},
+                status=404,
+            )
+
+    include_clusters = str(request.query_params.get("include_clusters", "true")).lower() != "false"
+    include_databases = str(request.query_params.get("include_databases", "true")).lower() != "false"
+    include_templates = str(request.query_params.get("include_templates", "false")).lower() == "true"
+    include_workflows = str(request.query_params.get("include_workflows", "false")).lower() == "true"
+    include_artifacts = str(request.query_params.get("include_artifacts", "false")).lower() == "true"
+
+    use_db_pagination = include_databases and ("limit" in request.query_params or "offset" in request.query_params)
+    db_pagination = _parse_pagination(request) if use_db_pagination else None
+
+    response_payload = build_effective_access_payload(
+        target_user=target_user,
+        include_clusters=include_clusters,
+        include_databases=include_databases,
+        include_templates=include_templates,
+        include_workflows=include_workflows,
+        include_artifacts=include_artifacts,
+        db_pagination=db_pagination,
+    )
     return Response(response_payload)

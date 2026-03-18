@@ -10,7 +10,31 @@ from .common import (
     _is_staff,
     _permission_denied,
     _validate_db_stream_ticket,
+    build_database_stream_active_key,
+    build_database_stream_scope,
+    parse_database_stream_lease,
 )
+
+
+def _build_stream_conflict_response(*, ttl: int, client_instance_id: str, scope: str, active_lease: dict | None):
+    retry_after = max(ttl, 0)
+    response = Response({
+        'success': False,
+        'error': {
+            'code': 'STREAM_ALREADY_ACTIVE',
+            'message': 'Database stream lease already active for this client session',
+            'details': {
+                'retry_after': retry_after,
+                'client_instance_id': client_instance_id,
+                'scope': scope,
+                'active_session_id': active_lease.get('session_id') if active_lease else None,
+                'active_lease_id': active_lease.get('lease_id') if active_lease else None,
+                'recovery_supported': True,
+            },
+        },
+    }, status=429)
+    response['Retry-After'] = str(retry_after)
+    return response
 
 @extend_schema(
     tags=['v2'],
@@ -37,7 +61,10 @@ def get_database_stream_ticket(request):
     serializer.is_valid(raise_exception=True)
 
     cluster_id = serializer.validated_data.get('cluster_id')
-    force = serializer.validated_data.get('force', False)
+    client_instance_id = serializer.validated_data['client_instance_id'].strip()
+    requested_session_id = serializer.validated_data.get('session_id')
+    recovery = serializer.validated_data.get('recovery', False)
+    scope = build_database_stream_scope(str(cluster_id) if cluster_id else None)
 
     if cluster_id and not Cluster.objects.filter(id=cluster_id).exists():
         record_api_v2_duration(endpoint, "not_found", time.monotonic() - start_time)
@@ -59,31 +86,44 @@ def get_database_stream_ticket(request):
             return _permission_denied("You do not have permission to access this cluster.")
 
     redis_conn = _get_redis_connection()
-    active_key = f"{DB_SSE_ACTIVE_PREFIX}{request.user.id}"
+    active_key = build_database_stream_active_key(
+        user_id=request.user.id,
+        client_instance_id=client_instance_id,
+        cluster_id=str(cluster_id) if cluster_id else None,
+    )
 
     try:
         ttl = redis_conn.ttl(active_key)
-        if ttl and ttl > 0 and not force:
+        active_lease = parse_database_stream_lease(redis_conn.get(active_key)) if ttl and ttl > 0 else None
+        can_recover_active_lease = bool(
+            recovery
+            and requested_session_id
+            and active_lease
+            and active_lease.get('session_id') == requested_session_id
+        )
+        if ttl and ttl > 0 and not can_recover_active_lease:
             record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
             record_sse_ticket("databases", "conflict")
-            response = Response({
-                'success': False,
-                'error': {
-                    'code': 'STREAM_ALREADY_ACTIVE',
-                    'message': 'Database stream already active for this user',
-                    'retry_after': ttl,
-                }
-            }, status=429)
-            response['Retry-After'] = str(ttl)
-            return response
+            return _build_stream_conflict_response(
+                ttl=ttl,
+                client_instance_id=client_instance_id,
+                scope=scope,
+                active_lease=active_lease,
+            )
 
         ticket = secrets.token_urlsafe(32)
+        session_id = requested_session_id or secrets.token_urlsafe(24)
+        lease_id = secrets.token_urlsafe(24)
         ticket_data = {
             'user_id': request.user.id,
             'username': request.user.username,
             'cluster_id': str(cluster_id) if cluster_id else None,
             'created_at': timezone.now().isoformat(),
-            'force': force,
+            'client_instance_id': client_instance_id,
+            'session_id': session_id,
+            'lease_id': lease_id,
+            'scope': scope,
+            'recovery': recovery,
         }
         redis_conn.setex(
             f"{DB_SSE_TICKET_PREFIX}{ticket}",
@@ -104,6 +144,11 @@ def get_database_stream_ticket(request):
         'ticket': ticket,
         'expires_in': DB_SSE_TICKET_TTL,
         'stream_url': f'/api/v2/databases/stream/?ticket={ticket}',
+        'session_id': session_id,
+        'lease_id': lease_id,
+        'client_instance_id': client_instance_id,
+        'scope': scope,
+        'message': 'Database stream recovery ticket issued' if recovery else 'Database stream ticket issued',
     })
 
 
@@ -159,7 +204,11 @@ async def _database_stream_async(request):
     cluster_id = ticket_data.get('cluster_id')
     username = ticket_data.get('username')
     user_id = ticket_data.get('user_id')
-    force = bool(ticket_data.get('force'))
+    client_instance_id = str(ticket_data.get('client_instance_id') or '').strip()
+    session_id = str(ticket_data.get('session_id') or '').strip()
+    lease_id = str(ticket_data.get('lease_id') or '').strip()
+    scope = str(ticket_data.get('scope') or build_database_stream_scope(cluster_id))
+    recovery = bool(ticket_data.get('recovery'))
     user = await sync_to_async(User.objects.get)(id=user_id)
     is_staff = user.is_staff
     allowed_db_ids: set[str] | None = None
@@ -186,24 +235,72 @@ async def _database_stream_async(request):
                 }
             }, status=403)
 
-    logger.info("Database SSE stream started for user %s (cluster=%s)", username, cluster_id or "all")
+    logger.info(
+        "Database SSE stream started for user %s (client=%s, cluster=%s, session=%s)",
+        username,
+        client_instance_id,
+        cluster_id or "all",
+        session_id,
+    )
 
-    active_key = f"{DB_SSE_ACTIVE_PREFIX}{user_id}"
-    active_value = secrets.token_urlsafe(12)
+    active_key = build_database_stream_active_key(
+        user_id=user_id,
+        client_instance_id=client_instance_id,
+        cluster_id=cluster_id,
+    )
+    active_value = json.dumps({
+        'session_id': session_id,
+        'lease_id': lease_id,
+        'client_instance_id': client_instance_id,
+        'scope': scope,
+    })
     active_conn = _get_async_redis_connection()
     try:
-        if force:
+        current_lease = parse_database_stream_lease(await active_conn.get(active_key))
+        ttl = await active_conn.ttl(active_key)
+        if recovery:
+            if current_lease and current_lease.get('session_id') != session_id:
+                record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
+                response = JsonResponse({
+                    'success': False,
+                    'error': {
+                        'code': 'STREAM_ALREADY_ACTIVE',
+                        'message': 'Database stream lease already active for this client session',
+                        'details': {
+                            'retry_after': max(ttl, 0),
+                            'client_instance_id': client_instance_id,
+                            'scope': scope,
+                            'active_session_id': current_lease.get('session_id'),
+                            'active_lease_id': current_lease.get('lease_id'),
+                            'recovery_supported': True,
+                        },
+                    },
+                }, status=429)
+                response['Retry-After'] = str(max(ttl, 0))
+                return response
             await active_conn.set(active_key, active_value, ex=DB_SSE_ACTIVE_TTL)
         else:
             if not await active_conn.set(active_key, active_value, nx=True, ex=DB_SSE_ACTIVE_TTL):
                 record_api_v2_duration(endpoint, "conflict", time.monotonic() - start_time)
-                return JsonResponse({
+                current_lease = parse_database_stream_lease(await active_conn.get(active_key))
+                ttl = await active_conn.ttl(active_key)
+                response = JsonResponse({
                     'success': False,
                     'error': {
                         'code': 'STREAM_ALREADY_ACTIVE',
-                        'message': 'Database stream already active for this user'
+                        'message': 'Database stream lease already active for this client session',
+                        'details': {
+                            'retry_after': max(ttl, 0),
+                            'client_instance_id': client_instance_id,
+                            'scope': scope,
+                            'active_session_id': current_lease.get('session_id') if current_lease else None,
+                            'active_lease_id': current_lease.get('lease_id') if current_lease else None,
+                            'recovery_supported': True,
+                        },
                     }
                 }, status=429)
+                response['Retry-After'] = str(max(ttl, 0))
+                return response
     finally:
         await active_conn.close()
 
@@ -224,6 +321,10 @@ async def _database_stream_async(request):
                 "type": "database_stream_connected",
                 "timestamp": timezone.now().isoformat(),
                 "cluster_id": cluster_id,
+                "client_instance_id": client_instance_id,
+                "session_id": session_id,
+                "lease_id": lease_id,
+                "scope": scope,
             }
             yield "event: database_stream_connected\n"
             yield f"data: {json.dumps(ready_event)}\n\n"

@@ -1,7 +1,8 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient } from '../client'
 import { queryKeys } from './queryKeys'
+import { withQueryPolicy } from '../../lib/queryRuntime'
 
 export type TenantSummary = {
   id: string
@@ -15,7 +16,12 @@ export type MyTenantsResponse = {
   tenants: TenantSummary[]
 }
 
-function syncActiveTenantLocalStorage(data: MyTenantsResponse): MyTenantsResponse {
+type TenantContextLike = {
+  active_tenant_id: string | null
+  tenants: Array<{ id: string }>
+}
+
+export function syncActiveTenantLocalStorage<T extends TenantContextLike>(data: T): T {
   const stored = localStorage.getItem('active_tenant_id')
   const tenants = Array.isArray(data.tenants) ? data.tenants : []
   const preferred = data.active_tenant_id || tenants[0]?.id || null
@@ -32,7 +38,7 @@ function syncActiveTenantLocalStorage(data: MyTenantsResponse): MyTenantsRespons
 }
 
 export async function fetchMyTenants(): Promise<MyTenantsResponse> {
-  const response = await apiClient.get('/api/v2/tenants/list-my-tenants/')
+  const response = await apiClient.get('/api/v2/tenants/list-my-tenants/', { errorPolicy: 'background' })
   return syncActiveTenantLocalStorage(response.data as MyTenantsResponse)
 }
 
@@ -42,15 +48,20 @@ export async function setActiveTenant(tenantId: string): Promise<{ active_tenant
 }
 
 export function useMyTenants(options?: { enabled?: boolean }) {
-  return useQuery({
+  return useQuery(withQueryPolicy('bootstrap', {
     queryKey: queryKeys.tenants.my(),
     queryFn: fetchMyTenants,
     enabled: options?.enabled,
-  })
+  }))
 }
 
 export function useSetActiveTenant() {
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (tenantId: string) => setActiveTenant(tenantId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.shell.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.tenants.all })
+    },
   })
 }

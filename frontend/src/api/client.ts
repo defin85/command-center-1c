@@ -3,6 +3,12 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 // API Gateway base URL (without path prefix - generated code includes full paths)
 // Port 8180 - outside Windows reserved range (8013-8112)
 import { getApiBaseUrl } from './baseUrl'
+import {
+  createApiErrorDetail,
+  resolveApiErrorPolicy,
+  shouldDispatchGlobalApiError,
+  type ApiErrorDetail,
+} from './apiErrorPolicy'
 
 const API_BASE_URL = getApiBaseUrl()
 
@@ -13,12 +19,7 @@ const TOKEN_REFRESH_URL = `${API_BASE_URL}/api/token/refresh/`
 export const API_ERROR_EVENT = 'api:error'
 
 // Dispatch API error event for global handling
-export function dispatchApiError(error: {
-  message: string
-  status?: number
-  code?: string
-  details?: unknown
-}) {
+export function dispatchApiError(error: ApiErrorDetail) {
   window.dispatchEvent(new CustomEvent(API_ERROR_EVENT, { detail: error }))
 }
 
@@ -129,6 +130,10 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
     const skipGlobalError = Boolean((originalRequest as { skipGlobalError?: boolean } | undefined)?.skipGlobalError)
+    const errorPolicy = resolveApiErrorPolicy({
+      errorPolicy: originalRequest?.errorPolicy,
+      skipGlobalError,
+    })
 
     // Handle 401 Unauthorized with token refresh
     if (error.response?.status === 401 && !originalRequest._retry) {
@@ -146,11 +151,14 @@ apiClient.interceptors.response.use(
         setAuthToken(null)
 
         // Dispatch error event before redirect
-        dispatchApiError({
+        dispatchApiError(createApiErrorDetail({
           message: 'Session expired. Please log in again.',
           status: 401,
           code: 'SESSION_EXPIRED',
-        })
+          method: originalRequest?.method,
+          path: originalRequest?.url,
+          errorPolicy,
+        }))
 
         window.location.href = '/login'
         return Promise.reject(error)
@@ -242,13 +250,17 @@ apiClient.interceptors.response.use(
     }
 
     if (!skipGlobalError) {
-      // Dispatch error event for global handling
-      dispatchApiError({
-        message,
-        status,
-        code: (errorData as { code?: string })?.code,
-        details: errorData,
-      })
+      if (shouldDispatchGlobalApiError({ errorPolicy, skipGlobalError })) {
+        dispatchApiError(createApiErrorDetail({
+          message,
+          status,
+          code: (errorData as { code?: string })?.code,
+          details: errorData,
+          method: originalRequest?.method,
+          path: originalRequest?.url,
+          errorPolicy,
+        }))
+      }
     }
 
     return Promise.reject(error)

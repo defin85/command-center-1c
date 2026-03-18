@@ -1,13 +1,11 @@
 import { Layout, Menu, Button, Dropdown, Tag, Tooltip, Space, Popover, Typography, Select, Grid } from 'antd'
 import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined, SafetyCertificateOutlined, FileTextOutlined, WarningOutlined, LoadingOutlined, SettingOutlined, InboxOutlined, AppstoreOutlined } from '@ant-design/icons'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
-import { useEffect, type ReactNode, type MouseEvent } from 'react'
+import type { ReactNode, MouseEvent } from 'react'
 import type { MenuProps } from 'antd'
 
-import { useMe } from '../../api/queries/me'
-import { useCanManageRbac } from '../../api/queries/rbac'
-import { useCanManageDriverCatalogs } from '../../api/queries/commandSchemas'
-import { useMyTenants, useSetActiveTenant } from '../../api/queries/tenants'
+import { useShellBootstrap } from '../../api/queries/shellBootstrap'
+import { useSetActiveTenant } from '../../api/queries/tenants'
 import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { setAuthToken } from '../../api/client'
 import { notifyAuthChanged } from '../../lib/authState'
@@ -25,12 +23,9 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const screens = useBreakpoint()
   const navigate = useNavigate()
   const location = useLocation()
-  const meQuery = useMe()
   const hasToken = Boolean(localStorage.getItem('auth_token'))
-  const myTenantsQuery = useMyTenants({ enabled: hasToken })
+  const shellBootstrapQuery = useShellBootstrap({ enabled: hasToken })
   const setActiveTenantMutation = useSetActiveTenant()
-  const canManageRbacQuery = useCanManageRbac({ enabled: hasToken })
-  const canManageDriverCatalogsQuery = useCanManageDriverCatalogs({ enabled: hasToken })
   const {
     isConnected: isDatabaseStreamConnected,
     isConnecting: isDatabaseStreamConnecting,
@@ -38,26 +33,14 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
     cooldownSeconds: databaseStreamCooldownSeconds,
     reconnect: reconnectDatabaseStream,
   } = useDatabaseStreamStatus()
-  const canSeeArtifacts = Boolean(meQuery.data?.is_staff)
-  const canManageUsers = Boolean(meQuery.data?.is_staff)
-  const canManageAdmin = Boolean(meQuery.data?.is_staff)
-  const canManageRbac = Boolean(canManageRbacQuery.data)
-  const canManageDriverCatalogs = Boolean(canManageDriverCatalogsQuery.data)
-
-  useEffect(() => {
-    const data = myTenantsQuery.data
-    if (!data) return
-
-    const stored = localStorage.getItem('active_tenant_id')
-    const tenants = Array.isArray(data.tenants) ? data.tenants : []
-    const preferred = data.active_tenant_id || tenants[0]?.id || null
-    if (!stored && preferred) {
-      localStorage.setItem('active_tenant_id', preferred)
-    }
-    if (stored && data.active_tenant_id && stored !== data.active_tenant_id) {
-      localStorage.setItem('active_tenant_id', data.active_tenant_id)
-    }
-  }, [myTenantsQuery.data])
+  const me = shellBootstrapQuery.data?.me
+  const tenantContext = shellBootstrapQuery.data?.tenant_context
+  const capabilities = shellBootstrapQuery.data?.capabilities
+  const canSeeArtifacts = Boolean(me?.is_staff)
+  const canManageUsers = Boolean(me?.is_staff)
+  const canManageAdmin = Boolean(me?.is_staff)
+  const canManageRbac = Boolean(capabilities?.can_manage_rbac)
+  const canManageDriverCatalogs = Boolean(capabilities?.can_manage_driver_catalogs)
 
   const handleSkipToContent = (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
@@ -86,8 +69,8 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
     },
   ]
 
-  const tenants = myTenantsQuery.data?.tenants ?? []
-  const activeTenantId = localStorage.getItem('active_tenant_id') || myTenantsQuery.data?.active_tenant_id || undefined
+  const tenants = tenantContext?.tenants ?? []
+  const activeTenantId = localStorage.getItem('active_tenant_id') || tenantContext?.active_tenant_id || undefined
 
   const menuItems = [
     {
@@ -279,7 +262,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
           {tenants.length > 1 && (
             <Select
               size="small"
-              loading={myTenantsQuery.isFetching}
+              loading={shellBootstrapQuery.isFetching}
               disabled={setActiveTenantMutation.isPending}
               value={activeTenantId}
               style={{ width: screens.sm ? 220 : 'min(220px, 100%)' }}
@@ -295,12 +278,12 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
               }}
             />
           )}
-          {meQuery.data?.is_staff && (
+          {me?.is_staff && (
             <Tag color="blue">Staff</Tag>
           )}
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <Button type="text" icon={<UserOutlined />} style={{ color: 'white' }}>
-              {meQuery.data?.username ?? '\u2026'}
+              {me?.username ?? '\u2026'}
             </Button>
           </Dropdown>
         </Space>

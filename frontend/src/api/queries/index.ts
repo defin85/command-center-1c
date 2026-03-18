@@ -19,6 +19,7 @@ export {
   useUpdateTemplate,
   useDeleteTemplate,
 } from './templates'
+export { useShellBootstrap } from './shellBootstrap'
 export { useMe } from './me'
 export { useDlqMessages, useRetryDlqMessage } from './dlq'
 export { useTableMetadata } from './ui'

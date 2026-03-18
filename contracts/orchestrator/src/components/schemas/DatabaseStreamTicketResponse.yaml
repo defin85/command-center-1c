@@ -10,10 +10,26 @@ properties:
   stream_url:
     type: string
     description: SSE endpoint URL to connect to
+  session_id:
+    type: string
+    description: Stable client session identifier for stream recovery
+  lease_id:
+    type: string
+    description: Active lease identifier for the issued stream ticket
+  client_instance_id:
+    type: string
+    description: Browser/client instance identifier bound to the lease
+  scope:
+    type: string
+    description: Stream scope associated with the lease
   message:
     type: string
 required:
+  - client_instance_id
   - expires_in
+  - lease_id
   - message
+  - scope
+  - session_id
   - stream_url
   - ticket

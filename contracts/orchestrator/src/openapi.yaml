@@ -464,6 +464,8 @@ paths:
     $ref: paths/api_v2_system_config_.yaml
   /api/v2/system/health/:
     $ref: paths/api_v2_system_health_.yaml
+  /api/v2/system/bootstrap/:
+    $ref: paths/api_v2_system_bootstrap_.yaml
   /api/v2/system/me/:
     $ref: paths/api_v2_system_me_.yaml
   /api/v2/templates/sync-from-registry/:

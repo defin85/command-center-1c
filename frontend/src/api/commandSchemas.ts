@@ -334,11 +334,12 @@ export type CommandSchemasAuditListResponse = {
 }
 
 export async function listCommandSchemasAudit(
-  filters?: { driver?: CommandSchemaDriver; limit?: number; offset?: number }
+  filters?: { driver?: CommandSchemaDriver; limit?: number; offset?: number },
+  options?: { errorPolicy?: 'global' | 'background' | 'page' | 'silent' }
 ): Promise<CommandSchemasAuditListResponse> {
   const response = await apiClient.get<CommandSchemasAuditListResponse>(
     '/api/v2/settings/command-schemas/audit/',
-    { params: filters }
+    { params: filters, errorPolicy: options?.errorPolicy }
   )
   return response.data
 }

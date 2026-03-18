@@ -25,38 +25,13 @@ vi.mock('./authz', () => ({
   AuthzProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
 
-vi.mock('./api/queries/me', () => ({
-  useMe: () => ({
-    data: {
-      is_staff: true,
-      username: 'tester',
-    },
-    isLoading: false,
-  }),
-}))
+const mockUseShellBootstrap = vi.fn()
 
-vi.mock('./api/queries/rbac', () => ({
-  useCanManageRbac: () => ({
-    data: true,
-    isLoading: false,
-  }),
-}))
-
-vi.mock('./api/queries/commandSchemas', () => ({
-  useCanManageDriverCatalogs: () => ({
-    data: false,
-    isLoading: false,
-  }),
+vi.mock('./api/queries/shellBootstrap', () => ({
+  useShellBootstrap: (...args: unknown[]) => mockUseShellBootstrap(...args),
 }))
 
 vi.mock('./api/queries/tenants', () => ({
-  useMyTenants: () => ({
-    data: {
-      active_tenant_id: 'tenant-1',
-      tenants: [{ id: 'tenant-1', name: 'Default', slug: 'default', role: 'admin' }],
-    },
-    isFetching: false,
-  }),
   useSetActiveTenant: () => ({
     mutate: vi.fn(),
     isPending: false,
@@ -75,6 +50,31 @@ vi.mock('./pages/Pools/PoolBindingProfilesPage', () => ({
 
 describe('App pools binding profiles route', () => {
   beforeEach(() => {
+    mockUseShellBootstrap.mockReset()
+    mockUseShellBootstrap.mockReturnValue({
+      data: {
+        me: {
+          is_staff: true,
+          username: 'tester',
+        },
+        tenant_context: {
+          active_tenant_id: 'tenant-1',
+          tenants: [{ id: 'tenant-1', name: 'Default', slug: 'default', role: 'admin' }],
+        },
+        access: {
+          clusters: [],
+          databases: [],
+          operation_templates: [],
+        },
+        capabilities: {
+          can_manage_rbac: true,
+          can_manage_driver_catalogs: false,
+        },
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+    })
     localStorage.clear()
     localStorage.setItem('auth_token', 'token')
     localStorage.setItem('active_tenant_id', 'tenant-1')
@@ -99,5 +99,33 @@ describe('App pools binding profiles route', () => {
 
     expect(await screen.findByTestId('pool-binding-profiles-route-page')).toBeInTheDocument()
     expect(screen.getByText('Pool Binding Profiles')).toBeInTheDocument()
+  })
+
+  it('shows a stable shell error state when bootstrap fails', async () => {
+    mockUseShellBootstrap.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      isError: true,
+      error: new Error('bootstrap unavailable'),
+    })
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AntApp>
+          <App />
+        </AntApp>
+      </QueryClientProvider>
+    )
+
+    expect(await screen.findByText('Shell bootstrap failed')).toBeInTheDocument()
+    expect(screen.queryByTestId('pool-binding-profiles-route-page')).not.toBeInTheDocument()
   })
 })

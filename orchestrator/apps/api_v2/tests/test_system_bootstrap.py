@@ -1,0 +1,57 @@
+import pytest
+from django.contrib.auth.models import Permission, User
+from rest_framework.test import APIClient
+
+from apps.core import permission_codes as perms
+from apps.tenancy.models import Tenant, TenantMember, UserTenantPreference
+
+
+def _permission_by_code(code: str) -> Permission:
+    app_label, codename = code.split(".", 1)
+    return Permission.objects.get(content_type__app_label=app_label, codename=codename)
+
+
+@pytest.fixture
+def staff_user():
+    user = User.objects.create_user(username="shell_bootstrap_staff", password="pass", is_staff=True)
+    user.user_permissions.add(_permission_by_code(perms.PERM_DATABASES_MANAGE_RBAC))
+    user.user_permissions.add(_permission_by_code(perms.PERM_OPERATIONS_MANAGE_DRIVER_CATALOGS))
+    return user
+
+
+@pytest.fixture
+def staff_client(staff_user):
+    client = APIClient()
+    client.force_authenticate(user=staff_user)
+    return client
+
+
+@pytest.mark.django_db
+def test_system_bootstrap_returns_shell_context(staff_client, staff_user):
+    tenant_a = Tenant.objects.create(slug="alpha", name="Alpha")
+    tenant_b = Tenant.objects.create(slug="beta", name="Beta")
+    TenantMember.objects.create(tenant=tenant_a, user=staff_user, role=TenantMember.ROLE_ADMIN)
+    TenantMember.objects.create(tenant=tenant_b, user=staff_user, role=TenantMember.ROLE_MEMBER)
+    preference, _ = UserTenantPreference.objects.get_or_create(user=staff_user)
+    preference.active_tenant = tenant_b
+    preference.save(update_fields=["active_tenant", "updated_at"])
+
+    response = staff_client.get("/api/v2/system/bootstrap/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["me"] == {
+      "id": staff_user.id,
+      "username": staff_user.username,
+      "is_staff": True,
+    }
+    assert payload["tenant_context"]["active_tenant_id"] == str(tenant_b.id)
+    tenant_slugs = {item["slug"] for item in payload["tenant_context"]["tenants"]}
+    assert {"alpha", "beta"}.issubset(tenant_slugs)
+    assert payload["capabilities"] == {
+      "can_manage_rbac": True,
+      "can_manage_driver_catalogs": True,
+    }
+    assert payload["access"]["user"]["id"] == staff_user.id
+    assert payload["access"]["clusters"] == []
+    assert payload["access"]["databases"] == []

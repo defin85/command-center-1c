@@ -1,0 +1,31 @@
+get:
+  operationId: v2_system_bootstrap_retrieve
+  description: >-
+    Returns canonical shell bootstrap context for the authenticated SPA session,
+    including identity, tenant context, effective access summary, and UI
+    capability flags.
+  summary: Get shell bootstrap context
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/SystemBootstrapResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

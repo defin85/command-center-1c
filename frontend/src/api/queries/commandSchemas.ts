@@ -3,15 +3,16 @@ import { useQuery } from '@tanstack/react-query'
 import { listCommandSchemasAudit } from '../commandSchemas'
 
 import { queryKeys } from './queryKeys'
+import { withQueryPolicy } from '../../lib/queryRuntime'
 
 const RBAC_STALE_TIME_MS = 5 * 60_000
 
 export function useCanManageDriverCatalogs(options?: { enabled?: boolean }) {
-  return useQuery({
+  return useQuery(withQueryPolicy('capability', {
     queryKey: queryKeys.commandSchemas.canManage(),
     queryFn: async (): Promise<boolean> => {
       try {
-        await listCommandSchemasAudit({ limit: 1, offset: 0 })
+        await listCommandSchemasAudit({ limit: 1, offset: 0 }, { errorPolicy: 'background' })
         return true
       } catch (error) {
         const status = (error as { response?: { status?: number } })?.response?.status
@@ -22,8 +23,6 @@ export function useCanManageDriverCatalogs(options?: { enabled?: boolean }) {
       }
     },
     staleTime: RBAC_STALE_TIME_MS,
-    refetchOnWindowFocus: false,
-    retry: false,
     enabled: options?.enabled ?? true,
-  })
+  }))
 }

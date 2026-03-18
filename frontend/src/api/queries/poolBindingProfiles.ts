@@ -14,6 +14,7 @@ import {
   type BindingProfileSummary,
 } from '../poolBindingProfiles'
 import { queryKeys } from './queryKeys'
+import { withQueryPolicy } from '../../lib/queryRuntime'
 
 const toBindingProfileSummary = (profile: BindingProfileDetail): BindingProfileSummary => ({
   binding_profile_id: profile.binding_profile_id,
@@ -47,20 +48,20 @@ const upsertBindingProfileListEntry = (
 }
 
 export function useBindingProfiles(options?: { enabled?: boolean }) {
-  return useQuery({
+  return useQuery(withQueryPolicy('interactive', {
     queryKey: queryKeys.poolBindingProfiles.list(),
     queryFn: listBindingProfiles,
-    placeholderData: (previousData) => previousData,
+    placeholderData: (previousData: BindingProfileListResponse | undefined) => previousData,
     enabled: options?.enabled ?? true,
-  })
+  }))
 }
 
 export function useBindingProfileDetail(bindingProfileId?: string, options?: { enabled?: boolean }) {
-  return useQuery({
+  return useQuery(withQueryPolicy('interactive', {
     queryKey: queryKeys.poolBindingProfiles.detail(bindingProfileId ?? ''),
     queryFn: () => getBindingProfileDetail(bindingProfileId as string),
     enabled: Boolean(bindingProfileId) && (options?.enabled ?? true),
-  })
+  }))
 }
 
 export function useCreateBindingProfile() {

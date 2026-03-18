@@ -21,11 +21,11 @@ export type {
 }
 
 export async function listBindingProfiles(): Promise<BindingProfileListResponse> {
-  return getV2().getPoolsBindingProfiles()
+  return getV2().getPoolsBindingProfiles({ errorPolicy: 'page' })
 }
 
 export async function getBindingProfileDetail(bindingProfileId: string): Promise<BindingProfileDetailResponse> {
-  return getV2().getPoolsBindingProfilesDetail(bindingProfileId)
+  return getV2().getPoolsBindingProfilesDetail(bindingProfileId, { errorPolicy: 'page' })
 }
 
 export async function createBindingProfile(

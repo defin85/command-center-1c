@@ -35,6 +35,7 @@ import {
 
 import { queryKeys } from './queryKeys'
 import type { DatabaseFilters } from './types'
+import { withQueryPolicy } from '../../lib/queryRuntime'
 
 // Initialize API client (generated)
 const api = getV2()
@@ -62,7 +63,7 @@ export async function fetchDatabases(
       filters: filtersParam,
       sort: sortParam,
     },
-    { signal }
+    { signal, errorPolicy: 'page' }
   )
 }
 
@@ -73,7 +74,10 @@ export async function fetchDatabase(
   id: string,
   signal?: AbortSignal
 ): Promise<Database | null> {
-  const response: DatabaseDetailResponse = await api.getDatabasesGetDatabase({ database_id: id }, { signal })
+  const response: DatabaseDetailResponse = await api.getDatabasesGetDatabase(
+    { database_id: id },
+    { signal, errorPolicy: 'page' },
+  )
   return response.database || null
 }
 
@@ -84,7 +88,7 @@ export async function fetchDatabaseExtensionsSnapshot(
   id: string,
   signal?: AbortSignal
 ): Promise<DatabaseExtensionsSnapshotResponse> {
-  return api.getDatabasesGetExtensionsSnapshot({ database_id: id }, { signal })
+  return api.getDatabasesGetExtensionsSnapshot({ database_id: id }, { signal, errorPolicy: 'page' })
 }
 
 /**
@@ -94,7 +98,7 @@ export async function fetchDatabaseMetadataManagement(
   id: string,
   signal?: AbortSignal
 ): Promise<DatabaseMetadataManagementResponse> {
-  return api.getDatabasesGetMetadataManagement({ database_id: id }, { signal })
+  return api.getDatabasesGetMetadataManagement({ database_id: id }, { signal, errorPolicy: 'page' })
 }
 
 // =============================================================================
@@ -121,13 +125,13 @@ export interface UseDatabasesOptions {
 export function useDatabases(options: UseDatabasesOptions = {}) {
   const { filters, refetchInterval = false, enabled = true } = options
 
-  return useQuery({
+  return useQuery(withQueryPolicy('realtime-backed', {
     queryKey: queryKeys.databases.list(filters),
     queryFn: ({ signal }) => fetchDatabases(filters, signal),
     refetchInterval,
     enabled,
-    placeholderData: (previousData) => previousData,
-  })
+    placeholderData: (previousData: DatabaseListResponse | undefined) => previousData,
+  }))
 }
 
 export interface UseDatabaseOptions {
@@ -251,11 +255,11 @@ export type DbmsUsersQuery = {
 export function useDatabase(options: UseDatabaseOptions) {
   const { id, enabled = true } = options
 
-  return useQuery({
+  return useQuery(withQueryPolicy('interactive', {
     queryKey: queryKeys.databases.detail(id),
     queryFn: ({ signal }) => fetchDatabase(id, signal),
     enabled: enabled && !!id,
-  })
+  }))
 }
 
 export interface UseDatabaseExtensionsSnapshotOptions {

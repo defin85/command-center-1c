@@ -25,6 +25,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
+from apps.api_v2.views.rbac.effective_access import build_effective_access_payload
+from apps.api_v2.views.rbac.serializers_effective_access import EffectiveAccessResponseSerializer
+from apps.api_v2.views.tenants import (
+    ListMyTenantsResponseSerializer,
+    build_tenant_context_payload,
+)
+from apps.core import permission_codes as perms
 from apps.operations.services.prometheus_client import (
     get_prometheus_client,
     SERVICE_CONFIG,
@@ -105,6 +112,33 @@ class CurrentUserSerializer(serializers.Serializer):
     is_staff = serializers.BooleanField()
 
 
+class ShellCapabilitiesSerializer(serializers.Serializer):
+    can_manage_rbac = serializers.BooleanField()
+    can_manage_driver_catalogs = serializers.BooleanField()
+
+
+class SystemBootstrapResponseSerializer(serializers.Serializer):
+    me = CurrentUserSerializer()
+    tenant_context = ListMyTenantsResponseSerializer()
+    access = EffectiveAccessResponseSerializer()
+    capabilities = ShellCapabilitiesSerializer()
+
+
+def build_current_user_payload(*, user) -> dict[str, object]:
+    return {
+        'id': user.id,
+        'username': user.get_username(),
+        'is_staff': bool(getattr(user, 'is_staff', False)),
+    }
+
+
+def build_shell_capabilities_payload(*, user) -> dict[str, bool]:
+    return {
+        'can_manage_rbac': bool(user.has_perm(perms.PERM_DATABASES_MANAGE_RBAC)),
+        'can_manage_driver_catalogs': bool(user.has_perm(perms.PERM_OPERATIONS_MANAGE_DRIVER_CATALOGS)),
+    }
+
+
 @extend_schema(
     tags=['v2'],
     summary='Get current user',
@@ -122,11 +156,38 @@ def system_me(request):
 
     Returns minimal identity information for SPA.
     """
-    user = request.user
+    return Response(build_current_user_payload(user=request.user))
+
+
+@extend_schema(
+    operation_id='v2_system_bootstrap_retrieve',
+    tags=['v2'],
+    summary='Get shell bootstrap context',
+    description=(
+        'Returns canonical shell bootstrap context for the authenticated SPA session, '
+        'including identity, tenant context, effective access summary, and UI capability flags.'
+    ),
+    responses={
+        200: SystemBootstrapResponseSerializer,
+        401: OpenApiResponse(description='Unauthorized'),
+    }
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def system_bootstrap(request):
+    access_payload = build_effective_access_payload(
+        target_user=request.user,
+        include_clusters=True,
+        include_databases=True,
+        include_templates=True,
+        include_workflows=False,
+        include_artifacts=False,
+    )
     return Response({
-        'id': user.id,
-        'username': user.get_username(),
-        'is_staff': bool(getattr(user, 'is_staff', False)),
+        'me': build_current_user_payload(user=request.user),
+        'tenant_context': build_tenant_context_payload(user=request.user),
+        'access': access_payload,
+        'capabilities': build_shell_capabilities_payload(user=request.user),
     })
 
 class SystemHealthView(APIView):

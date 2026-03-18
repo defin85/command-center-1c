@@ -1,14 +1,13 @@
 import { useEffect, useState, Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { ConfigProvider, App as AntApp, Spin } from 'antd'
+import { Button, ConfigProvider, App as AntApp, Result, Spin } from 'antd'
 import { MainLayout } from './components/layout/MainLayout'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { API_ERROR_EVENT } from './api/client'
+import type { ApiErrorDetail } from './api/apiErrorPolicy'
 import { useRealtimeInvalidation } from './hooks/useRealtimeInvalidation'
 import { DatabaseStreamProvider } from './contexts/DatabaseStreamContext'
-import { useMe } from './api/queries/me'
-import { useCanManageRbac } from './api/queries/rbac'
-import { useCanManageDriverCatalogs } from './api/queries/commandSchemas'
+import { useShellBootstrap } from './api/queries/shellBootstrap'
 import { getAuthToken, subscribeAuthChange } from './lib/authState'
 import { AuthzProvider } from './authz'
 
@@ -68,17 +67,49 @@ function LazyBoundary({ children }: { children: React.ReactNode }) {
   )
 }
 
+function getShellBootstrapErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+  return 'Unable to load the shell runtime context.'
+}
+
+function ShellBootstrapErrorState({ error }: { error: unknown }) {
+  return (
+    <Result
+      status="error"
+      title="Shell bootstrap failed"
+      subTitle={getShellBootstrapErrorMessage(error)}
+      extra={(
+        <Button type="primary" onClick={() => window.location.reload()}>
+          Retry
+        </Button>
+      )}
+    />
+  )
+}
+
 // Компонент для защиты маршрутов
 const ProtectedRoute = ({ children, authToken }: { children: React.ReactNode, authToken: string | null }) => {
+  const shellBootstrapQuery = useShellBootstrap({ enabled: Boolean(authToken) })
+
   if (!authToken) {
     return <Navigate to="/login" replace />
+  }
+
+  if (shellBootstrapQuery.isLoading) {
+    return <RouteLoading />
+  }
+
+  if (shellBootstrapQuery.isError) {
+    return <ShellBootstrapErrorState error={shellBootstrapQuery.error} />
   }
 
   return <>{children}</>
 }
 
 const StaffRoute = ({ children, authToken, preload }: { children: React.ReactNode, authToken: string | null, preload?: () => Promise<unknown> }) => {
-  const meQuery = useMe({ enabled: Boolean(authToken) })
+  const shellBootstrapQuery = useShellBootstrap({ enabled: Boolean(authToken) })
   useEffect(() => {
     if (!authToken) return
     void preload?.()
@@ -88,11 +119,15 @@ const StaffRoute = ({ children, authToken, preload }: { children: React.ReactNod
     return <Navigate to="/login" replace />
   }
 
-  if (meQuery.isLoading) {
+  if (shellBootstrapQuery.isLoading) {
     return <RouteLoading />
   }
 
-  if (!meQuery.data?.is_staff) {
+  if (shellBootstrapQuery.isError) {
+    return <ShellBootstrapErrorState error={shellBootstrapQuery.error} />
+  }
+
+  if (!shellBootstrapQuery.data?.me.is_staff) {
     return <Navigate to="/forbidden" replace />
   }
 
@@ -100,7 +135,7 @@ const StaffRoute = ({ children, authToken, preload }: { children: React.ReactNod
 }
 
 const RbacRoute = ({ children, authToken, preload }: { children: React.ReactNode, authToken: string | null, preload?: () => Promise<unknown> }) => {
-  const canManageRbacQuery = useCanManageRbac({ enabled: Boolean(authToken) })
+  const shellBootstrapQuery = useShellBootstrap({ enabled: Boolean(authToken) })
   useEffect(() => {
     if (!authToken) return
     void preload?.()
@@ -110,11 +145,15 @@ const RbacRoute = ({ children, authToken, preload }: { children: React.ReactNode
     return <Navigate to="/login" replace />
   }
 
-  if (canManageRbacQuery.isLoading) {
+  if (shellBootstrapQuery.isLoading) {
     return <RouteLoading />
   }
 
-  if (!canManageRbacQuery.data) {
+  if (shellBootstrapQuery.isError) {
+    return <ShellBootstrapErrorState error={shellBootstrapQuery.error} />
+  }
+
+  if (!shellBootstrapQuery.data?.capabilities.can_manage_rbac) {
     return <Navigate to="/forbidden" replace />
   }
 
@@ -122,7 +161,7 @@ const RbacRoute = ({ children, authToken, preload }: { children: React.ReactNode
 }
 
 const DriverCatalogsRoute = ({ children, authToken, preload }: { children: React.ReactNode, authToken: string | null, preload?: () => Promise<unknown> }) => {
-  const canManageDriverCatalogsQuery = useCanManageDriverCatalogs({ enabled: Boolean(authToken) })
+  const shellBootstrapQuery = useShellBootstrap({ enabled: Boolean(authToken) })
   useEffect(() => {
     if (!authToken) return
     void preload?.()
@@ -132,11 +171,15 @@ const DriverCatalogsRoute = ({ children, authToken, preload }: { children: React
     return <Navigate to="/login" replace />
   }
 
-  if (canManageDriverCatalogsQuery.isLoading) {
+  if (shellBootstrapQuery.isLoading) {
     return <RouteLoading />
   }
 
-  if (!canManageDriverCatalogsQuery.data) {
+  if (shellBootstrapQuery.isError) {
+    return <ShellBootstrapErrorState error={shellBootstrapQuery.error} />
+  }
+
+  if (!shellBootstrapQuery.data?.capabilities.can_manage_driver_catalogs) {
     return <Navigate to="/forbidden" replace />
   }
 
@@ -145,18 +188,12 @@ const DriverCatalogsRoute = ({ children, authToken, preload }: { children: React
 
 // Global API error handler component
 // Must be inside AntApp to access notification API
-interface ApiErrorDetail {
-  message: string
-  status?: number
-  code?: string
-}
-
 function GlobalApiErrorHandler() {
   const { notification } = AntApp.useApp()
 
   useEffect(() => {
     const handleApiError = (event: CustomEvent<ApiErrorDetail>) => {
-      const { message, status, code } = event.detail
+      const { message, status, code, dedupeKey } = event.detail
 
       // Don't show notification for 401 errors (handled by redirect)
       if (status === 401) {
@@ -176,7 +213,7 @@ function GlobalApiErrorHandler() {
         description: message,
         placement: 'topRight',
         duration: 5,
-        key: code || `api-error-${Date.now()}`, // Prevent duplicate notifications
+        key: dedupeKey || code || 'api-error',
       })
     }
 

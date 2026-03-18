@@ -1,0 +1,15 @@
+type: object
+properties:
+  me:
+    $ref: ./CurrentUser.yaml
+  tenant_context:
+    $ref: ./ListMyTenantsResponse.yaml
+  access:
+    $ref: ./EffectiveAccessResponse.yaml
+  capabilities:
+    $ref: ./ShellCapabilities.yaml
+required:
+  - access
+  - capabilities
+  - me
+  - tenant_context

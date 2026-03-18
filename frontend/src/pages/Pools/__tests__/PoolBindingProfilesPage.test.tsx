@@ -528,7 +528,14 @@ describe('PoolBindingProfilesPage', () => {
 
     renderPage()
 
+    expect(mockListOrganizationPools).not.toHaveBeenCalled()
     expect(await screen.findByText('Pool attachment usage')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Load attachment usage' }))
+
+    await waitFor(() => {
+      expect(mockListOrganizationPools).toHaveBeenCalledTimes(1)
+    })
+
     expect(screen.getByTestId('pool-binding-profiles-usage-total')).toHaveTextContent('2')
     expect(screen.getByTestId('pool-binding-profiles-usage-revisions')).toHaveTextContent('2')
     expect(screen.getAllByText('pool-main')).toHaveLength(2)

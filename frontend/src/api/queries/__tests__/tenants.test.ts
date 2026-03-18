@@ -32,7 +32,10 @@ describe('fetchMyTenants', () => {
     const { fetchMyTenants } = await import('../tenants')
     const response = await fetchMyTenants()
 
-    expect(mockGet).toHaveBeenCalledWith('/api/v2/tenants/list-my-tenants/')
+    expect(mockGet).toHaveBeenCalledWith(
+      '/api/v2/tenants/list-my-tenants/',
+      { errorPolicy: 'background' },
+    )
     expect(response.active_tenant_id).toBe('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     expect(localStorage.getItem('active_tenant_id')).toBe('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
   })

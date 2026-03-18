@@ -1,27 +1,32 @@
 import { apiClient } from './client'
 import { buildStreamUrl } from './sse'
-
-export interface DatabaseStreamTicketResponse {
-  ticket: string
-  expires_in: number
-  stream_url: string
-}
+import type { DatabaseStreamTicketRequest } from './generated/model/databaseStreamTicketRequest'
+import type { DatabaseStreamTicketResponse } from './generated/model/databaseStreamTicketResponse'
 
 export const getDatabaseStreamTicket = async (
-  clusterId?: string | null,
-  force?: boolean
-): Promise<DatabaseStreamTicketResponse> => {
-  const payload: { cluster_id?: string | null; force?: boolean } = {}
-  if (clusterId) {
-    payload.cluster_id = clusterId
+  options: {
+    clusterId?: string | null
+    clientInstanceId: string
+    sessionId?: string | null
+    recovery?: boolean
   }
-  if (force) {
-    payload.force = true
+): Promise<DatabaseStreamTicketResponse> => {
+  const payload: DatabaseStreamTicketRequest = {
+    client_instance_id: options.clientInstanceId,
+  }
+  if (options.clusterId) {
+    payload.cluster_id = options.clusterId
+  }
+  if (options.sessionId) {
+    payload.session_id = options.sessionId
+  }
+  if (options.recovery) {
+    payload.recovery = true
   }
   const response = await apiClient.post<DatabaseStreamTicketResponse>(
     '/api/v2/databases/stream-ticket/',
     payload,
-    { skipGlobalError: true }
+    { errorPolicy: 'silent' }
   )
   return response.data
 }

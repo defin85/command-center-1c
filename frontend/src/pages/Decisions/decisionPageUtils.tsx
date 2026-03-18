@@ -36,7 +36,7 @@ export type DatabaseMetadataManagementLike = DatabaseMetadataManagementResponse 
 export type DecisionReadResponse = Awaited<ReturnType<typeof api.getDecisionsCollection>>
 export type DecisionDetailReadResponse = Awaited<ReturnType<typeof api.getDecisionsDetail>>
 
-export const DECISIONS_API_OPTIONS = { skipGlobalError: true } as const
+export const DECISIONS_API_OPTIONS = { errorPolicy: 'page' } as const
 
 export const METADATA_CONTEXT_FALLBACK_MESSAGE = 'Metadata context недоступен для выбранной базы. Показываем глобальный список revisions без compatibility context этой базы; управлять configuration profile и metadata snapshot нужно через /databases.'
 export const METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE = 'Metadata context недоступен для выбранной базы. Чтобы восстановить configuration profile и metadata snapshot, откройте /databases.'

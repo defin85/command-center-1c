@@ -79,6 +79,7 @@ SSE_MAX_CONNECTION_SECONDS = getattr(settings, "SSE_MAX_CONNECTION_SECONDS", 0)
 SSE_MAX_IDLE_SECONDS = getattr(settings, "SSE_MAX_IDLE_SECONDS", 0)
 DB_SSE_ACTIVE_PREFIX = "db_sse_active:"
 DB_SSE_ACTIVE_TTL = 60
+DB_SSE_ALL_SCOPE = "__all__"
 
 DATABASE_FILTER_FIELDS = {
     "name": {"field": "name", "type": "text"},
@@ -113,6 +114,26 @@ def _permission_denied(message: str):
             "message": message,
         },
     }, status=403)
+
+
+def build_database_stream_scope(cluster_id: str | None) -> str:
+    return str(cluster_id) if cluster_id else DB_SSE_ALL_SCOPE
+
+
+def build_database_stream_active_key(*, user_id: int | str, client_instance_id: str, cluster_id: str | None) -> str:
+    scope = build_database_stream_scope(cluster_id)
+    return f"{DB_SSE_ACTIVE_PREFIX}{user_id}:{client_instance_id}:{scope}"
+
+
+def parse_database_stream_lease(raw_value: str | bytes | None) -> dict | None:
+    if not raw_value:
+        return None
+    candidate = raw_value.decode() if isinstance(raw_value, bytes) else raw_value
+    try:
+        payload = json.loads(candidate)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _resolve_tenant_id(request) -> str | None:
@@ -602,7 +623,9 @@ class DatabaseStreamTicketRequestSerializer(serializers.Serializer):
     """Request body for database stream ticket endpoint."""
 
     cluster_id = serializers.UUIDField(required=False, allow_null=True)
-    force = serializers.BooleanField(required=False, default=False)
+    client_instance_id = serializers.CharField(max_length=128)
+    session_id = serializers.CharField(required=False, allow_null=True, allow_blank=False)
+    recovery = serializers.BooleanField(required=False, default=False)
 
 
 class DatabaseStreamTicketResponseSerializer(serializers.Serializer):
@@ -611,4 +634,8 @@ class DatabaseStreamTicketResponseSerializer(serializers.Serializer):
     ticket = serializers.CharField(help_text="Short-lived ticket for SSE connection")
     expires_in = serializers.IntegerField(help_text="Seconds until ticket expires")
     stream_url = serializers.CharField(help_text="SSE endpoint URL to connect to")
+    session_id = serializers.CharField(help_text="Logical browser session identifier")
+    lease_id = serializers.CharField(help_text="Current lease identifier for the stream owner")
+    client_instance_id = serializers.CharField(help_text="Stable browser instance identifier")
+    scope = serializers.CharField(help_text="Stream scope key")
     message = serializers.CharField()

@@ -25,6 +25,31 @@ class ListMyTenantsResponseSerializer(serializers.Serializer):
     tenants = TenantItemSerializer(many=True)
 
 
+def build_tenant_context_payload(*, user) -> dict:
+    memberships = (
+        TenantMember.objects.filter(user_id=user.id)
+        .select_related("tenant")
+        .order_by("tenant__name")
+    )
+    pref = UserTenantPreference.objects.filter(user_id=user.id).first()
+
+    tenants_out = []
+    for membership in memberships:
+        tenants_out.append(
+            {
+                "id": membership.tenant_id,
+                "slug": membership.tenant.slug,
+                "name": membership.tenant.name,
+                "role": membership.role,
+            }
+        )
+
+    return {
+        "active_tenant_id": pref.active_tenant_id if pref else None,
+        "tenants": tenants_out,
+    }
+
+
 @extend_schema(
     tags=["v2"],
     summary="List my tenants",
@@ -37,30 +62,7 @@ class ListMyTenantsResponseSerializer(serializers.Serializer):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_my_tenants(request):
-    memberships = (
-        TenantMember.objects.filter(user_id=request.user.id)
-        .select_related("tenant")
-        .order_by("tenant__name")
-    )
-    pref = UserTenantPreference.objects.filter(user_id=request.user.id).first()
-
-    tenants_out = []
-    for m in memberships:
-        tenants_out.append(
-            {
-                "id": m.tenant_id,
-                "slug": m.tenant.slug,
-                "name": m.tenant.name,
-                "role": m.role,
-            }
-        )
-
-    return Response(
-        {
-            "active_tenant_id": pref.active_tenant_id if pref else None,
-            "tenants": tenants_out,
-        }
-    )
+    return Response(build_tenant_context_payload(user=request.user))
 
 
 class SetActiveTenantRequestSerializer(serializers.Serializer):

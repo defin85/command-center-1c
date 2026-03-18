@@ -1,0 +1,9 @@
+type: object
+properties:
+  can_manage_rbac:
+    type: boolean
+  can_manage_driver_catalogs:
+    type: boolean
+required:
+  - can_manage_driver_catalogs
+  - can_manage_rbac

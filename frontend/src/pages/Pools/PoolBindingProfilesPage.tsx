@@ -75,6 +75,7 @@ export function PoolBindingProfilesPage() {
   const [isReviseOpen, setIsReviseOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [organizationPools, setOrganizationPools] = useState<OrganizationPool[]>([])
+  const [isUsageRequested, setIsUsageRequested] = useState(false)
   const [usageLoading, setUsageLoading] = useState(false)
   const [usageError, setUsageError] = useState<string | null>(null)
   const deferredSearch = useDeferredValue(search)
@@ -294,6 +295,12 @@ export function PoolBindingProfilesPage() {
   }
 
   useEffect(() => {
+    if (!isUsageRequested || !selectedProfileId) {
+      setUsageLoading(false)
+      setUsageError(null)
+      return
+    }
+
     let isCancelled = false
     setUsageLoading(true)
     setUsageError(null)
@@ -320,7 +327,7 @@ export function PoolBindingProfilesPage() {
     return () => {
       isCancelled = true
     }
-  }, [])
+  }, [isUsageRequested, selectedProfileId])
 
   return (
     <WorkspacePage
@@ -511,6 +518,11 @@ export function PoolBindingProfilesPage() {
                   rowKey="key"
                   toolbar={(
                     <Space size={16} style={{ marginBottom: 16 }}>
+                      {!isUsageRequested ? (
+                        <Button onClick={() => setIsUsageRequested(true)}>
+                          Load attachment usage
+                        </Button>
+                      ) : null}
                       <Text>
                         Attachments:
                         {' '}

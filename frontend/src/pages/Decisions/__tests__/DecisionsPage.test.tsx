@@ -389,6 +389,25 @@ describe('DecisionsPage', () => {
     expect(screen.getByText('allocation.amount')).toBeInTheDocument()
   })
 
+  it('does not perform an unscoped bootstrap read before the default database selection resolves', async () => {
+    renderPage()
+
+    expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(mockGetDecisionsCollection).toHaveBeenCalledWith(
+        { database_id: 'db-2' },
+        { errorPolicy: 'page' },
+      )
+    })
+
+    expect(
+      mockGetDecisionsCollection.mock.calls.filter(
+        ([query]) => JSON.stringify(query) === JSON.stringify({})
+      ).length
+    ).toBe(0)
+  })
+
   it('creates document policy revision from structured builder fields', async () => {
     const user = userEvent.setup()
     renderPage()
@@ -443,7 +462,7 @@ describe('DecisionsPage', () => {
             }),
           ],
         }),
-        { skipGlobalError: true },
+        { errorPolicy: 'page' },
       )
     })
   }, 30000)
@@ -544,7 +563,7 @@ describe('DecisionsPage', () => {
     await waitFor(() => {
       expect(mockGetDecisionsCollection).toHaveBeenCalledWith(
         {},
-        { skipGlobalError: true },
+        { errorPolicy: 'page' },
       )
     })
     expect(
@@ -557,7 +576,7 @@ describe('DecisionsPage', () => {
       expect(mockGetDecisionsDetail).toHaveBeenCalledWith(
         'decision-version-2',
         {},
-        { skipGlobalError: true },
+        { errorPolicy: 'page' },
       )
     })
 
@@ -617,7 +636,7 @@ describe('DecisionsPage', () => {
             }),
           ]),
         }),
-        { skipGlobalError: true },
+        { errorPolicy: 'page' },
       )
     })
   }, 30000)
@@ -663,7 +682,7 @@ describe('DecisionsPage', () => {
       expect(mockGetDecisionsDetail).toHaveBeenCalledWith(
         defaultDecision.id,
         { database_id: 'db-2' },
-        { skipGlobalError: true },
+        { errorPolicy: 'page' },
       )
     })
 
@@ -747,7 +766,7 @@ describe('DecisionsPage', () => {
       expect(mockGetDecisionsDetail).toHaveBeenCalledWith(
         defaultDecision.id,
         { database_id: 'db-2' },
-        { skipGlobalError: true },
+        { errorPolicy: 'page' },
       )
     })
 
@@ -757,7 +776,7 @@ describe('DecisionsPage', () => {
       expect(mockGetDecisionsDetail).toHaveBeenCalledWith(
         legacyBoundDecision.id,
         { database_id: 'db-2' },
-        { skipGlobalError: true },
+        { errorPolicy: 'page' },
       )
     })
 
@@ -831,7 +850,7 @@ describe('DecisionsPage', () => {
           name: 'Previous release policy for Target DB',
           is_active: true,
         }),
-        { skipGlobalError: true },
+        { errorPolicy: 'page' },
       )
     })
   }, 30000)
@@ -864,7 +883,7 @@ describe('DecisionsPage', () => {
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
     expect(mockGetDecisionsCollection).toHaveBeenCalledWith(
       { database_id: 'db-2' },
-      { skipGlobalError: true },
+      { errorPolicy: 'page' },
     )
 
     clearSelect('decisions-database-select')
@@ -873,7 +892,7 @@ describe('DecisionsPage', () => {
     await waitFor(() => {
       expect(mockGetDecisionsCollection).toHaveBeenCalledWith(
         {},
-        { skipGlobalError: true },
+        { errorPolicy: 'page' },
       )
     })
 
@@ -887,7 +906,7 @@ describe('DecisionsPage', () => {
       expect(mockGetDecisionsDetail).toHaveBeenLastCalledWith(
         'decision-version-2',
         {},
-        { skipGlobalError: true },
+        { errorPolicy: 'page' },
       )
     })
 
@@ -1029,7 +1048,7 @@ describe('DecisionsPage', () => {
     expect(screen.queryByText('Transfer publication policy')).not.toBeInTheDocument()
     expect(mockGetDecisionsCollection).toHaveBeenCalledWith(
       { database_id: 'db-3' },
-      { skipGlobalError: true },
+      { errorPolicy: 'page' },
     )
   })
 
@@ -1037,10 +1056,6 @@ describe('DecisionsPage', () => {
     mockGetDecisionsCollection.mockReset()
     mockGetDecisionsDetail.mockReset()
     mockGetDecisionsCollection
-      .mockResolvedValueOnce({
-        decisions: [],
-        count: 0,
-      })
       .mockRejectedValueOnce(makeApiError('Metadata context is unavailable for the selected database.'))
       .mockResolvedValueOnce({
         decisions: [defaultDecision],
@@ -1057,20 +1072,20 @@ describe('DecisionsPage', () => {
     await waitFor(() => {
       expect(mockGetDecisionsCollection).toHaveBeenCalledWith(
         { database_id: 'db-2' },
-        { skipGlobalError: true },
+        { errorPolicy: 'page' },
       )
       expect(
         mockGetDecisionsCollection.mock.calls.filter(
-          ([query, options]) => JSON.stringify(query) === '{}' && JSON.stringify(options) === JSON.stringify({ skipGlobalError: true })
+          ([query, options]) => JSON.stringify(query) === '{}' && JSON.stringify(options) === JSON.stringify({ errorPolicy: 'page' })
         ).length
-      ).toBe(2)
+      ).toBe(1)
     })
 
     await waitFor(() => {
       expect(mockGetDecisionsDetail).toHaveBeenCalledWith(
         'decision-version-2',
         {},
-        { skipGlobalError: true },
+        { errorPolicy: 'page' },
       )
     })
 
@@ -1144,7 +1159,7 @@ describe('DecisionsPage', () => {
           name: 'Imported policy',
           parent_version_id: undefined,
         }),
-        { skipGlobalError: true },
+        { errorPolicy: 'page' },
       )
     })
 
@@ -1158,7 +1173,7 @@ describe('DecisionsPage', () => {
           parent_version_id: 'decision-version-2',
           is_active: false,
         }),
-        { skipGlobalError: true },
+        { errorPolicy: 'page' },
       )
     })
   }, 30000)

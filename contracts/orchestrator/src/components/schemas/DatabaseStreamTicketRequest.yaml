@@ -5,6 +5,14 @@ properties:
     type: string
     format: uuid
     nullable: true
-  force:
+  client_instance_id:
+    type: string
+    minLength: 1
+  session_id:
+    type: string
+    nullable: true
+  recovery:
     type: boolean
     default: false
+required:
+  - client_instance_id

@@ -10,6 +10,7 @@ import type { RevokeClusterPermissionRequest } from '../../generated/model/revok
 import type { RevokeDatabasePermissionRequest } from '../../generated/model/revokeDatabasePermissionRequest'
 
 import { queryKeys } from '../queryKeys'
+import { withQueryPolicy } from '../../../lib/queryRuntime'
 
 const api = getV2()
 const RBAC_STALE_TIME_MS = 5 * 60_000
@@ -79,7 +80,7 @@ export function useEffectiveAccess(
   const includeArtifacts = options?.includeArtifacts ?? false
   const limit = options?.limit
   const offset = options?.offset
-  return useQuery({
+  return useQuery(withQueryPolicy('bootstrap', {
     queryKey: queryKeys.rbac.effectiveAccess({
       user_id: userId,
       include_databases: includeDatabases,
@@ -100,11 +101,10 @@ export function useEffectiveAccess(
         include_artifacts: includeArtifacts,
         limit,
         offset,
-      }),
+      }, { errorPolicy: 'background' }),
     enabled: options?.enabled ?? true,
     staleTime: RBAC_STALE_TIME_MS,
-    refetchOnWindowFocus: false,
-  })
+  }))
 }
 
 export function useGrantClusterPermission() {
