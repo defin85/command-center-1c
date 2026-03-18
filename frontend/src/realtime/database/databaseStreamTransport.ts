@@ -1,4 +1,5 @@
 import { buildDatabaseStreamUrl, getDatabaseStreamTicket } from '../../api/databasesStream'
+import type { DatabaseStreamConflictResponse } from '../../api/generated'
 import { openSseStream } from '../../api/sse'
 import type {
   DatabaseRealtimeEvent,
@@ -9,6 +10,31 @@ import type {
 
 const CONNECT_TIMEOUT_MS = 10_000
 const DEFAULT_COOLDOWN_SECONDS = 60
+
+type DatabaseStreamConflictError = {
+  response?: {
+    status?: number
+    headers?: Record<string, string>
+    data?: unknown
+  }
+  status?: number
+}
+
+const isDatabaseStreamConflictResponse = (data: unknown): data is DatabaseStreamConflictResponse => {
+  if (!data || typeof data !== 'object') {
+    return false
+  }
+  const error = (data as { error?: unknown }).error
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+  const details = (error as { details?: unknown }).details
+  return Boolean(
+    details &&
+      typeof details === 'object' &&
+      typeof (details as { retry_after?: unknown }).retry_after === 'number'
+  )
+}
 
 type DatabaseStreamTransportOptions = {
   clientInstanceId: string
@@ -133,22 +159,20 @@ export class DatabaseStreamTransport implements DatabaseStreamTransportLike {
   }
 
   private handleTransportError(error: unknown) {
-    const response = error as {
-      response?: {
-        status?: number
-        headers?: Record<string, string>
-        data?: { error?: { details?: { retry_after?: number } } }
-      }
-      status?: number
-    }
+    const response = error as DatabaseStreamConflictError
     const status = response.response?.status ?? response.status
     if (status === 429) {
+      const conflict = isDatabaseStreamConflictResponse(response.response?.data)
+        ? response.response?.data
+        : null
       const retryAfterHeader = Number(response.response?.headers?.['retry-after'])
-      const retryAfterDetails = Number(response.response?.data?.error?.details?.retry_after)
-      const retryAfterSeconds = (
+      const retryAfterDetails = typeof conflict?.error.details.retry_after === 'number'
+        ? conflict.error.details.retry_after
+        : null
+      const retryAfterSeconds: number = (
         Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
           ? retryAfterHeader
-          : Number.isFinite(retryAfterDetails) && retryAfterDetails > 0
+          : retryAfterDetails !== null && retryAfterDetails > 0
             ? retryAfterDetails
             : DEFAULT_COOLDOWN_SECONDS
       )
@@ -157,7 +181,7 @@ export class DatabaseStreamTransport implements DatabaseStreamTransportLike {
       this.updateState({
         isConnected: false,
         isConnecting: false,
-        error: 'Database stream lease already active for this client session',
+        error: conflict?.error.message ?? 'Database stream lease already active for this client session',
         cooldownSeconds: retryAfterSeconds,
       })
       return

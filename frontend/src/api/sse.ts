@@ -15,11 +15,48 @@ export interface SSEOptions {
   connectTimeoutMs?: number
 }
 
+type SSEErrorResponse = {
+  status: number
+  headers: Record<string, string>
+  data?: unknown
+}
+
+type SSERequestError = Error & {
+  status?: number
+  response?: SSEErrorResponse
+}
+
 export const buildStreamUrl = (streamUrl: string): string => {
   if (streamUrl.startsWith('http://') || streamUrl.startsWith('https://')) {
     return streamUrl
   }
   return `${getApiBaseUrl()}${streamUrl}`
+}
+
+const readResponseHeaders = (response: Response): Record<string, string> => {
+  const headers: Record<string, string> = {}
+  response.headers.forEach((value, key) => {
+    headers[key.toLowerCase()] = value
+  })
+  return headers
+}
+
+const readErrorResponseData = async (response: Response): Promise<unknown> => {
+  const contentType = response.headers.get('content-type') ?? ''
+  if (contentType.includes('application/json')) {
+    try {
+      return await response.json()
+    } catch {
+      return undefined
+    }
+  }
+
+  try {
+    const text = await response.text()
+    return text ? { detail: text } : undefined
+  } catch {
+    return undefined
+  }
 }
 
 const parseSseEvent = (rawEvent: string): SSEMessage | null => {
@@ -138,8 +175,13 @@ export const openSseStream = (url: string, options: SSEOptions): (() => void) =>
           clearTimeout(connectTimeout)
           connectTimeout = null
         }
-        const error = new Error(`SSE request failed with status ${response.status}`)
-        ;(error as { status?: number }).status = response.status
+        const error = new Error(`SSE request failed with status ${response.status}`) as SSERequestError
+        error.status = response.status
+        error.response = {
+          status: response.status,
+          headers: readResponseHeaders(response),
+          data: await readErrorResponseData(response),
+        }
         reportError(error)
         return
       }

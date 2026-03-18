@@ -79,5 +79,5 @@ If users report repeated `429` or toast floods:
 
 1. verify `system/bootstrap` is the only shell bootstrap path in the affected route
 2. verify only one browser tab acquires a database stream lease
-3. inspect `Retry-After` on `/api/v2/databases/stream-ticket/`
+3. inspect `Retry-After` and conflict payload on `/api/v2/databases/stream-ticket/` and `/api/v2/databases/stream/`
 4. inspect whether a route started eager secondary reads (`/api/v2/pools/`, unscoped `/api/v2/decisions/`)

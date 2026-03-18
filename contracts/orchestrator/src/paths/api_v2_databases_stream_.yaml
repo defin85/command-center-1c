@@ -34,5 +34,5 @@ get:
       content:
         application/json:
           schema:
-            $ref: ../components/schemas/DatabaseErrorResponse.yaml
+            $ref: ../components/schemas/DatabaseStreamConflictResponse.yaml
       description: Stream lease already active for this client session

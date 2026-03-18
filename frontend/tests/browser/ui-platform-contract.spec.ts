@@ -630,6 +630,7 @@ test('Runtime contract: /decisions avoids mount-time waterfall and duplicate not
   await expect.poll(() => counts.metadataManagementReads).toBe(1)
   await expect.poll(() => counts.decisionsScoped).toBe(1)
   await expect.poll(() => counts.decisionsUnscoped).toBe(0)
+  await expect.poll(() => counts.organizationPools).toBe(0)
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 

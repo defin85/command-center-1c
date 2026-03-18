@@ -2231,7 +2231,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DatabaseErrorResponse'
+                $ref: '#/components/schemas/DatabaseStreamConflictResponse'
           description: Stream lease already active for this client session
       parameters:
         - name: X-CC1C-Tenant-ID
@@ -12513,7 +12513,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DatabaseErrorResponse'
+                $ref: '#/components/schemas/DatabaseStreamConflictResponse'
           description: Stream lease already active for this client session
   /api/v2/operations/stream/:
     get:
@@ -14296,6 +14296,65 @@ components:
         - session_id
         - stream_url
         - ticket
+    DatabaseStreamConflictDetails:
+      type: object
+      description: Machine-readable metadata for an active database stream lease conflict.
+      properties:
+        retry_after:
+          type: integer
+          minimum: 0
+          description: Seconds until a new connect or recovery attempt should be retried.
+        client_instance_id:
+          type: string
+          description: Browser/client instance identifier bound to the active lease.
+        scope:
+          type: string
+          description: Stream scope associated with the active lease.
+        active_session_id:
+          type: string
+          nullable: true
+          description: Logical session identifier currently holding the lease.
+        active_lease_id:
+          type: string
+          nullable: true
+          description: Active lease identifier currently holding the stream.
+        recovery_supported:
+          type: boolean
+          description: Indicates whether explicit recovery is supported for this conflict.
+      required:
+        - retry_after
+        - client_instance_id
+        - scope
+        - recovery_supported
+    DatabaseStreamConflictErrorDetail:
+      type: object
+      description: Error detail structure for database stream lease conflicts.
+      properties:
+        code:
+          type: string
+          enum:
+            - STREAM_ALREADY_ACTIVE
+          description: Stable error code for active client-session stream conflicts.
+        message:
+          type: string
+          description: Human-readable conflict message.
+        details:
+          $ref: '#/components/schemas/DatabaseStreamConflictDetails'
+      required:
+        - code
+        - message
+        - details
+    DatabaseStreamConflictResponse:
+      type: object
+      description: Conflict response for an already active database stream lease.
+      properties:
+        success:
+          type: boolean
+          default: false
+        error:
+          $ref: '#/components/schemas/DatabaseStreamConflictErrorDetail'
+      required:
+        - error
     DatabaseCredentialsUpdateRequest:
       type: object
       description: Request body for update_database_credentials endpoint.

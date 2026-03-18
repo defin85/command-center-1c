@@ -37,6 +37,16 @@ describe('query options (performance)', () => {
     expect(options.meta?.queryPolicy).toBe('realtime-backed')
   })
 
+  it('marks database metadata management reads as interactive workload', async () => {
+    const { useDatabaseMetadataManagement } = await import('../databases')
+    const options = useDatabaseMetadataManagement({ id: 'db-1' }) as {
+      refetchOnWindowFocus?: boolean
+      meta?: { queryPolicy?: string }
+    }
+    expect(options.refetchOnWindowFocus).toBe(false)
+    expect(options.meta?.queryPolicy).toBe('interactive')
+  })
+
   it('marks binding profiles queries as interactive workload', async () => {
     const { useBindingProfiles } = await import('../poolBindingProfiles')
     const options = useBindingProfiles() as { refetchOnWindowFocus?: boolean; meta?: { queryPolicy?: string } }

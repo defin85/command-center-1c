@@ -542,4 +542,31 @@ describe('PoolBindingProfilesPage', () => {
     expect(screen.getByText('binding-1')).toBeInTheDocument()
     expect(screen.getByText('binding-2')).toBeInTheDocument()
   })
+
+  it('fails closed on primary catalog load errors without triggering usage reads', async () => {
+    mockUseBindingProfiles.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: {
+        response: {
+          data: {
+            detail: 'Backend refused to load binding profiles.',
+          },
+        },
+      },
+    })
+    mockUseBindingProfileDetail.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      error: null,
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('Backend refused to load binding profiles.')).toBeInTheDocument()
+    expect(screen.getByText('Select a profile from the catalog.')).toBeInTheDocument()
+    expect(mockListOrganizationPools).not.toHaveBeenCalled()
+  })
 })

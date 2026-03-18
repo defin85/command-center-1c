@@ -287,11 +287,11 @@ export interface UseDatabaseMetadataManagementOptions {
 export function useDatabaseMetadataManagement(options: UseDatabaseMetadataManagementOptions) {
   const { id, enabled = true } = options
 
-  return useQuery({
+  return useQuery(withQueryPolicy('interactive', {
     queryKey: queryKeys.databases.metadataManagement(id),
     queryFn: ({ signal }) => fetchDatabaseMetadataManagement(id, signal),
     enabled: enabled && !!id,
-  })
+  }))
 }
 
 // =============================================================================

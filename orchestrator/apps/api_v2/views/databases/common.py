@@ -361,6 +361,32 @@ class DatabaseErrorResponseSerializer(serializers.Serializer):
     error = DatabaseErrorDetailSerializer()
 
 
+class DatabaseStreamConflictDetailsSerializer(serializers.Serializer):
+    """Machine-readable metadata for an active database stream lease conflict."""
+
+    retry_after = serializers.IntegerField(min_value=0, help_text="Seconds until a new connect or recovery attempt should be retried.")
+    client_instance_id = serializers.CharField(help_text="Browser/client instance identifier bound to the active lease.")
+    scope = serializers.CharField(help_text="Stream scope associated with the active lease.")
+    active_session_id = serializers.CharField(required=False, allow_null=True, help_text="Logical session identifier currently holding the lease.")
+    active_lease_id = serializers.CharField(required=False, allow_null=True, help_text="Active lease identifier currently holding the stream.")
+    recovery_supported = serializers.BooleanField(help_text="Indicates whether explicit recovery is supported for this conflict.")
+
+
+class DatabaseStreamConflictErrorDetailSerializer(serializers.Serializer):
+    """Error detail structure for database stream lease conflicts."""
+
+    code = serializers.ChoiceField(choices=["STREAM_ALREADY_ACTIVE"], help_text="Stable error code for active client-session stream conflicts.")
+    message = serializers.CharField(help_text="Human-readable conflict message.")
+    details = DatabaseStreamConflictDetailsSerializer()
+
+
+class DatabaseStreamConflictResponseSerializer(serializers.Serializer):
+    """Conflict response for an already active database stream lease."""
+
+    success = serializers.BooleanField(default=False)
+    error = DatabaseStreamConflictErrorDetailSerializer()
+
+
 class DatabaseListFiltersSerializer(serializers.Serializer):
     """Applied filters for database list."""
     cluster_id = serializers.UUIDField(required=False)

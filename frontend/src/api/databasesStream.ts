@@ -1,7 +1,7 @@
-import { apiClient } from './client'
+import { getV2, type DatabaseStreamTicketRequest, type DatabaseStreamTicketResponse } from './generated'
 import { buildStreamUrl } from './sse'
-import type { DatabaseStreamTicketRequest } from './generated/model/databaseStreamTicketRequest'
-import type { DatabaseStreamTicketResponse } from './generated/model/databaseStreamTicketResponse'
+
+const api = getV2()
 
 export const getDatabaseStreamTicket = async (
   options: {
@@ -23,12 +23,10 @@ export const getDatabaseStreamTicket = async (
   if (options.recovery) {
     payload.recovery = true
   }
-  const response = await apiClient.post<DatabaseStreamTicketResponse>(
-    '/api/v2/databases/stream-ticket/',
+  return api.postDatabasesStreamTicket(
     payload,
-    { errorPolicy: 'silent' }
+    { errorPolicy: 'silent' },
   )
-  return response.data
 }
 
 export const buildDatabaseStreamUrl = (streamUrl: string): string => {

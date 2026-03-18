@@ -675,7 +675,7 @@ describe('DecisionsPage', () => {
     renderPage()
 
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
-    await waitFor(() => expect(mockListOrganizationPools).toHaveBeenCalledTimes(1))
+    expect(mockListOrganizationPools).not.toHaveBeenCalled()
 
     await waitFor(() => {
       expect(mockGetDecisionsDetail.mock.calls.some(([decisionId]) => decisionId === unsupportedDecision.id)).toBe(false)
@@ -758,9 +758,7 @@ describe('DecisionsPage', () => {
     renderPage()
 
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
-    await waitFor(() => expect(mockListOrganizationPools).toHaveBeenCalledTimes(1))
-    expect(await screen.findByText('Sale only policy')).toBeInTheDocument()
-    expect(screen.getByText('Pinned in binding')).toBeInTheDocument()
+    expect(mockListOrganizationPools).not.toHaveBeenCalled()
 
     await waitFor(() => {
       expect(mockGetDecisionsDetail).toHaveBeenCalledWith(
@@ -769,6 +767,12 @@ describe('DecisionsPage', () => {
         { errorPolicy: 'page' },
       )
     })
+
+    await user.click(screen.getByRole('button', { name: 'Show all revisions' }))
+
+    await waitFor(() => expect(mockListOrganizationPools).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('Sale only policy')).toBeInTheDocument()
+    expect(screen.getByText('Pinned in binding')).toBeInTheDocument()
 
     await user.click(screen.getByText('Sale only policy'))
 

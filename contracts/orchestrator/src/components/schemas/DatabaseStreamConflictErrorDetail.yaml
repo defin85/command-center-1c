@@ -1,0 +1,17 @@
+type: object
+description: Error detail structure for database stream lease conflicts.
+properties:
+  code:
+    type: string
+    enum:
+      - STREAM_ALREADY_ACTIVE
+    description: Stable error code for active client-session stream conflicts.
+  message:
+    type: string
+    description: Human-readable conflict message.
+  details:
+    $ref: ./DatabaseStreamConflictDetails.yaml
+required:
+  - code
+  - message
+  - details

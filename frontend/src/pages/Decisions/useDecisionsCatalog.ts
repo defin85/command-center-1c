@@ -177,9 +177,10 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
     () => decisions.some((decision) => !isDocumentPolicyDecision(decision)),
     [decisions],
   )
+  const shouldLoadBindingUsage = hasNonDocumentPolicyDecisions && snapshotFilterMode === 'all'
 
   useEffect(() => {
-    if (!hasNonDocumentPolicyDecisions) {
+    if (!shouldLoadBindingUsage) {
       setBindingUsagePools([])
       setBindingUsageError(null)
       return
@@ -207,7 +208,7 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
     return () => {
       cancelled = true
     }
-  }, [hasNonDocumentPolicyDecisions, reloadTick])
+  }, [reloadTick, shouldLoadBindingUsage])
 
   const decisionSnapshotFilter = useMemo(
     () => resolveDecisionSnapshotFilter({

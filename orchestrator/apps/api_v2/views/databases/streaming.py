@@ -48,6 +48,7 @@ def _build_stream_conflict_response(*, ttl: int, client_instance_id: str, scope:
     responses={
         200: DatabaseStreamTicketResponseSerializer,
         400: DatabaseErrorResponseSerializer,
+        429: DatabaseStreamConflictResponseSerializer,
         401: OpenApiResponse(description='Unauthorized'),
         404: DatabaseErrorResponseSerializer,
     }
@@ -168,6 +169,8 @@ def get_database_stream_ticket(request):
     responses={
         200: OpenApiResponse(description='SSE stream (text/event-stream)'),
         401: OpenApiResponse(description='Unauthorized'),
+        403: OpenApiResponse(description='Forbidden'),
+        429: DatabaseStreamConflictResponseSerializer,
     },
 )
 @require_GET

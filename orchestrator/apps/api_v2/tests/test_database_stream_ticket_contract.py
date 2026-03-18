@@ -31,6 +31,26 @@ class FakeRedis:
         return None
 
 
+class FakeAsyncRedis:
+    def __init__(self, lease: dict | None = None, ttl: int = 45, set_result: bool = False):
+        self._lease = json.dumps(lease) if lease is not None else None
+        self._ttl = ttl
+        self._set_result = set_result
+
+    async def get(self, _key: str):
+        return self._lease
+
+    async def ttl(self, _key: str) -> int:
+        return self._ttl
+
+    async def set(self, _key: str, _value: str, *, nx: bool = False, ex: int | None = None):
+        _ = (nx, ex)
+        return self._set_result
+
+    async def close(self) -> None:
+        return None
+
+
 @pytest.fixture
 def staff_user():
     return User.objects.create_user(username="db_stream_staff", password="pass", is_staff=True)
@@ -157,3 +177,43 @@ def test_database_stream_ticket_allows_explicit_recovery_for_same_session(staff_
     assert payload["session_id"] == "session-a"
     assert payload["lease_id"] != "lease-a"
     assert payload["message"] == "Database stream recovery ticket issued"
+
+
+@pytest.mark.django_db
+def test_database_stream_returns_conflict_metadata_for_active_client_session(staff_client, staff_user):
+    active_lease = {
+        "session_id": "session-a",
+        "lease_id": "lease-a",
+        "client_instance_id": "browser-a",
+        "scope": "__all__",
+    }
+    fake_async_redis = FakeAsyncRedis(lease=active_lease, ttl=29, set_result=False)
+    ticket_data = {
+        "user_id": staff_user.id,
+        "username": staff_user.username,
+        "cluster_id": None,
+        "client_instance_id": "browser-a",
+        "session_id": "session-b",
+        "lease_id": "lease-b",
+        "scope": "__all__",
+        "recovery": False,
+    }
+
+    with (
+        patch("apps.api_v2.views.databases.streaming._validate_db_stream_ticket", return_value=(ticket_data, None)),
+        patch("apps.api_v2.views.databases.streaming._get_async_redis_connection", return_value=fake_async_redis),
+    ):
+        response = staff_client.get("/api/v2/databases/stream/?ticket=ticket-1")
+
+    assert response.status_code == 429
+    assert response["Retry-After"] == "29"
+    payload = response.json()
+    assert payload["error"]["code"] == "STREAM_ALREADY_ACTIVE"
+    assert payload["error"]["details"] == {
+        "retry_after": 29,
+        "client_instance_id": "browser-a",
+        "scope": "__all__",
+        "active_session_id": "session-a",
+        "active_lease_id": "lease-a",
+        "recovery_supported": True,
+    }

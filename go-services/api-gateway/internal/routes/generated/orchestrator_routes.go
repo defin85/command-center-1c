@@ -244,6 +244,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "GET", Path: "/snapshots/list/", OperationID: "v2_snapshots_list_retrieve"},
 	{Method: "GET", Path: "/system/config/", OperationID: "v2_system_config_retrieve"},
 	{Method: "GET", Path: "/system/health/", OperationID: "v2_system_health_retrieve"},
+	{Method: "GET", Path: "/system/bootstrap/", OperationID: "v2_system_bootstrap_retrieve"},
 	{Method: "GET", Path: "/system/me/", OperationID: "v2_system_me_retrieve"},
 	{Method: "POST", Path: "/templates/sync-from-registry/", OperationID: "v2_templates_sync_from_registry_create"},
 	{Method: "GET", Path: "/templates/pool-runtime-registry/", OperationID: "v2_templates_pool_runtime_registry_retrieve"},
