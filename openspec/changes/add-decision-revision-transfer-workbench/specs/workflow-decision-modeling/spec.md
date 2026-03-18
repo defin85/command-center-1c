@@ -2,6 +2,8 @@
 ### Requirement: `/decisions` MUST provide transfer workbench for concrete decision revisions
 Система ДОЛЖНА (SHALL) предоставлять в `/decisions` analyst-facing transfer workbench для создания новой concrete `decision_revision` из существующей source revision под target metadata context, резолвимый из выбранной ИБ.
 
+Этот transfer workbench ДОЛЖЕН (SHALL) расширять уже существующий guided rollover baseline и НЕ ДОЛЖЕН (SHALL NOT) вводить второй parallel lifecycle для create/revise/rollover concrete revisions.
+
 Transfer workbench ДОЛЖЕН (SHALL):
 - использовать source revision только как immutable authoring seed;
 - явно показывать `source revision`, `target database`, resolved `configuration profile` и resolved target `metadata snapshot`;

@@ -1,9 +1,10 @@
 ## 1. Контракт и API
-- [ ] 1.1 Зафиксировать в spec и API/read-model stateless two-phase contract для transfer workbench: server-evaluated `transfer preview` и `transfer publish` для concrete `decision_revision`.
-- [ ] 1.2 Зафиксировать shape `transfer preview`: source revision, target database, resolved configuration profile / metadata snapshot и transfer report.
-- [ ] 1.3 Зафиксировать metadata identity contract для transfer matching: primary signal — stable design-time IDs из `ConfigDumpInfo.xml`/`ibcmd`-enriched snapshot, fallback — canonical metadata path/name + type/shape.
-- [ ] 1.4 Зафиксировать fail-closed правила `transfer publish`: publish повторно валидирует report и создаёт новую revision только после разрешения всех `ambiguous` / `missing` / `incompatible` элементов.
-- [ ] 1.5 Зафиксировать provenance resulting revision и границу между default ready-to-pin selection и source-only transfer mode.
+- [ ] 1.1 Зафиксировать в spec и API/read-model, что change расширяет существующий guided rollover baseline, а не вводит новый parallel revision lifecycle для concrete `decision_revision`.
+- [ ] 1.2 Зафиксировать stateless two-phase transfer contract поверх existing rollover semantics: server-evaluated `transfer preview` и `transfer publish` или эквивалентный publish step через существующий revision publish core.
+- [ ] 1.3 Зафиксировать shape `transfer preview`: source revision, target database, resolved configuration profile / metadata snapshot и transfer report.
+- [ ] 1.4 Зафиксировать metadata identity contract для transfer matching: primary signal — stable design-time IDs из `ConfigDumpInfo.xml`/`ibcmd`-enriched snapshot, fallback — canonical metadata path/name + type/shape.
+- [ ] 1.5 Зафиксировать fail-closed правила publish: final publish повторно валидирует report и создаёт новую revision только после разрешения всех `ambiguous` / `missing` / `incompatible` элементов.
+- [ ] 1.6 Зафиксировать provenance resulting revision и границу между default ready-to-pin selection и source-only transfer mode.
 
 ## 2. Backend transfer semantics
 - [ ] 2.1 Реализовать enrichment metadata snapshot/read-model stable design-time IDs из `ConfigDumpInfo.xml`/`ibcmd`, не требуя от standard OData отдавать эти IDs напрямую.
@@ -14,8 +15,8 @@
 - [ ] 2.6 Добавить fail-closed validation errors для unresolved transfer items и отдать их в analyst-facing API/read-model.
 
 ## 3. Frontend analyst workbench
-- [ ] 3.1 Добавить в `/decisions` явную entry point для transfer из source revision в target database context.
-- [ ] 3.2 Показать source/target context, transfer report и guided remap surface для unresolved items.
+- [ ] 3.1 Расширить existing `/decisions` rollover entry point до explicit transfer mode вместо создания второго параллельного revision editor flow.
+- [ ] 3.2 Показать source/target context, transfer report и guided remap surface для unresolved items внутри existing rollover-oriented editor/workbench.
 - [ ] 3.3 Сохранить default compatible selection как primary ready-to-pin mode и отделить его от diagnostics/source-selection mode.
 
 ## 4. Проверки и документация

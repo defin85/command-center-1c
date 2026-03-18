@@ -6,17 +6,20 @@
 - Analyst-facing `/workflows` не даёт канонического способа собирать `one-of-many` и `many-of-many` ветвления без возврата к compatibility-конструкциям `condition` и raw `edge.condition`.
 
 ## Что меняется
+- Change фиксируется как phase 1 branching foundation, а не как попытка за один шаг переписать весь workflow authoring UX.
 - Добавляется явная analyst-facing модель `Decision Task -> Exclusive Gateway / Inclusive Gateway`.
 - Добавляется first-class `branch edge contract`, который хранится в DAG как typed persisted semantics, а не выводится из handle id, edge label или raw expression.
 - `Decision Task` становится отдельным вычислительным шагом: он вызывает pinned decision revision, публикует typed outputs в context и не маршрутизирует ветви напрямую.
-- `Exclusive Gateway` и `Inclusive Gateway` становятся каноническими branching-конструктами default workflow surface.
-- Legacy `condition`-node и raw `edge.condition` остаются inspectable/executable как compatibility-only path для существующих workflow, но перестают быть primary authoring model.
+- `Exclusive Gateway` и `Inclusive Gateway` становятся каноническими branching-конструктами default workflow surface для новых authoring flows.
+- Legacy `condition`-node и raw `edge.condition` остаются inspectable/executable как compatibility-only path для существующих workflow, но этот change НЕ ДОЛЖЕН (SHALL NOT) обещать полный auto-migration wizard или big-bang rewrite historical DAG.
 - Runtime получает fail-closed branching semantics, auditable branch diagnostics и activated-branch provenance для корректного downstream fan-in.
 
 ## Impact
 - Affected specs:
   - `workflow-decision-modeling`
   - `workflow-branching-contract` (new)
+- Delivery scope note:
+  - этот change должен доставить contract/runtime foundation и minimal canonical authoring path для новых branching flows; richer migration helpers, bulk conversion и advanced gateway UX допускаются только как follow-up changes.
 - Affected code:
   - `frontend/src/components/workflow/**`
   - `frontend/src/pages/Workflows/**`

@@ -11,6 +11,8 @@ Branch edge contract ДОЛЖЕН (SHALL) как минимум поддержи
 
 Система НЕ ДОЛЖНА (SHALL NOT) считать `edge.condition` canonical analyst-facing branching contract на default surface.
 
+Phase 1 implementation ДОЛЖНА (SHALL) обеспечивать этот persisted contract и minimal authoring/runtime support для новых workflow, даже если richer migration helpers для legacy DAG будут вынесены в follow-up change.
+
 #### Scenario: Gateway edge сохраняется как typed routing contract
 - **GIVEN** аналитик соединяет gateway с downstream step
 - **WHEN** он задаёт ветвь `route == "publish"`

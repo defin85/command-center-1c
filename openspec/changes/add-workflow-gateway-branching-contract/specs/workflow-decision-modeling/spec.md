@@ -4,6 +4,8 @@
 
 Branching ДОЛЖЕН (SHALL) выполняться отдельными analyst-facing gateway node types, использующими explicit `branch edge contract`.
 
+Этот change ДОЛЖЕН (SHALL) доставить minimal canonical authoring path для новых branching workflows и НЕ ДОЛЖЕН (SHALL NOT) зависеть от наличия полного migration wizard для legacy DAG как обязательного условия поставки.
+
 `Decision Task` ДОЛЖЕН (SHALL):
 - всегда ссылаться на pinned decision revision;
 - поддерживать explicit input/output mapping;

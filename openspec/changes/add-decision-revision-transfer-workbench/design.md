@@ -3,6 +3,8 @@
 
 Проблема здесь не в runtime model. Runtime уже закреплён вокруг concrete `decision_revision`, pinned workflow/binding refs и deterministic materialization в `document_policy.v1`. Проблема в authoring ergonomics: аналитику нужен явный экран переноса, который показывает, какие source mappings уже подходят target context, а какие требуют ручного remap.
 
+Важно: этот change НЕ стартует с нуля. Он должен расширять уже доставленный guided rollover baseline, а не вводить второй параллельный authoring lifecycle поверх тех же самых concrete revisions.
+
 ## Цели
 - Дать аналитику discoverable transfer flow для concrete `decision_revision`.
 - Сохранить текущую runtime модель: concrete revisions, pinned consumers, deterministic compile и auditable provenance.
@@ -77,7 +79,8 @@ MVP НЕ вводит persistent draft artifact, отдельную abstract rev
 Это снимает двусмысленность между UX workbench и backend contract:
 - preview считается авторитативно на server side, а не в браузере;
 - publish не доверяет устаревшему client-side report и повторно валидирует unresolved items;
-- create/revise lifecycle для обычного `/decisions` остаётся совместимым и не перегружается transfer-only semantics.
+- existing create/revise/rollover lifecycle для обычного `/decisions` остаётся совместимым и не перегружается transfer-only semantics;
+- если implementation сможет безопасно переиспользовать существующий rollover publish без отдельного `transfer publish` endpoint, это считается предпочтительным минимальным вариантом.
 
 ### Decision 6: Publish создаёт только новую concrete revision и не меняет existing consumers
 Transfer workbench не получает отдельный runtime artifact и не меняет semantics existing pins. Успешный publish:
@@ -122,11 +125,12 @@ Revision вне default compatible set может быть полезной ка
 - В OData-only среде без `ibcmd`/config dump quality auto-remap будет ниже, поэтому `ambiguous` cases станут встречаться чаще; это ожидаемый fail-closed trade-off.
 
 ## План миграции
-1. Зафиксировать spec-level transfer contract поверх текущего rollover semantics.
+1. Зафиксировать spec-level transfer contract поверх уже shipped guided rollover semantics.
 2. Зафиксировать metadata identity contract: `ConfigDumpInfo.xml`/`ibcmd`-enriched design-time IDs как primary signal и canonical path/name + type/shape как fallback.
 3. Определить stateless two-phase API/read-model shape: `transfer preview` и `transfer publish`.
 4. Реализовать backend remap/validation path поверх существующей publish semantics, сохранив existing revision publish core как финальный шаг materialization.
-5. Добавить analyst-facing transfer UI и тесты fail-closed поведения.
+5. Расширить existing rollover UI source/target summary до transfer report и guided remap вместо отдельного параллельного editor lifecycle.
+6. Добавить analyst-facing tests fail-closed поведения.
 
 ## Открытые вопросы
 - Нужен ли отдельный "fast publish" UX для полностью `matched` transfer report, или достаточно общего publish flow?
