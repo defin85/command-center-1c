@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Pool catalog workflow bindings MUST использовать isolated attachment workspace и canonical CRUD
+### Requirement: Pool catalog workflow bindings MUST использовать isolated binding workspace и canonical CRUD
 Система ДОЛЖНА (SHALL) управлять workflow bindings на `/pools/catalog` через dedicated attachment workspace и dedicated attachment endpoints, backed by the same canonical store, который использует runtime resolution.
 
 `/pools/catalog` ДОЛЖЕН (SHALL) трактовать `pool_workflow_binding` как pool-scoped attachment к pinned `binding_profile_revision_id`, а не как primary inline authoring surface для reusable workflow/slot logic.

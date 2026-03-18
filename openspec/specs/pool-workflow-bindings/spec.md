@@ -4,85 +4,76 @@
 TBD - created by archiving change refactor-12-workflow-centric-analyst-modeling. Update Purpose after archive.
 ## Requirements
 ### Requirement: Pools MUST поддерживать несколько workflow bindings в одном организационном контуре
-Система ДОЛЖНА (SHALL) поддерживать `pool_workflow_binding` как versioned связь между конкретным `pool` и pinned revision workflow definition.
+Система ДОЛЖНА (SHALL) поддерживать `pool_workflow_binding` как versioned attachment между конкретным `pool` и pinned `binding_profile_revision_id`.
 
-Binding ДОЛЖЕН (SHALL) хранить как минимум:
+Attachment ДОЛЖЕН (SHALL) хранить как минимум:
 - `pool_id`;
+- `binding_id`;
 - `status`;
 - `effective_from`;
 - `effective_to`;
 - `direction`;
 - `mode`;
-- `workflow_definition_id`;
-- `workflow_revision`;
-- `decisions`;
-- `parameters`;
-- `role_mapping` или эквивалентную контекстную привязку;
+- `binding_profile_id`;
+- `binding_profile_revision_id`;
+- read-only `binding_profile_revision_number` или эквивалентный display marker;
 - `revision`;
 - `created_by`;
 - `updated_by`.
 
-Один `pool` МОЖЕТ (MAY) иметь несколько одновременно активных bindings, если они различимы по selector/effective period и не создают ambiguity.
+Один `pool` МОЖЕТ (MAY) иметь несколько одновременно активных attachment-ов, если они различимы по selector/effective period и не создают ambiguity.
 
-Система ДОЛЖНА (SHALL) хранить canonical `pool_workflow_binding` в dedicated persistent resource/store/table, который является единым source-of-truth для:
-- list/detail/upsert/delete API;
-- runtime binding resolution;
+Canonical store `pool_workflow_binding` ДОЛЖЕН (SHALL) оставаться единым source-of-truth для:
+- list/detail/upsert/delete API pool-scoped attachment-ов;
+- runtime attachment resolution;
 - operator-facing read models и lineage.
 
-Canonical store ДОЛЖЕН (SHALL) использовать indexed scalar columns `pool_id`, `status`, `effective_from`, `effective_to`, `direction`, `mode`, JSON fields `decisions`, `parameters`, `role_mapping` и service fields `revision`, `created_by`, `updated_by`, `created_at`, `updated_at`.
+Reusable поля binding logic (`workflow`, `decisions`, `parameters`, `role_mapping`) НЕ ДОЛЖНЫ (SHALL NOT) оставаться primary mutable payload attachment-а после rollout profile model; authoritative source-of-truth для них ДОЛЖЕН (SHALL) находиться в pinned `binding_profile_revision_id`.
 
 `pool.metadata` НЕ ДОЛЖЕН (SHALL NOT) оставаться canonical или единственным runtime source-of-truth для workflow bindings после hardening cutover.
 
-Snapshot binding provenance для конкретного запуска НЕ ДОЛЖЕН (SHALL NOT) читаться retroactively из mutable binding row после старта run; он ДОЛЖЕН (SHALL) фиксироваться в `PoolRun`/execution lineage на момент preview/create-run.
+Snapshot binding provenance для конкретного запуска НЕ ДОЛЖЕН (SHALL NOT) читаться retroactively из mutable attachment row или latest profile revision после старта run; он ДОЛЖЕН (SHALL) фиксироваться в `PoolRun`/execution lineage на момент preview/create-run.
 
-#### Scenario: Один pool использует две разные схемы одновременно
-- **GIVEN** один `pool` имеет binding `top_down_services_v3` и binding `bottom_up_import_v2`
+#### Scenario: Один pool использует две разные profile revision одновременно
+- **GIVEN** один `pool` имеет attachment `top_down_services` на `binding_profile_revision_id services_v3_id`
+- **AND** attachment `bottom_up_import` на `binding_profile_revision_id import_v2_id`
 - **WHEN** оператор открывает список доступных схем для этого pool
-- **THEN** интерфейс показывает оба binding
-- **AND** каждый binding указывает на собственную pinned workflow revision
+- **THEN** интерфейс показывает оба attachment-а
+- **AND** каждый attachment указывает на собственную pinned profile revision
 
-#### Scenario: Обновление metadata пула не переписывает canonical binding store
-- **GIVEN** для `pool` уже созданы canonical workflow bindings
+#### Scenario: Обновление metadata пула не переписывает attachment и profile reference
+- **GIVEN** для `pool` уже созданы canonical workflow attachment-ы
 - **WHEN** оператор меняет `name`, `description` или другую pool metadata через pool upsert path
-- **THEN** bindings остаются доступными через dedicated binding API и runtime resolution
-- **AND** pool upsert path не переписывает canonical binding payload как побочный эффект
+- **THEN** attachment-ы остаются доступными через dedicated binding API и runtime resolution
+- **AND** pool upsert path не переписывает canonical attachment payload как побочный эффект
 
 ### Requirement: Pool workflow binding resolution MUST быть детерминированной и fail-closed
-Система ДОЛЖНА (SHALL) резолвить binding для запуска run либо явно по выбранному `pool_workflow_binding_id`, либо по детерминированным selector-правилам.
+Система ДОЛЖНА (SHALL) резолвить attachment для запуска run явно по выбранному `pool_workflow_binding_id`.
 
-Если запрос запуска подходит более чем к одному активному binding без явного disambiguation, система НЕ ДОЛЖНА (SHALL NOT) молча выбирать один из них.
+Selector matching МОЖЕТ (MAY) использоваться только для UI prefill/assistive filtering pool-local attachment-ов и НЕ ДОЛЖЕН (SHALL NOT) silently подменять explicit runtime reference.
 
-#### Scenario: Ambiguous binding блокирует запуск run
-- **GIVEN** для одного `pool` активны два binding с пересекающимся effective scope
-- **WHEN** оператор пытается запустить run без явного выбора binding
+Если запрос запуска не содержит explicit attachment reference или ссылка указывает на attachment вне active/effective scope, система НЕ ДОЛЖНА (SHALL NOT) молча выбирать другой attachment.
+
+#### Scenario: Отсутствие explicit attachment reference блокирует запуск run
+- **GIVEN** для одного `pool` существует один или несколько активных attachment-ов
+- **WHEN** оператор или внешний клиент пытается запустить run без `pool_workflow_binding_id`
 - **THEN** система отклоняет запуск fail-closed
-- **AND** возвращает machine-readable диагностику ambiguity
+- **AND** возвращает machine-readable диагностику о missing explicit attachment reference
 
 ### Requirement: Pool workflow binding MUST предоставлять preview effective runtime projection
-Система ДОЛЖНА (SHALL) предоставлять preview binding-а до запуска, достаточный для понимания:
+Система ДОЛЖНА (SHALL) предоставлять preview attachment-а до запуска, достаточный для понимания:
+- какой pool attachment будет использован;
+- на какую `binding_profile_revision_id` он pinned;
 - какой workflow revision будет выполнен;
 - какие decisions/parameters будут применены;
-- какие named publication slots доступны для topology resolution;
-- какие topology selectors остаются непокрытыми или ambiguous;
 - какая concrete runtime projection будет собрана;
 - какой lineage получит run.
 
-Binding preview ДОЛЖЕН (SHALL) показывать coverage named slots относительно topology selectors выбранного пула.
-
-Canonical preview/read-model ДОЛЖЕН (SHALL) использовать slot-based projection как source-of-truth и НЕ ДОЛЖЕН (SHALL NOT) ограничиваться single `compiled_document_policy` object как единственной effective policy view.
-
-#### Scenario: Binding preview показывает slot coverage для topology edges
-- **GIVEN** binding pin-ит policy decisions с `slot_key=sale` и `slot_key=purchase`
-- **AND** topology использует эти keys на активных edges
-- **WHEN** аналитик или оператор открывает binding перед запуском
-- **THEN** preview показывает pinned workflow revision, linked decisions и slot coverage summary
-- **AND** пользователь видит, какие topology edges будут резолвиться каким slot'ом до старта run
-
-#### Scenario: Preview показывает slot-based projection вместо single global policy
-- **GIVEN** binding pin-ит несколько publication slots
-- **WHEN** система строит preview до запуска
-- **THEN** response/read-model показывает materialized slot projection и coverage summary
-- **AND** effective preview не сводится к одному global compiled policy blob
+#### Scenario: Binding preview показывает attachment provenance и pinned profile revision
+- **GIVEN** аналитик или оператор открывает binding attachment перед запуском
+- **WHEN** система строит preview
+- **THEN** preview показывает pool attachment, pinned profile revision, workflow lineage и compiled projection summary
+- **AND** пользователь видит, какой attachment и какая reusable profile revision будут исполнены до старта run
 
 ### Requirement: Pool workflow binding mutating MUST быть conflict-safe и audit-friendly
 Система ДОЛЖНА (SHALL) предоставлять conflict-safe mutating semantics для `pool_workflow_binding`, достаточные для конкурентного редактирования и audit trail.
@@ -229,4 +220,35 @@ Raw identifiers (`decision_table_id`, внутренние ids) МОГУТ (MAY)
 - **WHEN** аналитик открывает binding workspace
 - **THEN** UI показывает ambiguous coverage context как отдельное состояние
 - **AND** не смешивает его с missing `slot_key` внутри выбранного binding
+
+### Requirement: Pool attachment MUST оставаться pool-local activation layer без local logic overrides в MVP
+Система ДОЛЖНА (SHALL) трактовать `pool_workflow_binding` как pool-local activation layer.
+
+В MVP attachment МОЖЕТ (MAY) редактировать только:
+- `status`;
+- selector scope;
+- `effective_from/effective_to`;
+- reference на `binding_profile_revision`;
+- optional display/provenance metadata, не влияющую на runtime logic.
+
+Attachment НЕ ДОЛЖЕН (SHALL NOT) локально переопределять:
+- workflow revision;
+- publication slot map;
+- parameters;
+- role mapping.
+
+Для pool-specific вариации reusable схемы система ДОЛЖНА (SHALL) требовать новую `binding_profile_revision` или отдельный `binding_profile`.
+
+#### Scenario: Оператор не может quietly изменить slot map только для одного pool attachment
+- **GIVEN** attachment pinned на reusable profile revision
+- **WHEN** оператор пытается изменить workflow/slot logic только внутри attachment-а
+- **THEN** система отклоняет такой mutate path или направляет к созданию новой profile revision
+- **AND** существующая reusable profile revision остаётся неизменной
+
+#### Scenario: Attachment на deactivated profile revision остаётся читаемым, но не переиспользуется для нового attach
+- **GIVEN** attachment уже pinned на `binding_profile_revision_id`
+- **AND** source profile позже деактивирован в catalog
+- **WHEN** оператор читает attachment collection или inspect lineage
+- **THEN** attachment остаётся видимым и читаемым с profile lifecycle warning
+- **AND** новый attach/re-attach на этот deactivated profile через default path недоступен
 

@@ -42,24 +42,33 @@ TBD - created by archiving change add-intercompany-pool-distribution-module. Upd
 - **AND** run продолжает обработку остальных строк
 
 ### Requirement: Run execution MUST быть идемпотентным для одного ключа расчёта
-Система ДОЛЖНА (SHALL) использовать idempotency key на основе `pool_id + period + direction + canonicalized(run_input)`.
+Система ДОЛЖНА (SHALL) использовать idempotency key для create-run на основе:
+- `pool_id`;
+- `period_start` / `period_end`;
+- `direction`;
+- `pool_workflow_binding_id`;
+- `attachment revision`;
+- `binding_profile_revision_id`;
+- `canonicalized(run_input)`.
 
 Система НЕ ДОЛЖНА (SHALL NOT) использовать `source_hash` как часть публичного create-run контракта или как часть новой формулы idempotency key.
 
-Повторный запуск с тем же canonicalized `run_input` ДОЛЖЕН (SHALL) обновлять существующий набор результатов/документов (upsert), а не создавать дубликаты.
+Повторный запуск с тем же explicit attachment reference, тем же `attachment revision`, тем же `binding_profile_revision_id` и тем же canonicalized `run_input` ДОЛЖЕН (SHALL) обновлять существующий набор результатов/документов (upsert), а не создавать дубликаты.
 
-#### Scenario: Повторный запуск с тем же run_input не создаёт дубликаты
-- **GIVEN** run уже выполнен для конкретного canonicalized `run_input`
-- **WHEN** пользователь запускает повторную обработку с тем же `run_input`
+Смена attachment revision или pinned `binding_profile_revision_id` ДОЛЖНА (SHALL) создавать новый idempotency fingerprint, даже если `pool_workflow_binding_id` и `run_input` остались теми же.
+
+#### Scenario: Повторный запуск с тем же attachment и той же pinned profile revision не создаёт дубликаты
+- **GIVEN** run уже выполнен для конкретного `pool_workflow_binding_id`, `attachment revision`, `binding_profile_revision_id` и canonicalized `run_input`
+- **WHEN** пользователь запускает повторную обработку с теми же значениями
 - **THEN** существующие записи обновляются
 - **AND** новые дубликаты документов и строк распределения не появляются
 
-#### Scenario: Изменение run_input создаёт новый idempotent запуск
-- **GIVEN** пользователь повторно запускает run с теми же `pool_id`, `period`, `direction`
-- **AND** `run_input` отличается от предыдущего запуска
-- **WHEN** система вычисляет idempotency key
-- **THEN** key отличается от предыдущего
-- **AND** создаётся новый запуск, а не reuse старого
+#### Scenario: Repin того же attachment на новую profile revision создаёт новый fingerprint
+- **GIVEN** attachment сохранил тот же `pool_workflow_binding_id`
+- **AND** его `attachment revision` или pinned `binding_profile_revision_id` изменились
+- **WHEN** оператор запускает create-run с тем же `run_input`
+- **THEN** система вычисляет новый idempotency key
+- **AND** старый run не reuse'ится поверх новой reusable логики
 
 ### Requirement: Reporting MUST предоставлять сводный и детализированный баланс
 Система ДОЛЖНА (SHALL) формировать:
@@ -97,32 +106,22 @@ TBD - created by archiving change add-intercompany-pool-distribution-module. Upd
 
 Для `bottom_up` система ДОЛЖНА (SHALL) поддерживать выбор шаблона импорта и ввод/загрузку источника данных из UI.
 
-Create-run payload ДОЛЖЕН (SHALL) содержать явную ссылку на binding через `pool_workflow_binding_id`.
+Create-run payload ДОЛЖЕН (SHALL) содержать явную ссылку на attachment через `pool_workflow_binding_id`.
+
+`pool_workflow_binding_id` ДОЛЖЕН (SHALL) резолвиться к pool-scoped attachment-у, который затем pinned на конкретную `binding_profile_revision_id`.
 
 Public operator-facing `POST /api/v2/pools/runs/` и `POST /api/v2/pools/workflow-bindings/preview/` ДОЛЖНЫ (SHALL) отклонять запрос без explicit binding reference fail-closed, даже если по selector существует ровно один кандидат.
 
 Selector-based matching МОЖЕТ (MAY) использоваться только для UI prefill/assistive hint до submit и НЕ ДОЛЖЕН (SHALL NOT) заменять explicit binding reference на public request boundary.
 
-Preview/create-run path ДОЛЖЕН (SHALL) резолвить binding только из canonical binding store и сохранять binding lineage snapshot на `PoolRun`/execution в момент запуска.
+Preview/create-run path ДОЛЖЕН (SHALL) резолвить attachment только из canonical attachment store и сохранять attachment lineage snapshot, `attachment revision` и pinned `binding_profile_revision_id` на `PoolRun`/execution в момент запуска.
 
-#### Scenario: Top-down run запускается из UI с выбранным binding и стартовой суммой
-- **GIVEN** оператор выбрал pool, binding и направление `top_down`
+#### Scenario: Top-down run запускается из UI с выбранным attachment и стартовой суммой
+- **GIVEN** оператор выбрал pool, attachment и направление `top_down`
 - **WHEN** оператор вводит стартовую сумму и отправляет форму запуска
 - **THEN** run создаётся через `/api/v2/pools/runs/` с explicit `pool_workflow_binding_id` и direction-specific входными данными
+- **AND** runtime резолвит pinned `binding_profile_revision_id` через выбранный attachment
 - **AND** запуск не требует ручного формирования payload во внешнем API-клиенте
-
-#### Scenario: Public create-run запрос без binding reference отклоняется fail-closed
-- **GIVEN** для выбранного pool существует workflow-centric binding
-- **WHEN** внешний клиент отправляет `POST /api/v2/pools/runs/` без `pool_workflow_binding_id`
-- **THEN** система возвращает fail-closed validation/problem-details ошибку
-- **AND** runtime не пытается silently выбрать binding по selector вместо клиента
-
-#### Scenario: Run сохраняет binding lineage snapshot из canonical store
-- **GIVEN** оператор запускает run с explicit `pool_workflow_binding_id`
-- **AND** canonical binding store возвращает pinned workflow revision, `decisions`, `parameters` и `role_mapping`
-- **WHEN** create-run успешно создаёт execution
-- **THEN** `PoolRun`/execution сохраняет lineage snapshot выбранного binding
-- **AND** последующий inspect использует этот snapshot как deterministic provenance
 
 ### Requirement: Pool runs UI MUST поддерживать полный операторский lifecycle run
 Система ДОЛЖНА (SHALL) предоставлять в `/pools/runs` полный операторский контроль run lifecycle: создание, мониторинг статуса/provenance, safe-команды (`confirm-publication`, `abort-publication`) и retry failed-целей.
@@ -234,16 +233,17 @@ Preview/create-run path ДОЛЖЕН (SHALL) резолвить binding толь
 ### Requirement: Pool runs UI MUST показывать lineage binding-to-execution как primary domain context
 Система ДОЛЖНА (SHALL) показывать в `/pools/runs` lineage запущенного процесса как часть primary domain read-model:
 - `pool`;
-- selected binding;
+- selected attachment;
+- pinned `binding_profile_revision_id`;
 - workflow definition/revision;
 - decision snapshot или эквивалентный compiled provenance;
 - link на underlying workflow execution diagnostics.
 
 Generic workflow execution surface НЕ ДОЛЖЕН (SHALL NOT) быть обязательной точкой входа для оператора при обычном управлении pool run lifecycle.
 
-#### Scenario: Оператор видит lineage run без перехода в generic workflow catalog
+#### Scenario: Оператор видит attachment и profile lineage без перехода в generic workflow catalog
 - **GIVEN** pool run уже создан и выполняется
 - **WHEN** оператор открывает inspect view на `/pools/runs`
-- **THEN** экран показывает binding lineage и workflow revision
+- **THEN** экран показывает selected attachment, pinned profile revision и workflow revision
 - **AND** ссылка на underlying workflow execution доступна как secondary diagnostics, а не как основной экран
 

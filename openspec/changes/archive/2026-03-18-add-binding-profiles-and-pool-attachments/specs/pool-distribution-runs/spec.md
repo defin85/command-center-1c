@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Run execution MUST быть идемпотентным для одного attachment+profile решения
+### Requirement: Run execution MUST быть идемпотентным для одного ключа расчёта
 Система ДОЛЖНА (SHALL) использовать idempotency key для create-run на основе:
 - `pool_id`;
 - `period_start` / `period_end`;

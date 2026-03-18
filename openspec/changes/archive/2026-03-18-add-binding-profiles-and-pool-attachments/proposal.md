@@ -1,6 +1,6 @@
 # Change: add-binding-profiles-and-pool-attachments
 
-## Почему
+## Why
 
 Сейчас `pool_workflow_binding` живет только внутри одного `pool`. Это делает повторное использование типовой схемы распределения между несколькими пулами невозможным без копирования binding payload.
 
@@ -11,7 +11,7 @@ Copy-paste bindings между пулами быстро приводит к dri
 
 При этом runtime уже опирается на explicit `pool_workflow_binding_id` и pool-specific effective scope, поэтому shared live binding на несколько пулов будет смешивать reusable логику и pool-local lifecycle в одной записи.
 
-## Что меняется
+## What Changes
 
 - Вводится tenant-scoped reusable сущность `binding_profile` с immutable `binding_profile_revision`, адресуемой через opaque `binding_profile_revision_id`.
 - `binding_profile_revision` становится reusable source-of-truth для:
