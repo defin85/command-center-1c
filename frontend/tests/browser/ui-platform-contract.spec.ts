@@ -608,6 +608,71 @@ const POOL_RUN_REPORT = {
   attempts_by_status: { failed: 1 },
 }
 
+const WORKFLOW_EXECUTION_DETAIL = {
+  id: POOL_RUN.workflow_execution_id,
+  workflow_template: WORKFLOW.id,
+  template_name: WORKFLOW.name,
+  template_version: WORKFLOW.version_number,
+  status: 'pending',
+  input_context: {
+    pool_id: POOL_RUN.pool_id,
+  },
+  final_result: null,
+  current_node_id: '',
+  completed_nodes: {},
+  failed_nodes: {},
+  node_statuses: {},
+  progress_percent: '0.00',
+  error_message: '',
+  error_node_id: '',
+  trace_id: '',
+  started_at: NOW,
+  completed_at: null,
+  duration: 0,
+  step_results: [],
+}
+
+const WORKFLOW_TEMPLATE_DETAIL = {
+  id: WORKFLOW.id,
+  name: WORKFLOW.name,
+  description: WORKFLOW.description,
+  workflow_type: 'sequential',
+  category: WORKFLOW.category,
+  dag_structure: {
+    nodes: [
+      {
+        id: 'start',
+        name: 'Start',
+        type: 'operation',
+        template_id: 'noop',
+        config: {
+          timeout_seconds: 300,
+          max_retries: 0,
+        },
+      },
+    ],
+    edges: [],
+  },
+  config: {
+    timeout_seconds: 300,
+    max_retries: 0,
+  },
+  is_valid: true,
+  is_active: true,
+  is_system_managed: false,
+  management_mode: 'user_authored',
+  visibility_surface: 'workflow_library',
+  read_only_reason: null,
+  version_number: WORKFLOW.version_number,
+  parent_version: null,
+  parent_version_name: null,
+  created_by: null,
+  created_by_username: 'analyst',
+  execution_count: 0,
+  created_at: NOW,
+  updated_at: NOW,
+}
+
 async function fulfillJson(route: Route, data: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -827,6 +892,52 @@ async function setupUiPlatformMocks(
         count: 1,
         total: 1,
         authoring_phase: null,
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/workflows/get-execution/') {
+      const executionId = String(url.searchParams.get('execution_id') || '')
+      if (executionId !== POOL_RUN.workflow_execution_id) {
+        return fulfillJson(route, { detail: 'Workflow execution not found.' }, 404)
+      }
+      return fulfillJson(route, {
+        execution: WORKFLOW_EXECUTION_DETAIL,
+        execution_plan: {
+          kind: 'workflow',
+          workflow_id: WORKFLOW.id,
+          input_context_masked: {
+            pool_id: POOL_RUN.pool_id,
+          },
+        },
+        bindings: [
+          {
+            target_ref: 'pool_id',
+            source_ref: 'request.pool_id',
+            resolve_at: 'api',
+            sensitive: false,
+            status: 'applied',
+          },
+        ],
+        steps: [],
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/workflows/get-workflow/') {
+      const workflowId = String(url.searchParams.get('workflow_id') || '')
+      if (workflowId !== WORKFLOW.id) {
+        return fulfillJson(route, { detail: 'Workflow not found.' }, 404)
+      }
+      return fulfillJson(route, {
+        workflow: WORKFLOW_TEMPLATE_DETAIL,
+        statistics: {
+          total_executions: 0,
+          successful: 0,
+          failed: 0,
+          cancelled: 0,
+          running: 0,
+          average_duration: null,
+        },
+        executions: [],
       })
     }
 
@@ -1126,6 +1237,24 @@ test('UI platform: /pools/binding-profiles opens create-profile authoring in a m
   await expectNoHorizontalOverflow(page)
 })
 
+test('UI platform: /pools/catalog restores attachment workspace in a mobile-safe drawer', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto(`/pools/catalog?pool_id=${POOL_WITH_ATTACHMENT.id}&tab=bindings`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Pool Catalog', level: 2 })).toBeVisible()
+  await expect(page.getByTestId('pool-catalog-context-pool')).toHaveText('pool-main - Main Pool')
+  const detailDrawer = page.getByTestId('pool-catalog-bindings-drawer')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByTestId('pool-catalog-save-bindings')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
 test('UI platform: /pools/runs restores selected run and stage from a deep-link', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
@@ -1141,6 +1270,31 @@ test('UI platform: /pools/runs restores selected run and stage from a deep-link'
   await expect(page.getByTestId('pool-runs-lineage-binding-id')).toHaveText('binding-top-down')
   await expect(page.getByTestId('pool-runs-lineage-slot-coverage')).toContainText('resolved: 1')
   await expect(page.getByRole('button', { name: 'Open Workflow Diagnostics' })).toBeVisible()
+})
+
+test('UI platform: /pools/runs keeps selected stage on browser back and forward', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+
+  await page.goto(`/pools/runs?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&stage=inspect&detail=1`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('tab', { name: 'Inspect' })).toHaveAttribute('aria-selected', 'true')
+
+  await page.getByRole('tab', { name: 'Retry Failed' }).click()
+  await expect(page).toHaveURL(new RegExp(`\\/pools\\/runs\\?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&stage=retry&detail=1$`))
+  await expect(page.getByRole('tab', { name: 'Retry Failed' })).toHaveAttribute('aria-selected', 'true')
+
+  await page.goBack()
+  await expect(page).toHaveURL(new RegExp(`\\/pools\\/runs\\?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&stage=inspect&detail=1$`))
+  await expect(page.getByRole('tab', { name: 'Inspect' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('pool-runs-lineage-binding-id')).toHaveText('binding-top-down')
+
+  await page.goForward()
+  await expect(page).toHaveURL(new RegExp(`\\/pools\\/runs\\?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&stage=retry&detail=1$`))
+  await expect(page.getByRole('tab', { name: 'Retry Failed' })).toHaveAttribute('aria-selected', 'true')
 })
 
 test('UI platform: /pools/runs opens inspect detail in a mobile-safe drawer without page-wide overflow', async ({ page }) => {
@@ -1226,6 +1380,32 @@ test('Runtime contract: /pools/binding-profiles hands off to /pools/catalog with
   await expect(counts.meReads).toBe(0)
   await expect(counts.myTenantsReads).toBe(0)
   await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: /pools/runs hands off to workflow diagnostics without replaying shell reads', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto(`/pools/runs?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&stage=inspect&detail=1`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Pool Runs', level: 2 })).toBeVisible()
+  await expect.poll(() => counts.bootstrap).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+
+  await page.getByRole('button', { name: 'Open Workflow Diagnostics' }).click()
+
+  await expect(page).toHaveURL(`/workflows/executions/${POOL_RUN.workflow_execution_id}`)
+  await expect(page.getByText('Workflow Execution')).toBeVisible()
+  await expect(page.getByText('Execution Info')).toBeVisible()
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
 })
 
 test('Runtime contract: /decisions hands off to /pools/binding-profiles without replaying shell reads', async ({ page }) => {
