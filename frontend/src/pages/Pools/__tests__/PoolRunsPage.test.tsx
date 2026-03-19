@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 
 import type {
   PoolRun,
@@ -453,12 +454,19 @@ function buildPoolGraph(slotKey = 'invoice_mode') {
 }
 
 function renderPage() {
-  window.history.pushState({}, '', '/pools/runs')
   return render(
-    <AntApp>
-      <PoolRunsPage />
-    </AntApp>
+    <MemoryRouter initialEntries={['/pools/runs']} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+      <AntApp>
+        <PoolRunsPage />
+        <LocationProbe />
+      </AntApp>
+    </MemoryRouter>
   )
+}
+
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="pool-runs-location">{`${location.pathname}${location.search}`}</div>
 }
 
 async function openRunsStage(user: ReturnType<typeof userEvent.setup>, stage: 'Create' | 'Inspect' | 'Safe Actions' | 'Retry Failed') {
@@ -764,9 +772,9 @@ describe('PoolRunsPage', () => {
     expect((screen.getByTestId('pool-runs-lineage-slot-projection') as HTMLTextAreaElement).value).toContain(
       '"invoice_mode"'
     )
-    const diagnosticsLink = screen.getByRole('link', { name: 'Open Workflow Diagnostics' })
-    expect(diagnosticsLink).toHaveAttribute(
-      'href',
+    const diagnosticsButton = screen.getByRole('button', { name: 'Open Workflow Diagnostics' })
+    await user.click(diagnosticsButton)
+    expect(screen.getByTestId('pool-runs-location')).toHaveTextContent(
       '/workflows/executions/22222222-2222-2222-2222-222222222222'
     )
   }, 30000)

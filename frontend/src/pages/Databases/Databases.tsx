@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react'
 import { App, Button, Space, Select, Breadcrumb, Form, Typography, Dropdown } from 'antd'
 import type { TableRowSelection } from 'antd/es/table/interface'
 import { PlusOutlined, HomeOutlined, ClusterOutlined, HeartOutlined, EditOutlined, DownOutlined } from '@ant-design/icons'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { Database } from '../../api/generated/model/database'
 import type { Cluster } from '../../api/generated/model/cluster'
 import { SetDatabaseStatusRequestStatus as SetDatabaseStatusRequestStatusEnum } from '../../api/generated/model/setDatabaseStatusRequestStatus'
@@ -650,12 +650,16 @@ export const Databases = () => {
       {/* Breadcrumbs если пришли из кластера */}
       {selectedCluster && (
         <Breadcrumb style={{ marginBottom: 16 }}>
-          <Breadcrumb.Item href="/">
-            <HomeOutlined />
+          <Breadcrumb.Item>
+            <Link to="/" aria-label="Open dashboard">
+              <HomeOutlined />
+            </Link>
           </Breadcrumb.Item>
-          <Breadcrumb.Item href="/clusters">
-            <ClusterOutlined />
-            <span>Clusters</span>
+          <Breadcrumb.Item>
+            <Link to="/clusters">
+              <ClusterOutlined />
+              <span>Clusters</span>
+            </Link>
           </Breadcrumb.Item>
           <Breadcrumb.Item>{selectedCluster.name}</Breadcrumb.Item>
           <Breadcrumb.Item>Databases</Breadcrumb.Item>

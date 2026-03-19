@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Alert, Checkbox, Form, Modal, Select, Space, Spin, Tabs, Typography } from 'antd'
 
 import { maskArgv } from '../../../lib/masking'
-import { useDriverCommands, useMe } from '../../../api/queries'
+import { useDriverCommands } from '../../../api/queries'
+import { useAuthz } from '../../../authz/useAuthz'
 import type {
   DriverCommandParamV2,
   DriverCommandV2,
@@ -58,7 +59,7 @@ export function DriverCommandBuilder({
   )
 
   const shortcutsEnabled = driver === 'ibcmd'
-  const meQuery = useMe()
+  const { isStaff } = useAuthz()
 
   const mode: DriverCommandBuilderMode = config.mode ?? 'guided'
   const commandId = (config.command_id || '').trim()
@@ -342,7 +343,7 @@ export function DriverCommandBuilder({
           scope={scope}
           selectedCommand={selectedCommand}
           commandId={commandId}
-          isStaff={meQuery.data?.is_staff === true}
+          isStaff={isStaff}
           databaseOptions={databaseOptions}
           stableAvailableDbIds={stableAvailableDbIds}
           config={config}

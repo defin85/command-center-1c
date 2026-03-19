@@ -7,7 +7,7 @@ import type {
   BindingProfileRevisionCreateRequest,
 } from '../../api/poolBindingProfiles'
 import { useAuthoringReferences } from '../../api/queries/authoringReferences'
-import { EntityDetails, ModalFormShell } from '../../components/platform'
+import { EntityDetails, ModalFormShell, RouteButton } from '../../components/platform'
 import { WorkflowRevisionSelect } from '../../components/workflow/WorkflowRevisionSelect'
 import { resolveApiError } from './masterData/errorUtils'
 import { BindingProfileDecisionRefsEditor } from './BindingProfileDecisionRefsEditor'
@@ -165,8 +165,8 @@ export function PoolBindingProfilesEditorModal({
             <Text>
               Author workflow revisions in `/workflows` and decision revisions in `/decisions`, then pin them here without copying opaque ids manually.
             </Text>
-            <Button href="/workflows">Open /workflows</Button>
-            <Button href="/decisions">Open /decisions</Button>
+            <RouteButton to="/workflows">Open /workflows</RouteButton>
+            <RouteButton to="/decisions">Open /decisions</RouteButton>
           </Space>
         )}
         style={{ marginBottom: 16 }}

@@ -5,6 +5,7 @@ import type {
   PoolWorkflowBinding,
   PoolWorkflowBindingResolvedProfile,
 } from '../../api/intercompanyPools'
+import { RouteButton } from '../../components/platform'
 import { POOL_BINDING_PROFILES_ROUTE } from './routes'
 import {
   createEmptyWorkflowBindingFormValue,
@@ -368,14 +369,14 @@ export function PoolWorkflowBindingsEditor({
                             </Form.Item>
                           </Col>
                           <Col span={6}>
-                            <Button
+                            <RouteButton
                               block
-                              href={POOL_BINDING_PROFILES_ROUTE}
+                              to={POOL_BINDING_PROFILES_ROUTE}
                               style={{ marginTop: 30 }}
                               data-testid={`pool-catalog-workflow-binding-handoff-${field.name}`}
                             >
                               Edit in catalog
-                            </Button>
+                            </RouteButton>
                           </Col>
                         </Row>
 

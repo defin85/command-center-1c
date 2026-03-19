@@ -26,8 +26,10 @@ function makeMutation() {
   }
 }
 
-vi.mock('../../../api/queries/me', () => ({
-  useMe: () => makeQuery({ id: 1, username: 'u1', is_staff: mockIsStaff }),
+vi.mock('../../../authz/useAuthz', () => ({
+  useAuthz: () => ({
+    isStaff: mockIsStaff,
+  }),
 }))
 
 vi.mock('../../../api/queries/rbac', () => ({

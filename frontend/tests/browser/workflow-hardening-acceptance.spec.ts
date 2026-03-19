@@ -1259,7 +1259,8 @@ test('Workflow hardening: /pools/runs shipped flow shows pinned decision lineage
   await expect(page.getByText('Published documents verified')).toBeVisible()
   await expect(page.getByText('document_policy r2')).toBeVisible()
   await expect(page.getByTestId('pool-runs-provenance-workflow-id')).toContainText('workflow-run-1')
-  await expect(page.getByRole('link', { name: 'Open Workflow Diagnostics' })).toHaveAttribute('href', '/workflows/executions/workflow-execution-1')
+  await page.getByRole('button', { name: 'Open Workflow Diagnostics' }).click()
+  await expect(page).toHaveURL(/\/workflows\/executions\/workflow-execution-1$/)
 })
 
 test('Workflow hardening: operator canary covers preview, create-run and inspect on the default path', async ({ page }) => {
@@ -1304,5 +1305,6 @@ test('Workflow hardening: operator canary covers preview, create-run and inspect
   await expect(page.getByTestId('pool-runs-lineage-binding-id')).toContainText(BINDING_ID)
   await expect(page.getByText('document_policy r1')).toBeVisible()
   await expect(page.getByTestId('pool-runs-provenance-workflow-id')).toContainText('workflow-run-1')
-  await expect(page.getByRole('link', { name: 'Open Workflow Diagnostics' })).toHaveAttribute('href', '/workflows/executions/workflow-execution-1')
+  await page.getByRole('button', { name: 'Open Workflow Diagnostics' }).click()
+  await expect(page).toHaveURL(/\/workflows\/executions\/workflow-execution-1$/)
 })

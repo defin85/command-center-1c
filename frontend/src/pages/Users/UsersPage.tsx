@@ -2,9 +2,10 @@ import { useCallback, useMemo, useState } from 'react'
 import { App, Button, Card, Form, Input, Modal, Space, Switch, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
+import { useAuthz } from '../../authz/useAuthz'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
-import { useUsers, useCreateUser, useUpdateUser, useSetUserPassword, type UserSummary, useMe } from '../../api/queries'
+import { useUsers, useCreateUser, useUpdateUser, useSetUserPassword, type UserSummary } from '../../api/queries'
 
 const { Text } = Typography
 
@@ -20,8 +21,7 @@ type UserFormValues = {
 
 export function UsersPage() {
   const { message, modal } = App.useApp()
-  const meQuery = useMe()
-  const isStaff = Boolean(meQuery.data?.is_staff)
+  const { isStaff } = useAuthz()
   const [editingUser, setEditingUser] = useState<UserSummary | null>(null)
   const [userModalVisible, setUserModalVisible] = useState(false)
   const [passwordModalVisible, setPasswordModalVisible] = useState(false)

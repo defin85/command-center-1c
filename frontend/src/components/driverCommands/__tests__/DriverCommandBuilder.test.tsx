@@ -30,20 +30,23 @@ vi.mock('@monaco-editor/react', () => ({
 }))
 
 const mockUseDriverCommands = vi.fn()
-const mockUseMe = vi.fn()
+const mockUseAuthz = vi.fn()
 const mockUseDriverCommandShortcuts = vi.fn()
 const mockCreateShortcut = vi.fn()
 const mockDeleteShortcut = vi.fn()
 
 vi.mock('../../../api/queries', () => ({
   useDriverCommands: (driver: string) => mockUseDriverCommands(driver),
-  useMe: () => mockUseMe(),
   useDriverCommandShortcuts: () => mockUseDriverCommandShortcuts(),
   useCreateDriverCommandShortcut: () => ({ mutateAsync: mockCreateShortcut, isPending: false }),
   useDeleteDriverCommandShortcut: () => ({ mutateAsync: mockDeleteShortcut, isPending: false }),
   useArtifacts: () => ({ data: { artifacts: [] }, isLoading: false, error: null }),
   useArtifactVersions: () => ({ data: { versions: [] }, isLoading: false, error: null }),
   useArtifactAliases: () => ({ data: { aliases: [] }, isLoading: false, error: null }),
+}))
+
+vi.mock('../../../authz/useAuthz', () => ({
+  useAuthz: () => mockUseAuthz(),
 }))
 
 function renderBuilder({
@@ -78,12 +81,12 @@ function renderBuilder({
 describe('DriverCommandBuilder (schema-driven driver options)', () => {
   beforeEach(() => {
     mockUseDriverCommands.mockReset()
-    mockUseMe.mockReset()
+    mockUseAuthz.mockReset()
     mockUseDriverCommandShortcuts.mockReset()
     mockCreateShortcut.mockReset()
     mockDeleteShortcut.mockReset()
 
-    mockUseMe.mockReturnValue({ data: { id: 1, username: 'u1', is_staff: true }, isLoading: false, error: null })
+    mockUseAuthz.mockReturnValue({ isStaff: true })
     mockUseDriverCommandShortcuts.mockReturnValue({ data: { items: [] }, isLoading: false, isError: false, error: null })
   })
 

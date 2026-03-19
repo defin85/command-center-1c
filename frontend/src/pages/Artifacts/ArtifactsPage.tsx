@@ -3,7 +3,7 @@ import { Alert, App, Button, Space, Tabs, Typography } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { useMe } from '../../api/queries'
+import { useAuthz } from '../../authz/useAuthz'
 import { useArtifacts, useDeleteArtifact, useRestoreArtifact } from '../../api/queries'
 import type { Artifact } from '../../api/artifacts'
 import { TableToolkit } from '../../components/table/TableToolkit'
@@ -19,8 +19,7 @@ const { Title } = Typography
 export const ArtifactsPage = () => {
   const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
-  const meQuery = useMe()
-  const isStaff = Boolean(meQuery.data?.is_staff)
+  const { isStaff } = useAuthz()
 
   const [catalogTab, setCatalogTab] = useState<'active' | 'deleted'>('active')
   const [createOpen, setCreateOpen] = useState(false)

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, InputNumber, Space, Switch, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
-import { useMe } from '../../api/queries/me'
+import { useAuthz } from '../../authz/useAuthz'
 import { getStreamMuxStatus } from '../../api/operations'
 import { getRuntimeSettings, updateRuntimeSetting, type RuntimeSetting } from '../../api/runtimeSettings'
 import { TableToolkit } from '../../components/table/TableToolkit'
@@ -28,7 +28,7 @@ const toNumber = (value: unknown): number | null => {
 const isBool = (value: unknown): value is boolean => typeof value === 'boolean'
 
 export function TimelineSettingsPage() {
-  const meQuery = useMe()
+  const { isStaff } = useAuthz()
   const [settings, setSettings] = useState<RuntimeSettingRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,7 +39,6 @@ export function TimelineSettingsPage() {
     maxSubscriptions: number
   } | null>(null)
 
-  const isStaff = Boolean(meQuery.data?.is_staff)
   const canEdit = isStaff
 
   const loadSettings = useCallback(async () => {

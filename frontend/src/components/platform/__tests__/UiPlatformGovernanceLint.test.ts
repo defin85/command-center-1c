@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 
 import { ESLint } from 'eslint'
 import { describe, expect, it } from 'vitest'
@@ -14,6 +15,31 @@ async function lintSnippet(filePath: string, code: string) {
     filePath: path.join(frontendRoot, filePath),
   })
   return result.messages
+}
+
+function collectSourceFiles(rootPath: string): string[] {
+  const entries = readdirSync(rootPath)
+  return entries.flatMap((entry) => {
+    const absoluteEntry = path.join(rootPath, entry)
+    const relativeEntry = path.relative(frontendRoot, absoluteEntry)
+    const stat = statSync(absoluteEntry)
+
+    if (stat.isDirectory()) {
+      if (entry === 'api' && absoluteEntry.endsWith(path.join('src', 'api'))) {
+        return collectSourceFiles(absoluteEntry)
+      }
+      if (entry === '__tests__' || entry === 'dist') {
+        return []
+      }
+      return collectSourceFiles(absoluteEntry)
+    }
+
+    if (!/\.(ts|tsx)$/.test(entry) || /\.test\.(ts|tsx)$/.test(entry)) {
+      return []
+    }
+
+    return [relativeEntry]
+  })
 }
 
 describe('ui platform governance lint', () => {
@@ -55,5 +81,71 @@ describe('ui platform governance lint', () => {
       message.ruleId === 'no-restricted-imports'
         && message.message.includes('platform')
     ))).toBe(true)
+  })
+
+  it('rejects raw Ant containers in future operational workspace modules', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Operations/OperationsWorkspace.tsx',
+      `
+        import { Card, Row } from 'antd'
+
+        export function OperationsWorkspace() {
+          return (
+            <Card>
+              <Row />
+            </Card>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'no-restricted-imports'
+        && message.message.includes('Operational workspace modules')
+    ))).toBe(true)
+  })
+
+  it('rejects full-document handoff props in audited authenticated modules', async () => {
+    const buttonMessages = await lintSnippet(
+      'src/pages/Pools/PoolRunsPage.tsx',
+      `
+        import { Button } from 'antd'
+
+        export function PoolRunsPage() {
+          return <Button href="/workflows/executions/run-1">Open Workflow Diagnostics</Button>
+        }
+      `,
+    )
+    const breadcrumbMessages = await lintSnippet(
+      'src/pages/Databases/Databases.tsx',
+      `
+        import { Breadcrumb } from 'antd'
+
+        export function Databases() {
+          return <Breadcrumb.Item href="/clusters">Clusters</Breadcrumb.Item>
+        }
+      `,
+    )
+
+    expect(buttonMessages.some((message) => (
+      message.ruleId === 'no-restricted-syntax'
+        && message.message.includes('RouteButton')
+    ))).toBe(true)
+    expect(breadcrumbMessages.some((message) => (
+      message.ruleId === 'no-restricted-syntax'
+        && message.message.includes('react-router-dom')
+    ))).toBe(true)
+  })
+
+  it('keeps shell-owned user context out of authenticated source modules', () => {
+    const sourceFiles = collectSourceFiles(path.join(frontendRoot, 'src'))
+    const offenders = sourceFiles.filter((relativePath) => {
+      if (relativePath === path.join('src', 'api', 'queries', 'me.ts')) {
+        return false
+      }
+      return readFileSync(path.join(frontendRoot, relativePath), 'utf8').includes('useMe(')
+    })
+
+    expect(offenders).toEqual([])
   })
 })

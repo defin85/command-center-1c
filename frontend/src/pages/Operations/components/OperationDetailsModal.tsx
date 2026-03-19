@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Modal, Space, Tag, Progress, Alert, Typography, Button, Tooltip, Table } from 'antd'
 import { MonitorOutlined, BranchesOutlined, FilterOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
+import { Link as RouterLink } from 'react-router-dom'
 import type { OperationDetailsModalProps, UITask } from '../types'
 import { getStatusColor, getOperationTypeLabel } from '../utils'
 import { useOperation } from '../../../api/queries/operations'
@@ -342,9 +343,9 @@ export const OperationDetailsModal = ({
             {operationState.workflow_execution_id && (
               <div>
                 <strong>Workflow Execution:</strong>{' '}
-                <Link href={`/workflows/executions/${operationState.workflow_execution_id}`}>
+                <RouterLink to={`/workflows/executions/${operationState.workflow_execution_id}`}>
                   {operationState.workflow_execution_id}
-                </Link>
+                </RouterLink>
                 {operationState.node_id && (
                   <Paragraph
                     copyable={{ text: operationState.node_id }}

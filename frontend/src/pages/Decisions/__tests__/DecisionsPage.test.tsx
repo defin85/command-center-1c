@@ -375,8 +375,8 @@ describe('DecisionsPage', () => {
 
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
     expect(screen.getByText('Create and revise document policies for the selected database without leaving the authoring workspace.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Open workflow references' })).toHaveAttribute('href', '/workflows')
-    expect(screen.getByRole('link', { name: 'Open binding profiles' })).toHaveAttribute('href', '/pools/binding-profiles')
+    expect(screen.getByRole('button', { name: 'Open workflow references' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open binding profiles' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'New policy' })).toBeInTheDocument()
     expect(screen.queryByText('shared_scope')).not.toBeInTheDocument()
     expect(screen.getByTestId('decisions-database-select')).toHaveTextContent('shared-profile')

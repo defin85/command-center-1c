@@ -393,8 +393,8 @@ describe('PoolBindingProfilesPage', () => {
     renderPage()
 
     fireEvent.click(await screen.findByRole('button', { name: 'Create profile' }))
-    expect(screen.getByRole('link', { name: 'Open /workflows' })).toHaveAttribute('href', '/workflows')
-    expect(screen.getByRole('link', { name: 'Open /decisions' })).toHaveAttribute('href', '/decisions')
+    expect(screen.getByRole('button', { name: 'Open /workflows' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open /decisions' })).toBeInTheDocument()
 
     fireEvent.change(await screen.findByTestId('pool-binding-profiles-create-code'), {
       target: { value: 'new-profile' },

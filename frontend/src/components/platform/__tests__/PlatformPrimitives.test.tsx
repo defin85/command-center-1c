@@ -1,14 +1,22 @@
 import { describe, expect, it, vi } from 'vitest'
 import { App as AntApp, Input } from 'antd'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 
 import {
   DashboardPage,
   EntityList,
   ModalFormShell,
   PageHeader,
+  RouteButton,
   StatusBadge,
 } from '..'
+
+function RouteLocationProbe() {
+  const location = useLocation()
+  return <div data-testid="route-location">{`${location.pathname}${location.search}`}</div>
+}
 
 describe('platform primitives', () => {
   it('renders EntityList as the canonical list pattern', () => {
@@ -59,6 +67,23 @@ describe('platform primitives', () => {
     expect(screen.getByText('Dashboard')).toBeInTheDocument()
     expect(screen.getByText('Last updated: now')).toBeInTheDocument()
     expect(screen.getByText('Cluster overview')).toBeInTheDocument()
+  })
+
+  it('renders RouteButton as a shell-safe internal navigation primitive', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <MemoryRouter initialEntries={['/source']}>
+        <AntApp>
+          <RouteButton to="/target?tab=details">Open target</RouteButton>
+          <RouteLocationProbe />
+        </AntApp>
+      </MemoryRouter>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open target' }))
+
+    expect(screen.getByTestId('route-location')).toHaveTextContent('/target?tab=details')
   })
 
   it('renders deactivated badges with contrast-safe neutral styling', () => {

@@ -1187,7 +1187,7 @@ describe('PoolCatalogPage', () => {
       expect(await screen.findByTestId('pool-catalog-workflow-binding-profile-summary-0')).toHaveTextContent(
         'services-publication-profile'
       )
-      expect(screen.getByTestId('pool-catalog-workflow-binding-handoff-0')).toHaveAttribute('href', '/pools/binding-profiles')
+      expect(screen.getByTestId('pool-catalog-workflow-binding-handoff-0').tagName).toBe('BUTTON')
       expect(
         consoleErrorSpy.mock.calls.some((call) => (
           call.some((argument) => typeof argument === 'string' && argument.includes('Encountered two children with the same key'))

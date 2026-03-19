@@ -9,6 +9,7 @@
 - `/operations`, `/databases`, `/pools/catalog`, `/pools/runs` по-прежнему собраны на raw `antd` containers и ad-hoc `Modal`/`Drawer` orchestration;
 - `/pools/catalog` и `/pools/runs` остаются крупнейшими route modules (`5000+` и `2900+` строк), а `/databases` и `/operations` продолжают смешивать catalog, inspect, authoring и diagnostics в одном route-level canvas;
 - `/` уже использует `DashboardPage`, но внутри route-level composition всё ещё держится на raw layout primitives.
+- поверх page-composition debt уже проявился отдельный runtime bug class: internal handoff между authenticated route может пересоздавать документ целиком, а route pages продолжают локально читать shell-owned context (`/system/bootstrap`, `/system/me`, `/tenants/list-my-tenants`), что быстро расходует gateway rate limit и маскируется вторичными WebSocket reconnect errors.
 
 Проблема здесь уже не в единичных accessibility defects, а в том, что следующий набор high-traffic workspaces не вошёл в platform-governed perimeter и поэтому продолжает накапливать UI debt быстрее, чем его можно исправлять точечными bugfix.
 
@@ -18,11 +19,13 @@
   - Зафиксировать route-level composition rules для `/`, `/operations`, `/databases`, `/pools/catalog`, `/pools/runs`.
   - Сделать route state, task separation и responsive fallback частью enforceable contract, а не только implementation detail.
   - Расширить automated governance perimeter на эти routes.
+  - Зафиксировать repo-wide shared-shell runtime contract, чтобы internal handoff и shell context ownership больше не зависели от ad-hoc решений конкретной route-page.
 - Non-Goals:
   - Одновременно переписать все оставшиеся admin/support routes.
   - Перепроектировать доменные backend contracts.
   - Устранять каждый raw `antd` import внутри leaf components, если route-level platform contract уже соблюдён.
   - Заходить в `/workflows` и related authoring surfaces в том же change.
+  - Гарантировать отсутствие любых duplicate domain reads во всём приложении, если они не относятся к shared shell/runtime ownership.
 
 ## Decisions
 
@@ -71,6 +74,20 @@
 
 Отдельную domain spec для dashboard создавать не нужно. Достаточно зафиксировать в `ui-web-interface-guidelines`, что dashboard входит в platform-governed perimeter и должен использовать platform-owned route composition.
 
+### 6. Shared shell bootstrap должен стать единственным owner для user/staff/tenant context
+Отдельный класс багов уже показал, что page migration сама по себе недостаточна, если каждая route продолжает самостоятельно решать:
+- как переходить на соседний internal route;
+- откуда читать `isStaff`, active tenant и shell capabilities;
+- когда повторно вызывать `/system/bootstrap`, `/system/me` и `/tenants/list-my-tenants`.
+
+Поэтому в этом change вводится repo-wide runtime invariant:
+- authenticated in-app handoff между route должен происходить через SPA navigation и не должен пересоздавать shell только ради перехода на другой route;
+- shared shell/bootstrap + authz providers являются canonical owner для user/staff/tenant context;
+- route page не должна дублировать shell-owned reads на default operator path, если тот же context уже доступен через shared providers;
+- исключения допускаются только для dedicated tenant-management surfaces, explicit refresh flows или route, где shell context ещё не инициализирован по design.
+
+Это правило специально расширяет change выше operational-only page composition: page migration остаётся сфокусированной на `/`, `/operations`, `/databases`, `/pools/catalog`, `/pools/runs`, но shell-safe navigation и shell context reuse должны применяться ко всему authenticated frontend.
+
 ## Alternatives Considered
 
 ### Вариант A: Один большой change на весь remaining frontend
@@ -110,16 +127,19 @@
   - Mitigation: фиксировать только route-level composition, task separation и state contract; backend/domain contracts не трогать.
 - Расширение lint perimeter может сначала дать много шума по legacy imports.
   - Mitigation: применять governance rules только к выбранным route modules этой волны, а не ко всему `frontend/src/pages/**` сразу.
+- Repo-wide audit internal handoff может обнаружить баги и в route, которые не входят в migration perimeter.
+  - Mitigation: считать shell-safe navigation и redundant shell reads отдельным shared-runtime слоем, который можно harden-ить без полной page migration этих route.
 - Route-state hardening может снова породить loops при неправильной синхронизации URL и local state.
   - Mitigation: включить explicit browser tests на reload/back-forward/same-route re-entry как blocking gate.
 - Dashboard — частично migrated route, и его легко недооценить.
   - Mitigation: считать dashboard completion частью shared governance slice, но не расширять его в отдельный broad redesign task.
 
 ## Migration Plan
-1. Расширить spec contract и governance perimeter на выбранные routes.
-2. Доработать shared platform primitives только под потребности operational workspaces.
-3. Завершить dashboard completion.
-4. Мигрировать `/operations` и `/databases`.
-5. Мигрировать `/pools/catalog` и `/pools/runs`.
-6. Добавить regression coverage и пройти blocking frontend gate.
-7. После стабилизации этой волны отдельно планировать remaining admin/support routes.
+1. Расширить spec contract и governance perimeter на выбранные routes и repo-wide shared-shell invariants.
+2. Доработать shared platform primitives и shell/runtime helpers только под потребности operational workspaces и shell-safe in-app handoff.
+3. Провести repo-wide audit internal handoff и shell context ownership.
+4. Завершить dashboard completion.
+5. Мигрировать `/operations` и `/databases`.
+6. Мигрировать `/pools/catalog` и `/pools/runs`.
+7. Добавить regression coverage и пройти blocking frontend gate.
+8. После стабилизации этой волны отдельно планировать remaining admin/support routes и residual domain-specific duplicate reads.

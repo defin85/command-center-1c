@@ -16,6 +16,7 @@ import {
   EntityDetails,
   MasterDetailShell,
   PageHeader,
+  RouteButton,
   WorkspacePage,
 } from '../../components/platform'
 import {
@@ -147,8 +148,8 @@ export function DecisionsPage() {
               profile catalogs only when you need reusable references or rollout targets.
             </Text>
             <Space wrap>
-              <Button href="/workflows">Open workflow references</Button>
-              <Button href="/pools/binding-profiles">Open binding profiles</Button>
+              <RouteButton to="/workflows">Open workflow references</RouteButton>
+              <RouteButton to="/pools/binding-profiles">Open binding profiles</RouteButton>
             </Space>
           </Space>
         )}

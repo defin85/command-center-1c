@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 
 import type { DLQMessage } from '../../api/generated/model/dLQMessage'
 import { useDlqMessages, useRetryDlqMessage } from '../../api/queries/dlq'
-import { useMe } from '../../api/queries/me'
+import { useAuthz } from '../../authz/useAuthz'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 
@@ -15,8 +15,7 @@ const { Title, Text } = Typography
 export function DLQPage() {
   const navigate = useNavigate()
   const { message, modal } = App.useApp()
-  const meQuery = useMe()
-  const isStaff = Boolean(meQuery.data?.is_staff)
+  const { isStaff } = useAuthz()
 
   const [retryReason, setRetryReason] = useState<string>('')
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])

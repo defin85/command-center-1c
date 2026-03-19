@@ -35,6 +35,30 @@ const canonicalPilotModuleImports = [
   },
 ]
 
+const operationalWorkspaceModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Empty', 'Row', 'Col', 'Spin', 'Table', 'Tag'],
+    message: 'Operational workspace modules must compose through `src/components/platform` primitives instead of raw Ant layout/data containers.',
+  },
+]
+
+const noStaticModalMethodsRule = {
+  selector: "MemberExpression[object.name='Modal'][property.name=/^(confirm|info|success|error|warning)$/]",
+  message: 'Use `const { modal } = App.useApp()` and call `modal.confirm/info/...` instead of `Modal.*` static methods.',
+}
+
+const shellSafeInternalNavigationRules = [
+  {
+    selector: "JSXOpeningElement[name.name='Button'] > JSXAttribute[name.name='href']",
+    message: 'Authenticated internal handoff must use `RouteButton` or explicit router navigation instead of `Button href`.',
+  },
+  {
+    selector: "JSXOpeningElement[name.object.name='Breadcrumb'][name.property.name='Item'] > JSXAttribute[name.name='href']",
+    message: 'Authenticated internal handoff must use `react-router-dom` links instead of `Breadcrumb.Item href`.',
+  },
+]
+
 export default tseslint.config(
   { ignores: ['dist', 'src/api/generated/**'] },
   {
@@ -97,10 +121,7 @@ export default tseslint.config(
         paths: contextAwareAntdImports,
         patterns: competingFoundationImportPatterns,
       }],
-      'no-restricted-syntax': ['error', {
-        selector: "MemberExpression[object.name='Modal'][property.name=/^(confirm|info|success|error|warning)$/]",
-        message: 'Use `const { modal } = App.useApp()` and call `modal.confirm/info/...` instead of `Modal.*` static methods.',
-      }],
+      'no-restricted-syntax': ['error', noStaticModalMethodsRule],
     },
   },
   {
@@ -153,6 +174,35 @@ export default tseslint.config(
         ],
         patterns: competingFoundationImportPatterns,
       }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Dashboard/**/*Workspace*.tsx',
+      'src/pages/Operations/**/*Workspace*.tsx',
+      'src/pages/Databases/**/*Workspace*.tsx',
+      'src/pages/Pools/**/*Workspace*.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...operationalWorkspaceModuleImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Decisions/DecisionsPage.tsx',
+      'src/pages/Databases/Databases.tsx',
+      'src/pages/Pools/PoolBindingProfilesEditorModal.tsx',
+      'src/pages/Pools/PoolRunsPage.tsx',
+      'src/pages/Pools/PoolWorkflowBindingsEditor.tsx',
+    ],
+    rules: {
+      'no-restricted-syntax': ['error', noStaticModalMethodsRule, ...shellSafeInternalNavigationRules],
     },
   },
 )

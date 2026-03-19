@@ -74,6 +74,7 @@ import {
   resolvePoolWorkflowBindingProfileStatus,
   resolvePoolWorkflowBindingWorkflow,
 } from './poolWorkflowBindingPresentation'
+import { RouteButton } from '../../components/platform'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -2553,13 +2554,13 @@ export function PoolRunsPage() {
                           </Descriptions.Item>
                           <Descriptions.Item label="Workflow Diagnostics" span={2}>
                             {workflowDiagnosticsId ? (
-                              <Button
+                              <RouteButton
                                 type="link"
-                                href={`/workflows/executions/${workflowDiagnosticsId}`}
+                                to={`/workflows/executions/${workflowDiagnosticsId}`}
                                 style={{ paddingInline: 0 }}
                               >
                                 Open Workflow Diagnostics
-                              </Button>
+                              </RouteButton>
                             ) : (
                               <Text type="secondary">No linked workflow execution diagnostics.</Text>
                             )}
@@ -2673,13 +2674,13 @@ export function PoolRunsPage() {
                               />
                             )}
                             {masterDataGateRemediationTarget && (
-                              <Button
+                              <RouteButton
                                 type="link"
-                                href={masterDataGateRemediationTarget.href}
+                                to={masterDataGateRemediationTarget.href}
                                 style={{ paddingInline: 0 }}
                               >
                                 {masterDataGateRemediationTarget.label}
-                              </Button>
+                              </RouteButton>
                             )}
                             {masterDataGateContextLines.length > 0 && (
                               <Space direction="vertical" size={0}>
@@ -2737,13 +2738,13 @@ export function PoolRunsPage() {
                                           ))}
                                           {hint ? <Text type="secondary">{hint}</Text> : null}
                                           {remediationTarget ? (
-                                            <Button
+                                            <RouteButton
                                               type="link"
-                                              href={remediationTarget.href}
+                                              to={remediationTarget.href}
                                               style={{ paddingInline: 0 }}
                                             >
                                               {remediationTarget.label}
-                                            </Button>
+                                            </RouteButton>
                                           ) : null}
                                         </Space>
                                       )

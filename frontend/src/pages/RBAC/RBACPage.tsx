@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Alert, Button, Radio, Space, Tabs, Tag, Typography } from 'antd'
 
-import { useMe } from '../../api/queries/me'
+import { useAuthz } from '../../authz/useAuthz'
 import { useCanManageRbac } from '../../api/queries/rbac'
 import { AuditTab } from './tabs/AuditTab'
 import { DbmsUsersTab } from './tabs/DbmsUsersTab'
@@ -25,8 +25,7 @@ export function RBACPage() {
   const [permissionLevelsHintExpanded, setPermissionLevelsHintExpanded] = useState<boolean>(true)
 
   const hasToken = Boolean(localStorage.getItem('auth_token'))
-  const meQuery = useMe({ enabled: hasToken })
-  const isStaff = Boolean(meQuery.data?.is_staff)
+  const { isStaff } = useAuthz()
 
   const canManageRbacQuery = useCanManageRbac({ enabled: hasToken })
   const canManageRbac = Boolean(canManageRbacQuery.data)
@@ -233,4 +232,3 @@ export function RBACPage() {
     </div>
   )
 }
-

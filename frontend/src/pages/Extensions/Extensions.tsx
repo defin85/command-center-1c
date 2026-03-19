@@ -8,7 +8,6 @@ import { useNavigate } from 'react-router-dom'
 import { getV2 } from '../../api/generated'
 import { useClusters } from '../../api/queries/clusters'
 import { useDatabases } from '../../api/queries/databases'
-import { useMe } from '../../api/queries/me'
 import {
   type ManualOperationKey,
   useDeleteManualOperationBinding,
@@ -24,6 +23,7 @@ import {
 } from '../../api/queries/extensions'
 import { listOperationCatalogExposures } from '../../api/operationCatalog'
 import { tryShowIbcmdCliUiError } from '../../components/ibcmd/ibcmdCliUiErrors'
+import { useAuthz } from '../../authz/useAuthz'
 import {
   buildSetFlagsRuntimeInput,
   hasSetFlagsMaskSelection,
@@ -137,8 +137,7 @@ type TemplateOption = {
 export const Extensions = () => {
   const navigate = useNavigate()
   const { message, modal } = App.useApp()
-  const meQuery = useMe()
-  const isStaff = Boolean(meQuery.data?.is_staff)
+  const { isStaff } = useAuthz()
   const hasTenantContext = Boolean(localStorage.getItem('active_tenant_id'))
   const mutatingDisabled = isStaff && !hasTenantContext
 
