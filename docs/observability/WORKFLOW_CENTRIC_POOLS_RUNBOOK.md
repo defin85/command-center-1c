@@ -73,6 +73,8 @@ Marker влияет на phase summary и rollout communication. Он не пе�
 - В `/decisions` canonical edge migration идёт через action `Import legacy edge`; `Import raw JSON` остаётся explicit compatibility-only fallback.
 - `/templates` остаётся catalog atomic operations; workflow executor templates должны читаться как compatibility/integration path.
 - `/pools/catalog` topology editor остаётся structural metadata surface и slot assignment workspace; primary shipped path редактирует только `edge.metadata.document_policy_key`, а save-path reject'ит legacy `document_policy` payload fail-closed.
+- `/pools/binding-profiles` default detail path остаётся summary-first: human-readable revision/workflow/usage summary и next actions показываются без opaque immutable ids как primary content; immutable pins и raw payload доступны только в explicit advanced disclosure.
+- На narrow viewport `/pools/binding-profiles` primary inspect/revise/deactivate flow обязан оставаться drawer-safe: primary actions и summary fields доступны без hidden horizontal scroll; внутренний overflow допустим только для secondary tables/diagnostics.
 - Decision builder/import и migration path используют business configuration identity provenance, а не database-local-only state. В ответах/API/UI ищи `config_name`, `config_version`, `config_generation_id`, `metadata_hash`, `observed_metadata_hash`, `publication_drift`, `is_shared_snapshot`, `provenance_database_id`.
 
 ## Default operator flow

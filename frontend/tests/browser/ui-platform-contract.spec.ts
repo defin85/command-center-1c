@@ -1000,6 +1000,24 @@ test('UI platform: /pools/binding-profiles keeps shell labels accessible and pri
   await expectContrastAtLeast(activeStatusBadge, 4.5)
 })
 
+test('UI platform: /pools/binding-profiles keeps fallback stream labels and deactivated states above contrast floor', async ({ page }) => {
+  await setupAuth(page)
+  await setupUiPlatformMocks(page, { isStaff: false })
+
+  await page.goto(`/pools/binding-profiles?profile=${LEGACY_BINDING_PROFILE_DETAIL.binding_profile_id}&detail=1`, { waitUntil: 'domcontentloaded' })
+
+  const streamStatusButton = page.getByRole('button', { name: 'Stream: Fallback' })
+  const deactivatedStatusBadge = page.getByTestId('pool-binding-profiles-status').locator('.ant-tag')
+
+  await expect(streamStatusButton).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Where this profile is used', level: 3 })).toBeVisible()
+  await expect(page.getByTestId('pool-binding-profiles-selected-code')).toHaveText('legacy-archive')
+  await expect(deactivatedStatusBadge).toContainText('deactivated')
+
+  await expectContrastAtLeast(streamStatusButton.locator('.ant-tag'), 4.5)
+  await expectContrastAtLeast(deactivatedStatusBadge, 4.5)
+})
+
 test('Runtime contract: one browser instance keeps a single database stream owner across tabs', async ({ context }) => {
   const counts = createRequestCounts()
   const firstPage = await context.newPage()

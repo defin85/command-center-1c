@@ -251,12 +251,7 @@ export const normalizeMetadataItems = (metadata: MetadataContextLike) => (
 
 export const renderCompatibilityTag = (compatibility?: DecisionMetadataCompatibility | null) => {
   if (!compatibility) return <StatusBadge status="unknown" />
-  return (
-    <StatusBadge
-      status={compatibility.status}
-      colorMap={compatibility.is_compatible ? undefined : { [compatibility.status]: 'volcano' }}
-    />
-  )
+  return <StatusBadge status={compatibility.status} />
 }
 
 export const buildChainsFromDraft = (draft: DecisionEditorState): DocumentPolicyBuilderChainFormValue[] => {

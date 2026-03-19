@@ -7,6 +7,7 @@ import {
   EntityList,
   ModalFormShell,
   PageHeader,
+  StatusBadge,
 } from '..'
 
 describe('platform primitives', () => {
@@ -58,5 +59,19 @@ describe('platform primitives', () => {
     expect(screen.getByText('Dashboard')).toBeInTheDocument()
     expect(screen.getByText('Last updated: now')).toBeInTheDocument()
     expect(screen.getByText('Cluster overview')).toBeInTheDocument()
+  })
+
+  it('renders deactivated badges with contrast-safe neutral styling', () => {
+    render(
+      <AntApp>
+        <StatusBadge status="deactivated" />
+      </AntApp>,
+    )
+
+    expect(screen.getByText('deactivated')).toHaveStyle({
+      backgroundColor: '#f3f4f6',
+      borderColor: '#d1d5db',
+      color: '#374151',
+    })
   })
 })

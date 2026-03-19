@@ -4,20 +4,6 @@ import type { ReactNode } from 'react'
 type StatusBadgeProps = {
   status: string
   label?: ReactNode
-  colorMap?: Record<string, string>
-}
-
-const DEFAULT_COLORS: Record<string, string> = {
-  active: 'green',
-  compatible: 'green',
-  published: 'green',
-  deactivated: 'default',
-  inactive: 'default',
-  pinned: 'gold',
-  unknown: 'default',
-  warning: 'gold',
-  incompatible: 'volcano',
-  error: 'red',
 }
 
 const DEFAULT_STYLES: Record<string, { backgroundColor: string, borderColor: string, color: string }> = {
@@ -73,13 +59,8 @@ const DEFAULT_STYLES: Record<string, { backgroundColor: string, borderColor: str
   },
 }
 
-export function StatusBadge({ status, label, colorMap }: StatusBadgeProps) {
-  const color = colorMap?.[status] ?? DEFAULT_COLORS[status] ?? 'blue'
+export function StatusBadge({ status, label }: StatusBadgeProps) {
   const style = DEFAULT_STYLES[status] ?? DEFAULT_STYLES.unknown
-
-  if (colorMap?.[status]) {
-    return <Tag color={color}>{label ?? status}</Tag>
-  }
 
   return (
     <Tag
