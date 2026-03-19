@@ -391,6 +391,223 @@ const POOL_WITH_ATTACHMENT = {
   ],
 }
 
+const POOL_RUN = {
+  id: 'run-1',
+  tenant_id: TENANT_ID,
+  pool_id: POOL_WITH_ATTACHMENT.id,
+  schema_template_id: null,
+  mode: 'safe',
+  direction: 'top_down',
+  status: 'validated',
+  status_reason: 'awaiting_approval',
+  period_start: '2026-01-01',
+  period_end: null,
+  run_input: {
+    starting_amount: '100.00',
+  },
+  input_contract_version: 'run_input_v1',
+  idempotency_key: 'idem-run-1',
+  workflow_execution_id: 'workflow-run-1',
+  workflow_status: 'pending',
+  root_operation_id: 'operation-root-1',
+  execution_consumer: 'pools',
+  lane: 'workflows',
+  approval_state: 'awaiting_approval',
+  publication_step_state: 'not_enqueued',
+  readiness_blockers: [],
+  readiness_checklist: {
+    status: 'ready',
+    checks: [
+      {
+        code: 'master_data_coverage',
+        status: 'ready',
+        blocker_codes: [],
+        blockers: [],
+      },
+      {
+        code: 'organization_party_bindings',
+        status: 'ready',
+        blocker_codes: [],
+        blockers: [],
+      },
+      {
+        code: 'policy_completeness',
+        status: 'ready',
+        blocker_codes: [],
+        blockers: [],
+      },
+      {
+        code: 'odata_verify_readiness',
+        status: 'ready',
+        blocker_codes: [],
+        blockers: [],
+      },
+    ],
+  },
+  verification_status: 'not_verified',
+  verification_summary: null,
+  terminal_reason: null,
+  execution_backend: 'workflow_core',
+  workflow_template_name: 'pool-template-v1',
+  seed: null,
+  validation_summary: { rows: 3 },
+  publication_summary: { total_targets: 1 },
+  diagnostics: [{ step: 'prepare_input', status: 'ok' }],
+  last_error: '',
+  created_at: NOW,
+  updated_at: NOW,
+  validated_at: NOW,
+  publication_confirmed_at: null,
+  publishing_started_at: null,
+  completed_at: null,
+  provenance: {
+    workflow_run_id: 'workflow-run-1',
+    workflow_status: 'pending',
+    execution_backend: 'workflow_core',
+    root_operation_id: 'operation-root-1',
+    execution_consumer: 'pools',
+    lane: 'workflows',
+    retry_chain: [
+      {
+        workflow_run_id: 'workflow-run-1',
+        parent_workflow_run_id: null,
+        attempt_number: 1,
+        attempt_kind: 'initial',
+        status: 'pending',
+      },
+    ],
+  },
+  workflow_binding: POOL_WITH_ATTACHMENT.workflow_bindings[0],
+  runtime_projection: {
+    version: 'pool_runtime_projection.v1',
+    run_id: 'run-1',
+    pool_id: POOL_WITH_ATTACHMENT.id,
+    direction: 'top_down',
+    mode: 'safe',
+    workflow_definition: {
+      plan_key: 'plan-services-v4',
+      template_version: 'workflow-template:4',
+      workflow_template_name: 'compiled-services-publication',
+      workflow_type: 'sequential',
+    },
+    workflow_binding: {
+      binding_mode: 'pool_workflow_binding',
+      binding_id: 'binding-top-down',
+      binding_profile_id: 'bp-services',
+      pool_id: POOL_WITH_ATTACHMENT.id,
+      binding_profile_revision_id: 'bp-rev-services-r2',
+      binding_profile_revision_number: 2,
+      attachment_revision: 3,
+      workflow_definition_key: 'services-publication',
+      workflow_revision_id: 'wf-services-r2',
+      workflow_revision: 4,
+      workflow_name: 'services_publication',
+      decision_refs: [
+        {
+          decision_table_id: 'services-publication-policy',
+          decision_key: 'document_policy',
+          slot_key: 'document_policy',
+          decision_revision: 2,
+        },
+      ],
+      selector: {
+        direction: 'top_down',
+        mode: 'safe',
+        tags: [],
+      },
+      status: 'active',
+    },
+    document_policy_projection: {
+      source_mode: 'decision_tables',
+      policy_refs: [
+        {
+          slot_key: 'document_policy',
+          edge_ref: {
+            parent_node_id: 'node-root',
+            child_node_id: 'node-child',
+          },
+          policy_version: 'document_policy.v1',
+          source: 'decision_tables',
+        },
+      ],
+      compiled_document_policy_slots: {
+        document_policy: {
+          decision_table_id: 'services-publication-policy',
+          decision_revision: 2,
+          document_policy_source: 'decision_tables',
+          document_policy: {
+            version: 'document_policy.v1',
+            targets: 1,
+          },
+        },
+      },
+      slot_coverage_summary: {
+        total_edges: 1,
+        counts: {
+          resolved: 1,
+          missing_selector: 0,
+          missing_slot: 0,
+          ambiguous_slot: 0,
+          ambiguous_context: 0,
+          unavailable_context: 0,
+        },
+        items: [
+          {
+            edge_id: 'edge-1',
+            edge_label: 'Root Org -> Child Org',
+            slot_key: 'document_policy',
+            coverage: {
+              code: null,
+              status: 'resolved',
+              label: 'Resolved',
+              detail: 'document_policy -> services-publication-policy r2',
+            },
+          },
+        ],
+      },
+      policy_refs_count: 1,
+      targets_count: 1,
+    },
+    artifacts: {
+      document_plan_artifact_version: 'document_plan_artifact.v1',
+      topology_version_ref: 'topology:v1',
+      distribution_artifact_ref: { id: 'distribution-artifact:v1' },
+    },
+    compile_summary: {
+      steps_count: 4,
+      atomic_publication_steps_count: 1,
+      compiled_targets_count: 1,
+    },
+  },
+}
+
+const POOL_RUN_REPORT = {
+  run: POOL_RUN,
+  publication_attempts: [
+    {
+      id: 'publication-attempt-1',
+      run_id: POOL_RUN.id,
+      target_database_id: DATABASE_ID,
+      attempt_number: 1,
+      attempt_timestamp: NOW,
+      status: 'failed',
+      entity_name: 'Document_Sales',
+      documents_count: 1,
+      publication_identity_strategy: 'guid',
+      external_document_identity: 'sale-1',
+      posted: false,
+      domain_error_code: 'network',
+      domain_error_message: 'temporary error',
+      http_error: null,
+      transport_error: null,
+    },
+  ],
+  validation_summary: { rows: 3 },
+  publication_summary: { total_targets: 1, failed_targets: 1 },
+  diagnostics: [{ step: 'distribution_calculation', status: 'ok' }],
+  attempts_by_status: { failed: 1 },
+}
+
 async function fulfillJson(route: Route, data: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -653,6 +870,10 @@ async function setupUiPlatformMocks(
       })
     }
 
+    if (method === 'GET' && path === '/api/v2/pools/schema-templates/') {
+      return fulfillJson(route, { templates: [] })
+    }
+
     if (method === 'GET' && path === '/api/v2/pools/organizations/') {
       return fulfillJson(route, {
         organizations: [organization],
@@ -674,9 +895,47 @@ async function setupUiPlatformMocks(
         pool_id: graphMatch[1],
         date: '2026-01-01',
         version: 'v1:topology-initial',
-        nodes: [],
-        edges: [],
+        nodes: [
+          {
+            node_version_id: 'node-root',
+            organization_id: organization.id,
+            inn: organization.inn,
+            name: organization.name,
+            is_root: true,
+            metadata: {},
+          },
+          {
+            node_version_id: 'node-child',
+            organization_id: 'organization-child',
+            inn: '730000000002',
+            name: 'Child Org',
+            is_root: false,
+            metadata: {},
+          },
+        ],
+        edges: [
+          {
+            edge_version_id: 'edge-1',
+            parent_node_version_id: 'node-root',
+            child_node_version_id: 'node-child',
+            weight: '1',
+            min_amount: null,
+            max_amount: null,
+            metadata: {
+              document_policy_key: 'document_policy',
+            },
+          },
+        ],
       })
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/runs/') {
+      return fulfillJson(route, { runs: [POOL_RUN] })
+    }
+
+    const poolRunReportMatch = path.match(/^\/api\/v2\/pools\/runs\/([^/]+)\/report\/$/)
+    if (method === 'GET' && poolRunReportMatch) {
+      return fulfillJson(route, POOL_RUN_REPORT)
     }
 
     const topologySnapshotsMatch = path.match(/^\/api\/v2\/pools\/([^/]+)\/topology-snapshots\/$/)
@@ -864,6 +1123,40 @@ test('UI platform: /pools/binding-profiles opens create-profile authoring in a m
   await expect(authoringModal.getByLabel('Profile name')).toBeVisible()
   await expect(authoringModal.getByTestId('pool-binding-profiles-create-workflow-revision-select')).toBeVisible()
   await expect(authoringModal.getByRole('button', { name: 'Create profile' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /pools/runs restores selected run and stage from a deep-link', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+
+  await page.goto(`/pools/runs?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&stage=inspect&detail=1`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Pool Runs', level: 2 })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Inspect' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('pool-runs-lineage-pool')).toHaveText('pool-main - Main Pool')
+  await expect(page.getByTestId('pool-runs-lineage-binding-id')).toHaveText('binding-top-down')
+  await expect(page.getByTestId('pool-runs-lineage-slot-coverage')).toContainText('resolved: 1')
+  await expect(page.getByRole('button', { name: 'Open Workflow Diagnostics' })).toBeVisible()
+})
+
+test('UI platform: /pools/runs opens inspect detail in a mobile-safe drawer without page-wide overflow', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto(`/pools/runs?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&stage=inspect&detail=1`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const detailDrawer = page.getByRole('dialog')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByTestId('pool-runs-lineage-pool')).toHaveText('pool-main - Main Pool')
+  await expect(detailDrawer.getByRole('button', { name: 'Open Workflow Diagnostics' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })
 

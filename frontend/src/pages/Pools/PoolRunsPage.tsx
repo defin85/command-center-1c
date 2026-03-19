@@ -8,6 +8,7 @@ import {
   Col,
   Descriptions,
   Form,
+  Grid,
   Input,
   InputNumber,
   Radio,
@@ -24,6 +25,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { UploadOutlined } from '@ant-design/icons'
 import ReactFlow, { Background, Controls, MiniMap, type Edge, type Node } from 'reactflow'
 import 'reactflow/dist/style.css'
+import { useSearchParams } from 'react-router-dom'
 
 import {
   abortPoolRunPublication,
@@ -74,10 +76,18 @@ import {
   resolvePoolWorkflowBindingProfileStatus,
   resolvePoolWorkflowBindingWorkflow,
 } from './poolWorkflowBindingPresentation'
-import { RouteButton } from '../../components/platform'
+import {
+  EntityTable,
+  MasterDetailShell,
+  PageHeader,
+  RouteButton,
+  WorkspacePage,
+} from '../../components/platform'
+import { POOL_RUNS_ROUTE } from './routes'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { TextArea } = Input
+const { useBreakpoint } = Grid
 
 type CreateRunFormValues = {
   period_start: string
@@ -98,9 +108,19 @@ type RetryFormValues = {
   documents_json: string
 }
 
+type PoolRunsStage = 'create' | 'inspect' | 'safe' | 'retry'
+
 type MasterDataRemediationTarget = {
   label: string
   href: string
+}
+
+type RouteSyncState = {
+  selectedPoolId: string | null | undefined
+  selectedRunId: string | null
+  activeStage: PoolRunsStage
+  graphDate: string
+  detailOpen: boolean
 }
 
 const DEFAULT_RETRY_DOCUMENTS_JSON = JSON.stringify(
@@ -250,6 +270,51 @@ const MASTER_DATA_WORKSPACE_TAB_LABELS: Record<string, string> = {
   'tax-profile': 'TaxProfile',
   bindings: 'Bindings',
 }
+
+const DEFAULT_STAGE: PoolRunsStage = 'create'
+const STAGE_LABELS: Record<PoolRunsStage, string> = {
+  create: 'Create',
+  inspect: 'Inspect',
+  safe: 'Safe Actions',
+  retry: 'Retry Failed',
+}
+const STAGE_DETAIL_TITLES: Record<PoolRunsStage, string> = {
+  create: 'Create run',
+  inspect: 'Inspect run',
+  safe: 'Safe actions',
+  retry: 'Retry failed targets',
+}
+const STAGE_MESSAGES: Record<PoolRunsStage, string> = {
+  create: (
+    'Start a run from the selected pool context, preview the pinned workflow binding, and keep heavy runtime lineage out of the primary authoring flow.'
+  ),
+  inspect: (
+    'Inspect lineage, readiness, master-data gate, verification, and workflow runtime for the selected run without mixing authoring and remediation as primary content.'
+  ),
+  safe: (
+    'Confirm or abort safe publication only after inspect stage shows that readiness blockers are resolved and the selected run is in the correct approval state.'
+  ),
+  retry: (
+    'Retry failed targets for the selected run from a dedicated remediation stage with explicit payload review, instead of mixing retry controls into the default inspect canvas.'
+  ),
+}
+
+const getDefaultGraphDate = () => new Date().toISOString().slice(0, 10)
+
+const normalizeRouteParam = (value: string | null): string | null => {
+  const normalized = value?.trim() ?? ''
+  return normalized.length > 0 ? normalized : null
+}
+
+const parseGraphDate = (value: string | null, fallback: string): string => (
+  value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback
+)
+
+const parsePoolRunsStage = (value: string | null): PoolRunsStage => (
+  value === 'inspect' || value === 'safe' || value === 'retry'
+    ? value
+    : DEFAULT_STAGE
+)
 
 const formatDate = (value: string | null | undefined) => {
   if (!value) return '-'
@@ -1099,13 +1164,27 @@ const normalizePreviewSlotCoverageSummary = (
 
 export function PoolRunsPage() {
   const { message } = AntApp.useApp()
+  const screens = useBreakpoint()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
+  const pendingRouteSyncRef = useRef<RouteSyncState | null>(null)
+  const previousStageRef = useRef<PoolRunsStage>(DEFAULT_STAGE)
+  const previousSelectedRunIdRef = useRef<string | null>(null)
+  const defaultGraphDateRef = useRef(getDefaultGraphDate())
+  const poolFromUrl = normalizeRouteParam(searchParams.get('pool'))
+  const runFromUrl = normalizeRouteParam(searchParams.get('run'))
+  const stageFromUrl = parsePoolRunsStage(searchParams.get('stage'))
+  const graphDateFromUrl = parseGraphDate(searchParams.get('date'), defaultGraphDateRef.current)
+  const detailOpenFromUrl = searchParams.get('detail') === '1'
   const [pools, setPools] = useState<OrganizationPool[]>([])
   const [schemaTemplates, setSchemaTemplates] = useState<PoolSchemaTemplate[]>([])
-  const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null)
-  const [graphDate, setGraphDate] = useState<string>(new Date().toISOString().slice(0, 10))
+  const [selectedPoolId, setSelectedPoolId] = useState<string | null | undefined>(
+    () => poolFromUrl ?? undefined
+  )
+  const [graphDate, setGraphDate] = useState<string>(graphDateFromUrl)
   const [graph, setGraph] = useState<PoolGraph | null>(null)
   const [runs, setRuns] = useState<PoolRun[]>([])
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(() => runFromUrl)
   const [report, setReport] = useState<PoolRunReport | null>(null)
   const [loadingPools, setLoadingPools] = useState(false)
   const [loadingSchemaTemplates, setLoadingSchemaTemplates] = useState(false)
@@ -1118,10 +1197,11 @@ export function PoolRunsPage() {
   const [safeActionLoading, setSafeActionLoading] = useState<PoolRunSafeCommandType | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [bindingPreview, setBindingPreview] = useState<PoolWorkflowBindingPreview | null>(null)
-  const [activeStageTab, setActiveStageTab] = useState<'create' | 'inspect' | 'safe' | 'retry'>('create')
+  const [activeStageTab, setActiveStageTab] = useState<PoolRunsStage>(stageFromUrl)
+  const [isRunDetailOpen, setIsRunDetailOpen] = useState(detailOpenFromUrl)
   const [createForm] = Form.useForm<CreateRunFormValues>()
   const [retryForm] = Form.useForm<RetryFormValues>()
-  const selectedPoolIdRef = useRef<string | null>(selectedPoolId)
+  const selectedPoolIdRef = useRef<string | null | undefined>(selectedPoolId)
   const selectedRunIdRef = useRef<string | null>(selectedRunId)
   const loadRunsRequestRef = useRef(0)
   const loadReportRequestRef = useRef(0)
@@ -1203,15 +1283,12 @@ export function PoolRunsPage() {
     try {
       const data = await listOrganizationPools()
       setPools(data)
-      if (!selectedPoolId && data.length > 0) {
-        setSelectedPoolId(data[0].id)
-      }
     } catch {
       setError('Не удалось загрузить список пулов.')
     } finally {
       setLoadingPools(false)
     }
-  }, [selectedPoolId])
+  }, [])
 
   const loadSchemaTemplates = useCallback(async () => {
     setLoadingSchemaTemplates(true)
@@ -1307,24 +1384,175 @@ export function PoolRunsPage() {
   }, [selectedRunId])
 
   useEffect(() => {
+    const nextSelectedPoolId = poolFromUrl
+      ? poolFromUrl
+      : (selectedPoolIdRef.current === undefined ? undefined : null)
+
+    pendingRouteSyncRef.current = {
+      selectedPoolId: nextSelectedPoolId,
+      selectedRunId: runFromUrl,
+      activeStage: stageFromUrl,
+      graphDate: graphDateFromUrl,
+      detailOpen: detailOpenFromUrl,
+    }
+
+    setSelectedPoolId((current) => (
+      current === nextSelectedPoolId ? current : nextSelectedPoolId
+    ))
+    setSelectedRunId((current) => (
+      current === runFromUrl ? current : runFromUrl
+    ))
+    setActiveStageTab((current) => (
+      current === stageFromUrl ? current : stageFromUrl
+    ))
+    setGraphDate((current) => (
+      current === graphDateFromUrl ? current : graphDateFromUrl
+    ))
+    setIsRunDetailOpen((current) => (
+      current === detailOpenFromUrl ? current : detailOpenFromUrl
+    ))
+  }, [detailOpenFromUrl, graphDateFromUrl, poolFromUrl, runFromUrl, stageFromUrl])
+
+  useEffect(() => {
+    const pendingRouteSync = pendingRouteSyncRef.current
+    if (pendingRouteSync) {
+      const poolMatches = selectedPoolId === pendingRouteSync.selectedPoolId
+      const runMatches = selectedRunId === pendingRouteSync.selectedRunId
+      const stageMatches = activeStageTab === pendingRouteSync.activeStage
+      const dateMatches = graphDate === pendingRouteSync.graphDate
+      const detailMatches = isRunDetailOpen === pendingRouteSync.detailOpen
+
+      if (!poolMatches || !runMatches || !stageMatches || !dateMatches || !detailMatches) {
+        return
+      }
+
+      pendingRouteSyncRef.current = null
+      return
+    }
+
+    const next = new URLSearchParams(searchParams)
+
+    if (selectedPoolId) {
+      next.set('pool', selectedPoolId)
+    } else {
+      next.delete('pool')
+    }
+
+    if (graphDate && graphDate !== defaultGraphDateRef.current) {
+      next.set('date', graphDate)
+    } else {
+      next.delete('date')
+    }
+
+    if (selectedRunId) {
+      next.set('run', selectedRunId)
+    } else {
+      next.delete('run')
+    }
+
+    if (activeStageTab === DEFAULT_STAGE) {
+      next.delete('stage')
+    } else {
+      next.set('stage', activeStageTab)
+    }
+
+    if (activeStageTab !== DEFAULT_STAGE && selectedRunId && isRunDetailOpen) {
+      next.set('detail', '1')
+    } else {
+      next.delete('detail')
+    }
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(
+        next,
+        routeUpdateModeRef.current === 'replace'
+          ? { replace: true }
+          : undefined
+      )
+    }
+    routeUpdateModeRef.current = 'replace'
+  }, [
+    activeStageTab,
+    graphDate,
+    isRunDetailOpen,
+    searchParams,
+    selectedPoolId,
+    selectedRunId,
+    setSearchParams,
+  ])
+
+  useEffect(() => {
     void loadPools()
     void loadSchemaTemplates()
   }, [loadPools, loadSchemaTemplates])
 
   useEffect(() => {
     void loadGraph()
+  }, [loadGraph])
+
+  useEffect(() => {
     void loadRuns()
-  }, [loadGraph, loadRuns])
+  }, [loadRuns])
+
+  useEffect(() => {
+    if (loadingPools) {
+      return
+    }
+
+    if (!pools.length) {
+      if (selectedPoolId !== null) {
+        routeUpdateModeRef.current = 'replace'
+        setSelectedPoolId(null)
+      }
+      return
+    }
+
+    if (selectedPoolId && pools.some((item) => item.id === selectedPoolId)) {
+      return
+    }
+
+    if (selectedPoolId === undefined || selectedPoolId === null || !pools.some((item) => item.id === selectedPoolId)) {
+      routeUpdateModeRef.current = 'replace'
+      setSelectedPoolId(pools[0].id)
+    }
+  }, [loadingPools, pools, selectedPoolId])
 
   useEffect(() => {
     setRuns([])
     setSelectedRunId(null)
     setReport(null)
+    setIsRunDetailOpen(false)
   }, [selectedPoolId])
 
   useEffect(() => {
     void loadReport()
   }, [loadReport])
+
+  useEffect(() => {
+    const pendingRouteSync = pendingRouteSyncRef.current
+    const stageChanged = previousStageRef.current !== activeStageTab
+    const runChanged = previousSelectedRunIdRef.current !== selectedRunId
+
+    previousStageRef.current = activeStageTab
+    previousSelectedRunIdRef.current = selectedRunId
+
+    if (pendingRouteSync) {
+      return
+    }
+
+    if (activeStageTab === DEFAULT_STAGE) {
+      if (stageChanged && isRunDetailOpen) {
+        routeUpdateModeRef.current = 'replace'
+        setIsRunDetailOpen(false)
+      }
+      return
+    }
+
+    if (selectedRunId && (stageChanged || runChanged)) {
+      routeUpdateModeRef.current = 'replace'
+      setIsRunDetailOpen(true)
+    }
+  }, [activeStageTab, isRunDetailOpen, selectedRunId])
 
   useEffect(() => {
     const currentBindingId = createForm.getFieldValue('pool_workflow_binding_id') as string | undefined
@@ -1630,6 +1858,42 @@ export function PoolRunsPage() {
     }
   }, [loadReport, loadRuns, message, runDetails, selectedRunId])
 
+  const handleSelectPool = useCallback((nextPoolId: string) => {
+    routeUpdateModeRef.current = 'push'
+    setSelectedPoolId(nextPoolId)
+    setSelectedRunId(null)
+    setIsRunDetailOpen(false)
+  }, [])
+
+  const handleGraphDateChange = useCallback((nextDate: string) => {
+    routeUpdateModeRef.current = 'push'
+    setGraphDate(nextDate || defaultGraphDateRef.current)
+  }, [])
+
+  const handleRefreshData = useCallback(() => {
+    void loadGraph()
+    void loadRuns()
+    void loadReport()
+  }, [loadGraph, loadReport, loadRuns])
+
+  const handleSelectStage = useCallback((nextStage: PoolRunsStage) => {
+    routeUpdateModeRef.current = 'push'
+    setActiveStageTab(nextStage)
+  }, [])
+
+  const handleSelectRun = useCallback((runId: string) => {
+    routeUpdateModeRef.current = 'push'
+    setSelectedRunId(runId)
+    if (activeStageTab !== DEFAULT_STAGE) {
+      setIsRunDetailOpen(true)
+    }
+  }, [activeStageTab])
+
+  const handleCloseRunDetail = useCallback(() => {
+    routeUpdateModeRef.current = 'push'
+    setIsRunDetailOpen(false)
+  }, [])
+
   const runColumns: ColumnsType<PoolRun> = useMemo(
     () => [
       {
@@ -1638,8 +1902,26 @@ export function PoolRunsPage() {
         key: 'id',
         width: 220,
         render: (value: string, record) => (
-          <Space size={4} wrap>
-            <Text code>{formatShortId(value)}</Text>
+          <Space direction="vertical" size={4}>
+            <Button
+              type="link"
+              aria-label={`Open run ${record.id}`}
+              aria-pressed={record.id === selectedRunId}
+              style={{
+                paddingInline: 0,
+                minHeight: 36,
+                justifyContent: 'flex-start',
+                whiteSpace: 'normal',
+                height: 'auto',
+              }}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                handleSelectRun(record.id)
+              }}
+            >
+              <Text code>{formatShortId(value)}</Text>
+            </Button>
             <Tag color={record.mode === 'safe' ? 'geekblue' : 'default'}>{record.mode}</Tag>
           </Space>
         ),
@@ -1721,7 +2003,7 @@ export function PoolRunsPage() {
         render: (value: string) => formatDate(value),
       },
     ],
-    []
+    [handleSelectRun, selectedRunId]
   )
 
   const publicationAttemptColumns: ColumnsType<PoolPublicationAttemptDiagnostics> = useMemo(
@@ -1880,10 +2162,18 @@ export function PoolRunsPage() {
     runtimeProjection,
   })
   const workflowBindingProfileStatus = resolvePoolWorkflowBindingProfileStatus(workflowBinding)
-  const bindingDecisionRefs = resolvePoolWorkflowBindingDecisionRefs(workflowBinding)
-  const workflowDecisionRefs = bindingDecisionRefs.length > 0
-    ? bindingDecisionRefs
-    : (runtimeProjection?.workflow_binding.decision_refs ?? [])
+  const bindingDecisionRefs = useMemo(
+    () => resolvePoolWorkflowBindingDecisionRefs(workflowBinding),
+    [workflowBinding]
+  )
+  const workflowDecisionRefs = useMemo(
+    () => (
+      bindingDecisionRefs.length > 0
+        ? bindingDecisionRefs
+        : (runtimeProjection?.workflow_binding.decision_refs ?? [])
+    ),
+    [bindingDecisionRefs, runtimeProjection]
+  )
   const bindingPreviewCoverageSummary = useMemo(() => {
     if (!bindingPreview) {
       return null
@@ -1961,53 +2251,105 @@ export function PoolRunsPage() {
     && !isPublishedOrPartial
     && !isTerminalNonAbortFailed
   )
+  const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
+  const detailDescriptionColumns = hasMatchedBreakpoint
+    ? (screens.lg ? 2 : 1)
+    : (
+      typeof window !== 'undefined' && window.innerWidth >= 992
+        ? 2
+        : 1
+    )
 
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <div>
-        <Title level={3} style={{ marginBottom: 0 }}>
-          Pool Runs
-        </Title>
-        <Text type="secondary">
-          Operator-facing surface для lifecycle run: pool/binding lineage, safe-команды, retry и secondary workflow diagnostics.
-        </Text>
-      </div>
+    <WorkspacePage
+      header={(
+        <PageHeader
+          title="Pool Runs"
+          subtitle={(
+            <>
+              Stage-based operator workspace on
+              {' '}
+              <Text code>{POOL_RUNS_ROUTE}</Text>
+              {' '}
+              for create, inspect, safe actions, and retry against one selected run context.
+            </>
+          )}
+          actions={(
+            <Space wrap size={16} align="start">
+              <Space direction="vertical" size={4}>
+                <Text strong>Pool</Text>
+                <Select
+                  aria-label="Run pool"
+                  data-testid="pool-runs-context-pool"
+                  style={{ width: 320 }}
+                  placeholder="Select pool"
+                  value={selectedPoolId ?? undefined}
+                  options={pools.map((pool) => ({
+                    value: pool.id,
+                    label: `${pool.code} - ${pool.name}`,
+                  }))}
+                  onChange={handleSelectPool}
+                />
+              </Space>
+              <Space direction="vertical" size={4}>
+                <Text strong>Graph date</Text>
+                <Input
+                  aria-label="Graph date"
+                  type="date"
+                  value={graphDate}
+                  onChange={(event) => handleGraphDateChange(event.target.value)}
+                  style={{ width: 180 }}
+                />
+              </Space>
+              <Button
+                onClick={handleRefreshData}
+                loading={loadingGraph || loadingRuns || loadingReport}
+                style={{ marginTop: 28 }}
+              >
+                Refresh Data
+              </Button>
+            </Space>
+          )}
+        />
+      )}
+    >
+      <Alert
+        type="info"
+        showIcon
+        message={`Lifecycle stage: ${STAGE_LABELS[activeStageTab]}`}
+        description={STAGE_MESSAGES[activeStageTab]}
+      />
 
       {error && <Alert type="error" message={error} />}
 
       <Card title="Run Context" loading={loadingPools}>
         <Space wrap>
-          <Select
-            data-testid="pool-runs-context-pool"
-            style={{ width: 320 }}
-            placeholder="Select pool"
-            value={selectedPoolId ?? undefined}
-            options={pools.map((pool) => ({
-              value: pool.id,
-              label: `${pool.code} - ${pool.name}`,
-            }))}
-            onChange={(value) => setSelectedPoolId(value)}
-          />
-          <Input
-            type="date"
-            value={graphDate}
-            onChange={(event) => setGraphDate(event.target.value)}
-            style={{ width: 180 }}
-          />
-          <Button onClick={() => { void loadGraph(); void loadRuns(); void loadReport() }} loading={loadingGraph || loadingRuns || loadingReport}>
-            Refresh Data
-          </Button>
+          <Text>
+            Selected pool:
+            {' '}
+            <Text strong>{selectedPool ? `${selectedPool.code} - ${selectedPool.name}` : 'none'}</Text>
+          </Text>
+          <Text>
+            Graph date:
+            {' '}
+            <Text strong>{graphDate}</Text>
+          </Text>
+          <Text>
+            Selected run:
+            {' '}
+            <Text strong>{selectedRunId ? formatShortId(selectedRunId) : 'none'}</Text>
+          </Text>
         </Space>
       </Card>
 
       <Tabs
         activeKey={activeStageTab}
-        onChange={(key) => setActiveStageTab(key as 'create' | 'inspect' | 'safe' | 'retry')}
+        onChange={(key) => handleSelectStage(key as PoolRunsStage)}
         data-testid="pool-runs-stage-tabs"
         items={[
           {
             key: 'create',
-            label: 'Create',
+            label: STAGE_LABELS.create,
             children: (
               <Card title="Create Run">
                 <Form form={createForm} layout="vertical" initialValues={CREATE_RUN_FORM_INITIAL_VALUES}>
@@ -2125,7 +2467,7 @@ export function PoolRunsPage() {
                       data-testid="pool-runs-create-selected-binding"
                       style={{ marginBottom: 12 }}
                     >
-                      <Descriptions bordered size="small" column={2}>
+                      <Descriptions bordered size="small" column={detailDescriptionColumns}>
                         <Descriptions.Item label="Attachment ID" span={1}>
                           <Text code>{selectedCreateBinding.binding_id ?? '-'}</Text>
                         </Descriptions.Item>
@@ -2252,7 +2594,7 @@ export function PoolRunsPage() {
                       data-testid="pool-runs-binding-preview"
                       style={{ marginTop: 16 }}
                     >
-                      <Descriptions bordered size="small" column={2}>
+                      <Descriptions bordered size="small" column={detailDescriptionColumns}>
                         <Descriptions.Item label="Attachment ID" span={1}>
                           <Text code>{bindingPreview.workflow_binding.binding_id ?? '-'}</Text>
                         </Descriptions.Item>
@@ -2372,11 +2714,32 @@ export function PoolRunsPage() {
           },
           {
             key: 'inspect',
-            label: 'Inspect',
+            label: STAGE_LABELS.inspect,
             children: (
-              <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                <Row gutter={16}>
-                  <Col span={12}>
+              <MasterDetailShell
+                detailOpen={Boolean(selectedRunId) && isRunDetailOpen}
+                onCloseDetail={handleCloseRunDetail}
+                detailDrawerTitle={selectedRunId ? `${STAGE_DETAIL_TITLES.inspect} · ${formatShortId(selectedRunId)}` : STAGE_DETAIL_TITLES.inspect}
+                list={(
+                  <EntityTable
+                    title="Runs"
+                    loading={loadingRuns}
+                    emptyDescription={selectedPoolId ? 'No runs found for the selected pool.' : 'Select a pool to load runs.'}
+                    dataSource={runs}
+                    columns={runColumns}
+                    rowKey="id"
+                    pagination={{ pageSize: 8 }}
+                    onRow={(record) => ({
+                      onClick: () => handleSelectRun(record.id),
+                      style: { cursor: 'pointer' },
+                    })}
+                    rowClassName={(record) => (
+                      record.id === selectedRunId ? 'ant-table-row-selected' : ''
+                    )}
+                  />
+                )}
+                detail={(
+                  <Space direction="vertical" size="large" style={{ width: '100%' }}>
                     <Card title="Pool Graph" loading={loadingGraph}>
                       <div style={{ height: 460 }}>
                         <ReactFlow nodes={flow.nodes} edges={flow.edges} fitView>
@@ -2386,26 +2749,8 @@ export function PoolRunsPage() {
                         </ReactFlow>
                       </div>
                     </Card>
-                  </Col>
-                  <Col span={12}>
-                    <Card title="Runs" loading={loadingRuns}>
-                      <Table
-                        rowKey="id"
-                        size="small"
-                        columns={runColumns}
-                        dataSource={runs}
-                        pagination={{ pageSize: 8 }}
-                        rowSelection={{
-                          type: 'radio',
-                          selectedRowKeys: selectedRunId ? [selectedRunId] : [],
-                          onChange: (keys) => setSelectedRunId(keys[0] ? String(keys[0]) : null),
-                        }}
-                      />
-                    </Card>
-                  </Col>
-                </Row>
 
-                <Card title="Run Lineage / Operator Report" loading={loadingReport}>
+                    <Card title="Run Lineage / Operator Report" loading={loadingReport}>
                   {!runDetails && (
                     <Text type="secondary">Select a run to inspect report.</Text>
                   )}
@@ -2429,7 +2774,7 @@ export function PoolRunsPage() {
                       />
 
                       <Card size="small" title="Run Lineage">
-                        <Descriptions bordered size="small" column={2}>
+                        <Descriptions bordered size="small" column={detailDescriptionColumns}>
                         <Descriptions.Item label="Pool" span={1}>
                             <Text data-testid="pool-runs-lineage-pool">{selectedPoolLabel}</Text>
                           </Descriptions.Item>
@@ -2569,7 +2914,7 @@ export function PoolRunsPage() {
                       </Card>
 
                       <Card size="small" title="Underlying Workflow Runtime">
-                        <Descriptions bordered size="small" column={2}>
+                        <Descriptions bordered size="small" column={detailDescriptionColumns}>
                           <Descriptions.Item label="Workflow Run" span={1}>
                             <Text code data-testid="pool-runs-provenance-workflow-id">{workflowRunId ?? '-'}</Text>
                           </Descriptions.Item>
@@ -2849,13 +3194,15 @@ export function PoolRunsPage() {
                       />
                     </Space>
                   )}
-                </Card>
-              </Space>
+                    </Card>
+                  </Space>
+                )}
+              />
             ),
           },
           {
             key: 'safe',
-            label: 'Safe Actions',
+            label: STAGE_LABELS.safe,
             children: (
               <Card
                 title="Safe Mode Actions"
@@ -2922,7 +3269,7 @@ export function PoolRunsPage() {
           },
           {
             key: 'retry',
-            label: 'Retry Failed',
+            label: STAGE_LABELS.retry,
             children: (
               <Card title="Retry Failed Targets">
                 <Form form={retryForm} layout="vertical" initialValues={RETRY_FORM_INITIAL_VALUES}>
@@ -2955,6 +3302,6 @@ export function PoolRunsPage() {
           },
         ]}
       />
-    </Space>
+    </WorkspacePage>
   )
 }

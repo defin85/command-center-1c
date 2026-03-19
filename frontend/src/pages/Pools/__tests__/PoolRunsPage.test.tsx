@@ -453,9 +453,9 @@ function buildPoolGraph(slotKey = 'invoice_mode') {
   }
 }
 
-function renderPage() {
+function renderPage(initialEntry = '/pools/runs') {
   return render(
-    <MemoryRouter initialEntries={['/pools/runs']} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+    <MemoryRouter initialEntries={[initialEntry]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
       <AntApp>
         <PoolRunsPage />
         <LocationProbe />
@@ -777,6 +777,84 @@ describe('PoolRunsPage', () => {
     expect(screen.getByTestId('pool-runs-location')).toHaveTextContent(
       '/workflows/executions/22222222-2222-2222-2222-222222222222'
     )
+  }, 30000)
+
+  it('restores selected run and stage from query params', async () => {
+    const run = buildRun()
+    mockListPoolRuns.mockResolvedValue([run])
+    mockGetPoolRunReport.mockResolvedValue(buildReport(run))
+
+    renderPage(`/pools/runs?pool=${run.pool_id}&run=${run.id}&stage=safe&detail=1`)
+
+    const confirmButton = await screen.findByTestId('pool-runs-safe-confirm')
+    expect(confirmButton).toBeEnabled()
+    expect(screen.getByRole('tab', { name: 'Safe Actions' })).toHaveAttribute('aria-selected', 'true')
+
+    await waitFor(() => {
+      const location = screen.getByTestId('pool-runs-location').textContent || ''
+      expect(location).toContain(`pool=${run.pool_id}`)
+      expect(location).toContain(`run=${run.id}`)
+      expect(location).toContain('stage=safe')
+      expect(location).toContain('detail=1')
+    })
+  }, 30000)
+
+  it('keeps selected run and active stage in the URL when the operator switches lifecycle stages', async () => {
+    const user = userEvent.setup()
+    const firstRun = buildRun()
+    const secondRun = buildRun({
+      id: 'aaaaaaaa-1111-1111-1111-111111111111',
+      workflow_execution_id: 'bbbbbbbb-2222-2222-2222-222222222222',
+      root_operation_id: 'bbbbbbbb-2222-2222-2222-222222222222',
+      provenance: {
+        ...firstRun.provenance,
+        workflow_run_id: 'bbbbbbbb-2222-2222-2222-222222222222',
+        root_operation_id: 'bbbbbbbb-2222-2222-2222-222222222222',
+        retry_chain: [
+          {
+            workflow_run_id: 'bbbbbbbb-2222-2222-2222-222222222222',
+            parent_workflow_run_id: null,
+            attempt_number: 1,
+            attempt_kind: 'initial',
+            status: 'pending',
+          },
+        ],
+      },
+    })
+
+    mockListPoolRuns.mockResolvedValue([firstRun, secondRun])
+    mockGetPoolRunReport.mockImplementation(async (runId: string) => buildReport(runId === secondRun.id ? secondRun : firstRun))
+
+    renderPage()
+
+    await user.click(await screen.findByRole('tab', { name: 'Retry Failed' }))
+
+    await waitFor(() => {
+      const location = screen.getByTestId('pool-runs-location').textContent || ''
+      expect(location).toContain(`pool=${firstRun.pool_id}`)
+      expect(location).toContain(`run=${firstRun.id}`)
+      expect(location).toContain('stage=retry')
+      expect(location).toContain('detail=1')
+    })
+
+    await user.click(screen.getByRole('tab', { name: 'Inspect' }))
+    await user.click(await screen.findByRole('button', { name: `Open run ${secondRun.id}` }))
+
+    await waitFor(() => {
+      const location = screen.getByTestId('pool-runs-location').textContent || ''
+      expect(location).toContain(`run=${secondRun.id}`)
+      expect(location).toContain('stage=inspect')
+      expect(location).toContain('detail=1')
+    })
+
+    await user.click(screen.getByRole('tab', { name: 'Retry Failed' }))
+
+    await waitFor(() => {
+      const location = screen.getByTestId('pool-runs-location').textContent || ''
+      expect(location).toContain(`run=${secondRun.id}`)
+      expect(location).toContain('stage=retry')
+      expect(location).toContain('detail=1')
+    })
   }, 30000)
 
   it('disables confirm while safe run is in pre-publish preparing state', async () => {
