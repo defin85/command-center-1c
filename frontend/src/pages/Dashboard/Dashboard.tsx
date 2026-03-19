@@ -10,7 +10,7 @@
  * - Clusters overview
  */
 import React, { useState, useCallback } from 'react'
-import { Row, Col, Divider, Button, Tooltip } from 'antd'
+import { Button, Tooltip } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 
@@ -34,6 +34,7 @@ import { useServiceMesh } from '../../hooks/useServiceMesh'
 // Operations components
 import { NewOperationWizard } from '../Operations/components/NewOperationWizard'
 import type { NewOperationData } from '../Operations/components/NewOperationWizard/types'
+import './Dashboard.css'
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate()
@@ -126,22 +127,25 @@ export const Dashboard: React.FC = () => {
         />
       )}
     >
+      <div className="dashboard-route">
+        <div className="dashboard-route__section">
+          <QuickActionsBar onNewOperation={handleNewOperation} />
+        </div>
 
-      {/* Quick Actions */}
-      <QuickActionsBar onNewOperation={handleNewOperation} />
+        <div
+          className="dashboard-route__separator"
+          aria-hidden="true"
+        />
 
-      <Divider style={{ margin: '16px 0' }} />
+        <div className="dashboard-route__section">
+          <StatisticsCards
+            operations={operations}
+            databases={databases}
+            loading={loading}
+          />
+        </div>
 
-      {/* Statistics Cards */}
-      <StatisticsCards
-        operations={operations}
-        databases={databases}
-        loading={loading}
-      />
-
-      {/* System Health Card (Real-time via WebSocket) */}
-      <Row style={{ marginTop: 24 }}>
-        <Col span={24}>
+        <div className="dashboard-route__section">
           <SystemHealthCard
             services={services}
             overallHealth={overallHealth}
@@ -149,34 +153,27 @@ export const Dashboard: React.FC = () => {
             isConnected={isConnected}
             connectionError={meshError}
           />
-        </Col>
-      </Row>
+        </div>
 
-      {/* Recent Operations + Failed Operations Alert */}
-      <Row gutter={24} style={{ marginTop: 24 }}>
-        <Col xs={24} lg={16}>
+        <div className="dashboard-route__support-grid">
           <RecentOperationsTable
             selectedService={null}
             onOperationClick={handleOperationClick}
           />
-        </Col>
-        <Col xs={24} lg={8}>
+
           <FailedOperationsAlert
             operations={failedOperations}
             maxDisplay={5}
           />
-        </Col>
-      </Row>
+        </div>
 
-      {/* Clusters Overview */}
-      <Row style={{ marginTop: 24 }}>
-        <Col span={24}>
+        <div className="dashboard-route__section">
           <ClusterOverview
             clusters={clusters}
             loading={loading}
           />
-        </Col>
-      </Row>
+        </div>
+      </div>
 
       {/* New Operation Wizard Modal */}
       <NewOperationWizard

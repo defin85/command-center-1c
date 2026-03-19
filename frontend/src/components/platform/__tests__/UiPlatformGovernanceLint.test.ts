@@ -105,6 +105,32 @@ describe('ui platform governance lint', () => {
     ))).toBe(true)
   })
 
+  it('rejects raw Ant layout containers in dashboard route modules', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Dashboard/Dashboard.tsx',
+      `
+        import { Row, Col, Divider } from 'antd'
+        import { DashboardPage, PageHeader } from '../../components/platform'
+
+        export function Dashboard() {
+          return (
+            <DashboardPage header={<PageHeader title="Dashboard" />}>
+              <Divider />
+              <Row>
+                <Col span={24}>legacy</Col>
+              </Row>
+            </DashboardPage>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'no-restricted-imports'
+        && message.message.includes('Dashboard route')
+    ))).toBe(true)
+  })
+
   it('rejects full-document handoff props in audited authenticated modules', async () => {
     const buttonMessages = await lintSnippet(
       'src/pages/Pools/PoolRunsPage.tsx',

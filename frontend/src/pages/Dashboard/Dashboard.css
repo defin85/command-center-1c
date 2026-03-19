@@ -1,0 +1,26 @@
+.dashboard-route {
+  display: grid;
+  gap: 24px;
+}
+
+.dashboard-route__separator {
+  height: 1px;
+  background: #d9d9d9;
+}
+
+.dashboard-route__section {
+  min-width: 0;
+}
+
+.dashboard-route__support-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  align-items: start;
+}
+
+@media (max-width: 991px) {
+  .dashboard-route__support-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

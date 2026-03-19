@@ -43,6 +43,14 @@ const operationalWorkspaceModuleImports = [
   },
 ]
 
+const dashboardRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Empty', 'Row', 'Col', 'Spin', 'Table', 'Tag', 'Divider'],
+    message: 'Dashboard route must compose through `DashboardPage` and platform-owned sections instead of raw Ant layout/data containers.',
+  },
+]
+
 const noStaticModalMethodsRule = {
   selector: "MemberExpression[object.name='Modal'][property.name=/^(confirm|info|success|error|warning)$/]",
   message: 'Use `const { modal } = App.useApp()` and call `modal.confirm/info/...` instead of `Modal.*` static methods.',
@@ -196,6 +204,7 @@ export default tseslint.config(
   {
     files: [
       'src/pages/Decisions/DecisionsPage.tsx',
+      'src/pages/Dashboard/Dashboard.tsx',
       'src/pages/Databases/Databases.tsx',
       'src/pages/Pools/PoolBindingProfilesEditorModal.tsx',
       'src/pages/Pools/PoolRunsPage.tsx',
@@ -203,6 +212,20 @@ export default tseslint.config(
     ],
     rules: {
       'no-restricted-syntax': ['error', noStaticModalMethodsRule, ...shellSafeInternalNavigationRules],
+    },
+  },
+  {
+    files: [
+      'src/pages/Dashboard/Dashboard.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...dashboardRouteModuleImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
     },
   },
 )
