@@ -934,6 +934,34 @@ test('Runtime contract: /pools/binding-profiles hands off to /pools/catalog with
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 
+test('Runtime contract: /decisions hands off to /pools/binding-profiles without replaying shell reads', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto(`/decisions?database=${DATABASE_ID}&decision=${DECISION.id}`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByText('Decision Policy Library')).toBeVisible()
+  await expect.poll(() => counts.bootstrap).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+
+  await page.getByRole('button', { name: 'Open binding profiles' }).click()
+
+  await expect(page).toHaveURL(/\/pools\/binding-profiles$/)
+  await expect(page.getByRole('heading', { name: 'Binding Profiles' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Create profile' })).toBeVisible()
+
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
 test('UI platform: /decisions restores deep-link context and keeps diagnostics behind disclosure', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
