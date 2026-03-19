@@ -242,7 +242,15 @@ function App() {
     <ErrorBoundary>
       <ConfigProvider theme={{
         token: {
-          colorPrimary: '#1890ff',
+          colorPrimary: '#0b5bd3',
+          colorError: '#b42318',
+          colorTextSecondary: '#4b5563',
+        },
+        components: {
+          Menu: {
+            itemSelectedBg: '#dbeafe',
+            itemSelectedColor: '#0b3d91',
+          },
         },
       }}>
         <AntApp>

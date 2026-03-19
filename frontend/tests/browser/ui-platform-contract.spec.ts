@@ -630,6 +630,83 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(hasOverflow).toBe(false)
 }
 
+async function expectVisibleWithinContainer(
+  locator: ReturnType<Page['locator']>,
+  container: ReturnType<Page['locator']>,
+) {
+  const [box, containerBox] = await Promise.all([locator.boundingBox(), container.boundingBox()])
+
+  if (!box || !containerBox) {
+    throw new Error('Expected visible element and container bounding boxes.')
+  }
+
+  expect(box.x).toBeGreaterThanOrEqual(containerBox.x)
+  expect(box.y).toBeGreaterThanOrEqual(containerBox.y)
+  expect(box.x + box.width).toBeLessThanOrEqual(containerBox.x + containerBox.width)
+  expect(box.y + box.height).toBeLessThanOrEqual(containerBox.y + containerBox.height)
+}
+
+async function expectContrastAtLeast(locator: ReturnType<Page['locator']>, minimumRatio: number) {
+  const contrastRatio = await locator.evaluate((element) => {
+    const parseColor = (value: string) => {
+      const match = value.match(/rgba?\(([^)]+)\)/)
+      if (!match) {
+        return [0, 0, 0, 1] as const
+      }
+
+      const [r = '0', g = '0', b = '0', a = '1'] = match[1].split(',').map((part) => part.trim())
+      return [Number(r), Number(g), Number(b), Number(a)] as const
+    }
+
+    const composite = (
+      foreground: readonly [number, number, number, number],
+      background: readonly [number, number, number, number],
+    ) => {
+      const alpha = foreground[3]
+      const channel = (index: number) => (
+        foreground[index] * alpha + background[index] * (1 - alpha)
+      )
+
+      return [channel(0), channel(1), channel(2), 1] as const
+    }
+
+    const luminance = (rgb: readonly [number, number, number, number]) => {
+      const toLinear = (channel: number) => {
+        const normalized = channel / 255
+        return normalized <= 0.04045
+          ? normalized / 12.92
+          : ((normalized + 0.055) / 1.055) ** 2.4
+      }
+
+      const [r, g, b] = rgb
+      return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b)
+    }
+
+    const resolveBackground = (node: HTMLElement | null) => {
+      let current = node
+      while (current) {
+        const background = parseColor(window.getComputedStyle(current).backgroundColor)
+        if (background[3] > 0) {
+          return background
+        }
+        current = current.parentElement
+      }
+
+      return [255, 255, 255, 1] as const
+    }
+
+    const styles = window.getComputedStyle(element)
+    const foreground = composite(parseColor(styles.color), resolveBackground(element.parentElement))
+    const background = resolveBackground(element as HTMLElement)
+    const lighter = Math.max(luminance(foreground), luminance(background))
+    const darker = Math.min(luminance(foreground), luminance(background))
+
+    return (lighter + 0.05) / (darker + 0.05)
+  })
+
+  expect(contrastRatio).toBeGreaterThanOrEqual(minimumRatio)
+}
+
 test('UI platform: /decisions keeps mobile list stable and opens detail in a drawer', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
@@ -685,8 +762,13 @@ test('UI platform: /pools/binding-profiles keeps mobile catalog readable and ope
   const detailDrawer = page.getByRole('dialog')
   await expect(detailDrawer).toBeVisible()
   await expect(detailDrawer.getByTestId('pool-binding-profiles-selected-code')).toHaveText('services-publication')
-  await expect(detailDrawer.getByText('Where this profile is used')).toBeVisible()
+  await expect(detailDrawer.getByRole('heading', { name: 'Where this profile is used', level: 3 })).toBeVisible()
+  await expect(detailDrawer.getByRole('button', { name: 'Publish new revision' })).toBeVisible()
+  await expect(detailDrawer.getByRole('button', { name: 'Deactivate profile' })).toBeVisible()
+  await expect(detailDrawer.getByRole('columnheader', { name: 'Opaque pin' })).toHaveCount(0)
   await expect(detailDrawer.getByRole('button', { name: /Advanced payload and immutable pins/i })).toBeVisible()
+  await expectVisibleWithinContainer(detailDrawer.getByRole('button', { name: 'Publish new revision' }), detailDrawer)
+  await expectVisibleWithinContainer(detailDrawer.getByRole('button', { name: 'Deactivate profile' }), detailDrawer)
   await expectNoHorizontalOverflow(page)
 })
 
@@ -885,6 +967,37 @@ test('UI platform: /pools/binding-profiles keeps selected profile on browser bac
   await expect(page).toHaveURL(new RegExp(`\\?profile=${LEGACY_BINDING_PROFILE_DETAIL.binding_profile_id}&detail=1$`))
   await expect(page.getByTestId('pool-binding-profiles-selected-code')).toHaveText('legacy-archive')
   await expect(legacyProfileButton).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('UI platform: /pools/binding-profiles keeps shell labels accessible and primary states above contrast floor', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+
+  await page.goto('/pools/binding-profiles', { waitUntil: 'domcontentloaded' })
+
+  const streamStatusButton = page.getByRole('button', { name: 'Stream: Connected' })
+  const selectedMenuItem = page.getByRole('menuitem', { name: /Pool Binding Profiles/i })
+  const subtitle = page.getByText(/Reusable profile workspace for selecting a profile/i).first()
+  const createProfileButton = page.getByRole('button', { name: 'Create profile' })
+  const deactivateProfileButton = page.getByRole('button', { name: 'Deactivate profile' })
+  const activeStatusBadge = page.getByTestId('pool-binding-profiles-status').locator('.ant-tag')
+
+  await expect(streamStatusButton).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Where this profile is used', level: 3 })).toBeVisible()
+  await expect(page.getByRole('columnheader', { name: 'Opaque pin' })).toHaveCount(0)
+
+  await page.getByRole('button', { name: /Advanced payload and immutable pins/i }).click()
+
+  await expect(page.getByRole('columnheader', { name: 'Opaque pin' })).toBeVisible()
+  await expect(page.getByText('Latest immutable revision')).toBeVisible()
+
+  await expectContrastAtLeast(selectedMenuItem, 4.5)
+  await expectContrastAtLeast(streamStatusButton.locator('.ant-tag'), 4.5)
+  await expectContrastAtLeast(subtitle, 4.5)
+  await expectContrastAtLeast(createProfileButton, 4.5)
+  await expectContrastAtLeast(deactivateProfileButton, 4.5)
+  await expectContrastAtLeast(activeStatusBadge, 4.5)
 })
 
 test('Runtime contract: one browser instance keeps a single database stream owner across tabs', async ({ context }) => {

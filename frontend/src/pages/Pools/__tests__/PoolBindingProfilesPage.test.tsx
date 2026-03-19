@@ -293,19 +293,21 @@ describe('PoolBindingProfilesPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Binding Profiles' })).toBeInTheDocument()
     expect(screen.getByText(/Reusable profile workspace for selecting a profile, checking where it is used, and publishing the next revision./i)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Open attachment workspace' })).toHaveAttribute('href', '/pools/catalog')
+    expect(screen.getAllByRole('link', { name: 'Open attachment workspace' })[0]).toHaveAttribute('href', '/pools/catalog')
     expect(screen.getAllByText('services-publication').length).toBeGreaterThan(0)
     expect(screen.getByText('legacy-archive')).toBeInTheDocument()
 
     expect(screen.getByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('services-publication')
     expect(screen.getByRole('button', { name: 'Publish new revision' })).toBeEnabled()
-    expect(screen.getByText('Where this profile is used')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Where this profile is used', level: 3 })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Opaque pin' })).not.toBeInTheDocument()
     expect(screen.queryByText('Latest immutable revision')).not.toBeInTheDocument()
     expect(screen.queryByText('Workflow definition key')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /Advanced payload and immutable pins/i }))
     expect(await screen.findByText('Latest immutable revision')).toBeInTheDocument()
     expect(screen.getByTestId('pool-binding-profiles-latest-revision-id')).toHaveTextContent('bp-rev-services-r2')
+    expect(screen.getByRole('columnheader', { name: 'Opaque pin' })).toBeInTheDocument()
     expect(await screen.findByText('Workflow definition key')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Open profile legacy-archive' }))
@@ -340,6 +342,7 @@ describe('PoolBindingProfilesPage', () => {
 
     const secondProfileButton = screen.getByRole('button', { name: 'Open profile legacy-archive' })
     expect(secondProfileButton.tagName).toBe('BUTTON')
+    expect(secondProfileButton).toHaveStyle({ minHeight: '36px' })
 
     fireEvent.click(secondProfileButton)
 

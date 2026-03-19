@@ -25,7 +25,7 @@ export function EntityDetails({
   children,
 }: EntityDetailsProps) {
   return (
-    <ProCard title={title} extra={extra}>
+    <ProCard title={title} extra={extra} style={{ minWidth: 0 }}>
       {error ? (
         <ErrorState message={error} />
       ) : loading ? (

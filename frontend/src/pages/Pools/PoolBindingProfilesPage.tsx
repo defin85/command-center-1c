@@ -4,6 +4,7 @@ import {
   Button,
   Collapse,
   Descriptions,
+  Grid,
   Input,
   Space,
   Typography,
@@ -39,6 +40,7 @@ import { PoolBindingProfilesEditorModal } from './PoolBindingProfilesEditorModal
 import { POOL_BINDING_PROFILES_ROUTE, POOL_CATALOG_ROUTE } from './routes'
 
 const { Title, Text } = Typography
+const { useBreakpoint } = Grid
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-'
@@ -95,6 +97,7 @@ const filterBindingProfiles = (profiles: BindingProfileSummary[], searchTerm: st
 }
 
 export function PoolBindingProfilesPage() {
+  const screens = useBreakpoint()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
   const searchFromUrl = searchParams.get('q') ?? ''
@@ -264,9 +267,15 @@ export function PoolBindingProfilesPage() {
           aria-pressed={record.binding_profile_id === selectedProfileId}
           onClick={() => handleSelectProfile(record.binding_profile_id)}
           style={{
-            paddingInline: 0,
+            width: '100%',
+            minHeight: 36,
+            paddingInline: 8,
+            paddingBlock: 6,
             height: 'auto',
             fontWeight: 600,
+            justifyContent: 'flex-start',
+            textAlign: 'left',
+            whiteSpace: 'normal',
           }}
         >
           {value}
@@ -306,6 +315,20 @@ export function PoolBindingProfilesPage() {
       render: (_value, record) => (
         <Text>{`${record.workflow.workflow_name} · rev ${record.workflow.workflow_revision}`}</Text>
       ),
+    },
+    {
+      title: 'Created at',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      render: (value: string) => formatDateTime(value),
+    },
+  ]
+  const immutableRevisionColumns: ColumnsType<BindingProfileRevision> = [
+    {
+      title: 'Revision',
+      dataIndex: 'revision_number',
+      key: 'revision_number',
+      render: (value: number) => `r${value}`,
     },
     {
       title: 'Opaque pin',
@@ -525,7 +548,7 @@ export function PoolBindingProfilesPage() {
                 placeholder="Search code, name, workflow"
                 value={search}
                 onChange={(event) => handleSearchChange(event.target.value)}
-                style={{ width: 240 }}
+                style={{ width: screens.sm ? 240 : '100%' }}
               />
             )}
             error={listError}
@@ -546,24 +569,6 @@ export function PoolBindingProfilesPage() {
         detail={(
           <EntityDetails
             title="Profile detail"
-            extra={(
-              <Space>
-                <Button
-                  onClick={() => setIsReviseOpen(true)}
-                  disabled={!selectedProfile || selectedProfile.status === 'deactivated'}
-                >
-                  Publish new revision
-                </Button>
-                <Button
-                  danger
-                  onClick={() => { void handleDeactivateProfile() }}
-                  disabled={!selectedProfile || selectedProfile.status === 'deactivated'}
-                  loading={deactivateBindingProfileMutation.isPending}
-                >
-                  Deactivate profile
-                </Button>
-              </Space>
-            )}
             error={detailError}
             loading={selectedProfileQuery.isLoading}
             empty={!selectedProfileId || (!selectedProfile && !selectedProfileQuery.isLoading)}
@@ -571,6 +576,39 @@ export function PoolBindingProfilesPage() {
           >
             {selectedProfile ? (
               <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: screens.sm ? 'row' : 'column',
+                    flexWrap: screens.sm ? 'wrap' : 'nowrap',
+                    gap: 12,
+                    width: '100%',
+                  }}
+                >
+                  <Button
+                    onClick={() => setIsReviseOpen(true)}
+                    disabled={!selectedProfile || selectedProfile.status === 'deactivated'}
+                    style={{ width: screens.sm ? 'auto' : '100%', whiteSpace: 'normal', height: 'auto' }}
+                  >
+                    Publish new revision
+                  </Button>
+                  <Button
+                    danger
+                    onClick={() => { void handleDeactivateProfile() }}
+                    disabled={!selectedProfile || selectedProfile.status === 'deactivated'}
+                    loading={deactivateBindingProfileMutation.isPending}
+                    style={{ width: screens.sm ? 'auto' : '100%', whiteSpace: 'normal', height: 'auto' }}
+                  >
+                    Deactivate profile
+                  </Button>
+                  <Button
+                    href={POOL_CATALOG_ROUTE}
+                    style={{ width: screens.sm ? 'auto' : '100%', whiteSpace: 'normal', height: 'auto' }}
+                  >
+                    Open attachment workspace
+                  </Button>
+                </div>
+
                 <Descriptions bordered size="small" column={1}>
                   <Descriptions.Item label="Code">
                     <Text strong data-testid="pool-binding-profiles-selected-code">
@@ -609,7 +647,7 @@ export function PoolBindingProfilesPage() {
                 ) : null}
 
                 <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                  <Title level={5} style={{ margin: 0 }}>
+                  <Title level={3} style={{ margin: 0, fontSize: 18 }}>
                     Where this profile is used
                   </Title>
                   <Text type="secondary">
@@ -626,7 +664,15 @@ export function PoolBindingProfilesPage() {
                   columns={usageColumns}
                   rowKey="key"
                   toolbar={(
-                    <Space size={16} style={{ marginBottom: 16 }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: screens.sm ? 'row' : 'column',
+                        flexWrap: screens.sm ? 'wrap' : 'nowrap',
+                        gap: 16,
+                        width: '100%',
+                      }}
+                    >
                       {!isUsageRequested ? (
                         <Button onClick={() => setIsUsageRequested(true)}>
                           Load attachment usage
@@ -642,7 +688,7 @@ export function PoolBindingProfilesPage() {
                         {' '}
                         <Text strong data-testid="pool-binding-profiles-usage-revisions">{selectedProfileUsageRevisionCount}</Text>
                       </Text>
-                    </Space>
+                    </div>
                   )}
                 />
 
@@ -674,6 +720,12 @@ export function PoolBindingProfilesPage() {
                               {`${selectedProfile.latest_revision.workflow.workflow_revision_id} · rev ${selectedProfile.latest_revision.workflow.workflow_revision}`}
                             </Descriptions.Item>
                           </Descriptions>
+                          <EntityTable
+                            title="Immutable revision lineage"
+                            rowKey="binding_profile_revision_id"
+                            columns={immutableRevisionColumns}
+                            dataSource={selectedProfile.revisions}
+                          />
                           <div
                             style={{
                               display: 'grid',

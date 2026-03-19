@@ -15,6 +15,19 @@ import { POOL_BINDING_PROFILES_ROUTE } from '../../pages/Pools/routes'
 const { Header, Content, Sider } = Layout
 const { useBreakpoint } = Grid
 
+const STREAM_TAG_STYLES = {
+  connected: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#86efac',
+    color: '#166534',
+  },
+  fallback: {
+    backgroundColor: '#f3f4f6',
+    borderColor: '#d1d5db',
+    color: '#374151',
+  },
+} as const
+
 interface MainLayoutProps {
   children: ReactNode
 }
@@ -41,6 +54,12 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const canManageAdmin = Boolean(me?.is_staff)
   const canManageRbac = Boolean(capabilities?.can_manage_rbac)
   const canManageDriverCatalogs = Boolean(capabilities?.can_manage_driver_catalogs)
+  const databaseStreamLabel = isDatabaseStreamConnecting
+    ? 'Stream: Connecting…'
+    : `Stream: ${isDatabaseStreamConnected ? 'Connected' : 'Fallback'}`
+  const streamTagStyle = isDatabaseStreamConnected
+    ? STREAM_TAG_STYLES.connected
+    : STREAM_TAG_STYLES.fallback
 
   const handleSkipToContent = (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
@@ -226,7 +245,13 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
             content={(
               <Space direction="vertical" size={4}>
                 <Typography.Text strong>Database stream</Typography.Text>
-                <Tag color={isDatabaseStreamConnected ? 'green' : 'default'}>
+                <Tag
+                  style={{
+                    backgroundColor: streamTagStyle.backgroundColor,
+                    borderColor: streamTagStyle.borderColor,
+                    color: streamTagStyle.color,
+                  }}
+                >
                   {isDatabaseStreamConnecting
                     ? 'Connecting\u2026'
                     : isDatabaseStreamConnected
@@ -249,10 +274,17 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
             )}
           >
             <Tooltip title={isDatabaseStreamConnected ? 'Live updates enabled' : (databaseStreamError || 'Live stream unavailable')}>
-              <Button type="text" aria-label="Database stream status" style={{ padding: 0, height: 'auto' }}>
-                <Tag color={isDatabaseStreamConnected ? 'green' : 'default'} style={{ cursor: 'pointer' }}>
+              <Button type="text" aria-label={databaseStreamLabel} style={{ padding: 0, height: 'auto' }}>
+                <Tag
+                  style={{
+                    cursor: 'pointer',
+                    backgroundColor: streamTagStyle.backgroundColor,
+                    borderColor: streamTagStyle.borderColor,
+                    color: streamTagStyle.color,
+                  }}
+                >
                   {isDatabaseStreamConnecting && <LoadingOutlined style={{ marginRight: 6 }} spin />}
-                  Stream: {isDatabaseStreamConnected ? 'Connected' : 'Fallback'}
+                  {databaseStreamLabel}
                 </Tag>
               </Button>
             </Tooltip>

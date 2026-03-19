@@ -38,8 +38,12 @@ export function EntityTable<T extends object>({
   size = 'small',
 }: EntityTableProps<T>) {
   return (
-    <ProCard title={title} extra={extra}>
-      {toolbar}
+    <ProCard title={title} extra={extra} style={{ minWidth: 0 }}>
+      {toolbar ? (
+        <div style={{ width: '100%', minWidth: 0, overflowX: 'auto', marginBottom: 16 }}>
+          {toolbar}
+        </div>
+      ) : null}
       {error ? (
         <ErrorState message={error} />
       ) : loading ? (
@@ -49,7 +53,7 @@ export function EntityTable<T extends object>({
       ) : dataSource.length === 0 ? (
         <EmptyState description={emptyDescription} />
       ) : (
-        <div style={{ width: '100%', overflowX: 'auto' }}>
+        <div style={{ width: '100%', minWidth: 0, overflowX: 'auto' }}>
           <Table
             rowKey={rowKey}
             size={size}

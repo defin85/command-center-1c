@@ -24,7 +24,7 @@ export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
         <Title level={2} style={{ marginBottom: 0 }}>
           {title}
         </Title>
-        {subtitle ? <Text type="secondary">{subtitle}</Text> : null}
+        {subtitle ? <Text type="secondary" style={{ color: '#4b5563' }}>{subtitle}</Text> : null}
       </Space>
       {actions ? <div>{actions}</div> : null}
     </div>
