@@ -800,6 +800,37 @@ test('UI platform: /decisions keeps selected revision on browser back and forwar
   await expect(fallbackDecisionButton).toHaveAttribute('aria-pressed', 'true')
 })
 
+test('Runtime contract: /decisions ignores same-route menu re-entry and keeps catalog state stable', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto(`/decisions?database=${DATABASE_ID}&decision=${DECISION.id}`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const decisionsMenuItem = page.getByRole('menuitem', { name: /Decisions/i })
+  const primaryDecisionButton = page.getByRole('button', { name: `Open decision ${DECISION.name}` })
+
+  await expect(primaryDecisionButton).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(() => counts.databaseLists).toBe(1)
+  await expect.poll(() => counts.metadataManagementReads).toBe(1)
+  await expect.poll(() => counts.decisionsScoped).toBe(1)
+
+  await decisionsMenuItem.click()
+  await page.waitForTimeout(750)
+
+  await expect(page).toHaveURL(new RegExp(`\\?database=${DATABASE_ID}&decision=${DECISION.id}$`))
+  await expect(primaryDecisionButton).toHaveAttribute('aria-pressed', 'true')
+  await expect(counts.databaseLists).toBe(1)
+  await expect(counts.metadataManagementReads).toBe(1)
+  await expect(counts.decisionsScoped).toBe(1)
+  await expect(counts.decisionsUnscoped).toBe(0)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
 test('UI platform: /pools/binding-profiles restores catalog context and keeps selection keyboard-first', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)

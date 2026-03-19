@@ -81,6 +81,11 @@ const parseSnapshotFilterMode = (value: string | null): DecisionSnapshotFilterMo
 export function useDecisionsCatalog(): DecisionsCatalogState {
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
+  const pendingRouteSyncRef = useRef<{
+    selectedDatabaseId: string | null | undefined
+    selectedDecisionId: string | null
+    snapshotFilterMode: DecisionSnapshotFilterMode
+  } | null>(null)
   const databaseFromUrl = normalizeRouteParam(searchParams.get('database'))
   const decisionFromUrl = normalizeRouteParam(searchParams.get('decision'))
   const snapshotModeFromUrl = parseSnapshotFilterMode(searchParams.get('snapshot'))
@@ -111,9 +116,11 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
     () => snapshotModeFromUrl
   )
   const [reloadTick, setReloadTick] = useState(0)
+  const selectedDatabaseIdRef = useRef<string | null | undefined>(selectedDatabaseIdState)
   const selectedDatabaseId = selectedDatabaseIdState
   const selectedDecisionId = selectedDecisionIdState
   const snapshotFilterMode = snapshotFilterModeState
+  selectedDatabaseIdRef.current = selectedDatabaseId
   const effectiveSelectedDatabaseId = selectedDatabaseId ?? undefined
   const databaseSelectionPending = selectedDatabaseId === undefined
   const setSelectedDatabaseId = ((next) => {
@@ -143,32 +150,42 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
   }
 
   useEffect(() => {
-    setSelectedDatabaseIdState((current) => {
-      if (databaseFromUrl) {
-        return current === databaseFromUrl ? current : databaseFromUrl
-      }
+    const nextSelectedDatabaseId = databaseFromUrl
+      ? databaseFromUrl
+      : (selectedDatabaseIdRef.current === undefined ? undefined : null)
 
-      if (current === undefined) {
-        return current
-      }
+    pendingRouteSyncRef.current = {
+      selectedDatabaseId: nextSelectedDatabaseId,
+      selectedDecisionId: decisionFromUrl,
+      snapshotFilterMode: snapshotModeFromUrl,
+    }
 
-      return current === null ? current : null
-    })
-  }, [databaseFromUrl])
-
-  useEffect(() => {
+    setSelectedDatabaseIdState((current) => (
+      current === nextSelectedDatabaseId ? current : nextSelectedDatabaseId
+    ))
     setSelectedDecisionIdState((current) => (
       current === decisionFromUrl ? current : decisionFromUrl
     ))
-  }, [decisionFromUrl])
-
-  useEffect(() => {
     setSnapshotFilterModeState((current) => (
       current === snapshotModeFromUrl ? current : snapshotModeFromUrl
     ))
-  }, [snapshotModeFromUrl])
+  }, [databaseFromUrl, decisionFromUrl, snapshotModeFromUrl])
 
   useEffect(() => {
+    const pendingRouteSync = pendingRouteSyncRef.current
+    if (pendingRouteSync) {
+      const databaseMatches = selectedDatabaseId === pendingRouteSync.selectedDatabaseId
+      const decisionMatches = selectedDecisionId === pendingRouteSync.selectedDecisionId
+      const snapshotMatches = snapshotFilterMode === pendingRouteSync.snapshotFilterMode
+
+      if (!databaseMatches || !decisionMatches || !snapshotMatches) {
+        return
+      }
+
+      pendingRouteSyncRef.current = null
+      return
+    }
+
     const next = new URLSearchParams(searchParams)
 
     if (selectedDatabaseId) {

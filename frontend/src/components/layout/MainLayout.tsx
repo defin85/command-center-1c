@@ -300,7 +300,13 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
             mode="inline"
             selectedKeys={[location.pathname]}
             items={menuItems}
-            onClick={({ key }) => navigate(key)}
+            onClick={({ key }) => {
+              const nextPath = String(key)
+              if (nextPath === location.pathname) {
+                return
+              }
+              navigate(nextPath)
+            }}
             style={{ height: '100%', borderRight: 0 }}
           />
         </Sider>
