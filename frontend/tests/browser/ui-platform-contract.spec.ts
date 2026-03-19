@@ -10,6 +10,50 @@ const TENANT_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const DATABASE_ID = '10101010-1010-1010-1010-101010101010'
 const NOW = '2026-03-10T12:00:00Z'
 const WORKFLOW_REVISION_ID = 'wf-services-r4'
+const DATABASE_RECORD = {
+  id: DATABASE_ID,
+  name: 'db-services',
+  host: 'srv-1c.local',
+  port: 1541,
+  base_name: 'shared-profile',
+  odata_url: 'http://srv-1c.local/odata',
+  username: 'odata_user',
+  password: '',
+  password_configured: true,
+  server_address: 'srv-1c.local',
+  server_port: 1540,
+  infobase_name: 'shared-profile',
+  status: 'active',
+  status_display: 'Active',
+  version: '8.3.24',
+  last_check: NOW,
+  last_check_status: 'ok',
+  consecutive_failures: 0,
+  avg_response_time: 12,
+  cluster_id: 'cluster-1',
+  is_healthy: true,
+  sessions_deny: false,
+  scheduled_jobs_deny: false,
+  dbms: 'PostgreSQL',
+  db_server: 'pg-db.internal',
+  db_name: 'shared_profile',
+  ibcmd_connection: {
+    remote: 'ssh://srv-1c.local:22',
+    pid: 1200,
+    offline: {
+      path: '/srv/ibcmd',
+    },
+  },
+  denied_from: null,
+  denied_to: null,
+  denied_message: null,
+  permission_code: null,
+  denied_parameter: null,
+  last_health_error: null,
+  last_health_error_code: null,
+  created_at: NOW,
+  updated_at: NOW,
+}
 
 const METADATA_CONTEXT = {
   database_id: DATABASE_ID,
@@ -1090,16 +1134,15 @@ async function setupUiPlatformMocks(
         counts.databaseLists += 1
       }
       return fulfillJson(route, {
-        databases: [
-          {
-            id: DATABASE_ID,
-            name: 'db-services',
-            base_name: 'shared-profile',
-            version: '8.3.24',
-          },
-        ],
+        databases: [DATABASE_RECORD],
         count: 1,
         total: 1,
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/databases/get-database/') {
+      return fulfillJson(route, {
+        database: DATABASE_RECORD,
       })
     }
 
@@ -1544,6 +1587,46 @@ test('UI platform: /pools/catalog restores attachment workspace in a mobile-safe
   await expectNoHorizontalOverflow(page)
 })
 
+test('UI platform: /databases restores selected database and management context from a deep-link', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+
+  await page.goto(`/databases?cluster=cluster-1&database=${DATABASE_ID}&context=metadata`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Databases', level: 2 })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Cluster filter' })).toBeVisible()
+  await expect(page.getByTestId('database-workspace-selected-id')).toHaveText(DATABASE_ID)
+  await expect(page.getByTestId('database-metadata-management-drawer')).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`\\/databases\\?cluster=cluster-1&database=${DATABASE_ID}&context=metadata$`))
+})
+
+test('UI platform: /databases keeps selected management context on browser back and forward', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+
+  await page.goto(`/databases?database=${DATABASE_ID}&context=inspect`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByTestId('database-workspace-selected-id')).toHaveText(DATABASE_ID)
+
+  await page.getByTestId('database-workspace-open-credentials').click()
+  await expect(page).toHaveURL(new RegExp(`\\/databases\\?database=${DATABASE_ID}&context=credentials$`))
+  await expect(page.getByText(`Credentials: ${DATABASE_RECORD.name}`)).toBeVisible()
+
+  await page.goBack()
+  await expect(page).toHaveURL(new RegExp(`\\/databases\\?database=${DATABASE_ID}&context=inspect$`))
+  await expect(page.getByText(`Database Workspace: ${DATABASE_RECORD.name}`)).toBeVisible()
+
+  await page.goForward()
+  await expect(page).toHaveURL(new RegExp(`\\/databases\\?database=${DATABASE_ID}&context=credentials$`))
+  await expect(page.getByText(`Credentials: ${DATABASE_RECORD.name}`)).toBeVisible()
+})
+
 test('UI platform: /pools/runs restores selected run and stage from a deep-link', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
@@ -1746,6 +1829,32 @@ test('Runtime contract: /pools/runs hands off to workflow diagnostics without re
   await expect(page).toHaveURL(`/workflows/executions/${POOL_RUN.workflow_execution_id}`)
   await expect(page.getByText('Workflow Execution')).toBeVisible()
   await expect(page.getByText('Execution Info')).toBeVisible()
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+})
+
+test('Runtime contract: /databases hands off to /operations without replaying shell reads', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto(`/databases?database=${DATABASE_ID}&context=inspect`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Databases', level: 2 })).toBeVisible()
+  await expect.poll(() => counts.bootstrap).toBe(1)
+  await expect.poll(() => counts.databaseLists).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+
+  await page.getByTestId('database-workspace-open-operations').click()
+
+  await expect(page).toHaveURL(new RegExp(`\\/operations\\?wizard=true&databases=${DATABASE_ID}$`))
+  await expect(page.getByRole('heading', { name: 'Operations Monitor', level: 2 })).toBeVisible()
   await expect(counts.bootstrap).toBe(1)
   await expect(counts.meReads).toBe(0)
   await expect(counts.myTenantsReads).toBe(0)
