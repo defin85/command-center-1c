@@ -21,6 +21,8 @@ export type UseDatabasesColumnsParams = {
   canViewDatabase: (databaseId: string) => boolean
   canOperateDatabase: (databaseId: string) => boolean
   canManageDatabase: (databaseId: string) => boolean
+  selectedDatabaseId?: string
+  onSelectDatabase: (database: Database) => void
   openCredentialsModal: (database: Database) => void
   openDbmsMetadataModal: (database: Database) => void
   openIbcmdProfileModal: (database: Database) => void
@@ -40,6 +42,8 @@ export const useDatabasesColumns = ({
   canViewDatabase,
   canOperateDatabase,
   canManageDatabase,
+  selectedDatabaseId,
+  onSelectDatabase,
   openCredentialsModal,
   openDbmsMetadataModal,
   openIbcmdProfileModal,
@@ -71,7 +75,25 @@ export const useDatabasesColumns = ({
       dataIndex: 'name',
       key: 'name',
       width: 200,
-      render: (name: string) => <span>{name}</span>,
+      render: (name: string, record: Database) => {
+        const isSelected = record.id === selectedDatabaseId
+        return (
+          <Button
+            type="text"
+            style={{
+              paddingInline: 0,
+              height: 'auto',
+              fontWeight: isSelected ? 600 : 500,
+            }}
+            onClick={() => onSelectDatabase(record)}
+            aria-label={`Open database ${name}`}
+            aria-pressed={isSelected}
+            disabled={!canViewDatabase(record.id)}
+          >
+            {name}
+          </Button>
+        )
+      },
     },
     {
       title: 'Host',
@@ -313,11 +335,13 @@ export const useDatabasesColumns = ({
     healthCheckPendingIds,
     markHealthCheckPending,
     message,
+    onSelectDatabase,
     openCredentialsModal,
     openDbmsMetadataModal,
     openIbcmdProfileModal,
     openMetadataManagementDrawer,
     openExtensionsDrawer,
     runSetStatus,
+    selectedDatabaseId,
   ])
 }

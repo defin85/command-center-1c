@@ -1,8 +1,8 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import { App, Button, Space, Select, Breadcrumb, Form, Typography, Dropdown } from 'antd'
+import { App, Button, Space, Select, Form, Typography, Dropdown } from 'antd'
 import type { TableRowSelection } from 'antd/es/table/interface'
-import { PlusOutlined, HomeOutlined, ClusterOutlined, HeartOutlined, EditOutlined, DownOutlined } from '@ant-design/icons'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { PlusOutlined, HeartOutlined, EditOutlined, DownOutlined } from '@ant-design/icons'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import type { Database } from '../../api/generated/model/database'
 import type { Cluster } from '../../api/generated/model/cluster'
 import { SetDatabaseStatusRequestStatus as SetDatabaseStatusRequestStatusEnum } from '../../api/generated/model/setDatabaseStatusRequestStatus'
@@ -12,6 +12,7 @@ import type { DatabaseActionKey } from '../../components/actions'
 import type { RASOperationType } from '../../api/operations'
 import {
   useDatabases,
+  useDatabase,
   useExecuteRasOperation,
   useHealthCheckDatabase,
   useBulkHealthCheckDatabases,
@@ -32,9 +33,49 @@ import { DatabaseIbcmdConnectionProfileModal } from './components/DatabaseIbcmdC
 import { DatabaseMetadataManagementDrawer } from './components/DatabaseMetadataManagementDrawer'
 import { ExtensionsDrawer } from './components/ExtensionsDrawer'
 import { useDatabasesColumns } from './components/useDatabasesColumns'
+import {
+  DatabaseWorkspaceDetailPanel,
+  type DatabaseManagementContext,
+} from './components/DatabaseWorkspaceDetailPanel'
 import { buildIbcmdConnectionProfileUpdatePayload } from './lib/ibcmdConnectionProfile'
+import { EntityDetails, MasterDetailShell, PageHeader, WorkspacePage } from '../../components/platform'
 
 const EMPTY_CLUSTERS: Cluster[] = []
+const EMPTY_DATABASES: Database[] = []
+const DEFAULT_DATABASE_CONTEXT = 'inspect' as const
+
+const parseDatabaseContext = (value: string | null): DatabaseManagementContext => (
+  value === 'credentials'
+  || value === 'dbms'
+  || value === 'ibcmd'
+  || value === 'metadata'
+  || value === 'extensions'
+    ? value
+    : DEFAULT_DATABASE_CONTEXT
+)
+
+const buildIbcmdOfflineEntries = (database: Database): Array<{ key: string; value: string }> => {
+  const profile = database.ibcmd_connection
+  const offlineRaw = profile && typeof profile === 'object' && 'offline' in profile
+    ? profile.offline
+    : null
+  const offline = offlineRaw && typeof offlineRaw === 'object'
+    ? offlineRaw as Record<string, unknown>
+    : {}
+
+  const entries: Array<{ key: string; value: string }> = []
+  for (const [rawKey, rawValue] of Object.entries(offline)) {
+    const key = rawKey.trim()
+    if (!key || typeof rawValue !== 'string') continue
+    const value = rawValue.trim()
+    if (!value) continue
+    if (key === 'db_user' || key === 'db_pwd' || key === 'db_password') continue
+    entries.push({ key, value })
+  }
+
+  entries.sort((left, right) => left.key.localeCompare(right.key))
+  return entries
+}
 
 export const Databases = () => {
   const navigate = useNavigate()
@@ -43,26 +84,15 @@ export const Databases = () => {
   const isStaff = authz.isStaff
   const hasTenantContext = Boolean(localStorage.getItem('active_tenant_id'))
   const mutatingDisabled = isStaff && !hasTenantContext
-  const [searchParams] = useSearchParams()
-  const clusterIdFromUrl = searchParams.get('cluster')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const clusterIdFromUrl = searchParams.get('cluster') || undefined
+  const selectedDatabaseIdFromUrl = searchParams.get('database') || undefined
+  const activeContext = parseDatabaseContext(searchParams.get('context'))
 
   // UI State
-  const [selectedClusterId, setSelectedClusterId] = useState<string | undefined>(
-    clusterIdFromUrl || undefined
-  )
-  const [credentialsModalVisible, setCredentialsModalVisible] = useState(false)
-  const [credentialsDatabase, setCredentialsDatabase] = useState<Database | null>(null)
   const [credentialsForm] = Form.useForm()
-  const [dbmsMetadataModalVisible, setDbmsMetadataModalVisible] = useState(false)
-  const [dbmsMetadataDatabase, setDbmsMetadataDatabase] = useState<Database | null>(null)
   const [dbmsMetadataForm] = Form.useForm()
-  const [ibcmdProfileModalVisible, setIbcmdProfileModalVisible] = useState(false)
-  const [ibcmdProfileDatabase, setIbcmdProfileDatabase] = useState<Database | null>(null)
   const [ibcmdProfileForm] = Form.useForm()
-  const [metadataManagementDrawerVisible, setMetadataManagementDrawerVisible] = useState(false)
-  const [metadataManagementDatabase, setMetadataManagementDatabase] = useState<Database | null>(null)
-  const [extensionsDrawerVisible, setExtensionsDrawerVisible] = useState(false)
-  const [extensionsDatabase, setExtensionsDatabase] = useState<Database | null>(null)
 
   // Row selection state
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
@@ -97,15 +127,26 @@ export const Databases = () => {
     databases: Array<{ id: string; name: string }>
   }>({ visible: false, operation: '', databases: [] })
 
+  const updateSearchParams = useCallback(
+    (updates: Record<string, string | null>) => {
+      const next = new URLSearchParams(searchParams)
+      Object.entries(updates).forEach(([key, value]) => {
+        if (!value) {
+          next.delete(key)
+        } else {
+          next.set(key, value)
+        }
+      })
+      setSearchParams(next)
+    },
+    [searchParams, setSearchParams]
+  )
+
   // React Query hooks
   const { data: clustersResponse, isLoading: clustersLoading } = useClusters()
   const clusters = clustersResponse?.clusters ?? EMPTY_CLUSTERS
   const { isConnected: isDatabaseStreamConnected } = useDatabaseStreamStatus()
   const fallbackPollIntervalMs = isDatabaseStreamConnected ? false : 120000
-  const extensionsSnapshotQuery = useDatabaseExtensionsSnapshot({
-    id: extensionsDatabase?.id ?? '',
-    enabled: extensionsDrawerVisible && Boolean(extensionsDatabase?.id),
-  })
 
   // Mutations
   const executeRasOperation = useExecuteRasOperation()
@@ -118,9 +159,9 @@ export const Databases = () => {
 
   // Derived state: selected cluster object
   const selectedCluster = useMemo(() => {
-    if (!selectedClusterId || !clusters.length) return null
-    return clusters.find((c) => c.id === selectedClusterId) || null
-  }, [selectedClusterId, clusters])
+    if (!clusterIdFromUrl || !clusters.length) return null
+    return clusters.find((c) => c.id === clusterIdFromUrl) || null
+  }, [clusterIdFromUrl, clusters])
 
   const canOperateDatabase = useCallback(
     (databaseId: string) => authz.canDatabase(databaseId, 'OPERATE'),
@@ -144,9 +185,9 @@ export const Databases = () => {
 
   const metadataManagementMutatingDisabled = useMemo(() => {
     if (mutatingDisabled) return true
-    if (!metadataManagementDatabase) return true
-    return !canOperateDatabase(metadataManagementDatabase.id)
-  }, [canOperateDatabase, metadataManagementDatabase, mutatingDisabled])
+    if (!selectedDatabaseIdFromUrl) return true
+    return !canOperateDatabase(selectedDatabaseIdFromUrl)
+  }, [canOperateDatabase, mutatingDisabled, selectedDatabaseIdFromUrl])
 
   const canManageSelected = useMemo(
     () => selectedDatabases.length > 0 && selectedDatabases.every((db) => canManageDatabase(db.id)),
@@ -166,108 +207,83 @@ export const Databases = () => {
   }
 
   const handleClusterChange = (value: string | undefined) => {
-    setSelectedClusterId(value)
-
-    // Update URL
-    if (value) {
-      navigate(`/databases?cluster=${value}`, { replace: true })
-    } else {
-      navigate('/databases', { replace: true })
-    }
+    updateSearchParams({
+      cluster: value ?? null,
+      database: null,
+      context: null,
+    })
   }
 
-  const openCredentialsModal = (database: Database) => {
+  const handleSelectDatabase = useCallback((database: Database) => {
+    updateSearchParams({
+      database: database.id,
+      context: DEFAULT_DATABASE_CONTEXT,
+    })
+  }, [updateSearchParams])
+
+  const openCredentialsModal = useCallback((database: Database) => {
     if (!canManageDatabase(database.id)) {
       message.error('Недостаточно прав для управления кредами базы')
       return
     }
-    setCredentialsDatabase(database)
-    credentialsForm.setFieldsValue({
-      username: database.username ?? '',
-      password: '',
+    updateSearchParams({
+      database: database.id,
+      context: 'credentials',
     })
-    setCredentialsModalVisible(true)
-  }
+  }, [canManageDatabase, message, updateSearchParams])
 
   const closeCredentialsModal = useCallback(() => {
-    setCredentialsModalVisible(false)
-    setCredentialsDatabase(null)
     credentialsForm.resetFields()
-  }, [credentialsForm])
+    updateSearchParams({
+      context: selectedDatabaseIdFromUrl ? DEFAULT_DATABASE_CONTEXT : null,
+    })
+  }, [credentialsForm, selectedDatabaseIdFromUrl, updateSearchParams])
 
-  const openDbmsMetadataModal = (database: Database) => {
+  const openDbmsMetadataModal = useCallback((database: Database) => {
     if (!canManageDatabase(database.id)) {
       message.error('Недостаточно прав для управления DBMS metadata базы')
       return
     }
-    const dbAny = database as Database & { dbms?: string | null; db_server?: string | null; db_name?: string | null }
-    setDbmsMetadataDatabase(database)
-    dbmsMetadataForm.setFieldsValue({
-      dbms: typeof dbAny.dbms === 'string' ? dbAny.dbms : '',
-      db_server: typeof dbAny.db_server === 'string' ? dbAny.db_server : '',
-      db_name: typeof dbAny.db_name === 'string' ? dbAny.db_name : '',
+    updateSearchParams({
+      database: database.id,
+      context: 'dbms',
     })
-    setDbmsMetadataModalVisible(true)
-  }
+  }, [canManageDatabase, message, updateSearchParams])
 
   const closeDbmsMetadataModal = useCallback(() => {
-    setDbmsMetadataModalVisible(false)
-    setDbmsMetadataDatabase(null)
     dbmsMetadataForm.resetFields()
-  }, [dbmsMetadataForm])
+    updateSearchParams({
+      context: selectedDatabaseIdFromUrl ? DEFAULT_DATABASE_CONTEXT : null,
+    })
+  }, [dbmsMetadataForm, selectedDatabaseIdFromUrl, updateSearchParams])
 
-  const openIbcmdProfileModal = (database: Database) => {
+  const openIbcmdProfileModal = useCallback((database: Database) => {
     if (!canManageDatabase(database.id)) {
       message.error('Недостаточно прав для управления IBCMD profile базы')
       return
     }
-    const dbAny = database as Database & {
-      ibcmd_connection?: {
-        remote?: string | null
-        pid?: number | null
-        offline?: Record<string, unknown> | null
-      } | null
-    }
-    const profile = dbAny.ibcmd_connection ?? null
-    const offlineRaw = profile?.offline && typeof profile.offline === 'object' ? profile.offline : null
-    const offline = offlineRaw ? (offlineRaw as Record<string, unknown>) : {}
-
-    const offlineEntries: Array<{ key: string; value: string }> = []
-    for (const [k, v] of Object.entries(offline)) {
-      if (typeof k !== 'string') continue
-      const key = k.trim()
-      if (!key) continue
-      if (typeof v !== 'string') continue
-      const value = v.trim()
-      if (!value) continue
-      if (key === 'db_user' || key === 'db_pwd' || key === 'db_password') continue
-      offlineEntries.push({ key, value })
-    }
-    offlineEntries.sort((a, b) => a.key.localeCompare(b.key))
-    setIbcmdProfileDatabase(database)
-    ibcmdProfileForm.setFieldsValue({
-      remote: typeof profile?.remote === 'string' ? profile.remote : '',
-      pid: typeof profile?.pid === 'number' ? profile.pid : null,
-      offline_entries: offlineEntries,
+    updateSearchParams({
+      database: database.id,
+      context: 'ibcmd',
     })
-    setIbcmdProfileModalVisible(true)
-  }
+  }, [canManageDatabase, message, updateSearchParams])
 
   const closeIbcmdProfileModal = useCallback(() => {
-    setIbcmdProfileModalVisible(false)
-    setIbcmdProfileDatabase(null)
     ibcmdProfileForm.resetFields()
-  }, [ibcmdProfileForm])
+    updateSearchParams({
+      context: selectedDatabaseIdFromUrl ? DEFAULT_DATABASE_CONTEXT : null,
+    })
+  }, [ibcmdProfileForm, selectedDatabaseIdFromUrl, updateSearchParams])
 
   const handleIbcmdProfileSave = async () => {
-    if (!ibcmdProfileDatabase) return
-    if (!canManageDatabase(ibcmdProfileDatabase.id)) {
+    if (!selectedDatabaseIdFromUrl) return
+    if (!canManageDatabase(selectedDatabaseIdFromUrl)) {
       message.error('Недостаточно прав для управления IBCMD profile базы')
       return
     }
 
     const values = await ibcmdProfileForm.validateFields()
-    const payload = buildIbcmdConnectionProfileUpdatePayload(ibcmdProfileDatabase.id, values)
+    const payload = buildIbcmdConnectionProfileUpdatePayload(selectedDatabaseIdFromUrl, values)
 
     updateDatabaseIbcmdConnectionProfile.mutate(payload, {
       onSuccess: (response) => {
@@ -281,8 +297,8 @@ export const Databases = () => {
   }
 
   const handleIbcmdProfileReset = () => {
-    if (!ibcmdProfileDatabase) return
-    if (!canManageDatabase(ibcmdProfileDatabase.id)) {
+    if (!selectedDatabaseIdFromUrl) return
+    if (!canManageDatabase(selectedDatabaseIdFromUrl)) {
       message.error('Недостаточно прав для управления IBCMD profile базы')
       return
     }
@@ -295,7 +311,7 @@ export const Databases = () => {
       okButtonProps: { danger: true },
       onOk: () => {
         updateDatabaseIbcmdConnectionProfile.mutate(
-          { database_id: ibcmdProfileDatabase.id, reset: true },
+          { database_id: selectedDatabaseIdFromUrl, reset: true },
           {
             onSuccess: (response) => {
               message.success(response.message || 'IBCMD profile сброшен')
@@ -311,8 +327,8 @@ export const Databases = () => {
   }
 
   const handleCredentialsSave = async () => {
-    if (!credentialsDatabase) return
-    if (!canManageDatabase(credentialsDatabase.id)) {
+    if (!selectedDatabaseIdFromUrl) return
+    if (!canManageDatabase(selectedDatabaseIdFromUrl)) {
       message.error('Недостаточно прав для управления кредами базы')
       return
     }
@@ -322,7 +338,7 @@ export const Databases = () => {
     const password = values.password ?? ''
 
     const payload: { database_id: string; username?: string; password?: string } = {
-      database_id: credentialsDatabase.id,
+      database_id: selectedDatabaseIdFromUrl,
     }
 
     if (username) payload.username = username
@@ -345,8 +361,8 @@ export const Databases = () => {
   }
 
   const handleCredentialsReset = () => {
-    if (!credentialsDatabase) return
-    if (!canManageDatabase(credentialsDatabase.id)) {
+    if (!selectedDatabaseIdFromUrl) return
+    if (!canManageDatabase(selectedDatabaseIdFromUrl)) {
       message.error('Недостаточно прав для управления кредами базы')
       return
     }
@@ -359,7 +375,7 @@ export const Databases = () => {
       okButtonProps: { danger: true },
       onOk: async () => {
         updateDatabaseCredentials.mutate(
-          { database_id: credentialsDatabase.id, reset: true },
+          { database_id: selectedDatabaseIdFromUrl, reset: true },
           {
             onSuccess: (response) => {
               message.success(response.message || 'Креды базы сброшены')
@@ -375,8 +391,8 @@ export const Databases = () => {
   }
 
   const handleDbmsMetadataSave = async () => {
-    if (!dbmsMetadataDatabase) return
-    if (!canManageDatabase(dbmsMetadataDatabase.id)) {
+    if (!selectedDatabaseIdFromUrl) return
+    if (!canManageDatabase(selectedDatabaseIdFromUrl)) {
       message.error('Недостаточно прав для управления DBMS metadata базы')
       return
     }
@@ -387,7 +403,7 @@ export const Databases = () => {
     const dbName = (values.db_name ?? '').trim()
 
     const payload: { database_id: string; dbms?: string; db_server?: string; db_name?: string } = {
-      database_id: dbmsMetadataDatabase.id,
+      database_id: selectedDatabaseIdFromUrl,
     }
     if (dbms) payload.dbms = dbms
     if (dbServer) payload.db_server = dbServer
@@ -410,8 +426,8 @@ export const Databases = () => {
   }
 
   const handleDbmsMetadataReset = () => {
-    if (!dbmsMetadataDatabase) return
-    if (!canManageDatabase(dbmsMetadataDatabase.id)) {
+    if (!selectedDatabaseIdFromUrl) return
+    if (!canManageDatabase(selectedDatabaseIdFromUrl)) {
       message.error('Недостаточно прав для управления DBMS metadata базы')
       return
     }
@@ -424,7 +440,7 @@ export const Databases = () => {
       okButtonProps: { danger: true },
       onOk: async () => {
         updateDatabaseDbmsMetadata.mutate(
-          { database_id: dbmsMetadataDatabase.id, reset: true },
+          { database_id: selectedDatabaseIdFromUrl, reset: true },
           {
             onSuccess: (response) => {
               message.success(response.message || 'DBMS metadata сброшены')
@@ -439,33 +455,39 @@ export const Databases = () => {
     })
   }
 
-  const openExtensionsDrawer = (database: Database) => {
+  const openExtensionsDrawer = useCallback((database: Database) => {
     if (!canOperateDatabase(database.id)) {
       message.error('Недостаточно прав для операций с расширениями')
       return
     }
-    setExtensionsDatabase(database)
-    setExtensionsDrawerVisible(true)
-  }
+    updateSearchParams({
+      database: database.id,
+      context: 'extensions',
+    })
+  }, [canOperateDatabase, message, updateSearchParams])
 
-  const closeExtensionsDrawer = () => {
-    setExtensionsDrawerVisible(false)
-    setExtensionsDatabase(null)
-  }
+  const closeExtensionsDrawer = useCallback(() => {
+    updateSearchParams({
+      context: selectedDatabaseIdFromUrl ? DEFAULT_DATABASE_CONTEXT : null,
+    })
+  }, [selectedDatabaseIdFromUrl, updateSearchParams])
 
-  const openMetadataManagementDrawer = (database: Database) => {
+  const openMetadataManagementDrawer = useCallback((database: Database) => {
     if (!canViewDatabase(database.id)) {
       message.error('Недостаточно прав для просмотра metadata management')
       return
     }
-    setMetadataManagementDatabase(database)
-    setMetadataManagementDrawerVisible(true)
-  }
+    updateSearchParams({
+      database: database.id,
+      context: 'metadata',
+    })
+  }, [canViewDatabase, message, updateSearchParams])
 
-  const closeMetadataManagementDrawer = () => {
-    setMetadataManagementDrawerVisible(false)
-    setMetadataManagementDatabase(null)
-  }
+  const closeMetadataManagementDrawer = useCallback(() => {
+    updateSearchParams({
+      context: selectedDatabaseIdFromUrl ? DEFAULT_DATABASE_CONTEXT : null,
+    })
+  }, [selectedDatabaseIdFromUrl, updateSearchParams])
 
   // Row selection configuration
   const rowSelection: TableRowSelection<Database> | undefined = canSelectRows
@@ -599,10 +621,13 @@ export const Databases = () => {
     setSelectedRowKeys([])
     setSelectedDatabases([])
   }, [])
+
   const columns = useDatabasesColumns({
     canViewDatabase,
     canOperateDatabase,
     canManageDatabase,
+    selectedDatabaseId: selectedDatabaseIdFromUrl,
+    onSelectDatabase: handleSelectDatabase,
     openCredentialsModal,
     openDbmsMetadataModal,
     openIbcmdProfileModal,
@@ -629,7 +654,7 @@ export const Databases = () => {
 
   const { data: databasesResponse, isLoading: databasesLoading } = useDatabases({
     filters: {
-      cluster_id: selectedClusterId,
+      cluster_id: clusterIdFromUrl,
       search: table.search,
       filters: table.filtersPayload,
       sort: table.sortPayload,
@@ -638,138 +663,258 @@ export const Databases = () => {
     },
     refetchInterval: fallbackPollIntervalMs,
   })
-  const databases = databasesResponse?.databases ?? []
+  const databases = databasesResponse?.databases ?? EMPTY_DATABASES
   const totalDatabases = typeof databasesResponse?.total === 'number'
     ? databasesResponse.total
     : databases.length
+  const selectedDatabaseFromCatalog = useMemo(
+    () => databases.find((database) => database.id === selectedDatabaseIdFromUrl) ?? null,
+    [databases, selectedDatabaseIdFromUrl]
+  )
+  const selectedDatabaseQuery = useDatabase({
+    id: selectedDatabaseIdFromUrl ?? '',
+    enabled: Boolean(selectedDatabaseIdFromUrl) && !selectedDatabaseFromCatalog,
+  })
+  const selectedDatabase = selectedDatabaseFromCatalog ?? selectedDatabaseQuery.data ?? null
+  const selectedDatabaseLoading = Boolean(selectedDatabaseIdFromUrl) && !selectedDatabaseFromCatalog && selectedDatabaseQuery.isLoading
+  const selectedDatabaseError = selectedDatabaseQuery.error
+    ? getErrorMessage(selectedDatabaseQuery.error)
+    : null
+  const credentialsModalVisible = activeContext === 'credentials' && Boolean(selectedDatabaseIdFromUrl)
+  const dbmsMetadataModalVisible = activeContext === 'dbms' && Boolean(selectedDatabaseIdFromUrl)
+  const ibcmdProfileModalVisible = activeContext === 'ibcmd' && Boolean(selectedDatabaseIdFromUrl)
+  const metadataManagementDrawerVisible = activeContext === 'metadata' && Boolean(selectedDatabaseIdFromUrl)
+  const extensionsDrawerVisible = activeContext === 'extensions' && Boolean(selectedDatabaseIdFromUrl)
+  const extensionsSnapshotQuery = useDatabaseExtensionsSnapshot({
+    id: selectedDatabase?.id ?? '',
+    enabled: extensionsDrawerVisible && Boolean(selectedDatabase?.id),
+  })
+  const canViewSelectedDatabase = selectedDatabase ? canViewDatabase(selectedDatabase.id) : false
+  const canManageSelectedDatabase = selectedDatabase ? canManageDatabase(selectedDatabase.id) : false
+  const canOperateSelectedDatabase = selectedDatabase ? canOperateDatabase(selectedDatabase.id) : false
+
+  useEffect(() => {
+    if (!credentialsModalVisible || !selectedDatabase) return
+    credentialsForm.setFieldsValue({
+      username: selectedDatabase.username ?? '',
+      password: '',
+    })
+  }, [credentialsForm, credentialsModalVisible, selectedDatabase])
+
+  useEffect(() => {
+    if (!dbmsMetadataModalVisible || !selectedDatabase) return
+    dbmsMetadataForm.setFieldsValue({
+      dbms: typeof selectedDatabase.dbms === 'string' ? selectedDatabase.dbms : '',
+      db_server: typeof selectedDatabase.db_server === 'string' ? selectedDatabase.db_server : '',
+      db_name: typeof selectedDatabase.db_name === 'string' ? selectedDatabase.db_name : '',
+    })
+  }, [dbmsMetadataForm, dbmsMetadataModalVisible, selectedDatabase])
+
+  useEffect(() => {
+    if (!ibcmdProfileModalVisible || !selectedDatabase) return
+    const profile = selectedDatabase.ibcmd_connection && typeof selectedDatabase.ibcmd_connection === 'object'
+      ? selectedDatabase.ibcmd_connection
+      : null
+    ibcmdProfileForm.setFieldsValue({
+      remote: typeof profile?.remote === 'string' ? profile.remote : '',
+      pid: typeof profile?.pid === 'number' ? profile.pid : null,
+      offline_entries: buildIbcmdOfflineEntries(selectedDatabase),
+    })
+  }, [ibcmdProfileForm, ibcmdProfileModalVisible, selectedDatabase])
+
+  const handleOpenDetailContext = useCallback(
+    (context: Exclude<DatabaseManagementContext, 'inspect'>) => {
+      if (!selectedDatabase) return
+      switch (context) {
+        case 'credentials':
+          openCredentialsModal(selectedDatabase)
+          break
+        case 'dbms':
+          openDbmsMetadataModal(selectedDatabase)
+          break
+        case 'ibcmd':
+          openIbcmdProfileModal(selectedDatabase)
+          break
+        case 'metadata':
+          openMetadataManagementDrawer(selectedDatabase)
+          break
+        case 'extensions':
+          openExtensionsDrawer(selectedDatabase)
+          break
+      }
+    },
+    [
+      openCredentialsModal,
+      openDbmsMetadataModal,
+      openExtensionsDrawer,
+      openIbcmdProfileModal,
+      openMetadataManagementDrawer,
+      selectedDatabase,
+    ]
+  )
+
+  const handleCloseDatabaseWorkspace = useCallback(() => {
+    updateSearchParams({
+      database: null,
+      context: null,
+    })
+  }, [updateSearchParams])
 
   const totalColumnsWidth = table.totalColumnsWidth
+  const databasesSubtitle = selectedCluster
+    ? `Manage database metadata, DBMS context, credentials, and extensions for ${selectedCluster.name}.`
+    : 'Manage database metadata, DBMS context, credentials, and extensions from one operational workspace.'
 
   return (
-    <div>
-      {/* Breadcrumbs если пришли из кластера */}
-      {selectedCluster && (
-        <Breadcrumb style={{ marginBottom: 16 }}>
-          <Breadcrumb.Item>
-            <Link to="/" aria-label="Open dashboard">
-              <HomeOutlined />
-            </Link>
-          </Breadcrumb.Item>
-          <Breadcrumb.Item>
-            <Link to="/clusters">
-              <ClusterOutlined />
-              <span>Clusters</span>
-            </Link>
-          </Breadcrumb.Item>
-          <Breadcrumb.Item>{selectedCluster.name}</Breadcrumb.Item>
-          <Breadcrumb.Item>Databases</Breadcrumb.Item>
-        </Breadcrumb>
-      )}
-
-      <Space style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
-        <Space>
-          <h1>Databases</h1>
-          <Select
-            style={{ width: 250 }}
-            placeholder="All Clusters"
-            allowClear
-            value={selectedClusterId}
-            onChange={handleClusterChange}
-            loading={clustersLoading}
-            aria-label="Cluster filter"
-          >
-            {clusters.map((cluster) => (
-              <Select.Option key={cluster.id} value={cluster.id}>
-                {cluster.name} ({cluster.databases_count ?? 0} databases)
-              </Select.Option>
-            ))}
-          </Select>
-        </Space>
-        <Button type="primary" icon={<PlusOutlined />} disabled={!isStaff}>
-          Add Database
-        </Button>
-      </Space>
-
-      {canOperateAny && (
-        <BulkActionsToolbar
-          selectedCount={selectedRowKeys.length}
-          onAction={handleBulkAction}
-          onClearSelection={handleClearSelection}
-          loading={executeRasOperation.isPending || bulkHealthCheck.isPending || setDatabaseStatus.isPending}
-          disabled={!canOperateSelected}
+    <WorkspacePage
+      header={(
+        <PageHeader
+          title="Databases"
+          subtitle={databasesSubtitle}
+          actions={(
+            <Space wrap size="middle">
+              <Select
+                style={{ width: 250 }}
+                placeholder="All clusters"
+                allowClear
+                value={clusterIdFromUrl}
+                onChange={handleClusterChange}
+                loading={clustersLoading}
+                aria-label="Cluster filter"
+              >
+                {clusters.map((cluster) => (
+                  <Select.Option key={cluster.id} value={cluster.id}>
+                    {cluster.name} ({cluster.databases_count ?? 0} databases)
+                  </Select.Option>
+                ))}
+              </Select>
+              <Button type="primary" icon={<PlusOutlined />} disabled={!isStaff}>
+                Add Database
+              </Button>
+            </Space>
+          )}
         />
       )}
-
-      {canOperateAny && selectedRowKeys.length > 0 && (
-        <Space style={{ marginBottom: 16 }}>
-          <Typography.Text type="secondary">Ops:</Typography.Text>
-          <Button
-            icon={<HeartOutlined />}
-            onClick={async () => {
-              if (!canOperateSelected) {
-                message.error('Недостаточно прав для массовой проверки')
-                return
-              }
-              try {
-                await runBulkHealthCheck(selectedDatabases.map((d) => d.id))
-              } catch (e: unknown) {
-                message.error(`Bulk health check failed: ${getErrorMessage(e)}`)
-              }
-            }}
-            loading={bulkHealthCheck.isPending}
-            disabled={!canOperateSelected}
+    >
+      <MasterDetailShell
+        list={(
+          <EntityDetails
+            title="Database Catalog"
+            extra={selectedCluster ? <Typography.Text type="secondary">Cluster: {selectedCluster.name}</Typography.Text> : null}
           >
-            Health check
-          </Button>
-          <Dropdown
-            trigger={['click']}
-            disabled={!canManageSelected}
-            menu={{
-              items: [
-                { key: SetDatabaseStatusRequestStatusEnum.active, label: 'Set Active' },
-                { key: SetDatabaseStatusRequestStatusEnum.inactive, label: 'Set Inactive' },
-                { key: SetDatabaseStatusRequestStatusEnum.maintenance, label: 'Set Maintenance' },
-              ],
-              onClick: async ({ key }) => {
-                if (!canManageSelected) {
-                  message.error('Недостаточно прав для смены статуса')
-                  return
-                }
-                try {
-                  await runSetStatus(selectedDatabases.map((d) => d.id), key as SetDatabaseStatusValue)
-                } catch (e: unknown) {
-                  const status = getErrorStatus(e)
-                  if (status === 403) {
-                    message.error('Set status requires manage access')
-                    return
-                  }
-                  message.error(`Set status failed: ${getErrorMessage(e)}`)
-                }
-              },
-            }}
-          >
-            <Button icon={<EditOutlined />} loading={setDatabaseStatus.isPending} disabled={!canManageSelected}>
-              Set status <DownOutlined />
-            </Button>
-          </Dropdown>
-        </Space>
-      )}
+            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+              {canOperateAny ? (
+                <BulkActionsToolbar
+                  selectedCount={selectedRowKeys.length}
+                  onAction={handleBulkAction}
+                  onClearSelection={handleClearSelection}
+                  loading={executeRasOperation.isPending || bulkHealthCheck.isPending || setDatabaseStatus.isPending}
+                  disabled={!canOperateSelected}
+                />
+              ) : null}
 
-      <TableToolkit
-        table={table}
-        data={databases}
-        total={totalDatabases}
-        loading={databasesLoading}
-        rowKey="id"
-        columns={columns}
-        rowSelection={rowSelection}
-        tableLayout="fixed"
-        scroll={{ x: totalColumnsWidth }}
-        searchPlaceholder="Search databases"
+              {canOperateAny && selectedRowKeys.length > 0 ? (
+                <Space wrap>
+                  <Typography.Text type="secondary">Ops:</Typography.Text>
+                  <Button
+                    icon={<HeartOutlined />}
+                    onClick={async () => {
+                      if (!canOperateSelected) {
+                        message.error('Недостаточно прав для массовой проверки')
+                        return
+                      }
+                      try {
+                        await runBulkHealthCheck(selectedDatabases.map((d) => d.id))
+                      } catch (e: unknown) {
+                        message.error(`Bulk health check failed: ${getErrorMessage(e)}`)
+                      }
+                    }}
+                    loading={bulkHealthCheck.isPending}
+                    disabled={!canOperateSelected}
+                  >
+                    Health check
+                  </Button>
+                  <Dropdown
+                    trigger={['click']}
+                    disabled={!canManageSelected}
+                    menu={{
+                      items: [
+                        { key: SetDatabaseStatusRequestStatusEnum.active, label: 'Set Active' },
+                        { key: SetDatabaseStatusRequestStatusEnum.inactive, label: 'Set Inactive' },
+                        { key: SetDatabaseStatusRequestStatusEnum.maintenance, label: 'Set Maintenance' },
+                      ],
+                      onClick: async ({ key }) => {
+                        if (!canManageSelected) {
+                          message.error('Недостаточно прав для смены статуса')
+                          return
+                        }
+                        try {
+                          await runSetStatus(selectedDatabases.map((d) => d.id), key as SetDatabaseStatusValue)
+                        } catch (e: unknown) {
+                          const status = getErrorStatus(e)
+                          if (status === 403) {
+                            message.error('Set status requires manage access')
+                            return
+                          }
+                          message.error(`Set status failed: ${getErrorMessage(e)}`)
+                        }
+                      },
+                    }}
+                  >
+                    <Button icon={<EditOutlined />} loading={setDatabaseStatus.isPending} disabled={!canManageSelected}>
+                      Set status <DownOutlined />
+                    </Button>
+                  </Dropdown>
+                </Space>
+              ) : null}
+
+              <TableToolkit
+                table={table}
+                data={databases}
+                total={totalDatabases}
+                loading={databasesLoading}
+                rowKey="id"
+                columns={columns}
+                rowSelection={rowSelection}
+                tableLayout="fixed"
+                scroll={{ x: totalColumnsWidth }}
+                searchPlaceholder="Search databases"
+              />
+            </Space>
+          </EntityDetails>
+        )}
+        detail={selectedDatabase ? (
+          <DatabaseWorkspaceDetailPanel
+            database={selectedDatabase}
+            activeContext={activeContext}
+            canView={canViewSelectedDatabase}
+            canManage={canManageSelectedDatabase}
+            canOperate={canOperateSelectedDatabase}
+            mutatingDisabled={mutatingDisabled}
+            onOpenContext={handleOpenDetailContext}
+          />
+        ) : (
+          <EntityDetails
+            title="Database Workspace"
+            loading={selectedDatabaseLoading}
+            error={selectedDatabaseIdFromUrl && selectedDatabaseError ? selectedDatabaseError : null}
+            empty
+            emptyDescription={selectedDatabaseIdFromUrl
+              ? 'Selected database could not be resolved in the current workspace.'
+              : 'Select a database from the catalog to inspect metadata, credentials, DBMS context, and extensions.'
+            }
+          />
+        )}
+        detailOpen={Boolean(selectedDatabaseIdFromUrl)}
+        onCloseDetail={handleCloseDatabaseWorkspace}
+        detailDrawerTitle={selectedDatabase ? `Database Workspace: ${selectedDatabase.name}` : 'Database Workspace'}
+        listMinWidth={560}
+        listMaxWidth={860}
       />
+
       <DatabaseCredentialsModal
         open={credentialsModalVisible}
-        database={credentialsDatabase}
+        database={selectedDatabase}
         form={credentialsForm}
         saving={updateDatabaseCredentials.isPending}
         onCancel={closeCredentialsModal}
@@ -778,7 +923,7 @@ export const Databases = () => {
       />
       <DatabaseDbmsMetadataModal
         open={dbmsMetadataModalVisible}
-        database={dbmsMetadataDatabase}
+        database={selectedDatabase}
         form={dbmsMetadataForm}
         saving={updateDatabaseDbmsMetadata.isPending}
         onCancel={closeDbmsMetadataModal}
@@ -787,7 +932,7 @@ export const Databases = () => {
       />
       <DatabaseIbcmdConnectionProfileModal
         open={ibcmdProfileModalVisible}
-        database={ibcmdProfileDatabase}
+        database={selectedDatabase}
         form={ibcmdProfileForm}
         saving={updateDatabaseIbcmdConnectionProfile.isPending}
         onCancel={closeIbcmdProfileModal}
@@ -796,29 +941,29 @@ export const Databases = () => {
       />
       <DatabaseMetadataManagementDrawer
         open={metadataManagementDrawerVisible}
-        databaseId={metadataManagementDatabase?.id}
-        databaseName={metadataManagementDatabase?.name}
+        databaseId={selectedDatabase?.id}
+        databaseName={selectedDatabase?.name}
         mutatingDisabled={metadataManagementMutatingDisabled}
         onClose={closeMetadataManagementDrawer}
         onOperationQueued={(operationId) => navigate(`/operations?operation=${operationId}`)}
         onOpenIbcmdProfile={() => {
-          if (!metadataManagementDatabase) return
-          openIbcmdProfileModal(metadataManagementDatabase)
+          if (!selectedDatabase) return
+          openIbcmdProfileModal(selectedDatabase)
         }}
       />
 
       <ExtensionsDrawer
         open={extensionsDrawerVisible}
-        databaseId={extensionsDatabase?.id}
-        databaseName={extensionsDatabase?.name}
-        mutatingDisabled={mutatingDisabled}
+        databaseId={selectedDatabase?.id}
+        databaseName={selectedDatabase?.name}
+        mutatingDisabled={mutatingDisabled || !canOperateSelectedDatabase}
         onClose={closeExtensionsDrawer}
         onOperationQueued={(operationId) => navigate(`/operations?operation=${operationId}`)}
         snapshot={extensionsSnapshotQuery.data ?? null}
         snapshotLoading={extensionsSnapshotQuery.isLoading}
         snapshotFetching={extensionsSnapshotQuery.isFetching}
         onRefreshSnapshot={() => {
-          if (!extensionsDatabase) return
+          if (!selectedDatabase) return
           extensionsSnapshotQuery.refetch()
         }}
       />
@@ -832,6 +977,6 @@ export const Databases = () => {
         onCancel={() => setConfirmModal({ visible: false, operation: '', databases: [] })}
         loading={executeRasOperation.isPending}
       />
-    </div>
+    </WorkspacePage>
   )
 }

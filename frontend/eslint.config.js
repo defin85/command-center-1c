@@ -59,6 +59,14 @@ const operationsRouteModuleImports = [
   },
 ]
 
+const databasesRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Empty', 'Row', 'Col', 'Spin', 'Table', 'Breadcrumb'],
+    message: 'Databases route must compose through `WorkspacePage`, `MasterDetailShell`, and platform-owned management surfaces instead of raw Ant layout/data containers.',
+  },
+]
+
 const noStaticModalMethodsRule = {
   selector: "MemberExpression[object.name='Modal'][property.name=/^(confirm|info|success|error|warning)$/]",
   message: 'Use `const { modal } = App.useApp()` and call `modal.confirm/info/...` instead of `Modal.*` static methods.',
@@ -246,6 +254,20 @@ export default tseslint.config(
         paths: [
           ...contextAwareAntdImports,
           ...operationsRouteModuleImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Databases/Databases.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...databasesRouteModuleImports,
         ],
         patterns: competingFoundationImportPatterns,
       }],

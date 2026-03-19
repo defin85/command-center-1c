@@ -157,6 +157,33 @@ describe('ui platform governance lint', () => {
     ))).toBe(true)
   })
 
+  it('rejects raw Ant layout containers in databases route modules', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Databases/Databases.tsx',
+      `
+        import { Breadcrumb, Card, Drawer, Table } from 'antd'
+        import { WorkspacePage, PageHeader } from '../../components/platform'
+
+        export function Databases() {
+          return (
+            <WorkspacePage header={<PageHeader title="Databases" />}>
+              <Breadcrumb />
+              <Card>
+                <Table />
+                <Drawer open />
+              </Card>
+            </WorkspacePage>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'no-restricted-imports'
+        && message.message.includes('Databases route')
+    ))).toBe(true)
+  })
+
   it('rejects full-document handoff props in audited authenticated modules', async () => {
     const buttonMessages = await lintSnippet(
       'src/pages/Pools/PoolRunsPage.tsx',

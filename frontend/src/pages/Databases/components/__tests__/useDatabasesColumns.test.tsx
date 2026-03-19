@@ -63,6 +63,8 @@ function ActionsCell({ canView = true }: { canView?: boolean }) {
     canViewDatabase: () => canView,
     canOperateDatabase: () => true,
     canManageDatabase: () => true,
+    selectedDatabaseId: 'db-1',
+    onSelectDatabase: vi.fn(),
     openMetadataManagementDrawer,
     openCredentialsModal: vi.fn(),
     openDbmsMetadataModal: vi.fn(),
@@ -82,6 +84,32 @@ function ActionsCell({ canView = true }: { canView?: boolean }) {
   return <div>{toReactNode(content)}</div>
 }
 
+function NameCell({ selectedDatabaseId = 'db-1' }: { selectedDatabaseId?: string }) {
+  const columns = useDatabasesColumns({
+    canViewDatabase: () => true,
+    canOperateDatabase: () => true,
+    canManageDatabase: () => true,
+    selectedDatabaseId,
+    onSelectDatabase: vi.fn(),
+    openMetadataManagementDrawer: vi.fn(),
+    openCredentialsModal: vi.fn(),
+    openDbmsMetadataModal: vi.fn(),
+    openIbcmdProfileModal: vi.fn(),
+    openExtensionsDrawer: vi.fn(),
+    handleSingleAction: vi.fn(),
+    healthCheckPendingIds: new Set<string>(),
+    markHealthCheckPending: vi.fn(),
+    healthCheck: { mutateAsync: vi.fn(async () => ({ operation_id: 'op-1' })) },
+    runSetStatus: vi.fn(async () => undefined),
+    getErrorStatus: vi.fn(() => undefined),
+    getErrorMessage: vi.fn(() => 'error'),
+    message: noopMessage,
+  })
+  const nameColumn = columns.find((column) => column.key === 'name')
+  const content = nameColumn?.render?.('Accounting DB', makeDatabase(), 0)
+  return <div>{toReactNode(content)}</div>
+}
+
 describe('useDatabasesColumns', () => {
   it('renders metadata management action for canonical /databases handoff', () => {
     render(<ActionsCell />)
@@ -94,5 +122,11 @@ describe('useDatabasesColumns', () => {
     render(<ActionsCell canView={false} />)
 
     expect(screen.getByRole('button', { name: 'Metadata management' })).toBeDisabled()
+  })
+
+  it('marks the selected database button as pressed for workspace routing', () => {
+    render(<NameCell />)
+
+    expect(screen.getByRole('button', { name: 'Open database Accounting DB' })).toHaveAttribute('aria-pressed', 'true')
   })
 })
