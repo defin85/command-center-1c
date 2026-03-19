@@ -370,16 +370,17 @@ describe('DecisionsPage', () => {
   })
 
   it('renders decision lifecycle list with metadata context and selected detail', async () => {
+    const user = userEvent.setup()
     renderPage()
 
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
-    expect(screen.getByText('/decisions is the primary surface for document_policy authoring.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Open workflow catalog' })).toHaveAttribute('href', '/workflows')
-    expect(screen.getByRole('link', { name: 'Open binding profile catalog' })).toHaveAttribute('href', '/pools/binding-profiles')
-    expect(screen.getByText('shared-profile')).toBeInTheDocument()
-    expect(screen.getByText('shared_scope')).toBeInTheDocument()
+    expect(screen.getByText('Create and revise document policies for the selected database without leaving the authoring workspace.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open workflow references' })).toHaveAttribute('href', '/workflows')
+    expect(screen.getByRole('link', { name: 'Open binding profiles' })).toHaveAttribute('href', '/pools/binding-profiles')
+    expect(screen.getByRole('button', { name: 'New policy' })).toBeInTheDocument()
+    expect(screen.queryByText('shared_scope')).not.toBeInTheDocument()
+    expect(screen.getByTestId('decisions-database-select')).toHaveTextContent('shared-profile')
     expect(screen.getByText('Services publication policy')).toBeInTheDocument()
-    expect(screen.getByText('snapshot-1')).toBeInTheDocument()
     expect(screen.getAllByText('compatible').length).toBeGreaterThan(0)
     expect(screen.getByText('services-publication-policy')).toBeInTheDocument()
     expect(await screen.findByText('Structured policy view')).toBeInTheDocument()
@@ -387,6 +388,90 @@ describe('DecisionsPage', () => {
     expect(screen.getByText('Document_Sales')).toBeInTheDocument()
     expect(screen.getByText('Amount')).toBeInTheDocument()
     expect(screen.getByText('allocation.amount')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Target metadata context/i }))
+
+    expect(await screen.findByText('shared_scope')).toBeInTheDocument()
+    expect(screen.getByText('snapshot-1')).toBeInTheDocument()
+  })
+
+  it('restores selected database, decision revision and snapshot mode from query params', async () => {
+    const followUpDecision = {
+      ...defaultDecision,
+      id: 'decision-version-3',
+      decision_revision: 3,
+      name: 'Fallback services publication policy',
+      parent_version: defaultDecision.id,
+    }
+
+    mockGetDecisionsCollection.mockResolvedValue({
+      decisions: [defaultDecision, followUpDecision],
+      count: 2,
+      metadata_context: defaultMetadataContext,
+    })
+    mockGetDecisionsDetail.mockImplementation(async (decisionId: string) => ({
+      decision: decisionId === followUpDecision.id ? followUpDecision : defaultDecision,
+      metadata_context: defaultMetadataContext,
+    }))
+
+    renderPage('/decisions?database=db-2&decision=decision-version-3&snapshot=all')
+
+    expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Target database' })).toBeInTheDocument()
+    expect(screen.getByTestId('decisions-database-select')).toHaveTextContent('Target DB')
+    expect(screen.getByRole('button', { name: 'Show matching configuration only' })).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(mockGetDecisionsDetail).toHaveBeenCalledWith(
+        'decision-version-3',
+        { database_id: 'db-2' },
+        { errorPolicy: 'page' },
+      )
+    })
+
+    expect(
+      screen.getByRole('button', { name: 'Open decision Fallback services publication policy' })
+    ).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Decision revisions (2 of 2)')).toBeInTheDocument()
+  })
+
+  it('uses semantic selection buttons for decision revisions', async () => {
+    const secondDecision = {
+      ...defaultDecision,
+      id: 'decision-version-3',
+      decision_revision: 3,
+      name: 'Fallback services publication policy',
+      parent_version: defaultDecision.id,
+    }
+
+    mockGetDecisionsCollection.mockResolvedValue({
+      decisions: [defaultDecision, secondDecision],
+      count: 2,
+      metadata_context: defaultMetadataContext,
+    })
+    mockGetDecisionsDetail.mockImplementation(async (decisionId: string) => ({
+      decision: decisionId === secondDecision.id ? secondDecision : defaultDecision,
+      metadata_context: defaultMetadataContext,
+    }))
+
+    renderPage()
+
+    expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
+
+    const secondDecisionButton = screen.getByRole('button', {
+      name: 'Open decision Fallback services publication policy',
+    })
+    expect(secondDecisionButton.tagName).toBe('BUTTON')
+
+    fireEvent.click(secondDecisionButton)
+
+    await waitFor(() => {
+      expect(mockGetDecisionsDetail).toHaveBeenCalledWith(
+        'decision-version-3',
+        { database_id: 'db-2' },
+        { errorPolicy: 'page' },
+      )
+    })
   })
 
   it('does not perform an unscoped bootstrap read before the default database selection resolves', async () => {
@@ -409,25 +494,24 @@ describe('DecisionsPage', () => {
   })
 
   it('creates document policy revision from structured builder fields', async () => {
-    const user = userEvent.setup()
     renderPage()
 
     await screen.findByText('Decision Policy Library')
-    await user.click(screen.getByRole('button', { name: 'New policy' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New policy' }))
     fireEvent.change(screen.getByLabelText('Decision table ID'), { target: { value: 'policy-new' } })
     fireEvent.change(screen.getByLabelText('Decision name'), { target: { value: 'New policy' } })
 
-    await user.click(screen.getByRole('button', { name: 'Add chain' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add chain' }))
     fireEvent.change(screen.getByLabelText('Chain 1 ID'), { target: { value: 'sale_chain' } })
-    await user.click(screen.getByRole('button', { name: 'Add document to chain 1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add document to chain 1' }))
     fireEvent.change(screen.getByLabelText('Chain 1 document 1 ID'), { target: { value: 'sale' } })
     fireEvent.change(screen.getByLabelText('Chain 1 document 1 entity'), { target: { value: 'Document_Sales' } })
     fireEvent.change(screen.getByLabelText('Chain 1 document 1 role'), { target: { value: 'base' } })
-    await user.click(screen.getByRole('button', { name: 'Add field mapping to chain 1 document 1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add field mapping to chain 1 document 1' }))
     fireEvent.change(screen.getByLabelText('Chain 1 document 1 field mapping 1 target'), { target: { value: 'Amount' } })
     fireEvent.change(screen.getByLabelText('Chain 1 document 1 field mapping 1 source'), { target: { value: 'allocation.amount' } })
 
-    await user.click(screen.getByRole('button', { name: 'Save decision' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save decision' }))
 
     await waitFor(() => {
       expect(mockPostDecisionsCollection).toHaveBeenCalledWith(
@@ -473,6 +557,7 @@ describe('DecisionsPage', () => {
 
     await screen.findByText('Decision Policy Library')
     expect(mockListOrganizationPools).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: /Import and migration tools/i }))
     await user.click(screen.getByRole('button', { name: 'Import legacy edge' }))
 
     expect(await screen.findByText('Import legacy edge policy')).toBeInTheDocument()
@@ -1139,12 +1224,13 @@ describe('DecisionsPage', () => {
     expect(screen.getByRole('tab', { name: 'Builder' })).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('supports raw JSON compatibility import and deactivate flows through decision revisions', async () => {
+  it('supports raw JSON compatibility import through decision revisions', async () => {
     const user = userEvent.setup()
     renderPage()
 
     await screen.findByText('Decision Policy Library')
 
+    await user.click(screen.getByRole('button', { name: /Import and migration tools/i }))
     await user.click(screen.getByRole('button', { name: 'Import raw JSON' }))
     fireEvent.change(screen.getByLabelText('Decision table ID'), { target: { value: 'policy-imported' } })
     fireEvent.change(screen.getByLabelText('Decision name'), { target: { value: 'Imported policy' } })
@@ -1166,10 +1252,17 @@ describe('DecisionsPage', () => {
         { errorPolicy: 'page' },
       )
     })
+  }, 30000)
 
-    mockPostDecisionsCollection.mockClear()
+  it('supports deactivating the selected decision from the authoring workspace', async () => {
+    renderPage()
 
-    await user.click(screen.getByRole('button', { name: 'Deactivate selected decision' }))
+    await screen.findByText('Decision Policy Library')
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Deactivate selected decision' })).toBeEnabled()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate selected decision' }))
 
     await waitFor(() => {
       expect(mockPostDecisionsCollection).toHaveBeenCalledWith(

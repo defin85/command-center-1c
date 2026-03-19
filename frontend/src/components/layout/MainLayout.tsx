@@ -261,6 +261,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
         <Space size="small" wrap>
           {tenants.length > 1 && (
             <Select
+              aria-label="Active tenant"
               size="small"
               loading={shellBootstrapQuery.isFetching}
               disabled={setActiveTenantMutation.isPending}

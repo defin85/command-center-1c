@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import type { DecisionTable, PoolODataMetadataCatalogResponse } from '../../api/generated/model'
 import { listOrganizationPools, type OrganizationPool } from '../../api/intercompanyPools'
@@ -44,6 +45,9 @@ type DecisionsCatalogState = {
   snapshotFilterMessage: string | null
   snapshotFilterMode: DecisionSnapshotFilterMode
   setSnapshotFilterMode: Dispatch<SetStateAction<DecisionSnapshotFilterMode>>
+  selectDatabase: (databaseId: string | null) => void
+  selectDecision: (decisionId: string) => void
+  toggleSnapshotFilterMode: () => void
   hiddenDecisionCount: number
   canFilterBySnapshot: boolean
   selectedConfigurationLabel: string
@@ -59,19 +63,43 @@ type DecisionsCatalogState = {
   reloadCatalog: () => void
 }
 
+const normalizeRouteParam = (value: string | null): string | null => {
+  const normalized = value?.trim() ?? ''
+  return normalized.length > 0 ? normalized : null
+}
+
+const resolveStateUpdate = <T,>(current: T, next: SetStateAction<T>): T => (
+  typeof next === 'function'
+    ? (next as (value: T) => T)(current)
+    : next
+)
+
+const parseSnapshotFilterMode = (value: string | null): DecisionSnapshotFilterMode => (
+  value === 'all' ? 'all' : 'matching_snapshot'
+)
+
 export function useDecisionsCatalog(): DecisionsCatalogState {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
+  const databaseFromUrl = normalizeRouteParam(searchParams.get('database'))
+  const decisionFromUrl = normalizeRouteParam(searchParams.get('decision'))
+  const snapshotModeFromUrl = parseSnapshotFilterMode(searchParams.get('snapshot'))
   const databasesQuery = useDatabases({ filters: { limit: 500, offset: 0 } })
   const databases = useMemo(
     () => databasesQuery.data?.databases ?? [],
     [databasesQuery.data?.databases],
   )
-  const [selectedDatabaseId, setSelectedDatabaseId] = useState<string | null | undefined>(undefined)
+  const [selectedDatabaseIdState, setSelectedDatabaseIdState] = useState<string | null | undefined>(
+    () => databaseFromUrl ?? undefined
+  )
   const [decisions, setDecisions] = useState<DecisionTable[]>([])
-  const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(null)
+  const [selectedDecisionIdState, setSelectedDecisionIdState] = useState<string | null>(
+    () => decisionFromUrl
+  )
   const [selectedDecision, setSelectedDecision] = useState<DecisionTable | null>(null)
   const [metadataContext, setMetadataContext] = useState<PoolODataMetadataCatalogResponse | null>(null)
   const [detailContext, setDetailContext] = useState<MetadataContextLike>(null)
-  const [listLoading, setListLoading] = useState(false)
+  const [listLoading, setListLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
@@ -79,10 +107,104 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
   const [bindingUsageError, setBindingUsageError] = useState<string | null>(null)
   const [listReadFallbackUsed, setListReadFallbackUsed] = useState(false)
   const [detailReadFallbackUsed, setDetailReadFallbackUsed] = useState(false)
-  const [snapshotFilterMode, setSnapshotFilterMode] = useState<DecisionSnapshotFilterMode>('matching_snapshot')
+  const [snapshotFilterModeState, setSnapshotFilterModeState] = useState<DecisionSnapshotFilterMode>(
+    () => snapshotModeFromUrl
+  )
   const [reloadTick, setReloadTick] = useState(0)
+  const selectedDatabaseId = selectedDatabaseIdState
+  const selectedDecisionId = selectedDecisionIdState
+  const snapshotFilterMode = snapshotFilterModeState
   const effectiveSelectedDatabaseId = selectedDatabaseId ?? undefined
   const databaseSelectionPending = selectedDatabaseId === undefined
+  const setSelectedDatabaseId = ((next) => {
+    setSelectedDatabaseIdState((current) => resolveStateUpdate(current, next))
+  }) as Dispatch<SetStateAction<string | null | undefined>>
+  const setSelectedDecisionId = ((next) => {
+    setSelectedDecisionIdState((current) => resolveStateUpdate(current, next))
+  }) as Dispatch<SetStateAction<string | null>>
+  const setSnapshotFilterMode = ((next) => {
+    setSnapshotFilterModeState((current) => resolveStateUpdate(current, next))
+  }) as Dispatch<SetStateAction<DecisionSnapshotFilterMode>>
+  const selectDatabase = (databaseId: string | null) => {
+    routeUpdateModeRef.current = 'push'
+    setSnapshotFilterModeState('matching_snapshot')
+    setSelectedDatabaseIdState(databaseId)
+    setSelectedDecisionIdState(null)
+  }
+  const selectDecision = (decisionId: string) => {
+    routeUpdateModeRef.current = 'push'
+    setSelectedDecisionIdState(decisionId)
+  }
+  const toggleSnapshotFilterMode = () => {
+    routeUpdateModeRef.current = 'push'
+    setSnapshotFilterModeState((current) => (
+      current === 'matching_snapshot' ? 'all' : 'matching_snapshot'
+    ))
+  }
+
+  useEffect(() => {
+    setSelectedDatabaseIdState((current) => {
+      if (databaseFromUrl) {
+        return current === databaseFromUrl ? current : databaseFromUrl
+      }
+
+      if (current === undefined) {
+        return current
+      }
+
+      return current === null ? current : null
+    })
+  }, [databaseFromUrl])
+
+  useEffect(() => {
+    setSelectedDecisionIdState((current) => (
+      current === decisionFromUrl ? current : decisionFromUrl
+    ))
+  }, [decisionFromUrl])
+
+  useEffect(() => {
+    setSnapshotFilterModeState((current) => (
+      current === snapshotModeFromUrl ? current : snapshotModeFromUrl
+    ))
+  }, [snapshotModeFromUrl])
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams)
+
+    if (selectedDatabaseId) {
+      next.set('database', selectedDatabaseId)
+    } else {
+      next.delete('database')
+    }
+
+    if (selectedDecisionId) {
+      next.set('decision', selectedDecisionId)
+    } else {
+      next.delete('decision')
+    }
+
+    if (snapshotFilterMode === 'matching_snapshot') {
+      next.delete('snapshot')
+    } else {
+      next.set('snapshot', snapshotFilterMode)
+    }
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(
+        next,
+        routeUpdateModeRef.current === 'replace'
+          ? { replace: true }
+          : undefined
+      )
+    }
+    routeUpdateModeRef.current = 'replace'
+  }, [
+    searchParams,
+    selectedDatabaseId,
+    selectedDecisionId,
+    setSearchParams,
+    snapshotFilterMode,
+  ])
 
   const selectedDatabaseMetadataManagementQuery = useDatabaseMetadataManagement({
     id: effectiveSelectedDatabaseId ?? '',
@@ -106,6 +228,7 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
 
   useEffect(() => {
     if (selectedDatabaseId !== undefined || databasesQuery.isLoading) return
+    routeUpdateModeRef.current = 'replace'
     setSelectedDatabaseId(databases[0]?.id ?? null)
   }, [databases, databasesQuery.isLoading, selectedDatabaseId])
 
@@ -136,6 +259,7 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
 
         const items = response.decisions ?? []
         setDecisions(items)
+        routeUpdateModeRef.current = 'replace'
         setSelectedDecisionId((current) => (
           current && items.some((decision) => decision.id === current)
             ? current
@@ -148,6 +272,7 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
         setListError(toErrorMessage(error, 'Failed to load decision table revisions.'))
         setDecisions([])
         setMetadataContext(null)
+        routeUpdateModeRef.current = 'replace'
         setSelectedDecisionId(null)
       } finally {
         if (!cancelled) {
@@ -228,6 +353,7 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
       return
     }
 
+    routeUpdateModeRef.current = 'replace'
     setSelectedDecisionId((current) => (
       current && visibleDecisions.some((decision) => decision.id === current)
         ? current
@@ -293,10 +419,6 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
       cancelled = true
     }
   }, [effectiveSelectedDatabaseId, listLoading, listReadFallbackUsed, selectedDecisionId, visibleDecisions])
-
-  useEffect(() => {
-    setSnapshotFilterMode('matching_snapshot')
-  }, [effectiveSelectedDatabaseId])
 
   const rolloverTargetMetadataContext = detailContext ?? metadataContext
   const selectedDecisionSupportsDocumentPolicyAuthoring = Boolean(
@@ -376,6 +498,9 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
     snapshotFilterMessage,
     snapshotFilterMode,
     setSnapshotFilterMode,
+    selectDatabase,
+    selectDecision,
+    toggleSnapshotFilterMode,
     hiddenDecisionCount,
     canFilterBySnapshot: decisionSnapshotFilter.canFilterBySnapshot,
     selectedConfigurationLabel: decisionSnapshotFilter.selectedConfigurationLabel,

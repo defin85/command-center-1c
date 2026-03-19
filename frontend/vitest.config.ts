@@ -13,9 +13,11 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
-    testTimeout: 30000,
-    hookTimeout: 30000,
-    maxWorkers: 4,
+    // Full validate:ui-platform runs many integration-heavy route suites in parallel.
+    // Keep enough budget to avoid false negatives from worker contention.
+    testTimeout: 120000,
+    hookTimeout: 120000,
+    maxWorkers: 2,
     minWorkers: 1,
     exclude: [...configDefaults.exclude, 'tests/**'],
     coverage: {

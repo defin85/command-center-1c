@@ -342,8 +342,7 @@ describe('PoolMasterDataPage', () => {
       count: 1,
     })
 
-    renderPage()
-    await user.click(await screen.findByRole('tab', { name: 'Sync' }))
+    renderPage('/pools/master-data?tab=sync')
 
     expect(await screen.findByText('Sync Status')).toBeInTheDocument()
     expect(await screen.findByText('Conflict Queue')).toBeInTheDocument()

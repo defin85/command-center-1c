@@ -64,22 +64,23 @@ export function DecisionCatalogPanel({
         />
       ) : null}
       renderItem={(decision) => (
-        <div
-          role="button"
-          tabIndex={0}
+        <Button
+          type="text"
+          block
+          aria-label={`Open decision ${decision.name}`}
+          aria-pressed={selectedDecisionId === decision.id}
           style={{
-            cursor: 'pointer',
+            justifyContent: 'flex-start',
+            height: 'auto',
             paddingBlock: 12,
             paddingInline: 12,
-            borderLeft: selectedDecisionId === decision.id ? '3px solid #1677ff' : '3px solid transparent',
+            borderRadius: 8,
+            border: selectedDecisionId === decision.id ? '1px solid #91caff' : '1px solid #f0f0f0',
+            borderInlineStart: selectedDecisionId === decision.id ? '4px solid #1677ff' : '4px solid transparent',
+            background: selectedDecisionId === decision.id ? '#e6f4ff' : '#fff',
+            boxShadow: selectedDecisionId === decision.id ? '0 1px 2px rgba(22, 119, 255, 0.12)' : 'none',
           }}
           onClick={() => onSelectDecision(decision.id)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault()
-              onSelectDecision(decision.id)
-            }
-          }}
         >
           <Space direction="vertical" size={2} style={{ width: '100%' }}>
             <Space wrap>
@@ -93,7 +94,7 @@ export function DecisionCatalogPanel({
             <Text type="secondary">{decision.decision_table_id}</Text>
             <Text type="secondary">Revision {decision.decision_revision}</Text>
           </Space>
-        </div>
+        </Button>
       )}
     />
   )

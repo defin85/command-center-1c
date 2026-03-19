@@ -49,15 +49,18 @@ export function EntityTable<T extends object>({
       ) : dataSource.length === 0 ? (
         <EmptyState description={emptyDescription} />
       ) : (
-        <Table
-          rowKey={rowKey}
-          size={size}
-          pagination={pagination}
-          columns={columns}
-          dataSource={dataSource}
-          onRow={onRow}
-          rowClassName={rowClassName}
-        />
+        <div style={{ width: '100%', overflowX: 'auto' }}>
+          <Table
+            rowKey={rowKey}
+            size={size}
+            pagination={pagination}
+            columns={columns}
+            dataSource={dataSource}
+            onRow={onRow}
+            rowClassName={rowClassName}
+            scroll={{ x: 'max-content' }}
+          />
+        </div>
       )}
     </ProCard>
   )

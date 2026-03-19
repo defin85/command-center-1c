@@ -1,13 +1,15 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Button,
+  Collapse,
   Descriptions,
   Input,
   Space,
   Typography,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
+import { useSearchParams } from 'react-router-dom'
 
 import {
   EntityDetails,
@@ -67,10 +69,43 @@ const formatBindingScope = (binding: PoolWorkflowBinding) => {
   return parts.join(' · ')
 }
 
+const normalizeRouteParam = (value: string | null): string | null => {
+  const normalized = value?.trim() ?? ''
+  return normalized.length > 0 ? normalized : null
+}
+
+const filterBindingProfiles = (profiles: BindingProfileSummary[], searchTerm: string) => {
+  const normalizedSearch = searchTerm.trim().toLowerCase()
+
+  if (!normalizedSearch) {
+    return profiles
+  }
+
+  return profiles.filter((profile) => (
+    [
+      profile.code,
+      profile.name,
+      profile.description ?? '',
+      profile.latest_revision.workflow.workflow_name,
+    ]
+      .join(' ')
+      .toLowerCase()
+      .includes(normalizedSearch)
+  ))
+}
+
 export function PoolBindingProfilesPage() {
-  const [search, setSearch] = useState('')
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
-  const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
+  const searchFromUrl = searchParams.get('q') ?? ''
+  const selectedProfileFromUrl = normalizeRouteParam(searchParams.get('profile'))
+  const detailOpenFromUrl = searchParams.get('detail') === '1'
+  const profileRouteSyncInitializedRef = useRef(false)
+  const [search, setSearch] = useState(searchFromUrl)
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null | undefined>(
+    () => selectedProfileFromUrl ?? undefined
+  )
+  const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(detailOpenFromUrl)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isReviseOpen, setIsReviseOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -85,37 +120,110 @@ export function PoolBindingProfilesPage() {
   const reviseBindingProfileMutation = useReviseBindingProfile()
   const deactivateBindingProfileMutation = useDeactivateBindingProfile()
 
+  useEffect(() => {
+    setSearch((current) => (current === searchFromUrl ? current : searchFromUrl))
+  }, [searchFromUrl])
+
+  useEffect(() => {
+    setSelectedProfileId((current) => {
+      if (selectedProfileFromUrl) {
+        return current === selectedProfileFromUrl ? current : selectedProfileFromUrl
+      }
+
+      if (!profileRouteSyncInitializedRef.current && current === undefined) {
+        return current
+      }
+
+      return current === null ? current : null
+    })
+    profileRouteSyncInitializedRef.current = true
+  }, [selectedProfileFromUrl])
+
+  useEffect(() => {
+    setIsDetailDrawerOpen((current) => (current === detailOpenFromUrl ? current : detailOpenFromUrl))
+  }, [detailOpenFromUrl])
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams)
+    const normalizedSearch = search.trim()
+
+    if (normalizedSearch) {
+      next.set('q', normalizedSearch)
+    } else {
+      next.delete('q')
+    }
+
+    if (selectedProfileId !== undefined) {
+      if (selectedProfileId) {
+        next.set('profile', selectedProfileId)
+      } else {
+        next.delete('profile')
+      }
+    }
+
+    if (selectedProfileId !== undefined) {
+      if (isDetailDrawerOpen && selectedProfileId) {
+        next.set('detail', '1')
+      } else {
+        next.delete('detail')
+      }
+    }
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(
+        next,
+        routeUpdateModeRef.current === 'replace'
+          ? { replace: true }
+          : undefined
+      )
+    }
+    routeUpdateModeRef.current = 'replace'
+  }, [isDetailDrawerOpen, search, searchParams, selectedProfileId, setSearchParams])
+
   const bindingProfiles = useMemo(
     () => bindingProfilesQuery.data?.binding_profiles ?? [],
     [bindingProfilesQuery.data?.binding_profiles],
   )
-  const normalizedSearch = deferredSearch.trim().toLowerCase()
-  const filteredProfiles = bindingProfiles.filter((profile) => {
-    if (!normalizedSearch) return true
-    return [
-      profile.code,
-      profile.name,
-      profile.description ?? '',
-      profile.latest_revision.workflow.workflow_name,
-    ]
-      .join(' ')
-      .toLowerCase()
-      .includes(normalizedSearch)
-  })
+  const filteredProfiles = useMemo(
+    () => filterBindingProfiles(bindingProfiles, deferredSearch),
+    [bindingProfiles, deferredSearch],
+  )
+
+  const handleSearchChange = (nextSearch: string) => {
+    const nextFilteredProfiles = filterBindingProfiles(bindingProfiles, nextSearch)
+    const nextSelectedProfileId = selectedProfileId && nextFilteredProfiles.some(
+      (profile) => profile.binding_profile_id === selectedProfileId
+    )
+      ? selectedProfileId
+      : (nextFilteredProfiles[0]?.binding_profile_id ?? null)
+    const nextDetailOpen = Boolean(nextSelectedProfileId) && isDetailDrawerOpen
+
+    routeUpdateModeRef.current = 'push'
+    setSearch(nextSearch)
+    setSelectedProfileId(nextSelectedProfileId)
+    setIsDetailDrawerOpen(nextDetailOpen)
+  }
 
   useEffect(() => {
-    if (!bindingProfiles.length) {
+    if (bindingProfilesQuery.isLoading) {
+      return
+    }
+
+    if (!filteredProfiles.length) {
+      routeUpdateModeRef.current = 'replace'
       setSelectedProfileId(null)
+      setIsDetailDrawerOpen(false)
       return
     }
-    if (selectedProfileId && bindingProfiles.some((profile) => profile.binding_profile_id === selectedProfileId)) {
+    if (selectedProfileId && filteredProfiles.some((profile) => profile.binding_profile_id === selectedProfileId)) {
       return
     }
-    setSelectedProfileId(bindingProfiles[0].binding_profile_id)
-  }, [bindingProfiles, selectedProfileId])
+    routeUpdateModeRef.current = 'replace'
+    setSelectedProfileId(filteredProfiles[0].binding_profile_id)
+  }, [bindingProfilesQuery.isLoading, filteredProfiles, selectedProfileId])
 
   const selectedProfileQuery = useBindingProfileDetail(selectedProfileId ?? undefined, {
-    enabled: Boolean(selectedProfileId),
+    enabled: typeof selectedProfileId === 'string' && selectedProfileId.length > 0,
   })
   const selectedProfile = selectedProfileQuery.data?.binding_profile ?? null
   const selectedProfileUsage = useMemo<BindingProfileUsageRow[]>(() => {
@@ -149,7 +257,21 @@ export function PoolBindingProfilesPage() {
       title: 'Code',
       dataIndex: 'code',
       key: 'code',
-      render: (value: string) => <Text strong>{value}</Text>,
+      render: (value: string, record) => (
+        <Button
+          type="text"
+          aria-label={`Open profile ${record.code}`}
+          aria-pressed={record.binding_profile_id === selectedProfileId}
+          onClick={() => handleSelectProfile(record.binding_profile_id)}
+          style={{
+            paddingInline: 0,
+            height: 'auto',
+            fontWeight: 600,
+          }}
+        >
+          {value}
+        </Button>
+      ),
     },
     {
       title: 'Name',
@@ -289,9 +411,15 @@ export function PoolBindingProfilesPage() {
     ? resolveApiError(selectedProfileQuery.error, 'Failed to load binding profile detail.').message
     : null
 
-  const handleSelectProfile = (profileId: string) => {
+  function handleSelectProfile(profileId: string) {
+    routeUpdateModeRef.current = 'push'
     setSelectedProfileId(profileId)
     setIsDetailDrawerOpen(true)
+  }
+
+  const handleCloseDetail = () => {
+    routeUpdateModeRef.current = 'push'
+    setIsDetailDrawerOpen(false)
   }
 
   useEffect(() => {
@@ -336,7 +464,8 @@ export function PoolBindingProfilesPage() {
           title="Binding Profiles"
           subtitle={(
             <>
-              Primary authoring catalog for reusable workflow/slot logic. Pool-local attachments remain in
+              Reusable profile workspace for selecting a profile, checking where it is used, and publishing the next revision.
+              Pool-local attachments remain in
               {' '}
               {POOL_CATALOG_ROUTE}
               .
@@ -354,17 +483,20 @@ export function PoolBindingProfilesPage() {
       <Alert
         type="info"
         showIcon
-        message="Dedicated route"
+        message="Operator workflow"
         description={(
           <Space direction="vertical" size={8}>
             <Text>
-              Reusable profile authoring is isolated on
+              Start here when you need to inspect a reusable profile, see where it is attached, or publish the next
+              revision. Use
               {' '}
               <Text code>{POOL_BINDING_PROFILES_ROUTE}</Text>
-              . Pool operators attach existing revisions from
+              {' '}
+              for profile-level authoring and
               {' '}
               <Text code>{POOL_CATALOG_ROUTE}</Text>
-              .
+              {' '}
+              when you need to attach an existing revision to a concrete pool.
             </Text>
             <Space wrap>
               <Button href={POOL_CATALOG_ROUTE}>Open attachment workspace</Button>
@@ -379,17 +511,20 @@ export function PoolBindingProfilesPage() {
 
       <MasterDetailShell
         detailOpen={isDetailDrawerOpen}
-        onCloseDetail={() => setIsDetailDrawerOpen(false)}
+        onCloseDetail={handleCloseDetail}
         detailDrawerTitle={selectedProfile?.name || 'Profile detail'}
         list={(
           <EntityTable
             title="Catalog"
             extra={(
               <Input
+                aria-label="Search profiles"
                 allowClear
+                autoComplete="off"
+                name="profile-search"
                 placeholder="Search code, name, workflow"
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => handleSearchChange(event.target.value)}
                 style={{ width: 240 }}
               />
             )}
@@ -448,16 +583,14 @@ export function PoolBindingProfilesPage() {
                       <StatusBadge status={selectedProfile.status} />
                     </span>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Latest immutable revision">
-                    <Text data-testid="pool-binding-profiles-latest-revision-id">
-                      {selectedProfile.latest_revision.binding_profile_revision_id}
-                    </Text>
-                  </Descriptions.Item>
                   <Descriptions.Item label="Latest revision number">
                     {`r${selectedProfile.latest_revision_number}`}
                   </Descriptions.Item>
                   <Descriptions.Item label="Description">
                     {selectedProfile.description || '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Workflow">
+                    {`${selectedProfile.latest_revision.workflow.workflow_name} · r${selectedProfile.latest_revision.workflow.workflow_revision}`}
                   </Descriptions.Item>
                   <Descriptions.Item label="Updated at">
                     {formatDateTime(selectedProfile.updated_at)}
@@ -475,38 +608,14 @@ export function PoolBindingProfilesPage() {
                   />
                 ) : null}
 
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                <Space direction="vertical" size={4} style={{ width: '100%' }}>
                   <Title level={5} style={{ margin: 0 }}>
-                    Latest revision payload
+                    Where this profile is used
                   </Title>
-                  <Descriptions bordered size="small" column={1}>
-                    <Descriptions.Item label="Workflow">
-                      {`${selectedProfile.latest_revision.workflow.workflow_name} · ${selectedProfile.latest_revision.workflow.workflow_definition_key}`}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="Workflow pin">
-                      {`${selectedProfile.latest_revision.workflow.workflow_revision_id} · rev ${selectedProfile.latest_revision.workflow.workflow_revision}`}
-                    </Descriptions.Item>
-                  </Descriptions>
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-                      gap: 16,
-                    }}
-                  >
-                    <JsonBlock title="Decision refs" value={selectedProfile.latest_revision.decisions} />
-                    <JsonBlock title="Parameters" value={selectedProfile.latest_revision.parameters} />
-                    <JsonBlock title="Role mapping" value={selectedProfile.latest_revision.role_mapping} />
-                    <JsonBlock title="Revision metadata" value={selectedProfile.latest_revision.metadata} />
-                  </div>
+                  <Text type="secondary">
+                    Check current pool attachments before publishing a new revision or deactivating the reusable profile.
+                  </Text>
                 </Space>
-
-                <EntityTable
-                  title="Revision history"
-                  rowKey="binding_profile_revision_id"
-                  columns={revisionColumns}
-                  dataSource={selectedProfile.revisions}
-                />
 
                 <EntityTable
                   title="Pool attachment usage"
@@ -535,6 +644,52 @@ export function PoolBindingProfilesPage() {
                       </Text>
                     </Space>
                   )}
+                />
+
+                <EntityTable
+                  title="Revision history"
+                  rowKey="binding_profile_revision_id"
+                  columns={revisionColumns}
+                  dataSource={selectedProfile.revisions}
+                />
+
+                <Collapse
+                  size="small"
+                  items={[
+                    {
+                      key: 'advanced-payload',
+                      label: 'Advanced payload and immutable pins',
+                      children: (
+                        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                          <Descriptions bordered size="small" column={1}>
+                            <Descriptions.Item label="Latest immutable revision">
+                              <Text data-testid="pool-binding-profiles-latest-revision-id">
+                                {selectedProfile.latest_revision.binding_profile_revision_id}
+                              </Text>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Workflow definition key">
+                              {selectedProfile.latest_revision.workflow.workflow_definition_key}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Workflow pin">
+                              {`${selectedProfile.latest_revision.workflow.workflow_revision_id} · rev ${selectedProfile.latest_revision.workflow.workflow_revision}`}
+                            </Descriptions.Item>
+                          </Descriptions>
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                              gap: 16,
+                            }}
+                          >
+                            <JsonBlock title="Decision refs" value={selectedProfile.latest_revision.decisions} />
+                            <JsonBlock title="Parameters" value={selectedProfile.latest_revision.parameters} />
+                            <JsonBlock title="Role mapping" value={selectedProfile.latest_revision.role_mapping} />
+                            <JsonBlock title="Revision metadata" value={selectedProfile.latest_revision.metadata} />
+                          </div>
+                        </Space>
+                      ),
+                    },
+                  ]}
                 />
               </Space>
             ) : null}

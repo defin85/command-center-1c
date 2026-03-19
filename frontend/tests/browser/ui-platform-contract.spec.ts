@@ -139,6 +139,17 @@ const DECISION = {
   updated_at: NOW,
 }
 
+const FALLBACK_DECISION = {
+  ...DECISION,
+  id: 'decision-version-3',
+  decision_revision: 3,
+  name: 'Fallback services publication policy',
+  description: 'Fallback policy for diagnostics',
+  parent_version: DECISION.id,
+}
+
+const DECISIONS = [DECISION, FALLBACK_DECISION]
+
 const WORKFLOW = {
   id: WORKFLOW_REVISION_ID,
   name: 'Services Publication',
@@ -239,6 +250,89 @@ const BINDING_PROFILE_SUMMARY = {
   deactivated_at: BINDING_PROFILE_DETAIL.deactivated_at,
   created_at: BINDING_PROFILE_DETAIL.created_at,
   updated_at: BINDING_PROFILE_DETAIL.updated_at,
+}
+
+const LEGACY_BINDING_PROFILE_DETAIL = {
+  ...BINDING_PROFILE_DETAIL,
+  binding_profile_id: 'bp-legacy',
+  code: 'legacy-archive',
+  name: 'Legacy Archive',
+  description: 'Legacy reusable profile kept for pinned attachments.',
+  status: 'deactivated',
+  latest_revision_number: 1,
+  latest_revision: {
+    binding_profile_revision_id: 'bp-rev-legacy-r1',
+    binding_profile_id: 'bp-legacy',
+    revision_number: 1,
+    workflow: {
+      workflow_definition_key: 'legacy-archive',
+      workflow_revision_id: 'wf-legacy-r1',
+      workflow_revision: 1,
+      workflow_name: 'legacy_archive',
+    },
+    decisions: [
+      {
+        decision_table_id: 'services-publication-policy',
+        decision_key: 'document_policy',
+        slot_key: 'document_policy',
+        decision_revision: 2,
+      },
+    ],
+    parameters: {
+      publication_variant: 'archive',
+    },
+    role_mapping: {
+      initiator: 'finance',
+    },
+    metadata: {
+      source: 'legacy',
+    },
+    created_by: 'analyst',
+    created_at: NOW,
+  },
+  revisions: [
+    {
+      binding_profile_revision_id: 'bp-rev-legacy-r1',
+      binding_profile_id: 'bp-legacy',
+      revision_number: 1,
+      workflow: {
+        workflow_definition_key: 'legacy-archive',
+        workflow_revision_id: 'wf-legacy-r1',
+        workflow_revision: 1,
+        workflow_name: 'legacy_archive',
+      },
+      decisions: [],
+      parameters: {},
+      role_mapping: {},
+      metadata: {},
+      created_by: 'analyst',
+      created_at: NOW,
+    },
+  ],
+  deactivated_by: 'analyst',
+  deactivated_at: NOW,
+}
+
+const LEGACY_BINDING_PROFILE_SUMMARY = {
+  binding_profile_id: LEGACY_BINDING_PROFILE_DETAIL.binding_profile_id,
+  code: LEGACY_BINDING_PROFILE_DETAIL.code,
+  name: LEGACY_BINDING_PROFILE_DETAIL.name,
+  description: LEGACY_BINDING_PROFILE_DETAIL.description,
+  status: LEGACY_BINDING_PROFILE_DETAIL.status,
+  latest_revision_number: LEGACY_BINDING_PROFILE_DETAIL.latest_revision_number,
+  latest_revision: LEGACY_BINDING_PROFILE_DETAIL.latest_revision,
+  created_by: LEGACY_BINDING_PROFILE_DETAIL.created_by,
+  updated_by: LEGACY_BINDING_PROFILE_DETAIL.updated_by,
+  deactivated_by: LEGACY_BINDING_PROFILE_DETAIL.deactivated_by,
+  deactivated_at: LEGACY_BINDING_PROFILE_DETAIL.deactivated_at,
+  created_at: LEGACY_BINDING_PROFILE_DETAIL.created_at,
+  updated_at: LEGACY_BINDING_PROFILE_DETAIL.updated_at,
+}
+
+const BINDING_PROFILE_SUMMARIES = [BINDING_PROFILE_SUMMARY, LEGACY_BINDING_PROFILE_SUMMARY]
+const BINDING_PROFILE_DETAILS: Record<string, typeof BINDING_PROFILE_DETAIL> = {
+  [BINDING_PROFILE_DETAIL.binding_profile_id]: BINDING_PROFILE_DETAIL,
+  [LEGACY_BINDING_PROFILE_DETAIL.binding_profile_id]: LEGACY_BINDING_PROFILE_DETAIL,
 }
 
 const POOL_WITH_ATTACHMENT = {
@@ -470,8 +564,8 @@ async function setupUiPlatformMocks(
         counts.decisionsUnscoped += 1
       }
       return fulfillJson(route, {
-        decisions: [DECISION],
-        count: 1,
+        decisions: DECISIONS,
+        count: DECISIONS.length,
         ...(databaseId ? { metadata_context: METADATA_CONTEXT } : {}),
       })
     }
@@ -487,8 +581,9 @@ async function setupUiPlatformMocks(
 
     const decisionDetailMatch = path.match(/^\/api\/v2\/decisions\/([^/]+)\/$/)
     if (method === 'GET' && decisionDetailMatch) {
+      const decisionId = decisionDetailMatch[1] ?? DECISION.id
       return fulfillJson(route, {
-        decision: DECISION,
+        decision: DECISIONS.find((candidate) => candidate.id === decisionId) ?? DECISION,
         ...(url.searchParams.get('database_id') ? { metadata_context: METADATA_CONTEXT } : {}),
       })
     }
@@ -498,18 +593,19 @@ async function setupUiPlatformMocks(
         counts.bindingProfilesList += 1
       }
       return fulfillJson(route, {
-        binding_profiles: [BINDING_PROFILE_SUMMARY],
-        count: 1,
+        binding_profiles: BINDING_PROFILE_SUMMARIES,
+        count: BINDING_PROFILE_SUMMARIES.length,
       })
     }
 
     const bindingProfileMatch = path.match(/^\/api\/v2\/pools\/binding-profiles\/([^/]+)\/$/)
     if (method === 'GET' && bindingProfileMatch) {
+      const bindingProfileId = bindingProfileMatch[1] ?? BINDING_PROFILE_DETAIL.binding_profile_id
       if (counts) {
         counts.bindingProfileDetails += 1
       }
       return fulfillJson(route, {
-        binding_profile: BINDING_PROFILE_DETAIL,
+        binding_profile: BINDING_PROFILE_DETAILS[bindingProfileId] ?? BINDING_PROFILE_DETAIL,
       })
     }
 
@@ -589,7 +685,8 @@ test('UI platform: /pools/binding-profiles keeps mobile catalog readable and ope
   const detailDrawer = page.getByRole('dialog')
   await expect(detailDrawer).toBeVisible()
   await expect(detailDrawer.getByTestId('pool-binding-profiles-selected-code')).toHaveText('services-publication')
-  await expect(detailDrawer.getByText('Latest revision payload')).toBeVisible()
+  await expect(detailDrawer.getByText('Where this profile is used')).toBeVisible()
+  await expect(detailDrawer.getByRole('button', { name: /Advanced payload and immutable pins/i })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })
 
@@ -651,6 +748,112 @@ test('Runtime contract: /pools/binding-profiles defers usage reads until the use
   await expect.poll(() => counts.organizationPools).toBe(1)
   await expect(page.getByText('Main Pool')).toBeVisible()
   await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('UI platform: /decisions restores deep-link context and keeps diagnostics behind disclosure', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+
+  await page.goto(`/decisions?database=${DATABASE_ID}&decision=${FALLBACK_DECISION.id}&snapshot=all`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('combobox', { name: 'Target database' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open decision Fallback services publication policy' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Show matching configuration only' })).toBeVisible()
+  await expect(page.getByText('shared_scope')).toHaveCount(0)
+
+  await page.getByRole('button', { name: /Target metadata context/i }).click()
+
+  await expect(page.getByText('shared_scope')).toBeVisible()
+  await expect(page.getByText('snapshot-shared-services')).toBeVisible()
+})
+
+test('UI platform: /decisions keeps selected revision on browser back and forward', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+
+  await page.goto(`/decisions?database=${DATABASE_ID}&decision=${DECISION.id}`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const primaryDecisionButton = page.getByRole('button', { name: `Open decision ${DECISION.name}` })
+  const fallbackDecisionButton = page.getByRole('button', { name: `Open decision ${FALLBACK_DECISION.name}` })
+
+  await expect(primaryDecisionButton).toHaveAttribute('aria-pressed', 'true')
+
+  await fallbackDecisionButton.click()
+
+  await expect(page).toHaveURL(new RegExp(`\\?database=${DATABASE_ID}&decision=${FALLBACK_DECISION.id}$`))
+  await expect(fallbackDecisionButton).toHaveAttribute('aria-pressed', 'true')
+
+  await page.goBack()
+
+  await expect(page).toHaveURL(new RegExp(`\\?database=${DATABASE_ID}&decision=${DECISION.id}$`))
+  await expect(primaryDecisionButton).toHaveAttribute('aria-pressed', 'true')
+
+  await page.goForward()
+
+  await expect(page).toHaveURL(new RegExp(`\\?database=${DATABASE_ID}&decision=${FALLBACK_DECISION.id}$`))
+  await expect(fallbackDecisionButton).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('UI platform: /pools/binding-profiles restores catalog context and keeps selection keyboard-first', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+
+  await page.goto('/pools/binding-profiles?q=legacy&profile=bp-legacy&detail=1', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByLabel('Search profiles')).toHaveValue('legacy')
+  await expect(page.getByTestId('pool-binding-profiles-selected-code')).toHaveText('legacy-archive')
+  await expect(page.getByText('legacy_archive · r1')).toBeVisible()
+  await expect(page.getByText('Workflow definition key')).toHaveCount(0)
+
+  await page.goto('/pools/binding-profiles', { waitUntil: 'domcontentloaded' })
+
+  const legacyProfileButton = page.getByRole('button', { name: 'Open profile legacy-archive' })
+  await legacyProfileButton.focus()
+  await page.keyboard.press('Enter')
+
+  await expect(page.getByTestId('pool-binding-profiles-selected-code')).toHaveText('legacy-archive')
+  await expect(legacyProfileButton).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('UI platform: /pools/binding-profiles keeps selected profile on browser back and forward', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+
+  await page.goto(`/pools/binding-profiles?profile=${BINDING_PROFILE_DETAIL.binding_profile_id}`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const servicesProfileButton = page.getByRole('button', { name: 'Open profile services-publication' })
+  const legacyProfileButton = page.getByRole('button', { name: 'Open profile legacy-archive' })
+
+  await expect(page.getByTestId('pool-binding-profiles-selected-code')).toHaveText('services-publication')
+  await expect(servicesProfileButton).toHaveAttribute('aria-pressed', 'true')
+
+  await legacyProfileButton.click()
+
+  await expect(page).toHaveURL(new RegExp(`\\?profile=${LEGACY_BINDING_PROFILE_DETAIL.binding_profile_id}&detail=1$`))
+  await expect(page.getByTestId('pool-binding-profiles-selected-code')).toHaveText('legacy-archive')
+  await expect(legacyProfileButton).toHaveAttribute('aria-pressed', 'true')
+
+  await page.goBack()
+
+  await expect(page).toHaveURL(new RegExp(`\\?profile=${BINDING_PROFILE_DETAIL.binding_profile_id}$`))
+  await expect(page.getByTestId('pool-binding-profiles-selected-code')).toHaveText('services-publication')
+  await expect(servicesProfileButton).toHaveAttribute('aria-pressed', 'true')
+
+  await page.goForward()
+
+  await expect(page).toHaveURL(new RegExp(`\\?profile=${LEGACY_BINDING_PROFILE_DETAIL.binding_profile_id}&detail=1$`))
+  await expect(page.getByTestId('pool-binding-profiles-selected-code')).toHaveText('legacy-archive')
+  await expect(legacyProfileButton).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('Runtime contract: one browser instance keeps a single database stream owner across tabs', async ({ context }) => {

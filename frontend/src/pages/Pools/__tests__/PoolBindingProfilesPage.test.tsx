@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -218,7 +219,7 @@ function openSelect(testId: string) {
   fireEvent.mouseDown(selector as Element)
 }
 
-function renderPage() {
+function renderPage(path = '/pools/binding-profiles') {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -228,7 +229,7 @@ function renderPage() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter future={ROUTER_FUTURE}>
+      <MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}>
         <AntApp>
           <PoolBindingProfilesPage />
         </AntApp>
@@ -287,24 +288,63 @@ describe('PoolBindingProfilesPage', () => {
   })
 
   it('renders a dedicated reusable profile catalog with list and detail states on a separate authoring surface', async () => {
+    const user = userEvent.setup()
     renderPage()
 
     expect(await screen.findByRole('heading', { name: 'Binding Profiles' })).toBeInTheDocument()
-    expect(screen.getByText(/Primary authoring catalog for reusable workflow\/slot logic/i)).toBeInTheDocument()
+    expect(screen.getByText(/Reusable profile workspace for selecting a profile, checking where it is used, and publishing the next revision./i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open attachment workspace' })).toHaveAttribute('href', '/pools/catalog')
     expect(screen.getAllByText('services-publication').length).toBeGreaterThan(0)
     expect(screen.getByText('legacy-archive')).toBeInTheDocument()
 
     expect(screen.getByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('services-publication')
-    expect(screen.getByTestId('pool-binding-profiles-latest-revision-id')).toHaveTextContent('bp-rev-services-r2')
     expect(screen.getByRole('button', { name: 'Publish new revision' })).toBeEnabled()
+    expect(screen.getByText('Where this profile is used')).toBeInTheDocument()
+    expect(screen.queryByText('Latest immutable revision')).not.toBeInTheDocument()
+    expect(screen.queryByText('Workflow definition key')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('legacy-archive'))
+    await user.click(screen.getByRole('button', { name: /Advanced payload and immutable pins/i }))
+    expect(await screen.findByText('Latest immutable revision')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-binding-profiles-latest-revision-id')).toHaveTextContent('bp-rev-services-r2')
+    expect(await screen.findByText('Workflow definition key')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open profile legacy-archive' }))
 
     expect(await screen.findByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('legacy-archive')
     expect(screen.getByTestId('pool-binding-profiles-status')).toHaveTextContent('deactivated')
     expect(screen.getByRole('button', { name: 'Publish new revision' })).toBeDisabled()
   }, 25000)
+
+  it('restores search and selected profile from query params and labels the catalog search', async () => {
+    renderPage('/pools/binding-profiles?q=legacy&profile=bp-legacy&detail=1')
+
+    expect(await screen.findByRole('heading', { name: 'Binding Profiles' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Search profiles')).toHaveValue('legacy')
+    expect(screen.queryByText('services-publication')).not.toBeInTheDocument()
+    expect(screen.getByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('legacy-archive')
+  })
+
+  it('keeps filtered catalog context coherent when the selected profile is outside the active search', async () => {
+    renderPage('/pools/binding-profiles?q=legacy&profile=bp-services&detail=1')
+
+    expect(await screen.findByRole('heading', { name: 'Binding Profiles' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Search profiles')).toHaveValue('legacy')
+    expect(screen.queryByText('services-publication')).not.toBeInTheDocument()
+    expect(screen.getByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('legacy-archive')
+  })
+
+  it('provides semantic profile selection controls instead of row-click-only selection', async () => {
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: 'Binding Profiles' })).toBeInTheDocument()
+
+    const secondProfileButton = screen.getByRole('button', { name: 'Open profile legacy-archive' })
+    expect(secondProfileButton.tagName).toBe('BUTTON')
+
+    fireEvent.click(secondProfileButton)
+
+    expect(await screen.findByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('legacy-archive')
+  })
 
   it('creates a reusable profile from the dedicated catalog form', async () => {
     const mutateAsync = vi.fn().mockResolvedValue({

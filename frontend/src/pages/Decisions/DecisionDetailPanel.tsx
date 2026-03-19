@@ -1,4 +1,4 @@
-import { Alert, Descriptions, Space, Typography } from 'antd'
+import { Alert, Collapse, Descriptions, Space, Typography } from 'antd'
 
 import type { DecisionTable } from '../../api/generated/model'
 import { LazyJsonCodeEditor } from '../../components/code/LazyJsonCodeEditor'
@@ -72,16 +72,6 @@ export function DecisionDetailPanel({
             ]}
           />
 
-          <Descriptions
-            size="small"
-            column={{ xs: 1, md: 2 }}
-            items={normalizeMetadataItems(selectedDecision.metadata_context ?? detailContext).map((item) => ({
-              key: `detail-${item.key}`,
-              label: item.label,
-              children: item.value,
-            }))}
-          />
-
           {selectedDecision.metadata_compatibility?.reason ? (
             <Alert
               type="warning"
@@ -125,21 +115,44 @@ export function DecisionDetailPanel({
             </div>
           ) : null}
 
-          <div>
-            <AntText strong>{selectedDecisionSupportsDocumentPolicyAuthoring ? 'Compiled document_policy JSON' : 'Decision rules JSON'}</AntText>
-            <div style={{ marginTop: 12 }}>
-              <LazyJsonCodeEditor
-                value={selectedDecisionSupportsDocumentPolicyAuthoring
-                  ? (selectedPolicy ? formatJson(selectedPolicy) : '{}')
-                  : formatJson(selectedDecision.rules ?? [])}
-                onChange={() => {}}
-                readOnly
-                height={320}
-                title={selectedDecisionSupportsDocumentPolicyAuthoring ? 'Document policy output' : 'Decision rules output'}
-                enableCopy
-              />
-            </div>
-          </div>
+          <Collapse
+            size="small"
+            items={[
+              {
+                key: 'metadata',
+                label: 'Metadata and provenance',
+                children: (
+                  <Descriptions
+                    size="small"
+                    column={{ xs: 1, md: 2 }}
+                    items={normalizeMetadataItems(selectedDecision.metadata_context ?? detailContext).map((item) => ({
+                      key: `detail-${item.key}`,
+                      label: item.label,
+                      children: item.value,
+                    }))}
+                  />
+                ),
+              },
+              {
+                key: 'json',
+                label: selectedDecisionSupportsDocumentPolicyAuthoring
+                  ? 'Compiled document_policy JSON'
+                  : 'Decision rules JSON',
+                children: (
+                  <LazyJsonCodeEditor
+                    value={selectedDecisionSupportsDocumentPolicyAuthoring
+                      ? (selectedPolicy ? formatJson(selectedPolicy) : '{}')
+                      : formatJson(selectedDecision.rules ?? [])}
+                    onChange={() => {}}
+                    readOnly
+                    height={320}
+                    title={selectedDecisionSupportsDocumentPolicyAuthoring ? 'Document policy output' : 'Decision rules output'}
+                    enableCopy
+                  />
+                ),
+              },
+            ]}
+          />
         </Space>
       ) : null}
     </EntityDetails>

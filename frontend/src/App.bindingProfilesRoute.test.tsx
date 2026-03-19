@@ -101,6 +101,54 @@ describe('App pools binding profiles route', () => {
     expect(screen.getByText('Pool Binding Profiles')).toBeInTheDocument()
   })
 
+  it('labels the tenant selector when multiple tenants are available', async () => {
+    mockUseShellBootstrap.mockReturnValue({
+      data: {
+        me: {
+          is_staff: true,
+          username: 'tester',
+        },
+        tenant_context: {
+          active_tenant_id: 'tenant-1',
+          tenants: [
+            { id: 'tenant-1', name: 'Default', slug: 'default', role: 'admin' },
+            { id: 'tenant-2', name: 'Finance', slug: 'finance', role: 'admin' },
+          ],
+        },
+        access: {
+          clusters: [],
+          databases: [],
+          operation_templates: [],
+        },
+        capabilities: {
+          can_manage_rbac: true,
+          can_manage_driver_catalogs: false,
+        },
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+    })
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AntApp>
+          <App />
+        </AntApp>
+      </QueryClientProvider>
+    )
+
+    expect(await screen.findByTestId('pool-binding-profiles-route-page')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Active tenant' })).toBeInTheDocument()
+  })
+
   it('shows a stable shell error state when bootstrap fails', async () => {
     mockUseShellBootstrap.mockReturnValue({
       data: undefined,

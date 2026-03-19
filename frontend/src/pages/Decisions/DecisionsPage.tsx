@@ -5,6 +5,7 @@ import {
   Alert,
   App,
   Button,
+  Collapse,
   Select,
   Space,
   Typography,
@@ -97,8 +98,17 @@ export function DecisionsPage() {
   }
 
   const handleSelectDecision = (decisionId: string) => {
-    catalog.setSelectedDecisionId(decisionId)
+    catalog.selectDecision(decisionId)
     setIsDetailDrawerOpen(true)
+  }
+
+  const handleDatabaseChange = (nextValue: string | null) => {
+    catalog.selectDatabase(nextValue)
+    setIsDetailDrawerOpen(false)
+  }
+
+  const handleToggleSnapshotMode = () => {
+    catalog.toggleSnapshotFilterMode()
   }
 
   return (
@@ -106,9 +116,10 @@ export function DecisionsPage() {
       header={(
         <PageHeader
           title="Decision Policy Library"
-          subtitle="/decisions is the primary surface for document_policy authoring."
+          subtitle="Create and revise document policies for the selected database without leaving the authoring workspace."
           actions={(
             <Select
+              aria-label="Target database"
               allowClear
               data-testid="decisions-database-select"
               placeholder="Select database"
@@ -118,7 +129,7 @@ export function DecisionsPage() {
                 value: database.id,
                 label: `${database.name} (${database.base_name ?? database.version ?? database.id})`,
               }))}
-              onChange={(nextValue) => catalog.setSelectedDatabaseId(nextValue ?? null)}
+              onChange={(nextValue) => handleDatabaseChange(nextValue ?? null)}
               loading={catalog.databasesQuery.isLoading}
             />
           )}
@@ -128,16 +139,16 @@ export function DecisionsPage() {
       <Alert
         type="info"
         showIcon
-        message="Canonical authoring surfaces"
+        message="Task-first authoring flow"
         description={(
           <Space direction="vertical" size={8}>
             <Text>
-              Use `/decisions` to author document policies, `/workflows` to publish reusable workflow revisions,
-              and `/pools/binding-profiles` to pin those revisions into reusable profile bundles without copy-paste.
+              Start with a new policy or revise the selected revision for the current database. Use workflow and binding
+              profile catalogs only when you need reusable references or rollout targets.
             </Text>
             <Space wrap>
-              <Button href="/workflows">Open workflow catalog</Button>
-              <Button href="/pools/binding-profiles">Open binding profile catalog</Button>
+              <Button href="/workflows">Open workflow references</Button>
+              <Button href="/pools/binding-profiles">Open binding profiles</Button>
             </Space>
           </Space>
         )}
@@ -190,7 +201,7 @@ export function DecisionsPage() {
 
       <EntityDetails title="Authoring workspace">
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Space wrap>
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
             <Button
               type="primary"
               icon={<PlusOutlined />}
@@ -200,88 +211,109 @@ export function DecisionsPage() {
             >
               New policy
             </Button>
-            <Button
-              icon={<ImportOutlined />}
-              onClick={openLegacyImport}
-              disabled={saving}
-              aria-label="Import legacy edge"
-            >
-              Import legacy edge
-            </Button>
-            <Button
-              onClick={openRawImport}
-              disabled={saving}
-              aria-label="Import raw JSON"
-            >
-              Import raw JSON
-            </Button>
-            <Button
-              icon={<EditOutlined />}
-              onClick={handleOpenSelectedDecisionForEdit}
-              disabled={
-                !catalog.selectedDecision
-                || !catalog.selectedDecisionSupportsDocumentPolicyAuthoring
-                || saving
-                || catalog.selectedDecisionRequiresRollover
-                || catalog.metadataContextFallbackActive
-              }
-              aria-label="Edit selected decision"
-            >
-              Edit selected decision
-            </Button>
-            <Button
-              onClick={handleOpenSelectedDecisionForRollover}
-              disabled={
-                !catalog.selectedDecision
-                || !catalog.selectedDecisionSupportsDocumentPolicyAuthoring
-                || saving
-                || !catalog.canOpenRollover
-              }
-              aria-label="Rollover selected revision"
-            >
-              Rollover selected revision
-            </Button>
-            <Button
-              danger
-              icon={<MinusCircleOutlined />}
-              onClick={() => void editor.handleDeactivateSelected()}
-              disabled={
-                !catalog.selectedDecision
-                || !catalog.selectedDecisionSupportsDocumentPolicyAuthoring
-                || saving
-                || catalog.selectedDecisionRequiresRollover
-                || catalog.metadataContextFallbackActive
-              }
-              aria-label="Deactivate selected decision"
-            >
-              Deactivate selected decision
-            </Button>
+            <Space wrap>
+              <Button
+                icon={<EditOutlined />}
+                onClick={handleOpenSelectedDecisionForEdit}
+                disabled={
+                  !catalog.selectedDecision
+                  || !catalog.selectedDecisionSupportsDocumentPolicyAuthoring
+                  || saving
+                  || catalog.selectedDecisionRequiresRollover
+                  || catalog.metadataContextFallbackActive
+                }
+                aria-label="Edit selected decision"
+              >
+                Edit selected decision
+              </Button>
+              <Button
+                onClick={handleOpenSelectedDecisionForRollover}
+                disabled={
+                  !catalog.selectedDecision
+                  || !catalog.selectedDecisionSupportsDocumentPolicyAuthoring
+                  || saving
+                  || !catalog.canOpenRollover
+                }
+                aria-label="Rollover selected revision"
+              >
+                Rollover selected revision
+              </Button>
+              <Button
+                danger
+                icon={<MinusCircleOutlined />}
+                onClick={() => void editor.handleDeactivateSelected()}
+                disabled={
+                  !catalog.selectedDecision
+                  || !catalog.selectedDecisionSupportsDocumentPolicyAuthoring
+                  || saving
+                  || catalog.selectedDecisionRequiresRollover
+                  || catalog.metadataContextFallbackActive
+                }
+                aria-label="Deactivate selected decision"
+              >
+                Deactivate selected decision
+              </Button>
+            </Space>
           </Space>
 
-          <dl
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: 12,
-              margin: 0,
-            }}
-          >
-            {normalizeMetadataItems(catalog.metadataContext).map((item) => (
-              <div key={item.key} style={{ minWidth: 0 }}>
-                <dt style={{ fontSize: 12, color: '#8c8c8c' }}>{item.label}</dt>
-                <dd
-                  style={{
-                    margin: '4px 0 0',
-                    minWidth: 0,
-                    overflowWrap: 'anywhere',
-                    wordBreak: 'break-word',
-                  }}
-                >
-                  {item.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          <Collapse
+            size="small"
+            items={[
+              {
+                key: 'imports',
+                label: 'Import and migration tools',
+                children: (
+                  <Space wrap>
+                    <Button
+                      icon={<ImportOutlined />}
+                      onClick={openLegacyImport}
+                      disabled={saving}
+                      aria-label="Import legacy edge"
+                    >
+                      Import legacy edge
+                    </Button>
+                    <Button
+                      onClick={openRawImport}
+                      disabled={saving}
+                      aria-label="Import raw JSON"
+                    >
+                      Import raw JSON
+                    </Button>
+                  </Space>
+                ),
+              },
+              {
+                key: 'metadata',
+                label: 'Target metadata context',
+                children: (
+                  <dl
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                      gap: 12,
+                      margin: 0,
+                    }}
+                  >
+                    {normalizeMetadataItems(catalog.metadataContext).map((item) => (
+                      <div key={item.key} style={{ minWidth: 0 }}>
+                        <dt style={{ fontSize: 12, color: '#8c8c8c' }}>{item.label}</dt>
+                        <dd
+                          style={{
+                            margin: '4px 0 0',
+                            minWidth: 0,
+                            overflowWrap: 'anywhere',
+                            wordBreak: 'break-word',
+                          }}
+                        >
+                          {item.value}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                ),
+              },
+            ]}
+          />
 
           {catalog.metadataContextWarning ? (
             <Alert
@@ -321,9 +353,7 @@ export function DecisionsPage() {
             snapshotFilterMessage={catalog.snapshotFilterMessage}
             selectedConfigurationLabel={catalog.selectedConfigurationLabel}
             canFilterBySnapshot={catalog.canFilterBySnapshot}
-            onToggleSnapshotMode={() => catalog.setSnapshotFilterMode((current) => (
-              current === 'matching_snapshot' ? 'all' : 'matching_snapshot'
-            ))}
+            onToggleSnapshotMode={handleToggleSnapshotMode}
             onSelectDecision={handleSelectDecision}
           />
         )}
