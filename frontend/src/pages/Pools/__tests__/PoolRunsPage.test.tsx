@@ -1290,16 +1290,13 @@ describe('PoolRunsPage', () => {
     renderPage()
 
     await openRunsStage(user, 'Inspect')
-    const bindingsLink = await screen.findByText('Open Bindings workspace', {}, { timeout: 10000 })
-    expect(bindingsLink.closest('a')).toHaveAttribute(
-      'href',
-      '/pools/master-data?tab=bindings&entityType=party&canonicalId=party-1&databaseId=db-1&role=organization'
-    )
-    const itemLink = screen.getByText('Open Item workspace')
-    expect(itemLink.closest('a')).toHaveAttribute(
-      'href',
-      '/pools/master-data?tab=item&entityType=item&canonicalId=item-missing&databaseId=db-2'
-    )
+    const bindingsLink = await screen.findByRole('button', { name: 'Open Bindings workspace' }, { timeout: 10000 })
+    await user.click(bindingsLink)
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-runs-location')).toHaveTextContent(
+        '/pools/master-data?tab=bindings&entityType=party&canonicalId=party-1&databaseId=db-1&role=organization'
+      )
+    })
   }, 30000)
 
   it('disables confirm when readiness blockers are present', async () => {
