@@ -89,6 +89,24 @@ describe('platform primitives', () => {
     expect(screen.getByLabelText('Drawer field')).toBeInTheDocument()
   })
 
+  it('renders DrawerFormShell header actions through the canonical extra slot', () => {
+    render(
+      <AntApp>
+        <DrawerFormShell
+          open
+          onClose={vi.fn()}
+          title="Attachment workspace"
+          extra={<button type="button">Header action</button>}
+        >
+          <div>Drawer body</div>
+        </DrawerFormShell>
+      </AntApp>,
+    )
+
+    expect(screen.getByRole('button', { name: 'Header action' })).toBeInTheDocument()
+    expect(screen.getByText('Drawer body')).toBeInTheDocument()
+  })
+
   it('renders DashboardPage as the canonical dashboard shell', () => {
     render(
       <AntApp>

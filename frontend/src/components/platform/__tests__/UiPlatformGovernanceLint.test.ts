@@ -184,6 +184,38 @@ describe('ui platform governance lint', () => {
     ))).toBe(true)
   })
 
+  it('rejects raw Ant Modal and Drawer usage in databases management surfaces', async () => {
+    const modalMessages = await lintSnippet(
+      'src/pages/Databases/components/DatabaseCredentialsModal.tsx',
+      `
+        import { Modal } from 'antd'
+
+        export function DatabaseCredentialsModal() {
+          return <Modal open />
+        }
+      `,
+    )
+    const drawerMessages = await lintSnippet(
+      'src/pages/Databases/components/ExtensionsDrawer.tsx',
+      `
+        import { Drawer } from 'antd'
+
+        export function ExtensionsDrawer() {
+          return <Drawer open />
+        }
+      `,
+    )
+
+    expect(modalMessages.some((message) => (
+      message.ruleId === 'no-restricted-imports'
+        && message.message.includes('ModalFormShell')
+    ))).toBe(true)
+    expect(drawerMessages.some((message) => (
+      message.ruleId === 'no-restricted-imports'
+        && message.message.includes('DrawerFormShell')
+    ))).toBe(true)
+  })
+
   it('rejects full-document handoff props in audited authenticated modules', async () => {
     const buttonMessages = await lintSnippet(
       'src/pages/Pools/PoolRunsPage.tsx',

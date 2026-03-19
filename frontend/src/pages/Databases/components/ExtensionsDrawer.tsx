@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, App, Button, Checkbox, Drawer, Select, Space, Spin, Switch, Table, Tag, Typography } from 'antd'
+import { Alert, App, Button, Checkbox, Select, Space, Spin, Switch, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import dayjs from 'dayjs'
 
@@ -14,6 +14,7 @@ import {
 } from '../../../api/queries/extensionsManualOperations'
 import { listOperationCatalogExposures } from '../../../api/operationCatalog'
 import { tryShowIbcmdCliUiError } from '../../../components/ibcmd/ibcmdCliUiErrors'
+import { DrawerFormShell } from '../../../components/platform'
 
 const api = getV2()
 
@@ -405,12 +406,12 @@ export const ExtensionsDrawer = ({
   const setFlagsOperationSelected = manualOperation === 'extensions.set_flags'
 
   return (
-    <Drawer
+    <DrawerFormShell
       title={databaseName ? `Extensions: ${databaseName}` : 'Extensions'}
       open={open}
       onClose={onClose}
       width={760}
-      destroyOnHidden
+      drawerTestId="database-extensions-drawer"
     >
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         {mutatingDisabled && (
@@ -579,6 +580,6 @@ export const ExtensionsDrawer = ({
           </pre>
         )}
       </Space>
-    </Drawer>
+    </DrawerFormShell>
   )
 }

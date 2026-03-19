@@ -1,4 +1,4 @@
-import { Alert, App, Button, Descriptions, Divider, Drawer, Space, Spin, Tag, Typography } from 'antd'
+import { Alert, App, Button, Descriptions, Divider, Space, Spin, Tag, Typography } from 'antd'
 import { LinkOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 
@@ -10,6 +10,7 @@ import {
   useRefreshDatabaseMetadataSnapshot,
   useReverifyDatabaseConfigurationProfile,
 } from '../../../api/queries/databases'
+import { DrawerFormShell } from '../../../components/platform'
 
 type AlertTone = 'success' | 'info' | 'warning' | 'error'
 
@@ -225,12 +226,12 @@ export const DatabaseMetadataManagementDrawer = ({
   }
 
   return (
-    <Drawer
+    <DrawerFormShell
       open={open}
       onClose={onClose}
       width={640}
       title={`Metadata management: ${databaseName ?? databaseId ?? 'database'}`}
-      data-testid="database-metadata-management-drawer"
+      drawerTestId="database-metadata-management-drawer"
       extra={queuedOperationId ? (
         <Button
           size="small"
@@ -366,6 +367,6 @@ export const DatabaseMetadataManagementDrawer = ({
           </Typography.Text>
         </Space>
       ) : null}
-    </Drawer>
+    </DrawerFormShell>
   )
 }

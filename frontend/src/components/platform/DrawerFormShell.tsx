@@ -10,6 +10,7 @@ type DrawerFormShellProps = {
   onClose: () => void
   title?: ReactNode
   subtitle?: ReactNode
+  extra?: ReactNode
   width?: number
   drawerTestId?: string
   children: ReactNode
@@ -20,6 +21,7 @@ export function DrawerFormShell({
   onClose,
   title,
   subtitle,
+  extra,
   width = 880,
   drawerTestId,
   children,
@@ -49,6 +51,7 @@ export function DrawerFormShell({
       open={open}
       onClose={onClose}
       title={drawerTitle}
+      extra={extra}
       width={isNarrow ? '100%' : width}
       forceRender
       destroyOnClose

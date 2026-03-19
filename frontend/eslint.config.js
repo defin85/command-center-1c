@@ -67,6 +67,19 @@ const databasesRouteModuleImports = [
   },
 ]
 
+const databasesSecondarySurfaceImports = [
+  {
+    name: 'antd',
+    importNames: ['Modal'],
+    message: 'Databases modal management flows must use `ModalFormShell` from `src/components/platform` instead of raw `Modal`.',
+  },
+  {
+    name: 'antd',
+    importNames: ['Drawer'],
+    message: 'Databases drawer management flows must use `DrawerFormShell` from `src/components/platform` instead of raw `Drawer`.',
+  },
+]
+
 const noStaticModalMethodsRule = {
   selector: "MemberExpression[object.name='Modal'][property.name=/^(confirm|info|success|error|warning)$/]",
   message: 'Use `const { modal } = App.useApp()` and call `modal.confirm/info/...` instead of `Modal.*` static methods.',
@@ -268,6 +281,24 @@ export default tseslint.config(
         paths: [
           ...contextAwareAntdImports,
           ...databasesRouteModuleImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Databases/components/DatabaseCredentialsModal.tsx',
+      'src/pages/Databases/components/DatabaseDbmsMetadataModal.tsx',
+      'src/pages/Databases/components/DatabaseIbcmdConnectionProfileModal.tsx',
+      'src/pages/Databases/components/DatabaseMetadataManagementDrawer.tsx',
+      'src/pages/Databases/components/ExtensionsDrawer.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...databasesSecondarySurfaceImports,
         ],
         patterns: competingFoundationImportPatterns,
       }],
