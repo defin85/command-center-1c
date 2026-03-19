@@ -51,6 +51,14 @@ const dashboardRouteModuleImports = [
   },
 ]
 
+const operationsRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Empty', 'Row', 'Col', 'Spin', 'Table'],
+    message: 'Operations route must compose through `WorkspacePage`, `MasterDetailShell`, and platform-owned secondary surfaces instead of raw Ant layout/data containers.',
+  },
+]
+
 const noStaticModalMethodsRule = {
   selector: "MemberExpression[object.name='Modal'][property.name=/^(confirm|info|success|error|warning)$/]",
   message: 'Use `const { modal } = App.useApp()` and call `modal.confirm/info/...` instead of `Modal.*` static methods.',
@@ -206,6 +214,7 @@ export default tseslint.config(
       'src/pages/Decisions/DecisionsPage.tsx',
       'src/pages/Dashboard/Dashboard.tsx',
       'src/pages/Databases/Databases.tsx',
+      'src/pages/Operations/OperationsPage.tsx',
       'src/pages/Pools/PoolBindingProfilesEditorModal.tsx',
       'src/pages/Pools/PoolRunsPage.tsx',
       'src/pages/Pools/PoolWorkflowBindingsEditor.tsx',
@@ -223,6 +232,20 @@ export default tseslint.config(
         paths: [
           ...contextAwareAntdImports,
           ...dashboardRouteModuleImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Operations/OperationsPage.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...operationsRouteModuleImports,
         ],
         patterns: competingFoundationImportPatterns,
       }],

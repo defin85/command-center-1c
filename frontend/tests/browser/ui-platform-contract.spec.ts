@@ -673,6 +673,258 @@ const WORKFLOW_TEMPLATE_DETAIL = {
   updated_at: NOW,
 }
 
+const WORKFLOW_OPERATION = {
+  id: 'workflow-operation-1',
+  name: 'workflow root execute',
+  description: '',
+  operation_type: 'query',
+  target_entity: 'Workflow',
+  status: 'processing',
+  progress: 50,
+  total_tasks: 2,
+  completed_tasks: 1,
+  failed_tasks: 0,
+  payload: {},
+  config: {},
+  task_id: null,
+  started_at: NOW,
+  completed_at: null,
+  duration_seconds: 1,
+  success_rate: 50,
+  created_by: 'admin',
+  metadata: {
+    workflow_execution_id: POOL_RUN.workflow_execution_id,
+    node_id: 'services-node-1',
+    root_operation_id: 'workflow-operation-1',
+    execution_consumer: 'workflows',
+    lane: 'workflows',
+    trace_id: 'trace-services-1',
+  },
+  created_at: NOW,
+  updated_at: NOW,
+  database_names: ['db-services'],
+  tasks: [],
+}
+
+const MANUAL_OPERATION = {
+  id: 'manual-operation-1',
+  name: 'manual lock scheduled jobs',
+  description: '',
+  operation_type: 'lock_scheduled_jobs',
+  target_entity: 'Infobase',
+  status: 'completed',
+  progress: 100,
+  total_tasks: 1,
+  completed_tasks: 1,
+  failed_tasks: 0,
+  payload: {},
+  config: {},
+  task_id: null,
+  started_at: NOW,
+  completed_at: NOW,
+  duration_seconds: 1,
+  success_rate: 100,
+  created_by: 'admin',
+  metadata: {},
+  created_at: NOW,
+  updated_at: NOW,
+  database_names: ['db-services'],
+  tasks: [],
+}
+
+const OPERATIONS = [WORKFLOW_OPERATION, MANUAL_OPERATION]
+
+const OPERATION_DETAILS: Record<string, {
+  operation: typeof WORKFLOW_OPERATION
+  execution_plan: Record<string, unknown> | null
+  bindings: Array<Record<string, unknown>>
+  tasks: Array<Record<string, unknown>>
+  progress: Record<string, number>
+}> = {
+  [WORKFLOW_OPERATION.id]: {
+    operation: {
+      ...WORKFLOW_OPERATION,
+      tasks: [
+        {
+          id: 'task-workflow-1',
+          database: DATABASE_ID,
+          database_name: 'db-services',
+          status: 'processing',
+          result: {},
+          error_message: '',
+          error_code: '',
+          retry_count: 0,
+          max_retries: 3,
+          worker_id: 'worker-1',
+          started_at: NOW,
+          completed_at: null,
+          duration_seconds: 1,
+          created_at: NOW,
+          updated_at: NOW,
+        },
+      ],
+    },
+    execution_plan: {
+      kind: 'workflow',
+      workflow_id: WORKFLOW.id,
+      input_context_masked: {
+        workflow_execution_id: POOL_RUN.workflow_execution_id,
+      },
+    },
+    bindings: [
+      {
+        target_ref: 'workflow_execution_id',
+        source_ref: 'request.workflow_execution_id',
+        resolve_at: 'api',
+        sensitive: false,
+        status: 'applied',
+      },
+    ],
+    tasks: [
+      {
+        id: 'task-workflow-1',
+        database: DATABASE_ID,
+        database_name: 'db-services',
+        status: 'processing',
+        result: {},
+        error_message: '',
+        error_code: '',
+        retry_count: 0,
+        max_retries: 3,
+        worker_id: 'worker-1',
+        started_at: NOW,
+        completed_at: null,
+        duration_seconds: 1,
+        created_at: NOW,
+        updated_at: NOW,
+      },
+    ],
+    progress: {
+      total: 2,
+      completed: 1,
+      failed: 0,
+      pending: 0,
+      processing: 1,
+      percent: 50,
+    },
+  },
+  [MANUAL_OPERATION.id]: {
+    operation: {
+      ...MANUAL_OPERATION,
+      tasks: [
+        {
+          id: 'task-manual-1',
+          database: DATABASE_ID,
+          database_name: 'db-services',
+          status: 'completed',
+          result: {},
+          error_message: '',
+          error_code: '',
+          retry_count: 0,
+          max_retries: 3,
+          worker_id: 'worker-1',
+          started_at: NOW,
+          completed_at: NOW,
+          duration_seconds: 1,
+          created_at: NOW,
+          updated_at: NOW,
+        },
+      ],
+    },
+    execution_plan: null,
+    bindings: [],
+    tasks: [
+      {
+        id: 'task-manual-1',
+        database: DATABASE_ID,
+        database_name: 'db-services',
+        status: 'completed',
+        result: {},
+        error_message: '',
+        error_code: '',
+        retry_count: 0,
+        max_retries: 3,
+        worker_id: 'worker-1',
+        started_at: NOW,
+        completed_at: NOW,
+        duration_seconds: 1,
+        created_at: NOW,
+        updated_at: NOW,
+      },
+    ],
+    progress: {
+      total: 1,
+      completed: 1,
+      failed: 0,
+      pending: 0,
+      processing: 0,
+      percent: 100,
+    },
+  },
+}
+
+const OPERATION_TIMELINES: Record<string, {
+  operation_id: string
+  timeline: Array<Record<string, unknown>>
+  total_events: number
+  duration_ms: number | null
+}> = {
+  [WORKFLOW_OPERATION.id]: {
+    operation_id: WORKFLOW_OPERATION.id,
+    timeline: [
+      {
+        timestamp: 1000,
+        event: 'orchestrator.created',
+        service: 'orchestrator',
+        workflow_execution_id: POOL_RUN.workflow_execution_id,
+        node_id: 'services-node-1',
+        root_operation_id: WORKFLOW_OPERATION.id,
+        execution_consumer: 'workflows',
+        lane: 'workflows',
+        metadata: {},
+      },
+      {
+        timestamp: 1800,
+        event: 'worker.command.completed',
+        service: 'worker',
+        workflow_execution_id: POOL_RUN.workflow_execution_id,
+        node_id: 'services-node-1',
+        root_operation_id: WORKFLOW_OPERATION.id,
+        execution_consumer: 'workflows',
+        lane: 'workflows',
+        metadata: {},
+      },
+    ],
+    total_events: 2,
+    duration_ms: 800,
+  },
+  [MANUAL_OPERATION.id]: {
+    operation_id: MANUAL_OPERATION.id,
+    timeline: [
+      {
+        timestamp: 1000,
+        event: 'orchestrator.created',
+        service: 'orchestrator',
+        root_operation_id: MANUAL_OPERATION.id,
+        execution_consumer: 'operations',
+        lane: 'operations',
+        metadata: {},
+      },
+      {
+        timestamp: 1300,
+        event: 'worker.command.completed',
+        service: 'worker',
+        root_operation_id: MANUAL_OPERATION.id,
+        execution_consumer: 'operations',
+        lane: 'operations',
+        metadata: {},
+      },
+    ],
+    total_events: 2,
+    duration_ms: 300,
+  },
+}
+
 async function fulfillJson(route: Route, data: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -694,6 +946,8 @@ type RequestCounts = {
   bindingProfilesList: number
   bindingProfileDetails: number
   organizationPools: number
+  operationsList: number
+  operationDetails: number
 }
 
 function createRequestCounts(): RequestCounts {
@@ -709,6 +963,8 @@ function createRequestCounts(): RequestCounts {
     bindingProfilesList: 0,
     bindingProfileDetails: 0,
     organizationPools: 0,
+    operationsList: 0,
+    operationDetails: 0,
   }
 }
 
@@ -939,6 +1195,39 @@ async function setupUiPlatformMocks(
         },
         executions: [],
       })
+    }
+
+    if (method === 'GET' && path === '/api/v2/operations/list-operations/') {
+      if (counts) {
+        counts.operationsList += 1
+      }
+      return fulfillJson(route, {
+        operations: OPERATIONS,
+        count: OPERATIONS.length,
+        total: OPERATIONS.length,
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/operations/get-operation/') {
+      const operationId = String(url.searchParams.get('operation_id') || '')
+      const detail = OPERATION_DETAILS[operationId]
+      if (!detail) {
+        return fulfillJson(route, { detail: 'Operation not found.' }, 404)
+      }
+      if (counts) {
+        counts.operationDetails += 1
+      }
+      return fulfillJson(route, detail)
+    }
+
+    if (method === 'POST' && path === '/api/v2/operations/get-operation-timeline/') {
+      const payload = request.postDataJSON() as { operation_id?: string } | null
+      const operationId = typeof payload?.operation_id === 'string' ? payload.operation_id : ''
+      const timeline = OPERATION_TIMELINES[operationId]
+      if (!timeline) {
+        return fulfillJson(route, { detail: 'Operation timeline not found.' }, 404)
+      }
+      return fulfillJson(route, timeline)
     }
 
     const decisionDetailMatch = path.match(/^\/api\/v2\/decisions\/([^/]+)\/$/)
@@ -1314,6 +1603,60 @@ test('UI platform: /pools/runs opens inspect detail in a mobile-safe drawer with
   await expectNoHorizontalOverflow(page)
 })
 
+test('UI platform: /operations restores selected operation and inspect context from a deep-link', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+
+  await page.goto(`/operations?operation=${WORKFLOW_OPERATION.id}&tab=inspect`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Operations Monitor', level: 2 })).toBeVisible()
+  await expect(page.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Timeline' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open workflow diagnostics' })).toBeVisible()
+})
+
+test('UI platform: /operations keeps selected operation view on browser back and forward', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+
+  await page.goto(`/operations?operation=${WORKFLOW_OPERATION.id}&tab=inspect`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible()
+
+  await page.getByRole('button', { name: 'Timeline' }).click()
+  await expect(page).toHaveURL(new RegExp(`\\/operations\\?operation=${WORKFLOW_OPERATION.id}&tab=monitor$`))
+
+  await page.goBack()
+  await expect(page).toHaveURL(new RegExp(`\\/operations\\?operation=${WORKFLOW_OPERATION.id}&tab=inspect$`))
+  await expect(page.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible()
+
+  await page.goForward()
+  await expect(page).toHaveURL(new RegExp(`\\/operations\\?operation=${WORKFLOW_OPERATION.id}&tab=monitor$`))
+})
+
+test('UI platform: /operations opens inspect detail in a mobile-safe drawer without page-wide overflow', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto(`/operations?operation=${WORKFLOW_OPERATION.id}&tab=inspect`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const detailDrawer = page.getByRole('dialog')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible()
+  await expect(detailDrawer.getByRole('button', { name: 'Timeline' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
 test('Runtime contract: /decisions avoids mount-time waterfall and duplicate notifications on the default path', async ({ page }) => {
   const counts = createRequestCounts()
 
@@ -1406,6 +1749,60 @@ test('Runtime contract: /pools/runs hands off to workflow diagnostics without re
   await expect(counts.bootstrap).toBe(1)
   await expect(counts.meReads).toBe(0)
   await expect(counts.myTenantsReads).toBe(0)
+})
+
+test('Runtime contract: /operations hands off to workflow diagnostics without replaying shell reads', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto(`/operations?operation=${WORKFLOW_OPERATION.id}&tab=inspect`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Operations Monitor', level: 2 })).toBeVisible()
+  await expect.poll(() => counts.bootstrap).toBe(1)
+  await expect.poll(() => counts.operationsList).toBe(1)
+  await expect.poll(() => counts.operationDetails).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+
+  await page.getByRole('button', { name: 'Open workflow diagnostics' }).click()
+
+  await expect(page).toHaveURL(`/workflows/executions/${POOL_RUN.workflow_execution_id}`)
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+})
+
+test('Runtime contract: /operations ignores same-route menu re-entry and keeps inspect context stable', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto(`/operations?operation=${WORKFLOW_OPERATION.id}&tab=inspect`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const operationsMenuItem = page.getByRole('menuitem', { name: /Operations/i })
+
+  await expect(page.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible()
+  await expect.poll(() => counts.operationsList).toBe(1)
+  await expect.poll(() => counts.operationDetails).toBe(1)
+
+  await operationsMenuItem.click()
+  await page.waitForTimeout(750)
+
+  await expect(page).toHaveURL(new RegExp(`\\/operations\\?operation=${WORKFLOW_OPERATION.id}&tab=inspect$`))
+  await expect(page.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible()
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.operationsList).toBe(1)
+  await expect(counts.operationDetails).toBe(1)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 
 test('Runtime contract: /decisions hands off to /pools/binding-profiles without replaying shell reads', async ({ page }) => {

@@ -131,6 +131,32 @@ describe('ui platform governance lint', () => {
     ))).toBe(true)
   })
 
+  it('rejects raw Ant layout containers in operations route modules', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Operations/OperationsPage.tsx',
+      `
+        import { Card, Drawer, Table } from 'antd'
+        import { WorkspacePage, PageHeader } from '../../components/platform'
+
+        export function OperationsPage() {
+          return (
+            <WorkspacePage header={<PageHeader title="Operations" />}>
+              <Card>
+                <Table />
+                <Drawer open />
+              </Card>
+            </WorkspacePage>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'no-restricted-imports'
+        && message.message.includes('Operations route')
+    ))).toBe(true)
+  })
+
   it('rejects full-document handoff props in audited authenticated modules', async () => {
     const buttonMessages = await lintSnippet(
       'src/pages/Pools/PoolRunsPage.tsx',

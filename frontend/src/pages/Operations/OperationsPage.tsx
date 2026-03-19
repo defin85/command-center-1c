@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import { Button, Space, Alert, Tag } from 'antd'
+import { Button, Space, Alert, Tag, Typography } from 'antd'
 import { ReloadOutlined, PlusOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router-dom'
 import { useOperations, useCancelOperation } from '../../api/queries/operations'
@@ -19,12 +19,13 @@ import type { TimelineStreamEvent } from '../../hooks/useOperationTimelineStream
 import { useOperationsMuxStream } from '../../hooks/useOperationsMuxStream'
 import { OperationsTable } from './components/OperationsTable'
 import { buildOperationsColumns } from './components/OperationsTableColumns'
-import { OperationDetailsModal } from './components/OperationDetailsModal'
+import { OperationInspectPanel } from './components/OperationDetailsModal'
 import { NewOperationWizard } from './components/NewOperationWizard'
 import OperationTimelineDrawer from '../../components/service-mesh/OperationTimelineDrawer'
 import type { NewOperationData } from './components/NewOperationWizard'
 import type { UIBatchOperation } from './types'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
+import { EntityDetails, MasterDetailShell, PageHeader, WorkspacePage } from '../../components/platform'
 
 const api = getV2()
 
@@ -43,10 +44,17 @@ const DEFAULT_MAX_LIVE_STREAMS = 10
 const DEFAULT_MAX_SUBSCRIPTIONS = 200
 const ACTIVE_STATUSES = ['pending', 'queued', 'processing'] as const
 const EMPTY_OPERATIONS: UIBatchOperation[] = []
+const DEFAULT_OPERATIONS_VIEW = 'inspect' as const
 const isActiveStatus = (
   status: UIBatchOperation['status']
 ): status is (typeof ACTIVE_STATUSES)[number] =>
   (ACTIVE_STATUSES as readonly string[]).includes(status)
+
+const parseOperationsView = (value: string | null): 'inspect' | 'timeline' => (
+  value === 'monitor' || value === 'timeline'
+    ? 'timeline'
+    : DEFAULT_OPERATIONS_VIEW
+)
 
 /**
  * OperationsPage - Main page with tabs for operations list and live monitor
@@ -55,19 +63,16 @@ export const OperationsPage = () => {
   const authz = useAuthz()
   const isStaff = authz.isStaff
   const [searchParams, setSearchParams] = useSearchParams()
+  const selectedOperationIdFromUrl = searchParams.get('operation') || undefined
+  const activeView = parseOperationsView(searchParams.get('tab'))
 
   // UI State (not data-related)
-  const [selectedOperation, setSelectedOperation] = useState<UIBatchOperation | null>(null)
-  const [detailsVisible, setDetailsVisible] = useState(false)
   const [wizardVisible, setWizardVisible] = useState(false)
-  const [timelineVisible, setTimelineVisible] = useState(false)
-  const [timelineOperationId, setTimelineOperationId] = useState<string | undefined>()
   const [operationsState, setOperationsState] = useState<UIBatchOperation[]>([])
   const [liveEvents, setLiveEvents] = useState<Record<string, TimelineStreamEvent>>({})
   const [maxLiveStreams, setMaxLiveStreams] = useState(DEFAULT_MAX_LIVE_STREAMS)
   const [maxSubscriptions, setMaxSubscriptions] = useState(DEFAULT_MAX_SUBSCRIPTIONS)
 
-  const operationIdFromUrl = searchParams.get('operation') || undefined
   const operationIdFilter = (searchParams.get('operation_id') || '').trim() || undefined
   const workflowExecutionId = searchParams.get('workflow_execution_id') || undefined
   const nodeId = searchParams.get('node_id') || undefined
@@ -150,12 +155,6 @@ export const OperationsPage = () => {
     [cancelMutation]
   )
 
-  // Show operation details modal
-  const handleViewDetails = useCallback((operation: UIBatchOperation) => {
-    setSelectedOperation(operation)
-    setDetailsVisible(true)
-  }, [])
-
   const updateSearchParams = useCallback(
     (updates: Record<string, string | null>) => {
       const next = new URLSearchParams(searchParams)
@@ -171,20 +170,27 @@ export const OperationsPage = () => {
     [searchParams, setSearchParams]
   )
 
+  const handleViewDetails = useCallback((operation: UIBatchOperation) => {
+    updateSearchParams({ operation: operation.id, tab: 'inspect' })
+  }, [updateSearchParams])
+
   const handleTimelineOpen = useCallback(
     (opId: string) => {
-      setDetailsVisible(false)
-      setTimelineOperationId(opId)
-      setTimelineVisible(true)
-      updateSearchParams({ operation: opId })
+      updateSearchParams({ operation: opId, tab: 'monitor' })
     },
     [updateSearchParams]
   )
 
   const handleTimelineClose = useCallback(() => {
-    setTimelineVisible(false)
-    setTimelineOperationId(undefined)
-    updateSearchParams({ operation: null })
+    if (selectedOperationIdFromUrl) {
+      updateSearchParams({ tab: 'inspect' })
+      return
+    }
+    updateSearchParams({ operation: null, tab: null })
+  }, [selectedOperationIdFromUrl, updateSearchParams])
+
+  const handleInspectClose = useCallback(() => {
+    updateSearchParams({ operation: null, tab: null })
   }, [updateSearchParams])
 
   const handleFilterWorkflow = useCallback(
@@ -266,6 +272,14 @@ export const OperationsPage = () => {
   const totalOperations = typeof operationsResponse?.total === 'number'
     ? operationsResponse.total
     : operations.length
+  const selectedOperation = useMemo(
+    () => operationsState.find((item) => item.id === selectedOperationIdFromUrl)
+      ?? operations.find((item) => item.id === selectedOperationIdFromUrl)
+      ?? null,
+    [operations, operationsState, selectedOperationIdFromUrl]
+  )
+  const inspectVisible = Boolean(selectedOperationIdFromUrl) && activeView === 'inspect'
+  const timelineVisible = Boolean(selectedOperationIdFromUrl) && activeView === 'timeline'
 
   const error = queryError
     ? 'Failed to load operations. Please try again.'
@@ -274,13 +288,6 @@ export const OperationsPage = () => {
   const handleRefresh = useCallback(() => {
     refetch()
   }, [refetch])
-
-  useEffect(() => {
-    if (operationIdFromUrl) {
-      setTimelineOperationId(operationIdFromUrl)
-      setTimelineVisible(true)
-    }
-  }, [operationIdFromUrl])
 
   useEffect(() => {
     if (!isStaff) {
@@ -562,108 +569,135 @@ export const OperationsPage = () => {
     }))
   }, [muxEvent, applyTimelineUpdate])
 
-  return (
-    <div>
-      {/* Header */}
-      <Space style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
-        <h1 style={{ margin: 0 }}>Operations Monitor</h1>
-        <Space>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setWizardVisible(true)}
-            disabled={!canCreateOperation}
-          >
-            New Operation
-          </Button>
-        </Space>
-      </Space>
-
-      {/* Error Alert */}
-      {error && (
-        <Alert
-          message={error}
-          type="error"
-          closable
-          style={{ marginBottom: 16 }}
-        />
-      )}
-
-      {workflowExecutionId && (
+  const activeFilterChips = (
+    <>
+      {workflowExecutionId ? (
         <Tag closable onClose={() => updateSearchParams({ workflow_execution_id: null })}>
           Workflow: {workflowExecutionId}
         </Tag>
-      )}
-      {operationIdFilter && (
+      ) : null}
+      {operationIdFilter ? (
         <Tag closable onClose={() => updateSearchParams({ operation_id: null })}>
           Operation: {operationIdFilter}
         </Tag>
-      )}
-      {nodeId && (
+      ) : null}
+      {nodeId ? (
         <Tag closable onClose={() => updateSearchParams({ node_id: null })}>
           Node: {nodeId}
         </Tag>
-      )}
-      {rootOperationId && (
+      ) : null}
+      {rootOperationId ? (
         <Tag closable onClose={() => updateSearchParams({ root_operation_id: null })}>
           Root: {rootOperationId}
         </Tag>
-      )}
-      {executionConsumer && (
+      ) : null}
+      {executionConsumer ? (
         <Tag closable onClose={() => updateSearchParams({ execution_consumer: null })}>
           Consumer: {executionConsumer}
         </Tag>
-      )}
-      {lane && (
+      ) : null}
+      {lane ? (
         <Tag closable onClose={() => updateSearchParams({ lane: null })}>
           Lane: {lane}
         </Tag>
+      ) : null}
+    </>
+  )
+
+  return (
+    <WorkspacePage
+      header={(
+        <PageHeader
+          title="Operations Monitor"
+          subtitle="Inspect, trace, and control batch operations without leaving the catalog."
+          actions={(
+            <Space wrap>
+              <Button
+                icon={<ReloadOutlined />}
+                onClick={handleRefresh}
+                loading={loading}
+              >
+                Refresh
+              </Button>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => setWizardVisible(true)}
+                disabled={!canCreateOperation}
+              >
+                New Operation
+              </Button>
+            </Space>
+          )}
+        />
       )}
-
-      <div style={{ marginTop: 12 }}>
-      <OperationsTable
-        table={table}
-        operations={operationsState}
-        total={totalOperations}
-        loading={loading}
-        columns={operationsColumns}
-        toolbarActions={(
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={handleRefresh}
-            loading={loading}
-          >
-            Refresh
-          </Button>
+    >
+      <MasterDetailShell
+        list={(
+          <EntityDetails title="Operations Catalog">
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              {error ? (
+                <Alert
+                  message={error}
+                  type="error"
+                  closable
+                />
+              ) : null}
+              {workflowExecutionId || operationIdFilter || nodeId || rootOperationId || executionConsumer || lane ? (
+                <Space size={[8, 8]} wrap>
+                  {activeFilterChips}
+                </Space>
+              ) : null}
+              <OperationsTable
+                table={table}
+                operations={operationsState}
+                total={totalOperations}
+                loading={loading}
+                columns={operationsColumns}
+                onViewDetails={handleViewDetails}
+                onCancel={handleCancel}
+                onFilterWorkflow={handleFilterWorkflow}
+                onFilterNode={handleFilterNode}
+              />
+            </Space>
+          </EntityDetails>
         )}
-        onViewDetails={handleViewDetails}
-        onCancel={handleCancel}
-        onFilterWorkflow={handleFilterWorkflow}
-        onFilterNode={handleFilterNode}
-      />
-      </div>
-
-      {/* Details Modal */}
-      <OperationDetailsModal
-        operation={selectedOperation}
-        visible={detailsVisible}
-        onClose={() => setDetailsVisible(false)}
-        onTimeline={handleTimelineOpen}
-        liveEvent={selectedOperation ? liveEvents[selectedOperation.id] ?? null : null}
+        detail={inspectVisible ? (
+          <OperationInspectPanel
+            operationId={selectedOperationIdFromUrl ?? null}
+            operationSnapshot={selectedOperation}
+            onTimeline={handleTimelineOpen}
+            liveEvent={selectedOperationIdFromUrl ? liveEvents[selectedOperationIdFromUrl] ?? null : null}
+            onFilterWorkflow={handleFilterWorkflow}
+            onFilterNode={handleFilterNode}
+            canCancel={canCancel}
+            onCancel={handleCancel}
+          />
+        ) : (
+          <EntityDetails title="Operation Inspect">
+            <Typography.Text type="secondary">
+              Select an operation to inspect status, task execution, and workflow context.
+            </Typography.Text>
+          </EntityDetails>
+        )}
+        detailOpen={inspectVisible}
+        onCloseDetail={handleInspectClose}
+        detailDrawerTitle={selectedOperation?.name ?? 'Operation Details'}
+        listMinWidth={420}
+        listMaxWidth={560}
       />
 
       <OperationTimelineDrawer
         visible={timelineVisible}
-        operationId={timelineOperationId || null}
+        operationId={selectedOperationIdFromUrl ?? null}
         onClose={handleTimelineClose}
       />
 
-      {/* New Operation Wizard */}
       <NewOperationWizard
         visible={wizardVisible}
         onClose={() => setWizardVisible(false)}
         onSubmit={handleWizardSubmit}
       />
-    </div>
+    </WorkspacePage>
   )
 }

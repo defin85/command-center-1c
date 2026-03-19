@@ -1,22 +1,62 @@
 /**
- * Modal component for displaying operation details and task list.
- * Extracted from Operations.tsx.
+ * Secondary surfaces for inspecting operation details.
+ *
+ * Provides a reusable inspect panel for the canonical /operations workspace
+ * and a modal wrapper kept for backward-compatible callers.
  */
 
 import { useEffect, useMemo, useState } from 'react'
 import { Modal, Space, Tag, Progress, Alert, Typography, Button, Tooltip, Table } from 'antd'
-import { MonitorOutlined, BranchesOutlined, FilterOutlined } from '@ant-design/icons'
+import { MonitorOutlined, BranchesOutlined, FilterOutlined, StopOutlined, ExportOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import { Link as RouterLink } from 'react-router-dom'
-import type { OperationDetailsModalProps, UITask } from '../types'
+
+import type { OperationDetailsModalProps, UIBatchOperation, UITask } from '../types'
 import { getStatusColor, getOperationTypeLabel } from '../utils'
 import { useOperation } from '../../../api/queries/operations'
 import type { TimelineStreamEvent } from '../../../hooks/useOperationTimelineStream'
 import { TableToolkit } from '../../../components/table/TableToolkit'
 import { useTableToolkit } from '../../../components/table/hooks/useTableToolkit'
 import { useAuthz } from '../../../authz/useAuthz'
+import { EntityDetails, RouteButton } from '../../../components/platform'
 
 const { Paragraph, Link, Text } = Typography
+
+type OperationInspectPanelProps = {
+  operationId: string | null
+  operationSnapshot?: UIBatchOperation | null
+  onTimeline: (operationId: string) => void
+  liveEvent?: TimelineStreamEvent | null
+  onFilterWorkflow?: (workflowExecutionId: string) => void
+  onFilterNode?: (nodeId: string) => void
+  canCancel?: boolean
+  onCancel?: (operationId: string) => void
+}
+
+type OperationInspectBodyProps = OperationInspectPanelProps & {
+  operationState: UIBatchOperation | null
+  tasksLoading: boolean
+  queuedTasks: number
+  executionPlanText: string | null
+  bindings: UIBinding[]
+  taskColumns: ColumnsType<UITask>
+  bindingColumns: ColumnsType<UIBinding>
+  taskTable: ReturnType<typeof useTableToolkit<UITask>>
+}
+
+type UIBinding = {
+  target_ref?: string
+  source_ref?: string
+  resolve_at?: string
+  sensitive?: boolean
+  status?: string
+  reason?: string | null
+}
+
+const CANCELLABLE_OPERATION_STATUSES = new Set<UIBatchOperation['status']>([
+  'pending',
+  'queued',
+  'processing',
+])
 
 const toNumber = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -32,7 +72,7 @@ const toNumber = (value: unknown): number | null => {
 const extractTaskResultField = <T,>(
   result: unknown,
   key: string,
-  predicate: (value: unknown) => value is T
+  predicate: (value: unknown) => value is T,
 ): T | null => {
   if (!result || typeof result !== 'object') return null
   const value = (result as Record<string, unknown>)[key]
@@ -40,17 +80,17 @@ const extractTaskResultField = <T,>(
 }
 
 const extractTaskStderr = (result: unknown): string | null => {
-  const raw = extractTaskResultField(result, 'stderr', (v): v is string => typeof v === 'string')
+  const raw = extractTaskResultField(result, 'stderr', (value): value is string => typeof value === 'string')
   const trimmed = raw?.trim()
   return trimmed ? trimmed : null
 }
 
 const extractTaskExitStatus = (result: unknown): number | null =>
-  extractTaskResultField(result, 'exit_code', (v): v is number => typeof v === 'number' && Number.isFinite(v))
+  extractTaskResultField(result, 'exit_code', (value): value is number => typeof value === 'number' && Number.isFinite(value))
 
 const applyTimelineUpdate = (
-  operation: OperationDetailsModalProps['operation'],
-  event: TimelineStreamEvent | null
+  operation: UIBatchOperation | null,
+  event: TimelineStreamEvent | null,
 ) => {
   if (!operation || !event || operation.id !== event.operation_id) {
     return operation
@@ -119,28 +159,22 @@ const applyTimelineUpdate = (
   return updatedOperation
 }
 
-/**
- * OperationDetailsModal - Shows detailed operation info with task breakdown
- */
-export const OperationDetailsModal = ({
-  operation,
-  visible,
-  onClose,
-  onTimeline,
+function useOperationInspectModel({
+  operationId,
+  operationSnapshot,
   liveEvent,
-}: OperationDetailsModalProps) => {
+}: Pick<OperationInspectPanelProps, 'operationId' | 'operationSnapshot' | 'liveEvent'>) {
   const authz = useAuthz()
   const isStaff = authz.isStaff
-  const operationId = operation?.id ?? null
-  const [operationState, setOperationState] = useState(operation)
+  const [operationState, setOperationState] = useState<UIBatchOperation | null>(operationSnapshot ?? null)
 
   useEffect(() => {
     if (!operationId) {
       setOperationState(null)
       return
     }
-    setOperationState(operation)
-  }, [operation, operationId])
+    setOperationState(operationSnapshot ?? null)
+  }, [operationId, operationSnapshot])
 
   useEffect(() => {
     if (!liveEvent) return
@@ -153,13 +187,6 @@ export const OperationDetailsModal = ({
     return Math.max(queued, 0)
   }, [operationState])
 
-  const applyFilter = (key: 'workflow_execution_id' | 'node_id', value?: string) => {
-    if (!value) return
-    const params = new URLSearchParams(window.location.search)
-    params.set(key, value)
-    window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`)
-    window.dispatchEvent(new PopStateEvent('popstate'))
-  }
   const fallbackColumnConfigs = useMemo(() => [
     { key: 'database_name', label: 'Database', sortable: true, groupKey: 'core', groupLabel: 'Core' },
     { key: 'status', label: 'Status', sortable: true, groupKey: 'status', groupLabel: 'Status' },
@@ -168,7 +195,7 @@ export const OperationDetailsModal = ({
     { key: 'error_message', label: 'Error', groupKey: 'details', groupLabel: 'Details' },
   ], [])
 
-  const taskColumns: ColumnsType<UITask> = [
+  const taskColumns: ColumnsType<UITask> = useMemo(() => [
     {
       title: 'Database',
       dataIndex: 'database_name',
@@ -190,13 +217,13 @@ export const OperationDetailsModal = ({
       title: 'Retries',
       dataIndex: 'retry_count',
       key: 'retry_count',
-      render: (count: number, record) => `${count}/${record.max_retries}`,
+      render: (count: number, record: UITask) => `${count}/${record.max_retries}`,
     },
     {
       title: 'Error',
       dataIndex: 'error_message',
       key: 'error_message',
-      render: (_error: string, record) => {
+      render: (_error: string, record: UITask) => {
         const stderr = extractTaskStderr(record.result)
         const exitStatus = extractTaskExitStatus(record.result)
         const error = (record.error_message ?? '').trim()
@@ -216,7 +243,7 @@ export const OperationDetailsModal = ({
         )
       },
     },
-  ]
+  ], [])
 
   const taskTable = useTableToolkit({
     tableId: 'operation_tasks',
@@ -228,7 +255,7 @@ export const OperationDetailsModal = ({
   const taskPageStart = (taskTable.pagination.page - 1) * taskTable.pagination.pageSize
 
   const { data: freshOperation, isFetching: tasksLoading } = useOperation(operationId ?? '', {
-    enabled: visible && !!operationId,
+    enabled: Boolean(operationId),
     taskParams: {
       limit: taskTable.pagination.pageSize,
       offset: taskPageStart,
@@ -243,22 +270,13 @@ export const OperationDetailsModal = ({
     }
   }, [freshOperation])
 
-  type UIBinding = {
-    target_ref?: string
-    source_ref?: string
-    resolve_at?: string
-    sensitive?: boolean
-    status?: string
-    reason?: string | null
-  }
-
   const executionPlanText = useMemo(() => {
     if (!operationState || !isStaff) return null
     const plan = operationState.execution_plan as Record<string, unknown> | undefined
     if (!plan || typeof plan !== 'object') return null
 
     const kind = String(plan.kind ?? '')
-    const argv = Array.isArray(plan.argv_masked) ? plan.argv_masked.filter((x) => typeof x === 'string') : []
+    const argv = Array.isArray(plan.argv_masked) ? plan.argv_masked.filter((item) => typeof item === 'string') : []
     const stdinMasked = typeof plan.stdin_masked === 'string' ? plan.stdin_masked : null
     const workflowId = typeof plan.workflow_id === 'string' ? plan.workflow_id : null
     const inputContextMasked = plan.input_context_masked as unknown
@@ -268,7 +286,7 @@ export const OperationDetailsModal = ({
     if (workflowId) lines.push(`workflow_id: ${workflowId}`)
     if (argv.length > 0) {
       lines.push('argv_masked:')
-      lines.push(...argv.map((x) => `  ${x}`))
+      lines.push(...argv.map((item) => `  ${item}`))
     }
     if (stdinMasked) {
       lines.push(`stdin_masked: ${stdinMasked}`)
@@ -285,7 +303,7 @@ export const OperationDetailsModal = ({
     return Array.isArray(operationState.bindings) ? (operationState.bindings as UIBinding[]) : []
   }, [isStaff, operationState])
 
-  const bindingColumns: ColumnsType<UIBinding> = [
+  const bindingColumns: ColumnsType<UIBinding> = useMemo(() => [
     { title: 'Target', dataIndex: 'target_ref', key: 'target_ref' },
     { title: 'Source', dataIndex: 'source_ref', key: 'source_ref' },
     { title: 'Resolve', dataIndex: 'resolve_at', key: 'resolve_at', width: 90 },
@@ -298,169 +316,267 @@ export const OperationDetailsModal = ({
     },
     { title: 'Status', dataIndex: 'status', key: 'status', width: 110 },
     { title: 'Reason', dataIndex: 'reason', key: 'reason' },
-  ]
+  ], [])
+
+  return {
+    operationState,
+    tasksLoading,
+    queuedTasks,
+    executionPlanText,
+    bindings,
+    taskColumns,
+    bindingColumns,
+    taskTable,
+  }
+}
+
+function OperationInspectBody({
+  operationId,
+  operationState,
+  onTimeline,
+  liveEvent: _liveEvent,
+  onFilterWorkflow,
+  onFilterNode,
+  canCancel = false,
+  onCancel,
+  tasksLoading,
+  queuedTasks,
+  executionPlanText,
+  bindings,
+  taskColumns,
+  bindingColumns,
+  taskTable,
+}: OperationInspectBodyProps) {
+  if (!operationId || !operationState) {
+    return <Text type="secondary">Select an operation to inspect status, tasks, and execution context.</Text>
+  }
+
+  const showCancel = canCancel && typeof onCancel === 'function' && CANCELLABLE_OPERATION_STATUSES.has(operationState.status)
+
+  return (
+    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      <div
+        style={{
+          padding: '12px',
+          background: '#f0f2f5',
+          borderRadius: '8px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 12,
+        }}
+      >
+        <div>
+          <strong>Operation ID:</strong>
+          <Paragraph
+            copyable={{ text: operationState.id }}
+            style={{ marginBottom: 0, marginLeft: 8, display: 'inline' }}
+          >
+            <code>{operationState.id}</code>
+          </Paragraph>
+        </div>
+        <Space wrap>
+          {showCancel ? (
+            <Button
+              danger
+              icon={<StopOutlined />}
+              onClick={() => onCancel(operationState.id)}
+            >
+              Cancel
+            </Button>
+          ) : null}
+          <Button
+            type="primary"
+            icon={<MonitorOutlined />}
+            onClick={() => onTimeline(operationState.id)}
+          >
+            Timeline
+          </Button>
+        </Space>
+      </div>
+
+      {operationState.workflow_execution_id ? (
+        <div>
+          <strong>Workflow Execution:</strong>{' '}
+          <Text code>{operationState.workflow_execution_id}</Text>
+          <RouteButton
+            size="small"
+            type="link"
+            icon={<ExportOutlined />}
+            to={`/workflows/executions/${operationState.workflow_execution_id}`}
+            style={{ marginLeft: 8 }}
+          >
+            Open workflow diagnostics
+          </RouteButton>
+          {operationState.node_id ? (
+            <Paragraph
+              copyable={{ text: operationState.node_id }}
+              style={{ marginBottom: 0, marginLeft: 8, display: 'inline' }}
+            >
+              <BranchesOutlined style={{ marginRight: 6 }} />
+              <code>{operationState.node_id}</code>
+            </Paragraph>
+          ) : null}
+          {onFilterWorkflow ? (
+            <Button
+              size="small"
+              icon={<FilterOutlined />}
+              style={{ marginLeft: 8 }}
+              onClick={() => {
+                if (operationState.workflow_execution_id) {
+                  onFilterWorkflow(operationState.workflow_execution_id)
+                }
+              }}
+            >
+              Filter
+            </Button>
+          ) : null}
+          {operationState.node_id && onFilterNode ? (
+            <Button
+              size="small"
+              icon={<FilterOutlined />}
+              style={{ marginLeft: 8 }}
+              onClick={() => {
+                if (operationState.node_id) {
+                  onFilterNode(operationState.node_id)
+                }
+              }}
+            >
+              Node
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {operationState.trace_id ? (
+        <div>
+          <strong>Trace:</strong>{' '}
+          <Tooltip title="Открыть trace через API Gateway">
+            <Link
+              href={`/api/v2/tracing/traces/${operationState.trace_id}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {operationState.trace_id}
+            </Link>
+          </Tooltip>
+        </div>
+      ) : null}
+
+      <div>
+        <strong>Description:</strong> {operationState.description || '-'}
+      </div>
+      <div>
+        <strong>Type:</strong> {getOperationTypeLabel(operationState.operation_type)}
+      </div>
+      <div>
+        <strong>Target Entity:</strong> {operationState.target_entity || '-'}
+      </div>
+      {executionPlanText ? (
+        <div>
+          <strong>Execution Plan (staff):</strong>
+          <pre style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>{executionPlanText}</pre>
+        </div>
+      ) : null}
+      {bindings.length > 0 ? (
+        <div>
+          <strong>Binding Provenance (staff):</strong>
+          <Table
+            style={{ marginTop: 8 }}
+            size="small"
+            rowKey={(_, index) => String(index)}
+            pagination={false}
+            dataSource={bindings}
+            columns={bindingColumns}
+            scroll={{ x: 900 }}
+          />
+        </div>
+      ) : null}
+      <div>
+        <strong>Progress:</strong> <Progress percent={operationState.progress} />
+      </div>
+      <div>
+        <strong>Statistics:</strong>{' '}
+        {`${operationState.completed_tasks} completed, ${operationState.failed_tasks} failed, ${queuedTasks} queued, ${operationState.total_tasks} total`}
+      </div>
+
+      {operationState.status === 'failed' &&
+      operationState.metadata &&
+      (operationState.metadata as Record<string, unknown>).error ? (
+        <Alert
+          type="error"
+          showIcon
+          message="Operation Failed"
+          description={String(
+            (operationState.metadata as Record<string, unknown>).error,
+          )}
+        />
+      ) : null}
+
+      <h3 style={{ marginBottom: 0 }}>Tasks</h3>
+      <TableToolkit
+        table={taskTable}
+        data={operationState.tasks}
+        total={operationState.total_tasks ?? operationState.tasks.length}
+        loading={tasksLoading}
+        rowKey="id"
+        columns={taskColumns}
+        size="small"
+        tableLayout="fixed"
+        scroll={{ x: taskTable.totalColumnsWidth }}
+        searchPlaceholder="Search tasks"
+      />
+    </Space>
+  )
+}
+
+export function OperationInspectPanel(props: OperationInspectPanelProps) {
+  const model = useOperationInspectModel(props)
+  const title = model.operationState
+    ? `Operation Details: ${model.operationState.name}`
+    : 'Operation Details'
+
+  return (
+    <EntityDetails title={title}>
+      <OperationInspectBody
+        {...props}
+        {...model}
+      />
+    </EntityDetails>
+  )
+}
+
+/**
+ * Modal wrapper retained for backward-compatible callers.
+ */
+export const OperationDetailsModal = ({
+  operation,
+  visible,
+  onClose,
+  onTimeline,
+  liveEvent,
+}: OperationDetailsModalProps) => {
+  const model = useOperationInspectModel({
+    operationId: visible ? operation?.id ?? null : null,
+    operationSnapshot: operation,
+    liveEvent,
+  })
 
   return (
     <Modal
-      title={`Operation Details: ${operationState?.name}`}
+      title={model.operationState ? `Operation Details: ${model.operationState.name}` : 'Operation Details'}
       open={visible}
       onCancel={onClose}
       width={1000}
       footer={null}
     >
-      {operationState && (
-        <div>
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            {/* Operation ID with Timeline button */}
-            <div
-              style={{
-                padding: '12px',
-                background: '#f0f2f5',
-                borderRadius: '8px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <div>
-                <strong>Operation ID:</strong>
-                <Paragraph
-                  copyable={{ text: operationState.id }}
-                  style={{ marginBottom: 0, marginLeft: 8, display: 'inline' }}
-                >
-                  <code>{operationState.id}</code>
-                </Paragraph>
-              </div>
-              <Button
-                type="primary"
-                icon={<MonitorOutlined />}
-                onClick={() => onTimeline(operationState.id)}
-              >
-                Timeline
-              </Button>
-            </div>
-
-            {operationState.workflow_execution_id && (
-              <div>
-                <strong>Workflow Execution:</strong>{' '}
-                <RouterLink to={`/workflows/executions/${operationState.workflow_execution_id}`}>
-                  {operationState.workflow_execution_id}
-                </RouterLink>
-                {operationState.node_id && (
-                  <Paragraph
-                    copyable={{ text: operationState.node_id }}
-                    style={{ marginBottom: 0, marginLeft: 8, display: 'inline' }}
-                  >
-                    <BranchesOutlined style={{ marginRight: 6 }} />
-                    <code>{operationState.node_id}</code>
-                  </Paragraph>
-                )}
-                <Button
-                  size="small"
-                  icon={<FilterOutlined />}
-                  style={{ marginLeft: 8 }}
-                  onClick={() => applyFilter('workflow_execution_id', operationState.workflow_execution_id)}
-                >
-                  Filter
-                </Button>
-                {operationState.node_id && (
-                  <Button
-                    size="small"
-                    icon={<FilterOutlined />}
-                    style={{ marginLeft: 8 }}
-                    onClick={() => applyFilter('node_id', operationState.node_id)}
-                  >
-                    Node
-                  </Button>
-                )}
-              </div>
-            )}
-            {operationState.trace_id && (
-              <div>
-                <strong>Trace:</strong>{' '}
-                <Tooltip title="Открыть trace через API Gateway">
-                  <Link
-                    href={`/api/v2/tracing/traces/${operationState.trace_id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {operationState.trace_id}
-                  </Link>
-                </Tooltip>
-              </div>
-            )}
-
-            <div>
-              <strong>Description:</strong> {operationState.description || '-'}
-            </div>
-            <div>
-              <strong>Type:</strong> {getOperationTypeLabel(operationState.operation_type)}
-            </div>
-            <div>
-              <strong>Target Entity:</strong> {operationState.target_entity || '-'}
-            </div>
-            {isStaff && (
-              <div>
-                <strong>Execution Plan (staff):</strong>
-                {executionPlanText ? (
-                  <pre style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>{executionPlanText}</pre>
-                ) : (
-                  <div style={{ marginTop: 8, opacity: 0.7 }}>Not available</div>
-                )}
-              </div>
-            )}
-            {isStaff && bindings.length > 0 && (
-              <div>
-                <strong>Binding Provenance (staff):</strong>
-                <Table
-                  style={{ marginTop: 8 }}
-                  size="small"
-                  rowKey={(_, idx) => String(idx)}
-                  pagination={false}
-                  dataSource={bindings}
-                  columns={bindingColumns}
-                  scroll={{ x: 900 }}
-                />
-              </div>
-            )}
-            <div>
-              <strong>Progress:</strong> <Progress percent={operationState.progress} />
-            </div>
-            <div>
-              <strong>Statistics:</strong>{' '}
-              {`${operationState.completed_tasks} completed, ${operationState.failed_tasks} failed, ${queuedTasks} queued, ${operationState.total_tasks} total`}
-            </div>
-
-            {/* Error message from metadata */}
-            {operationState.status === 'failed' &&
-            operationState.metadata &&
-            (operationState.metadata as Record<string, unknown>).error ? (
-              <Alert
-                type="error"
-                showIcon
-                message="Operation Failed"
-                description={String(
-                  (operationState.metadata as Record<string, unknown>).error
-                )}
-              />
-            ) : null}
-
-            <h3>Tasks</h3>
-            <TableToolkit
-              table={taskTable}
-              data={operationState.tasks}
-              total={operationState.total_tasks ?? operationState.tasks.length}
-              loading={tasksLoading}
-              rowKey="id"
-              columns={taskColumns}
-              size="small"
-              tableLayout="fixed"
-              scroll={{ x: taskTable.totalColumnsWidth }}
-              searchPlaceholder="Search tasks"
-            />
-          </Space>
-        </div>
-      )}
+      <OperationInspectBody
+        operationId={visible ? operation?.id ?? null : null}
+        operationSnapshot={operation}
+        onTimeline={onTimeline}
+        liveEvent={liveEvent}
+        {...model}
+      />
     </Modal>
   )
 }

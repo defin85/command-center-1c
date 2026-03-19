@@ -38,6 +38,26 @@ async function setupCommonApiMocks(page: Page, opts: {
     const path = url.pathname
     const method = request.method()
 
+    if (method === 'GET' && path === '/api/v2/system/bootstrap/') {
+      return fulfillJson(route, {
+        me: { id: 1, username: 'admin', is_staff: opts.isStaff },
+        tenant_context: {
+          active_tenant_id: null,
+          tenants: [],
+        },
+        access: {
+          user: { id: 1, username: 'admin' },
+          clusters: [],
+          databases: [],
+          operation_templates: [],
+        },
+        capabilities: {
+          can_manage_rbac: opts.isStaff,
+          can_manage_driver_catalogs: false,
+        },
+      })
+    }
+
     if (method === 'GET' && path === '/api/v2/system/me/') {
       return fulfillJson(route, { id: 1, username: 'admin', is_staff: opts.isStaff })
     }
