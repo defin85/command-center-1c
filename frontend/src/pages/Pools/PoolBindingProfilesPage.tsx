@@ -10,7 +10,7 @@ import {
   Typography,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import {
   EntityDetails,
@@ -98,6 +98,7 @@ const filterBindingProfiles = (profiles: BindingProfileSummary[], searchTerm: st
 
 export function PoolBindingProfilesPage() {
   const screens = useBreakpoint()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
   const searchFromUrl = searchParams.get('q') ?? ''
@@ -255,6 +256,14 @@ export function PoolBindingProfilesPage() {
     [selectedProfileUsage]
   )
 
+  const openAttachmentWorkspace = (poolId?: string) => {
+    if (!poolId) {
+      navigate(POOL_CATALOG_ROUTE)
+      return
+    }
+    navigate(`${POOL_CATALOG_ROUTE}?pool_id=${encodeURIComponent(poolId)}&tab=bindings`)
+  }
+
   const listColumns: ColumnsType<BindingProfileSummary> = [
     {
       title: 'Code',
@@ -389,7 +398,7 @@ export function PoolBindingProfilesPage() {
       render: (_value, record) => (
         <Button
           size="small"
-          href={`${POOL_CATALOG_ROUTE}?pool_id=${encodeURIComponent(record.poolId)}&tab=bindings`}
+          onClick={() => openAttachmentWorkspace(record.poolId)}
         >
           Open pool attachment
         </Button>
@@ -522,7 +531,7 @@ export function PoolBindingProfilesPage() {
               when you need to attach an existing revision to a concrete pool.
             </Text>
             <Space wrap>
-              <Button href={POOL_CATALOG_ROUTE}>Open attachment workspace</Button>
+              <Button onClick={() => openAttachmentWorkspace()}>Open attachment workspace</Button>
             </Space>
           </Space>
         )}
@@ -602,7 +611,7 @@ export function PoolBindingProfilesPage() {
                     Deactivate profile
                   </Button>
                   <Button
-                    href={POOL_CATALOG_ROUTE}
+                    onClick={() => openAttachmentWorkspace()}
                     style={{ width: screens.sm ? 'auto' : '100%', whiteSpace: 'normal', height: 'auto' }}
                   >
                     Open attachment workspace

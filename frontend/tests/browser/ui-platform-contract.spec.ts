@@ -402,6 +402,8 @@ async function fulfillJson(route: Route, data: unknown, status = 200) {
 
 type RequestCounts = {
   bootstrap: number
+  meReads: number
+  myTenantsReads: number
   streamTickets: number
   databaseLists: number
   metadataManagementReads: number
@@ -415,6 +417,8 @@ type RequestCounts = {
 function createRequestCounts(): RequestCounts {
   return {
     bootstrap: 0,
+    meReads: 0,
+    myTenantsReads: 0,
     streamTickets: 0,
     databaseLists: 0,
     metadataManagementReads: 0,
@@ -483,6 +487,25 @@ async function setupUiPlatformMocks(
 ) {
   const counts = options?.counts
   const isStaff = options?.isStaff ?? false
+  const currentUser = { id: 1, username: 'ui-platform', is_staff: isStaff }
+  const tenantContext = {
+    active_tenant_id: TENANT_ID,
+    tenants: [{ id: TENANT_ID, slug: 'default', name: 'Default', role: 'owner' }],
+  }
+  const organization = {
+    id: 'organization-main',
+    tenant_id: TENANT_ID,
+    database_id: DATABASE_ID,
+    name: 'Org One',
+    full_name: 'Org One LLC',
+    inn: '730000000001',
+    kpp: '123456789',
+    status: 'active',
+    external_ref: '',
+    metadata: {},
+    created_at: NOW,
+    updated_at: NOW,
+  }
 
   await page.route('**/api/v2/**', async (route) => {
     const request = route.request()
@@ -495,13 +518,10 @@ async function setupUiPlatformMocks(
         counts.bootstrap += 1
       }
       return fulfillJson(route, {
-        me: { id: 1, username: 'ui-platform', is_staff: isStaff },
-        tenant_context: {
-          active_tenant_id: TENANT_ID,
-          tenants: [{ id: TENANT_ID, slug: 'default', name: 'Default', role: 'owner' }],
-        },
+        me: currentUser,
+        tenant_context: tenantContext,
         access: {
-          user: { id: 1, username: 'ui-platform' },
+          user: { id: currentUser.id, username: currentUser.username },
           clusters: [],
           databases: [],
           operation_templates: [],
@@ -511,6 +531,20 @@ async function setupUiPlatformMocks(
           can_manage_driver_catalogs: false,
         },
       })
+    }
+
+    if (method === 'GET' && path === '/api/v2/system/me/') {
+      if (counts) {
+        counts.meReads += 1
+      }
+      return fulfillJson(route, currentUser)
+    }
+
+    if (method === 'GET' && path === '/api/v2/tenants/list-my-tenants/') {
+      if (counts) {
+        counts.myTenantsReads += 1
+      }
+      return fulfillJson(route, tenantContext)
     }
 
     if (method === 'GET' && path === '/api/v2/databases/list-databases/') {
@@ -616,6 +650,48 @@ async function setupUiPlatformMocks(
       return fulfillJson(route, {
         pools: [POOL_WITH_ATTACHMENT],
         count: 1,
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/organizations/') {
+      return fulfillJson(route, {
+        organizations: [organization],
+        count: 1,
+      })
+    }
+
+    const organizationMatch = path.match(/^\/api\/v2\/pools\/organizations\/([^/]+)\/$/)
+    if (method === 'GET' && organizationMatch) {
+      return fulfillJson(route, {
+        organization,
+        pool_bindings: [],
+      })
+    }
+
+    const graphMatch = path.match(/^\/api\/v2\/pools\/([^/]+)\/graph\/$/)
+    if (method === 'GET' && graphMatch) {
+      return fulfillJson(route, {
+        pool_id: graphMatch[1],
+        date: '2026-01-01',
+        version: 'v1:topology-initial',
+        nodes: [],
+        edges: [],
+      })
+    }
+
+    const topologySnapshotsMatch = path.match(/^\/api\/v2\/pools\/([^/]+)\/topology-snapshots\/$/)
+    if (method === 'GET' && topologySnapshotsMatch) {
+      return fulfillJson(route, {
+        pool_id: topologySnapshotsMatch[1],
+        count: 1,
+        snapshots: [
+          {
+            effective_from: '2026-01-01',
+            effective_to: null,
+            nodes_count: 0,
+            edges_count: 0,
+          },
+        ],
       })
     }
 
@@ -829,6 +905,32 @@ test('Runtime contract: /pools/binding-profiles defers usage reads until the use
 
   await expect.poll(() => counts.organizationPools).toBe(1)
   await expect(page.getByText('Main Pool')).toBeVisible()
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: /pools/binding-profiles hands off to /pools/catalog without replaying shell reads', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/pools/binding-profiles', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByText('Binding Profiles')).toBeVisible()
+  await expect.poll(() => counts.bootstrap).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+
+  await page.getByRole('button', { name: 'Open attachment workspace' }).first().click()
+
+  await expect(page).toHaveURL(/\/pools\/catalog$/)
+  await expect(page.getByRole('heading', { name: 'Pool Catalog', level: 3 })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Organizations' })).toBeVisible()
+
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 

@@ -32,10 +32,9 @@ const mockListMasterDataParties = vi.fn()
 const mockListMasterDataItems = vi.fn()
 const mockListMasterDataContracts = vi.fn()
 const mockListMasterDataTaxProfiles = vi.fn()
-const mockUseMe = vi.fn()
+const mockUseAuthz = vi.fn()
 const mockUseDatabases = vi.fn()
 const mockUseBindingProfiles = vi.fn()
-const mockUseMyTenants = vi.fn()
 const mockSyncPoolWorkflowBindings = vi.fn()
 const mockGetBindingProfileDetail = vi.fn()
 
@@ -54,10 +53,6 @@ vi.mock('../../../api/generated/v2/v2', () => ({
   }),
 }))
 
-vi.mock('../../../api/queries/me', () => ({
-  useMe: (...args: unknown[]) => mockUseMe(...args),
-}))
-
 vi.mock('../../../api/queries/databases', () => ({
   useDatabases: (...args: unknown[]) => mockUseDatabases(...args),
 }))
@@ -66,12 +61,12 @@ vi.mock('../../../api/queries/poolBindingProfiles', () => ({
   useBindingProfiles: (...args: unknown[]) => mockUseBindingProfiles(...args),
 }))
 
-vi.mock('../../../api/queries/tenants', () => ({
-  useMyTenants: (...args: unknown[]) => mockUseMyTenants(...args),
-}))
-
 vi.mock('../../../api/poolBindingProfiles', () => ({
   getBindingProfileDetail: (...args: unknown[]) => mockGetBindingProfileDetail(...args),
+}))
+
+vi.mock('../../../authz/useAuthz', () => ({
+  useAuthz: (...args: unknown[]) => mockUseAuthz(...args),
 }))
 
 vi.mock('../../../api/intercompanyPools', () => ({
@@ -347,6 +342,23 @@ const EXTENDED_UI_TEST_TIMEOUT_MS = 30000
 const TOPOLOGY_EDITOR_TIMEOUT_MS = EXTENDED_UI_TEST_TIMEOUT_MS
 const SYNC_MODAL_TIMEOUT_MS = EXTENDED_UI_TEST_TIMEOUT_MS
 
+function createAuthzValue(overrides: Partial<{ isStaff: boolean; isLoading: boolean }> = {}) {
+  return {
+    isStaff: false,
+    isLoading: false,
+    canDatabase: vi.fn(() => false),
+    canCluster: vi.fn(() => false),
+    canTemplate: vi.fn(() => false),
+    canAnyDatabase: vi.fn(() => false),
+    canAnyCluster: vi.fn(() => false),
+    canAnyTemplate: vi.fn(() => false),
+    getDatabaseLevel: vi.fn(() => null),
+    getClusterLevel: vi.fn(() => null),
+    getTemplateLevel: vi.fn(() => null),
+    ...overrides,
+  }
+}
+
 describe('PoolCatalogPage', () => {
   beforeEach(() => {
     initialCatalogLoadPromise = null
@@ -372,17 +384,13 @@ describe('PoolCatalogPage', () => {
     mockListMasterDataItems.mockReset()
     mockListMasterDataContracts.mockReset()
     mockListMasterDataTaxProfiles.mockReset()
-    mockUseMe.mockReset()
+    mockUseAuthz.mockReset()
     mockUseDatabases.mockReset()
     mockUseBindingProfiles.mockReset()
-    mockUseMyTenants.mockReset()
     mockSyncPoolWorkflowBindings.mockReset()
     mockGetBindingProfileDetail.mockReset()
 
-    mockUseMe.mockReturnValue({ data: { is_staff: false } })
-    mockUseMyTenants.mockReturnValue({
-      data: { active_tenant_id: null, tenants: [] },
-    })
+    mockUseAuthz.mockReturnValue(createAuthzValue())
     mockUseDatabases.mockReturnValue({
       data: {
         databases: [
@@ -631,7 +639,7 @@ describe('PoolCatalogPage', () => {
   })
 
   it('disables mutating controls for staff without active tenant', async () => {
-    mockUseMe.mockReturnValue({ data: { is_staff: true } })
+    mockUseAuthz.mockReturnValue(createAuthzValue({ isStaff: true }))
 
     renderPage()
 
@@ -643,7 +651,7 @@ describe('PoolCatalogPage', () => {
   })
 
   it('keeps mutating controls enabled for non-staff without active tenant', async () => {
-    mockUseMe.mockReturnValue({ data: { is_staff: false } })
+    mockUseAuthz.mockReturnValue(createAuthzValue({ isStaff: false }))
 
     renderPage()
 
@@ -652,14 +660,9 @@ describe('PoolCatalogPage', () => {
     expect(screen.getByTestId('pool-catalog-sync-orgs')).toBeEnabled()
   })
 
-  it('keeps mutating controls enabled for staff with tenant from server context', async () => {
-    mockUseMe.mockReturnValue({ data: { is_staff: true } })
-    mockUseMyTenants.mockReturnValue({
-      data: {
-        active_tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-        tenants: [{ id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', slug: 'default', name: 'Default', role: 'owner' }],
-      },
-    })
+  it('keeps mutating controls enabled for staff with tenant from shell local storage', async () => {
+    mockUseAuthz.mockReturnValue(createAuthzValue({ isStaff: true }))
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
 
     renderPage()
 

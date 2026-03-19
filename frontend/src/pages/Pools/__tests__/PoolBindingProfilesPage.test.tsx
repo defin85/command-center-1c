@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 
 import type { BindingProfileDetail } from '../../../api/generated/model/bindingProfileDetail'
 import type { BindingProfileRevision } from '../../../api/generated/model/bindingProfileRevision'
@@ -238,6 +238,33 @@ function renderPage(path = '/pools/binding-profiles') {
   )
 }
 
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="location-probe">{`${location.pathname}${location.search}`}</div>
+}
+
+function renderPageWithRoutes(path = '/pools/binding-profiles') {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  })
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}>
+        <AntApp>
+          <Routes>
+            <Route path="/pools/binding-profiles" element={<PoolBindingProfilesPage />} />
+            <Route path="/pools/catalog" element={<LocationProbe />} />
+          </Routes>
+        </AntApp>
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+}
+
 describe('PoolBindingProfilesPage', () => {
   beforeEach(() => {
     mockUseBindingProfiles.mockReset()
@@ -293,7 +320,7 @@ describe('PoolBindingProfilesPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Binding Profiles' })).toBeInTheDocument()
     expect(screen.getByText(/Reusable profile workspace for selecting a profile, checking where it is used, and publishing the next revision./i)).toBeInTheDocument()
-    expect(screen.getAllByRole('link', { name: 'Open attachment workspace' })[0]).toHaveAttribute('href', '/pools/catalog')
+    expect(screen.getAllByRole('button', { name: 'Open attachment workspace' })).toHaveLength(2)
     expect(screen.getAllByText('services-publication').length).toBeGreaterThan(0)
     expect(screen.getByText('legacy-archive')).toBeInTheDocument()
 
@@ -584,6 +611,54 @@ describe('PoolBindingProfilesPage', () => {
     expect(screen.getAllByText('pool-main')).toHaveLength(2)
     expect(screen.getByText('binding-1')).toBeInTheDocument()
     expect(screen.getByText('binding-2')).toBeInTheDocument()
+  })
+
+  it('navigates to the pool attachment workspace through the router when opening usage entries', async () => {
+    const user = userEvent.setup()
+    mockListOrganizationPools.mockResolvedValue([
+      {
+        id: 'pool-1',
+        code: 'pool-main',
+        name: 'Pool Main',
+        description: '',
+        is_active: true,
+        metadata: {},
+        workflow_bindings: [
+          {
+            binding_id: 'binding-1',
+            pool_id: 'pool-1',
+            revision: 4,
+            status: 'active',
+            binding_profile_id: activeDetail.binding_profile_id,
+            binding_profile_revision_id: 'bp-rev-services-r2',
+            binding_profile_revision_number: 2,
+            resolved_profile: {
+              binding_profile_id: activeDetail.binding_profile_id,
+              code: activeDetail.code,
+              name: activeDetail.name,
+              status: activeDetail.status,
+              binding_profile_revision_id: 'bp-rev-services-r2',
+              binding_profile_revision_number: 2,
+              workflow: activeDetail.latest_revision.workflow,
+              decisions: activeDetail.latest_revision.decisions,
+              parameters: activeDetail.latest_revision.parameters,
+              role_mapping: activeDetail.latest_revision.role_mapping,
+            },
+            selector: { direction: 'top_down', mode: 'safe', tags: ['baseline'] },
+            effective_from: '2026-01-01',
+            effective_to: null,
+          },
+        ],
+        updated_at: '2026-03-16T12:00:00Z',
+      },
+    ])
+
+    renderPageWithRoutes('/pools/binding-profiles?profile=bp-services&detail=1')
+
+    await user.click(await screen.findByRole('button', { name: 'Load attachment usage' }))
+    await user.click(await screen.findByRole('button', { name: 'Open pool attachment' }))
+
+    expect(await screen.findByTestId('location-probe')).toHaveTextContent('/pools/catalog?pool_id=pool-1&tab=bindings')
   })
 
   it('fails closed on primary catalog load errors without triggering usage reads', async () => {

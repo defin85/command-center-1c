@@ -27,11 +27,10 @@ import ReactFlow, { Background, Controls, MiniMap, type Edge, type Node } from '
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import 'reactflow/dist/style.css'
 
+import { useAuthz } from '../../authz/useAuthz'
 import { getBindingProfileDetail, type BindingProfileDetail } from '../../api/poolBindingProfiles'
 import { useDatabases } from '../../api/queries/databases'
-import { useMe } from '../../api/queries/me'
 import { useBindingProfiles } from '../../api/queries/poolBindingProfiles'
-import { useMyTenants } from '../../api/queries/tenants'
 import {
   getOrganization,
   getPoolGraph,
@@ -1585,14 +1584,11 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
 
 export function PoolCatalogPage() {
   const { message } = AntApp.useApp()
+  const { isStaff } = useAuthz()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const api = useMemo(() => getV2(), [])
-  const meQuery = useMe()
-  const hasAuthToken = Boolean(localStorage.getItem('auth_token'))
-  const myTenantsQuery = useMyTenants({ enabled: hasAuthToken })
-  const isStaff = Boolean(meQuery.data?.is_staff)
-  const activeTenantId = localStorage.getItem('active_tenant_id') || myTenantsQuery.data?.active_tenant_id || null
+  const activeTenantId = localStorage.getItem('active_tenant_id')
   const hasTenantContext = Boolean(activeTenantId)
   const mutatingDisabled = isStaff && !hasTenantContext
   const databasesQuery = useDatabases({ filters: { limit: 500, offset: 0 } })
