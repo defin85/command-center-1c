@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   App as AntApp,
@@ -66,6 +66,13 @@ import type {
   PoolODataMetadataCatalogDocument,
   PoolODataMetadataCatalogResponse,
 } from '../../api/generated/model'
+import {
+  DrawerFormShell,
+  PageHeader,
+  RouteButton,
+  StatusBadge,
+  WorkspacePage,
+} from '../../components/platform'
 import { PoolWorkflowBindingsEditor } from './PoolWorkflowBindingsEditor'
 import {
   buildWorkflowBindingsFromForm,
@@ -83,8 +90,9 @@ import {
   summarizeTopologySlotCoverage,
   type TopologyEdgeSelector,
 } from './topologySlotCoverage'
+import { POOL_BINDING_PROFILES_ROUTE, POOL_CATALOG_ROUTE } from './routes'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { TextArea } = Input
 
 const SYNC_MAX_ROWS = 1000
@@ -123,6 +131,39 @@ const METADATA_HANDOFF_ERROR_CODES = new Set([
   'POOL_METADATA_FETCH_FAILED',
   'POOL_METADATA_PARSE_FAILED',
 ])
+
+type PoolCatalogWorkspaceTab = 'organizations' | 'pools' | 'bindings' | 'topology' | 'graph'
+
+const DEFAULT_WORKSPACE_TAB: PoolCatalogWorkspaceTab = 'pools'
+
+const normalizeRouteParam = (value: string | null): string | null => {
+  const normalized = value?.trim() ?? ''
+  return normalized.length > 0 ? normalized : null
+}
+
+const parseWorkspaceTab = (value: string | null): PoolCatalogWorkspaceTab => {
+  const normalized = normalizeRouteParam(value)
+  if (
+    normalized === 'organizations'
+    || normalized === 'pools'
+    || normalized === 'bindings'
+    || normalized === 'topology'
+    || normalized === 'graph'
+  ) {
+    return normalized
+  }
+  return DEFAULT_WORKSPACE_TAB
+}
+
+const getDefaultGraphDate = () => new Date().toISOString().slice(0, 10)
+
+const parseGraphDate = (value: string | null): string => {
+  const normalized = normalizeRouteParam(value)
+  if (normalized && /^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return normalized
+  }
+  return getDefaultGraphDate()
+}
 
 type OrganizationFormValues = {
   inn: string
@@ -1586,12 +1627,19 @@ export function PoolCatalogPage() {
   const { message } = AntApp.useApp()
   const { isStaff } = useAuthz()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
   const api = useMemo(() => getV2(), [])
   const activeTenantId = localStorage.getItem('active_tenant_id')
   const hasTenantContext = Boolean(activeTenantId)
   const mutatingDisabled = isStaff && !hasTenantContext
   const databasesQuery = useDatabases({ filters: { limit: 500, offset: 0 } })
+  const requestedPoolId = useMemo(() => normalizeRouteParam(searchParams.get('pool_id')), [searchParams])
+  const requestedWorkspaceTab = useMemo(
+    () => parseWorkspaceTab(searchParams.get('tab')),
+    [searchParams],
+  )
+  const graphDateFromUrl = useMemo(() => parseGraphDate(searchParams.get('date')), [searchParams])
 
   const [organizationForm] = Form.useForm<OrganizationFormValues>()
   const [poolForm] = Form.useForm<PoolFormValues>()
@@ -1605,8 +1653,8 @@ export function PoolCatalogPage() {
     pool_bindings: OrganizationPoolBinding[]
   } | null>(null)
   const [pools, setPools] = useState<OrganizationPool[]>([])
-  const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null)
-  const [graphDate, setGraphDate] = useState<string>(new Date().toISOString().slice(0, 10))
+  const [selectedPoolId, setSelectedPoolId] = useState<string | null | undefined>(() => requestedPoolId ?? undefined)
+  const [graphDate, setGraphDate] = useState<string>(graphDateFromUrl)
   const [graph, setGraph] = useState<PoolGraph | null>(null)
   const [topologySnapshots, setTopologySnapshots] = useState<PoolTopologySnapshotPeriod[]>([])
   const [loadingOrganizations, setLoadingOrganizations] = useState(false)
@@ -1642,7 +1690,8 @@ export function PoolCatalogPage() {
   const [syncErrors, setSyncErrors] = useState<string[]>([])
   const [syncResult, setSyncResult] = useState<{ stats: { created: number; updated: number; skipped: number }; total_rows: number } | null>(null)
   const [isSyncSubmitting, setIsSyncSubmitting] = useState(false)
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'organizations' | 'pools' | 'bindings' | 'topology' | 'graph'>('organizations')
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<PoolCatalogWorkspaceTab>(requestedWorkspaceTab)
+  const [isBindingsWorkspaceOpen, setIsBindingsWorkspaceOpen] = useState(requestedWorkspaceTab === 'bindings')
   const [bindingProfileDetailsById, setBindingProfileDetailsById] = useState<Record<string, BindingProfileDetail>>({})
   const [bindingProfileDetailFallbackIds, setBindingProfileDetailFallbackIds] = useState<Record<string, true>>({})
   const [bindingProfileDetailsError, setBindingProfileDetailsError] = useState<string | null>(null)
@@ -1667,17 +1716,6 @@ export function PoolCatalogPage() {
     () => pools.find((item) => item.id === selectedPoolId) ?? null,
     [pools, selectedPoolId]
   )
-  const requestedPoolId = useMemo(() => {
-    const value = String(searchParams.get('pool_id') ?? '').trim()
-    return value || null
-  }, [searchParams])
-  const requestedWorkspaceTab = useMemo(() => {
-    const value = String(searchParams.get('tab') ?? '').trim()
-    if (value === 'organizations' || value === 'pools' || value === 'bindings' || value === 'topology' || value === 'graph') {
-      return value
-    }
-    return null
-  }, [searchParams])
   const bindingProfilesQuery = useBindingProfiles({ enabled: activeWorkspaceTab === 'bindings' })
   const organizationById = useMemo(() => (
     Object.fromEntries(organizations.map((item) => [item.id, item]))
@@ -1696,18 +1734,90 @@ export function PoolCatalogPage() {
     [loadedPoolBindings, topologyCoverageBindingId]
   )
   useEffect(() => {
-    if (!requestedWorkspaceTab) {
-      return
-    }
     setActiveWorkspaceTab((previous) => (previous === requestedWorkspaceTab ? previous : requestedWorkspaceTab))
   }, [requestedWorkspaceTab])
 
   useEffect(() => {
-    if (!requestedPoolId || !pools.some((item) => item.id === requestedPoolId)) {
+    if (requestedPoolId && pools.some((item) => item.id === requestedPoolId)) {
+      setSelectedPoolId((previous) => (previous === requestedPoolId ? previous : requestedPoolId))
       return
     }
-    setSelectedPoolId((previous) => (previous === requestedPoolId ? previous : requestedPoolId))
-  }, [pools, requestedPoolId])
+
+    if (!requestedPoolId && selectedPoolId === undefined && pools.length > 0) {
+      setSelectedPoolId(pools[0]?.id ?? null)
+    }
+  }, [pools, requestedPoolId, selectedPoolId])
+
+  useEffect(() => {
+    setGraphDate((current) => (current === graphDateFromUrl ? current : graphDateFromUrl))
+  }, [graphDateFromUrl])
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams)
+
+    if (selectedPoolId !== undefined) {
+      if (selectedPoolId) {
+        next.set('pool_id', selectedPoolId)
+      } else {
+        next.delete('pool_id')
+      }
+    }
+
+    next.set('tab', activeWorkspaceTab)
+
+    if (graphDate.trim()) {
+      next.set('date', graphDate.trim())
+    } else {
+      next.delete('date')
+    }
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(
+        next,
+        routeUpdateModeRef.current === 'replace'
+          ? { replace: true }
+          : undefined,
+      )
+    }
+    routeUpdateModeRef.current = 'replace'
+  }, [activeWorkspaceTab, graphDate, searchParams, selectedPoolId, setSearchParams])
+
+  useEffect(() => {
+    if (requestedWorkspaceTab === 'bindings') {
+      setIsBindingsWorkspaceOpen(true)
+      return
+    }
+    setIsBindingsWorkspaceOpen(false)
+  }, [requestedWorkspaceTab])
+
+  const handleSelectWorkspaceTab = useCallback((nextTab: PoolCatalogWorkspaceTab) => {
+    routeUpdateModeRef.current = 'push'
+    if (nextTab !== 'bindings') {
+      setIsBindingsWorkspaceOpen(false)
+    }
+    setActiveWorkspaceTab((previous) => (previous === nextTab ? previous : nextTab))
+  }, [])
+
+  const handleSelectPool = useCallback((nextPoolId: string | null | undefined) => {
+    const normalizedPoolId = typeof nextPoolId === 'string' && nextPoolId.trim()
+      ? nextPoolId
+      : null
+    routeUpdateModeRef.current = 'push'
+    setSelectedPoolId((previous) => (previous === normalizedPoolId ? previous : normalizedPoolId))
+  }, [])
+
+  const handleGraphDateChange = useCallback((nextGraphDate: string) => {
+    const normalizedGraphDate = parseGraphDate(nextGraphDate)
+    routeUpdateModeRef.current = 'push'
+    setGraphDate((current) => (current === normalizedGraphDate ? current : normalizedGraphDate))
+  }, [])
+
+  const handleOpenBindingsWorkspace = useCallback(() => {
+    if (!selectedPool) return
+    routeUpdateModeRef.current = 'push'
+    setActiveWorkspaceTab('bindings')
+    setIsBindingsWorkspaceOpen(true)
+  }, [selectedPool])
 
   useEffect(() => {
     if (activeWorkspaceTab !== 'bindings' || bindingProfilesQuery.isLoading || bindingProfilesQuery.isError) {
@@ -2918,21 +3028,97 @@ export function PoolCatalogPage() {
 
   return (
     <>
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        <div>
-          <Title level={3} style={{ marginBottom: 0 }}>
-            Pool Catalog
-          </Title>
-          <Text type="secondary">
-            Tenant-aware каталог организаций и read-only граф структуры пула по дате.
-          </Text>
-        </div>
+      <WorkspacePage
+        header={(
+          <PageHeader
+            title="Pool Catalog"
+            subtitle={(
+              <>
+                Task-first operator workspace on
+                {' '}
+                <Text code>{POOL_CATALOG_ROUTE}</Text>
+                {' '}
+                for pool basics, workflow attachments, topology authoring, and graph inspection.
+              </>
+            )}
+            actions={(
+              <Space wrap size={16} align="start">
+                <Space direction="vertical" size={4}>
+                  <Text strong>Pool</Text>
+                  <Select
+                    aria-label="Catalog pool"
+                    data-testid="pool-catalog-context-pool"
+                    style={{ width: 320 }}
+                    placeholder="Select pool"
+                    value={selectedPoolId ?? undefined}
+                    options={pools.map((pool) => ({
+                      value: pool.id,
+                      label: `${pool.code} - ${pool.name}`,
+                    }))}
+                    onChange={(value) => handleSelectPool(value ?? null)}
+                  />
+                </Space>
+                <Space direction="vertical" size={4}>
+                  <Text strong>Graph date</Text>
+                  <Input
+                    aria-label="Pool graph date"
+                    type="date"
+                    value={graphDate}
+                    onChange={(event) => handleGraphDateChange(event.target.value)}
+                    style={{ width: 180 }}
+                  />
+                </Space>
+                <Button
+                  onClick={() => {
+                    if (activeWorkspaceTab === 'bindings' && selectedPool) {
+                      void reloadBindingsWorkspace(selectedPool)
+                      return
+                    }
+                    if (activeWorkspaceTab === 'graph' || activeWorkspaceTab === 'topology') {
+                      void loadGraph()
+                      return
+                    }
+                    void loadPools()
+                  }}
+                  loading={loadingPools || loadingGraph || isPoolBindingsLoading}
+                  style={{ marginTop: 28 }}
+                >
+                  Refresh data
+                </Button>
+              </Space>
+            )}
+          />
+        )}
+      >
+        <Alert
+          type="info"
+          showIcon
+          message="Task-first pool workspace"
+          description={(
+            <Space direction="vertical" size={8}>
+              <Text>
+                Keep pool fields, reusable attachment logic, and topology remediation on separate task surfaces. Open
+                reusable logic in the binding profile catalog and concrete policy authoring in /decisions.
+              </Text>
+              {selectedOrganization ? (
+                <Space size={4} wrap>
+                  <Text type="secondary">Organization catalog ready:</Text>
+                  <Text>{selectedOrganization.name}</Text>
+                </Space>
+              ) : null}
+              <Space wrap>
+                <RouteButton to={POOL_BINDING_PROFILES_ROUTE}>Open binding profiles</RouteButton>
+                <RouteButton to="/decisions">Open /decisions</RouteButton>
+              </Space>
+            </Space>
+          )}
+        />
 
         {error && <Alert type="error" message={error} showIcon />}
 
         <Tabs
           activeKey={activeWorkspaceTab}
-          onChange={(key) => setActiveWorkspaceTab(key as 'organizations' | 'pools' | 'bindings' | 'topology' | 'graph')}
+          onChange={(key) => handleSelectWorkspaceTab(key as PoolCatalogWorkspaceTab)}
           data-testid="pool-catalog-workspace-tabs"
           items={[
             {
@@ -3089,7 +3275,7 @@ export function PoolCatalogPage() {
                           value: pool.id,
                           label: `${pool.code} - ${pool.name}`,
                         }))}
-                        onChange={(value) => setSelectedPoolId(value)}
+                        onChange={(value) => handleSelectPool(value ?? null)}
                       />
                       <Button
                         type="primary"
@@ -3126,10 +3312,10 @@ export function PoolCatalogPage() {
                       rowSelection={{
                         type: 'radio',
                         selectedRowKeys: selectedPoolId ? [selectedPoolId] : [],
-                        onChange: (keys) => setSelectedPoolId(keys[0] ? String(keys[0]) : null),
+                        onChange: (keys) => handleSelectPool(keys[0] ? String(keys[0]) : null),
                       }}
                       onRow={(record) => ({
-                        onClick: () => setSelectedPoolId(record.id),
+                        onClick: () => handleSelectPool(record.id),
                       })}
                     />
                   </Space>
@@ -3166,12 +3352,12 @@ export function PoolCatalogPage() {
                           value: pool.id,
                           label: `${pool.code} - ${pool.name}`,
                         }))}
-                        onChange={(value) => setSelectedPoolId(value)}
+                        onChange={(value) => handleSelectPool(value ?? null)}
                       />
                       <Button
                         onClick={() => {
                           if (selectedPool) {
-                            setActiveWorkspaceTab('pools')
+                            handleSelectWorkspaceTab('pools')
                             openEditPoolDrawer()
                           }
                         }}
@@ -3199,27 +3385,18 @@ export function PoolCatalogPage() {
                         }}
                         disabled={!selectedPool || isPoolBindingsSaving}
                         loading={isPoolBindingsLoading}
-                        data-testid="pool-catalog-refresh-bindings"
                       >
                         Refresh bindings
                       </Button>
                       <Button
                         type="primary"
-                        onClick={() => { void submitPoolBindings() }}
-                        loading={isPoolBindingsSaving}
-                        disabled={(
-                          mutatingDisabled
-                          || !selectedPool
-                          || isPoolBindingsLoading
-                          || isPoolBindingsSaving
-                          || Boolean(poolBindingsLoadError)
-                          || isPoolBindingsSaveBlocked
-                          || !loadedPoolBindingsCollectionEtag
-                        )}
-                        data-testid="pool-catalog-save-bindings"
+                        onClick={() => { handleOpenBindingsWorkspace() }}
+                        disabled={!selectedPool}
+                        data-testid="pool-catalog-open-bindings-workspace"
                       >
-                        Save bindings
+                        Open attachment workspace
                       </Button>
+                      <RouteButton to={POOL_BINDING_PROFILES_ROUTE}>Open binding profiles</RouteButton>
                     </Space>
 
                     {poolBindingsSubmitError && <Alert type="error" message={poolBindingsSubmitError} showIcon />}
@@ -3233,7 +3410,7 @@ export function PoolCatalogPage() {
                         showIcon
                         action={(
                           <Space size={8}>
-                            <Button size="small" onClick={() => { setActiveWorkspaceTab('topology') }}>
+                            <Button size="small" onClick={() => { handleSelectWorkspaceTab('topology') }}>
                               Open Topology Editor
                             </Button>
                             <Button size="small" onClick={() => { navigate('/decisions') }}>
@@ -3250,31 +3427,86 @@ export function PoolCatalogPage() {
                     {!selectedPool ? (
                       <Text type="secondary">Выберите пул, чтобы управлять workflow attachments.</Text>
                     ) : (
-                      <Form form={poolBindingsForm} layout="vertical">
+                      <>
                         <Descriptions size="small" column={1} bordered style={{ marginBottom: 16 }}>
                           <Descriptions.Item label="Pool">{`${selectedPool.code} - ${selectedPool.name}`}</Descriptions.Item>
                           <Descriptions.Item label="Status">
-                            {selectedPool.is_active ? <Tag color="success">active</Tag> : <Tag color="default">inactive</Tag>}
+                            <StatusBadge status={selectedPool.is_active ? 'active' : 'inactive'} />
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Attachment state">
+                            {loadedPoolBindings.length > 0
+                              ? `${loadedPoolBindings.length} configured attachment${loadedPoolBindings.length === 1 ? '' : 's'}`
+                              : 'No attachments configured yet'}
                           </Descriptions.Item>
                         </Descriptions>
-                        <PoolWorkflowBindingsEditor
-                          availableBindingProfiles={bindingProfilesQuery.data?.binding_profiles ?? []}
-                          availableBindingProfileDetails={bindingProfileDetailsById}
-                          bindingProfilesLoading={bindingProfilesQuery.isLoading}
-                          bindingProfilesLoadError={
-                            bindingProfilesQuery.isError
-                              ? resolveApiError(bindingProfilesQuery.error, 'Не удалось загрузить binding profiles catalog.').message
-                              : bindingProfileDetailsError
-                          }
-                          topologyEdgeSelectors={topologyEdgeSelectors}
-                          disabled={
-                            mutatingDisabled
-                            || isPoolBindingsSaving
-                            || isPoolBindingsLoading
-                            || Boolean(poolBindingsBackendBlockingRemediation)
-                          }
+                        <Alert
+                          type="info"
+                          showIcon
+                          message="Attachment editing moved to a dedicated secondary surface"
+                          description="The canonical attachment workspace now opens in a drawer so pool basics, topology authoring, and reusable profile logic do not compete on one default canvas."
                         />
-                      </Form>
+                        <DrawerFormShell
+                          open={isBindingsWorkspaceOpen}
+                          onClose={() => setIsBindingsWorkspaceOpen(false)}
+                          title="Attachment workspace"
+                          subtitle={`${selectedPool.code} - ${selectedPool.name}`}
+                          width={960}
+                          drawerTestId="pool-catalog-bindings-drawer"
+                        >
+                          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                            <Space size="small" wrap>
+                              <Button
+                                onClick={() => {
+                                  if (selectedPool) {
+                                    void reloadBindingsWorkspace(selectedPool)
+                                  }
+                                }}
+                                disabled={!selectedPool || isPoolBindingsSaving}
+                                loading={isPoolBindingsLoading}
+                                data-testid="pool-catalog-refresh-bindings"
+                              >
+                                Refresh bindings
+                              </Button>
+                              <Button
+                                type="primary"
+                                onClick={() => { void submitPoolBindings() }}
+                                loading={isPoolBindingsSaving}
+                                disabled={(
+                                  mutatingDisabled
+                                  || !selectedPool
+                                  || isPoolBindingsLoading
+                                  || isPoolBindingsSaving
+                                  || Boolean(poolBindingsLoadError)
+                                  || isPoolBindingsSaveBlocked
+                                  || !loadedPoolBindingsCollectionEtag
+                                )}
+                                data-testid="pool-catalog-save-bindings"
+                              >
+                                Save bindings
+                              </Button>
+                            </Space>
+                            <Form form={poolBindingsForm} layout="vertical">
+                              <PoolWorkflowBindingsEditor
+                                availableBindingProfiles={bindingProfilesQuery.data?.binding_profiles ?? []}
+                                availableBindingProfileDetails={bindingProfileDetailsById}
+                                bindingProfilesLoading={bindingProfilesQuery.isLoading}
+                                bindingProfilesLoadError={
+                                  bindingProfilesQuery.isError
+                                    ? resolveApiError(bindingProfilesQuery.error, 'Не удалось загрузить binding profiles catalog.').message
+                                    : bindingProfileDetailsError
+                                }
+                                topologyEdgeSelectors={topologyEdgeSelectors}
+                                disabled={
+                                  mutatingDisabled
+                                  || isPoolBindingsSaving
+                                  || isPoolBindingsLoading
+                                  || Boolean(poolBindingsBackendBlockingRemediation)
+                                }
+                              />
+                            </Form>
+                          </Space>
+                        </DrawerFormShell>
+                      </>
                     )}
                   </Space>
                 </Card>
@@ -3337,7 +3569,7 @@ export function PoolCatalogPage() {
                                 <Button size="small" onClick={() => { navigate('/decisions') }}>
                                   Open /decisions
                                 </Button>
-                                <Button size="small" onClick={() => { setActiveWorkspaceTab('bindings') }}>
+                                <Button size="small" onClick={() => { handleOpenBindingsWorkspace() }}>
                                   Open Bindings
                                 </Button>
                               </Space>
@@ -3458,7 +3690,7 @@ export function PoolCatalogPage() {
                                   <Button
                                     size="small"
                                     type={graphDate === record.effective_from ? 'primary' : 'default'}
-                                    onClick={() => setGraphDate(record.effective_from)}
+                                    onClick={() => handleGraphDateChange(record.effective_from)}
                                     data-testid={`pool-catalog-topology-snapshot-open-${record.effective_from}`}
                                   >
                                     Open
@@ -4829,13 +5061,13 @@ export function PoolCatalogPage() {
                         value: pool.id,
                         label: `${pool.code} - ${pool.name}`,
                       }))}
-                      onChange={(value) => setSelectedPoolId(value)}
+                      onChange={(value) => handleSelectPool(value ?? null)}
                     />
                     <Input
                       type="date"
                       value={graphDate}
                       style={{ width: 170 }}
-                      onChange={(event) => setGraphDate(event.target.value)}
+                      onChange={(event) => handleGraphDateChange(event.target.value)}
                     />
                     <Button onClick={() => { void loadGraph() }} loading={loadingGraph}>
                       Refresh graph
@@ -4862,13 +5094,15 @@ export function PoolCatalogPage() {
             },
           ]}
         />
-      </Space>
+      </WorkspacePage>
 
       <Drawer
+        data-testid="pool-catalog-organization-drawer"
         title={organizationDrawerMode === 'create' ? 'Add organization' : 'Edit organization'}
         width={520}
         open={isOrganizationDrawerOpen}
         onClose={closeOrganizationDrawer}
+        forceRender
         destroyOnHidden
         extra={(
           <Space>
@@ -4937,10 +5171,12 @@ export function PoolCatalogPage() {
       </Drawer>
 
       <Drawer
+        data-testid="pool-catalog-pool-drawer"
         title={poolDrawerMode === 'create' ? 'Add pool' : 'Edit pool'}
         width={520}
         open={isPoolDrawerOpen}
         onClose={closePoolDrawer}
+        forceRender
         destroyOnHidden
         extra={(
           <Space>

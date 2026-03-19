@@ -3,9 +3,11 @@ import { App as AntApp, Input } from 'antd'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
+import * as React from 'react'
 
 import {
   DashboardPage,
+  DrawerFormShell,
   EntityList,
   ModalFormShell,
   PageHeader,
@@ -53,6 +55,38 @@ describe('platform primitives', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByLabelText('Profile code')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Create profile' })).toBeInTheDocument()
+  })
+
+  it('renders DrawerFormShell content after dynamic open transitions', async () => {
+    const user = userEvent.setup()
+
+    function DrawerHarness() {
+      const [open, setOpen] = React.useState(false)
+
+      return (
+        <AntApp>
+          <button type="button" onClick={() => setOpen(true)}>
+            Open drawer
+          </button>
+          <DrawerFormShell
+            open={open}
+            onClose={() => setOpen(false)}
+            title="Attachment workspace"
+            drawerTestId="platform-drawer-shell"
+          >
+            <label htmlFor="drawer-field">Drawer field</label>
+            <Input id="drawer-field" />
+          </DrawerFormShell>
+        </AntApp>
+      )
+    }
+
+    render(<DrawerHarness />)
+
+    await user.click(screen.getByRole('button', { name: 'Open drawer' }))
+
+    expect(await screen.findByTestId('platform-drawer-shell')).toBeInTheDocument()
+    expect(screen.getByLabelText('Drawer field')).toBeInTheDocument()
   })
 
   it('renders DashboardPage as the canonical dashboard shell', () => {

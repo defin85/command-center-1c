@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 
 import type {
   Organization,
@@ -285,16 +285,25 @@ async function waitForInitialCatalogLoad() {
   await waitFor(() => expect(mockListPoolTopologySnapshots).toHaveBeenCalled())
 }
 
-function renderPage() {
+function renderPage(initialEntry = '/pools/catalog') {
   const result = render(
-    <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+    <MemoryRouter
+      initialEntries={[initialEntry]}
+      future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+    >
       <AntApp>
         <PoolCatalogPage />
+        <LocationProbe />
       </AntApp>
     </MemoryRouter>
   )
   initialCatalogLoadPromise = waitForInitialCatalogLoad()
   return result
+}
+
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="pool-catalog-location">{`${location.pathname}${location.search}`}</div>
 }
 
 function openSelectByTestId(testId: string) {
@@ -318,6 +327,9 @@ async function openWorkspaceTab(
   tabLabel: 'Pools' | 'Bindings' | 'Topology Editor'
 ) {
   await initialCatalogLoadPromise
+  await waitFor(() => {
+    expect(screen.getByTestId('pool-catalog-context-pool')).toHaveTextContent('pool-1 - Pool One')
+  })
   await user.click(screen.getByRole('tab', { name: tabLabel }))
   if (tabLabel === 'Pools') {
     await screen.findByText('Pools management')
@@ -325,6 +337,14 @@ async function openWorkspaceTab(
   }
   if (tabLabel === 'Bindings') {
     await screen.findByText('Workflow attachment workspace')
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-open-bindings-workspace')).toBeEnabled()
+    })
+    fireEvent.click(screen.getByTestId('pool-catalog-open-bindings-workspace'))
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('tab=bindings')
+    })
+    await screen.findByTestId('pool-catalog-bindings-drawer', undefined, { timeout: 5000 })
     return
   }
   await screen.findByText('Topology snapshots by date')
@@ -843,6 +863,40 @@ describe('PoolCatalogPage', () => {
     )
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
+  it('restores selected pool and attachment workspace from query params', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+
+    renderPage('/pools/catalog?pool_id=44444444-4444-4444-4444-444444444444&tab=bindings')
+    await initialCatalogLoadPromise
+    expect(screen.getByTestId('pool-catalog-context-pool')).toHaveTextContent('pool-1 - Pool One')
+
+    await waitFor(() => {
+      expect(mockListPoolWorkflowBindings).toHaveBeenCalledWith('44444444-4444-4444-4444-444444444444')
+    })
+
+    expect(await screen.findByTestId('pool-catalog-bindings-drawer')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('pool_id=44444444-4444-4444-4444-444444444444')
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('tab=bindings')
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
+  it('keeps selected pool and active workspace tab in the URL when the operator switches tasks', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    renderPage()
+    await initialCatalogLoadPromise
+    expect(screen.getByTestId('pool-catalog-context-pool')).toHaveTextContent('pool-1 - Pool One')
+
+    await openWorkspaceTab(user, 'Bindings')
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('pool_id=44444444-4444-4444-4444-444444444444')
+    })
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('tab=bindings')
+
+    await openWorkspaceTab(user, 'Topology Editor')
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('tab=topology')
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
   it('renders existing workflow attachments in isolated workspace and keeps pool drawer focused on pool fields', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
@@ -924,7 +978,10 @@ describe('PoolCatalogPage', () => {
     await openWorkspaceTab(user, 'Pools')
     await user.click(screen.getByTestId('pool-catalog-edit-pool'))
 
-    const dialog = await screen.findByRole('dialog', { name: 'Edit pool' })
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-pool-drawer')).toBeVisible()
+    })
+    const dialog = screen.getByTestId('pool-catalog-pool-drawer')
     expect(within(dialog).queryByTestId('pool-catalog-workflow-binding-card-0')).not.toBeInTheDocument()
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
@@ -1420,7 +1477,13 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
     await openWorkspaceTab(user, 'Bindings')
-    expect(await screen.findByTestId('pool-catalog-workflow-binding-coverage-0')).toHaveTextContent('edges: 2')
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-workflow-binding-profile-summary-0')).toBeInTheDocument()
+    }, { timeout: 3000 })
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-workflow-binding-coverage-0')).toBeInTheDocument()
+    }, { timeout: 3000 })
+    expect(screen.getByTestId('pool-catalog-workflow-binding-coverage-0')).toHaveTextContent('edges: 2')
     expect(screen.getByTestId('pool-catalog-workflow-binding-coverage-0')).toHaveTextContent('resolved: 1')
     expect(screen.getByTestId('pool-catalog-workflow-binding-coverage-0')).toHaveTextContent('missing slot: 1')
     expect(screen.getByText('Binding remediation required')).toBeInTheDocument()

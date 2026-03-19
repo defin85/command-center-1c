@@ -11,6 +11,7 @@ type DrawerFormShellProps = {
   title?: ReactNode
   subtitle?: ReactNode
   width?: number
+  drawerTestId?: string
   children: ReactNode
 }
 
@@ -20,6 +21,7 @@ export function DrawerFormShell({
   title,
   subtitle,
   width = 880,
+  drawerTestId,
   children,
 }: DrawerFormShellProps) {
   const screens = useBreakpoint()
@@ -43,10 +45,12 @@ export function DrawerFormShell({
 
   return (
     <Drawer
+      data-testid={drawerTestId}
       open={open}
       onClose={onClose}
       title={drawerTitle}
       width={isNarrow ? '100%' : width}
+      forceRender
       destroyOnClose
     >
       {children}

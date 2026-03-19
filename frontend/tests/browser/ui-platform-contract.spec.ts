@@ -1217,9 +1217,10 @@ test('Runtime contract: /pools/binding-profiles hands off to /pools/catalog with
 
   await page.getByRole('button', { name: 'Open attachment workspace' }).first().click()
 
-  await expect(page).toHaveURL(/\/pools\/catalog$/)
-  await expect(page.getByRole('heading', { name: 'Pool Catalog', level: 3 })).toBeVisible()
-  await expect(page.getByRole('tab', { name: 'Organizations' })).toBeVisible()
+  await expect(page).toHaveURL(/\/pools\/catalog\?pool_id=.*&tab=pools&date=/)
+  await expect(page.getByRole('heading', { name: 'Pool Catalog', level: 2 })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Pools' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('pool-catalog-context-pool')).toBeVisible()
 
   await expect(counts.bootstrap).toBe(1)
   await expect(counts.meReads).toBe(0)
