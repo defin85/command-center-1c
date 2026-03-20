@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, App, Button, Checkbox, Select, Space, Spin, Switch, Table, Tag, Typography } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
+import { Alert, App, Button, Checkbox, Select, Space, Spin, Switch, Tag, Typography } from 'antd'
 import dayjs from 'dayjs'
 
 import { getV2 } from '../../../api/generated'
@@ -38,6 +37,12 @@ type UIBinding = {
   reason?: string | null
 }
 
+type BindingPreviewField = {
+  key: string
+  label: string
+  value: string
+}
+
 const extractBindings = (bindings: unknown): UIBinding[] => {
   if (!Array.isArray(bindings)) return []
   return bindings.filter((item) => item && typeof item === 'object') as UIBinding[]
@@ -61,6 +66,77 @@ const formatExecutionPlan = (executionPlan: unknown): string => {
 
 const hasSetFlagsMaskSelection = (applyMask: { active: boolean; safe_mode: boolean; unsafe_action_protection: boolean }) => (
   Boolean(applyMask.active || applyMask.safe_mode || applyMask.unsafe_action_protection)
+)
+
+const renderBindingPreviewFields = (binding: UIBinding): BindingPreviewField[] => [
+  {
+    key: 'target',
+    label: 'Target',
+    value: typeof binding.target_ref === 'string' && binding.target_ref.trim() ? binding.target_ref : 'n/a',
+  },
+  {
+    key: 'source',
+    label: 'Source',
+    value: typeof binding.source_ref === 'string' && binding.source_ref.trim() ? binding.source_ref : 'n/a',
+  },
+  {
+    key: 'resolve',
+    label: 'Resolve',
+    value: typeof binding.resolve_at === 'string' && binding.resolve_at.trim() ? binding.resolve_at : 'n/a',
+  },
+  {
+    key: 'status',
+    label: 'Status',
+    value: typeof binding.status === 'string' && binding.status.trim() ? binding.status : 'n/a',
+  },
+  {
+    key: 'reason',
+    label: 'Reason',
+    value: typeof binding.reason === 'string' && binding.reason.trim() ? binding.reason : 'n/a',
+  },
+]
+
+const renderBindingProvenancePreview = (bindings: UIBinding[]) => (
+  <div data-testid="database-extensions-binding-provenance" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    {bindings.map((binding, index) => (
+      <div
+        key={`${binding.target_ref || 'binding'}-${binding.source_ref || index}`}
+        data-testid={`database-extensions-binding-provenance-row-${index}`}
+        style={{
+          border: '1px solid #f0f0f0',
+          borderRadius: 8,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          padding: '12px 14px',
+        }}
+      >
+        <Space size={8} wrap>
+          <Tag color="geekblue">binding {index + 1}</Tag>
+          <Tag color={binding.sensitive ? 'red' : 'default'}>
+            sensitive: {binding.sensitive ? 'yes' : 'no'}
+          </Tag>
+        </Space>
+        <div
+          style={{
+            display: 'grid',
+            gap: 8,
+            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+          }}
+        >
+          {renderBindingPreviewFields(binding).map((field) => (
+            <div
+              key={field.key}
+              style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+            >
+              <Typography.Text type="secondary">{field.label}</Typography.Text>
+              <Typography.Text>{field.value}</Typography.Text>
+            </div>
+          ))}
+        </div>
+      </div>
+    ))}
+  </div>
 )
 
 export interface ExtensionsDrawerProps {
@@ -298,20 +374,6 @@ export const ExtensionsDrawer = ({
       const plan = await api.postExtensionsPlan(buildPlanRequest())
       const previewText = formatExecutionPlan(plan.execution_plan)
       const bindings = extractBindings(plan.bindings)
-      const bindingColumns: ColumnsType<UIBinding> = [
-        { title: 'Target', dataIndex: 'target_ref', key: 'target_ref' },
-        { title: 'Source', dataIndex: 'source_ref', key: 'source_ref' },
-        { title: 'Resolve', dataIndex: 'resolve_at', key: 'resolve_at', width: 90 },
-        {
-          title: 'Sensitive',
-          dataIndex: 'sensitive',
-          key: 'sensitive',
-          width: 90,
-          render: (value: boolean | undefined) => (value ? <Tag color="red">yes</Tag> : <Tag>no</Tag>),
-        },
-        { title: 'Status', dataIndex: 'status', key: 'status', width: 110 },
-        { title: 'Reason', dataIndex: 'reason', key: 'reason' },
-      ]
 
       modal.confirm({
         title: isSetFlagsOperation ? 'Apply selected flags?' : 'Launch extensions sync?',
@@ -346,14 +408,7 @@ export const ExtensionsDrawer = ({
             <div style={{ marginTop: 12 }}>
               <div style={{ fontWeight: 600, marginBottom: 8 }}>Binding Provenance:</div>
               {bindings.length > 0 ? (
-                <Table
-                  size="small"
-                  rowKey={(_row, idx) => String(idx)}
-                  pagination={false}
-                  dataSource={bindings}
-                  columns={bindingColumns}
-                  scroll={{ x: 900 }}
-                />
+                renderBindingProvenancePreview(bindings)
               ) : (
                 <div style={{ opacity: 0.7 }}>No bindings</div>
               )}

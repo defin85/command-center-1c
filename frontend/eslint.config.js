@@ -115,6 +115,7 @@ const shellSafeInternalNavigationRules = [
 const platformShellImportNames = new Set(['ModalFormShell', 'DrawerFormShell'])
 const platformShellRestrictedAntdImports = new Map([
   ['Descriptions', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe summary rows instead of raw `Descriptions`.'],
+  ['Table', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe list/summary surfaces instead of raw `Table`.'],
 ])
 
 const uiPlatformLocalPlugin = {
