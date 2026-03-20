@@ -1828,7 +1828,7 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
     await openWorkspaceTab(user, 'Topology Editor')
-    expect(await screen.findByTestId('pool-catalog-topology-edge-slot-0')).toHaveValue('sale')
+    expect(await screen.findByTestId('pool-catalog-topology-edge-slot-0')).toHaveTextContent('sale')
     expect(screen.queryByText('Legacy edge document_policy compatibility')).not.toBeInTheDocument()
     expect(screen.queryByTestId('pool-catalog-topology-edge-open-legacy-policy-editor-0')).not.toBeInTheDocument()
     expect(screen.queryByTestId('pool-catalog-topology-edge-migrate-legacy-policy-0')).not.toBeInTheDocument()
@@ -1899,9 +1899,8 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
     await openWorkspaceTab(user, 'Topology Editor')
-    const slotInput = screen.getByTestId('pool-catalog-topology-edge-slot-0')
-    await user.clear(slotInput)
-    await user.paste('sale')
+    openSelectByTestId('pool-catalog-topology-edge-slot-0')
+    await selectDropdownOption('sale · decision-1 (document_policy) r4')
     await user.click(screen.getByTestId('pool-catalog-topology-save'))
 
     await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
@@ -1985,7 +1984,7 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Org One')).toBeInTheDocument()
     await openWorkspaceTab(user, 'Topology Editor')
 
-    expect(await screen.findByTestId('pool-catalog-topology-edge-slot-0')).toHaveValue('sale')
+    expect(await screen.findByTestId('pool-catalog-topology-edge-slot-0')).toHaveTextContent('sale')
     await expandFirstEdgeAdvanced(user)
 
     openSelectByTestId('pool-catalog-topology-edge-metadata-mode-0')
@@ -2072,9 +2071,8 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
     await openWorkspaceTab(user, 'Topology Editor')
-    const slotInput = screen.getByTestId('pool-catalog-topology-edge-slot-0')
-    await user.clear(slotInput)
-    await user.paste('sale')
+    openSelectByTestId('pool-catalog-topology-edge-slot-0')
+    await selectDropdownOption('sale · decision-1 (document_policy) r4')
     await user.click(screen.getByTestId('pool-catalog-topology-save'))
 
     await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))

@@ -632,6 +632,34 @@ const buildBindingSlotRefsFromForm = (
     .filter((slotRef): slotRef is { slotKey: string; refLabel: string } => Boolean(slotRef))
 )
 
+const buildTopologySlotOptions = (
+  slotRefs: Array<{ slotKey: string; refLabel: string }>
+): Array<{ value: string; label: string }> => {
+  const groupedRefs = new Map<string, Set<string>>()
+  slotRefs.forEach((slotRef) => {
+    const slotKey = String(slotRef.slotKey || '').trim()
+    const refLabel = String(slotRef.refLabel || '').trim()
+    if (!slotKey || !refLabel) {
+      return
+    }
+    const labels = groupedRefs.get(slotKey) ?? new Set<string>()
+    labels.add(refLabel)
+    groupedRefs.set(slotKey, labels)
+  })
+
+  return Array.from(groupedRefs.entries())
+    .map(([slotKey, refLabels]) => {
+      const labels = Array.from(refLabels)
+      return {
+        value: slotKey,
+        label: labels.length === 1
+          ? `${slotKey} · ${labels[0]}`
+          : `${slotKey} · ${labels.length} decision refs`,
+      }
+    })
+    .sort((left, right) => left.label.localeCompare(right.label))
+}
+
 const buildLegacyTopologyBlockingRemediation = ({
   graph,
   pool,
@@ -1738,6 +1766,10 @@ export function PoolCatalogPage() {
   const topologyCoverageContext = useMemo(
     () => resolveTopologyCoverageContext(loadedPoolBindings, topologyCoverageBindingId),
     [loadedPoolBindings, topologyCoverageBindingId]
+  )
+  const topologySlotOptions = useMemo(
+    () => buildTopologySlotOptions(topologyCoverageContext.slotRefs),
+    [topologyCoverageContext]
   )
   useEffect(() => {
     setActiveWorkspaceTab((previous) => (previous === requestedWorkspaceTab ? previous : requestedWorkspaceTab))
@@ -3851,15 +3883,47 @@ export function PoolCatalogPage() {
                                       </Form.Item>
                                     </Col>
                                     <Col span={8}>
-                                      <Form.Item
-                                        name={[field.name, 'document_policy_key']}
-                                        label={field.name === 0 ? 'Publication slot' : ''}
-                                        style={{ marginBottom: 0 }}
-                                      >
-                                        <Input
-                                          placeholder="sale"
-                                          data-testid={`pool-catalog-topology-edge-slot-${field.name}`}
-                                        />
+                                      <Form.Item noStyle shouldUpdate>
+                                        {({ getFieldValue }) => {
+                                          const currentSlotKey = String(
+                                            getFieldValue(['edges', field.name, 'document_policy_key']) || ''
+                                          ).trim()
+                                          const currentSlotOptions = (
+                                            currentSlotKey
+                                            && !topologySlotOptions.some((option) => option.value === currentSlotKey)
+                                          )
+                                            ? [
+                                                {
+                                                  value: currentSlotKey,
+                                                  label: `${currentSlotKey} · current edge value`,
+                                                },
+                                                ...topologySlotOptions,
+                                              ]
+                                            : topologySlotOptions
+
+                                          return (
+                                            <Form.Item
+                                              name={[field.name, 'document_policy_key']}
+                                              label={field.name === 0 ? 'Publication slot' : ''}
+                                              style={{ marginBottom: 0 }}
+                                            >
+                                              {currentSlotOptions.length > 0 ? (
+                                                <Select
+                                                  showSearch
+                                                  optionFilterProp="label"
+                                                  placeholder="Select publication slot from bindings"
+                                                  options={currentSlotOptions}
+                                                  data-testid={`pool-catalog-topology-edge-slot-${field.name}`}
+                                                />
+                                              ) : (
+                                                <Input
+                                                  placeholder="sale"
+                                                  data-testid={`pool-catalog-topology-edge-slot-${field.name}`}
+                                                />
+                                              )}
+                                            </Form.Item>
+                                          )
+                                        }}
                                       </Form.Item>
                                     </Col>
                                     <Col span={2}>
