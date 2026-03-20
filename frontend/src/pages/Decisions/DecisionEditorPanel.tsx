@@ -2,6 +2,7 @@ import { Alert, Button, Descriptions, Input, Space, Typography } from 'antd'
 import type { DescriptionsProps } from 'antd'
 
 import { LazyJsonCodeEditorFormField } from '../../components/code/LazyJsonCodeEditor'
+import type { PoolODataMetadataCatalogDocument } from '../../api/generated/model'
 import type { DocumentPolicyBuilderChainFormValue } from './documentPolicyBuilder'
 import { DocumentPolicyBuilderEditor } from './DocumentPolicyBuilderEditor'
 
@@ -44,6 +45,7 @@ type DecisionEditorPanelProps = {
   error?: string | null
   saving?: boolean
   value: DecisionEditorState
+  metadataDocuments?: readonly PoolODataMetadataCatalogDocument[]
   onCancel: () => void
   onChange: (value: DecisionEditorState) => void
   onSave: () => void
@@ -73,6 +75,7 @@ export function DecisionEditorPanel({
   error,
   saving,
   value,
+  metadataDocuments = [],
   onCancel,
   onChange,
   onSave,
@@ -229,6 +232,7 @@ export function DecisionEditorPanel({
       {value.activeTab === 'builder' ? (
         <DocumentPolicyBuilderEditor
           disabled={saving}
+          metadataDocuments={metadataDocuments}
           value={value.chains}
           onChange={(chains) => onChange({ ...value, chains })}
         />

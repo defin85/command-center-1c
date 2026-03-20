@@ -10,6 +10,7 @@ import {
   Space,
   Typography,
 } from 'antd'
+import type { PoolODataMetadataCatalogDocument } from '../../api/generated/model'
 
 import {
   DrawerFormShell,
@@ -67,6 +68,16 @@ export function DecisionsPage() {
   })
 
   const saving = editor.saving || legacyImport.saving
+  const editorMetadataContext = editor.editorDraft?.mode === 'rollover'
+    ? catalog.rolloverTargetMetadataContext
+    : (catalog.detailContext ?? catalog.metadataContext)
+  const editorMetadataDocuments = (
+    editorMetadataContext
+    && typeof editorMetadataContext === 'object'
+    && Array.isArray((editorMetadataContext as { documents?: unknown }).documents)
+      ? (editorMetadataContext as { documents: PoolODataMetadataCatalogDocument[] }).documents
+      : []
+  )
 
   const openEditor = (mode: DecisionEditorMode, draft: DecisionEditorState) => {
     editor.openEditor(mode, draft)
@@ -407,6 +418,7 @@ export function DecisionsPage() {
             value={editor.editorDraft}
             error={editor.editorError}
             saving={saving}
+            metadataDocuments={editorMetadataDocuments}
             onCancel={editor.closeEditor}
             onSave={() => void editor.handleSaveDecision()}
             onChange={editor.setEditorDraft}

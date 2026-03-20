@@ -1,4 +1,4 @@
-import { Button, Card, Divider, Input, Select, Space, Typography } from 'antd'
+import { AutoComplete, Button, Card, Divider, Input, Select, Space, Typography } from 'antd'
 
 import type {
   DocumentPolicyBuilderChainFormValue,
@@ -6,6 +6,21 @@ import type {
   DocumentPolicyBuilderMappingFormValue,
   DocumentPolicyBuilderTablePartMappingFormValue,
 } from './documentPolicyBuilder'
+import {
+  buildChainDocumentIdOptions,
+  buildChainIdOptions,
+  buildDocumentRoleOptions,
+  buildEntityOptions,
+  buildFieldTargetOptions,
+  buildLinkRuleTargetOptions,
+  buildRowTargetOptions,
+  buildSourceExpressionOptions,
+  buildTablePartOptions,
+  findMetadataDocument,
+  findMetadataTablePart,
+  type SuggestionOption,
+} from './documentPolicyBuilderSuggestions'
+import type { PoolODataMetadataCatalogDocument } from '../../api/generated/model'
 
 const { Text } = Typography
 
@@ -13,6 +28,7 @@ type DocumentPolicyBuilderEditorProps = {
   value: DocumentPolicyBuilderChainFormValue[]
   onChange: (value: DocumentPolicyBuilderChainFormValue[]) => void
   disabled?: boolean
+  metadataDocuments?: readonly PoolODataMetadataCatalogDocument[]
 }
 
 const createEmptyMapping = (): DocumentPolicyBuilderMappingFormValue => ({
@@ -123,12 +139,57 @@ const ensureLinkRules = (
   return document.link_rules
 }
 
+const INLINE_FIELD_STYLE = { minWidth: 220, width: 240 }
+
+const matchesSuggestionOption = (inputValue: string, option?: SuggestionOption) => (
+  `${option?.value ?? ''} ${option?.label ?? ''}`
+    .toLowerCase()
+    .includes(inputValue.trim().toLowerCase())
+)
+
+type SuggestionInputProps = {
+  ariaLabel: string
+  value?: string
+  placeholder: string
+  options: SuggestionOption[]
+  onChange: (value: string) => void
+  disabled?: boolean
+  style?: { minWidth?: number; width?: number | string }
+}
+
+function SuggestionInput({
+  ariaLabel,
+  value,
+  placeholder,
+  options,
+  onChange,
+  disabled,
+  style,
+}: SuggestionInputProps) {
+  return (
+    <AutoComplete
+      value={value ?? ''}
+      options={options}
+      onChange={onChange}
+      disabled={disabled}
+      filterOption={matchesSuggestionOption}
+      style={style}
+    >
+      <Input aria-label={ariaLabel} placeholder={placeholder} disabled={disabled} />
+    </AutoComplete>
+  )
+}
+
 export function DocumentPolicyBuilderEditor({
   value,
   onChange,
   disabled = false,
+  metadataDocuments = [],
 }: DocumentPolicyBuilderEditorProps) {
   const chains = Array.isArray(value) ? value : []
+  const chainIdOptions = buildChainIdOptions(chains)
+  const documentRoleOptions = buildDocumentRoleOptions(chains)
+  const sourceExpressionOptions = buildSourceExpressionOptions(chains)
 
   const updateChains = (recipe: (draft: DocumentPolicyBuilderChainFormValue[]) => void) => {
     const next = cloneChains(chains)
@@ -167,14 +228,16 @@ export function DocumentPolicyBuilderEditor({
           )}
         >
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Input
-              aria-label={`Chain ${chainIndex + 1} ID`}
+            <SuggestionInput
+              ariaLabel={`Chain ${chainIndex + 1} ID`}
               placeholder="sale_chain"
               value={chain.chain_id ?? ''}
-              onChange={(event) => updateChains((draft) => {
-                draft[chainIndex].chain_id = event.target.value
+              options={chainIdOptions}
+              onChange={(nextValue) => updateChains((draft) => {
+                draft[chainIndex].chain_id = nextValue
               })}
               disabled={disabled}
+              style={{ width: '100%' }}
             />
 
             <Button
@@ -188,6 +251,28 @@ export function DocumentPolicyBuilderEditor({
             </Button>
 
             {(chain.documents ?? []).map((document, documentIndex) => (
+              (() => {
+                const selectedMetadataDocument = findMetadataDocument(metadataDocuments, document.entity_name)
+                const documentIdOptions = buildChainDocumentIdOptions(
+                  chain,
+                  document.document_id,
+                )
+                const linkToOptions = buildChainDocumentIdOptions(
+                  chain,
+                  document.link_to,
+                  { excludeDocumentIndex: documentIndex },
+                )
+                const entityOptions = buildEntityOptions(metadataDocuments, document.entity_name)
+                const fieldTargetOptions = buildFieldTargetOptions(
+                  document,
+                  selectedMetadataDocument,
+                )
+                const tablePartOptions = buildTablePartOptions(
+                  document,
+                  selectedMetadataDocument,
+                )
+
+                return (
               <Card
                 key={`chain-${chainIndex + 1}-document-${documentIndex + 1}`}
                 size="small"
@@ -207,32 +292,38 @@ export function DocumentPolicyBuilderEditor({
                 )}
               >
                 <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                  <Input
-                    aria-label={`Chain ${chainIndex + 1} document ${documentIndex + 1} ID`}
+                  <SuggestionInput
+                    ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} ID`}
                     placeholder="sale"
                     value={document.document_id ?? ''}
-                    onChange={(event) => updateChains((draft) => {
-                      getDraftDocument(draft, chainIndex, documentIndex).document_id = event.target.value
+                    options={documentIdOptions}
+                    onChange={(nextValue) => updateChains((draft) => {
+                      getDraftDocument(draft, chainIndex, documentIndex).document_id = nextValue
                     })}
                     disabled={disabled}
+                    style={{ width: '100%' }}
                   />
-                  <Input
-                    aria-label={`Chain ${chainIndex + 1} document ${documentIndex + 1} entity`}
+                  <SuggestionInput
+                    ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} entity`}
                     placeholder="Document_Sales"
                     value={document.entity_name ?? ''}
-                    onChange={(event) => updateChains((draft) => {
-                      getDraftDocument(draft, chainIndex, documentIndex).entity_name = event.target.value
+                    options={entityOptions}
+                    onChange={(nextValue) => updateChains((draft) => {
+                      getDraftDocument(draft, chainIndex, documentIndex).entity_name = nextValue
                     })}
                     disabled={disabled}
+                    style={{ width: '100%' }}
                   />
-                  <Input
-                    aria-label={`Chain ${chainIndex + 1} document ${documentIndex + 1} role`}
+                  <SuggestionInput
+                    ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} role`}
                     placeholder="base"
                     value={document.document_role ?? ''}
-                    onChange={(event) => updateChains((draft) => {
-                      getDraftDocument(draft, chainIndex, documentIndex).document_role = event.target.value
+                    options={documentRoleOptions}
+                    onChange={(nextValue) => updateChains((draft) => {
+                      getDraftDocument(draft, chainIndex, documentIndex).document_role = nextValue
                     })}
                     disabled={disabled}
+                    style={{ width: '100%' }}
                   />
                   <Select
                     aria-label={`Chain ${chainIndex + 1} document ${documentIndex + 1} invoice mode`}
@@ -246,14 +337,16 @@ export function DocumentPolicyBuilderEditor({
                     })}
                     disabled={disabled}
                   />
-                  <Input
-                    aria-label={`Chain ${chainIndex + 1} document ${documentIndex + 1} link to`}
+                  <SuggestionInput
+                    ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} link to`}
                     placeholder="parent_document"
                     value={document.link_to ?? ''}
-                    onChange={(event) => updateChains((draft) => {
-                      getDraftDocument(draft, chainIndex, documentIndex).link_to = event.target.value
+                    options={linkToOptions}
+                    onChange={(nextValue) => updateChains((draft) => {
+                      getDraftDocument(draft, chainIndex, documentIndex).link_to = nextValue
                     })}
                     disabled={disabled}
+                    style={{ width: '100%' }}
                   />
 
                   <Divider orientation="left" plain>Field mapping</Divider>
@@ -268,23 +361,27 @@ export function DocumentPolicyBuilderEditor({
                   </Button>
                   {(document.field_mappings ?? []).map((mapping, mappingIndex) => (
                     <Space key={`field-${mappingIndex + 1}`} align="start" wrap>
-                      <Input
-                        aria-label={`Chain ${chainIndex + 1} document ${documentIndex + 1} field mapping ${mappingIndex + 1} target`}
+                      <SuggestionInput
+                        ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} field mapping ${mappingIndex + 1} target`}
                         placeholder="Amount"
                         value={mapping.target ?? ''}
-                        onChange={(event) => updateChains((draft) => {
-                          ensureFieldMappings(getDraftDocument(draft, chainIndex, documentIndex))[mappingIndex].target = event.target.value
+                        options={fieldTargetOptions}
+                        onChange={(nextValue) => updateChains((draft) => {
+                          ensureFieldMappings(getDraftDocument(draft, chainIndex, documentIndex))[mappingIndex].target = nextValue
                         })}
                         disabled={disabled}
+                        style={INLINE_FIELD_STYLE}
                       />
-                      <Input
-                        aria-label={`Chain ${chainIndex + 1} document ${documentIndex + 1} field mapping ${mappingIndex + 1} source`}
+                      <SuggestionInput
+                        ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} field mapping ${mappingIndex + 1} source`}
                         placeholder="allocation.amount"
                         value={mapping.source ?? ''}
-                        onChange={(event) => updateChains((draft) => {
-                          ensureFieldMappings(getDraftDocument(draft, chainIndex, documentIndex))[mappingIndex].source = event.target.value
+                        options={sourceExpressionOptions}
+                        onChange={(nextValue) => updateChains((draft) => {
+                          ensureFieldMappings(getDraftDocument(draft, chainIndex, documentIndex))[mappingIndex].source = nextValue
                         })}
                         disabled={disabled}
+                        style={INLINE_FIELD_STYLE}
                       />
                       <Button
                         danger
@@ -309,6 +406,17 @@ export function DocumentPolicyBuilderEditor({
                     {`Add table part mapping to chain ${chainIndex + 1} document ${documentIndex + 1}`}
                   </Button>
                   {(document.table_part_mappings ?? []).map((tablePartMapping, tablePartIndex) => (
+                    (() => {
+                      const metadataTablePart = findMetadataTablePart(
+                        selectedMetadataDocument,
+                        tablePartMapping.table_part,
+                      )
+                      const rowTargetOptions = buildRowTargetOptions(
+                        tablePartMapping,
+                        metadataTablePart,
+                      )
+
+                      return (
                     <Card
                       key={`table-part-${tablePartIndex + 1}`}
                       size="small"
@@ -328,14 +436,16 @@ export function DocumentPolicyBuilderEditor({
                       )}
                     >
                       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                        <Input
-                          aria-label={`Chain ${chainIndex + 1} document ${documentIndex + 1} table part mapping ${tablePartIndex + 1} name`}
+                        <SuggestionInput
+                          ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} table part mapping ${tablePartIndex + 1} name`}
                           placeholder="Items"
                           value={tablePartMapping.table_part ?? ''}
-                          onChange={(event) => updateChains((draft) => {
-                            getTablePartMapping(getDraftDocument(draft, chainIndex, documentIndex), tablePartIndex).table_part = event.target.value
+                          options={tablePartOptions}
+                          onChange={(nextValue) => updateChains((draft) => {
+                            getTablePartMapping(getDraftDocument(draft, chainIndex, documentIndex), tablePartIndex).table_part = nextValue
                           })}
                           disabled={disabled}
+                          style={{ width: '100%' }}
                         />
                         <Button
                           type="dashed"
@@ -348,23 +458,27 @@ export function DocumentPolicyBuilderEditor({
                         </Button>
                         {(tablePartMapping.row_mappings ?? []).map((rowMapping, rowMappingIndex) => (
                           <Space key={`row-${rowMappingIndex + 1}`} align="start" wrap>
-                            <Input
-                              aria-label={`Chain ${chainIndex + 1} document ${documentIndex + 1} table part ${tablePartIndex + 1} row mapping ${rowMappingIndex + 1} target`}
+                            <SuggestionInput
+                              ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} table part ${tablePartIndex + 1} row mapping ${rowMappingIndex + 1} target`}
                               placeholder="Quantity"
                               value={rowMapping.target ?? ''}
-                              onChange={(event) => updateChains((draft) => {
-                                ensureRowMappings(getTablePartMapping(getDraftDocument(draft, chainIndex, documentIndex), tablePartIndex))[rowMappingIndex].target = event.target.value
+                              options={rowTargetOptions}
+                              onChange={(nextValue) => updateChains((draft) => {
+                                ensureRowMappings(getTablePartMapping(getDraftDocument(draft, chainIndex, documentIndex), tablePartIndex))[rowMappingIndex].target = nextValue
                               })}
                               disabled={disabled}
+                              style={INLINE_FIELD_STYLE}
                             />
-                            <Input
-                              aria-label={`Chain ${chainIndex + 1} document ${documentIndex + 1} table part ${tablePartIndex + 1} row mapping ${rowMappingIndex + 1} source`}
+                            <SuggestionInput
+                              ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} table part ${tablePartIndex + 1} row mapping ${rowMappingIndex + 1} source`}
                               placeholder="allocation.lines.quantity"
                               value={rowMapping.source ?? ''}
-                              onChange={(event) => updateChains((draft) => {
-                                ensureRowMappings(getTablePartMapping(getDraftDocument(draft, chainIndex, documentIndex), tablePartIndex))[rowMappingIndex].source = event.target.value
+                              options={sourceExpressionOptions}
+                              onChange={(nextValue) => updateChains((draft) => {
+                                ensureRowMappings(getTablePartMapping(getDraftDocument(draft, chainIndex, documentIndex), tablePartIndex))[rowMappingIndex].source = nextValue
                               })}
                               disabled={disabled}
+                              style={INLINE_FIELD_STYLE}
                             />
                             <Button
                               danger
@@ -379,6 +493,8 @@ export function DocumentPolicyBuilderEditor({
                         ))}
                       </Space>
                     </Card>
+                      )
+                    })()
                   ))}
 
                   <Divider orientation="left" plain>Link rules</Divider>
@@ -393,23 +509,32 @@ export function DocumentPolicyBuilderEditor({
                   </Button>
                   {(document.link_rules ?? []).map((linkRule, linkRuleIndex) => (
                     <Space key={`link-rule-${linkRuleIndex + 1}`} align="start" wrap>
-                      <Input
-                        aria-label={`Chain ${chainIndex + 1} document ${documentIndex + 1} link rule ${linkRuleIndex + 1} target`}
+                      <SuggestionInput
+                        ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} link rule ${linkRuleIndex + 1} target`}
                         placeholder="child_document"
                         value={linkRule.target ?? ''}
-                        onChange={(event) => updateChains((draft) => {
-                          ensureLinkRules(getDraftDocument(draft, chainIndex, documentIndex))[linkRuleIndex].target = event.target.value
+                        options={buildLinkRuleTargetOptions(
+                          chain,
+                          document,
+                          linkRule.target,
+                          { excludeDocumentIndex: documentIndex },
+                        )}
+                        onChange={(nextValue) => updateChains((draft) => {
+                          ensureLinkRules(getDraftDocument(draft, chainIndex, documentIndex))[linkRuleIndex].target = nextValue
                         })}
                         disabled={disabled}
+                        style={INLINE_FIELD_STYLE}
                       />
-                      <Input
-                        aria-label={`Chain ${chainIndex + 1} document ${documentIndex + 1} link rule ${linkRuleIndex + 1} source`}
+                      <SuggestionInput
+                        ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} link rule ${linkRuleIndex + 1} source`}
                         placeholder="parent.ref"
                         value={linkRule.source ?? ''}
-                        onChange={(event) => updateChains((draft) => {
-                          ensureLinkRules(getDraftDocument(draft, chainIndex, documentIndex))[linkRuleIndex].source = event.target.value
+                        options={sourceExpressionOptions}
+                        onChange={(nextValue) => updateChains((draft) => {
+                          ensureLinkRules(getDraftDocument(draft, chainIndex, documentIndex))[linkRuleIndex].source = nextValue
                         })}
                         disabled={disabled}
+                        style={INLINE_FIELD_STYLE}
                       />
                       <Button
                         danger
@@ -424,6 +549,8 @@ export function DocumentPolicyBuilderEditor({
                   ))}
                 </Space>
               </Card>
+                )
+              })()
             ))}
           </Space>
         </Card>

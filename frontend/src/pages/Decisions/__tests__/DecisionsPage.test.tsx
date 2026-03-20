@@ -726,6 +726,131 @@ describe('DecisionsPage', () => {
     })
   }, 30000)
 
+  it('offers known metadata and draft-backed choices across the structured decision builder', async () => {
+    const user = userEvent.setup()
+    const metadataContext = {
+      ...defaultMetadataContext,
+      documents: [
+        {
+          entity_name: 'Document_Sales',
+          display_name: 'Sales',
+          fields: [
+            { name: 'Amount' },
+            { name: 'Customer' },
+          ],
+          table_parts: [
+            {
+              name: 'Items',
+              row_fields: [
+                { name: 'Quantity' },
+                { name: 'Price' },
+              ],
+            },
+          ],
+        },
+        {
+          entity_name: 'Document_Invoice',
+          display_name: 'Invoice',
+          fields: [
+            { name: 'Number' },
+          ],
+          table_parts: [],
+        },
+      ],
+    }
+    const richerDecision = {
+      ...defaultDecision,
+      rules: [
+        {
+          ...defaultDecision.rules[0],
+          outputs: {
+            document_policy: {
+              version: 'document_policy.v1',
+              chains: [
+                {
+                  chain_id: 'sale_chain',
+                  documents: [
+                    {
+                      document_id: 'sale',
+                      entity_name: 'Document_Sales',
+                      document_role: 'base',
+                      invoice_mode: 'required',
+                      link_to: 'parent_document',
+                      field_mapping: {
+                        Amount: 'allocation.amount',
+                      },
+                      table_parts_mapping: {
+                        Items: {
+                          Quantity: 'allocation.lines.quantity',
+                        },
+                      },
+                      link_rules: {
+                        child_document: 'parent.ref',
+                      },
+                    },
+                    {
+                      document_id: 'parent_document',
+                      entity_name: 'Document_Invoice',
+                      document_role: 'parent',
+                      invoice_mode: 'optional',
+                      field_mapping: {},
+                      table_parts_mapping: {},
+                      link_rules: {},
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    }
+
+    mockGetDecisionsCollection.mockResolvedValue({
+      decisions: [richerDecision],
+      count: 1,
+      metadata_context: metadataContext,
+    })
+    mockGetDecisionsDetail.mockResolvedValue({
+      decision: richerDecision,
+      metadata_context: metadataContext,
+    })
+
+    renderPage()
+
+    await screen.findByText('Decision Policy Library')
+    await user.click(screen.getByRole('button', { name: 'Edit selected decision' }))
+
+    expect(await screen.findByRole('heading', { name: 'Edit selected decision' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Chain 1 ID' })).toHaveValue('sale_chain')
+    expect(screen.getByRole('combobox', { name: 'Chain 1 document 1 ID' })).toHaveValue('sale')
+    expect(screen.getByRole('combobox', { name: 'Chain 1 document 1 entity' })).toHaveValue('Document_Sales')
+    expect(screen.getByRole('combobox', { name: 'Chain 1 document 1 role' })).toHaveValue('base')
+    expect(screen.getByRole('combobox', { name: 'Chain 1 document 1 link to' })).toHaveValue('parent_document')
+    expect(screen.getByRole('combobox', { name: 'Chain 1 document 1 field mapping 1 target' })).toHaveValue('Amount')
+    expect(screen.getByRole('combobox', { name: 'Chain 1 document 1 field mapping 1 source' })).toHaveValue('allocation.amount')
+    expect(screen.getByRole('combobox', { name: 'Chain 1 document 1 table part mapping 1 name' })).toHaveValue('Items')
+    expect(screen.getByRole('combobox', { name: 'Chain 1 document 1 table part 1 row mapping 1 target' })).toHaveValue('Quantity')
+    expect(screen.getByRole('combobox', { name: 'Chain 1 document 1 table part 1 row mapping 1 source' })).toHaveValue('allocation.lines.quantity')
+    expect(screen.getByRole('combobox', { name: 'Chain 1 document 1 link rule 1 target' })).toHaveValue('child_document')
+    expect(screen.getByRole('combobox', { name: 'Chain 1 document 1 link rule 1 source' })).toHaveValue('parent.ref')
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Chain 1 document 1 entity' }), {
+      target: { value: 'Document_Inv' },
+    })
+    expect(await screen.findByRole('option', { name: 'Document_Invoice (Invoice)' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Chain 1 document 1 link to' }), {
+      target: { value: 'parent' },
+    })
+    expect(await screen.findByRole('option', { name: 'parent_document' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Chain 1 document 1 field mapping 1 source' }), {
+      target: { value: 'allocation.' },
+    })
+    expect(await screen.findByRole('option', { name: 'allocation.lines.quantity' })).toBeInTheDocument()
+  })
+
   it('keeps unbound non-document_policy revisions out of the default selection and edit flow', async () => {
     const user = userEvent.setup()
     const unsupportedDecision = {
