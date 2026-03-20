@@ -119,6 +119,8 @@ describe('ExtensionsDrawer', () => {
 
     expect(screen.getByText('Extensions: db-1')).toBeInTheDocument()
     expect(screen.getByText('Manual Operations')).toBeInTheDocument()
+    expect(screen.getByText('preferred')).toBeInTheDocument()
+    expect(screen.getByText('tpl-sync')).toBeInTheDocument()
     expect(screen.getByText(/"extensions"/)).toBeInTheDocument()
   })
 
@@ -157,6 +159,8 @@ describe('ExtensionsDrawer', () => {
 
     expect(await screen.findByTestId('database-extensions-binding-provenance')).toBeInTheDocument()
     expect(screen.getByTestId('database-extensions-binding-provenance-row-0')).toBeInTheDocument()
+    expect(screen.getByText('binding 1')).toBeInTheDocument()
+    expect(screen.getByText('sensitive: no')).toBeInTheDocument()
     expect(screen.getByText('Target')).toBeInTheDocument()
     expect(screen.getByText('Source')).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()

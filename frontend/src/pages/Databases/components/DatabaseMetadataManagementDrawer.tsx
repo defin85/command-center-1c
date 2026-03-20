@@ -1,4 +1,4 @@
-import { Alert, App, Button, Divider, Space, Spin, Tag, Typography } from 'antd'
+import { Alert, App, Button, Space, Spin, Typography } from 'antd'
 import { LinkOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 
@@ -162,13 +162,30 @@ const getErrorMessage = (error: unknown): string => {
 }
 
 const renderStatusTag = (descriptor: StatusDescriptor) => {
-  const colorMap: Record<AlertTone, string> = {
-    success: 'green',
-    info: 'blue',
-    warning: 'gold',
-    error: 'red',
+  const colorMap: Record<AlertTone, { background: string; border: string; text: string }> = {
+    success: { background: '#ecfdf3', border: '#a6f4c5', text: '#166534' },
+    info: { background: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
+    warning: { background: '#fff7ed', border: '#fed7aa', text: '#c2410c' },
+    error: { background: '#fef2f2', border: '#fecaca', text: '#b91c1c' },
   }
-  return <Tag color={colorMap[descriptor.tone]}>{descriptor.label}</Tag>
+  const palette = colorMap[descriptor.tone]
+  return (
+    <span
+      style={{
+        background: palette.background,
+        border: `1px solid ${palette.border}`,
+        borderRadius: 999,
+        color: palette.text,
+        display: 'inline-flex',
+        fontSize: 12,
+        fontWeight: 600,
+        lineHeight: 1.4,
+        padding: '2px 10px',
+      }}
+    >
+      {descriptor.label}
+    </span>
+  )
 }
 
 const renderMetadataSummarySection = (
@@ -343,7 +360,14 @@ export const DatabaseMetadataManagementDrawer = ({
             { key: 'publication_drift', label: 'Publication drift', value: profile.publication_drift ? 'Да' : 'Нет' },
           ])}
 
-          <Divider style={{ margin: 0 }} />
+          <div
+            aria-hidden
+            style={{
+              borderTop: '1px solid #e5e7eb',
+              margin: 0,
+              width: '100%',
+            }}
+          />
 
           <Alert
             type={snapshotDescriptor?.tone}

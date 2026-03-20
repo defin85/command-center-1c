@@ -1,4 +1,4 @@
-import { Button, Divider, Form, Input, InputNumber, Space, Typography } from 'antd'
+import { Button, Form, Input, InputNumber, Space, Typography } from 'antd'
 import type { FormInstance } from 'antd'
 import { useMemo, useState } from 'react'
 
@@ -94,7 +94,14 @@ export function DatabaseIbcmdConnectionProfileModal({
             <InputNumber id="database-ibcmd-profile-pid" min={1} style={{ width: '100%' }} placeholder="12345" />
           </Form.Item>
 
-          <Divider />
+          <div
+            aria-hidden
+            style={{
+              borderTop: '1px solid #e5e7eb',
+              margin: '8px 0 0',
+              width: '100%',
+            }}
+          />
           <Typography.Title level={5} style={{ marginTop: 0 }}>offline</Typography.Title>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
             Любые offline.* ключи из driver schema. Они будут прокинуты как флаги вида <Typography.Text code>--key=value</Typography.Text>

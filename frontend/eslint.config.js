@@ -121,6 +121,8 @@ const platformShellRestrictedAntdImports = new Map([
   ['Col', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe detail/layout primitives instead of raw `Col`.'],
   ['Tabs', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe task surfaces instead of raw `Tabs`.'],
   ['Collapse', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe disclosure surfaces instead of raw `Collapse`.'],
+  ['Tag', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe status/summary chips instead of raw `Tag`.'],
+  ['Divider', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe spacing/separators instead of raw `Divider`.'],
 ])
 
 const uiPlatformLocalPlugin = {

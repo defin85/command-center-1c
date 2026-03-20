@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, App, Button, Checkbox, Select, Space, Spin, Switch, Tag, Typography } from 'antd'
+import { Alert, App, Button, Checkbox, Select, Space, Spin, Switch, Typography } from 'antd'
 import dayjs from 'dayjs'
 
 import { getV2 } from '../../../api/generated'
@@ -42,6 +42,8 @@ type BindingPreviewField = {
   label: string
   value: string
 }
+
+type InlinePillTone = 'default' | 'blue' | 'geekblue' | 'green' | 'red'
 
 const extractBindings = (bindings: unknown): UIBinding[] => {
   if (!Array.isArray(bindings)) return []
@@ -96,6 +98,35 @@ const renderBindingPreviewFields = (binding: UIBinding): BindingPreviewField[] =
   },
 ]
 
+const renderInlinePill = (label: string, tone: InlinePillTone = 'default') => {
+  const palette: Record<InlinePillTone, { background: string; border: string; color: string }> = {
+    default: { background: '#f8fafc', border: '#d1d5db', color: '#374151' },
+    blue: { background: '#eff6ff', border: '#bfdbfe', color: '#1d4ed8' },
+    geekblue: { background: '#eef2ff', border: '#c7d2fe', color: '#3730a3' },
+    green: { background: '#ecfdf3', border: '#a7f3d0', color: '#166534' },
+    red: { background: '#fef2f2', border: '#fecaca', color: '#b91c1c' },
+  }
+  const resolved = palette[tone]
+
+  return (
+    <span
+      style={{
+        background: resolved.background,
+        border: `1px solid ${resolved.border}`,
+        borderRadius: 999,
+        color: resolved.color,
+        display: 'inline-flex',
+        fontSize: 12,
+        fontWeight: 600,
+        lineHeight: 1.4,
+        padding: '2px 10px',
+      }}
+    >
+      {label}
+    </span>
+  )
+}
+
 const renderBindingProvenancePreview = (bindings: UIBinding[]) => (
   <div data-testid="database-extensions-binding-provenance" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
     {bindings.map((binding, index) => (
@@ -112,10 +143,8 @@ const renderBindingProvenancePreview = (bindings: UIBinding[]) => (
         }}
       >
         <Space size={8} wrap>
-          <Tag color="geekblue">binding {index + 1}</Tag>
-          <Tag color={binding.sensitive ? 'red' : 'default'}>
-            sensitive: {binding.sensitive ? 'yes' : 'no'}
-          </Tag>
+          {renderInlinePill(`binding ${index + 1}`, 'geekblue')}
+          {renderInlinePill(`sensitive: ${binding.sensitive ? 'yes' : 'no'}`, binding.sensitive ? 'red' : 'default')}
         </Space>
         <div
           style={{
@@ -394,9 +423,9 @@ export const ExtensionsDrawer = ({
                   Extension: <Typography.Text code>{extensionName.trim()}</Typography.Text>
                 </div>
                 <Space size={8} wrap style={{ marginBottom: 8 }}>
-                  <div>Active: {applyMask.active ? <Tag color={flagsValues.active ? 'green' : 'red'}>{flagsValues.active ? 'on' : 'off'}</Tag> : <Typography.Text type="secondary">skipped</Typography.Text>}</div>
-                  <div>Safe mode: {applyMask.safe_mode ? <Tag color={flagsValues.safe_mode ? 'green' : 'red'}>{flagsValues.safe_mode ? 'on' : 'off'}</Tag> : <Typography.Text type="secondary">skipped</Typography.Text>}</div>
-                  <div>Unsafe action protection: {applyMask.unsafe_action_protection ? <Tag color={flagsValues.unsafe_action_protection ? 'green' : 'red'}>{flagsValues.unsafe_action_protection ? 'on' : 'off'}</Tag> : <Typography.Text type="secondary">skipped</Typography.Text>}</div>
+                  <div>Active: {applyMask.active ? renderInlinePill(flagsValues.active ? 'on' : 'off', flagsValues.active ? 'green' : 'red') : <Typography.Text type="secondary">skipped</Typography.Text>}</div>
+                  <div>Safe mode: {applyMask.safe_mode ? renderInlinePill(flagsValues.safe_mode ? 'on' : 'off', flagsValues.safe_mode ? 'green' : 'red') : <Typography.Text type="secondary">skipped</Typography.Text>}</div>
+                  <div>Unsafe action protection: {applyMask.unsafe_action_protection ? renderInlinePill(flagsValues.unsafe_action_protection ? 'on' : 'off', flagsValues.unsafe_action_protection ? 'green' : 'red') : <Typography.Text type="secondary">skipped</Typography.Text>}</div>
                 </Space>
               </>
             )}
@@ -537,16 +566,16 @@ export const ExtensionsDrawer = ({
           )}
           {preferredBinding && (
             <Space size={8} wrap>
-              <Tag color="geekblue">preferred</Tag>
-              <Tag>{preferredBinding.template_id}</Tag>
-              {preferredBinding.updated_at && <Tag>{dayjs(preferredBinding.updated_at).format('DD.MM.YYYY HH:mm')}</Tag>}
-              {preferredBinding.updated_by && <Tag>{preferredBinding.updated_by}</Tag>}
+              {renderInlinePill('preferred', 'geekblue')}
+              {renderInlinePill(preferredBinding.template_id)}
+              {preferredBinding.updated_at && renderInlinePill(dayjs(preferredBinding.updated_at).format('DD.MM.YYYY HH:mm'))}
+              {preferredBinding.updated_by && renderInlinePill(preferredBinding.updated_by)}
             </Space>
           )}
           {selectedTemplate && (
             <Space size={8} wrap>
-              <Tag color="blue">{selectedTemplate.value}</Tag>
-              <Tag>{selectedTemplate.capability || 'no capability'}</Tag>
+              {renderInlinePill(selectedTemplate.value, 'blue')}
+              {renderInlinePill(selectedTemplate.capability || 'no capability')}
             </Space>
           )}
           {templateSelectionMissing && (

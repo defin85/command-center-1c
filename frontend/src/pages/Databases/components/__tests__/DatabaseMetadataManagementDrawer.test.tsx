@@ -112,6 +112,8 @@ describe('DatabaseMetadataManagementDrawer', () => {
     expect(screen.getByText('Metadata management: Accounting DB')).toBeInTheDocument()
     expect(screen.getByText('Configuration profile')).toBeInTheDocument()
     expect(screen.getByText('Metadata snapshot')).toBeInTheDocument()
+    expect(screen.getByText('Verified')).toBeInTheDocument()
+    expect(screen.getByText('Drift')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Перепроверить configuration identity/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Обновить metadata snapshot/i })).toBeInTheDocument()
 
