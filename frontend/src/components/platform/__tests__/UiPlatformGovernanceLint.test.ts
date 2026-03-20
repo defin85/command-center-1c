@@ -284,14 +284,14 @@ describe('ui platform governance lint', () => {
     ))).toBe(true)
   })
 
-  it('rejects raw Ant Descriptions inside binding profile authoring modal shells', async () => {
+  it('rejects raw Ant Descriptions inside future platform modal shells', async () => {
     const messages = await lintSnippet(
-      'src/pages/Pools/PoolBindingProfilesEditorModal.tsx',
+      'src/pages/Future/FuturePlatformModal.tsx',
       `
         import { Descriptions } from 'antd'
         import { ModalFormShell } from '../../components/platform'
 
-        export function PoolBindingProfilesEditorModal() {
+        export function FuturePlatformModal() {
           return (
             <ModalFormShell open title="Publish immutable revision" onClose={() => {}} onSubmit={() => {}}>
               <Descriptions
@@ -306,7 +306,34 @@ describe('ui platform governance lint', () => {
     )
 
     expect(messages.some((message) => (
-      message.ruleId === 'no-restricted-imports'
+      message.ruleId === 'ui-platform-local/no-legacy-containers-in-platform-shell-modules'
+        && message.message.includes('platform-safe summary rows')
+    ))).toBe(true)
+  })
+
+  it('rejects raw Ant Descriptions inside future platform drawer shells', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Future/FuturePlatformDrawer.tsx',
+      `
+        import { Descriptions } from 'antd'
+        import { DrawerFormShell } from '../../components/platform'
+
+        export function FuturePlatformDrawer() {
+          return (
+            <DrawerFormShell open title="Metadata management" onClose={() => {}} onSubmit={() => {}}>
+              <Descriptions
+                items={[
+                  { key: 'snapshot', label: 'Snapshot', children: 'snapshot-1' },
+                ]}
+              />
+            </DrawerFormShell>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/no-legacy-containers-in-platform-shell-modules'
         && message.message.includes('platform-safe summary rows')
     ))).toBe(true)
   })
@@ -362,6 +389,23 @@ describe('ui platform governance lint', () => {
         return false
       }
       return readFileSync(path.join(frontendRoot, relativePath), 'utf8').includes('useMyTenants(')
+    })
+
+    expect(offenders).toEqual([])
+  })
+
+  it('keeps raw Ant Descriptions out of platform shell modal and drawer modules', () => {
+    const sourceFiles = collectSourceFiles(path.join(frontendRoot, 'src'))
+    const offenders = sourceFiles.filter((relativePath) => {
+      if (!/(Modal|Drawer)\.tsx$/.test(relativePath)) {
+        return false
+      }
+
+      const source = readFileSync(path.join(frontendRoot, relativePath), 'utf8')
+      const usesPlatformShell = source.includes('ModalFormShell') || source.includes('DrawerFormShell')
+      const importsRawDescriptions = /import\s*\{[^}]*\bDescriptions\b[^}]*\}\s*from ['"]antd['"]/.test(source)
+
+      return usesPlatformShell && importsRawDescriptions
     })
 
     expect(offenders).toEqual([])

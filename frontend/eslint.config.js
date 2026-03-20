@@ -112,6 +112,71 @@ const shellSafeInternalNavigationRules = [
   },
 ]
 
+const platformShellImportNames = new Set(['ModalFormShell', 'DrawerFormShell'])
+const platformShellRestrictedAntdImports = new Map([
+  ['Descriptions', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe summary rows instead of raw `Descriptions`.'],
+])
+
+const uiPlatformLocalPlugin = {
+  rules: {
+    'no-legacy-containers-in-platform-shell-modules': {
+      meta: {
+        type: 'problem',
+        schema: [],
+      },
+      create(context) {
+        const filename = typeof context.filename === 'string' ? context.filename : context.getFilename()
+        const isShellSurfaceFile = /(?:Modal|Drawer)\.tsx$/.test(filename)
+        let usesPlatformShell = false
+        /** @type {Array<{ node: import('estree').Node, message: string }>} */
+        const offenders = []
+
+        return {
+          ImportDeclaration(node) {
+            const source = typeof node.source.value === 'string' ? node.source.value : ''
+            if (source.includes('components/platform')) {
+              for (const specifier of node.specifiers) {
+                if (
+                  specifier.type === 'ImportSpecifier'
+                  && platformShellImportNames.has(specifier.imported.name)
+                ) {
+                  usesPlatformShell = true
+                }
+              }
+            }
+
+            if (source !== 'antd') {
+              return
+            }
+
+            for (const specifier of node.specifiers) {
+              if (specifier.type !== 'ImportSpecifier') {
+                continue
+              }
+              const message = platformShellRestrictedAntdImports.get(specifier.imported.name)
+              if (message) {
+                offenders.push({ node: specifier, message })
+              }
+            }
+          },
+          'Program:exit'() {
+            if (!isShellSurfaceFile || !usesPlatformShell) {
+              return
+            }
+
+            for (const offender of offenders) {
+              context.report({
+                node: offender.node,
+                message: offender.message,
+              })
+            }
+          },
+        }
+      },
+    },
+  },
+}
+
 export default tseslint.config(
   { ignores: ['dist', 'src/api/generated/**'] },
   {
@@ -124,6 +189,7 @@ export default tseslint.config(
     plugins: {
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
+      'ui-platform-local': uiPlatformLocalPlugin,
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
@@ -174,6 +240,7 @@ export default tseslint.config(
         paths: contextAwareAntdImports,
         patterns: competingFoundationImportPatterns,
       }],
+      'ui-platform-local/no-legacy-containers-in-platform-shell-modules': 'error',
       'no-restricted-syntax': ['error', noStaticModalMethodsRule],
     },
   },
@@ -219,11 +286,6 @@ export default tseslint.config(
       'no-restricted-imports': ['error', {
         paths: [
           ...contextAwareAntdImports,
-          {
-            name: 'antd',
-            importNames: ['Descriptions'],
-            message: 'Binding profile authoring must use platform-safe summary rows inside `ModalFormShell` instead of raw `Descriptions`.',
-          },
           {
             name: 'antd',
             importNames: ['Modal'],
