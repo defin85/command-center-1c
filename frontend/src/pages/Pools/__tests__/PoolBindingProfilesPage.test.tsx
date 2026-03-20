@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -532,6 +532,32 @@ describe('PoolBindingProfilesPage', () => {
       expect(deactivateMutateAsync).toHaveBeenCalledWith(activeDetail.binding_profile_id)
     })
   }, 25000)
+
+  it('renders publication slots as compact stacked rows in the publish revision modal', async () => {
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish new revision' }))
+
+    fireEvent.click(screen.getByTestId('pool-binding-profiles-revise-add-slot'))
+    fireEvent.click(screen.getByTestId('pool-binding-profiles-revise-add-slot'))
+
+    for (const slotIndex of [0, 1, 2]) {
+      expect(screen.getByTestId(`pool-binding-profiles-revise-slot-row-${slotIndex}`)).toHaveStyle({
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+      })
+      expect(screen.getByTestId(`pool-binding-profiles-revise-slot-controls-${slotIndex}`)).toHaveStyle({
+        alignItems: 'flex-start',
+      })
+    }
+
+    const firstSlotControls = screen.getByTestId('pool-binding-profiles-revise-slot-controls-0')
+    expect(
+      within(firstSlotControls).queryByTestId('pool-binding-profiles-revise-slot-ref-0'),
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId('pool-binding-profiles-revise-slot-ref-0')).toBeInTheDocument()
+  })
 
   it('shows pool attachment usage for selected profile revisions', async () => {
     mockListOrganizationPools.mockResolvedValue([

@@ -1618,6 +1618,42 @@ test('UI platform: /pools/binding-profiles opens create-profile authoring in a m
   await expectNoHorizontalOverflow(page)
 })
 
+test('UI platform: /pools/binding-profiles keeps publication slots compact in the publish revision modal', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+
+  await page.goto('/pools/binding-profiles?profile=e54257e5-c587-4467-bb7c-4eb53ee05293&detail=1', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await page.getByRole('button', { name: 'Publish new revision' }).click()
+
+  const authoringModal = page.getByRole('dialog')
+  await expect(authoringModal).toBeVisible()
+
+  await authoringModal.getByTestId('pool-binding-profiles-revise-add-slot').click()
+  await authoringModal.getByTestId('pool-binding-profiles-revise-add-slot').click()
+
+  const slotRows = [0, 1, 2].map((slotIndex) => (
+    authoringModal.getByTestId(`pool-binding-profiles-revise-slot-row-${slotIndex}`)
+  ))
+
+  const boxes = await Promise.all(slotRows.map(async (locator) => locator.boundingBox()))
+  const [firstRow, secondRow, thirdRow] = boxes
+
+  if (!firstRow || !secondRow || !thirdRow) {
+    throw new Error('Expected publication slot rows to have measurable bounding boxes.')
+  }
+
+  const firstGap = secondRow.y - (firstRow.y + firstRow.height)
+  const secondGap = thirdRow.y - (secondRow.y + secondRow.height)
+
+  expect(firstGap).toBeLessThanOrEqual(24)
+  expect(secondGap).toBeLessThanOrEqual(24)
+  await expectVisibleWithinContainer(slotRows[2], authoringModal)
+})
+
 test('UI platform: /pools/catalog restores attachment workspace in a mobile-safe drawer', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
