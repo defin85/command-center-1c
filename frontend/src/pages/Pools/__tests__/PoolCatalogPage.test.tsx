@@ -324,13 +324,19 @@ async function selectDropdownOption(label: string | RegExp) {
 
 async function openWorkspaceTab(
   user: ReturnType<typeof userEvent.setup>,
-  tabLabel: 'Pools' | 'Bindings' | 'Topology Editor'
+  tabLabel: 'Organizations' | 'Pools' | 'Bindings' | 'Topology Editor'
 ) {
   await initialCatalogLoadPromise
   await waitFor(() => {
     expect(screen.getByTestId('pool-catalog-context-pool')).toHaveTextContent('pool-1 - Pool One')
   })
   await user.click(screen.getByRole('tab', { name: tabLabel }))
+  if (tabLabel === 'Organizations') {
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-add-org')).toBeInTheDocument()
+    })
+    return
+  }
   if (tabLabel === 'Pools') {
     await screen.findByText('Pools management')
     return
@@ -351,6 +357,10 @@ async function openWorkspaceTab(
   await waitFor(() => {
     expect(screen.getByTestId('pool-catalog-topology-save')).toBeInTheDocument()
   })
+}
+
+async function findDialogByName(name: string | RegExp) {
+  return screen.findByRole('dialog', { name })
 }
 
 async function expandFirstEdgeAdvanced(user: ReturnType<typeof userEvent.setup>) {
@@ -660,10 +670,12 @@ describe('PoolCatalogPage', () => {
 
   it('disables mutating controls for staff without active tenant', async () => {
     mockUseAuthz.mockReturnValue(createAuthzValue({ isStaff: true }))
+    const user = userEvent.setup()
 
     renderPage()
 
     expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Organizations')
     expect(screen.getAllByText('Mutating actions are disabled').length).toBeGreaterThan(0)
     expect(screen.getByTestId('pool-catalog-add-org')).toBeDisabled()
     expect(screen.getByTestId('pool-catalog-edit-org')).toBeDisabled()
@@ -672,10 +684,12 @@ describe('PoolCatalogPage', () => {
 
   it('keeps mutating controls enabled for non-staff without active tenant', async () => {
     mockUseAuthz.mockReturnValue(createAuthzValue({ isStaff: false }))
+    const user = userEvent.setup()
 
     renderPage()
 
     expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Organizations')
     expect(screen.getByTestId('pool-catalog-add-org')).toBeEnabled()
     expect(screen.getByTestId('pool-catalog-sync-orgs')).toBeEnabled()
   })
@@ -683,10 +697,12 @@ describe('PoolCatalogPage', () => {
   it('keeps mutating controls enabled for staff with tenant from shell local storage', async () => {
     mockUseAuthz.mockReturnValue(createAuthzValue({ isStaff: true }))
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
 
     renderPage()
 
     expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Organizations')
     expect(screen.getByTestId('pool-catalog-add-org')).toBeEnabled()
     expect(screen.getByTestId('pool-catalog-sync-orgs')).toBeEnabled()
   })
@@ -719,14 +735,17 @@ describe('PoolCatalogPage', () => {
     renderPage()
 
     expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Organizations')
     await user.click(screen.getByTestId('pool-catalog-add-org'))
+    const drawer = await findDialogByName('Add organization')
+    const drawerQueries = within(drawer)
 
-    await user.clear(screen.getByLabelText('INN'))
-    await user.type(screen.getByLabelText('INN'), '730000000999')
-    await user.clear(screen.getByLabelText('Name'))
-    await user.type(screen.getByLabelText('Name'), 'Created Org')
+    await user.clear(drawerQueries.getByLabelText('INN'))
+    await user.type(drawerQueries.getByLabelText('INN'), '730000000999')
+    await user.clear(drawerQueries.getByLabelText('Name'))
+    await user.type(drawerQueries.getByLabelText('Name'), 'Created Org')
 
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(drawerQueries.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mockUpsertOrganization).toHaveBeenCalledTimes(1))
     expect(mockUpsertOrganization).toHaveBeenCalledWith(
@@ -768,10 +787,11 @@ describe('PoolCatalogPage', () => {
     renderPage()
 
     expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Organizations')
     expect(await screen.findByText(baseOrganization.database_id as string)).toBeInTheDocument()
 
     await user.click(screen.getByTestId('pool-catalog-edit-org'))
-    const drawer = await screen.findByRole('dialog', { name: 'Edit organization' })
+    const drawer = await findDialogByName('Edit organization')
     await user.click(within(drawer).getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mockUpsertOrganization).toHaveBeenCalledTimes(1))
@@ -825,10 +845,21 @@ describe('PoolCatalogPage', () => {
 
     await openWorkspaceTab(user, 'Pools')
     await user.click(screen.getByTestId('pool-catalog-add-pool'))
-    fireEvent.change(screen.getByLabelText('Code'), { target: { value: 'pool-2' } })
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Pool Two' } })
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Second pool' } })
-    await user.click(screen.getByTestId('pool-catalog-save-pool'))
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-pool-drawer')).toBeVisible()
+    })
+    const drawer = screen.getByTestId('pool-catalog-pool-drawer')
+    const drawerQueries = within(drawer)
+    const codeInput = drawerQueries.getByPlaceholderText('pool-main')
+    const nameInput = drawerQueries.getByPlaceholderText('Main intercompany pool')
+    const descriptionInput = drawerQueries.getByPlaceholderText('Optional')
+    await user.clear(codeInput)
+    await user.type(codeInput, 'pool-2')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Pool Two')
+    await user.clear(descriptionInput)
+    await user.type(descriptionInput, 'Second pool')
+    await user.click(drawerQueries.getByTestId('pool-catalog-save-pool'))
 
     await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
     expect(mockUpsertOrganizationPool).toHaveBeenCalledWith(
@@ -849,9 +880,15 @@ describe('PoolCatalogPage', () => {
 
     await openWorkspaceTab(user, 'Pools')
     await user.click(screen.getByTestId('pool-catalog-edit-pool'))
-    await user.clear(screen.getByLabelText('Name'))
-    await user.type(screen.getByLabelText('Name'), 'Pool One Updated')
-    await user.click(screen.getByTestId('pool-catalog-save-pool'))
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-pool-drawer')).toBeVisible()
+    })
+    const drawer = screen.getByTestId('pool-catalog-pool-drawer')
+    const drawerQueries = within(drawer)
+    const nameInput = drawerQueries.getByPlaceholderText('Main intercompany pool')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Pool One Updated')
+    await user.click(drawerQueries.getByTestId('pool-catalog-save-pool'))
 
     await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
     expect(mockUpsertOrganizationPool).toHaveBeenCalledWith(
@@ -2001,7 +2038,6 @@ describe('PoolCatalogPage', () => {
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
-    expect(await screen.findByText('Org Two')).toBeInTheDocument()
 
     await openWorkspaceTab(user, 'Topology Editor')
     const slotInput = screen.getByTestId('pool-catalog-topology-edge-slot-0')
@@ -2327,18 +2363,21 @@ describe('PoolCatalogPage', () => {
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Organizations')
 
     await user.click(screen.getByTestId('pool-catalog-add-org'))
-    await user.clear(screen.getByLabelText('INN'))
-    await user.type(screen.getByLabelText('INN'), '730000000111')
-    await user.clear(screen.getByLabelText('Name'))
-    await user.type(screen.getByLabelText('Name'), 'Mapped Error Org')
+    const drawer = await findDialogByName('Add organization')
+    const drawerQueries = within(drawer)
+    await user.clear(drawerQueries.getByLabelText('INN'))
+    await user.type(drawerQueries.getByLabelText('INN'), '730000000111')
+    await user.clear(drawerQueries.getByLabelText('Name'))
+    await user.type(drawerQueries.getByLabelText('Name'), 'Mapped Error Org')
 
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(drawerQueries.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText('Выбранная база уже привязана к другой организации.')).toBeInTheDocument()
-    expect(screen.getByLabelText('INN')).toHaveValue('730000000111')
-    expect(screen.getByLabelText('Name')).toHaveValue('Mapped Error Org')
+    expect(drawerQueries.getByLabelText('INN')).toHaveValue('730000000111')
+    expect(drawerQueries.getByLabelText('Name')).toHaveValue('Mapped Error Org')
   }, EXTENDED_UI_TEST_TIMEOUT_MS)
 
   it('shows problem detail for topology validation error without field-level payload', async () => {
@@ -2515,17 +2554,20 @@ describe('PoolCatalogPage', () => {
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Organizations')
 
     await user.click(screen.getByTestId('pool-catalog-add-org'))
-    await user.clear(screen.getByLabelText('INN'))
-    await user.type(screen.getByLabelText('INN'), '730000000001')
-    await user.clear(screen.getByLabelText('Name'))
-    await user.type(screen.getByLabelText('Name'), 'Duplicate Org')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    const drawer = await findDialogByName('Add organization')
+    const drawerQueries = within(drawer)
+    await user.clear(drawerQueries.getByLabelText('INN'))
+    await user.type(drawerQueries.getByLabelText('INN'), '730000000001')
+    await user.clear(drawerQueries.getByLabelText('Name'))
+    await user.type(drawerQueries.getByLabelText('Name'), 'Duplicate Org')
+    await user.click(drawerQueries.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText('Проверьте корректность заполнения полей.')).toBeInTheDocument()
     expect(await screen.findByText('ИНН уже существует')).toBeInTheDocument()
-    expect(screen.getByLabelText('INN')).toHaveValue('730000000001')
+    expect(drawerQueries.getByLabelText('INN')).toHaveValue('730000000001')
   }, EXTENDED_UI_TEST_TIMEOUT_MS)
 
   it('applies field-level validation errors from problem+json payload on upsert', async () => {
@@ -2549,17 +2591,20 @@ describe('PoolCatalogPage', () => {
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Organizations')
 
     await user.click(screen.getByTestId('pool-catalog-add-org'))
-    await user.clear(screen.getByLabelText('INN'))
-    await user.type(screen.getByLabelText('INN'), '730000000001')
-    await user.clear(screen.getByLabelText('Name'))
-    await user.type(screen.getByLabelText('Name'), 'Duplicate Org')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    const drawer = await findDialogByName('Add organization')
+    const drawerQueries = within(drawer)
+    await user.clear(drawerQueries.getByLabelText('INN'))
+    await user.type(drawerQueries.getByLabelText('INN'), '730000000001')
+    await user.clear(drawerQueries.getByLabelText('Name'))
+    await user.type(drawerQueries.getByLabelText('Name'), 'Duplicate Org')
+    await user.click(drawerQueries.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText('Проверьте корректность данных.')).toBeInTheDocument()
     expect(await screen.findByText('ИНН уже существует')).toBeInTheDocument()
-    expect(screen.getByLabelText('INN')).toHaveValue('730000000001')
+    expect(drawerQueries.getByLabelText('INN')).toHaveValue('730000000001')
   }, EXTENDED_UI_TEST_TIMEOUT_MS)
 
   it('blocks sync submit when preflight validation fails', async () => {
@@ -2568,6 +2613,7 @@ describe('PoolCatalogPage', () => {
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Organizations')
 
     await user.click(screen.getByTestId('pool-catalog-sync-orgs'))
     fireEvent.change(screen.getByTestId('pool-catalog-sync-input'), {
@@ -2592,6 +2638,7 @@ describe('PoolCatalogPage', () => {
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Organizations')
 
     await user.click(screen.getByTestId('pool-catalog-sync-orgs'))
     fireEvent.change(screen.getByTestId('pool-catalog-sync-input'), {
@@ -2620,6 +2667,7 @@ describe('PoolCatalogPage', () => {
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Organizations')
 
     await user.click(screen.getByTestId('pool-catalog-sync-orgs'))
     fireEvent.change(screen.getByTestId('pool-catalog-sync-input'), {
@@ -2637,6 +2685,7 @@ describe('PoolCatalogPage', () => {
 
     renderPage()
     expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await openWorkspaceTab(user, 'Organizations')
 
     await user.click(screen.getByTestId('pool-catalog-sync-orgs'))
     fireEvent.change(screen.getByTestId('pool-catalog-sync-input'), {
