@@ -117,6 +117,21 @@ export const queryKeys = {
     list: () => [...queryKeys.poolBindingProfiles.all, 'list'] as const,
     detail: (bindingProfileId: string) => [...queryKeys.poolBindingProfiles.all, 'detail', bindingProfileId] as const,
   },
+  poolCatalog: {
+    all: ['pool-catalog'] as const,
+    organizations: (filters?: {
+      status?: string
+      query?: string
+      databaseLinked?: boolean
+      limit?: number
+    }) => [...queryKeys.poolCatalog.all, 'organizations', filters] as const,
+    organizationDetail: (organizationId: string) => (
+      [...queryKeys.poolCatalog.all, 'organization-detail', organizationId] as const
+    ),
+    pools: () => [...queryKeys.poolCatalog.all, 'pools'] as const,
+    graph: (poolId: string, date: string) => [...queryKeys.poolCatalog.all, 'graph', poolId, date] as const,
+    topologySnapshots: (poolId: string) => [...queryKeys.poolCatalog.all, 'topology-snapshots', poolId] as const,
+  },
   authoringReferences: {
     all: ['authoring-references'] as const,
     list: (databaseId?: string) => [...queryKeys.authoringReferences.all, 'list', databaseId ?? null] as const,

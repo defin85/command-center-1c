@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { StrictMode, type ReactNode } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -285,18 +286,29 @@ async function waitForInitialCatalogLoad() {
   await waitFor(() => expect(mockListPoolTopologySnapshots).toHaveBeenCalled())
 }
 
-function renderPage(initialEntry = '/pools/catalog') {
-  const result = render(
-    <MemoryRouter
-      initialEntries={[initialEntry]}
-      future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
-    >
-      <AntApp>
-        <PoolCatalogPage />
-        <LocationProbe />
-      </AntApp>
-    </MemoryRouter>
+function renderPage(initialEntry = '/pools/catalog', options?: { strict?: boolean }) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  })
+
+  const tree = (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter
+        initialEntries={[initialEntry]}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
+        <AntApp>
+          <PoolCatalogPage />
+          <LocationProbe />
+        </AntApp>
+      </MemoryRouter>
+    </QueryClientProvider>
   )
+
+  const result = render(options?.strict ? <StrictMode>{tree}</StrictMode> : tree)
   initialCatalogLoadPromise = waitForInitialCatalogLoad()
   return result
 }
@@ -705,6 +717,26 @@ describe('PoolCatalogPage', () => {
     await openWorkspaceTab(user, 'Organizations')
     expect(screen.getByTestId('pool-catalog-add-org')).toBeEnabled()
     expect(screen.getByTestId('pool-catalog-sync-orgs')).toBeEnabled()
+  })
+
+  it('deduplicates initial catalog reads in StrictMode and resolves the default graph date before the first graph fetch', async () => {
+    renderPage('/pools/catalog', { strict: true })
+
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+    await initialCatalogLoadPromise
+
+    await waitFor(() => {
+      expect(mockListOrganizations).toHaveBeenCalledTimes(1)
+      expect(mockGetOrganization).toHaveBeenCalledTimes(1)
+      expect(mockListOrganizationPools).toHaveBeenCalledTimes(1)
+      expect(mockListPoolTopologySnapshots).toHaveBeenCalledTimes(1)
+      expect(mockGetPoolGraph).toHaveBeenCalledTimes(1)
+    })
+
+    expect(mockGetPoolGraph).toHaveBeenCalledWith(
+      '44444444-4444-4444-4444-444444444444',
+      '2026-01-01',
+    )
   })
 
   it('creates organization via drawer and reloads catalog', async () => {

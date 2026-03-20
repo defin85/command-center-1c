@@ -990,6 +990,10 @@ type RequestCounts = {
   bindingProfilesList: number
   bindingProfileDetails: number
   organizationPools: number
+  poolOrganizations: number
+  poolOrganizationDetails: number
+  poolGraphs: number
+  poolTopologySnapshots: number
   operationsList: number
   operationDetails: number
 }
@@ -1007,6 +1011,10 @@ function createRequestCounts(): RequestCounts {
     bindingProfilesList: 0,
     bindingProfileDetails: 0,
     organizationPools: 0,
+    poolOrganizations: 0,
+    poolOrganizationDetails: 0,
+    poolGraphs: 0,
+    poolTopologySnapshots: 0,
     operationsList: 0,
     operationDetails: 0,
   }
@@ -1318,6 +1326,9 @@ async function setupUiPlatformMocks(
     }
 
     if (method === 'GET' && path === '/api/v2/pools/organizations/') {
+      if (counts) {
+        counts.poolOrganizations += 1
+      }
       return fulfillJson(route, {
         organizations: [organization],
         count: 1,
@@ -1326,6 +1337,9 @@ async function setupUiPlatformMocks(
 
     const organizationMatch = path.match(/^\/api\/v2\/pools\/organizations\/([^/]+)\/$/)
     if (method === 'GET' && organizationMatch) {
+      if (counts) {
+        counts.poolOrganizationDetails += 1
+      }
       return fulfillJson(route, {
         organization,
         pool_bindings: [],
@@ -1334,6 +1348,9 @@ async function setupUiPlatformMocks(
 
     const graphMatch = path.match(/^\/api\/v2\/pools\/([^/]+)\/graph\/$/)
     if (method === 'GET' && graphMatch) {
+      if (counts) {
+        counts.poolGraphs += 1
+      }
       return fulfillJson(route, {
         pool_id: graphMatch[1],
         date: '2026-01-01',
@@ -1383,6 +1400,9 @@ async function setupUiPlatformMocks(
 
     const topologySnapshotsMatch = path.match(/^\/api\/v2\/pools\/([^/]+)\/topology-snapshots\/$/)
     if (method === 'GET' && topologySnapshotsMatch) {
+      if (counts) {
+        counts.poolTopologySnapshots += 1
+      }
       return fulfillJson(route, {
         pool_id: topologySnapshotsMatch[1],
         count: 1,
@@ -1778,6 +1798,27 @@ test('Runtime contract: /pools/binding-profiles defers usage reads until the use
 
   await expect.poll(() => counts.organizationPools).toBe(1)
   await expect(page.getByText('Main Pool')).toBeVisible()
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: /pools/catalog keeps the default mount within a single initial read budget', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/pools/catalog', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Pool Catalog', level: 2 })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Pools' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page).toHaveURL(/\/pools\/catalog\?pool_id=.*&tab=pools&date=2026-01-01$/)
+
+  await expect.poll(() => counts.poolOrganizations).toBe(1)
+  await expect.poll(() => counts.poolOrganizationDetails).toBe(1)
+  await expect.poll(() => counts.organizationPools).toBe(1)
+  await expect.poll(() => counts.poolTopologySnapshots).toBe(1)
+  await expect.poll(() => counts.poolGraphs).toBe(1)
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 

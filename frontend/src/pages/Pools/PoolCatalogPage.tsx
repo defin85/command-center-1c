@@ -22,6 +22,7 @@ import {
   Typography,
 } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons'
+import { useQueryClient } from '@tanstack/react-query'
 import type { ColumnsType } from 'antd/es/table'
 import ReactFlow, { Background, Controls, MiniMap, type Edge, type Node } from 'reactflow'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -31,6 +32,7 @@ import { useAuthz } from '../../authz/useAuthz'
 import { getBindingProfileDetail, type BindingProfileDetail } from '../../api/poolBindingProfiles'
 import { useDatabases } from '../../api/queries/databases'
 import { useBindingProfiles } from '../../api/queries/poolBindingProfiles'
+import { queryKeys } from '../../api/queries/queryKeys'
 import {
   getOrganization,
   getPoolGraph,
@@ -66,6 +68,7 @@ import type {
   PoolODataMetadataCatalogDocument,
   PoolODataMetadataCatalogResponse,
 } from '../../api/generated/model'
+import { withQueryPolicy } from '../../lib/queryRuntime'
 import {
   DrawerFormShell,
   PageHeader,
@@ -157,13 +160,15 @@ const parseWorkspaceTab = (value: string | null): PoolCatalogWorkspaceTab => {
 
 const getDefaultGraphDate = () => new Date().toISOString().slice(0, 10)
 
-const parseGraphDate = (value: string | null): string => {
+const normalizeGraphDateParam = (value: string | null): string | null => {
   const normalized = normalizeRouteParam(value)
   if (normalized && /^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
     return normalized
   }
-  return getDefaultGraphDate()
+  return null
 }
+
+const parseGraphDateInput = (value: string): string => normalizeGraphDateParam(value) ?? getDefaultGraphDate()
 
 type OrganizationFormValues = {
   inn: string
@@ -1626,6 +1631,7 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
 export function PoolCatalogPage() {
   const { message } = AntApp.useApp()
   const { isStaff } = useAuthz()
+  const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
@@ -1639,7 +1645,7 @@ export function PoolCatalogPage() {
     () => parseWorkspaceTab(searchParams.get('tab')),
     [searchParams],
   )
-  const graphDateFromUrl = useMemo(() => parseGraphDate(searchParams.get('date')), [searchParams])
+  const graphDateFromUrl = useMemo(() => normalizeGraphDateParam(searchParams.get('date')), [searchParams])
 
   const [organizationForm] = Form.useForm<OrganizationFormValues>()
   const [poolForm] = Form.useForm<PoolFormValues>()
@@ -1654,7 +1660,7 @@ export function PoolCatalogPage() {
   } | null>(null)
   const [pools, setPools] = useState<OrganizationPool[]>([])
   const [selectedPoolId, setSelectedPoolId] = useState<string | null | undefined>(() => requestedPoolId ?? undefined)
-  const [graphDate, setGraphDate] = useState<string>(graphDateFromUrl)
+  const [graphDate, setGraphDate] = useState<string>(graphDateFromUrl ?? '')
   const [graph, setGraph] = useState<PoolGraph | null>(null)
   const [topologySnapshots, setTopologySnapshots] = useState<PoolTopologySnapshotPeriod[]>([])
   const [loadingOrganizations, setLoadingOrganizations] = useState(false)
@@ -1749,7 +1755,8 @@ export function PoolCatalogPage() {
   }, [pools, requestedPoolId, selectedPoolId])
 
   useEffect(() => {
-    setGraphDate((current) => (current === graphDateFromUrl ? current : graphDateFromUrl))
+    const nextGraphDate = graphDateFromUrl ?? ''
+    setGraphDate((current) => (current === nextGraphDate ? current : nextGraphDate))
   }, [graphDateFromUrl])
 
   useEffect(() => {
@@ -1807,7 +1814,7 @@ export function PoolCatalogPage() {
   }, [])
 
   const handleGraphDateChange = useCallback((nextGraphDate: string) => {
-    const normalizedGraphDate = parseGraphDate(nextGraphDate)
+    const normalizedGraphDate = parseGraphDateInput(nextGraphDate)
     routeUpdateModeRef.current = 'push'
     setGraphDate((current) => (current === normalizedGraphDate ? current : normalizedGraphDate))
   }, [])
@@ -2086,16 +2093,21 @@ export function PoolCatalogPage() {
 
   const flow = useMemo(() => buildFlowLayout(graph), [graph])
 
-  const loadOrganizations = useCallback(async () => {
+  const loadOrganizations = useCallback(async (options?: { force?: boolean }) => {
     setLoadingOrganizations(true)
     setError(null)
     try {
-      const data = await listOrganizations({
+      const filters = {
         status: statusFilter === 'all' ? undefined : statusFilter,
         query: query.trim() || undefined,
         databaseLinked: databaseLinkFilter === 'all' ? undefined : databaseLinkFilter === 'linked',
         limit: 300,
-      })
+      }
+      const data = await queryClient.fetchQuery(withQueryPolicy('interactive', {
+        queryKey: queryKeys.poolCatalog.organizations(filters),
+        queryFn: () => listOrganizations(filters),
+        ...(options?.force ? { staleTime: 0 } : {}),
+      }))
       setOrganizations(data)
       setSelectedOrganizationId((previous) => {
         if (previous && data.some((item) => item.id === previous)) {
@@ -2108,9 +2120,12 @@ export function PoolCatalogPage() {
     } finally {
       setLoadingOrganizations(false)
     }
-  }, [databaseLinkFilter, query, statusFilter])
+  }, [databaseLinkFilter, query, queryClient, statusFilter])
 
-  const loadOrganizationDetailById = useCallback(async (organizationId: string) => {
+  const loadOrganizationDetailById = useCallback(async (
+    organizationId: string,
+    options?: { force?: boolean },
+  ) => {
     const normalizedOrganizationId = String(organizationId || '').trim()
     if (!normalizedOrganizationId) {
       setOrganizationDetail(null)
@@ -2118,27 +2133,35 @@ export function PoolCatalogPage() {
     }
     setLoadingOrganizationDetail(true)
     try {
-      const detail = await getOrganization(normalizedOrganizationId)
+      const detail = await queryClient.fetchQuery(withQueryPolicy('interactive', {
+        queryKey: queryKeys.poolCatalog.organizationDetail(normalizedOrganizationId),
+        queryFn: () => getOrganization(normalizedOrganizationId),
+        ...(options?.force ? { staleTime: 0 } : {}),
+      }))
       setOrganizationDetail(detail)
     } catch {
       setError('Не удалось загрузить детали организации.')
     } finally {
       setLoadingOrganizationDetail(false)
     }
-  }, [])
+  }, [queryClient])
 
-  const loadOrganizationDetail = useCallback(async () => {
+  const loadOrganizationDetail = useCallback(async (options?: { force?: boolean }) => {
     if (!selectedOrganizationId) {
       setOrganizationDetail(null)
       return
     }
-    await loadOrganizationDetailById(selectedOrganizationId)
+    await loadOrganizationDetailById(selectedOrganizationId, options)
   }, [loadOrganizationDetailById, selectedOrganizationId])
 
-  const loadPools = useCallback(async () => {
+  const loadPools = useCallback(async (options?: { force?: boolean }) => {
     setLoadingPools(true)
     try {
-      const data = await listOrganizationPools()
+      const data = await queryClient.fetchQuery(withQueryPolicy('interactive', {
+        queryKey: queryKeys.poolCatalog.pools(),
+        queryFn: () => listOrganizationPools(),
+        ...(options?.force ? { staleTime: 0 } : {}),
+      }))
       setPools(data)
       setSelectedPoolId((previous) => {
         if (previous && data.some((item) => item.id === previous)) {
@@ -2151,32 +2174,41 @@ export function PoolCatalogPage() {
     } finally {
       setLoadingPools(false)
     }
-  }, [])
+  }, [queryClient])
 
-  const loadGraph = useCallback(async () => {
-    if (!selectedPoolId) {
+  const loadGraph = useCallback(async (options?: { force?: boolean }) => {
+    const resolvedGraphDate = graphDate.trim()
+    if (!selectedPoolId || !resolvedGraphDate) {
       setGraph(null)
       return
     }
     setLoadingGraph(true)
     try {
-      const payload = await getPoolGraph(selectedPoolId, graphDate || undefined)
+      const payload = await queryClient.fetchQuery(withQueryPolicy('interactive', {
+        queryKey: queryKeys.poolCatalog.graph(selectedPoolId, resolvedGraphDate),
+        queryFn: () => getPoolGraph(selectedPoolId, resolvedGraphDate),
+        ...(options?.force ? { staleTime: 0 } : {}),
+      }))
       setGraph(payload)
     } catch {
       setError('Не удалось загрузить граф пула.')
     } finally {
       setLoadingGraph(false)
     }
-  }, [graphDate, selectedPoolId])
+  }, [graphDate, queryClient, selectedPoolId])
 
-  const loadTopologySnapshots = useCallback(async () => {
+  const loadTopologySnapshots = useCallback(async (options?: { force?: boolean }) => {
     if (!selectedPoolId) {
       setTopologySnapshots([])
       return
     }
     setLoadingTopologySnapshots(true)
     try {
-      const payload = await listPoolTopologySnapshots(selectedPoolId)
+      const payload = await queryClient.fetchQuery(withQueryPolicy('interactive', {
+        queryKey: queryKeys.poolCatalog.topologySnapshots(selectedPoolId),
+        queryFn: () => listPoolTopologySnapshots(selectedPoolId),
+        ...(options?.force ? { staleTime: 0 } : {}),
+      }))
       const snapshots = Array.isArray(payload.snapshots) ? payload.snapshots : []
       setTopologySnapshots(snapshots)
 
@@ -2195,7 +2227,7 @@ export function PoolCatalogPage() {
     } finally {
       setLoadingTopologySnapshots(false)
     }
-  }, [selectedPoolId])
+  }, [queryClient, selectedPoolId])
 
   const loadMetadataCatalog = useCallback(async (
     databaseId: string,
@@ -2525,8 +2557,8 @@ export function PoolCatalogPage() {
       message.success(response.created ? 'Организация создана.' : 'Организация обновлена.')
       setIsOrganizationDrawerOpen(false)
       await Promise.all([
-        loadOrganizations(),
-        loadOrganizationDetailById(organizationId),
+        loadOrganizations({ force: true }),
+        loadOrganizationDetailById(organizationId, { force: true }),
       ])
     } catch (err) {
       if (
@@ -2677,8 +2709,8 @@ export function PoolCatalogPage() {
       setSelectedPoolId(response.pool.id)
       message.success(response.created ? 'Пул создан.' : 'Пул обновлён.')
       setIsPoolDrawerOpen(false)
-      await loadPools()
-      await loadGraph()
+      await loadPools({ force: true })
+      await loadGraph({ force: true })
     } catch (err) {
       if (
         err
@@ -2723,8 +2755,8 @@ export function PoolCatalogPage() {
       })
       await reloadBindingsWorkspace(selectedPool)
       message.success('Workflow bindings updated.')
-      await loadPools()
-      await loadOrganizationDetail()
+      await loadPools({ force: true })
+      await loadOrganizationDetail({ force: true })
     } catch (err) {
       if (
         err
@@ -2767,8 +2799,8 @@ export function PoolCatalogPage() {
         metadata: selectedPool.metadata,
       })
       message.success(selectedPool.is_active ? 'Пул деактивирован.' : 'Пул активирован.')
-      await loadPools()
-      await loadGraph()
+      await loadPools({ force: true })
+      await loadGraph({ force: true })
     } catch (err) {
       const resolved = resolveApiError(err, 'Не удалось изменить статус пула.')
       setPoolSubmitError(resolved.message)
@@ -2810,7 +2842,7 @@ export function PoolCatalogPage() {
       }
       await upsertPoolTopologySnapshot(selectedPoolId, { ...preflight.payload, version: versionToken })
       message.success('Topology snapshot сохранён.')
-      await Promise.all([loadGraph(), loadTopologySnapshots()])
+      await Promise.all([loadGraph({ force: true }), loadTopologySnapshots({ force: true })])
     } catch (err) {
       if (
         err
@@ -2876,7 +2908,7 @@ export function PoolCatalogPage() {
       const response = await syncOrganizationsCatalog({ rows: parsed.rows })
       setSyncResult(response)
       message.success('Синхронизация каталога завершена.')
-      await loadOrganizations()
+      await loadOrganizations({ force: true })
     } catch (err) {
       const resolved = resolveApiError(err, 'Не удалось выполнить синхронизацию каталога.')
       const fieldErrors = buildFieldErrorLines(resolved.fieldErrors)
@@ -3075,10 +3107,10 @@ export function PoolCatalogPage() {
                       return
                     }
                     if (activeWorkspaceTab === 'graph' || activeWorkspaceTab === 'topology') {
-                      void loadGraph()
+                      void loadGraph({ force: true })
                       return
                     }
-                    void loadPools()
+                    void loadPools({ force: true })
                   }}
                   loading={loadingPools || loadingGraph || isPoolBindingsLoading}
                   style={{ marginTop: 28 }}
@@ -3142,7 +3174,7 @@ export function PoolCatalogPage() {
                       placeholder="Search by INN/name"
                       style={{ width: 280 }}
                       onChange={(event) => setQuery(event.target.value)}
-                      onPressEnter={() => { void loadOrganizations() }}
+                      onPressEnter={() => { void loadOrganizations({ force: true }) }}
                       allowClear
                     />
                     <Select
@@ -3166,7 +3198,7 @@ export function PoolCatalogPage() {
                       ]}
                       onChange={setDatabaseLinkFilter}
                     />
-                    <Button onClick={() => { void loadOrganizations() }} loading={loadingOrganizations}>
+                    <Button onClick={() => { void loadOrganizations({ force: true }) }} loading={loadingOrganizations}>
                       Refresh
                     </Button>
                     <Button
@@ -3368,8 +3400,8 @@ export function PoolCatalogPage() {
                       <Button
                         onClick={() => {
                           if (selectedPool) {
-                            void loadPools()
-                            void loadOrganizationDetail()
+                            void loadPools({ force: true })
+                            void loadOrganizationDetail({ force: true })
                           }
                         }}
                         disabled={!selectedPool || isPoolBindingsSaving}
@@ -3645,7 +3677,7 @@ export function PoolCatalogPage() {
                             <Text strong>Topology snapshots by date</Text>
                             <Button
                               size="small"
-                              onClick={() => { void loadTopologySnapshots() }}
+                              onClick={() => { void loadTopologySnapshots({ force: true }) }}
                               loading={loadingTopologySnapshots}
                             >
                               Refresh snapshots
@@ -5069,7 +5101,7 @@ export function PoolCatalogPage() {
                       style={{ width: 170 }}
                       onChange={(event) => handleGraphDateChange(event.target.value)}
                     />
-                    <Button onClick={() => { void loadGraph() }} loading={loadingGraph}>
+                    <Button onClick={() => { void loadGraph({ force: true }) }} loading={loadingGraph}>
                       Refresh graph
                     </Button>
                   </Space>
