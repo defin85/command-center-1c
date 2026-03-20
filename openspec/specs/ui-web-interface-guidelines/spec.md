@@ -22,12 +22,20 @@ TBD - created by archiving change update-frontend-ui-ux-a11y. Update Purpose aft
 - **THEN** trigger доступен через Tab и открывается по Enter/Space
 
 ### Requirement: Формы и фильтры имеют label или aria-label
-Система ДОЛЖНА (SHALL) обеспечивать, что `Input/Select` и прочие form controls имеют связанный label (через `Form.Item label`/`htmlFor`) или `aria-label`.
+Система ДОЛЖНА (SHALL) обеспечивать, что `Input`, `Select` и прочие form controls имеют связанный label (через `Form.Item label`/`htmlFor`) или `aria-label`.
+
+Placeholder-only имя НЕ ДОЛЖНО (SHALL NOT) считаться достаточным accessible name для shell-level selector, route-level filter или table-toolbar control, если после выбора значения пользователь теряет явное имя поля.
 
 #### Scenario: Фильтры операций имеют доступные имена
 - **GIVEN** на странице есть фильтры операций по ID/Workflow/Node
 - **WHEN** пользователь использует скринридер
 - **THEN** каждый фильтр имеет доступное имя (label или `aria-label`)
+
+#### Scenario: Shell selector сохраняет понятное имя после выбора значения
+- **GIVEN** в общем shell есть selector tenant context или другой shared route control
+- **WHEN** пользователь уже выбрал значение и возвращается к контролу с клавиатуры или скринридером
+- **THEN** control сохраняет устойчивое доступное имя
+- **AND** placeholder не является единственным способом понять назначение поля
 
 ### Requirement: Типографика использует символ многоточия
 Система ДОЛЖНА (SHALL) использовать `…` вместо `...` в пользовательском UI тексте (loading/empty states/truncation).
@@ -79,4 +87,74 @@ TBD - created by archiving change update-frontend-ui-ux-a11y. Update Purpose aft
 - **WHEN** automated accessibility audit проверяет shared shell и primary page states
 - **THEN** selected navigation state, status badges, page subtitles и primary/danger action labels проходят WCAG AA contrast
 - **AND** страница не зависит от known failing contrast exceptions в этих состояниях
+
+### Requirement: High-traffic operational routes MUST входить в platform governance perimeter
+Система ДОЛЖНА (SHALL) трактовать route pages `/`, `/operations`, `/databases`, `/pools/catalog` и `/pools/runs` как platform-governed surfaces следующей волны UI migration.
+
+Для этих routes page-level composition ДОЛЖНА (SHALL) использовать `DashboardPage` или `WorkspacePage`, `PageHeader` и соответствующие platform primitives для primary catalog/detail/authoring flows вместо raw `antd` containers как page-level foundation.
+
+Raw `antd` imports МОГУТ (MAY) оставаться внутри leaf presentational blocks, если route shell и primary orchestration уже проходят через platform layer, но НЕ ДОЛЖНЫ (SHALL NOT) оставаться основным способом сборки route-level workspace.
+
+#### Scenario: Lint блокирует возврат raw page shell на platform-governed route
+- **GIVEN** разработчик меняет `/operations` или другой route из governance perimeter
+- **WHEN** route-level page module снова импортирует raw `Card`, `Row`, `Col`, `Table`, `Drawer` или аналогичный container как основу primary composition
+- **THEN** frontend lint сообщает явное platform-boundary нарушение
+- **AND** изменение не проходит validation gate до возврата к canonical platform primitives
+
+### Requirement: Operational platform migration MUST иметь blocking automated regression coverage
+Система ДОЛЖНА (SHALL) расширить blocking frontend validation gate для migrated operational routes так, чтобы automated checks покрывали:
+- platform-boundary regressions, которые ловятся lint;
+- route-state restore и same-route stability, которые проверяются browser-level tests;
+- shell-safe internal handoff и отсутствие redundant shell reads на authenticated route;
+- mobile-safe detail fallback и отсутствие page-wide horizontal overflow на primary operator path.
+
+#### Scenario: Browser validation ловит regression в route-state и responsive contract
+- **GIVEN** migrated operational route уже использует platform workspace
+- **WHEN** regression ломает reload/back-forward restore, same-route re-entry, shell-safe internal handoff или narrow-viewport detail flow
+- **THEN** automated browser test фиксирует нарушение
+- **AND** frontend validation gate завершается ошибкой до принятия change
+
+### Requirement: Authenticated internal navigation MUST сохранять shared shell runtime
+Система ДОЛЖНА (SHALL) использовать SPA navigation для внутренних переходов между authenticated frontend route, которые живут под общим application shell.
+
+Такие handoff path НЕ ДОЛЖНЫ (SHALL NOT) использовать full-document navigation как основной путь, если целевой route находится внутри того же frontend приложения и может быть открыт через router navigation.
+
+Shared shell/bootstrap + authz providers ДОЛЖНЫ (SHALL) оставаться canonical owner для user/staff/tenant context. Route pages НЕ ДОЛЖНЫ (SHALL NOT) дублировать `/api/v2/system/bootstrap/`, `/api/v2/system/me/` и `/api/v2/tenants/list-my-tenants/` на default operator path, если тот же context уже доступен через shared shell runtime.
+
+Исключения допускаются только для dedicated login/logout path, explicit refresh flows, tenant-management surfaces или route, где shell context ещё не инициализирован по design.
+
+#### Scenario: Internal CTA переводит оператора на другой route без document reload
+- **GIVEN** оператор находится на authenticated route внутри frontend shell
+- **WHEN** он нажимает internal CTA или handoff action, ведущий на другой route того же приложения
+- **THEN** navigation выполняется внутри SPA shell без full-document reload
+- **AND** bootstrap budget не расходуется повторно только из-за этого перехода
+
+#### Scenario: Route page использует shell-owned user и tenant context вместо повторных shell reads
+- **GIVEN** shared shell runtime уже загрузил bootstrap и синхронизировал `isStaff` и active tenant
+- **WHEN** route page монтируется по своему default operator path
+- **THEN** страница получает user/staff/tenant context через shared providers
+- **AND** не инициирует redundant вызовы `/api/v2/system/bootstrap/`, `/api/v2/system/me/` и `/api/v2/tenants/list-my-tenants/` без явного runtime trigger
+
+### Requirement: Stateful workspace routes MUST синхронизировать primary navigation state с URL
+Система ДОЛЖНА (SHALL) обеспечивать, что stateful workspace routes отражают primary filter/selection state в URL, если без этого пользователь теряет адресуемый рабочий контекст.
+
+Для catalog/detail surfaces сюда входят как минимум selected entity, активный filter mode, поисковый запрос и detail-open state, если они меняют основной смысл текущего экрана.
+
+#### Scenario: Пользователь делится ссылкой на конкретный workspace context
+- **GIVEN** пользователь выбрал сущность и фильтры в stateful catalog/detail route
+- **WHEN** он копирует URL и открывает его в новой вкладке или использует back/forward
+- **THEN** система восстанавливает тот же основной workspace context
+- **AND** не требует повторно выбирать entity/filter вручную
+
+### Requirement: Master-detail selection MUST использовать semantic control и явный selected state
+Система ДОЛЖНА (SHALL) обеспечивать, что primary selection в master-detail surface выполняется через semantic interactive control, а выбранное состояние читается и визуально, и программно.
+
+Row click без отдельного semantic trigger МОЖЕТ (MAY) существовать как дополнительное удобство, но НЕ ДОЛЖЕН (SHALL NOT) быть единственным primary path.
+
+#### Scenario: Выбор элемента каталога доступен с клавиатуры и имеет selected state
+- **GIVEN** пользователь работает с catalog/detail page
+- **WHEN** он выбирает элемент списка только с клавиатуры
+- **THEN** selection trigger является semantic control
+- **AND** текущий выбранный элемент имеет явный selected state (`aria-selected`, `aria-current` или эквивалентный корректный путь)
+- **AND** визуальное выделение выбранного элемента читается без наведения мышью
 
