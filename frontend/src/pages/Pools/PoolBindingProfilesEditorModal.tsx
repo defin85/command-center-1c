@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Descriptions, Form, Input, Space, Typography } from 'antd'
+import { Alert, Button, Form, Input, Space, Typography } from 'antd'
 
 import type {
   BindingProfileCreateRequest,
@@ -86,6 +86,28 @@ export function PoolBindingProfilesEditorModal({
     workflowRevision: form.getFieldValue('workflow_revision'),
     workflowName: form.getFieldValue('workflow_name'),
   }), [currentWorkflow, form])
+  const workflowLineageItems = useMemo(() => ([
+    {
+      key: 'workflow-name',
+      label: 'Workflow',
+      value: currentWorkflowSelection.workflowName || '—',
+    },
+    {
+      key: 'workflow-definition-key',
+      label: 'Definition key',
+      value: currentWorkflowSelection.workflowDefinitionKey || '—',
+    },
+    {
+      key: 'workflow-revision-id',
+      label: 'Revision ID',
+      value: currentWorkflowSelection.workflowRevisionId || '—',
+    },
+    {
+      key: 'workflow-revision',
+      label: 'Revision',
+      value: currentWorkflowSelection.workflowRevision || '—',
+    },
+  ]), [currentWorkflowSelection])
 
   useEffect(() => {
     if (!open) return
@@ -232,32 +254,18 @@ export function PoolBindingProfilesEditorModal({
         {currentWorkflowSelection.workflowRevisionId ? (
           <div style={{ marginBottom: 16 }}>
             <EntityDetails title="Pinned workflow lineage">
-              <Descriptions
-                size="small"
-                column={1}
-                items={[
-                  {
-                    key: 'workflow-name',
-                    label: 'Workflow',
-                    children: currentWorkflowSelection.workflowName || '—',
-                  },
-                  {
-                    key: 'workflow-definition-key',
-                    label: 'Definition key',
-                    children: currentWorkflowSelection.workflowDefinitionKey || '—',
-                  },
-                  {
-                    key: 'workflow-revision-id',
-                    label: 'Revision ID',
-                    children: currentWorkflowSelection.workflowRevisionId || '—',
-                  },
-                  {
-                    key: 'workflow-revision',
-                    label: 'Revision',
-                    children: currentWorkflowSelection.workflowRevision || '—',
-                  },
-                ]}
-              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {workflowLineageItems.map((item) => (
+                  <div
+                    key={item.key}
+                    data-testid={`pool-binding-profiles-${mode}-workflow-lineage-${item.key}`}
+                    style={{ display: 'flex', flexDirection: 'column', gap: 2 }}
+                  >
+                    <Text type="secondary">{item.label}</Text>
+                    <Text>{item.value}</Text>
+                  </div>
+                ))}
+              </div>
             </EntityDetails>
           </div>
         ) : null}

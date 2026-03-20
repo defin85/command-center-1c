@@ -221,6 +221,11 @@ export default tseslint.config(
           ...contextAwareAntdImports,
           {
             name: 'antd',
+            importNames: ['Descriptions'],
+            message: 'Binding profile authoring must use platform-safe summary rows inside `ModalFormShell` instead of raw `Descriptions`.',
+          },
+          {
+            name: 'antd',
             importNames: ['Modal'],
             message: 'Binding profile authoring must use `ModalFormShell` from `src/components/platform` instead of raw `Modal`.',
           },

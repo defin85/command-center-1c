@@ -284,6 +284,33 @@ describe('ui platform governance lint', () => {
     ))).toBe(true)
   })
 
+  it('rejects raw Ant Descriptions inside binding profile authoring modal shells', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Pools/PoolBindingProfilesEditorModal.tsx',
+      `
+        import { Descriptions } from 'antd'
+        import { ModalFormShell } from '../../components/platform'
+
+        export function PoolBindingProfilesEditorModal() {
+          return (
+            <ModalFormShell open title="Publish immutable revision" onClose={() => {}} onSubmit={() => {}}>
+              <Descriptions
+                items={[
+                  { key: 'workflow', label: 'Workflow', children: 'wf-services-r5' },
+                ]}
+              />
+            </ModalFormShell>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'no-restricted-imports'
+        && message.message.includes('platform-safe summary rows')
+    ))).toBe(true)
+  })
+
   it('rejects full-document handoff props in audited authenticated modules', async () => {
     const buttonMessages = await lintSnippet(
       'src/pages/Pools/PoolRunsPage.tsx',
