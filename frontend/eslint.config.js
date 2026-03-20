@@ -116,6 +116,9 @@ const platformShellImportNames = new Set(['ModalFormShell', 'DrawerFormShell'])
 const platformShellRestrictedAntdImports = new Map([
   ['Descriptions', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe summary rows instead of raw `Descriptions`.'],
   ['Table', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe list/summary surfaces instead of raw `Table`.'],
+  ['Card', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe detail/layout primitives instead of raw `Card`.'],
+  ['Row', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe detail/layout primitives instead of raw `Row`.'],
+  ['Col', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe detail/layout primitives instead of raw `Col`.'],
 ])
 
 const uiPlatformLocalPlugin = {

@@ -361,6 +361,33 @@ describe('ui platform governance lint', () => {
     ))).toBe(true)
   })
 
+  it('rejects raw Ant Card, Row, and Col inside future platform modal shells', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Future/FuturePlatformModal.tsx',
+      `
+        import { Card, Col, Row } from 'antd'
+        import { ModalFormShell } from '../../components/platform'
+
+        export function FuturePlatformModal() {
+          return (
+            <ModalFormShell open title="Future authoring" onClose={() => {}} onSubmit={() => {}}>
+              <Card>
+                <Row>
+                  <Col span={24}>legacy layout</Col>
+                </Row>
+              </Card>
+            </ModalFormShell>
+          )
+        }
+      `,
+    )
+
+    expect(messages.filter((message) => (
+      message.ruleId === 'ui-platform-local/no-legacy-containers-in-platform-shell-modules'
+        && message.message.includes('platform-safe detail/layout primitives')
+    )).length).toBe(3)
+  })
+
   it('rejects full-document handoff props in audited authenticated modules', async () => {
     const buttonMessages = await lintSnippet(
       'src/pages/Pools/PoolRunsPage.tsx',
@@ -417,7 +444,7 @@ describe('ui platform governance lint', () => {
     expect(offenders).toEqual([])
   })
 
-  it('keeps raw Ant Descriptions and Table out of platform shell modal and drawer modules', () => {
+  it('keeps raw Ant Descriptions, Table, Card, Row, and Col out of platform shell modal and drawer modules', () => {
     const sourceFiles = collectSourceFiles(path.join(frontendRoot, 'src'))
     const offenders = sourceFiles.filter((relativePath) => {
       if (!/(Modal|Drawer)\.tsx$/.test(relativePath)) {
@@ -426,7 +453,7 @@ describe('ui platform governance lint', () => {
 
       const source = readFileSync(path.join(frontendRoot, relativePath), 'utf8')
       const usesPlatformShell = source.includes('ModalFormShell') || source.includes('DrawerFormShell')
-      const importsLegacyDetailSurface = /import\s*\{[^}]*\b(Descriptions|Table)\b[^}]*\}\s*from ['"]antd['"]/.test(source)
+      const importsLegacyDetailSurface = /import\s*\{[^}]*\b(Descriptions|Table|Card|Row|Col)\b[^}]*\}\s*from ['"]antd['"]/.test(source)
 
       return usesPlatformShell && importsLegacyDetailSurface
     })
