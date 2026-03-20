@@ -983,6 +983,7 @@ type RequestCounts = {
   meReads: number
   myTenantsReads: number
   streamTickets: number
+  clusterLists: number
   databaseLists: number
   metadataManagementReads: number
   decisionsScoped: number
@@ -994,6 +995,8 @@ type RequestCounts = {
   poolOrganizationDetails: number
   poolGraphs: number
   poolTopologySnapshots: number
+  poolRuns: number
+  poolRunReports: number
   operationsList: number
   operationDetails: number
 }
@@ -1004,6 +1007,7 @@ function createRequestCounts(): RequestCounts {
     meReads: 0,
     myTenantsReads: 0,
     streamTickets: 0,
+    clusterLists: 0,
     databaseLists: 0,
     metadataManagementReads: 0,
     decisionsScoped: 0,
@@ -1015,6 +1019,8 @@ function createRequestCounts(): RequestCounts {
     poolOrganizationDetails: 0,
     poolGraphs: 0,
     poolTopologySnapshots: 0,
+    poolRuns: 0,
+    poolRunReports: 0,
     operationsList: 0,
     operationDetails: 0,
   }
@@ -1143,6 +1149,23 @@ async function setupUiPlatformMocks(
       }
       return fulfillJson(route, {
         databases: [DATABASE_RECORD],
+        count: 1,
+        total: 1,
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/clusters/list-clusters/') {
+      if (counts) {
+        counts.clusterLists += 1
+      }
+      return fulfillJson(route, {
+        clusters: [
+          {
+            id: 'cluster-1',
+            name: 'Main Cluster',
+            status: 'connected',
+          },
+        ],
         count: 1,
         total: 1,
       })
@@ -1390,11 +1413,17 @@ async function setupUiPlatformMocks(
     }
 
     if (method === 'GET' && path === '/api/v2/pools/runs/') {
+      if (counts) {
+        counts.poolRuns += 1
+      }
       return fulfillJson(route, { runs: [POOL_RUN] })
     }
 
     const poolRunReportMatch = path.match(/^\/api\/v2\/pools\/runs\/([^/]+)\/report\/$/)
     if (method === 'GET' && poolRunReportMatch) {
+      if (counts) {
+        counts.poolRunReports += 1
+      }
       return fulfillJson(route, POOL_RUN_REPORT)
     }
 
@@ -1952,6 +1981,154 @@ test('Runtime contract: /operations ignores same-route menu re-entry and keeps i
   await expect(counts.bootstrap).toBe(1)
   await expect(counts.operationsList).toBe(1)
   await expect(counts.operationDetails).toBe(1)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: / ignores same-route menu re-entry and keeps dashboard shell stable', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+
+  const dashboardMenuItem = page.getByRole('menuitem', { name: /Dashboard/i })
+
+  await expect(page.getByRole('heading', { name: 'Dashboard', level: 2 })).toBeVisible()
+  await expect.poll(() => counts.bootstrap).toBe(1)
+  await expect.poll(() => counts.operationsList).toBeGreaterThan(0)
+  await expect.poll(() => counts.databaseLists).toBeGreaterThan(0)
+  await expect.poll(() => counts.clusterLists).toBeGreaterThan(0)
+
+  const initialOperationsList = counts.operationsList
+  const initialDatabaseLists = counts.databaseLists
+  const initialClusterLists = counts.clusterLists
+
+  await dashboardMenuItem.click()
+  await page.waitForTimeout(750)
+
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole('heading', { name: 'Dashboard', level: 2 })).toBeVisible()
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.operationsList).toBe(initialOperationsList)
+  await expect(counts.databaseLists).toBe(initialDatabaseLists)
+  await expect(counts.clusterLists).toBe(initialClusterLists)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: /databases ignores same-route menu re-entry and keeps management context stable', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto(`/databases?database=${DATABASE_ID}&context=inspect`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const databasesMenuItem = page.getByRole('menuitem', { name: /Databases/i })
+
+  await expect(page.getByTestId('database-workspace-selected-id')).toHaveText(DATABASE_ID)
+  await expect(page.getByText(`Database Workspace: ${DATABASE_RECORD.name}`)).toBeVisible()
+  await expect.poll(() => counts.databaseLists).toBe(1)
+  await expect.poll(() => counts.clusterLists).toBe(1)
+  await expect(counts.metadataManagementReads).toBe(0)
+
+  await databasesMenuItem.click()
+  await page.waitForTimeout(750)
+
+  await expect(page).toHaveURL(new RegExp(`\\/databases\\?database=${DATABASE_ID}&context=inspect$`))
+  await expect(page.getByTestId('database-workspace-selected-id')).toHaveText(DATABASE_ID)
+  await expect(page.getByText(`Database Workspace: ${DATABASE_RECORD.name}`)).toBeVisible()
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.databaseLists).toBe(1)
+  await expect(counts.clusterLists).toBe(1)
+  await expect(counts.metadataManagementReads).toBe(0)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: /pools/catalog ignores same-route menu re-entry and keeps attachment context stable', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto(`/pools/catalog?pool_id=${POOL_WITH_ATTACHMENT.id}&tab=pools&date=2026-01-01`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const poolCatalogMenuItem = page.getByRole('menuitem', { name: /Pool Catalog/i })
+
+  await expect(page.getByTestId('pool-catalog-context-pool')).toHaveText('pool-main - Main Pool')
+  await expect(page.getByRole('tab', { name: 'Pools' })).toHaveAttribute('aria-selected', 'true')
+  await expect.poll(() => counts.organizationPools).toBe(1)
+  await expect.poll(() => counts.poolOrganizations).toBe(1)
+  await expect.poll(() => counts.poolOrganizationDetails).toBe(1)
+  await expect.poll(() => counts.poolTopologySnapshots).toBe(1)
+  await expect.poll(() => counts.poolGraphs).toBe(1)
+
+  await poolCatalogMenuItem.click()
+  await page.waitForTimeout(750)
+
+  await expect(page).toHaveURL(new RegExp(`\\/pools\\/catalog\\?pool_id=${POOL_WITH_ATTACHMENT.id}&tab=pools&date=2026-01-01$`))
+  await expect(page.getByTestId('pool-catalog-context-pool')).toHaveText('pool-main - Main Pool')
+  await expect(page.getByRole('tab', { name: 'Pools' })).toHaveAttribute('aria-selected', 'true')
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.organizationPools).toBe(1)
+  await expect(counts.poolOrganizations).toBe(1)
+  await expect(counts.poolOrganizationDetails).toBe(1)
+  await expect(counts.poolTopologySnapshots).toBe(1)
+  await expect(counts.poolGraphs).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: /pools/runs ignores same-route menu re-entry and keeps inspect context stable', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto(`/pools/runs?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&stage=inspect&detail=1`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const poolRunsMenuItem = page.getByRole('menuitem', { name: /Pool Runs/i })
+
+  await expect(page.getByRole('tab', { name: 'Inspect' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('pool-runs-lineage-binding-id')).toHaveText('binding-top-down')
+  await expect.poll(() => counts.organizationPools).toBe(1)
+  await expect.poll(() => counts.poolGraphs).toBeGreaterThan(0)
+  await expect.poll(() => counts.poolRuns).toBeGreaterThan(0)
+  await expect.poll(() => counts.poolRunReports).toBeGreaterThan(0)
+
+  const initialUrl = page.url()
+  const initialPoolGraphs = counts.poolGraphs
+  const initialPoolRuns = counts.poolRuns
+  const initialPoolRunReports = counts.poolRunReports
+
+  await poolRunsMenuItem.click()
+  await page.waitForTimeout(750)
+
+  await expect(page).toHaveURL(initialUrl)
+  await expect(page.getByRole('tab', { name: 'Inspect' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('pool-runs-lineage-binding-id')).toHaveText('binding-top-down')
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.organizationPools).toBe(1)
+  await expect(counts.poolGraphs).toBe(initialPoolGraphs)
+  await expect(counts.poolRuns).toBe(initialPoolRuns)
+  await expect(counts.poolRunReports).toBe(initialPoolRunReports)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 

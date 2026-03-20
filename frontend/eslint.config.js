@@ -67,6 +67,22 @@ const databasesRouteModuleImports = [
   },
 ]
 
+const poolCatalogRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Modal', 'Row', 'Col', 'Table', 'Tabs', 'Tag'],
+    message: 'Pool catalog route must compose through `WorkspacePage`, platform-owned task surfaces, and canonical secondary shells instead of raw Ant route containers.',
+  },
+]
+
+const poolRunsRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Collapse', 'Descriptions', 'Row', 'Col', 'Table', 'Tabs', 'Tag'],
+    message: 'Pool runs route must compose through `WorkspacePage`, stage-aware platform surfaces, and mobile-safe inspect flows instead of raw Ant route containers.',
+  },
+]
+
 const databasesSecondarySurfaceImports = [
   {
     name: 'antd',
@@ -281,6 +297,34 @@ export default tseslint.config(
         paths: [
           ...contextAwareAntdImports,
           ...databasesRouteModuleImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Pools/PoolCatalogPage.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...poolCatalogRouteModuleImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Pools/PoolRunsPage.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...poolRunsRouteModuleImports,
         ],
         patterns: competingFoundationImportPatterns,
       }],

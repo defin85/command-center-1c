@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { StrictMode, type ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -11,6 +11,7 @@ import type {
   PoolRunReadinessChecklist,
   PoolRunReport,
 } from '../../../api/intercompanyPools'
+import { resetQueryClient } from '../../../lib/queryClient'
 import { PoolRunsPage } from '../PoolRunsPage'
 
 const mockListOrganizationPools = vi.fn()
@@ -453,8 +454,8 @@ function buildPoolGraph(slotKey = 'invoice_mode') {
   }
 }
 
-function renderPage(initialEntry = '/pools/runs') {
-  return render(
+function renderPage(initialEntry = '/pools/runs', options?: { strict?: boolean }) {
+  const tree = (
     <MemoryRouter initialEntries={[initialEntry]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
       <AntApp>
         <PoolRunsPage />
@@ -462,6 +463,8 @@ function renderPage(initialEntry = '/pools/runs') {
       </AntApp>
     </MemoryRouter>
   )
+
+  return render(options?.strict ? <StrictMode>{tree}</StrictMode> : tree)
 }
 
 function LocationProbe() {
@@ -480,6 +483,7 @@ async function openInspectDiagnostics(user: ReturnType<typeof userEvent.setup>) 
 
 describe('PoolRunsPage', () => {
   beforeEach(() => {
+    resetQueryClient()
     mockListOrganizationPools.mockReset()
     mockListPoolSchemaTemplates.mockReset()
     mockGetPoolGraph.mockReset()
@@ -570,6 +574,17 @@ describe('PoolRunsPage', () => {
       command_type: 'abort-publication',
       result: 'accepted',
       replayed: false,
+    })
+  })
+
+  it('deduplicates initial pool reads in StrictMode on the default route', async () => {
+    renderPage('/pools/runs', { strict: true })
+
+    await waitFor(() => {
+      expect(mockListOrganizationPools).toHaveBeenCalledTimes(1)
+      expect(mockGetPoolGraph).toHaveBeenCalledTimes(1)
+      expect(mockListPoolRuns).toHaveBeenCalledTimes(1)
+      expect(mockGetPoolRunReport).toHaveBeenCalledTimes(1)
     })
   })
 

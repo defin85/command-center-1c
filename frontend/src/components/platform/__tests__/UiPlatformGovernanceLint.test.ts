@@ -184,6 +184,74 @@ describe('ui platform governance lint', () => {
     ))).toBe(true)
   })
 
+  it('rejects raw Ant layout containers in pool catalog route modules', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Pools/PoolCatalogPage.tsx',
+      `
+        import { Card, Drawer, Table, Tabs } from 'antd'
+        import { WorkspacePage, PageHeader } from '../../components/platform'
+
+        export function PoolCatalogPage() {
+          return (
+            <WorkspacePage header={<PageHeader title="Pool Catalog" />}>
+              <Tabs
+                items={[
+                  {
+                    key: 'pools',
+                    label: 'Pools',
+                    children: (
+                      <Card>
+                        <Table />
+                        <Drawer open />
+                      </Card>
+                    ),
+                  },
+                ]}
+              />
+            </WorkspacePage>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'no-restricted-imports'
+        && message.message.includes('Pool catalog route')
+    ))).toBe(true)
+  })
+
+  it('rejects raw Ant layout containers in pool runs route modules', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Pools/PoolRunsPage.tsx',
+      `
+        import { Card, Table, Tabs } from 'antd'
+        import { WorkspacePage, PageHeader } from '../../components/platform'
+
+        export function PoolRunsPage() {
+          return (
+            <WorkspacePage header={<PageHeader title="Pool Runs" />}>
+              <Card title="Run Context" />
+              <Tabs
+                items={[
+                  {
+                    key: 'inspect',
+                    label: 'Inspect',
+                    children: <Table />,
+                  },
+                ]}
+              />
+            </WorkspacePage>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'no-restricted-imports'
+        && message.message.includes('Pool runs route')
+    ))).toBe(true)
+  })
+
   it('rejects raw Ant Modal and Drawer usage in databases management surfaces', async () => {
     const modalMessages = await lintSnippet(
       'src/pages/Databases/components/DatabaseCredentialsModal.tsx',
@@ -255,6 +323,18 @@ describe('ui platform governance lint', () => {
         return false
       }
       return readFileSync(path.join(frontendRoot, relativePath), 'utf8').includes('useMe(')
+    })
+
+    expect(offenders).toEqual([])
+  })
+
+  it('keeps shell-owned tenant catalog reads out of authenticated source modules', () => {
+    const sourceFiles = collectSourceFiles(path.join(frontendRoot, 'src'))
+    const offenders = sourceFiles.filter((relativePath) => {
+      if (relativePath === path.join('src', 'api', 'queries', 'tenants.ts')) {
+        return false
+      }
+      return readFileSync(path.join(frontendRoot, relativePath), 'utf8').includes('useMyTenants(')
     })
 
     expect(offenders).toEqual([])
