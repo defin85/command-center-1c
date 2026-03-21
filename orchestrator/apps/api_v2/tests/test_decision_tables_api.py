@@ -746,6 +746,236 @@ def test_decision_tables_api_creates_rollover_revision_with_target_metadata_prov
 
 
 @pytest.mark.django_db
+def test_decision_tables_api_creates_clone_as_independent_resource_with_target_metadata_provenance(
+    staff_client: APIClient,
+) -> None:
+    tenant = Tenant.objects.create(slug=f"decision-meta-clone-ok-{uuid.uuid4().hex[:8]}", name="Decision Meta Clone OK")
+    source_database = _create_database(
+        tenant=tenant,
+        name=f"decision-clone-ok-source-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    target_database = _create_database(
+        tenant=tenant,
+        name=f"decision-clone-ok-target-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.25",
+    )
+    _create_service_infobase_mapping(database=source_database)
+    _create_service_infobase_mapping(database=target_database)
+    _set_business_configuration_profile(
+        database=source_database,
+        config_version="8.3.24",
+    )
+    _set_business_configuration_profile(
+        database=target_database,
+        config_version="8.3.25",
+    )
+    _create_current_metadata_catalog_snapshot(
+        tenant=tenant,
+        database=source_database,
+        catalog_version="v1:clone-source",
+        metadata_hash="a" * 64,
+    )
+    target_snapshot = _create_current_metadata_catalog_snapshot(
+        tenant=tenant,
+        database=target_database,
+        catalog_version="v1:clone-target",
+        metadata_hash="b" * 64,
+    )
+
+    create_response = staff_client.post(
+        "/api/v2/decisions/",
+        data={
+            **_build_decision_payload(decision_table_id="source-policy"),
+            "database_id": str(source_database.id),
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+    assert create_response.status_code == 201
+    source_revision = create_response.json()["decision"]
+
+    clone_response = staff_client.post(
+        "/api/v2/decisions/",
+        data={
+            **_build_decision_payload(decision_table_id="cloned-policy"),
+            "database_id": str(target_database.id),
+            "name": "Cloned Policy for 8.3.25",
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+
+    assert clone_response.status_code == 201
+    payload = clone_response.json()
+    created = payload["decision"]
+    assert created["decision_table_id"] == "cloned-policy"
+    assert created["decision_revision"] == 1
+    assert created["parent_version"] is None
+    assert created["metadata_context"]["snapshot_id"] == str(target_snapshot.id)
+    assert created["metadata_context"]["config_version"] == "8.3.25"
+    assert created["metadata_context"]["provenance_database_id"] == str(target_database.id)
+    assert payload["metadata_context"]["database_id"] == str(target_database.id)
+    assert payload["metadata_context"]["snapshot_id"] == str(target_snapshot.id)
+
+    source_decision = DecisionTable.objects.get(id=source_revision["id"])
+    cloned_decision = DecisionTable.objects.get(id=created["id"])
+    assert source_decision.parent_version_id is None
+    assert source_decision.version_number == 1
+    assert cloned_decision.parent_version_id is None
+    assert cloned_decision.version_number == 1
+    assert DecisionTable.objects.filter(decision_table_id="source-policy").count() == 1
+    assert DecisionTable.objects.filter(decision_table_id="cloned-policy").count() == 1
+
+
+@pytest.mark.django_db
+def test_decision_tables_api_clone_does_not_rebind_existing_consumers(
+    staff_client: APIClient,
+) -> None:
+    tenant = Tenant.objects.create(slug=f"decision-clone-consumers-{uuid.uuid4().hex[:8]}", name="Decision Clone Consumers")
+    source_database = _create_database(
+        tenant=tenant,
+        name=f"decision-clone-consumer-source-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    target_database = _create_database(
+        tenant=tenant,
+        name=f"decision-clone-consumer-target-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.25",
+    )
+    _create_service_infobase_mapping(database=source_database)
+    _create_service_infobase_mapping(database=target_database)
+    _set_business_configuration_profile(
+        database=source_database,
+        config_version="8.3.24",
+    )
+    _set_business_configuration_profile(
+        database=target_database,
+        config_version="8.3.25",
+    )
+    _create_current_metadata_catalog_snapshot(tenant=tenant, database=source_database)
+    _create_current_metadata_catalog_snapshot(
+        tenant=tenant,
+        database=target_database,
+        metadata_hash="b" * 64,
+    )
+
+    create_response = staff_client.post(
+        "/api/v2/decisions/",
+        data={
+            **_build_decision_payload(decision_table_id="source-policy"),
+            "database_id": str(source_database.id),
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+    assert create_response.status_code == 201
+    source_revision = create_response.json()["decision"]
+    source_decision = DecisionTable.objects.get(id=source_revision["id"])
+
+    workflow = _create_decision_consumer_workflow(decision=source_decision)
+    pool, schema_template = _create_binding_preview_context(tenant=tenant, target_database=target_database)
+    binding_id = str(uuid.uuid4())
+    upsert_canonical_pool_workflow_binding(
+        pool=pool,
+        workflow_binding={
+            "binding_id": binding_id,
+            "pool_id": str(pool.id),
+            "workflow": {
+                "workflow_definition_key": str(workflow.id),
+                "workflow_revision_id": str(workflow.id),
+                "workflow_revision": workflow.version_number,
+                "workflow_name": workflow.name,
+            },
+            "decisions": [
+                {
+                    "decision_table_id": source_decision.decision_table_id,
+                    "decision_key": source_decision.decision_key,
+                    "decision_revision": source_decision.version_number,
+                    "slot_key": "document_policy",
+                }
+            ],
+            "selector": {
+                "direction": PoolRunDirection.BOTTOM_UP,
+                "mode": PoolRunMode.SAFE,
+                "tags": [],
+            },
+            "effective_from": "2026-01-01",
+            "status": "active",
+        },
+        actor_username="decision-clone-test",
+    )
+    preview_before = build_pool_workflow_binding_preview(
+        tenant=tenant,
+        pool=pool,
+        pool_workflow_binding_id=binding_id,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 1, 31),
+        run_input={"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+        schema_template=schema_template,
+    )
+
+    clone_response = staff_client.post(
+        "/api/v2/decisions/",
+        data={
+            **_build_decision_payload(decision_table_id="cloned-policy"),
+            "database_id": str(target_database.id),
+            "name": "Cloned Policy for 8.3.25",
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+
+    assert clone_response.status_code == 201
+    created = clone_response.json()["decision"]
+    assert created["decision_table_id"] == "cloned-policy"
+    assert created["decision_revision"] == 1
+    assert created["parent_version"] is None
+
+    workflow.refresh_from_db()
+    workflow_dag = workflow.dag_structure.model_dump(mode="json")
+    decision_node = workflow_dag["nodes"][0]
+    assert decision_node["decision_ref"]["decision_table_id"] == source_decision.decision_table_id
+    assert decision_node["decision_ref"]["decision_revision"] == source_decision.version_number
+
+    binding_record = PoolWorkflowBinding.objects.get(binding_id=binding_id)
+    assert binding_record.revision == 1
+    assert binding_record.decisions == preview_before["workflow_binding"]["decisions"]
+
+    preview_after = build_pool_workflow_binding_preview(
+        tenant=tenant,
+        pool=pool,
+        pool_workflow_binding_id=binding_id,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 1, 31),
+        run_input={"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+        schema_template=schema_template,
+    )
+
+    assert preview_after["workflow_binding"]["decisions"] == preview_before["workflow_binding"]["decisions"]
+    assert (
+        preview_after["runtime_projection"]["workflow_binding"]["decision_refs"]
+        == preview_before["runtime_projection"]["workflow_binding"]["decision_refs"]
+    )
+    assert preview_after["runtime_projection"]["workflow_binding"]["decision_refs"] == [
+        {
+            "decision_table_id": source_decision.decision_table_id,
+            "decision_key": source_decision.decision_key,
+            "decision_revision": source_decision.version_number,
+            "slot_key": "document_policy",
+        }
+    ]
+
+
+@pytest.mark.django_db
 def test_decision_tables_api_rollover_does_not_rebind_existing_consumers(
     staff_client: APIClient,
 ) -> None:
@@ -811,6 +1041,7 @@ def test_decision_tables_api_rollover_does_not_rebind_existing_consumers(
                     "decision_table_id": source_decision.decision_table_id,
                     "decision_key": source_decision.decision_key,
                     "decision_revision": source_decision.version_number,
+                    "slot_key": "document_policy",
                 }
             ],
             "selector": {
@@ -883,6 +1114,7 @@ def test_decision_tables_api_rollover_does_not_rebind_existing_consumers(
             "decision_table_id": source_decision.decision_table_id,
             "decision_key": source_decision.decision_key,
             "decision_revision": source_decision.version_number,
+            "slot_key": "document_policy",
         }
     ]
 
@@ -961,6 +1193,83 @@ def test_decision_tables_api_rejects_rollover_publish_when_source_policy_is_inco
     assert payload["success"] is False
     assert payload["error"]["code"] == "POOL_METADATA_REFERENCE_INVALID"
     assert DecisionTable.objects.filter(decision_table_id="rollover-policy").count() == 1
+    source_decision = DecisionTable.objects.get(id=source_revision["id"])
+    assert source_decision.parent_version_id is None
+
+
+@pytest.mark.django_db
+def test_decision_tables_api_rejects_clone_publish_when_target_snapshot_is_incompatible(
+    staff_client: APIClient,
+) -> None:
+    tenant = Tenant.objects.create(slug=f"decision-meta-clone-{uuid.uuid4().hex[:8]}", name="Decision Meta Clone")
+    source_database = _create_database(
+        tenant=tenant,
+        name=f"decision-clone-source-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.24",
+    )
+    target_database = _create_database(
+        tenant=tenant,
+        name=f"decision-clone-target-{uuid.uuid4().hex[:8]}",
+        base_name="shared-profile",
+        version="8.3.25",
+    )
+    _create_service_infobase_mapping(database=source_database)
+    _create_service_infobase_mapping(database=target_database)
+    _set_business_configuration_profile(
+        database=source_database,
+        config_version="8.3.24",
+    )
+    _set_business_configuration_profile(
+        database=target_database,
+        config_version="8.3.25",
+    )
+    _create_current_metadata_catalog_snapshot(tenant=tenant, database=source_database)
+    _create_current_metadata_catalog_snapshot(
+        tenant=tenant,
+        database=target_database,
+        payload={
+            "documents": [
+                {
+                    "entity_name": "Document_Sales",
+                    "display_name": "Sales",
+                    "fields": [
+                        {"name": "Amount", "type": "Edm.Decimal", "nullable": False},
+                    ],
+                    "table_parts": [],
+                }
+            ]
+        },
+    )
+
+    create_response = staff_client.post(
+        "/api/v2/decisions/",
+        data={
+            **_build_decision_payload(decision_table_id="source-policy"),
+            "database_id": str(source_database.id),
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+    assert create_response.status_code == 201
+    source_revision = create_response.json()["decision"]
+
+    clone_response = staff_client.post(
+        "/api/v2/decisions/",
+        data={
+            **_build_decision_payload(decision_table_id="cloned-policy"),
+            "database_id": str(target_database.id),
+            "name": "Cloned Policy for 8.3.25",
+        },
+        format="json",
+        HTTP_X_CC1C_TENANT_ID=str(tenant.id),
+    )
+
+    assert clone_response.status_code == 400
+    payload = clone_response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "POOL_METADATA_REFERENCE_INVALID"
+    assert DecisionTable.objects.filter(decision_table_id="cloned-policy").count() == 0
     source_decision = DecisionTable.objects.get(id=source_revision["id"])
     assert source_decision.parent_version_id is None
 

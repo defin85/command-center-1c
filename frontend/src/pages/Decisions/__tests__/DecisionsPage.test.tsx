@@ -1352,6 +1352,7 @@ describe('DecisionsPage', () => {
     expect(screen.getAllByText('Services publication policy').length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'Edit selected decision' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Rollover selected revision' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Clone selected revision' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Deactivate selected decision' })).toBeDisabled()
   })
 

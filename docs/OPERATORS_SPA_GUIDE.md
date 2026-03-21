@@ -24,6 +24,9 @@
   - `Перепроверить configuration identity` запускает async verification через worker path и при необходимости ведёт в `/operations`;
   - `Обновить metadata snapshot` обновляет только current metadata snapshot и publication drift diagnostics.
 - `/pools/catalog` и `/decisions` больше не являются canonical местом для metadata maintenance: если там не хватает metadata context, исправление выполняется через `/databases`.
+- В `/decisions` два разных пути повторного использования revision:
+  - `Rollover selected revision` создаёт новую revision того же decision resource;
+  - `Clone selected revision` создаёт независимый decision resource на основе существующей revision.
 
 ### Extensions (`/extensions`)
 - Основной путь для массового `extensions.set_flags`: workflow-first запуск с явным runtime input (`flags_values` + `apply_mask`).

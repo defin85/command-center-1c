@@ -642,6 +642,33 @@ async function setupApiMocks(page: Page, state: AcceptanceState) {
       return fulfillJson(route, { items: [], count: 0, total: 0 })
     }
 
+    if (method === 'GET' && path === '/api/v2/system/bootstrap/') {
+      return fulfillJson(route, {
+        me: { id: 1, username: 'browser-user', is_staff: false },
+        tenant_context: {
+          active_tenant_id: TENANT_ID,
+          tenants: [
+            {
+              id: TENANT_ID,
+              slug: 'default',
+              name: 'Default',
+              role: 'owner',
+            },
+          ],
+        },
+        access: {
+          user: { id: 1, username: 'browser-user' },
+          clusters: [],
+          databases: [],
+          operation_templates: [],
+        },
+        capabilities: {
+          can_manage_rbac: false,
+          can_manage_driver_catalogs: false,
+        },
+      })
+    }
+
     if (method === 'GET' && path === '/api/v2/tenants/list-my-tenants/') {
       return fulfillJson(route, {
         active_tenant_id: TENANT_ID,
@@ -1129,6 +1156,40 @@ test('Workflow hardening: /decisions supports guided rollover from a previous-re
   await expect.poll(() => String(state.decisionWrites[0]?.name || '')).toBe('Previous release policy for Target DB')
   await expect.poll(() => String(state.decisions[0]?.parent_version || '')).toBe('decision-version-previous-release')
   await expect.poll(() => String((state.decisions[0]?.metadata_context as AnyRecord | undefined)?.config_version || '')).toBe('8.3.24')
+})
+
+test('Workflow hardening: /decisions supports cloning a revision into an independent decision resource', async ({ page }) => {
+  const state = createAcceptanceState()
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/decisions', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Decision Policy Library' })).toBeVisible()
+  await page.getByRole('button', { name: 'Open decision Services publication policy' }).click()
+
+  await expect(page.getByRole('button', { name: 'Clone selected revision' })).toBeVisible()
+  await page.getByRole('button', { name: 'Clone selected revision' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Clone selected revision' })).toBeVisible()
+  await expect(page.getByText('Source revision')).toBeVisible()
+  await expect(page.getByText('Services publication policy (services-publication-policy r2)')).toBeVisible()
+  await expect(page.getByText('Publishing a clone creates a new independent decision resource. Existing workflows, bindings, and runtime projections stay pinned until you update them explicitly.')).toBeVisible()
+  await expect(page.getByLabel('Decision table ID')).toHaveValue('services-publication-policy-copy')
+  await expect(page.getByText('Target database', { exact: true })).toBeVisible()
+  await expect(page.getByText('Target metadata snapshot', { exact: true })).toBeVisible()
+
+  await page.getByLabel('Decision table ID').fill('services-publication-policy-clone')
+  await page.getByLabel('Decision name').fill('Services publication policy clone')
+  await page.getByRole('button', { name: 'Publish cloned decision' }).click()
+
+  await expect.poll(() => state.decisionWrites.length).toBe(1)
+  await expect.poll(() => String(state.decisionWrites[0]?.decision_table_id || '')).toBe('services-publication-policy-clone')
+  await expect.poll(() => String(state.decisionWrites[0]?.database_id || '')).toBe('10101010-1010-1010-1010-101010101010')
+  await expect.poll(() => String(state.decisionWrites[0]?.parent_version_id || '')).toBe('')
+  await expect.poll(() => String(state.decisions[0]?.decision_table_id || '')).toBe('services-publication-policy-clone')
+  await expect.poll(() => String(state.decisions[0]?.parent_version || '')).toBe('')
 })
 
 test('Workflow hardening: /templates, /pools/catalog, and /decisions expose compatibility guidance and legacy migration outcome', async ({ page }) => {
