@@ -1069,6 +1069,46 @@ describe('DecisionsPage', () => {
     })
   }, 30000)
 
+  it('supports cloning a selected revision into an independent decision resource', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('Decision Policy Library')
+
+    await user.click(screen.getByRole('button', { name: 'Clone selected revision' }))
+
+    expect(await screen.findByRole('heading', { name: 'Clone selected revision' })).toBeInTheDocument()
+    expect(screen.getByText('Source revision')).toBeInTheDocument()
+    expect(screen.getByText('Services publication policy (services-publication-policy r2)')).toBeInTheDocument()
+    expect(screen.getByText('Publishing a clone creates a new independent decision resource. Existing workflows, bindings, and runtime projections stay pinned until you update them explicitly.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Decision table ID')).toHaveValue('services-publication-policy-copy')
+    expect(screen.getByLabelText('Decision name')).toHaveValue('Services publication policy')
+
+    fireEvent.change(screen.getByLabelText('Decision table ID'), {
+      target: { value: 'services-publication-policy-clone' },
+    })
+    fireEvent.change(screen.getByLabelText('Decision name'), {
+      target: { value: 'Services publication policy clone' },
+    })
+    await user.click(screen.getByRole('button', { name: 'Publish cloned decision' }))
+
+    await waitFor(() => {
+      expect(mockPostDecisionsCollection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          database_id: 'db-2',
+          decision_table_id: 'services-publication-policy-clone',
+          name: 'Services publication policy clone',
+          is_active: true,
+        }),
+        { errorPolicy: 'page' },
+      )
+    })
+
+    const payload = mockPostDecisionsCollection.mock.calls.at(-1)?.[0]
+    expect(payload).toBeTruthy()
+    expect(payload.parent_version_id).toBeUndefined()
+  })
+
   it('allows clearing the selected database without auto-restoring the first option', async () => {
     const user = userEvent.setup()
     mockGetDecisionsCollection.mockReset()

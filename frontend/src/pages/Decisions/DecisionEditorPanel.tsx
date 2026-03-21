@@ -6,7 +6,7 @@ import type { PoolODataMetadataCatalogDocument } from '../../api/generated/model
 import type { DocumentPolicyBuilderChainFormValue } from './documentPolicyBuilder'
 import { DocumentPolicyBuilderEditor } from './DocumentPolicyBuilderEditor'
 
-export type DecisionEditorMode = 'create' | 'import' | 'revise' | 'rollover'
+export type DecisionEditorMode = 'create' | 'import' | 'revise' | 'rollover' | 'clone'
 export type DecisionEditorTab = 'builder' | 'raw'
 
 export type DecisionEditorSourceSummary = {
@@ -69,6 +69,10 @@ const PANEL_COPY: Record<DecisionEditorMode, { title: string; subtitle: string }
     title: 'Rollover selected revision',
     subtitle: 'Use the selected revision as a source seed and publish a new revision for the target database metadata context.',
   },
+  clone: {
+    title: 'Clone selected revision',
+    subtitle: 'Use the selected revision as a source seed and publish a new independent decision resource for the current target database context.',
+  },
 }
 
 export function DecisionEditorPanel({
@@ -82,7 +86,11 @@ export function DecisionEditorPanel({
   onTabChange,
 }: DecisionEditorPanelProps) {
   const copy = PANEL_COPY[value.mode]
-  const saveButtonLabel = value.mode === 'rollover' ? 'Publish rollover revision' : 'Save decision'
+  const saveButtonLabel = value.mode === 'rollover'
+    ? 'Publish rollover revision'
+    : value.mode === 'clone'
+      ? 'Publish cloned decision'
+      : 'Save decision'
   type SummaryItem = NonNullable<DescriptionsProps['items']>[number]
   const summaryItems: SummaryItem[] = []
 
@@ -163,6 +171,14 @@ export function DecisionEditorPanel({
           type="info"
           showIcon
           message="Publishing a rollover creates a new revision only. Existing workflows, bindings, and runtime projections stay pinned until you update them explicitly."
+        />
+      ) : null}
+
+      {value.mode === 'clone' ? (
+        <Alert
+          type="info"
+          showIcon
+          message="Publishing a clone creates a new independent decision resource. Existing workflows, bindings, and runtime projections stay pinned until you update them explicitly."
         />
       ) : null}
 

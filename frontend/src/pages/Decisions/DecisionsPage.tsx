@@ -109,6 +109,12 @@ export function DecisionsPage() {
     editor.handleOpenSelectedDecisionForRollover()
   }
 
+  const handleOpenSelectedDecisionForClone = () => {
+    setIsDetailDrawerOpen(false)
+    legacyImport.resetLegacyImport()
+    editor.handleOpenSelectedDecisionForClone()
+  }
+
   const handleSelectDecision = (decisionId: string) => {
     catalog.selectDecision(decisionId)
     setIsDetailDrawerOpen(true)
@@ -249,6 +255,18 @@ export function DecisionsPage() {
                 aria-label="Rollover selected revision"
               >
                 Rollover selected revision
+              </Button>
+              <Button
+                onClick={handleOpenSelectedDecisionForClone}
+                disabled={
+                  !catalog.selectedDecision
+                  || !catalog.selectedDecisionSupportsDocumentPolicyAuthoring
+                  || saving
+                  || catalog.metadataContextFallbackActive
+                }
+                aria-label="Clone selected revision"
+              >
+                Clone selected revision
               </Button>
               <Button
                 danger

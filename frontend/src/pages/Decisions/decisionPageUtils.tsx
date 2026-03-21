@@ -41,6 +41,7 @@ export const DECISIONS_API_OPTIONS = { errorPolicy: 'page' } as const
 export const METADATA_CONTEXT_FALLBACK_MESSAGE = 'Metadata context недоступен для выбранной базы. Показываем глобальный список revisions без compatibility context этой базы; управлять configuration profile и metadata snapshot нужно через /databases.'
 export const METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE = 'Metadata context недоступен для выбранной базы. Чтобы восстановить configuration profile и metadata snapshot, откройте /databases.'
 export const METADATA_CONTEXT_ROLLOVER_BLOCKED_MESSAGE = 'Resolved target metadata context недоступен. Откройте /databases и обновите metadata snapshot перед guided rollover.'
+export const METADATA_CONTEXT_CLONE_BLOCKED_MESSAGE = 'Resolved target metadata context недоступен. Откройте /databases и обновите metadata snapshot перед clone flow.'
 export const LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE = 'This revision is still pinned in workflow bindings, but /decisions editing supports only document_policy. Update the binding to a document_policy revision before editing here.'
 
 const METADATA_CONTEXT_FALLBACK_CODES = new Set([
@@ -207,6 +208,14 @@ export const buildEditorTargetSummary = (
   }
 }
 
+const buildCloneDecisionTableId = (decisionTableId: string): string => {
+  const normalized = decisionTableId.trim()
+  if (!normalized) {
+    return ''
+  }
+  return `${normalized}-copy`
+}
+
 export const buildDraftFromDecision = (
   decision: DecisionTable,
   options?: {
@@ -217,19 +226,24 @@ export const buildDraftFromDecision = (
 ): DecisionEditorState => {
   const policy = extractDocumentPolicyOutput(decision, { allowNonDefaultRuleId: true })
   const chains = documentPolicyToBuilderChains(policy)
+  const mode = options?.mode ?? 'revise'
+  const isClone = mode === 'clone'
+  const isSourceBasedMode = mode === 'rollover' || mode === 'clone'
   return {
-    mode: options?.mode ?? 'revise',
-    decisionTableId: decision.decision_table_id,
+    mode,
+    decisionTableId: isClone
+      ? buildCloneDecisionTableId(decision.decision_table_id)
+      : decision.decision_table_id,
     name: decision.name,
     description: decision.description ?? '',
     chains,
     rawJson: formatJson(buildDocumentPolicyFromBuilder(chains)),
     activeTab: 'builder',
-    parentVersionId: decision.id,
+    parentVersionId: isClone ? undefined : decision.id,
     isActive: decision.is_active,
     targetDatabaseId: options?.targetDatabaseId,
-    sourceSummary: options?.mode === 'rollover' ? buildEditorSourceSummary(decision) : undefined,
-    targetSummary: options?.mode === 'rollover' ? options?.targetSummary : undefined,
+    sourceSummary: isSourceBasedMode ? buildEditorSourceSummary(decision) : undefined,
+    targetSummary: isSourceBasedMode ? options?.targetSummary : undefined,
   }
 }
 

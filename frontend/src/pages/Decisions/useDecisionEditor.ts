@@ -19,6 +19,7 @@ import {
   buildEditorTargetSummary,
   LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE,
   METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE,
+  METADATA_CONTEXT_CLONE_BLOCKED_MESSAGE,
   METADATA_CONTEXT_ROLLOVER_BLOCKED_MESSAGE,
   toErrorMessage,
   type MetadataContextLike,
@@ -166,6 +167,53 @@ export function useDecisionEditor({
     }
   }
 
+  const handleOpenSelectedDecisionForClone = () => {
+    if (!selectedDecision) return
+    if (!selectedDecisionSupportsDocumentPolicyAuthoring) {
+      setEditorDraft(null)
+      setEditorError(
+        selectedDecisionPinnedInBinding
+          ? LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE
+          : `This revision uses decision_key "${selectedDecision.decision_key}". /decisions clone supports only document_policy.`
+      )
+      return
+    }
+    if (metadataContextFallbackActive) {
+      setEditorDraft(null)
+      setEditorError(METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE)
+      return
+    }
+    if (!effectiveSelectedDatabaseId || !selectedDatabaseLabel) {
+      setEditorDraft(null)
+      setEditorError('Select a target database before cloning the selected revision.')
+      return
+    }
+
+    const targetSummary = buildEditorTargetSummary(rolloverTargetMetadataContext, {
+      databaseId: effectiveSelectedDatabaseId,
+      databaseLabel: selectedDatabaseLabel,
+    })
+    if (!targetSummary) {
+      setEditorDraft(null)
+      setEditorError(METADATA_CONTEXT_CLONE_BLOCKED_MESSAGE)
+      return
+    }
+
+    try {
+      openEditor(
+        'clone',
+        buildDraftFromDecision(selectedDecision, {
+          mode: 'clone',
+          targetDatabaseId: effectiveSelectedDatabaseId,
+          targetSummary,
+        }),
+      )
+    } catch (error) {
+      setEditorDraft(null)
+      setEditorError(toErrorMessage(error, 'Selected decision cannot be opened as a clone source.'))
+    }
+  }
+
   const handleEditorTabChange = (nextTab: DecisionEditorTab) => {
     if (!editorDraft || editorDraft.activeTab === nextTab) return
 
@@ -213,6 +261,8 @@ export function useDecisionEditor({
       message.success(
         editorDraft.mode === 'rollover'
           ? 'Rollover revision created'
+          : editorDraft.mode === 'clone'
+            ? 'Cloned decision created'
           : editorDraft.mode === 'revise'
             ? 'Decision revision created'
             : 'Decision saved',
@@ -277,6 +327,7 @@ export function useDecisionEditor({
     resetEditor,
     handleOpenSelectedDecisionForEdit,
     handleOpenSelectedDecisionForRollover,
+    handleOpenSelectedDecisionForClone,
     handleEditorTabChange,
     handleSaveDecision,
     handleDeactivateSelected,
