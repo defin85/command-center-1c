@@ -58,6 +58,7 @@ export function DatabaseIbcmdConnectionProfileModal({
       submitText="Save"
       confirmLoading={saving}
       width={720}
+      forceRender
     >
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Space style={{ width: '100%', justifyContent: 'flex-end' }}>

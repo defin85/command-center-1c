@@ -15,6 +15,7 @@ type ModalFormShellProps = {
   confirmLoading?: boolean
   width?: number
   submitButtonTestId?: string
+  forceRender?: boolean
   children: ReactNode
 }
 
@@ -28,6 +29,7 @@ export function ModalFormShell({
   confirmLoading = false,
   width = 880,
   submitButtonTestId,
+  forceRender = false,
   children,
 }: ModalFormShellProps) {
   const screens = useBreakpoint()
@@ -57,6 +59,7 @@ export function ModalFormShell({
       onOk={onSubmit}
       okText={submitText}
       confirmLoading={confirmLoading}
+      forceRender={forceRender}
       destroyOnHidden
       okButtonProps={submitButtonTestId ? { 'data-testid': submitButtonTestId } : undefined}
       width={isNarrow ? 'calc(100vw - 24px)' : width}

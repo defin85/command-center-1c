@@ -758,26 +758,30 @@ export function PoolBindingProfilesPage() {
         )}
       />
 
-      <PoolBindingProfilesEditorModal
-        open={isCreateOpen}
-        mode="create"
-        onCancel={() => setIsCreateOpen(false)}
-        onSubmit={async (request) => {
-          await handleCreateProfile(request)
-          setIsCreateOpen(false)
-        }}
-      />
+      {isCreateOpen ? (
+        <PoolBindingProfilesEditorModal
+          open={isCreateOpen}
+          mode="create"
+          onCancel={() => setIsCreateOpen(false)}
+          onSubmit={async (request) => {
+            await handleCreateProfile(request)
+            setIsCreateOpen(false)
+          }}
+        />
+      ) : null}
 
-      <PoolBindingProfilesEditorModal
-        open={isReviseOpen}
-        mode="revise"
-        profile={selectedProfile}
-        onCancel={() => setIsReviseOpen(false)}
-        onSubmit={async (request) => {
-          await handleReviseProfile(request)
-          setIsReviseOpen(false)
-        }}
-      />
+      {isReviseOpen ? (
+        <PoolBindingProfilesEditorModal
+          open={isReviseOpen}
+          mode="revise"
+          profile={selectedProfile}
+          onCancel={() => setIsReviseOpen(false)}
+          onSubmit={async (request) => {
+            await handleReviseProfile(request)
+            setIsReviseOpen(false)
+          }}
+        />
+      ) : null}
     </WorkspacePage>
   )
 }

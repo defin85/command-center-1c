@@ -34,6 +34,7 @@ export function DatabaseCredentialsModal({
       subtitle="Legacy OData credential override"
       submitText="Save"
       confirmLoading={saving}
+      forceRender
     >
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Space style={{ width: '100%', justifyContent: 'flex-end' }}>

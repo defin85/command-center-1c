@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { App as AntApp, Input } from 'antd'
+import { App as AntApp, Form, Input } from 'antd'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -55,6 +55,40 @@ describe('platform primitives', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByLabelText('Profile code')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Create profile' })).toBeInTheDocument()
+  })
+
+  it('keeps closed ModalFormShell form instances connected without console warnings when forceRender is enabled', () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    function ClosedModalHarness() {
+      const [form] = Form.useForm()
+
+      return (
+        <AntApp>
+          <ModalFormShell
+            open={false}
+            onClose={vi.fn()}
+            onSubmit={vi.fn()}
+            title="Hidden editor"
+            forceRender
+          >
+            <Form form={form} layout="vertical">
+              <Form.Item label="Profile code" name="code">
+                <Input />
+              </Form.Item>
+            </Form>
+          </ModalFormShell>
+        </AntApp>
+      )
+    }
+
+    render(<ClosedModalHarness />)
+
+    expect(
+      consoleErrorSpy.mock.calls.some(([message]) => String(message).includes('useForm')),
+    ).toBe(false)
+
+    consoleErrorSpy.mockRestore()
   })
 
   it('renders DrawerFormShell content after dynamic open transitions', async () => {
