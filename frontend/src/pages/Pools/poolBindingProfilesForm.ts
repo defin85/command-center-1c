@@ -67,7 +67,7 @@ export function buildBindingProfileEditorInitialValues(
 }
 
 const parseJsonField = <T,>(
-  value: string,
+  value: string | null | undefined,
   {
     field,
     emptyValue,
@@ -78,7 +78,7 @@ const parseJsonField = <T,>(
     kind: 'array' | 'object'
   },
 ): { value?: T; error?: FormError } => {
-  const trimmed = value.trim()
+  const trimmed = typeof value === 'string' ? value.trim() : ''
   if (!trimmed) {
     return { value: emptyValue }
   }
