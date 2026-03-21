@@ -26,10 +26,12 @@ const basePolicy: DocumentPolicyOutput = {
             Organization: 'allocation.organization_ref',
           },
           table_parts_mapping: {
-            Goods: {
-              Item: 'allocation.items[].item_ref',
-              Quantity: 'allocation.items[].qty',
-            },
+            Goods: [
+              {
+                Item: 'allocation.items[].item_ref',
+                Quantity: 'allocation.items[].qty',
+              },
+            ],
           },
           link_rules: {},
         },
@@ -114,6 +116,87 @@ describe('documentPolicyBuilder', () => {
     ])
 
     expect(buildDocumentPolicyFromBuilder(builder)).toEqual(basePolicy)
+  })
+
+  it('preserves table-part row arrays and rich mapping values via builder encoding', () => {
+    const richPolicy: DocumentPolicyOutput = {
+      version: 'document_policy.v1',
+      chains: [
+        {
+          chain_id: 'services',
+          documents: [
+            {
+              document_id: 'sale',
+              entity_name: 'Document_РеализацияТоваровУслуг',
+              document_role: 'sale',
+              invoice_mode: 'optional',
+              field_mapping: {
+                Date: '2023-10-04T12:00:00',
+                СуммаДокумента: 'allocation.amount',
+                СуммаВключаетНДС: true,
+                КурсВзаиморасчетов: 1,
+              },
+              table_parts_mapping: {
+                АгентскиеУслуги: [
+                  {
+                    Количество: 1,
+                    Сумма: 'allocation.amount',
+                    СуммаНДС: {
+                      $derive: {
+                        op: 'div',
+                        args: ['allocation.amount', 6],
+                        scale: 2,
+                      },
+                    },
+                  },
+                ],
+              },
+              link_rules: {},
+            },
+          ],
+        },
+      ],
+    }
+
+    const extracted = extractDocumentPolicyOutput({
+      decision_key: 'document_policy',
+      rules: [
+        {
+          rule_id: 'default',
+          priority: 0,
+          conditions: {},
+          outputs: {
+            document_policy: richPolicy,
+          },
+        },
+      ],
+    })
+
+    expect(extracted).toEqual(richPolicy)
+
+    const builder = documentPolicyToBuilderChains(extracted)
+
+    expect(builder[0]?.documents?.[0]?.field_mappings).toEqual(
+      expect.arrayContaining([
+        { target: 'СуммаВключаетНДС', source: '@json:true' },
+        { target: 'КурсВзаиморасчетов', source: '@json:1' },
+      ]),
+    )
+    expect(builder[0]?.documents?.[0]?.table_part_mappings).toEqual([
+      {
+        table_part: 'АгентскиеУслуги',
+        row_mappings: [
+          { target: 'Количество', source: '@json:1' },
+          { target: 'Сумма', source: 'allocation.amount' },
+          {
+            target: 'СуммаНДС',
+            source: '@json:{"$derive":{"args":["allocation.amount",6],"op":"div","scale":2}}',
+          },
+        ],
+      },
+    ])
+
+    expect(buildDocumentPolicyFromBuilder(builder)).toEqual(richPolicy)
   })
 
   it('supports detail response shape in extractDocumentPolicyOutput', () => {

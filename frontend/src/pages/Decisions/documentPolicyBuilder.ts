@@ -5,6 +5,7 @@ export const DOCUMENT_POLICY_DECISION_KEY = 'document_policy'
 const DEFAULT_DECISION_RULE_ID = 'default'
 const DEFAULT_HIT_POLICY = 'first_match'
 const DEFAULT_VALIDATION_MODE = 'fail_closed'
+const JSON_LITERAL_PREFIX = '@json:'
 
 export type DocumentPolicyBuilderMappingFormValue = {
   target?: string
@@ -32,15 +33,23 @@ export type DocumentPolicyBuilderChainFormValue = {
   documents?: DocumentPolicyBuilderDocumentFormValue[]
 }
 
+export type DocumentPolicyMappingValue =
+  | string
+  | number
+  | boolean
+  | null
+  | DocumentPolicyMappingValue[]
+  | { [key: string]: DocumentPolicyMappingValue }
+
 export type DocumentPolicyDocumentOutput = {
   document_id: string
   entity_name: string
   document_role: string
   invoice_mode?: 'optional' | 'required'
   link_to?: string
-  field_mapping: Record<string, string>
-  table_parts_mapping: Record<string, Record<string, string>>
-  link_rules: Record<string, string>
+  field_mapping: Record<string, DocumentPolicyMappingValue>
+  table_parts_mapping: Record<string, Array<Record<string, DocumentPolicyMappingValue>>>
+  link_rules: Record<string, DocumentPolicyMappingValue>
 }
 
 export type DocumentPolicyChainOutput = {
@@ -123,19 +132,24 @@ const getDocumentPolicyRule = (decisionLike: unknown): Record<string, unknown> |
   return asObject(policyRules[0])
 }
 
-const sortRecordByKey = (value: Record<string, string>): Record<string, string> => (
+const sortMappingRecordByKey = (
+  value: Record<string, DocumentPolicyMappingValue>
+): Record<string, DocumentPolicyMappingValue> => (
   Object.fromEntries(
     Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
   )
 )
 
 const sortTablePartsByKey = (
-  value: Record<string, Record<string, string>>
-): Record<string, Record<string, string>> => (
+  value: Record<string, Array<Record<string, DocumentPolicyMappingValue>>>
+): Record<string, Array<Record<string, DocumentPolicyMappingValue>>> => (
   Object.fromEntries(
     Object.entries(value)
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([tablePart, rowMappings]) => [tablePart, sortRecordByKey(rowMappings)])
+      .map(([tablePart, rowMappings]) => [
+        tablePart,
+        rowMappings.map((rowMappingsObject) => sortMappingRecordByKey(rowMappingsObject)),
+      ])
   )
 )
 
@@ -157,24 +171,134 @@ const assertNoIssues = (issues: string[]): void => {
   }
 }
 
+const serializeBuilderSource = (value: DocumentPolicyMappingValue): string => (
+  typeof value === 'string'
+    ? value
+    : `${JSON_LITERAL_PREFIX}${JSON.stringify(value)}`
+)
+
+const normalizeBuilderSource = (
+  source: string,
+  issues: string[],
+  rowLabel: string,
+  target: string,
+): DocumentPolicyMappingValue | null => {
+  if (!source.startsWith(JSON_LITERAL_PREFIX)) {
+    return source
+  }
+
+  const payload = source.slice(JSON_LITERAL_PREFIX.length).trim()
+  if (!payload) {
+    issues.push(`${rowLabel}: значение ${target} содержит пустой JSON literal.`)
+    return null
+  }
+
+  try {
+    return JSON.parse(payload) as DocumentPolicyMappingValue
+  } catch {
+    issues.push(`${rowLabel}: значение ${target} содержит невалидный JSON literal.`)
+    return null
+  }
+}
+
 const normalizeKeyValueRows = (
   rowsRaw: DocumentPolicyBuilderMappingFormValue[] | undefined,
   issues: string[],
   rowLabel: string,
   mappingKind: 'field_mapping' | 'table_parts_mapping' | 'link_rules'
-): Record<string, string> => {
+): Record<string, DocumentPolicyMappingValue> => {
   const rows = Array.isArray(rowsRaw) ? rowsRaw : []
-  const normalized: Record<string, string> = {}
+  const normalized: Record<string, DocumentPolicyMappingValue> = {}
 
   rows.forEach((row) => {
     const target = trimString(row?.target)
     const source = trimString(row?.source)
     pushInvalidTargetSourceRow(issues, rowLabel, mappingKind, target, source)
     if (!target || !source) return
-    normalized[target] = source
+    const normalizedSource = normalizeBuilderSource(source, issues, rowLabel, target)
+    if (normalizedSource === null) return
+    normalized[target] = normalizedSource
   })
 
-  return sortRecordByKey(normalized)
+  return sortMappingRecordByKey(normalized)
+}
+
+const normalizeMappingValue = (
+  value: unknown,
+  issues: string[],
+  valueLabel: string,
+): DocumentPolicyMappingValue => {
+  if (
+    typeof value === 'string'
+    || typeof value === 'number'
+    || typeof value === 'boolean'
+    || value === null
+  ) {
+    return value
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item, index) => (
+      normalizeMappingValue(item, issues, `${valueLabel}[${index}]`)
+    ))
+  }
+
+  const objectValue = asObject(value)
+  if (objectValue) {
+    return sortMappingRecordByKey(
+      Object.fromEntries(
+        Object.entries(objectValue).map(([key, nestedValue]) => [
+          trimString(key),
+          normalizeMappingValue(nestedValue, issues, `${valueLabel}.${trimString(key)}`),
+        ]),
+      ),
+    )
+  }
+
+  issues.push(`${valueLabel} содержит unsupported mapping value.`)
+  return ''
+}
+
+const normalizeMappingObject = (
+  value: unknown,
+  issues: string[],
+  valueLabel: string,
+): Record<string, DocumentPolicyMappingValue> => {
+  const objectValue = asObject(value)
+  if (!objectValue) {
+    issues.push(`${valueLabel} должен быть object.`)
+    return {}
+  }
+
+  return sortMappingRecordByKey(
+    Object.fromEntries(
+      Object.entries(objectValue).map(([target, source]) => [
+        trimString(target),
+        normalizeMappingValue(source, issues, `${valueLabel}.${trimString(target)}`),
+      ]),
+    ),
+  )
+}
+
+const normalizeTablePartRows = (
+  value: unknown,
+  issues: string[],
+  valueLabel: string,
+): Array<Record<string, DocumentPolicyMappingValue>> => {
+  if (Array.isArray(value)) {
+    return value
+      .map((rowValue, index) => normalizeMappingObject(rowValue, issues, `${valueLabel}[${index}]`))
+      .filter((rowValue) => Object.keys(rowValue).length > 0)
+  }
+
+  const objectValue = asObject(value)
+  if (!objectValue) {
+    issues.push(`${valueLabel} должен содержать array row mappings.`)
+    return []
+  }
+
+  const normalizedLegacyRow = normalizeMappingObject(objectValue, issues, valueLabel)
+  return Object.keys(normalizedLegacyRow).length > 0 ? [normalizedLegacyRow] : []
 }
 
 const validateDocumentPolicyOutput = (policy: unknown, contextLabel: string): DocumentPolicyOutput => {
@@ -243,34 +367,28 @@ const validateDocumentPolicyOutput = (policy: unknown, contextLabel: string): Do
         issues.push(`${documentLabel} содержит недопустимый invoice_mode.`)
       }
 
-      const fieldMappingObject = asObject(documentObject.field_mapping) || {}
-      const tablePartsObject = asObject(documentObject.table_parts_mapping) || {}
-      const linkRulesObject = asObject(documentObject.link_rules) || {}
-
-      const fieldMapping = sortRecordByKey(
-        Object.fromEntries(
-          Object.entries(fieldMappingObject).map(([target, source]) => [trimString(target), trimString(source)])
-        )
+      const fieldMapping = normalizeMappingObject(
+        documentObject.field_mapping,
+        issues,
+        `${documentLabel}.field_mapping`,
       )
-
+      const tablePartsObject = asObject(documentObject.table_parts_mapping) || {}
       const tablePartsMapping = sortTablePartsByKey(
         Object.fromEntries(
-          Object.entries(tablePartsObject).map(([tablePart, rowMappings]) => {
-            const rowMappingsObject = asObject(rowMappings) || {}
-            return [
-              trimString(tablePart),
-              Object.fromEntries(
-                Object.entries(rowMappingsObject).map(([target, source]) => [trimString(target), trimString(source)])
-              ),
-            ]
-          })
-        )
+          Object.entries(tablePartsObject).map(([tablePart, rowMappings]) => [
+            trimString(tablePart),
+            normalizeTablePartRows(
+              rowMappings,
+              issues,
+              `${documentLabel}.table_parts_mapping.${trimString(tablePart)}`,
+            ),
+          ]),
+        ),
       )
-
-      const linkRules = sortRecordByKey(
-        Object.fromEntries(
-          Object.entries(linkRulesObject).map(([target, source]) => [trimString(target), trimString(source)])
-        )
+      const linkRules = normalizeMappingObject(
+        documentObject.link_rules,
+        issues,
+        `${documentLabel}.link_rules`,
       )
 
       const normalizedDocument: DocumentPolicyDocumentOutput = {
@@ -339,18 +457,20 @@ export const documentPolicyToBuilderChains = (
       link_to: document.link_to || '',
       field_mappings: Object.entries(document.field_mapping).map(([target, source]) => ({
         target,
-        source,
+        source: serializeBuilderSource(source),
       })),
-      table_part_mappings: Object.entries(document.table_parts_mapping).map(([tablePart, rowMappings]) => ({
-        table_part: tablePart,
-        row_mappings: Object.entries(rowMappings).map(([target, source]) => ({
-          target,
-          source,
-        })),
-      })),
+      table_part_mappings: Object.entries(document.table_parts_mapping).flatMap(([tablePart, rowMappings]) => (
+        rowMappings.map((rowMapping) => ({
+          table_part: tablePart,
+          row_mappings: Object.entries(rowMapping).map(([target, source]) => ({
+            target,
+            source: serializeBuilderSource(source),
+          })),
+        }))
+      )),
       link_rules: Object.entries(document.link_rules).map(([target, source]) => ({
         target,
-        source,
+        source: serializeBuilderSource(source),
       })),
     })),
   }))
@@ -411,7 +531,7 @@ export const buildDocumentPolicyFromBuilder = (
       const tablePartMappingsRaw = Array.isArray(document?.table_part_mappings)
         ? document.table_part_mappings
         : []
-      const tablePartsMapping: Record<string, Record<string, string>> = {}
+      const tablePartsMapping: Record<string, Array<Record<string, DocumentPolicyMappingValue>>> = {}
       tablePartMappingsRaw.forEach((tablePartMapping) => {
         const tablePart = trimString(tablePartMapping?.table_part)
         const rowMappings = normalizeKeyValueRows(
@@ -426,7 +546,10 @@ export const buildDocumentPolicyFromBuilder = (
           }
           return
         }
-        tablePartsMapping[tablePart] = rowMappings
+        tablePartsMapping[tablePart] = tablePartsMapping[tablePart] || []
+        if (Object.keys(rowMappings).length > 0) {
+          tablePartsMapping[tablePart].push(rowMappings)
+        }
       })
 
       const normalizedDocument: DocumentPolicyDocumentOutput = {

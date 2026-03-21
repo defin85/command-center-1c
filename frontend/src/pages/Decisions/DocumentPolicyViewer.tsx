@@ -4,6 +4,7 @@ import { EmptyState, EntityDetails } from '../../components/platform'
 import type {
   DocumentPolicyChainOutput,
   DocumentPolicyDocumentOutput,
+  DocumentPolicyMappingValue,
   DocumentPolicyOutput,
 } from './documentPolicyBuilder'
 
@@ -11,13 +12,20 @@ const { Text } = Typography
 
 type MappingViewerProps = {
   title: string
-  entries: Array<[string, string]>
+  entries: Array<[string, DocumentPolicyMappingValue]>
   emptyLabel: string
 }
 
 const renderText = (value: string | undefined): string => {
   const normalized = String(value ?? '').trim()
   return normalized || '—'
+}
+
+const renderMappingValue = (value: DocumentPolicyMappingValue | undefined): string => {
+  if (typeof value === 'string') {
+    return value === '' ? '""' : value
+  }
+  return JSON.stringify(value)
 }
 
 function MappingViewer({ title, entries, emptyLabel }: MappingViewerProps) {
@@ -39,7 +47,7 @@ function MappingViewer({ title, entries, emptyLabel }: MappingViewerProps) {
             }}
           >
             <Text strong>{target}</Text>
-            <Text code>{source}</Text>
+            <Text code>{renderMappingValue(source)}</Text>
           </div>
         ))}
       </Space>
@@ -99,12 +107,21 @@ function DocumentViewer({
           {tableParts.length === 0 ? (
             <Text type="secondary">No table-part mapping configured.</Text>
           ) : tableParts.map(([tablePart, rowMappings]) => (
-            <MappingViewer
-              key={tablePart}
-              title={`Table part: ${tablePart}`}
-              entries={Object.entries(rowMappings)}
-              emptyLabel="No row mappings configured."
-            />
+            rowMappings.length === 0 ? (
+              <EntityDetails
+                key={tablePart}
+                title={`Table part: ${tablePart}`}
+                empty
+                emptyDescription="No row mappings configured."
+              />
+            ) : rowMappings.map((rowMapping, rowIndex) => (
+              <MappingViewer
+                key={`${tablePart}:${rowIndex}`}
+                title={rowMappings.length > 1 ? `Table part: ${tablePart} · Row ${rowIndex + 1}` : `Table part: ${tablePart}`}
+                entries={Object.entries(rowMapping)}
+                emptyLabel="No row mappings configured."
+              />
+            ))
           ))}
         </Space>
 
