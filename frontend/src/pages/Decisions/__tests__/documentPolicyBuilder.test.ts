@@ -199,6 +199,41 @@ describe('documentPolicyBuilder', () => {
     expect(buildDocumentPolicyFromBuilder(builder)).toEqual(richPolicy)
   })
 
+  it('preserves explicit empty, whitespace-only, and @json-prefixed string literals in builder round-trip', () => {
+    const literalPolicy: DocumentPolicyOutput = {
+      version: 'document_policy.v1',
+      chains: [
+        {
+          chain_id: 'literals',
+          documents: [
+            {
+              document_id: 'sale',
+              entity_name: 'Document_РеализацияТоваровУслуг',
+              document_role: 'sale',
+              invoice_mode: 'optional',
+              field_mapping: {
+                Комментарий: '',
+                КодВидаТранспорта: '  ',
+                ПрефиксJson: '@json:not-json',
+              },
+              table_parts_mapping: {},
+              link_rules: {},
+            },
+          ],
+        },
+      ],
+    }
+
+    const builder = documentPolicyToBuilderChains(literalPolicy)
+    expect(builder[0]?.documents?.[0]?.field_mappings).toEqual([
+      { target: 'КодВидаТранспорта', source: '@json:"  "' },
+      { target: 'Комментарий', source: '@json:""' },
+      { target: 'ПрефиксJson', source: '@json:"@json:not-json"' },
+    ])
+
+    expect(buildDocumentPolicyFromBuilder(builder)).toEqual(literalPolicy)
+  })
+
   it('supports detail response shape in extractDocumentPolicyOutput', () => {
     expect(
       extractDocumentPolicyOutput({

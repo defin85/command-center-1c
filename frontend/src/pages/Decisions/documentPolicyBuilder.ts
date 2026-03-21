@@ -173,7 +173,13 @@ const assertNoIssues = (issues: string[]): void => {
 
 const serializeBuilderSource = (value: DocumentPolicyMappingValue): string => (
   typeof value === 'string'
-    ? value
+    ? (
+      value === ''
+      || value.trim() !== value
+      || value.startsWith(JSON_LITERAL_PREFIX)
+        ? `${JSON_LITERAL_PREFIX}${JSON.stringify(value)}`
+        : value
+    )
     : `${JSON_LITERAL_PREFIX}${JSON.stringify(value)}`
 )
 
