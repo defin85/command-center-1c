@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Reusable execution packs MUST быть tenant-scoped reusable versioned resources
-Система ДОЛЖНА (SHALL) трактовать текущую capability reusable `binding_profile` / `binding_profile_revision` как reusable execution-pack catalog.
+Система ДОЛЖНА (SHALL) предоставлять reusable execution-pack catalog как tenant-scoped versioned resource для reusable execution logic.
 
 Primary operator/domain термином для этой capability ДОЛЖЕН (SHALL) быть `Execution Pack`.
 
@@ -14,7 +14,7 @@ Execution-pack revision ДОЛЖНА (SHALL) хранить reusable executable 
 
 Execution-pack revision НЕ ДОЛЖНА (SHALL NOT) считаться owner-ом topology shape или structural slot namespace.
 
-Immutable opaque revision id ДОЛЖЕН (SHALL) оставаться authoritative runtime pin, даже если storage/model alias временно продолжает использовать `binding_profile_revision_id`.
+Immutable opaque revision id ДОЛЖЕН (SHALL) оставаться authoritative runtime pin в execution-pack semantics.
 
 #### Scenario: Один execution pack используется несколькими pool attachment-ами
 - **GIVEN** аналитик создал reusable execution pack revision
@@ -26,25 +26,25 @@ Immutable opaque revision id ДОЛЖЕН (SHALL) оставаться authorita
 - **GIVEN** аналитик или оператор открывает reusable catalog surface
 - **WHEN** UI рендерит list/detail/create/revise flows
 - **THEN** основная operator-facing терминология использует `Execution Pack`
-- **AND** legacy термин `Binding Profile` может оставаться только как transitional compatibility alias
+- **AND** shipped contract не зависит от обязательного legacy alias `Binding Profile`
 
-### Requirement: Execution pack catalog MUST использовать dedicated catalog surface и staged route migration
+### Requirement: Execution pack catalog MUST использовать dedicated catalog surface и primary execution-pack route
 Система ДОЛЖНА (SHALL) предоставлять dedicated catalog surface для list/detail/create/revise/deactivate reusable execution packs.
 
 Primary operator-facing route для этого catalog ДОЛЖЕН (SHALL) быть `/pools/execution-packs`.
 
-Legacy route `/pools/binding-profiles` МОЖЕТ (MAY) временно существовать как redirect или compatibility alias, но НЕ ДОЛЖЕН (SHALL NOT) оставаться единственным primary operator-facing route после rollout этого change.
+Shipped contract НЕ ДОЛЖЕН (SHALL NOT) требовать legacy route `/pools/binding-profiles` как обязательный redirect или compatibility alias после rollout этого change.
 
 #### Scenario: Оператор открывает reusable execution logic catalog по новому route
 - **WHEN** пользователь открывает `/pools/execution-packs`
 - **THEN** UI показывает catalog reusable execution packs
 - **AND** create/revise/deactivate flows доступны на этом route как primary path
 
-#### Scenario: Legacy route остаётся только compatibility path
-- **GIVEN** в системе ещё существуют ссылки на `/pools/binding-profiles`
-- **WHEN** оператор открывает legacy route
-- **THEN** система перенаправляет его или отображает совместимый alias surface
-- **AND** primary navigation и operator-facing copy указывают на `/pools/execution-packs`
+#### Scenario: Primary navigation больше не зависит от binding-profiles route
+- **GIVEN** rollout execution-pack catalog завершён после hard reset данных
+- **WHEN** оператор использует primary navigation и handoff links
+- **THEN** они указывают на `/pools/execution-packs`
+- **AND** shipped path не требует `/pools/binding-profiles` для корректной работы catalog surface
 
 ### Requirement: Execution pack authoring MUST реализовывать external structural slots, а не определять их
 Execution-pack authoring ДОЛЖЕН (SHALL) использовать `slot_key` как ключ executable implementation для external structural slot contract.

@@ -5,11 +5,19 @@
 
 Этот path ДОЛЖЕН (SHALL) быть preferred reuse path для типовых новых pool схем, где shape graph повторяется между несколькими `pool`.
 
+Этот change НЕ ДОЛЖЕН (SHALL NOT) требовать automatic in-place conversion already existing pools; template-based path применяется к новым или явно пересозданным после hard reset `pool`.
+
 #### Scenario: Оператор создаёт новый pool из reusable topology template
 - **GIVEN** в tenant catalog опубликована активная `topology_template_revision`
 - **WHEN** оператор создаёт новый `pool` через `/pools/catalog` и выбирает template-based path
 - **THEN** интерфейс предлагает выбрать revision и назначить организации в required slot-ы
 - **AND** оператору не нужно вручную собирать все узлы и рёбра заново edge-by-edge
+
+#### Scenario: Existing pool не переводится в template mode как побочный эффект rollout
+- **GIVEN** в tenant уже существует `pool`, собранный вручную до появления topology templates
+- **WHEN** оператор открывает `/pools/catalog` после rollout
+- **THEN** existing `pool` не получает template revision и slot assignments автоматически
+- **AND** переход на template-based path требует явного пересоздания или отдельного операторского действия вне этого change
 
 ### Requirement: Manual topology authoring MUST оставаться fallback path для нестандартных схем
 Система ДОЛЖНА (SHALL) сохранять manual topology editor как fallback/remediation path для нестандартных или разовых схем, которые не укладываются в reusable template.

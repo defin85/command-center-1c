@@ -22,7 +22,7 @@ Default mutate path для attachment-а ДОЛЖЕН (SHALL) принимать
 - **THEN** response МОЖЕТ (MAY) включать `resolved_profile` как convenience summary
 - **AND** этот payload derived из pinned profile revision, а не из отдельного attachment-local mutable source-of-truth
 
-### Requirement: Default attachment reads MUST быть side-effect-free и требовать explicit remediation
+### Requirement: Default attachment reads MUST быть side-effect-free и не включать remediation/backfill compatibility path
 Система ДОЛЖНА (SHALL) обеспечивать, что default shipped list/detail/preview/runtime path для attachment-ов не меняет canonical binding/profile state как implicit remediation.
 
 Default shipped path НЕ ДОЛЖЕН (SHALL NOT):
@@ -32,10 +32,9 @@ Default shipped path НЕ ДОЛЖЕН (SHALL NOT):
 
 Если canonical attachment row не может быть корректно прочитан из-за отсутствующих или неразрешимых profile refs, shipped path ДОЛЖЕН (SHALL):
 - fail-closed;
-- вернуть blocking remediation state или machine-readable diagnostic;
-- требовать explicit remediation/backfill flow вне default read/runtime path.
+- вернуть blocking remediation state или machine-readable diagnostic.
 
-Generated one-off profile materialization для historical bindings МОЖЕТ (MAY) выполняться только explicit remediation/backfill tooling, вызванным осознанно оператором или support workflow.
+Этот refactor НЕ ДОЛЖЕН (SHALL NOT) требовать shipped remediation/backfill compatibility flow для rows без resolvable profile refs; rollout допускает предварительное удаление или пересоздание затронутых historical данных вместо in-place repair.
 
 #### Scenario: Missing profile refs не materialize'ятся молча на read path
 - **GIVEN** canonical `pool_workflow_binding` существует, но не содержит корректных profile refs
@@ -43,8 +42,8 @@ Generated one-off profile materialization для historical bindings МОЖЕТ 
 - **THEN** система возвращает blocking remediation или fail-closed diagnostic
 - **AND** generated profile/revision не создаётся как побочный эффект этого чтения
 
-#### Scenario: Generated one-off profile materialize'ится только в explicit remediation tooling
-- **GIVEN** historical binding требует generated one-off profile для совместимого rollout
-- **WHEN** оператор или support запускает explicit remediation/backfill tooling
-- **THEN** tooling materialize'ит generated profile/revision как отдельное осознанное действие
-- **AND** только после этого default shipped read/runtime path начинает читать resulting attachment без remediation blocker
+#### Scenario: Legacy residue без profile refs остаётся fail-closed после rollout
+- **GIVEN** historical `pool_workflow_binding` сохранился без resolvable profile refs после destructive rollout
+- **WHEN** оператор или runtime path читает attachment detail, collection или preview
+- **THEN** система возвращает blocking diagnostic
+- **AND** не пытается materialize'ить generated profile/revision или repair canonical row

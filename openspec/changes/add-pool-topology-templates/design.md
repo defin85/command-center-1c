@@ -19,14 +19,16 @@
   - дать штатный path тиражирования topology между пулами;
   - сохранить explicit `document_policy_key` как canonical runtime selector;
   - не вводить “магическое” поведение, вычисляемое только по degree/position узла;
-  - сохранить текущий concrete graph/runtime layer как execution model.
+  - сохранить текущий concrete graph/runtime layer как execution model;
+  - выполнить rollout без in-place migration existing pool graph и связанных binding данных.
 
 - Non-Goals:
   - не превращать pool clone в основной механизм reuse;
   - не делать cross-tenant template library;
   - не заменять все existing topology APIs новым read model в одном change;
   - не вводить full graph inference engine, который сам решает `multi/receipt/realization` без explicit preset;
-  - не убирать manual topology authoring.
+  - не убирать manual topology authoring;
+  - не конвертировать автоматически существующие `pool` в templates; затронутые `pool` допускается удалить и пересоздать.
 
 ## Decisions
 
@@ -65,6 +67,8 @@ Current `PoolNodeVersion` / `PoolEdgeVersion` and graph endpoints already обс
 
 Поэтому template instantiation materialize'ит concrete graph в текущий runtime layer, а existing graph API остаётся operator/runtime-facing read path.
 
+В MVP template path применяется к новым или явно пересозданным после hard reset пулам. Change не требует in-place conversion already existing concrete graph.
+
 Rationale:
 - это минимальный путь без большого runtime refactor;
 - change добавляет reusable authoring layer, а не переписывает весь execution stack.
@@ -92,6 +96,16 @@ Rationale:
 - это снижает риск блокировки оператора на corner cases;
 - при этом типовые сценарии перестают зависеть от ручной сборки графа.
 
+### 6. Rollout выполняется без automatic conversion existing pools
+
+Change не включает automatic extraction existing manual pool graphs в `topology_template_revision` и не требует преобразования уже настроенных `pool` in place.
+
+Вместо этого rollout допускает destructive reset затронутых `pool` и связанных reusable binding данных с последующим пересозданием через template-based path.
+
+Rationale:
+- это минимизирует implementation scope и убирает сложный migration layer;
+- текущие данные не являются ценным долгосрочным legacy contract для этого refactor.
+
 ## Alternatives Considered
 
 ### 1. Оставить только pool clone
@@ -115,13 +129,20 @@ Rejected:
 - разветвлённые графы быстро создадут неоднозначные случаи;
 - противоречит existing explicit-slot contract вокруг `edge.metadata.document_policy_key`.
 
+### 4. Автоматически конвертировать existing pools в topology templates
+
+Rejected:
+- добавляет дорогой migration layer ради данных, которые можно пересоздать;
+- усложняет rollout и повышает риск несовместимой materialization;
+- не нужен для достижения reusable template model в MVP.
+
 ## Risks / Trade-offs
 
 - Появляется ещё один доменный слой поверх current concrete topology.
   - Mitigation: оставить concrete graph runtime model без немедленного refactor.
 
-- Materialization из template revision в concrete graph создаёт migration/consistency точку.
-  - Mitigation: pin на revision, explicit apply/update flow, optimistic concurrency и deterministic materialization.
+- Materialization из template revision в concrete graph создаёт rollout/consistency точку.
+  - Mitigation: pin на revision, explicit apply/update flow, optimistic concurrency, deterministic materialization и destructive reset старых данных вместо conversion path.
 
 - Слишком свободные pool-local overrides могут размыть пользу templates.
   - Mitigation: в MVP ограничить pool-local instantiation mapping'ом slot-ов и явным edge selector override только там, где это действительно нужно.
@@ -129,11 +150,12 @@ Rejected:
 - Manual topology editor и template path могут конфликтовать как два равноправных authoring mode.
   - Mitigation: зафиксировать template instantiation как preferred reuse path, manual editor как fallback/remediation.
 
-## Migration Plan
+## Rollout Plan
 
 1. Добавить новую reusable capability `pool-topology-templates`.
 2. Определить contract template revision: abstract nodes, abstract edges, default edge selectors.
 3. Определить pool instantiation contract: pin на revision + slot assignments.
-4. Зафиксировать, что instantiation materialize'ит current concrete graph/runtime layer.
-5. Расширить `/pools/catalog` template-based authoring path без удаления manual editor.
-6. Сохранить existing runtime resolution document policy через explicit concrete `edge.metadata.document_policy_key`.
+4. До включения нового authoring path удалить затронутые `pool` и связанные reusable binding данные вместо in-place conversion existing graphs.
+5. Зафиксировать, что instantiation materialize'ит current concrete graph/runtime layer только для новых или пересозданных pool.
+6. Расширить `/pools/catalog` template-based authoring path без удаления manual editor.
+7. Сохранить existing runtime resolution document policy через explicit concrete `edge.metadata.document_policy_key`.

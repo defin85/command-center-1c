@@ -12,7 +12,7 @@
 - он скрывает фактическую роль reusable execution pack;
 - он размывает границу между slot namespace и slot implementation.
 
-При этом полное физическое удаление `binding_profile*` сейчас не нужно: runtime уже pinned на immutable revision id, а existing storage/read/write path можно мигрировать постепенно.
+Так как затронутые `binding_profile*`, attachment и связанные `pool` данные допускается удалить до rollout, change не обязан тащить staged compatibility migration ради сохранения текущего каталога.
 
 ## Goals / Non-Goals
 
@@ -20,15 +20,15 @@
   - ввести понятный доменный/операторский термин `Execution Pack`;
   - отделить structural slot ownership от executable slot implementation ownership;
   - сохранить immutable revision pin и reproducible runtime;
-  - разрешить staged migration без немедленного big-bang rename всего storage/API слоя;
+  - выполнить reframe как clean rename без migration/backfill existing data и без обязательного compatibility alias layer;
   - подготовить более ясную модель для future topology-template integration.
 
 - Non-Goals:
-  - не удалять сразу всю storage модель `binding_profile` / `binding_profile_revision`;
+  - не сохранять existing `binding_profile*`, attachment и затронутые `pool` данные ценой отдельного migration/alias layer;
   - не сливать execution pack и topology template в одну сущность;
   - не менять explicit attachment/runtime identity;
   - не переносить workflow/parameters/role mapping в topology template;
-  - не вводить silent fallback на legacy naming без явного migration contract.
+  - не вводить silent fallback на legacy naming.
 
 ## Decisions
 
@@ -62,18 +62,15 @@ Rationale:
 - один и тот же execution pack может быть совместим с несколькими topology templates, если их slot namespace пересекается;
 - topology shape и executable implementation не сливаются в один catalog.
 
-### 3. Migration остаётся staged: operator-facing rename first, storage/runtime alias second
+### 3. Rollout выполняется как clean rename без compatibility alias layer
 
-В этом change допустим staged contract:
-- UI/route/labels используют `Execution Packs`;
-- API/read models могут возвращать operator-facing execution-pack semantics;
-- internal/storage identifiers `binding_profile*` и `binding_profile_revision_id` могут временно сохраняться как compatibility aliases.
+Shipped contract этого change использует `Execution Pack` как primary operator-facing и API semantics без обязательного compatibility alias path для existing `binding_profile*` data.
 
-При этом immutable opaque revision id остаётся runtime pin. Его роль не меняется, даже если operator-facing label меняется.
+При этом immutable opaque revision id остаётся runtime pin. Его роль не меняется, даже если старые данные удаляются и catalog переезжает на execution-pack naming.
 
 Rationale:
-- это минимизирует стоимость миграции;
-- не требует одномоментного rename базы, OpenAPI и всех runtime contracts.
+- hard reset данных дешевле и чище, чем поддержка временного двуязычного контракта;
+- доменная модель сразу становится однозначной без transition tax.
 
 ### 4. Pool attachment остаётся activation layer, pinned на execution-pack revision
 
@@ -104,30 +101,30 @@ Rejected:
 - operator-facing mental model останется неясной;
 - часть будущего API/UI hardening будет строиться вокруг уже слабого названия.
 
-### 3. Переименовать всё сразу, включая storage и runtime fields
+### 3. Сохранить staged migration и compatibility aliases
 
 Rejected:
-- слишком широкий breaking scope;
-- затрагивает БД, API, frontend, tests и lineage contracts в одном шаге;
-- не нужен для того, чтобы доменно прояснить модель уже сейчас.
+- prolongs старый mental model и переходный код;
+- создаёт лишний rollout scope ради данных, которые допускается удалить;
+- мешает быстро зафиксировать clean ownership split между topology template и execution pack.
 
 ## Risks / Trade-offs
 
-- Transitional aliases `binding_profile*` могут временно сохранять двуязычие модели.
-  - Mitigation: в specs явно зафиксировать, что `Execution Pack` — primary operator/domain term, а old identifiers — compatibility layer.
+- Clean rename затрагивает больше operator-facing copy, API и тестов в одном шаге.
+  - Mitigation: scope ограничивается reusable execution catalog и attachment semantics, а затронутые данные удаляются до rollout.
 
 - Если `add-pool-topology-templates` задержится, часть semantics execution-pack model останется “подвешенной”.
   - Mitigation: явно указать dependency и sequencing в change/tasks.
 
 - UI rename маршрута и терминов затронет много тестов и handoff links.
-  - Mitigation: staged redirect/alias path и явный migration checklist.
+  - Mitigation: единый primary route/copy без alias layers и явный hard-reset rollout checklist.
 
-## Migration Plan
+## Rollout Plan
 
 1. Зафиксировать в specs, что reusable execution logic теперь описывается как `Execution Pack`.
 2. Зафиксировать ownership split:
    - topology templates own structural slots;
    - execution packs own executable implementations.
-3. Обновить operator-facing catalog surface и handoff semantics на `Execution Packs`.
-4. Сохранить immutable revision pin и compatibility aliases для existing `binding_profile*` identifiers на переходный период.
-5. Отдельным последующим change решать, нужен ли физический rename storage/API contracts или alias layer можно сохранять дольше.
+3. До включения нового контракта удалить affected `binding_profile*`, attachment и при необходимости `pool` данные вместо migration legacy catalog.
+4. Обновить operator-facing catalog surface и handoff semantics на `Execution Packs` без обязательного legacy alias route.
+5. Сохранить immutable revision pin и reproducible runtime lineage под новым execution-pack semantics.

@@ -24,6 +24,8 @@ Pool instantiation ДОЛЖНА (SHALL) сохранять mapping `slot_key -> 
 
 Созданный pool НЕ ДОЛЖЕН (SHALL NOT) retroactively менять свою topology только потому, что в catalog появилась новая template revision.
 
+Capability НЕ ДОЛЖНА (SHALL NOT) требовать automatic conversion existing concrete pool graphs; в MVP template instantiation применяется к новым или явно пересозданным `pool`.
+
 #### Scenario: Оператор создаёт pool из template revision и назначает организации в slot-ы
 - **GIVEN** в tenant catalog опубликована `topology_template_revision`
 - **WHEN** оператор выбирает эту revision для нового `pool` и задаёт mapping `slot_key -> organization_id`
@@ -36,6 +38,12 @@ Pool instantiation ДОЛЖНА (SHALL) сохранять mapping `slot_key -> 
 - **WHEN** оператор открывает существующий `pool`
 - **THEN** concrete topology pool остаётся связанной с `v3`
 - **AND** migration на `v4` требует отдельного явного действия
+
+#### Scenario: Existing manual pool не конвертируется в template автоматически
+- **GIVEN** в системе уже существует `pool` с concrete manual topology
+- **WHEN** capability `pool-topology-templates` включается для tenant
+- **THEN** existing `pool` не получает template instantiation автоматически
+- **AND** template-based path применяется только к новым или явно пересозданным `pool`
 
 ### Requirement: Template edge defaults MUST быть explicit presets, а не graph-only inference
 Если template edge задаёт default `document_policy_key`, система ДОЛЖНА (SHALL) materialize'ить его в concrete `edge.metadata.document_policy_key` при instantiation, если pool-local path явно не задал другой selector.

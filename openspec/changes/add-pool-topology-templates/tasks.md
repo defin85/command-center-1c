@@ -15,8 +15,12 @@
 - [ ] 3.1 Обновить `pool-document-policy`, чтобы template edge defaults materialize'ились в explicit `edge.metadata.document_policy_key`.
 - [ ] 3.2 Зафиксировать fail-closed поведение при отсутствии explicit selector после instantiation и запрет на silent graph-position fallback.
 
-## 4. Validation
+## 4. Rollout Reset
 
-- [ ] 4.1 Добавить/update backend tests на template revision pinning, slot assignments и deterministic materialization concrete topology.
-- [ ] 4.2 Добавить/update backend/frontend tests на template-based authoring path и explicit selector defaults/diagnostics.
-- [ ] 4.3 Прогнать релевантные quality gates: targeted `pytest`, `npm run lint`, `npm run test:run`, `openspec validate add-pool-topology-templates --strict --no-interactive`.
+- [ ] 4.1 Зафиксировать hard-reset rollout: существующие `pool` и связанные reusable binding данные удаляются/пересоздаются вместо automatic conversion в templates.
+
+## 5. Validation
+
+- [ ] 5.1 Добавить/update backend tests на template revision pinning, slot assignments и deterministic materialization concrete topology.
+- [ ] 5.2 Добавить/update backend/frontend tests на template-based authoring path и explicit selector defaults/diagnostics.
+- [ ] 5.3 Прогнать релевантные quality gates: targeted `pytest`, `npm run lint`, `npm run test:run`, `openspec validate add-pool-topology-templates --strict --no-interactive`.

@@ -21,6 +21,7 @@
 - Добавить pool-local instantiation path, где `pool` pin-ит конкретную `topology_template_revision_id` и задаёт mapping `slot_key -> organization_id`.
 - Зафиксировать, что instantiation materialize'ит concrete topology в текущий pool graph/runtime layer и не меняется retroactively при появлении новой template revision.
 - Зафиксировать, что `edge.metadata.document_policy_key` остаётся canonical runtime selector, а template edge defaults лишь materialize'ятся в explicit edge metadata.
+- Зафиксировать fresh-start rollout без in-place migration existing pool topology/binding data: затронутые `pool` и связанные reusable binding данные допускается удалить заранее и создать заново через template-based path.
 - Сохранить manual topology authoring как fallback path для нестандартных или разовых схем.
 
 ## Impact
@@ -39,4 +40,5 @@
   - pool clone как canonical reuse path;
   - cross-tenant/global template library;
   - автоматическое вычисление `document_policy_key` только по degree/position узла без explicit template preset или operator override;
+  - in-place conversion existing pool graph/binding data в templates;
   - полная замена текущих concrete runtime tables `PoolNodeVersion` / `PoolEdgeVersion`.

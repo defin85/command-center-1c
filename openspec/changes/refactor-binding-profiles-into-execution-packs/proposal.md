@@ -19,7 +19,7 @@
 - упрощает и переосмысляет роль `Binding Profiles`;
 - вводит operator/domain термин `Execution Pack`;
 - фиксирует разделение ответственности между structural slot graph и executable slot implementations;
-- не требует немедленного big-bang удаления existing storage/runtime identifiers `binding_profile*`.
+- выполняется как clean-slate refactor без migration existing `binding_profile*` данных.
 
 ## What Changes
 
@@ -28,10 +28,10 @@
   - reusable execution-pack revision хранит workflow revision, decision refs, parameters, role mapping и provenance;
   - execution pack НЕ владеет topology shape и НЕ является источником structural slot namespace.
 - Зафиксировать, что structural slot namespace принадлежит `Topology Templates`, а execution pack лишь реализует template-defined slot keys.
-- Зафиксировать staged migration:
-  - operator-facing route и UI терминология переходят на `Execution Packs`;
-  - existing internal/storage/runtime identifiers `binding_profile`, `binding_profile_revision`, `binding_profile_revision_id` могут временно оставаться compatibility aliases;
-  - attachment/runtime pin остаётся immutable opaque revision identity.
+- Зафиксировать direct destructive rollout:
+  - затронутые `binding_profile*`, attachment и связанные `pool` данные допускается удалить заранее;
+  - change не включает staged migration, compatibility aliases или legacy naming fallback как часть shipped contract;
+  - attachment/runtime pin остаётся immutable opaque revision identity, но operator-facing semantics сразу описываются как execution-pack semantics.
 - Обновить binding attachment contract так, чтобы operator-facing semantics описывали attached execution pack, а не “binding profile” как будто он владеет structural topology.
 
 ## Impact
@@ -53,6 +53,7 @@
   - `add-pool-topology-templates` задаёт structural slot ownership и должен быть реализован до или вместе с этим change.
   - `refactor-binding-profile-runtime-simplification` желательно выполнить до этого change, чтобы не тащить в execution-pack reframe лишнюю денормализацию и side-effectful read paths.
 - Explicitly out of scope:
-  - полное физическое удаление storage-модели `binding_profile*` в этом change;
+  - автоматическая миграция historical `binding_profile*` данных в execution-pack catalog;
+  - физическое удаление obsolete storage/schema artifacts сразу в этом change, если это не требуется для shipped contract;
   - merge reusable execution logic обратно в topology templates;
   - runtime inference slot behavior только по graph shape.
