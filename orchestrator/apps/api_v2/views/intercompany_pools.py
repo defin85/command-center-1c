@@ -178,6 +178,7 @@ _POOL_RUNTIME_START_FAIL_CLOSED_CODES = {
     "POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS",
     "POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED",
     "POOL_WORKFLOW_BINDING_REQUIRED",
+    "POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING",
     "ODATA_MAPPING_NOT_CONFIGURED",
     "ODATA_MAPPING_AMBIGUOUS",
     "ODATA_PUBLICATION_AUTH_CONTEXT_INVALID",
@@ -2907,6 +2908,19 @@ def create_pool_run(request):
             mode=data.get("mode", PoolRunMode.SAFE),
             period_start=data["period_start"],
         )
+    except PoolWorkflowBindingStoreError as exc:
+        error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
+        title = (
+            "Pool Runtime Configuration Error"
+            if error_code in _POOL_RUNTIME_START_FAIL_CLOSED_CODES
+            else "Pool Workflow Binding Resolution Failed"
+        )
+        return _problem(
+            code=error_code,
+            title=title,
+            detail=detail,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
     except PoolWorkflowBindingResolutionError as exc:
         return _problem(
             code=exc.code,
@@ -2981,6 +2995,19 @@ def create_pool_run(request):
             run=result.run,
             requested_by=request.user if request.user and request.user.is_authenticated else None,
             workflow_binding=resolved_workflow_binding_payload,
+        )
+    except PoolWorkflowBindingStoreError as exc:
+        error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
+        title = (
+            "Pool Runtime Configuration Error"
+            if error_code in _POOL_RUNTIME_START_FAIL_CLOSED_CODES
+            else "Validation Error"
+        )
+        return _problem(
+            code=error_code,
+            title=title,
+            detail=detail,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
         )
     except (ValueError, DjangoValidationError) as exc:
         error_code, detail = _resolve_pool_runtime_start_error(exc)
@@ -3089,6 +3116,14 @@ def preview_pool_workflow_binding(request):
             period_end=data.get("period_end"),
             run_input=data.get("run_input"),
             schema_template=schema_template,
+        )
+    except PoolWorkflowBindingStoreError as exc:
+        error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
+        return _problem(
+            code=error_code,
+            title="Pool Workflow Binding Preview Failed",
+            detail=detail,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
         )
     except PoolWorkflowBindingResolutionError as exc:
         return _problem(

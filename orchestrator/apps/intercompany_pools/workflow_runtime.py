@@ -45,7 +45,10 @@ from .runtime_projection_contract import (
 from .runtime_template_registry import sync_pool_runtime_template_registry
 from .runtime_distribution import compute_distribution_runtime_state, load_runtime_topology_for_period
 from .run_input_sanitizer import sanitize_run_input_for_runtime_contract
-from .workflow_authoring_contract import PoolWorkflowBindingContract
+from .workflow_authoring_contract import (
+    PoolWorkflowBindingContract,
+    build_pool_workflow_binding_read_model,
+)
 from .workflow_compiler import PoolWorkflowRunContext, compile_pool_execution_plan
 
 
@@ -144,7 +147,8 @@ def start_pool_run_workflow_execution(
             schema_template=schema_template,
             run=locked_run,
         )
-        resolved_workflow_binding = bundle["workflow_binding"]
+        resolved_workflow_binding = bundle["resolved_workflow_binding"]
+        workflow_binding_snapshot = bundle["workflow_binding"]
         sanitized_run_input = bundle["run_input"]
         document_plan_artifact = bundle["document_plan_artifact"]
         decision_outputs = bundle["decision_outputs"]
@@ -225,7 +229,7 @@ def start_pool_run_workflow_execution(
         locked_run.workflow_status = execution.status
         locked_run.execution_backend = "workflow_core"
         locked_run.workflow_template_name = workflow_template.name
-        locked_run.workflow_binding_snapshot = resolved_workflow_binding
+        locked_run.workflow_binding_snapshot = workflow_binding_snapshot
         locked_run.runtime_projection_snapshot = runtime_projection
         save_fields.update({"workflow_binding_snapshot", "runtime_projection_snapshot"})
 
@@ -329,6 +333,9 @@ def start_pool_run_retry_workflow_execution(
             raise ValueError(
                 f"{POOL_WORKFLOW_BINDING_REQUIRED}: retry requires persisted pool workflow binding snapshot"
             )
+        retry_workflow_binding_snapshot = _build_runtime_workflow_binding_read_model(
+            retry_workflow_binding
+        )
         root_workflow_run_id = str(
             parent_input_context.get("root_workflow_run_id") or parent_execution.id
         )
@@ -469,7 +476,7 @@ def start_pool_run_retry_workflow_execution(
         locked_run.workflow_status = execution.status
         locked_run.execution_backend = "workflow_core"
         locked_run.workflow_template_name = workflow_template.name
-        locked_run.workflow_binding_snapshot = retry_workflow_binding
+        locked_run.workflow_binding_snapshot = retry_workflow_binding_snapshot
         locked_run.runtime_projection_snapshot = runtime_projection
         locked_run.save(
             update_fields=[
@@ -622,6 +629,17 @@ def _normalize_runtime_workflow_binding(
         return None
     binding = PoolWorkflowBindingContract(**workflow_binding)
     return binding.model_dump(mode="json", exclude_none=True)
+
+
+def _build_runtime_workflow_binding_read_model(
+    workflow_binding: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(workflow_binding, Mapping) or not workflow_binding:
+        raise ValueError(
+            f"{POOL_WORKFLOW_BINDING_REQUIRED}: pool_workflow_binding_id is required for workflow runtime start"
+        )
+    binding = PoolWorkflowBindingContract(**dict(workflow_binding))
+    return build_pool_workflow_binding_read_model(binding=binding)
 
 
 def _resolve_retry_workflow_binding(

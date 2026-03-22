@@ -336,7 +336,7 @@ def test_get_pool_workflow_binding_attachment_fails_closed_for_missing_profile_r
 
 
 @pytest.mark.django_db
-def test_legacy_binding_materialization_does_not_merge_profiles_across_pools() -> None:
+def test_legacy_bindings_without_profile_refs_fail_closed_independently_across_pools() -> None:
     tenant = Tenant.objects.create(slug=f"binding-attachment-dedupe-{uuid4().hex[:8]}", name="Binding Attachment")
     first_pool = OrganizationPool.objects.create(
         tenant=tenant,
@@ -360,13 +360,23 @@ def test_legacy_binding_materialization_does_not_merge_profiles_across_pools() -
         actor_username="legacy-import",
     )
 
-    first_listed = list_pool_workflow_binding_attachments(pool=first_pool)
-    second_listed = list_pool_workflow_binding_attachments(pool=second_pool)
+    with pytest.raises(PoolWorkflowBindingStoreError) as first_exc:
+        list_pool_workflow_binding_attachments(pool=first_pool)
+    with pytest.raises(PoolWorkflowBindingStoreError) as second_exc:
+        list_pool_workflow_binding_attachments(pool=second_pool)
 
-    assert first_listed[0]["binding_profile_id"] != second_listed[0]["binding_profile_id"]
-    assert first_listed[0]["binding_profile_revision_id"] != second_listed[0]["binding_profile_revision_id"]
+    assert str(first_exc.value) == (
+        f"POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING: Workflow binding '{first_binding['binding_id']}' "
+        "is missing binding_profile references."
+    )
+    assert str(second_exc.value) == (
+        f"POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING: Workflow binding '{second_binding['binding_id']}' "
+        "is missing binding_profile references."
+    )
 
     first_record = PoolWorkflowBinding.objects.get(binding_id=first_binding["binding_id"])
     second_record = PoolWorkflowBinding.objects.get(binding_id=second_binding["binding_id"])
-    assert first_record.binding_profile_revision.metadata["generated_from_pool_id"] == str(first_pool.id)
-    assert second_record.binding_profile_revision.metadata["generated_from_pool_id"] == str(second_pool.id)
+    assert first_record.binding_profile_id is None
+    assert first_record.binding_profile_revision_id is None
+    assert second_record.binding_profile_id is None
+    assert second_record.binding_profile_revision_id is None

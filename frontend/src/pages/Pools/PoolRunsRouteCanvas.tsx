@@ -164,6 +164,7 @@ const CREATE_RUN_PROBLEM_CODE_MESSAGES: Record<string, string> = {
   TENANT_CONTEXT_REQUIRED: 'Для запуска run требуется активный tenant context.',
   POOL_NOT_FOUND: 'Пул не найден в текущем tenant context.',
   POOL_WORKFLOW_BINDING_REQUIRED: 'Перед продолжением выберите workflow binding.',
+  POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING: 'Сохранённые workflow bindings ссылаются на отсутствующий binding profile revision. Выполните destructive reset затронутых данных и пересоздайте attachment.',
   POOL_WORKFLOW_BINDING_NOT_FOUND: 'Выбранный attachment больше не найден в текущем пуле.',
   POOL_WORKFLOW_BINDING_NOT_RESOLVED: 'Выбранный attachment неактивен или не попадает в effective scope для текущего запуска.',
   POOL_WORKFLOW_BINDING_AMBIGUOUS: 'Найдено несколько подходящих workflow bindings. Нужен явный выбор binding.',
@@ -327,6 +328,28 @@ const formatDate = (value: string | null | undefined) => {
 const formatShortId = (value: string | null | undefined) => {
   if (!value) return '-'
   return value.slice(0, 8)
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => (
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+)
+
+const resolvePoolWorkflowBindingsReadError = (
+  pool: OrganizationPool | null,
+): { code: string; detail: string } | null => {
+  if (!isPlainObject(pool?.metadata)) {
+    return null
+  }
+  const rawError = pool.metadata.workflow_bindings_read_error
+  if (!isPlainObject(rawError)) {
+    return null
+  }
+  const code = String(rawError.code ?? '').trim()
+  const detail = String(rawError.detail ?? '').trim()
+  if (!code || !detail) {
+    return null
+  }
+  return { code, detail }
 }
 
 const getStatusColor = (status: string) => STATUS_COLORS[status] ?? 'default'
@@ -1240,6 +1263,10 @@ export function PoolRunsPage() {
   const selectedPool = useMemo(
     () => pools.find((item) => item.id === selectedPoolId) ?? null,
     [pools, selectedPoolId]
+  )
+  const selectedPoolWorkflowBindingsReadError = useMemo(
+    () => resolvePoolWorkflowBindingsReadError(selectedPool),
+    [selectedPool]
   )
   const matchingWorkflowBindings = useMemo(
     () => (selectedPool?.workflow_bindings ?? []).filter((binding) => matchesWorkflowBindingForCreateRun({
@@ -2366,6 +2393,16 @@ export function PoolRunsPage() {
                     description="`odata_url` берётся из Databases, а OData user/password для публикации — из /rbac → Infobase Users (actor/service mapping)."
                     style={{ marginBottom: 12 }}
                   />
+                  {selectedPoolWorkflowBindingsReadError ? (
+                    <Alert
+                      type="error"
+                      showIcon
+                      data-testid="pool-runs-create-binding-read-error"
+                      message={`Binding diagnostics: ${selectedPoolWorkflowBindingsReadError.code}`}
+                      description={selectedPoolWorkflowBindingsReadError.detail}
+                      style={{ marginBottom: 12 }}
+                    />
+                  ) : null}
                   <Row gutter={12}>
                     <Col span={5}>
                       <Form.Item name="period_start" label="Period start" rules={[{ required: true }]}>
@@ -2438,7 +2475,9 @@ export function PoolRunsPage() {
                         label="Workflow binding"
                         rules={[{ required: true, message: 'workflow binding required' }]}
                         extra={
-                          matchingWorkflowBindings.length === 0
+                          selectedPoolWorkflowBindingsReadError
+                            ? `Active bindings are unavailable: ${selectedPoolWorkflowBindingsReadError.detail}`
+                            : matchingWorkflowBindings.length === 0
                             ? 'Для выбранного pool/direction/mode/period_start нет активного workflow binding.'
                             : 'Run запускается по pinned workflow binding, а не по raw selector.'
                         }
@@ -2446,9 +2485,16 @@ export function PoolRunsPage() {
                         <Select
                           data-testid="pool-runs-create-workflow-binding"
                           aria-label="Workflow binding"
+                          aria-disabled={Boolean(selectedPoolWorkflowBindingsReadError) || matchingWorkflowBindings.length === 0}
                           allowClear={matchingWorkflowBindings.length > 1}
-                          disabled={matchingWorkflowBindings.length === 0}
-                          placeholder={matchingWorkflowBindings.length === 0 ? 'No matching binding' : 'Select binding'}
+                          disabled={Boolean(selectedPoolWorkflowBindingsReadError) || matchingWorkflowBindings.length === 0}
+                          placeholder={
+                            selectedPoolWorkflowBindingsReadError
+                              ? 'Bindings unavailable'
+                              : matchingWorkflowBindings.length === 0
+                                ? 'No matching binding'
+                                : 'Select binding'
+                          }
                           options={matchingWorkflowBindings.map((binding) => ({
                             value: binding.binding_id,
                             label: formatWorkflowBindingOptionLabel(binding),

@@ -2,6 +2,12 @@
 
 ## refactor-14-workflow-centric-hardening
 
+> Update 2026-03-22:
+> Для residue вида `POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING` этот cutover note больше не является canonical remediation path.
+> Не запускайте `backfill_pool_workflow_bindings` для восстановления missing `binding_profile` refs.
+> Используйте destructive reset затронутых `pool`, `pool_workflow_binding` и `binding_profile*` данных.
+> Актуальная operator note: [2026-03-22-binding-profile-runtime-simplification.md](./2026-03-22-binding-profile-runtime-simplification.md).
+
 ### Что изменилось
 
 - /decisions становится primary surface для workflow-centric `document_policy` authoring, revise/import и metadata-aware preview.

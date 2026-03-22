@@ -1104,7 +1104,8 @@ describe('DecisionsPage', () => {
       )
     })
 
-    const payload = mockPostDecisionsCollection.mock.calls.at(-1)?.[0]
+    const lastCallIndex = mockPostDecisionsCollection.mock.calls.length - 1
+    const payload = lastCallIndex >= 0 ? mockPostDecisionsCollection.mock.calls[lastCallIndex]?.[0] : undefined
     expect(payload).toBeTruthy()
     expect(payload.parent_version_id).toBeUndefined()
   })

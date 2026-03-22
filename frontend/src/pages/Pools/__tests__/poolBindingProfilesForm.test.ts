@@ -29,7 +29,9 @@ describe('poolBindingProfilesForm', () => {
       metadata_json: undefined,
     }
 
-    const result = buildBindingProfileCreateRequest(valuesWithoutAdvancedJson as typeof baseValues)
+    const result = buildBindingProfileCreateRequest(
+      valuesWithoutAdvancedJson as unknown as Parameters<typeof buildBindingProfileCreateRequest>[0],
+    )
 
     expect(result.errors).toEqual([])
     expect(result.request).toEqual({

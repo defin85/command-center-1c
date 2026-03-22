@@ -1728,6 +1728,7 @@ export function PoolCatalogPage() {
   const [isBindingsWorkspaceOpen, setIsBindingsWorkspaceOpen] = useState(requestedWorkspaceTab === 'bindings')
   const [bindingProfileDetailsById, setBindingProfileDetailsById] = useState<Record<string, BindingProfileDetail>>({})
   const [bindingProfileDetailFallbackIds, setBindingProfileDetailFallbackIds] = useState<Record<string, true>>({})
+  const [bindingProfileDetailsLoading, setBindingProfileDetailsLoading] = useState(false)
   const [bindingProfileDetailsError, setBindingProfileDetailsError] = useState<string | null>(null)
   const [topologyCoverageBindingId, setTopologyCoverageBindingId] = useState<string | undefined>(undefined)
   const [metadataCatalogByDatabase, setMetadataCatalogByDatabase] = useState<Record<string, PoolODataMetadataCatalogResponse>>({})
@@ -1871,6 +1872,34 @@ export function PoolCatalogPage() {
       }
       return Object.fromEntries(nextEntries)
     })
+    setBindingProfileDetailsById((previous) => {
+      const nextEntries = Object.entries(previous).filter(([bindingProfileId]) => profileIds.has(bindingProfileId))
+      if (
+        nextEntries.length === Object.keys(previous).length
+        && nextEntries.every(([bindingProfileId, value]) => previous[bindingProfileId] === value)
+      ) {
+        return previous
+      }
+      return Object.fromEntries(nextEntries)
+    })
+    if (bindingProfileDetailsError && Object.keys(bindingProfileDetailFallbackIds).length === 0) {
+      setBindingProfileDetailsError(null)
+    }
+  }, [
+    activeWorkspaceTab,
+    bindingProfileDetailFallbackIds,
+    bindingProfileDetailsError,
+    bindingProfilesQuery.data?.binding_profiles,
+    bindingProfilesQuery.isError,
+    bindingProfilesQuery.isLoading,
+  ])
+
+  const ensureBindingProfileDetailsLoaded = useCallback(async () => {
+    if (bindingProfilesQuery.isLoading || bindingProfilesQuery.isError || bindingProfileDetailsLoading) {
+      return
+    }
+
+    const profiles = bindingProfilesQuery.data?.binding_profiles ?? []
     const missingProfileIds = profiles
       .map((profile) => profile.binding_profile_id)
       .filter((bindingProfileId) => (
@@ -1884,61 +1913,55 @@ export function PoolCatalogPage() {
       return
     }
 
-    let isCancelled = false
-
-    void Promise.all(
-      missingProfileIds.map(async (bindingProfileId) => {
-        try {
-          const response = await getBindingProfileDetail(bindingProfileId)
-          return {
-            bindingProfileId,
-            bindingProfile: isValidBindingProfileDetailResponse(bindingProfileId, response.binding_profile)
-              ? response.binding_profile
-              : null,
+    setBindingProfileDetailsLoading(true)
+    try {
+      const results = await Promise.all(
+        missingProfileIds.map(async (bindingProfileId) => {
+          try {
+            const response = await getBindingProfileDetail(bindingProfileId)
+            return {
+              bindingProfileId,
+              bindingProfile: isValidBindingProfileDetailResponse(bindingProfileId, response.binding_profile)
+                ? response.binding_profile
+                : null,
+            }
+          } catch {
+            return {
+              bindingProfileId,
+              bindingProfile: null,
+            }
           }
-        } catch {
-          return {
-            bindingProfileId,
-            bindingProfile: null,
-          }
-        }
-      }),
-    )
-      .then((results) => {
-        if (isCancelled) {
-          return
-        }
-        const validDetails = results
-          .map((item) => item.bindingProfile)
-          .filter((detail): detail is BindingProfileDetail => Boolean(detail))
-        const fallbackProfileIds = results
-          .filter((item) => !item.bindingProfile)
-          .map((item) => item.bindingProfileId)
-        setBindingProfileDetailsById((previous) => ({
+        }),
+      )
+      const validDetails = results
+        .map((item) => item.bindingProfile)
+        .filter((detail): detail is BindingProfileDetail => Boolean(detail))
+      const fallbackProfileIds = results
+        .filter((item) => !item.bindingProfile)
+        .map((item) => item.bindingProfileId)
+      setBindingProfileDetailsById((previous) => ({
+        ...previous,
+        ...Object.fromEntries(validDetails.map((detail) => [detail.binding_profile_id, detail])),
+      }))
+      if (fallbackProfileIds.length > 0) {
+        setBindingProfileDetailFallbackIds((previous) => ({
           ...previous,
-          ...Object.fromEntries(validDetails.map((detail) => [detail.binding_profile_id, detail])),
+          ...Object.fromEntries(fallbackProfileIds.map((bindingProfileId) => [bindingProfileId, true])),
         }))
-        if (fallbackProfileIds.length > 0) {
-          setBindingProfileDetailFallbackIds((previous) => ({
-            ...previous,
-            ...Object.fromEntries(fallbackProfileIds.map((bindingProfileId) => [bindingProfileId, true])),
-          }))
-        }
-        setBindingProfileDetailsError(
-          validDetails.length === results.length
-            ? null
-            : 'Некоторые binding profiles вернули неконсистентную историю revisions; используется latest revision из summary catalog.',
-        )
-      })
-
-    return () => {
-      isCancelled = true
+      }
+      setBindingProfileDetailsError(
+        validDetails.length === results.length
+          ? null
+          : 'Некоторые binding profiles вернули неконсистентную историю revisions; используется latest revision из summary catalog.',
+      )
+    } finally {
+      setBindingProfileDetailsLoading(false)
     }
   }, [
-    activeWorkspaceTab,
     bindingProfileDetailFallbackIds,
     bindingProfileDetailsById,
     bindingProfileDetailsError,
+    bindingProfileDetailsLoading,
     bindingProfilesQuery.data?.binding_profiles,
     bindingProfilesQuery.isError,
     bindingProfilesQuery.isLoading,
@@ -3550,11 +3573,15 @@ export function PoolCatalogPage() {
                                 availableBindingProfiles={bindingProfilesQuery.data?.binding_profiles ?? []}
                                 availableBindingProfileDetails={bindingProfileDetailsById}
                                 bindingProfilesLoading={bindingProfilesQuery.isLoading}
+                                bindingProfileDetailsLoading={bindingProfileDetailsLoading}
                                 bindingProfilesLoadError={
                                   bindingProfilesQuery.isError
                                     ? resolveApiError(bindingProfilesQuery.error, 'Не удалось загрузить binding profiles catalog.').message
                                     : bindingProfileDetailsError
                                 }
+                                onBindingProfileRevisionSelectOpen={() => {
+                                  void ensureBindingProfileDetailsLoaded()
+                                }}
                                 topologyEdgeSelectors={topologyEdgeSelectors}
                                 disabled={
                                   mutatingDisabled

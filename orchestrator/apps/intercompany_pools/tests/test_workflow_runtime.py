@@ -46,10 +46,6 @@ from apps.intercompany_pools.workflow_binding_resolution import (
     ERROR_CODE_POOL_WORKFLOW_BINDING_NOT_FOUND,
     PoolWorkflowBindingResolutionError,
 )
-from apps.intercompany_pools.workflow_bindings_store import (
-    list_pool_workflow_bindings,
-    upsert_canonical_pool_workflow_binding,
-)
 from apps.intercompany_pools.workflow_binding_attachments_store import (
     list_pool_workflow_binding_attachments,
     PoolWorkflowBindingStoreError,
@@ -329,56 +325,7 @@ def _create_runtime_workflow_template(
 
 
 def _ensure_runtime_test_workflow_binding(*, run: PoolRun) -> dict[str, object]:
-    existing_bindings = list_pool_workflow_bindings(pool=run.pool)
-    if existing_bindings:
-        return existing_bindings[0]
-
-    _attach_pool_target_database(
-        tenant=run.tenant,
-        pool=run.pool,
-        period_start=run.period_start,
-    )
-    decision = create_decision_table_revision(
-        contract=_build_document_policy_decision_payload(
-            decision_table_id=f"runtime-doc-policy-{uuid4().hex[:8]}"
-        )
-    )
-    workflow_root, workflow = _create_runtime_workflow_template(direction=run.direction)
-    binding = {
-        "binding_id": str(uuid4()),
-        "pool_id": str(run.pool_id),
-        "workflow": {
-            "workflow_definition_key": str(workflow_root.id),
-            "workflow_revision_id": str(workflow.id),
-            "workflow_revision": workflow.version_number,
-            "workflow_name": workflow.name,
-        },
-        "decisions": [
-            {
-                "decision_table_id": decision.decision_table_id,
-                "decision_key": decision.decision_key,
-                "slot_key": decision.decision_key,
-                "decision_revision": decision.version_number,
-            }
-        ],
-        "selector": {
-            "direction": run.direction,
-            "mode": run.mode,
-            "tags": [],
-        },
-        "effective_from": run.period_start.isoformat(),
-        "status": "active",
-    }
-    metadata = dict(run.pool.metadata) if isinstance(run.pool.metadata, dict) else {}
-    metadata.pop("workflow_bindings", None)
-    run.pool.metadata = metadata
-    run.pool.save(update_fields=["metadata", "updated_at"])
-    upsert_canonical_pool_workflow_binding(
-        pool=run.pool,
-        workflow_binding=binding,
-        actor_username="pool-runtime-test",
-    )
-    return binding
+    return _ensure_runtime_test_workflow_binding_attachment(run=run)
 
 
 def _create_runtime_binding_profile_revision(
@@ -775,7 +722,14 @@ def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_bindi
     assert binding_entry["binding_mode"] == "pool_workflow_binding"
 
     persisted_run = PoolRun.objects.get(id=run.id)
-    assert persisted_run.workflow_binding_snapshot == persisted_binding
+    assert persisted_run.workflow_binding_snapshot["binding_id"] == workflow_binding["binding_id"]
+    assert persisted_run.workflow_binding_snapshot["binding_profile_revision_id"] == (
+        workflow_binding["binding_profile_revision_id"]
+    )
+    assert persisted_run.workflow_binding_snapshot["revision"] == workflow_binding["revision"]
+    assert persisted_run.workflow_binding_snapshot["resolved_profile"]["workflow"]["workflow_revision"] == 3
+    assert "workflow" not in persisted_run.workflow_binding_snapshot
+    assert "decisions" not in persisted_run.workflow_binding_snapshot
     assert persisted_run.runtime_projection_snapshot == runtime_projection
 
 
@@ -859,7 +813,14 @@ def test_start_pool_run_workflow_execution_reloads_binding_snapshot_from_attachm
     assert runtime_projection["document_policy_projection"]["compiled_document_policy_slots"]
 
     persisted_run = PoolRun.objects.get(id=run.id)
-    assert persisted_run.workflow_binding_snapshot == persisted_binding
+    assert persisted_run.workflow_binding_snapshot["binding_id"] == stale_binding["binding_id"]
+    assert persisted_run.workflow_binding_snapshot["binding_profile_revision_id"] == (
+        updated_revision["binding_profile_revision_id"]
+    )
+    assert persisted_run.workflow_binding_snapshot["revision"] == updated_binding["revision"]
+    assert persisted_run.workflow_binding_snapshot["resolved_profile"]["workflow"]["workflow_revision"] == 4
+    assert "workflow" not in persisted_run.workflow_binding_snapshot
+    assert "decisions" not in persisted_run.workflow_binding_snapshot
     assert persisted_run.runtime_projection_snapshot == runtime_projection
 
 

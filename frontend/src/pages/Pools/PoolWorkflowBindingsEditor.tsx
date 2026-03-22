@@ -35,6 +35,7 @@ type PoolWorkflowBindingsEditorProps = {
   bindingProfilesLoading?: boolean
   bindingProfileDetailsLoading?: boolean
   bindingProfilesLoadError?: string | null
+  onBindingProfileRevisionSelectOpen?: () => void
   topologyEdgeSelectors?: TopologyEdgeSelector[]
   disabled?: boolean
 }
@@ -158,6 +159,7 @@ export function PoolWorkflowBindingsEditor({
   bindingProfilesLoading = false,
   bindingProfileDetailsLoading = false,
   bindingProfilesLoadError = null,
+  onBindingProfileRevisionSelectOpen,
   topologyEdgeSelectors = [],
   disabled = false,
 }: PoolWorkflowBindingsEditorProps) {
@@ -344,14 +346,19 @@ export function PoolWorkflowBindingsEditor({
                               name={[field.name, 'binding_profile_revision_id']}
                               label="binding_profile_revision_id"
                             >
-                                <Select
-                                  showSearch
-                                  optionFilterProp="label"
-                                  loading={bindingProfilesLoading || bindingProfileDetailsLoading}
-                                  options={revisionOptions}
-                                  disabled={disabled}
-                                  placeholder="Select reusable profile revision"
+                              <Select
+                                showSearch
+                                optionFilterProp="label"
+                                loading={bindingProfilesLoading || bindingProfileDetailsLoading}
+                                options={revisionOptions}
+                                disabled={disabled}
+                                placeholder="Select reusable profile revision"
                                 data-testid={`pool-catalog-workflow-binding-profile-revision-${field.name}`}
+                                onOpenChange={(open) => {
+                                  if (open) {
+                                    onBindingProfileRevisionSelectOpen?.()
+                                  }
+                                }}
                                 onChange={(value) => {
                                   const option = revisionOptions.find((item) => item.value === value)
                                   setFieldValue(['workflow_bindings', field.name, 'binding_profile_id'], option?.bindingProfileId ?? '')

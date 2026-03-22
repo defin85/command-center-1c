@@ -1473,6 +1473,39 @@ describe('PoolRunsPage', () => {
     expect(screen.getByTestId('pool-runs-create-slot-coverage-summary')).toHaveTextContent('resolved: 1')
   }, 30000)
 
+  it('surfaces blocking workflow binding read diagnostics instead of generic empty binding state', async () => {
+    const user = userEvent.setup()
+    mockListOrganizationPools.mockResolvedValue([
+      {
+        id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        code: 'pool-code',
+        name: 'Pool name',
+        description: 'Main pool',
+        is_active: true,
+        metadata: {
+          workflow_bindings_read_error: {
+            code: 'POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING',
+            detail: "Workflow binding 'binding-top-down' is missing binding_profile references.",
+          },
+        },
+        workflow_bindings: [],
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ])
+
+    renderPage()
+
+    await openRunsStage(user, 'Create')
+    expect(await screen.findByTestId('pool-runs-create-binding-read-error')).toHaveTextContent(
+      'POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING'
+    )
+    expect(screen.getByTestId('pool-runs-create-binding-read-error')).toHaveTextContent(
+      "Workflow binding 'binding-top-down' is missing binding_profile references."
+    )
+    expect(screen.getByTestId('pool-runs-create-workflow-binding')).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.queryByText('No matching binding')).not.toBeInTheDocument()
+  }, 30000)
+
   it('submits top_down create-run payload with run_input and without source_hash', async () => {
     const user = userEvent.setup()
     renderPage()

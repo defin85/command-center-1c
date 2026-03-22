@@ -29,6 +29,7 @@ from .workflow_authoring_contract import (
     POOL_DOCUMENT_POLICY_SLOT_REQUIRED,
     PoolWorkflowBindingContract,
     PoolWorkflowBindingDecisionRef,
+    build_pool_workflow_binding_read_model,
 )
 from .workflow_binding_resolution import resolve_pool_workflow_binding_for_run
 from .workflow_binding_attachments_store import list_pool_workflow_binding_attachments
@@ -174,6 +175,8 @@ def build_pool_workflow_binding_runtime_bundle(
         mode=mode,
         period_start=period_start,
     )
+    resolved_binding_payload = resolved_binding.model_dump(mode="json", exclude_none=True)
+    workflow_binding_read_model = build_pool_workflow_binding_read_model(binding=resolved_binding)
 
     sanitized_run_input = sanitize_run_input_for_runtime_contract(run_input=dict(run_input or {}))
     sync_pool_runtime_template_registry()
@@ -231,7 +234,7 @@ def build_pool_workflow_binding_runtime_bundle(
             mode=mode,
             run_input=sanitized_run_input,
             document_plan_artifact=document_plan_artifact,
-            workflow_binding=resolved_binding.model_dump(mode="json", exclude_none=True),
+            workflow_binding=resolved_binding_payload,
         ),
     )
     runtime_projection = build_pool_runtime_projection_v1(
@@ -243,7 +246,8 @@ def build_pool_workflow_binding_runtime_bundle(
         slot_coverage_summary=slot_coverage_summary,
     )
     return {
-        "workflow_binding": resolved_binding.model_dump(mode="json", exclude_none=True),
+        "workflow_binding": workflow_binding_read_model,
+        "resolved_workflow_binding": resolved_binding_payload,
         "decision_outputs": decision_outputs,
         "compiled_document_policy_slots": compiled_document_policy_slots,
         "compiled_document_policy": compiled_document_policy,

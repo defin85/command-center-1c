@@ -51,9 +51,9 @@ from apps.intercompany_pools.models import (
     PoolSchemaTemplateFormat,
 )
 from apps.intercompany_pools.runtime_projection_contract import POOL_RUNTIME_PROJECTION_CONTEXT_KEY
-from apps.intercompany_pools.workflow_bindings_store import (
-    list_pool_workflow_bindings,
-    upsert_canonical_pool_workflow_binding,
+from apps.intercompany_pools.workflow_binding_attachments_store import (
+    list_pool_workflow_binding_attachments,
+    upsert_pool_workflow_binding_attachment,
 )
 from apps.intercompany_pools.workflow_runtime import POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY
 from apps.operations.models import BatchOperation
@@ -464,6 +464,10 @@ def _build_pool_workflow_binding_payload(
     }
 
 
+def list_pool_workflow_bindings(*, pool: OrganizationPool) -> list[dict[str, object]]:
+    return list_pool_workflow_binding_attachments(pool=pool)
+
+
 def _build_binding_profile_revision_payload(
     *,
     workflow_definition_key: str,
@@ -583,6 +587,108 @@ def _attachment_payload_from_read_model(
     )
     payload.update(overrides)
     return payload
+
+
+def upsert_canonical_pool_workflow_binding(
+    *,
+    pool: OrganizationPool,
+    workflow_binding: dict[str, object],
+    actor_username: str = "",
+) -> tuple[dict[str, object], bool]:
+    workflow_payload = (
+        dict(workflow_binding.get("workflow"))
+        if isinstance(workflow_binding.get("workflow"), dict)
+        else {}
+    )
+    selector = (
+        dict(workflow_binding.get("selector"))
+        if isinstance(workflow_binding.get("selector"), dict)
+        else {}
+    )
+    profile = create_canonical_binding_profile(
+        tenant=pool.tenant,
+        binding_profile={
+            "code": f"binding-fixture-{uuid4().hex[:8]}",
+            "name": f"Binding Fixture {workflow_payload.get('workflow_name') or 'workflow'}",
+            "revision": _build_binding_profile_revision_payload(
+                workflow_definition_key=str(
+                    workflow_payload.get("workflow_definition_key") or "workflow-definition"
+                ),
+                workflow_revision=int(workflow_payload.get("workflow_revision") or 1),
+                workflow_revision_id=str(workflow_payload.get("workflow_revision_id") or uuid4()),
+                workflow_name=str(workflow_payload.get("workflow_name") or "workflow"),
+                decisions=(
+                    list(workflow_binding.get("decisions"))
+                    if isinstance(workflow_binding.get("decisions"), list)
+                    else []
+                ),
+                parameters=(
+                    dict(workflow_binding.get("parameters"))
+                    if isinstance(workflow_binding.get("parameters"), dict)
+                    else {}
+                ),
+                role_mapping=(
+                    dict(workflow_binding.get("role_mapping"))
+                    if isinstance(workflow_binding.get("role_mapping"), dict)
+                    else {}
+                ),
+            ),
+        },
+        actor_username=actor_username or "binding-fixture-test",
+    )
+    latest_revision = profile["latest_revision"]
+    assert isinstance(latest_revision, dict)
+    return upsert_pool_workflow_binding_attachment(
+        pool=pool,
+        workflow_binding=_build_pool_workflow_binding_attachment_payload(
+            binding_profile_revision_id=str(latest_revision["binding_profile_revision_id"]),
+            direction=str(selector.get("direction") or "").strip() or None,
+            mode=str(selector.get("mode") or "").strip() or None,
+            effective_from=str(workflow_binding.get("effective_from") or "2026-01-01"),
+            effective_to=str(workflow_binding.get("effective_to") or "").strip() or None,
+            status=str(workflow_binding.get("status") or "active"),
+            tags=list(selector.get("tags") or []) if isinstance(selector.get("tags"), list) else [],
+            binding_id=str(workflow_binding.get("binding_id") or "").strip() or None,
+            revision=(
+                int(workflow_binding["revision"])
+                if workflow_binding.get("revision") not in {None, ""}
+                else None
+            ),
+        ),
+        actor_username=actor_username or "binding-fixture-test",
+    )
+
+
+def _create_legacy_pool_workflow_binding_without_profile_refs(
+    *,
+    tenant: Tenant,
+    pool: OrganizationPool,
+    binding_id: str | None = None,
+    direction: str = PoolRunDirection.BOTTOM_UP,
+    mode: str = PoolRunMode.SAFE,
+) -> PoolWorkflowBinding:
+    return PoolWorkflowBinding.objects.create(
+        binding_id=binding_id or str(uuid4()),
+        tenant=tenant,
+        pool=pool,
+        contract_version="pool_workflow_binding.v1",
+        status="active",
+        effective_from="2026-01-01",
+        effective_to=None,
+        direction=direction,
+        mode=mode,
+        selector_tags=[],
+        workflow_definition_key="services-publication",
+        workflow_revision_id=str(uuid4()),
+        workflow_revision=3,
+        workflow_name="services_publication",
+        decisions=[],
+        parameters={"publication_variant": "full"},
+        role_mapping={"initiator": "finance"},
+        revision=1,
+        created_by="legacy-import",
+        updated_by="legacy-import",
+    )
 
 
 def _create_pool_runtime_workflow_revision(
@@ -2034,7 +2140,7 @@ def test_pool_workflow_bindings_collection_put_applies_atomic_replace_and_return
         first_binding["binding_id"],
         "replacement-binding",
     ]
-    assert stored_bindings[0]["workflow"]["workflow_revision"] == 4
+    assert stored_bindings[0]["resolved_profile"]["workflow"]["workflow_revision"] == 4
     assert second_binding["binding_id"] not in {item["binding_id"] for item in stored_bindings}
 
 
@@ -2300,7 +2406,7 @@ def test_pool_workflow_binding_upsert_creates_and_updates_first_class_binding(
     assert bindings[0]["binding_id"] == binding_id
     assert bindings[0]["revision"] == 2
     assert bindings[0]["selector"]["tags"] == ["baseline", "monthly"]
-    assert bindings[0]["workflow"]["workflow_revision"] == 4
+    assert bindings[0]["resolved_profile"]["workflow"]["workflow_revision"] == 4
 
 
 @pytest.mark.django_db
@@ -3088,7 +3194,7 @@ def test_migrate_pool_edge_document_policy_updates_canonical_binding_runtime_pat
         initial_binding = initial_bindings_by_id[binding_id]
         updated_binding = updated_bindings_by_id[binding_id]
         assert updated_binding["revision"] == initial_binding["revision"] + 1
-        assert updated_binding["decisions"] == [migrated_decision_ref]
+        assert updated_binding["resolved_profile"]["decisions"] == [migrated_decision_ref]
 
     edge.refresh_from_db()
     assert edge.metadata["document_policy_key"] == migrated_slot_key
@@ -3120,7 +3226,8 @@ def test_migrate_pool_edge_document_policy_updates_canonical_binding_runtime_pat
 
         assert preview_response.status_code == 200, preview_response.json()
         preview_payload = preview_response.json()
-        assert preview_payload["workflow_binding"]["decisions"] == [migrated_decision_ref]
+        assert preview_payload["workflow_binding"]["resolved_profile"]["decisions"] == [migrated_decision_ref]
+        assert "decisions" not in preview_payload["workflow_binding"]
         assert preview_payload["compiled_document_policy"]["chains"][0]["chain_id"] == "migrated_sale_chain"
         assert preview_payload["runtime_projection"]["workflow_binding"]["decision_refs"] == [
             migrated_decision_ref
@@ -3743,10 +3850,46 @@ def test_create_pool_run_does_not_fallback_to_legacy_metadata_workflow_bindings(
     payload = _assert_problem_details_response(
         response,
         status_code=400,
-        code="POOL_WORKFLOW_BINDING_NOT_RESOLVED",
+        code="POOL_WORKFLOW_BINDING_NOT_FOUND",
     )
-    assert payload["detail"] == "No pool workflow bindings are configured for this pool."
-    assert payload.get("errors", []) == []
+    assert payload["detail"] == (
+        f"Requested pool_workflow_binding_id '{legacy_binding['binding_id']}' was not found."
+    )
+    assert payload.get("errors", []) == [{"binding_id": legacy_binding["binding_id"]}]
+    assert not PoolRun.objects.filter(pool=pool).exists()
+
+
+@pytest.mark.django_db
+def test_create_pool_run_fails_closed_for_attachment_without_profile_refs(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    legacy_binding = _create_legacy_pool_workflow_binding_without_profile_refs(
+        tenant=default_tenant,
+        pool=pool,
+    )
+
+    response = authenticated_client.post(
+        "/api/v2/pools/runs/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": legacy_binding.binding_id,
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING",
+    )
+    assert payload["title"] == "Pool Runtime Configuration Error"
+    assert legacy_binding.binding_id in payload["detail"]
     assert not PoolRun.objects.filter(pool=pool).exists()
 
 
@@ -4772,6 +4915,39 @@ def test_preview_pool_workflow_binding_rejects_missing_binding_reference(
         code="POOL_WORKFLOW_BINDING_REQUIRED",
     )
     assert payload["detail"] == "pool_workflow_binding_id is required."
+
+
+@pytest.mark.django_db
+def test_preview_pool_workflow_binding_fails_closed_for_attachment_without_profile_refs(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    legacy_binding = _create_legacy_pool_workflow_binding_without_profile_refs(
+        tenant=default_tenant,
+        pool=pool,
+    )
+
+    response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/preview/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": legacy_binding.binding_id,
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING",
+    )
+    assert payload["title"] == "Pool Workflow Binding Preview Failed"
+    assert legacy_binding.binding_id in payload["detail"]
 
 
 @pytest.mark.django_db
@@ -8097,8 +8273,8 @@ def test_list_pools_endpoint_ignores_invalid_canonical_workflow_bindings(
     pool_payload = next(item for item in pools_payload["pools"] if item["id"] == str(pool.id))
     assert pool_payload["workflow_bindings"] == []
     assert pool_payload["metadata"]["workflow_bindings_read_error"] == {
-        "code": "POOL_DOCUMENT_POLICY_SLOT_REQUIRED",
-        "detail": "slot_key is required for policy-bearing document_policy decisions",
+        "code": "POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING",
+        "detail": "Workflow binding 'binding-invalid-slot' is missing binding_profile references.",
     }
 
 

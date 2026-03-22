@@ -11,6 +11,7 @@ from apps.intercompany_pools.document_policy_contract import (
     DOCUMENT_POLICY_METADATA_KEY,
     resolve_document_policy_from_edge_metadata,
 )
+from apps.intercompany_pools.binding_profiles_store import revise_canonical_binding_profile
 from apps.intercompany_pools.metadata_catalog import (
     MetadataCatalogError,
     build_metadata_catalog_api_payload,
@@ -19,11 +20,13 @@ from apps.intercompany_pools.metadata_catalog import (
     validate_document_policy_references,
 )
 from apps.intercompany_pools.models import OrganizationPool, PoolEdgeVersion
+from apps.intercompany_pools.workflow_binding_attachments_store import (
+    list_pool_workflow_binding_attachments,
+    upsert_pool_workflow_binding_attachment,
+)
 from apps.intercompany_pools.workflow_bindings_store import (
     PoolWorkflowBindingRevisionConflictError,
     PoolWorkflowBindingStoreError,
-    list_canonical_pool_workflow_bindings,
-    upsert_canonical_pool_workflow_binding,
 )
 from apps.templates.workflow.decision_tables import (
     build_decision_table_ref,
@@ -421,21 +424,30 @@ def _update_affected_pool_workflow_bindings(
     slot_key: str,
     actor_username: str,
 ) -> list[DocumentPolicyMigrationBindingOutcome]:
-    canonical_bindings = list_canonical_pool_workflow_bindings(pool=pool)
+    bindings = list_pool_workflow_binding_attachments(pool=pool)
     migrated_decision_ref = {
         **build_decision_table_ref(decision_table=decision).model_dump(mode="json"),
         "slot_key": slot_key,
     }
     outcomes: list[DocumentPolicyMigrationBindingOutcome] = []
 
-    for binding in canonical_bindings:
+    for binding in bindings:
+        resolved_profile = (
+            dict(binding.get("resolved_profile"))
+            if isinstance(binding.get("resolved_profile"), Mapping)
+            else {}
+        )
         rewritten_decisions = _rewrite_document_policy_binding_decisions(
-            decisions=binding.get("decisions"),
+            decisions=resolved_profile.get("decisions"),
             migrated_decision_ref=migrated_decision_ref,
             binding_id=str(binding.get("binding_id") or ""),
             slot_key=slot_key,
         )
-        existing_decisions = list(binding.get("decisions") or [])
+        existing_decisions = (
+            list(resolved_profile.get("decisions"))
+            if isinstance(resolved_profile.get("decisions"), list)
+            else []
+        )
         updated = rewritten_decisions != existing_decisions
         updated_binding = binding
         revision = int(binding.get("revision") or 0)
@@ -449,12 +461,55 @@ def _update_affected_pool_workflow_bindings(
                 )
             )
             continue
-        updated_payload = dict(binding)
-        updated_payload["decisions"] = rewritten_decisions
+        binding_profile_id = str(
+            binding.get("binding_profile_id")
+            or resolved_profile.get("binding_profile_id")
+            or ""
+        ).strip()
+        if not binding_profile_id:
+            raise DocumentPolicyMigrationError(
+                code="POOL_WORKFLOW_BINDING_UPDATE_FAILED",
+                detail=(
+                    "Failed to update pool workflow binding "
+                    f"'{binding.get('binding_id')}' because binding_profile_id is missing."
+                ),
+            )
         try:
-            updated_binding, _ = upsert_canonical_pool_workflow_binding(
+            revised_profile = revise_canonical_binding_profile(
+                tenant=pool.tenant,
+                binding_profile_id=binding_profile_id,
+                revision={
+                    "workflow": dict(resolved_profile.get("workflow") or {}),
+                    "decisions": rewritten_decisions,
+                    "parameters": (
+                        dict(resolved_profile.get("parameters"))
+                        if isinstance(resolved_profile.get("parameters"), Mapping)
+                        else {}
+                    ),
+                    "role_mapping": (
+                        dict(resolved_profile.get("role_mapping"))
+                        if isinstance(resolved_profile.get("role_mapping"), Mapping)
+                        else {}
+                    ),
+                    "metadata": {"source": "document_policy_migration"},
+                },
+                actor_username=actor_username,
+            )
+            latest_revision = revised_profile["latest_revision"]
+            assert isinstance(latest_revision, dict)
+            updated_binding, _ = upsert_pool_workflow_binding_attachment(
                 pool=pool,
-                workflow_binding=updated_payload,
+                workflow_binding={
+                    "binding_id": str(binding.get("binding_id") or ""),
+                    "binding_profile_revision_id": str(
+                        latest_revision["binding_profile_revision_id"]
+                    ),
+                    "selector": dict(binding.get("selector") or {}),
+                    "effective_from": str(binding.get("effective_from") or ""),
+                    "effective_to": binding.get("effective_to"),
+                    "status": str(binding.get("status") or "active"),
+                    "revision": revision,
+                },
                 actor_username=actor_username,
             )
         except PoolWorkflowBindingStoreError as exc:
@@ -462,7 +517,7 @@ def _update_affected_pool_workflow_bindings(
             raise DocumentPolicyMigrationError(
                 code="POOL_WORKFLOW_BINDING_UPDATE_FAILED",
                 detail=(
-                    "Failed to update canonical workflow binding "
+                    "Failed to update pool workflow binding "
                     f"'{binding.get('binding_id')}' with migrated document policy ref."
                 ),
                 status_code=status_code,

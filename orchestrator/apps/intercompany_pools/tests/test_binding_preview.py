@@ -7,6 +7,7 @@ import pytest
 
 from apps.databases.models import Database
 from apps.intercompany_pools import binding_preview
+from apps.intercompany_pools.binding_profiles_store import create_canonical_binding_profile
 from apps.intercompany_pools.document_policy_contract import DOCUMENT_POLICY_VERSION
 from apps.intercompany_pools.models import (
     Organization,
@@ -26,7 +27,9 @@ from apps.intercompany_pools.workflow_authoring_contract import (
     PoolWorkflowBindingStatus,
     build_workflow_definition_ref,
 )
-from apps.intercompany_pools.workflow_bindings_store import upsert_canonical_pool_workflow_binding
+from apps.intercompany_pools.workflow_binding_attachments_store import (
+    upsert_pool_workflow_binding_attachment,
+)
 from apps.templates.workflow.decision_tables import create_decision_table_revision
 from apps.templates.workflow.models import WorkflowTemplate, WorkflowType
 from apps.tenancy.models import Tenant
@@ -204,7 +207,7 @@ def _create_preview_fixture(
     }
 
 
-def _build_binding(
+def _attach_binding(
     *,
     pool: OrganizationPool,
     workflow: WorkflowTemplate,
@@ -212,24 +215,45 @@ def _build_binding(
     direction: str,
     mode: str,
 ) -> dict[str, object]:
-    return {
-        "binding_id": str(uuid4()),
-        "pool_id": str(pool.id),
-        "workflow": {
-            "workflow_definition_key": str(workflow.id),
-            "workflow_revision_id": str(workflow.id),
-            "workflow_revision": workflow.version_number,
-            "workflow_name": workflow.name,
+    profile = create_canonical_binding_profile(
+        tenant=pool.tenant,
+        binding_profile={
+            "code": f"binding-preview-{uuid4().hex[:8]}",
+            "name": f"Binding Preview {workflow.name}",
+            "revision": {
+                "workflow": {
+                    "workflow_definition_key": str(workflow.id),
+                    "workflow_revision_id": str(workflow.id),
+                    "workflow_revision": workflow.version_number,
+                    "workflow_name": workflow.name,
+                },
+                "decisions": decisions,
+                "parameters": {},
+                "role_mapping": {},
+                "metadata": {
+                    "source": "test",
+                },
+            },
         },
-        "decisions": decisions,
-        "selector": {
-            "direction": direction,
-            "mode": mode,
-            "tags": [],
+        actor_username="binding-preview-test",
+    )
+    latest_revision = profile["latest_revision"]
+    assert isinstance(latest_revision, dict)
+    binding, _ = upsert_pool_workflow_binding_attachment(
+        pool=pool,
+        workflow_binding={
+            "binding_profile_revision_id": str(latest_revision["binding_profile_revision_id"]),
+            "selector": {
+                "direction": direction,
+                "mode": mode,
+                "tags": [],
+            },
+            "effective_from": "2026-01-01",
+            "status": "active",
         },
-        "effective_from": "2026-01-01",
-        "status": "active",
-    }
+        actor_username="binding-preview-test",
+    )
+    return binding
 
 
 @pytest.mark.django_db
@@ -241,7 +265,7 @@ def test_build_pool_workflow_binding_preview_returns_compiled_projection_and_dec
 
     decision = create_decision_table_revision(contract=_build_decision_payload(decision_table_id="doc-policy"))
     workflow = _create_runtime_workflow_template(direction=PoolRunDirection.BOTTOM_UP)
-    binding = _build_binding(
+    binding = _attach_binding(
         pool=pool,
         workflow=workflow,
         decisions=[
@@ -254,11 +278,6 @@ def test_build_pool_workflow_binding_preview_returns_compiled_projection_and_dec
         ],
         direction=PoolRunDirection.BOTTOM_UP,
         mode=PoolRunMode.SAFE,
-    )
-    upsert_canonical_pool_workflow_binding(
-        pool=pool,
-        workflow_binding=binding,
-        actor_username="binding-preview-test",
     )
 
     preview = build_pool_workflow_binding_preview(
@@ -274,6 +293,16 @@ def test_build_pool_workflow_binding_preview_returns_compiled_projection_and_dec
     )
 
     assert preview["workflow_binding"]["binding_id"] == binding["binding_id"]
+    assert "workflow" not in preview["workflow_binding"]
+    assert "decisions" not in preview["workflow_binding"]
+    assert preview["workflow_binding"]["resolved_profile"]["decisions"] == [
+        {
+            "decision_table_id": decision.decision_table_id,
+            "decision_key": decision.decision_key,
+            "slot_key": "document_policy",
+            "decision_revision": decision.version_number,
+        }
+    ]
     assert preview["compiled_document_policy"]["version"] == DOCUMENT_POLICY_VERSION
     assert preview["compiled_document_policy_slots"] == {
         "document_policy": {
@@ -332,7 +361,7 @@ def test_build_pool_workflow_binding_preview_materializes_slots_once_per_decisio
         )
     )
     workflow = _create_runtime_workflow_template(direction=PoolRunDirection.BOTTOM_UP)
-    binding = _build_binding(
+    binding = _attach_binding(
         pool=pool,
         workflow=workflow,
         decisions=[
@@ -351,11 +380,6 @@ def test_build_pool_workflow_binding_preview_materializes_slots_once_per_decisio
         ],
         direction=PoolRunDirection.BOTTOM_UP,
         mode=PoolRunMode.SAFE,
-    )
-    upsert_canonical_pool_workflow_binding(
-        pool=pool,
-        workflow_binding=binding,
-        actor_username="binding-preview-test",
     )
 
     original_evaluate = binding_preview.evaluate_decision_table

@@ -194,7 +194,6 @@ def delete_pool_workflow_binding_attachment(
         record = (
             PoolWorkflowBinding.objects.select_for_update()
             .filter(pool=pool, binding_id=binding_id)
-            .select_related("binding_profile", "binding_profile_revision")
             .first()
         )
         if record is None:
@@ -206,7 +205,12 @@ def delete_pool_workflow_binding_attachment(
                 actual_revision=record.revision,
                 operation="delete",
             )
-        serialized = _serialize_attachment_record(record)
+        serialized = _serialize_attachment_record(
+            PoolWorkflowBinding.objects.select_related(
+                "binding_profile",
+                "binding_profile_revision",
+            ).get(pk=record.pk)
+        )
         record.delete()
         return serialized
 
@@ -237,7 +241,6 @@ def replace_pool_workflow_binding_attachments_collection(
         existing_records = list(
             PoolWorkflowBinding.objects.select_for_update()
             .filter(pool=pool)
-            .select_related("binding_profile", "binding_profile_revision")
             .order_by("effective_from", "created_at", "binding_id")
         )
         actual_collection_etag = _calculate_collection_etag(

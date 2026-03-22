@@ -1387,6 +1387,39 @@ describe('PoolCatalogPage', () => {
     }
   }, 30000)
 
+  it('does not prefetch every binding profile detail before the operator opens a revision selector', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockUseBindingProfiles.mockReturnValue({
+      data: {
+        binding_profiles: [
+          buildBindingProfileSummary(),
+          buildBindingProfileSummary({
+            binding_profile_id: 'bp-legacy',
+            code: 'legacy-archive-profile',
+            name: 'Legacy Archive Profile',
+          }),
+        ],
+        count: 2,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Bindings')
+    expect(mockGetBindingProfileDetail).not.toHaveBeenCalled()
+
+    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
+    openSelectByTestId('pool-catalog-workflow-binding-profile-revision-0')
+
+    await waitFor(() => expect(mockGetBindingProfileDetail).toHaveBeenCalledTimes(2))
+  }, 30000)
+
   it('allows attaching an explicit non-latest profile revision from catalog detail', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()
