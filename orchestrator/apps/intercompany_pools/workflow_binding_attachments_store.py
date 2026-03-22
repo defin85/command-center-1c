@@ -44,8 +44,10 @@ class PoolWorkflowBindingAttachmentLifecycleConflictError(PoolWorkflowBindingSto
         self.operation = operation
 
 
+POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING = "POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING"
+
+
 def list_pool_workflow_binding_attachments(*, pool: OrganizationPool) -> list[dict[str, Any]]:
-    _ensure_attachment_refs_for_pool(pool=pool)
     records = (
         PoolWorkflowBinding.objects.filter(pool=pool)
         .select_related("binding_profile", "binding_profile_revision")
@@ -55,7 +57,6 @@ def list_pool_workflow_binding_attachments(*, pool: OrganizationPool) -> list[di
 
 
 def get_pool_workflow_binding_attachment(*, pool: OrganizationPool, binding_id: str) -> dict[str, Any]:
-    _ensure_attachment_refs_for_pool(pool=pool)
     record = (
         PoolWorkflowBinding.objects.filter(pool=pool, binding_id=binding_id)
         .select_related("binding_profile", "binding_profile_revision")
@@ -193,11 +194,11 @@ def delete_pool_workflow_binding_attachment(
         record = (
             PoolWorkflowBinding.objects.select_for_update()
             .filter(pool=pool, binding_id=binding_id)
+            .select_related("binding_profile", "binding_profile_revision")
             .first()
         )
         if record is None:
             raise PoolWorkflowBindingNotFoundError(binding_id=binding_id)
-        _ensure_attachment_ref_for_record(record=record)
         if requested_revision != record.revision:
             raise PoolWorkflowBindingRevisionConflictError(
                 binding_id=binding_id,
@@ -236,13 +237,7 @@ def replace_pool_workflow_binding_attachments_collection(
         existing_records = list(
             PoolWorkflowBinding.objects.select_for_update()
             .filter(pool=pool)
-            .order_by("effective_from", "created_at", "binding_id")
-        )
-        for record in existing_records:
-            _ensure_attachment_ref_for_record(record=record)
-        existing_records = list(
-            PoolWorkflowBinding.objects.select_for_update()
-            .filter(pool=pool)
+            .select_related("binding_profile", "binding_profile_revision")
             .order_by("effective_from", "created_at", "binding_id")
         )
         actual_collection_etag = _calculate_collection_etag(
@@ -415,6 +410,7 @@ def _serialize_attachment_record(record: PoolWorkflowBinding) -> dict[str, Any]:
     profile_revision = record.binding_profile_revision
     if profile is None or profile_revision is None:
         raise PoolWorkflowBindingStoreError(
+            f"{POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING}: "
             f"Workflow binding '{record.binding_id}' is missing binding_profile references."
         )
     return {
@@ -462,107 +458,6 @@ def _build_profile_lifecycle_warning(*, profile: BindingProfile) -> dict[str, st
         "title": "Binding profile is deactivated",
         "detail": "Pinned reusable binding profile is deactivated and requires planned migration.",
     }
-
-
-def _ensure_attachment_refs_for_pool(*, pool: OrganizationPool) -> None:
-    missing_records = list(
-        PoolWorkflowBinding.objects.filter(pool=pool).filter(
-            binding_profile__isnull=True
-        )
-    ) + list(
-        PoolWorkflowBinding.objects.filter(pool=pool).filter(
-            binding_profile_revision__isnull=True
-        )
-    )
-    seen_ids: set[str] = set()
-    for record in missing_records:
-        if record.binding_id in seen_ids:
-            continue
-        seen_ids.add(record.binding_id)
-        _ensure_attachment_ref_for_record(record=record)
-
-
-def _ensure_attachment_ref_for_record(*, record: PoolWorkflowBinding) -> PoolWorkflowBinding:
-    if record.binding_profile_id and record.binding_profile_revision_id:
-        if record.binding_profile is None or record.binding_profile_revision is None:
-            return (
-                PoolWorkflowBinding.objects.filter(binding_id=record.binding_id)
-                .select_related("binding_profile", "binding_profile_revision")
-                .get()
-            )
-        return record
-
-    with transaction.atomic():
-        locked = (
-            PoolWorkflowBinding.objects.select_for_update()
-            .filter(binding_id=record.binding_id)
-            .get()
-        )
-        if locked.binding_profile_id and locked.binding_profile_revision_id:
-            return locked
-
-        generated_code = _build_generated_profile_code(record=locked)
-        profile = BindingProfile.objects.create(
-            tenant=locked.tenant,
-            code=generated_code,
-            name=_build_generated_profile_name(record=locked),
-            description=(
-                "Generated one-off binding profile materialized from historical "
-                f"pool_workflow_binding '{locked.binding_id}'."
-            ),
-            created_by="system-backfill",
-            updated_by="system-backfill",
-        )
-        revision = BindingProfileRevision.objects.create(
-            binding_profile_revision_id=f"bp_rev_{uuid4().hex}",
-            tenant=locked.tenant,
-            profile=profile,
-            contract_version="binding_profile_revision.v1",
-            revision_number=1,
-            workflow_definition_key=locked.workflow_definition_key,
-            workflow_revision_id=locked.workflow_revision_id,
-            workflow_revision=locked.workflow_revision,
-            workflow_name=locked.workflow_name,
-            decisions=list(locked.decisions) if isinstance(locked.decisions, list) else [],
-            parameters=dict(locked.parameters) if isinstance(locked.parameters, dict) else {},
-            role_mapping=dict(locked.role_mapping) if isinstance(locked.role_mapping, dict) else {},
-            metadata={
-                "source": "generated_from_pool_workflow_binding",
-                "generated_from_binding_id": locked.binding_id,
-                "generated_from_pool_id": str(locked.pool_id),
-            },
-            created_by="system-backfill",
-        )
-        locked.binding_profile = profile
-        locked.binding_profile_revision = revision
-        locked.contract_version = POOL_WORKFLOW_BINDING_ATTACHMENT_CONTRACT_VERSION
-        locked.updated_by = "system-backfill"
-        locked.save(
-            update_fields=[
-                "binding_profile",
-                "binding_profile_revision",
-                "contract_version",
-                "updated_by",
-                "updated_at",
-            ]
-        )
-        return (
-            PoolWorkflowBinding.objects.filter(binding_id=record.binding_id)
-            .select_related("binding_profile", "binding_profile_revision")
-            .get()
-        )
-
-
-def _build_generated_profile_code(*, record: PoolWorkflowBinding) -> str:
-    seed = f"{record.pool_id}:{record.binding_id}"
-    suffix = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:12]
-    pool_code = str(record.pool.code or "pool").strip()[:48]
-    return f"generated-{pool_code}-{suffix}"
-
-
-def _build_generated_profile_name(*, record: PoolWorkflowBinding) -> str:
-    workflow_name = str(record.workflow_name or record.workflow_definition_key or record.binding_id).strip()
-    return f"Generated {workflow_name}"
 
 
 def _serialize_attachment_collection(
@@ -616,6 +511,7 @@ def _normalize_requested_revision(
 
 
 __all__ = [
+    "POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING",
     "PoolWorkflowBindingAttachmentLifecycleConflictError",
     "delete_pool_workflow_binding_attachment",
     "get_pool_workflow_binding_attachment",

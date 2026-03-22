@@ -6,6 +6,8 @@ import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
+from apps.intercompany_pools.models import OrganizationPool
+from apps.intercompany_pools.workflow_binding_attachments_store import upsert_pool_workflow_binding_attachment
 from apps.tenancy.models import Tenant, TenantMember
 
 
@@ -155,3 +157,92 @@ def test_binding_profiles_api_rejects_duplicate_code_with_conflict(authenticated
         status_code=409,
         code="BINDING_PROFILE_CODE_CONFLICT",
     )
+
+
+@pytest.mark.django_db
+def test_binding_profile_detail_includes_scoped_attachment_usage_summary(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    create_response = authenticated_client.post(
+        "/api/v2/pools/binding-profiles/",
+        {
+            "code": "services-publication-default",
+            "name": "Services Publication",
+            "description": "Reusable publication scheme",
+            "revision": _build_revision_payload(),
+        },
+        format="json",
+    )
+    assert create_response.status_code == 201
+    binding_profile = create_response.json()["binding_profile"]
+    binding_profile_id = binding_profile["binding_profile_id"]
+    first_revision_id = binding_profile["latest_revision"]["binding_profile_revision_id"]
+
+    revise_response = authenticated_client.post(
+        f"/api/v2/pools/binding-profiles/{binding_profile_id}/revisions/",
+        {
+            "revision": _build_revision_payload(workflow_revision=4),
+        },
+        format="json",
+    )
+    assert revise_response.status_code == 201
+    revised_binding_profile = revise_response.json()["binding_profile"]
+    second_revision_id = revised_binding_profile["latest_revision"]["binding_profile_revision_id"]
+
+    first_pool = OrganizationPool.objects.create(
+        tenant=default_tenant,
+        code=f"pool-{uuid4().hex[:6]}",
+        name="First Pool",
+    )
+    second_pool = OrganizationPool.objects.create(
+        tenant=default_tenant,
+        code=f"pool-{uuid4().hex[:6]}",
+        name="Second Pool",
+    )
+
+    upsert_pool_workflow_binding_attachment(
+        pool=first_pool,
+        workflow_binding={
+            "binding_profile_revision_id": first_revision_id,
+            "selector": {"direction": "top_down", "mode": "safe", "tags": ["baseline"]},
+            "effective_from": "2026-01-01",
+            "status": "active",
+        },
+        actor_username="operator",
+    )
+    upsert_pool_workflow_binding_attachment(
+        pool=second_pool,
+        workflow_binding={
+            "binding_profile_revision_id": second_revision_id,
+            "selector": {"direction": "bottom_up", "mode": "safe", "tags": []},
+            "effective_from": "2026-02-01",
+            "status": "draft",
+        },
+        actor_username="operator",
+    )
+
+    detail_response = authenticated_client.get(f"/api/v2/pools/binding-profiles/{binding_profile_id}/")
+    assert detail_response.status_code == 200
+    usage_summary = detail_response.json()["binding_profile"]["usage_summary"]
+
+    assert usage_summary["attachment_count"] == 2
+    assert len(usage_summary["revision_summary"]) == 2
+    assert {item["binding_profile_revision_id"] for item in usage_summary["revision_summary"]} == {
+        first_revision_id,
+        second_revision_id,
+    }
+    attachments_by_pool_id = {
+        item["pool_id"]: item
+        for item in usage_summary["attachments"]
+    }
+    assert set(attachments_by_pool_id) == {str(first_pool.id), str(second_pool.id)}
+    first_attachment = attachments_by_pool_id[str(first_pool.id)]
+    assert first_attachment["pool_code"] == first_pool.code
+    assert first_attachment["binding_id"]
+    assert first_attachment["binding_profile_revision_id"] == first_revision_id
+    assert first_attachment["selector"] == {
+        "direction": "top_down",
+        "mode": "safe",
+        "tags": ["baseline"],
+    }

@@ -272,6 +272,35 @@ const BINDING_PROFILE_DETAIL = {
       created_at: NOW,
     },
   ],
+  usage_summary: {
+    attachment_count: 1,
+    revision_summary: [
+      {
+        binding_profile_revision_id: 'bp-rev-services-r2',
+        binding_profile_revision_number: 2,
+        attachment_count: 1,
+      },
+    ],
+    attachments: [
+      {
+        pool_id: 'pool-1',
+        pool_code: 'pool-main',
+        pool_name: 'Main Pool',
+        binding_id: 'binding-top-down',
+        attachment_revision: 3,
+        binding_profile_revision_id: 'bp-rev-services-r2',
+        binding_profile_revision_number: 2,
+        status: 'active',
+        selector: {
+          direction: 'top_down',
+          mode: 'safe',
+          tags: [],
+        },
+        effective_from: NOW,
+        effective_to: null,
+      },
+    ],
+  },
   created_by: 'analyst',
   updated_by: 'analyst',
   deactivated_by: null,
@@ -353,6 +382,11 @@ const LEGACY_BINDING_PROFILE_DETAIL = {
       created_at: NOW,
     },
   ],
+  usage_summary: {
+    attachment_count: 0,
+    revision_summary: [],
+    attachments: [],
+  },
   deactivated_by: 'analyst',
   deactivated_at: NOW,
 }
@@ -1584,7 +1618,7 @@ test('UI platform: /pools/binding-profiles keeps mobile catalog readable and ope
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expectNoHorizontalOverflow(page)
 
-  await page.getByText('services-publication').first().click()
+  await page.getByRole('button', { name: 'Open profile services-publication' }).click()
 
   const detailDrawer = page.getByRole('dialog')
   await expect(detailDrawer).toBeVisible()
@@ -1847,7 +1881,7 @@ test('Runtime contract: /decisions avoids mount-time waterfall and duplicate not
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 
-test('Runtime contract: /pools/binding-profiles defers usage reads until the user requests them', async ({ page }) => {
+test('Runtime contract: /pools/binding-profiles keeps usage scoped without broad pool scans', async ({ page }) => {
   const counts = createRequestCounts()
 
   await setupAuth(page)
@@ -1857,11 +1891,13 @@ test('Runtime contract: /pools/binding-profiles defers usage reads until the use
   await page.goto('/pools/binding-profiles', { waitUntil: 'domcontentloaded' })
 
   await expect(page.getByText('Binding Profiles')).toBeVisible()
+  await expect.poll(() => counts.bindingProfileDetails).toBe(1)
   await expect.poll(() => counts.organizationPools).toBe(0)
 
   await page.getByRole('button', { name: 'Load attachment usage' }).click()
 
-  await expect.poll(() => counts.organizationPools).toBe(1)
+  await expect.poll(() => counts.organizationPools).toBe(0)
+  await expect(counts.bindingProfileDetails).toBe(1)
   await expect(page.getByText('Main Pool')).toBeVisible()
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
@@ -1901,16 +1937,18 @@ test('Runtime contract: /pools/binding-profiles hands off to /pools/catalog with
   await expect(counts.meReads).toBe(0)
   await expect(counts.myTenantsReads).toBe(0)
 
-  await page.getByRole('button', { name: 'Open attachment workspace' }).first().click()
+  await page.getByRole('button', { name: 'Load attachment usage' }).click()
+  await page.getByRole('button', { name: 'Open pool attachment' }).click()
 
-  await expect(page).toHaveURL(/\/pools\/catalog\?pool_id=.*&tab=pools&date=/)
+  await expect(page).toHaveURL(/\/pools\/catalog\?pool_id=pool-1&tab=bindings(?:&date=2026-01-01)?$/)
   await expect(page.getByRole('heading', { name: 'Pool Catalog', level: 2 })).toBeVisible()
-  await expect(page.getByRole('tab', { name: 'Pools' })).toHaveAttribute('aria-selected', 'true')
-  await expect(page.getByTestId('pool-catalog-context-pool')).toBeVisible()
+  await expect(page.getByTestId('pool-catalog-context-pool')).toHaveText('pool-main - Main Pool')
+  await expect(page.getByTestId('pool-catalog-bindings-drawer')).toBeVisible()
 
   await expect(counts.bootstrap).toBe(1)
   await expect(counts.meReads).toBe(0)
   await expect(counts.myTenantsReads).toBe(0)
+  await expect.poll(() => counts.organizationPools).toBe(1)
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 

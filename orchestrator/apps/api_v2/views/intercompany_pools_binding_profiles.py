@@ -73,8 +73,35 @@ class BindingProfileSummarySerializer(serializers.Serializer):
     updated_at = serializers.DateTimeField()
 
 
+class BindingProfileUsageRevisionSummarySerializer(serializers.Serializer):
+    binding_profile_revision_id = serializers.CharField(required=True, allow_blank=False)
+    binding_profile_revision_number = serializers.IntegerField(min_value=1, required=False, allow_null=True)
+    attachment_count = serializers.IntegerField(min_value=0, required=True)
+
+
+class BindingProfileUsageAttachmentSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField(required=True)
+    pool_code = serializers.CharField(required=True)
+    pool_name = serializers.CharField(required=True)
+    binding_id = serializers.CharField(required=True, allow_blank=False)
+    attachment_revision = serializers.IntegerField(min_value=1, required=True)
+    binding_profile_revision_id = serializers.CharField(required=True, allow_blank=False)
+    binding_profile_revision_number = serializers.IntegerField(min_value=1, required=False, allow_null=True)
+    status = serializers.CharField(required=True)
+    selector = serializers.JSONField(required=True)
+    effective_from = serializers.DateField(required=True)
+    effective_to = serializers.DateField(required=False, allow_null=True)
+
+
+class BindingProfileUsageSummarySerializer(serializers.Serializer):
+    attachment_count = serializers.IntegerField(min_value=0, required=True)
+    revision_summary = BindingProfileUsageRevisionSummarySerializer(many=True)
+    attachments = BindingProfileUsageAttachmentSerializer(many=True)
+
+
 class BindingProfileDetailSerializer(BindingProfileSummarySerializer):
     revisions = BindingProfileRevisionReadSerializer(many=True)
+    usage_summary = BindingProfileUsageSummarySerializer()
 
 
 class BindingProfileCreateRequestSerializer(serializers.Serializer):

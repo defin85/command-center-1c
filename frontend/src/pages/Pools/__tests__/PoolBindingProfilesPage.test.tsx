@@ -8,6 +8,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import type { BindingProfileDetail } from '../../../api/generated/model/bindingProfileDetail'
 import type { BindingProfileRevision } from '../../../api/generated/model/bindingProfileRevision'
 import type { BindingProfileSummary } from '../../../api/generated/model/bindingProfileSummary'
+import type { BindingProfileUsageSummary } from '../../../api/generated/model/bindingProfileUsageSummary'
 import type { AvailableDecisionRevision, AvailableWorkflowRevision } from '../../../types/workflow'
 import { PoolBindingProfilesPage } from '../PoolBindingProfilesPage'
 
@@ -17,7 +18,6 @@ const mockUseCreateBindingProfile = vi.fn()
 const mockUseReviseBindingProfile = vi.fn()
 const mockUseDeactivateBindingProfile = vi.fn()
 const mockUseAuthoringReferences = vi.fn()
-const mockListOrganizationPools = vi.fn()
 
 vi.mock('../../../api/queries/poolBindingProfiles', () => ({
   useBindingProfiles: (...args: unknown[]) => mockUseBindingProfiles(...args),
@@ -29,10 +29,6 @@ vi.mock('../../../api/queries/poolBindingProfiles', () => ({
 
 vi.mock('../../../api/queries/authoringReferences', () => ({
   useAuthoringReferences: (...args: unknown[]) => mockUseAuthoringReferences(...args),
-}))
-
-vi.mock('../../../api/intercompanyPools', () => ({
-  listOrganizationPools: (...args: unknown[]) => mockListOrganizationPools(...args),
 }))
 
 const ROUTER_FUTURE = {
@@ -92,6 +88,15 @@ function buildSummaryFromDetail(detail: BindingProfileDetail): BindingProfileSum
   }
 }
 
+function buildUsageSummary(overrides: Partial<BindingProfileUsageSummary> = {}): BindingProfileUsageSummary {
+  return {
+    attachment_count: 0,
+    revision_summary: [],
+    attachments: [],
+    ...overrides,
+  }
+}
+
 const activeDetail: BindingProfileDetail = {
   binding_profile_id: 'bp-services',
   code: 'services-publication',
@@ -114,6 +119,7 @@ const activeDetail: BindingProfileDetail = {
       created_at: '2026-03-15T08:00:00Z',
     }),
   ],
+  usage_summary: buildUsageSummary(),
   created_by: 'analyst',
   updated_by: 'analyst',
   deactivated_by: undefined,
@@ -153,6 +159,7 @@ const deactivatedDetail: BindingProfileDetail = {
       },
     }),
   ],
+  usage_summary: buildUsageSummary(),
   created_by: 'analyst',
   updated_by: 'analyst',
   deactivated_by: 'staff',
@@ -273,7 +280,6 @@ describe('PoolBindingProfilesPage', () => {
     mockUseReviseBindingProfile.mockReset()
     mockUseDeactivateBindingProfile.mockReset()
     mockUseAuthoringReferences.mockReset()
-    mockListOrganizationPools.mockReset()
 
     mockUseBindingProfiles.mockReturnValue({
       data: {
@@ -311,7 +317,6 @@ describe('PoolBindingProfilesPage', () => {
       isError: false,
       error: null,
     })
-    mockListOrganizationPools.mockResolvedValue([])
   })
 
   it('renders a dedicated reusable profile catalog with list and detail states on a separate authoring surface', async () => {
@@ -560,77 +565,64 @@ describe('PoolBindingProfilesPage', () => {
   })
 
   it('shows pool attachment usage for selected profile revisions', async () => {
-    mockListOrganizationPools.mockResolvedValue([
-      {
-        id: 'pool-1',
-        code: 'pool-main',
-        name: 'Pool Main',
-        description: '',
-        is_active: true,
-        metadata: {},
-        workflow_bindings: [
-          {
-            binding_id: 'binding-1',
-            pool_id: 'pool-1',
-            revision: 4,
-            status: 'active',
-            binding_profile_id: activeDetail.binding_profile_id,
-            binding_profile_revision_id: 'bp-rev-services-r2',
-            binding_profile_revision_number: 2,
-            resolved_profile: {
-              binding_profile_id: activeDetail.binding_profile_id,
-              code: activeDetail.code,
-              name: activeDetail.name,
-              status: activeDetail.status,
-              binding_profile_revision_id: 'bp-rev-services-r2',
-              binding_profile_revision_number: 2,
-              workflow: activeDetail.latest_revision.workflow,
-              decisions: activeDetail.latest_revision.decisions,
-              parameters: activeDetail.latest_revision.parameters,
-              role_mapping: activeDetail.latest_revision.role_mapping,
-            },
-            selector: { direction: 'top_down', mode: 'safe', tags: ['baseline'] },
-            effective_from: '2026-01-01',
-            effective_to: null,
-          },
-          {
-            binding_id: 'binding-2',
-            pool_id: 'pool-1',
-            revision: 2,
-            status: 'draft',
-            binding_profile_id: activeDetail.binding_profile_id,
-            binding_profile_revision_id: 'bp-rev-services-r1',
-            binding_profile_revision_number: 1,
-            resolved_profile: {
-              binding_profile_id: activeDetail.binding_profile_id,
-              code: activeDetail.code,
-              name: activeDetail.name,
-              status: activeDetail.status,
-              binding_profile_revision_id: 'bp-rev-services-r1',
-              binding_profile_revision_number: 1,
-              workflow: activeDetail.revisions[1].workflow,
-              decisions: activeDetail.revisions[1].decisions,
-              parameters: activeDetail.revisions[1].parameters,
-              role_mapping: activeDetail.revisions[1].role_mapping,
-            },
-            selector: { direction: 'bottom_up', mode: 'safe', tags: [] },
-            effective_from: '2026-02-01',
-            effective_to: null,
-          },
-        ],
-        updated_at: '2026-03-16T12:00:00Z',
-      },
-    ])
+    mockUseBindingProfileDetail.mockImplementation((bindingProfileId?: string) => ({
+      data: bindingProfileId ? {
+        binding_profile: {
+          ...profileDetails[bindingProfileId],
+          usage_summary: buildUsageSummary({
+            attachment_count: 2,
+            revision_summary: [
+              {
+                binding_profile_revision_id: 'bp-rev-services-r2',
+                binding_profile_revision_number: 2,
+                attachment_count: 1,
+              },
+              {
+                binding_profile_revision_id: 'bp-rev-services-r1',
+                binding_profile_revision_number: 1,
+                attachment_count: 1,
+              },
+            ],
+            attachments: [
+              {
+                pool_id: 'pool-1',
+                pool_code: 'pool-main',
+                pool_name: 'Pool Main',
+                binding_id: 'binding-1',
+                attachment_revision: 4,
+                status: 'active',
+                binding_profile_revision_id: 'bp-rev-services-r2',
+                binding_profile_revision_number: 2,
+                selector: { direction: 'top_down', mode: 'safe', tags: ['baseline'] },
+                effective_from: '2026-01-01',
+                effective_to: null,
+              },
+              {
+                pool_id: 'pool-1',
+                pool_code: 'pool-main',
+                pool_name: 'Pool Main',
+                binding_id: 'binding-2',
+                attachment_revision: 2,
+                status: 'draft',
+                binding_profile_revision_id: 'bp-rev-services-r1',
+                binding_profile_revision_number: 1,
+                selector: { direction: 'bottom_up', mode: 'safe', tags: [] },
+                effective_from: '2026-02-01',
+                effective_to: null,
+              },
+            ],
+          }),
+        },
+      } : undefined,
+      isLoading: false,
+      isError: false,
+      error: null,
+    }))
 
     renderPage()
 
-    expect(mockListOrganizationPools).not.toHaveBeenCalled()
     expect(await screen.findByText('Pool attachment usage')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Load attachment usage' }))
-
-    await waitFor(() => {
-      expect(mockListOrganizationPools).toHaveBeenCalledTimes(1)
-    })
 
     expect(screen.getByTestId('pool-binding-profiles-usage-total')).toHaveTextContent('2')
     expect(screen.getByTestId('pool-binding-profiles-usage-revisions')).toHaveTextContent('2')
@@ -641,43 +633,41 @@ describe('PoolBindingProfilesPage', () => {
 
   it('navigates to the pool attachment workspace through the router when opening usage entries', async () => {
     const user = userEvent.setup()
-    mockListOrganizationPools.mockResolvedValue([
-      {
-        id: 'pool-1',
-        code: 'pool-main',
-        name: 'Pool Main',
-        description: '',
-        is_active: true,
-        metadata: {},
-        workflow_bindings: [
-          {
-            binding_id: 'binding-1',
-            pool_id: 'pool-1',
-            revision: 4,
-            status: 'active',
-            binding_profile_id: activeDetail.binding_profile_id,
-            binding_profile_revision_id: 'bp-rev-services-r2',
-            binding_profile_revision_number: 2,
-            resolved_profile: {
-              binding_profile_id: activeDetail.binding_profile_id,
-              code: activeDetail.code,
-              name: activeDetail.name,
-              status: activeDetail.status,
-              binding_profile_revision_id: 'bp-rev-services-r2',
-              binding_profile_revision_number: 2,
-              workflow: activeDetail.latest_revision.workflow,
-              decisions: activeDetail.latest_revision.decisions,
-              parameters: activeDetail.latest_revision.parameters,
-              role_mapping: activeDetail.latest_revision.role_mapping,
-            },
-            selector: { direction: 'top_down', mode: 'safe', tags: ['baseline'] },
-            effective_from: '2026-01-01',
-            effective_to: null,
-          },
-        ],
-        updated_at: '2026-03-16T12:00:00Z',
-      },
-    ])
+    mockUseBindingProfileDetail.mockImplementation((bindingProfileId?: string) => ({
+      data: bindingProfileId ? {
+        binding_profile: {
+          ...profileDetails[bindingProfileId],
+          usage_summary: buildUsageSummary({
+            attachment_count: 1,
+            revision_summary: [
+              {
+                binding_profile_revision_id: 'bp-rev-services-r2',
+                binding_profile_revision_number: 2,
+                attachment_count: 1,
+              },
+            ],
+            attachments: [
+              {
+                pool_id: 'pool-1',
+                pool_code: 'pool-main',
+                pool_name: 'Pool Main',
+                binding_id: 'binding-1',
+                attachment_revision: 4,
+                status: 'active',
+                binding_profile_revision_id: 'bp-rev-services-r2',
+                binding_profile_revision_number: 2,
+                selector: { direction: 'top_down', mode: 'safe', tags: ['baseline'] },
+                effective_from: '2026-01-01',
+                effective_to: null,
+              },
+            ],
+          }),
+        },
+      } : undefined,
+      isLoading: false,
+      isError: false,
+      error: null,
+    }))
 
     renderPageWithRoutes('/pools/binding-profiles?profile=bp-services&detail=1')
 
@@ -711,6 +701,5 @@ describe('PoolBindingProfilesPage', () => {
 
     expect(await screen.findByText('Backend refused to load binding profiles.')).toBeInTheDocument()
     expect(screen.getByText('Select a profile from the catalog.')).toBeInTheDocument()
-    expect(mockListOrganizationPools).not.toHaveBeenCalled()
   })
 })

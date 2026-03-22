@@ -28,12 +28,12 @@ import {
   useDeactivateBindingProfile,
   useReviseBindingProfile,
 } from '../../api/queries/poolBindingProfiles'
-import { listOrganizationPools, type OrganizationPool, type PoolWorkflowBinding } from '../../api/intercompanyPools'
 import type {
   BindingProfileCreateRequest,
   BindingProfileRevision,
   BindingProfileRevisionCreateRequest,
   BindingProfileSummary,
+  BindingProfileUsageAttachment,
 } from '../../api/poolBindingProfiles'
 import { resolveApiError } from './masterData/errorUtils'
 import { PoolBindingProfilesEditorModal } from './PoolBindingProfilesEditorModal'
@@ -45,6 +45,12 @@ const { useBreakpoint } = Grid
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-'
   return new Date(value).toLocaleString()
+}
+
+type BindingSelector = {
+  direction?: string | null
+  mode?: string | null
+  tags?: string[]
 }
 
 type BindingProfileUsageRow = {
@@ -60,13 +66,13 @@ type BindingProfileUsageRow = {
   scope: string
 }
 
-const formatBindingScope = (binding: PoolWorkflowBinding) => {
+const formatBindingScope = (selector?: BindingSelector | null) => {
   const parts = [
-    binding.selector?.direction || 'any direction',
-    binding.selector?.mode || 'any mode',
+    selector?.direction || 'any direction',
+    selector?.mode || 'any mode',
   ]
-  if (binding.selector?.tags?.length) {
-    parts.push(binding.selector.tags.join(', '))
+  if (selector?.tags?.length) {
+    parts.push(selector.tags.join(', '))
   }
   return parts.join(' · ')
 }
@@ -113,10 +119,7 @@ export function PoolBindingProfilesPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isReviseOpen, setIsReviseOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [organizationPools, setOrganizationPools] = useState<OrganizationPool[]>([])
   const [isUsageRequested, setIsUsageRequested] = useState(false)
-  const [usageLoading, setUsageLoading] = useState(false)
-  const [usageError, setUsageError] = useState<string | null>(null)
   const deferredSearch = useDeferredValue(search)
 
   const bindingProfilesQuery = useBindingProfiles()
@@ -231,30 +234,26 @@ export function PoolBindingProfilesPage() {
   })
   const selectedProfile = selectedProfileQuery.data?.binding_profile ?? null
   const selectedProfileUsage = useMemo<BindingProfileUsageRow[]>(() => {
-    if (!selectedProfileId) {
-      return []
-    }
-    return organizationPools.flatMap((pool) => (
-      (pool.workflow_bindings ?? [])
-        .filter((binding) => binding.binding_profile_id === selectedProfileId)
-        .map((binding) => ({
-          key: `${pool.id}:${binding.binding_id}`,
-          poolId: pool.id,
-          poolCode: pool.code,
-          poolName: pool.name,
-          bindingId: binding.binding_id,
-          attachmentRevision: binding.revision,
-          bindingProfileRevisionId: binding.binding_profile_revision_id,
-          bindingProfileRevisionNumber: binding.binding_profile_revision_number ?? null,
-          status: binding.status,
-          scope: formatBindingScope(binding),
-        }))
-    ))
-  }, [organizationPools, selectedProfileId])
+    const attachments = selectedProfile?.usage_summary?.attachments ?? []
+    return attachments.map((attachment: BindingProfileUsageAttachment) => ({
+      key: `${attachment.pool_id}:${attachment.binding_id}`,
+      poolId: attachment.pool_id,
+      poolCode: attachment.pool_code,
+      poolName: attachment.pool_name,
+      bindingId: attachment.binding_id,
+      attachmentRevision: attachment.attachment_revision,
+      bindingProfileRevisionId: attachment.binding_profile_revision_id,
+      bindingProfileRevisionNumber: attachment.binding_profile_revision_number ?? null,
+      status: attachment.status,
+      scope: formatBindingScope(attachment.selector),
+    }))
+  }, [selectedProfile])
   const selectedProfileUsageRevisionCount = useMemo(
-    () => new Set(selectedProfileUsage.map((item) => item.bindingProfileRevisionId)).size,
-    [selectedProfileUsage]
+    () => selectedProfile?.usage_summary?.revision_summary.length ?? 0,
+    [selectedProfile]
   )
+  const visibleProfileUsage = isUsageRequested ? selectedProfileUsage : []
+  const visibleProfileUsageRevisionCount = isUsageRequested ? selectedProfileUsageRevisionCount : 0
 
   const openAttachmentWorkspace = (poolId?: string) => {
     if (!poolId) {
@@ -455,39 +454,8 @@ export function PoolBindingProfilesPage() {
   }
 
   useEffect(() => {
-    if (!isUsageRequested || !selectedProfileId) {
-      setUsageLoading(false)
-      setUsageError(null)
-      return
-    }
-
-    let isCancelled = false
-    setUsageLoading(true)
-    setUsageError(null)
-
-    void listOrganizationPools()
-      .then((data) => {
-        if (isCancelled) {
-          return
-        }
-        setOrganizationPools(data)
-      })
-      .catch(() => {
-        if (isCancelled) {
-          return
-        }
-        setUsageError('Failed to load pool attachment usage.')
-      })
-      .finally(() => {
-        if (!isCancelled) {
-          setUsageLoading(false)
-        }
-      })
-
-    return () => {
-      isCancelled = true
-    }
-  }, [isUsageRequested, selectedProfileId])
+    setIsUsageRequested(false)
+  }, [selectedProfileId])
 
   return (
     <WorkspacePage
@@ -666,10 +634,9 @@ export function PoolBindingProfilesPage() {
 
                 <EntityTable
                   title="Pool attachment usage"
-                  error={usageError}
-                  loading={usageLoading}
+                  loading={selectedProfileQuery.isLoading && isUsageRequested}
                   emptyDescription="No pool attachments are pinned on this profile yet."
-                  dataSource={selectedProfileUsage}
+                  dataSource={visibleProfileUsage}
                   columns={usageColumns}
                   rowKey="key"
                   toolbar={(
@@ -690,12 +657,12 @@ export function PoolBindingProfilesPage() {
                       <Text>
                         Attachments:
                         {' '}
-                        <Text strong data-testid="pool-binding-profiles-usage-total">{selectedProfileUsage.length}</Text>
+                        <Text strong data-testid="pool-binding-profiles-usage-total">{visibleProfileUsage.length}</Text>
                       </Text>
                       <Text>
                         Revisions in use:
                         {' '}
-                        <Text strong data-testid="pool-binding-profiles-usage-revisions">{selectedProfileUsageRevisionCount}</Text>
+                        <Text strong data-testid="pool-binding-profiles-usage-revisions">{visibleProfileUsageRevisionCount}</Text>
                       </Text>
                     </div>
                   )}

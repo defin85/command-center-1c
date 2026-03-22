@@ -1,0 +1,14 @@
+type: object
+properties:
+  binding_profile_revision_id:
+    type: string
+  binding_profile_revision_number:
+    type: integer
+    minimum: 1
+    nullable: true
+  attachment_count:
+    type: integer
+    minimum: 0
+required:
+  - binding_profile_revision_id
+  - attachment_count

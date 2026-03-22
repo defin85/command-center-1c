@@ -13,6 +13,7 @@ from apps.intercompany_pools.models import BindingProfileRevision, OrganizationP
 from apps.intercompany_pools.workflow_bindings_store import upsert_canonical_pool_workflow_binding
 from apps.intercompany_pools.workflow_binding_attachments_store import (
     PoolWorkflowBindingAttachmentLifecycleConflictError,
+    PoolWorkflowBindingStoreError,
     get_pool_workflow_binding_attachment,
     list_pool_workflow_binding_attachments,
     upsert_pool_workflow_binding_attachment,
@@ -209,7 +210,7 @@ def test_existing_attachment_on_deactivated_profile_remains_readable_but_new_att
 
 
 @pytest.mark.django_db
-def test_list_pool_workflow_binding_attachments_materializes_generated_profile_for_legacy_rows() -> None:
+def test_list_pool_workflow_binding_attachments_fails_closed_for_legacy_rows_without_profile_refs() -> None:
     tenant = Tenant.objects.create(slug=f"binding-attachment-legacy-{uuid4().hex[:8]}", name="Binding Attachment Legacy")
     pool = OrganizationPool.objects.create(
         tenant=tenant,
@@ -246,42 +247,23 @@ def test_list_pool_workflow_binding_attachments_materializes_generated_profile_f
         updated_by="legacy-import",
     )
 
-    listed = list_pool_workflow_binding_attachments(pool=pool)
+    with pytest.raises(PoolWorkflowBindingStoreError) as exc_info:
+        list_pool_workflow_binding_attachments(pool=pool)
 
-    assert len(listed) == 1
-    attachment = listed[0]
-    assert attachment["binding_id"] == legacy_binding.binding_id
-    assert attachment["binding_profile_id"]
-    assert attachment["binding_profile_revision_id"]
-    assert attachment["binding_profile_revision_number"] == 1
-    assert attachment["contract_version"] == POOL_WORKFLOW_BINDING_ATTACHMENT_CONTRACT_VERSION
-    assert attachment["resolved_profile"]["workflow"]["workflow_revision"] == 3
-    assert attachment["resolved_profile"]["parameters"] == {"publication_variant": "full"}
-    assert attachment["resolved_profile"]["role_mapping"] == {"initiator": "finance"}
-
-    persisted = (
-        PoolWorkflowBinding.objects.select_related("binding_profile", "binding_profile_revision")
-        .get(binding_id=legacy_binding.binding_id)
+    assert str(exc_info.value) == (
+        f"POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING: Workflow binding '{legacy_binding.binding_id}' "
+        "is missing binding_profile references."
     )
-    assert persisted.binding_profile_id is not None
-    assert persisted.binding_profile_revision_id is not None
-    assert persisted.updated_by == "system-backfill"
-    assert persisted.contract_version == POOL_WORKFLOW_BINDING_ATTACHMENT_CONTRACT_VERSION
 
-    profile = persisted.binding_profile
-    profile_revision = persisted.binding_profile_revision
-    assert profile is not None
-    assert profile_revision is not None
-    assert profile.created_by == "system-backfill"
-    assert profile.code.startswith(f"generated-{pool.code}-")
-    assert profile_revision.created_by == "system-backfill"
-    assert profile_revision.metadata["source"] == "generated_from_pool_workflow_binding"
-    assert profile_revision.metadata["generated_from_binding_id"] == legacy_binding.binding_id
-    assert profile_revision.metadata["generated_from_pool_id"] == str(pool.id)
+    persisted = PoolWorkflowBinding.objects.get(binding_id=legacy_binding.binding_id)
+    assert persisted.binding_profile_id is None
+    assert persisted.binding_profile_revision_id is None
+    assert persisted.updated_by == "legacy-import"
+    assert persisted.contract_version == "pool_workflow_binding.v1"
 
 
 @pytest.mark.django_db
-def test_list_pool_workflow_binding_attachments_materializes_generated_profile_for_legacy_binding() -> None:
+def test_list_pool_workflow_binding_attachments_fails_closed_for_legacy_binding_without_profile_refs() -> None:
     tenant = Tenant.objects.create(slug=f"binding-attachment-legacy-{uuid4().hex[:8]}", name="Binding Attachment")
     pool = OrganizationPool.objects.create(
         tenant=tenant,
@@ -299,20 +281,58 @@ def test_list_pool_workflow_binding_attachments_materializes_generated_profile_f
     assert record.binding_profile_id is None
     assert record.binding_profile_revision_id is None
 
-    listed = list_pool_workflow_binding_attachments(pool=pool)
+    with pytest.raises(PoolWorkflowBindingStoreError) as exc_info:
+        list_pool_workflow_binding_attachments(pool=pool)
 
-    assert len(listed) == 1
-    assert listed[0]["binding_id"] == legacy_binding["binding_id"]
-    assert listed[0]["binding_profile_revision_id"]
-    assert listed[0]["resolved_profile"]["workflow"]["workflow_revision"] == 3
+    assert str(exc_info.value) == (
+        f"POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING: Workflow binding '{legacy_binding['binding_id']}' "
+        "is missing binding_profile references."
+    )
 
     record.refresh_from_db()
-    assert record.binding_profile_id is not None
-    assert record.binding_profile_revision_id is not None
-    assert record.binding_profile.code.startswith("generated-")
-    assert record.binding_profile_revision.metadata["source"] == "generated_from_pool_workflow_binding"
-    assert record.binding_profile_revision.metadata["generated_from_binding_id"] == legacy_binding["binding_id"]
-    assert record.binding_profile_revision.metadata["generated_from_pool_id"] == str(pool.id)
+    assert record.binding_profile_id is None
+    assert record.binding_profile_revision_id is None
+    assert record.updated_by == "legacy-import"
+
+
+@pytest.mark.django_db
+def test_get_pool_workflow_binding_attachment_fails_closed_for_missing_profile_refs() -> None:
+    tenant = Tenant.objects.create(slug=f"binding-attachment-detail-{uuid4().hex[:8]}", name="Binding Attachment")
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code=f"pool-{uuid4().hex[:6]}",
+        name="Binding Attachment Pool",
+    )
+    legacy_binding = PoolWorkflowBinding.objects.create(
+        binding_id=str(uuid4()),
+        tenant=tenant,
+        pool=pool,
+        contract_version=POOL_WORKFLOW_BINDING_ATTACHMENT_CONTRACT_VERSION,
+        status="active",
+        effective_from=date(2026, 1, 1),
+        effective_to=None,
+        direction="top_down",
+        mode="safe",
+        selector_tags=["baseline"],
+        workflow_definition_key="services-publication",
+        workflow_revision_id=str(uuid4()),
+        workflow_revision=3,
+        workflow_name="services_publication",
+        decisions=[],
+        parameters={"publication_variant": "full"},
+        role_mapping={"initiator": "finance"},
+        revision=1,
+        created_by="legacy-import",
+        updated_by="legacy-import",
+    )
+
+    with pytest.raises(PoolWorkflowBindingStoreError) as exc_info:
+        get_pool_workflow_binding_attachment(pool=pool, binding_id=legacy_binding.binding_id)
+
+    assert str(exc_info.value) == (
+        f"POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING: Workflow binding '{legacy_binding.binding_id}' "
+        "is missing binding_profile references."
+    )
 
 
 @pytest.mark.django_db

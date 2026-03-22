@@ -23,6 +23,8 @@ properties:
     type: array
     items:
       $ref: ./BindingProfileRevision.yaml
+  usage_summary:
+    $ref: ./BindingProfileUsageSummary.yaml
   created_by:
     type: string
   updated_by:
@@ -47,5 +49,6 @@ required:
   - latest_revision_number
   - latest_revision
   - revisions
+  - usage_summary
   - created_at
   - updated_at

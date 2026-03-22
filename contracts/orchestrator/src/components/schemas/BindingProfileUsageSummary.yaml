@@ -1,0 +1,17 @@
+type: object
+properties:
+  attachment_count:
+    type: integer
+    minimum: 0
+  revision_summary:
+    type: array
+    items:
+      $ref: ./BindingProfileUsageRevisionSummary.yaml
+  attachments:
+    type: array
+    items:
+      $ref: ./BindingProfileUsageAttachment.yaml
+required:
+  - attachment_count
+  - revision_summary
+  - attachments

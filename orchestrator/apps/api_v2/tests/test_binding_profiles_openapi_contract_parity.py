@@ -66,6 +66,7 @@ def test_binding_profile_detail_schema_covers_runtime_serializer_fields() -> Non
         "type": "array",
         "items": {"$ref": "#/components/schemas/BindingProfileRevision"},
     }
+    assert properties["usage_summary"] == {"$ref": "#/components/schemas/BindingProfileUsageSummary"}
     assert properties["status"]["enum"] == ["active", "deactivated"]
 
 

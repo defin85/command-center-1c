@@ -52,6 +52,7 @@ from apps.intercompany_pools.workflow_bindings_store import (
 )
 from apps.intercompany_pools.workflow_binding_attachments_store import (
     list_pool_workflow_binding_attachments,
+    PoolWorkflowBindingStoreError,
     upsert_pool_workflow_binding_attachment,
 )
 from apps.intercompany_pools.workflow_runtime import (
@@ -779,51 +780,22 @@ def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_bindi
 
 
 @pytest.mark.django_db
-def test_start_pool_run_workflow_execution_materializes_legacy_attachment_for_default_runtime_path() -> None:
+def test_start_pool_run_workflow_execution_fails_closed_for_legacy_attachment_without_profile_refs() -> None:
     run = _create_pool_run(mode=PoolRunMode.SAFE)
     legacy_binding = _create_runtime_legacy_workflow_binding_attachment(run=run)
 
-    with patch(
-        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
-        return_value=EnqueueResult(
-            success=True,
-            operation_id="workflow-op-binding-legacy-backfill",
-            status="queued",
-            error=None,
-            error_code=None,
-        ),
-    ):
-        result = _start_runtime_workflow_execution(run=run, workflow_binding=legacy_binding)
+    with pytest.raises(PoolWorkflowBindingStoreError) as exc_info:
+        _start_runtime_workflow_execution(run=run, workflow_binding=legacy_binding)
 
-    execution = WorkflowExecution.objects.get(id=result.execution_id)
-    persisted_binding = execution.input_context.get(POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY)
-    runtime_projection = execution.input_context.get(POOL_RUNTIME_PROJECTION_CONTEXT_KEY)
-    assert isinstance(persisted_binding, dict)
-    assert isinstance(runtime_projection, dict)
-    assert persisted_binding["binding_id"] == legacy_binding["binding_id"]
-    assert persisted_binding["binding_profile_revision_id"]
-    assert persisted_binding["binding_profile_revision_number"] == 1
-    assert persisted_binding["resolved_profile"]["workflow"]["workflow_revision"] == (
-        legacy_binding["workflow"]["workflow_revision"]
+    assert str(exc_info.value) == (
+        f"POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING: Workflow binding '{legacy_binding['binding_id']}' "
+        "is missing binding_profile references."
     )
-    assert persisted_binding["resolved_profile"]["workflow"]["workflow_revision_id"] == (
-        legacy_binding["workflow"]["workflow_revision_id"]
-    )
-    assert runtime_projection["workflow_binding"]["binding_profile_revision_id"] == (
-        persisted_binding["binding_profile_revision_id"]
-    )
-    assert runtime_projection["workflow_binding"]["attachment_revision"] == persisted_binding["revision"]
 
-    persisted_record = (
-        PoolWorkflowBinding.objects.select_related("binding_profile", "binding_profile_revision")
-        .get(binding_id=str(legacy_binding["binding_id"]))
-    )
-    assert persisted_record.binding_profile_id is not None
-    assert persisted_record.binding_profile_revision_id is not None
-    assert persisted_record.updated_by == "system-backfill"
-    assert persisted_record.binding_profile_revision.metadata["source"] == "generated_from_pool_workflow_binding"
-    assert persisted_record.binding_profile_revision.metadata["generated_from_binding_id"] == legacy_binding["binding_id"]
-    assert persisted_record.binding_profile_revision.metadata["generated_from_pool_id"] == str(run.pool_id)
+    persisted_record = PoolWorkflowBinding.objects.get(binding_id=str(legacy_binding["binding_id"]))
+    assert persisted_record.binding_profile_id is None
+    assert persisted_record.binding_profile_revision_id is None
+    assert persisted_record.updated_by == "legacy-import"
 
 
 @pytest.mark.django_db

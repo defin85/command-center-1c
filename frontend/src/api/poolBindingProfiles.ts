@@ -8,6 +8,9 @@ import type { BindingProfileMutationResponse } from './generated/model/bindingPr
 import type { BindingProfileRevision } from './generated/model/bindingProfileRevision'
 import type { BindingProfileRevisionCreateRequest } from './generated/model/bindingProfileRevisionCreateRequest'
 import type { BindingProfileSummary } from './generated/model/bindingProfileSummary'
+import type { BindingProfileUsageAttachment } from './generated/model/bindingProfileUsageAttachment'
+import type { BindingProfileUsageRevisionSummary } from './generated/model/bindingProfileUsageRevisionSummary'
+import type { BindingProfileUsageSummary } from './generated/model/bindingProfileUsageSummary'
 
 export type {
   BindingProfileCreateRequest,
@@ -18,6 +21,9 @@ export type {
   BindingProfileRevision,
   BindingProfileRevisionCreateRequest,
   BindingProfileSummary,
+  BindingProfileUsageAttachment,
+  BindingProfileUsageRevisionSummary,
+  BindingProfileUsageSummary,
 }
 
 export async function listBindingProfiles(): Promise<BindingProfileListResponse> {

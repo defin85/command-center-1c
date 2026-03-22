@@ -11,6 +11,7 @@ from apps.intercompany_pools.binding_profiles_contract import (
     BindingProfileCreateContract,
     BindingProfileRevisionContract,
 )
+from apps.intercompany_pools.binding_profile_usage_store import build_binding_profile_usage_summary
 from apps.intercompany_pools.models import BindingProfile, BindingProfileRevision
 from apps.tenancy.models import Tenant
 
@@ -71,7 +72,12 @@ def get_canonical_binding_profile(*, tenant: Tenant, binding_profile_id: str) ->
     )
     if profile is None:
         raise BindingProfileNotFoundError(binding_profile_id=binding_profile_id)
-    return _serialize_binding_profile_detail(profile)
+    detail = _serialize_binding_profile_detail(profile)
+    detail["usage_summary"] = build_binding_profile_usage_summary(
+        tenant=tenant,
+        binding_profile_id=str(profile.id),
+    )
+    return detail
 
 
 def create_canonical_binding_profile(

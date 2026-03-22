@@ -10,6 +10,7 @@ from apps.intercompany_pools.binding_profiles_store import (
     create_canonical_binding_profile,
     deactivate_canonical_binding_profile,
 )
+from apps.intercompany_pools.models import OrganizationPool, PoolWorkflowBinding
 from apps.tenancy.models import Tenant, TenantMember
 
 
@@ -192,3 +193,53 @@ def test_pool_workflow_bindings_api_rejects_new_attach_to_deactivated_profile_re
         code="POOL_WORKFLOW_BINDING_PROFILE_LIFECYCLE_CONFLICT",
     )
     assert "deactivated" in payload["detail"].lower()
+
+
+@pytest.mark.django_db
+def test_pool_workflow_bindings_api_fails_closed_for_legacy_rows_without_profile_refs(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    pool = OrganizationPool.objects.create(
+        tenant=default_tenant,
+        code=f"pool-{uuid4().hex[:6]}",
+        name="Attachment Pool",
+    )
+    legacy_binding = PoolWorkflowBinding.objects.create(
+        binding_id=str(uuid4()),
+        tenant=default_tenant,
+        pool=pool,
+        contract_version="pool_workflow_binding.v1",
+        status="active",
+        effective_from="2026-01-01",
+        effective_to=None,
+        direction="top_down",
+        mode="safe",
+        selector_tags=["baseline"],
+        workflow_definition_key="services-publication",
+        workflow_revision_id=str(uuid4()),
+        workflow_revision=3,
+        workflow_name="services_publication",
+        decisions=[],
+        parameters={"publication_variant": "full"},
+        role_mapping={"initiator": "finance"},
+        revision=1,
+        created_by="legacy-import",
+        updated_by="legacy-import",
+    )
+
+    list_response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/?pool_id={pool.id}")
+    list_payload = _assert_problem_details_response(
+        list_response,
+        status_code=400,
+        code="POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING",
+    )
+    assert legacy_binding.binding_id in list_payload["detail"]
+
+    detail_response = authenticated_client.get(f"/api/v2/pools/workflow-bindings/{legacy_binding.binding_id}/?pool_id={pool.id}")
+    detail_payload = _assert_problem_details_response(
+        detail_response,
+        status_code=400,
+        code="POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING",
+    )
+    assert legacy_binding.binding_id in detail_payload["detail"]

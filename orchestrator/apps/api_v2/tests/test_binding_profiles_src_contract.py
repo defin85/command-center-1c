@@ -156,6 +156,7 @@ def test_binding_profile_read_src_schema_exposes_latest_revision_and_revisions()
         "type": "array",
         "items": {"$ref": "./BindingProfileRevision.yaml"},
     }
+    assert properties.get("usage_summary") == {"$ref": "./BindingProfileUsageSummary.yaml"}
     assert properties.get("status") == {
         "type": "string",
         "enum": ["active", "deactivated"],
@@ -170,6 +171,7 @@ def test_binding_profile_read_src_schema_exposes_latest_revision_and_revisions()
         "latest_revision_number",
         "latest_revision",
         "revisions",
+        "usage_summary",
         "created_at",
         "updated_at",
     ]
