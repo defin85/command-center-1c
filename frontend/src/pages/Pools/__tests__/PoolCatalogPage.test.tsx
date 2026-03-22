@@ -966,6 +966,69 @@ describe('PoolCatalogPage', () => {
     expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('tab=topology')
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
+  it('keeps the newly selected pool stable instead of bouncing back to the previous route pool', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+
+    mockListOrganizationPools.mockResolvedValueOnce([
+      {
+        id: '44444444-4444-4444-4444-444444444444',
+        code: 'pool-1',
+        name: 'Pool One',
+        description: 'Main pool',
+        is_active: true,
+        metadata: {},
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+      {
+        id: '55555555-5555-5555-5555-555555555555',
+        code: 'pool-2',
+        name: 'Pool Two',
+        description: 'Secondary pool',
+        is_active: true,
+        metadata: {},
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+    mockGetPoolGraph.mockImplementation(async (poolId: string) => ({
+      pool_id: poolId,
+      date: '2026-01-01',
+      version: `v1:${poolId}`,
+      nodes: [],
+      edges: [],
+    }))
+    mockListPoolTopologySnapshots.mockImplementation(async (poolId: string) => ({
+      pool_id: poolId,
+      count: 1,
+      snapshots: [
+        {
+          effective_from: '2026-01-01',
+          effective_to: null,
+          nodes_count: 0,
+          edges_count: 0,
+        },
+      ],
+    }))
+
+    renderPage('/pools/catalog?pool_id=44444444-4444-4444-4444-444444444444&tab=pools')
+    await initialCatalogLoadPromise
+
+    expect(screen.getByTestId('pool-catalog-context-pool')).toHaveTextContent('pool-1 - Pool One')
+
+    openSelectByTestId('pool-catalog-context-pool')
+    await selectDropdownOption('pool-2 - Pool Two')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-context-pool')).toHaveTextContent('pool-2 - Pool Two')
+      expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent(
+        'pool_id=55555555-5555-5555-5555-555555555555'
+      )
+    })
+
+    await waitFor(() => {
+      expect(mockGetPoolGraph).toHaveBeenLastCalledWith('55555555-5555-5555-5555-555555555555', '2026-01-01')
+    })
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
   it('renders existing workflow attachments in isolated workspace and keeps pool drawer focused on pool fields', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()

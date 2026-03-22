@@ -1776,15 +1776,11 @@ export function PoolCatalogPage() {
   }, [requestedWorkspaceTab])
 
   useEffect(() => {
-    if (requestedPoolId && pools.some((item) => item.id === requestedPoolId)) {
-      setSelectedPoolId((previous) => (previous === requestedPoolId ? previous : requestedPoolId))
+    if (!requestedPoolId || !pools.some((item) => item.id === requestedPoolId)) {
       return
     }
-
-    if (!requestedPoolId && selectedPoolId === undefined && pools.length > 0) {
-      setSelectedPoolId(pools[0]?.id ?? null)
-    }
-  }, [pools, requestedPoolId, selectedPoolId])
+    setSelectedPoolId((previous) => (previous === requestedPoolId ? previous : requestedPoolId))
+  }, [pools, requestedPoolId])
 
   useEffect(() => {
     const nextGraphDate = graphDateFromUrl ?? ''
