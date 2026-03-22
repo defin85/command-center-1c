@@ -1,0 +1,16 @@
+type: object
+properties:
+  slot_key:
+    type: string
+  label:
+    type: string
+    nullable: true
+  is_root:
+    type: boolean
+  metadata:
+    type: object
+    additionalProperties: true
+required:
+  - slot_key
+  - is_root
+  - metadata

@@ -1,0 +1,6 @@
+type: object
+properties:
+  topology_template:
+    $ref: ./TopologyTemplate.yaml
+required:
+  - topology_template

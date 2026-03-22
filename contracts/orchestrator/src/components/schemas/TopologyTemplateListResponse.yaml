@@ -1,0 +1,11 @@
+type: object
+properties:
+  topology_templates:
+    type: array
+    items:
+      $ref: ./TopologyTemplate.yaml
+  count:
+    type: integer
+required:
+  - topology_templates
+  - count

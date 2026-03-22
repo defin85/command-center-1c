@@ -896,6 +896,115 @@ class OrganizationPool(models.Model):
         validate_pool_graph_for_date(self, target_date or timezone.localdate())
 
 
+class TopologyTemplateStatus(models.TextChoices):
+    ACTIVE = "active", "Active"
+    DEACTIVATED = "deactivated", "Deactivated"
+
+
+class TopologyTemplate(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="topology_templates",
+    )
+    code = models.SlugField(max_length=128)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=16,
+        choices=TopologyTemplateStatus.choices,
+        default=TopologyTemplateStatus.ACTIVE,
+        db_index=True,
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    created_by = models.CharField(max_length=255, blank=True, default="")
+    updated_by = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "topology_templates"
+        indexes = [
+            models.Index(fields=["tenant", "status"]),
+            models.Index(fields=["tenant", "-updated_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "code"], name="uniq_topology_template_tenant_code"),
+            models.CheckConstraint(
+                condition=~Q(code=""),
+                name="chk_topology_template_code_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(name=""),
+                name="chk_topology_template_name_nonempty",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.code}:{self.name}"
+
+
+class TopologyTemplateRevision(models.Model):
+    topology_template_revision_id = models.CharField(primary_key=True, max_length=128, serialize=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="topology_template_revisions",
+    )
+    template = models.ForeignKey(
+        "intercompany_pools.TopologyTemplate",
+        on_delete=models.CASCADE,
+        related_name="revisions",
+    )
+    contract_version = models.CharField(max_length=64, default="topology_template_revision.v1")
+    revision_number = models.PositiveIntegerField()
+    nodes = models.JSONField(default=list, blank=True)
+    edges = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_by = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        db_table = "topology_template_revisions"
+        indexes = [
+            models.Index(fields=["tenant", "template", "-revision_number"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["template", "revision_number"],
+                name="uniq_topology_template_revision_number",
+            ),
+            models.CheckConstraint(
+                condition=~Q(topology_template_revision_id=""),
+                name="chk_topology_template_revision_id_nonempty",
+            ),
+        ]
+
+    def clean(self) -> None:
+        from .topology_template_contract import normalize_topology_template_revision_payload
+
+        if self.template_id and self.tenant_id and self.template.tenant_id != self.tenant_id:
+            raise ValidationError({"template": "Topology template revision must belong to the same tenant."})
+        normalized_nodes, normalized_edges = normalize_topology_template_revision_payload(
+            nodes=self.nodes,
+            edges=self.edges,
+        )
+        self.nodes = normalized_nodes
+        self.edges = normalized_edges
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.template_id}:{self.topology_template_revision_id}:r{self.revision_number}"
+
+
 class BindingProfileStatus(models.TextChoices):
     ACTIVE = "active", "Active"
     DEACTIVATED = "deactivated", "Deactivated"

@@ -74,6 +74,13 @@ from apps.intercompany_pools.document_policy_contract import (
     DOCUMENT_POLICY_METADATA_KEY,
     resolve_document_policy_from_edge_metadata,
 )
+from apps.intercompany_pools.topology_template_contract import (
+    POOL_TOPOLOGY_TEMPLATE_INSTANTIATION_METADATA_KEY,
+)
+from apps.intercompany_pools.topology_template_store import (
+    TopologyTemplateStoreError,
+    materialize_topology_template_instantiation,
+)
 from apps.intercompany_pools.safe_commands import (
     CONFLICT_REASON_AWAITING_PRE_PUBLISH,
     CONFLICT_REASON_IDEMPOTENCY_KEY_REUSED,
@@ -713,6 +720,40 @@ def _legacy_document_policy_write_problem(*, errors: list[dict[str, str]]) -> Re
         status_code=http_status.HTTP_400_BAD_REQUEST,
         errors=errors,
     )
+
+
+def _resolve_topology_template_store_error_response(exc: TopologyTemplateStoreError) -> Response:
+    status_code = http_status.HTTP_400_BAD_REQUEST
+    if exc.code in {"TOPOLOGY_TEMPLATE_NOT_FOUND", "TOPOLOGY_TEMPLATE_REVISION_NOT_FOUND", "ORGANIZATION_NOT_FOUND"}:
+        status_code = http_status.HTTP_404_NOT_FOUND
+    return _problem(
+        code=exc.code,
+        title="Topology Template Error",
+        detail=exc.detail,
+        status_code=status_code,
+    )
+
+
+def _resolve_topology_snapshot_materialization_input(
+    *,
+    tenant_id: UUID,
+    data: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    topology_template_revision_id = str(data.get("topology_template_revision_id") or "").strip()
+    if not topology_template_revision_id:
+        return (
+            list(data.get("nodes") or []),
+            list(data.get("edges") or []),
+            {},
+        )
+
+    materialized = materialize_topology_template_instantiation(
+        tenant_id=tenant_id,
+        topology_template_revision_id=topology_template_revision_id,
+        slot_assignments=data.get("slot_assignments"),
+        edge_selector_overrides=data.get("edge_selector_overrides"),
+    )
+    return materialized.nodes, materialized.edges, materialized.metadata
 
 
 def _serialize_run(
@@ -2683,11 +2724,29 @@ class PoolTopologySnapshotEdgeInputSerializer(serializers.Serializer):
         return dict(value)
 
 
+class PoolTopologyTemplateSlotAssignmentInputSerializer(serializers.Serializer):
+    slot_key = serializers.CharField()
+    organization_id = serializers.UUIDField()
+
+
+class PoolTopologyTemplateEdgeSelectorOverrideInputSerializer(serializers.Serializer):
+    parent_slot_key = serializers.CharField()
+    child_slot_key = serializers.CharField()
+    document_policy_key = serializers.CharField()
+
+
 class PoolTopologySnapshotUpsertRequestSerializer(serializers.Serializer):
     version = serializers.CharField()
     effective_from = serializers.DateField()
     effective_to = serializers.DateField(required=False, allow_null=True)
-    nodes = PoolTopologySnapshotNodeInputSerializer(many=True, allow_empty=False)
+    topology_template_revision_id = serializers.CharField(required=False, allow_blank=False)
+    slot_assignments = PoolTopologyTemplateSlotAssignmentInputSerializer(many=True, required=False, default=list)
+    edge_selector_overrides = PoolTopologyTemplateEdgeSelectorOverrideInputSerializer(
+        many=True,
+        required=False,
+        default=list,
+    )
+    nodes = PoolTopologySnapshotNodeInputSerializer(many=True, required=False, default=list)
     edges = PoolTopologySnapshotEdgeInputSerializer(many=True, required=False, default=list)
 
     def validate(self, attrs):
@@ -2695,6 +2754,21 @@ class PoolTopologySnapshotUpsertRequestSerializer(serializers.Serializer):
         effective_to = attrs.get("effective_to")
         if effective_to is not None and effective_to < effective_from:
             raise serializers.ValidationError("effective_to must be greater than or equal to effective_from.")
+        topology_template_revision_id = str(attrs.get("topology_template_revision_id") or "").strip()
+        nodes = list(attrs.get("nodes") or [])
+        edges = list(attrs.get("edges") or [])
+        if topology_template_revision_id:
+            if nodes or edges:
+                raise serializers.ValidationError(
+                    "nodes/edges cannot be provided together with topology_template_revision_id."
+                )
+            if not list(attrs.get("slot_assignments") or []):
+                raise serializers.ValidationError(
+                    "slot_assignments are required for topology_template_revision instantiation."
+                )
+            return attrs
+        if not nodes:
+            raise serializers.ValidationError("nodes are required for manual topology snapshot authoring.")
         return attrs
 
 
@@ -4205,8 +4279,15 @@ def upsert_pool_topology_snapshot(request, pool_id: UUID):
 
     data = serializer.validated_data
     version_token = str(data.get("version") or "").strip()
-    nodes_payload = list(data.get("nodes") or [])
-    edges_payload = list(data.get("edges") or [])
+    try:
+        nodes_payload, edges_payload, topology_instantiation_metadata = (
+            _resolve_topology_snapshot_materialization_input(
+                tenant_id=tenant_id,
+                data=data,
+            )
+        )
+    except TopologyTemplateStoreError as exc:
+        return _resolve_topology_template_store_error_response(exc)
     effective_from = data["effective_from"]
     effective_to = data.get("effective_to")
     legacy_write_errors = _collect_legacy_document_policy_write_errors(
@@ -4280,6 +4361,11 @@ def upsert_pool_topology_snapshot(request, pool_id: UUID):
     period_node_qs = PoolNodeVersion.objects.filter(pool=pool, effective_from=effective_from)
     period_edge_qs = PoolEdgeVersion.objects.filter(pool=pool, effective_from=effective_from)
     replacement_previous_end = effective_from - timedelta(days=1)
+    updated_pool_metadata = dict(pool.metadata) if isinstance(pool.metadata, dict) else {}
+    if topology_instantiation_metadata:
+        updated_pool_metadata.update(topology_instantiation_metadata)
+    else:
+        updated_pool_metadata.pop(POOL_TOPOLOGY_TEMPLATE_INSTANTIATION_METADATA_KEY, None)
 
     try:
         with transaction.atomic():
@@ -4321,6 +4407,10 @@ def upsert_pool_topology_snapshot(request, pool_id: UUID):
                     max_amount=edge.get("max_amount"),
                     metadata=edge.get("metadata") if isinstance(edge.get("metadata"), dict) else {},
                 )
+
+            if updated_pool_metadata != (pool.metadata if isinstance(pool.metadata, dict) else {}):
+                pool.metadata = updated_pool_metadata
+                pool.save(update_fields=["metadata", "updated_at"])
 
             pool.validate_graph(effective_from)
     except (IntegrityError, DjangoValidationError, ValueError) as exc:

@@ -1,0 +1,12 @@
+type: object
+properties:
+  parent_slot_key:
+    type: string
+  child_slot_key:
+    type: string
+  document_policy_key:
+    type: string
+required:
+  - parent_slot_key
+  - child_slot_key
+  - document_policy_key

@@ -9,6 +9,7 @@ import type {
   PoolRunSafeCommandConflict,
   PoolRunSafeCommandResponse,
   PoolSchemaTemplate,
+  UpsertPoolTopologySnapshotPayload,
   PoolWorkflowBinding,
   PoolWorkflowBindingInput,
   PoolWorkflowBindingSelector,
@@ -28,6 +29,7 @@ import type { PoolRunRetryRequest as GeneratedPoolRunRetryRequest } from './gene
 import type { PoolRunSafeCommandConflict as GeneratedPoolRunSafeCommandConflict } from './generated/model/poolRunSafeCommandConflict'
 import type { PoolRunSafeCommandResponse as GeneratedPoolRunSafeCommandResponse } from './generated/model/poolRunSafeCommandResponse'
 import type { PoolSchemaTemplate as GeneratedPoolSchemaTemplate } from './generated/model/poolSchemaTemplate'
+import type { PoolTopologySnapshotUpsertRequest as GeneratedPoolTopologySnapshotUpsertRequest } from './generated/model/poolTopologySnapshotUpsertRequest'
 import type { PoolWorkflowBindingInput as GeneratedPoolWorkflowBindingInput } from './generated/model/poolWorkflowBindingInput'
 import type { PoolWorkflowBindingRead as GeneratedPoolWorkflowBinding } from './generated/model/poolWorkflowBindingRead'
 import type { PoolWorkflowBindingSelector as GeneratedPoolWorkflowBindingSelector } from './generated/model/poolWorkflowBindingSelector'
@@ -52,5 +54,9 @@ export type PoolRunRetryAcceptedResponseContract = AssertAssignable<PoolRunRetry
 export type CreatePoolRunPayloadContract = AssertAssignable<CreatePoolRunPayload, GeneratedPoolRunCreateRequest>
 export type RetryPoolRunPayloadContract = AssertAssignable<RetryPoolRunPayload, GeneratedPoolRunRetryRequest>
 export type UpsertOrganizationPoolPayloadContract = AssertAssignable<UpsertOrganizationPoolPayload, GeneratedOrganizationPoolUpsertRequest>
+export type UpsertPoolTopologySnapshotPayloadContract = AssertAssignable<
+  UpsertPoolTopologySnapshotPayload,
+  GeneratedPoolTopologySnapshotUpsertRequest
+>
 
 export {}

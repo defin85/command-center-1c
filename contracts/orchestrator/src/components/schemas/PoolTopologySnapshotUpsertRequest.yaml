@@ -9,6 +9,16 @@ properties:
     type: string
     format: date
     nullable: true
+  topology_template_revision_id:
+    type: string
+  slot_assignments:
+    type: array
+    items:
+      $ref: ./PoolTopologyTemplateSlotAssignmentInput.yaml
+  edge_selector_overrides:
+    type: array
+    items:
+      $ref: ./PoolTopologyTemplateEdgeSelectorOverrideInput.yaml
   nodes:
     type: array
     items:
@@ -19,5 +29,4 @@ properties:
       $ref: ./PoolTopologySnapshotEdgeInput.yaml
 required:
   - effective_from
-  - nodes
   - version

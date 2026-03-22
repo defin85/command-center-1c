@@ -131,6 +131,7 @@ export const queryKeys = {
     pools: () => [...queryKeys.poolCatalog.all, 'pools'] as const,
     graph: (poolId: string, date: string) => [...queryKeys.poolCatalog.all, 'graph', poolId, date] as const,
     topologySnapshots: (poolId: string) => [...queryKeys.poolCatalog.all, 'topology-snapshots', poolId] as const,
+    topologyTemplates: () => [...queryKeys.poolCatalog.all, 'topology-templates'] as const,
   },
   authoringReferences: {
     all: ['authoring-references'] as const,

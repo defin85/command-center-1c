@@ -41,6 +41,7 @@ import {
   listMasterDataItems,
   listMasterDataParties,
   listMasterDataTaxProfiles,
+  listPoolTopologyTemplates,
   listPoolTopologySnapshots,
   listOrganizationPools,
   listOrganizations,
@@ -57,10 +58,15 @@ import {
   type PoolMasterItem,
   type PoolMasterParty,
   type PoolMasterTaxProfile,
+  type PoolTopologyTemplate,
+  type PoolTopologyTemplateRevision,
+  type PoolTopologyTemplateEdge,
   type PoolWorkflowBindingBlockingRemediation,
   type PoolTopologySnapshotPeriod,
   type PoolTopologySnapshotEdgeInput,
   type PoolTopologySnapshotNodeInput,
+  type PoolTopologyTemplateEdgeSelectorOverrideInput,
+  type PoolTopologyTemplateSlotAssignmentInput,
   type PoolWorkflowBinding,
 } from '../../api/intercompanyPools'
 import { getV2 } from '../../api/generated/v2/v2'
@@ -197,6 +203,17 @@ type TopologyNodeFormValue = {
   metadata_json?: string
 }
 
+type TopologyTemplateSlotAssignmentFormValue = {
+  slot_key?: string
+  organization_id?: string
+}
+
+type TopologyTemplateEdgeSelectorOverrideFormValue = {
+  parent_slot_key?: string
+  child_slot_key?: string
+  document_policy_key?: string
+}
+
 type TopologyEdgeFormValue = {
   edge_version_id?: string
   parent_organization_id?: string
@@ -214,8 +231,12 @@ type TopologyEdgeFormValue = {
 }
 
 type TopologyFormValues = {
+  authoring_mode?: 'template' | 'manual'
   effective_from: string
   effective_to?: string
+  topology_template_revision_id?: string
+  slot_assignments?: TopologyTemplateSlotAssignmentFormValue[]
+  edge_selector_overrides?: TopologyTemplateEdgeSelectorOverrideFormValue[]
   nodes: TopologyNodeFormValue[]
   edges: TopologyEdgeFormValue[]
 }
@@ -587,6 +608,30 @@ const hasLegacyDocumentPolicyPayload = (value: unknown): value is Record<string,
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 )
 
+type TopologyTemplateInstantiationMetadata = {
+  topology_template_id?: string
+  topology_template_code?: string
+  topology_template_name?: string
+  topology_template_revision_id?: string
+  topology_template_revision_number?: number
+  slot_assignments?: TopologyTemplateSlotAssignmentFormValue[]
+  edge_selector_overrides?: TopologyTemplateEdgeSelectorOverrideFormValue[]
+}
+
+const readTopologyTemplateInstantiation = (
+  pool: OrganizationPool | null | undefined
+): TopologyTemplateInstantiationMetadata | null => {
+  const metadata = pool?.metadata
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return null
+  }
+  const payload = (metadata as Record<string, unknown>).topology_template_instantiation
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null
+  }
+  return payload as TopologyTemplateInstantiationMetadata
+}
+
 const buildDraftTopologyEdgeSelectors = (
   edges: TopologyEdgeFormValue[] | undefined,
   organizationById: Record<string, Organization>
@@ -611,6 +656,47 @@ const buildDraftTopologyEdgeSelectors = (
     }
   })
 )
+
+const buildTemplateDraftTopologyEdgeSelectors = (
+  revision: PoolTopologyTemplateRevision | null,
+  overrides: TopologyTemplateEdgeSelectorOverrideFormValue[] | undefined
+): TopologyEdgeSelector[] => {
+  if (!revision) {
+    return []
+  }
+  const labelBySlotKey = new Map(
+    revision.nodes.map((node) => [
+      String(node.slot_key || '').trim(),
+      String(node.label || node.slot_key || '').trim(),
+    ])
+  )
+  const overrideByEdge = new Map<string, string>()
+  ;(Array.isArray(overrides) ? overrides : []).forEach((override) => {
+    const parentSlotKey = String(override.parent_slot_key || '').trim()
+    const childSlotKey = String(override.child_slot_key || '').trim()
+    const documentPolicyKey = String(override.document_policy_key || '').trim()
+    if (!parentSlotKey || !childSlotKey || !documentPolicyKey) {
+      return
+    }
+    overrideByEdge.set(`${parentSlotKey}:${childSlotKey}`, documentPolicyKey)
+  })
+  return revision.edges.map((edge: PoolTopologyTemplateEdge, index: number) => {
+    const parentSlotKey = String(edge.parent_slot_key || '').trim()
+    const childSlotKey = String(edge.child_slot_key || '').trim()
+    const edgeId = `${parentSlotKey}:${childSlotKey}:${index}`
+    const parentLabel = labelBySlotKey.get(parentSlotKey) || parentSlotKey || `template-edge-${index + 1}-parent`
+    const childLabel = labelBySlotKey.get(childSlotKey) || childSlotKey || `template-edge-${index + 1}-child`
+    const slotKey = (
+      overrideByEdge.get(`${parentSlotKey}:${childSlotKey}`)
+      || String(edge.document_policy_key || '').trim()
+    )
+    return {
+      edgeId,
+      edgeLabel: `${parentLabel} -> ${childLabel}`,
+      slotKey,
+    }
+  })
+}
 
 const buildBindingSlotRefsFromForm = (
   binding: PoolWorkflowBindingFormValue | undefined
@@ -1517,10 +1603,16 @@ const buildEdgeMetadataFromBuilder = (
   }
 }
 
-const buildTopologyPreflight = (values: TopologyFormValues): {
+const buildTopologyPreflight = (
+  values: TopologyFormValues,
+  selectedTemplateRevision?: PoolTopologyTemplateRevision | null
+): {
   payload: {
     effective_from: string
     effective_to?: string | null
+    topology_template_revision_id?: string
+    slot_assignments?: PoolTopologyTemplateSlotAssignmentInput[]
+    edge_selector_overrides?: PoolTopologyTemplateEdgeSelectorOverrideInput[]
     nodes: PoolTopologySnapshotNodeInput[]
     edges: PoolTopologySnapshotEdgeInput[]
   } | null
@@ -1529,11 +1621,68 @@ const buildTopologyPreflight = (values: TopologyFormValues): {
   const errors: string[] = []
   const effectiveFrom = String(values.effective_from || '').trim()
   const effectiveToRaw = String(values.effective_to || '').trim()
+  const authoringMode = String(values.authoring_mode || 'manual').trim().toLowerCase() === 'template'
+    ? 'template'
+    : 'manual'
   if (!effectiveFrom) {
     errors.push('effective_from обязателен.')
   }
   if (effectiveToRaw && effectiveFrom && effectiveToRaw < effectiveFrom) {
     errors.push('effective_to не может быть раньше effective_from.')
+  }
+
+  if (authoringMode === 'template') {
+    const topologyTemplateRevisionId = String(values.topology_template_revision_id || '').trim()
+    if (!topologyTemplateRevisionId) {
+      errors.push('Выберите topology template revision.')
+    }
+    if (!selectedTemplateRevision) {
+      errors.push('Не удалось загрузить выбранную topology template revision.')
+    }
+    const slotAssignmentsSource = Array.isArray(values.slot_assignments) ? values.slot_assignments : []
+    const slotAssignments = slotAssignmentsSource
+      .map((assignment) => ({
+        slot_key: String(assignment.slot_key || '').trim(),
+        organization_id: String(assignment.organization_id || '').trim(),
+      }))
+      .filter((assignment) => assignment.slot_key)
+    if (selectedTemplateRevision) {
+      selectedTemplateRevision.nodes.forEach((node, index) => {
+        const slotKey = String(node.slot_key || '').trim()
+        const assignment = slotAssignments.find((item) => item.slot_key === slotKey)
+        if (!assignment?.organization_id) {
+          errors.push(`Назначьте организацию для slot ${slotKey || `#${index + 1}`}.`)
+        }
+      })
+    }
+    const edgeSelectorOverrides = (Array.isArray(values.edge_selector_overrides) ? values.edge_selector_overrides : [])
+      .map((override) => ({
+        parent_slot_key: String(override.parent_slot_key || '').trim(),
+        child_slot_key: String(override.child_slot_key || '').trim(),
+        document_policy_key: String(override.document_policy_key || '').trim(),
+      }))
+      .filter((override) => (
+        override.parent_slot_key
+        && override.child_slot_key
+        && override.document_policy_key
+      ))
+
+    if (errors.length > 0 || !effectiveFrom || !topologyTemplateRevisionId) {
+      return { payload: null, errors }
+    }
+
+    return {
+      payload: {
+        effective_from: effectiveFrom,
+        effective_to: effectiveToRaw || null,
+        topology_template_revision_id: topologyTemplateRevisionId,
+        slot_assignments: slotAssignments,
+        edge_selector_overrides: edgeSelectorOverrides,
+        nodes: [],
+        edges: [],
+      },
+      errors,
+    }
   }
 
   const nodesSource = Array.isArray(values.nodes) ? values.nodes : []
@@ -1679,6 +1828,10 @@ export function PoolCatalogPage() {
   const [poolForm] = Form.useForm<PoolFormValues>()
   const [poolBindingsForm] = Form.useForm<PoolBindingsFormValues>()
   const [topologyForm] = Form.useForm<TopologyFormValues>()
+  const watchedEdges = Form.useWatch('edges', topologyForm)
+  const watchedTopologyAuthoringMode = Form.useWatch('authoring_mode', topologyForm)
+  const watchedTopologyTemplateRevisionId = Form.useWatch('topology_template_revision_id', topologyForm)
+  const watchedTopologyTemplateEdgeSelectorOverrides = Form.useWatch('edge_selector_overrides', topologyForm)
 
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | null>(null)
@@ -1691,11 +1844,13 @@ export function PoolCatalogPage() {
   const [graphDate, setGraphDate] = useState<string>(graphDateFromUrl ?? '')
   const [graph, setGraph] = useState<PoolGraph | null>(null)
   const [topologySnapshots, setTopologySnapshots] = useState<PoolTopologySnapshotPeriod[]>([])
+  const [topologyTemplates, setTopologyTemplates] = useState<PoolTopologyTemplate[]>([])
   const [loadingOrganizations, setLoadingOrganizations] = useState(false)
   const [loadingOrganizationDetail, setLoadingOrganizationDetail] = useState(false)
   const [loadingPools, setLoadingPools] = useState(false)
   const [loadingGraph, setLoadingGraph] = useState(false)
   const [loadingTopologySnapshots, setLoadingTopologySnapshots] = useState(false)
+  const [loadingTopologyTemplates, setLoadingTopologyTemplates] = useState(false)
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | OrganizationStatus>('all')
   const [databaseLinkFilter, setDatabaseLinkFilter] = useState<'all' | 'linked' | 'unlinked'>('all')
@@ -1718,6 +1873,7 @@ export function PoolCatalogPage() {
   const [poolBindingsBackendBlockingRemediation, setPoolBindingsBackendBlockingRemediation] = useState<PoolWorkflowBindingBlockingRemediation | null>(null)
   const [topologyPreflightErrors, setTopologyPreflightErrors] = useState<string[]>([])
   const [topologySubmitError, setTopologySubmitError] = useState<string | null>(null)
+  const [topologyTemplatesLoadError, setTopologyTemplatesLoadError] = useState<string | null>(null)
   const [isTopologySaving, setIsTopologySaving] = useState(false)
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false)
   const [syncInput, setSyncInput] = useState('{\n  "rows": []\n}')
@@ -1740,7 +1896,6 @@ export function PoolCatalogPage() {
   const [masterDataTaxProfiles, setMasterDataTaxProfiles] = useState<PoolMasterTaxProfile[]>([])
   const [loadingMasterDataTokenCatalog, setLoadingMasterDataTokenCatalog] = useState(false)
   const [masterDataTokenCatalogError, setMasterDataTokenCatalogError] = useState<string | null>(null)
-  const watchedEdges = Form.useWatch('edges', topologyForm)
   const watchedWorkflowBindings = Form.useWatch('workflow_bindings', poolBindingsForm)
 
   const selectedOrganization = useMemo(
@@ -1755,6 +1910,40 @@ export function PoolCatalogPage() {
   const organizationById = useMemo(() => (
     Object.fromEntries(organizations.map((item) => [item.id, item]))
   ), [organizations])
+  const selectedPoolTopologyInstantiation = useMemo(
+    () => readTopologyTemplateInstantiation(selectedPool),
+    [selectedPool]
+  )
+  const isTemplateTopologyAuthoring = String(watchedTopologyAuthoringMode || 'manual').trim().toLowerCase() === 'template'
+  const topologyTemplateRevisionOptions = useMemo(() => (
+    topologyTemplates.flatMap((template) => (
+      template.revisions.map((revision) => ({
+        value: revision.topology_template_revision_id,
+        label: `${template.name} · r${revision.revision_number}`,
+      }))
+    ))
+  ), [topologyTemplates])
+  const selectedTopologyTemplateRevision = useMemo(() => {
+    const revisionId = String(watchedTopologyTemplateRevisionId || '').trim()
+    if (!revisionId) {
+      return null
+    }
+    for (const template of topologyTemplates) {
+      const revision = template.revisions.find((item) => item.topology_template_revision_id === revisionId)
+      if (revision) {
+        return revision
+      }
+    }
+    return null
+  }, [topologyTemplates, watchedTopologyTemplateRevisionId])
+  const selectedTopologyTemplate = useMemo(() => {
+    if (!selectedTopologyTemplateRevision) {
+      return null
+    }
+    return topologyTemplates.find(
+      (template) => template.topology_template_id === selectedTopologyTemplateRevision.topology_template_id
+    ) ?? null
+  }, [selectedTopologyTemplateRevision, topologyTemplates])
   const topologyCoverageBindingOptions = useMemo(() => (
     loadedPoolBindings
       .filter((binding) => binding.status === 'active')
@@ -1989,8 +2178,21 @@ export function PoolCatalogPage() {
     })
   }, [graph])
   const draftTopologyEdgeSelectors = useMemo(
-    () => buildDraftTopologyEdgeSelectors(watchedEdges, organizationById),
-    [organizationById, watchedEdges]
+    () => (
+      isTemplateTopologyAuthoring
+        ? buildTemplateDraftTopologyEdgeSelectors(
+          selectedTopologyTemplateRevision,
+          watchedTopologyTemplateEdgeSelectorOverrides
+        )
+        : buildDraftTopologyEdgeSelectors(watchedEdges, organizationById)
+    ),
+    [
+      isTemplateTopologyAuthoring,
+      organizationById,
+      selectedTopologyTemplateRevision,
+      watchedEdges,
+      watchedTopologyTemplateEdgeSelectorOverrides,
+    ]
   )
   const topologyCoverageSummary = useMemo(
     () => summarizeTopologySlotCoverage(draftTopologyEdgeSelectors, topologyCoverageContext),
@@ -2280,6 +2482,24 @@ export function PoolCatalogPage() {
     }
   }, [queryClient, selectedPoolId])
 
+  const loadTopologyTemplates = useCallback(async (options?: { force?: boolean }) => {
+    setLoadingTopologyTemplates(true)
+    try {
+      const data = await queryClient.fetchQuery(withQueryPolicy('interactive', {
+        queryKey: queryKeys.poolCatalog.topologyTemplates(),
+        queryFn: () => listPoolTopologyTemplates(),
+        ...(options?.force ? { staleTime: 0 } : {}),
+      }))
+      setTopologyTemplates(data)
+      setTopologyTemplatesLoadError(null)
+    } catch {
+      setTopologyTemplates([])
+      setTopologyTemplatesLoadError('Не удалось загрузить topology templates catalog.')
+    } finally {
+      setLoadingTopologyTemplates(false)
+    }
+  }, [queryClient])
+
   const loadMetadataCatalog = useCallback(async (
     databaseId: string,
     forceRefresh: boolean
@@ -2457,6 +2677,21 @@ export function PoolCatalogPage() {
   useEffect(() => {
     if (activeWorkspaceTab !== 'topology') return
     if (!hasTenantContext) return
+    if (topologyTemplates.length > 0 || loadingTopologyTemplates) {
+      return
+    }
+    void loadTopologyTemplates()
+  }, [
+    activeWorkspaceTab,
+    hasTenantContext,
+    loadTopologyTemplates,
+    loadingTopologyTemplates,
+    topologyTemplates.length,
+  ])
+
+  useEffect(() => {
+    if (activeWorkspaceTab !== 'topology') return
+    if (!hasTenantContext) return
     if (
       masterDataParties.length > 0
       || masterDataItems.length > 0
@@ -2481,8 +2716,12 @@ export function PoolCatalogPage() {
     setTopologySubmitError(null)
     if (activeWorkspaceTab !== 'topology' || !selectedPool) return
     topologyForm.setFieldsValue({
+      authoring_mode: 'manual',
       effective_from: new Date().toISOString().slice(0, 10),
       effective_to: '',
+      topology_template_revision_id: undefined,
+      slot_assignments: [],
+      edge_selector_overrides: [],
       nodes: [],
       edges: [],
     })
@@ -2490,6 +2729,7 @@ export function PoolCatalogPage() {
 
   useEffect(() => {
     if (activeWorkspaceTab !== 'topology' || !selectedPool || !selectedPoolId || !graph) return
+    const topologyInstantiation = selectedPoolTopologyInstantiation
     const organizationByNodeVersion = new Map(
       graph.nodes.map((node) => [node.node_version_id, node.organization_id])
     )
@@ -2529,12 +2769,82 @@ export function PoolCatalogPage() {
       }
     })
     topologyForm.setFieldsValue({
+      authoring_mode: topologyInstantiation ? 'template' : 'manual',
       effective_from: String(graph.date || '').trim() || new Date().toISOString().slice(0, 10),
       effective_to: '',
+      topology_template_revision_id: topologyInstantiation?.topology_template_revision_id || undefined,
+      slot_assignments: Array.isArray(topologyInstantiation?.slot_assignments)
+        ? topologyInstantiation?.slot_assignments
+        : [],
+      edge_selector_overrides: Array.isArray(topologyInstantiation?.edge_selector_overrides)
+        ? topologyInstantiation?.edge_selector_overrides
+        : [],
       nodes,
       edges,
     })
-  }, [activeWorkspaceTab, graph, selectedPool, selectedPoolId, topologyForm])
+  }, [activeWorkspaceTab, graph, selectedPool, selectedPoolId, selectedPoolTopologyInstantiation, topologyForm])
+
+  useEffect(() => {
+    if (!isTemplateTopologyAuthoring) {
+      return
+    }
+    const revisionId = String(watchedTopologyTemplateRevisionId || '').trim()
+    if (!revisionId) {
+      topologyForm.setFieldsValue({
+        slot_assignments: [],
+        edge_selector_overrides: [],
+      })
+      return
+    }
+    if (!selectedTopologyTemplateRevision) {
+      return
+    }
+
+    const assignmentBySlotKey = new Map<string, string>()
+    const currentAssignments = topologyForm.getFieldValue('slot_assignments')
+    ;(Array.isArray(currentAssignments) ? currentAssignments : []).forEach((assignment) => {
+      const slotKey = String(assignment?.slot_key || '').trim()
+      const organizationId = String(assignment?.organization_id || '').trim()
+      if (slotKey) {
+        assignmentBySlotKey.set(slotKey, organizationId)
+      }
+    })
+
+    const overrideByEdge = new Map<string, string>()
+    const currentOverrides = topologyForm.getFieldValue('edge_selector_overrides')
+    ;(Array.isArray(currentOverrides) ? currentOverrides : []).forEach((override) => {
+      const parentSlotKey = String(override?.parent_slot_key || '').trim()
+      const childSlotKey = String(override?.child_slot_key || '').trim()
+      const documentPolicyKey = String(override?.document_policy_key || '').trim()
+      if (parentSlotKey && childSlotKey) {
+        overrideByEdge.set(`${parentSlotKey}:${childSlotKey}`, documentPolicyKey)
+      }
+    })
+
+    topologyForm.setFieldsValue({
+      slot_assignments: selectedTopologyTemplateRevision.nodes.map((node) => {
+        const slotKey = String(node.slot_key || '').trim()
+        return {
+          slot_key: slotKey,
+          organization_id: assignmentBySlotKey.get(slotKey) || '',
+        }
+      }),
+      edge_selector_overrides: selectedTopologyTemplateRevision.edges.map((edge) => {
+        const parentSlotKey = String(edge.parent_slot_key || '').trim()
+        const childSlotKey = String(edge.child_slot_key || '').trim()
+        return {
+          parent_slot_key: parentSlotKey,
+          child_slot_key: childSlotKey,
+          document_policy_key: overrideByEdge.get(`${parentSlotKey}:${childSlotKey}`) || '',
+        }
+      }),
+    })
+  }, [
+    isTemplateTopologyAuthoring,
+    selectedTopologyTemplateRevision,
+    topologyForm,
+    watchedTopologyTemplateRevisionId,
+  ])
 
   const openCreateOrganizationDrawer = useCallback(() => {
     if (mutatingDisabled) return
@@ -2872,7 +3182,7 @@ export function PoolCatalogPage() {
     setTopologyPreflightErrors([])
     try {
       const values = await topologyForm.validateFields()
-      const preflight = buildTopologyPreflight(values)
+      const preflight = buildTopologyPreflight(values, selectedTopologyTemplateRevision)
       if (!preflight.payload) {
         setTopologyPreflightErrors(preflight.errors)
         return
@@ -2893,7 +3203,11 @@ export function PoolCatalogPage() {
       }
       await upsertPoolTopologySnapshot(selectedPoolId, { ...preflight.payload, version: versionToken })
       message.success('Topology snapshot сохранён.')
-      await Promise.all([loadGraph({ force: true }), loadTopologySnapshots({ force: true })])
+      await Promise.all([
+        loadGraph({ force: true }),
+        loadTopologySnapshots({ force: true }),
+        loadPools({ force: true }),
+      ])
     } catch (err) {
       if (
         err
@@ -2921,10 +3235,12 @@ export function PoolCatalogPage() {
     graphDate,
     isTopologySaveBlocked,
     loadGraph,
+    loadPools,
     loadTopologySnapshots,
     message,
     mutatingDisabled,
     selectedPoolId,
+    selectedTopologyTemplateRevision,
     topologyBlockingRemediations,
     topologyForm,
   ])
@@ -3727,6 +4043,279 @@ export function PoolCatalogPage() {
                           />
                         )}
 
+                        <Row gutter={12} style={{ marginBottom: 12 }}>
+                          <Col span={12}>
+                            <Form.Item label="Authoring path" name="authoring_mode" style={{ marginBottom: 0 }}>
+                              <Select
+                                options={[
+                                  { value: 'template', label: 'Template-based instantiation' },
+                                  { value: 'manual', label: 'Manual snapshot editor' },
+                                ]}
+                                data-testid="pool-catalog-topology-authoring-mode"
+                              />
+                            </Form.Item>
+                          </Col>
+                          <Col span={12}>
+                            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                              <Text strong>Current mode</Text>
+                              <Text type="secondary">
+                                {isTemplateTopologyAuthoring
+                                  ? 'Topology template revision + slot assignment'
+                                  : 'Concrete nodes/edges authoring'}
+                              </Text>
+                            </Space>
+                          </Col>
+                        </Row>
+
+                        {isTemplateTopologyAuthoring ? (
+                          <Space direction="vertical" size={12} style={{ width: '100%', marginBottom: 12 }}>
+                            <Alert
+                              type="info"
+                              showIcon
+                              message="Template-based path is the preferred reuse flow"
+                              description="Выберите published topology template revision, назначьте организации в slot-ы и при необходимости задайте explicit selector override для edge. Concrete graph materialize'ится в текущий pool snapshot при сохранении."
+                            />
+                            {topologyTemplatesLoadError && (
+                              <Alert
+                                type="warning"
+                                showIcon
+                                message={topologyTemplatesLoadError}
+                                action={(
+                                  <Button
+                                    size="small"
+                                    onClick={() => { void loadTopologyTemplates({ force: true }) }}
+                                    loading={loadingTopologyTemplates}
+                                  >
+                                    Retry templates
+                                  </Button>
+                                )}
+                              />
+                            )}
+                            <Row gutter={12}>
+                              <Col span={12}>
+                                <Form.Item
+                                  label="Topology template revision"
+                                  name="topology_template_revision_id"
+                                  style={{ marginBottom: 0 }}
+                                >
+                                  <Select
+                                    showSearch
+                                    optionFilterProp="label"
+                                    placeholder="Select topology template revision"
+                                    options={topologyTemplateRevisionOptions}
+                                    loading={loadingTopologyTemplates}
+                                    data-testid="pool-catalog-topology-template-revision"
+                                  />
+                                </Form.Item>
+                              </Col>
+                              <Col span={12}>
+                                <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                                  <Text strong>Template summary</Text>
+                                  {selectedTopologyTemplate && selectedTopologyTemplateRevision ? (
+                                    <Descriptions size="small" column={1} bordered>
+                                      <Descriptions.Item label="Template">
+                                        {selectedTopologyTemplate.name}
+                                      </Descriptions.Item>
+                                      <Descriptions.Item label="Revision">
+                                        {`r${selectedTopologyTemplateRevision.revision_number}`}
+                                      </Descriptions.Item>
+                                      <Descriptions.Item label="Edges">
+                                        {selectedTopologyTemplateRevision.edges.length}
+                                      </Descriptions.Item>
+                                    </Descriptions>
+                                  ) : (
+                                    <Text type="secondary">Выберите revision из topology template catalog.</Text>
+                                  )}
+                                </Space>
+                              </Col>
+                            </Row>
+
+                            <Text strong>Slot assignments</Text>
+                            <Form.List name="slot_assignments">
+                              {(fields) => (
+                                <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                                  {fields.length === 0 && (
+                                    <Text type="secondary">
+                                      Сначала выберите topology template revision.
+                                    </Text>
+                                  )}
+                                  {fields.map((field) => (
+                                    <Row key={field.key} gutter={12} align="middle">
+                                      <Col span={8}>
+                                        <Form.Item
+                                          name={[field.name, 'slot_key']}
+                                          label={field.name === 0 ? 'Slot key' : ''}
+                                          style={{ marginBottom: 0 }}
+                                        >
+                                          <Input
+                                            disabled
+                                            data-testid={`pool-catalog-topology-template-slot-key-${field.name}`}
+                                          />
+                                        </Form.Item>
+                                      </Col>
+                                      <Col span={16}>
+                                        <Form.Item
+                                          name={[field.name, 'organization_id']}
+                                          label={field.name === 0 ? 'Organization' : ''}
+                                          style={{ marginBottom: 0 }}
+                                        >
+                                          <Select
+                                            showSearch
+                                            optionFilterProp="label"
+                                            placeholder="Assign organization to slot"
+                                            options={organizationOptions}
+                                            data-testid={`pool-catalog-topology-template-slot-org-${field.name}`}
+                                          />
+                                        </Form.Item>
+                                      </Col>
+                                    </Row>
+                                  ))}
+                                </Space>
+                              )}
+                            </Form.List>
+
+                            <Text strong>Template edge selector overrides</Text>
+                            <Form.List name="edge_selector_overrides">
+                              {(fields) => (
+                                <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                                  {fields.length === 0 && (
+                                    <Text type="secondary">
+                                      После выбора revision здесь появятся materialized template edge selectors.
+                                    </Text>
+                                  )}
+                                  {fields.map((field) => {
+                                    const templateEdge = selectedTopologyTemplateRevision?.edges[field.name]
+                                    const parentSlotKey = String(templateEdge?.parent_slot_key || '').trim()
+                                    const childSlotKey = String(templateEdge?.child_slot_key || '').trim()
+                                    const defaultSelector = String(templateEdge?.document_policy_key || '').trim()
+
+                                    return (
+                                      <Space
+                                        key={field.key}
+                                        direction="vertical"
+                                        size={6}
+                                        style={{ width: '100%' }}
+                                      >
+                                        <Row gutter={12} align="middle">
+                                          <Col span={8}>
+                                            <Form.Item
+                                              name={[field.name, 'parent_slot_key']}
+                                              label={field.name === 0 ? 'Parent slot' : ''}
+                                              style={{ marginBottom: 0 }}
+                                            >
+                                              <Input
+                                                disabled
+                                                data-testid={`pool-catalog-topology-template-edge-parent-${field.name}`}
+                                              />
+                                            </Form.Item>
+                                          </Col>
+                                          <Col span={8}>
+                                            <Form.Item
+                                              name={[field.name, 'child_slot_key']}
+                                              label={field.name === 0 ? 'Child slot' : ''}
+                                              style={{ marginBottom: 0 }}
+                                            >
+                                              <Input
+                                                disabled
+                                                data-testid={`pool-catalog-topology-template-edge-child-${field.name}`}
+                                              />
+                                            </Form.Item>
+                                          </Col>
+                                          <Col span={8}>
+                                            <Form.Item noStyle shouldUpdate>
+                                              {({ getFieldValue }) => {
+                                                const currentSlotKey = String(
+                                                  getFieldValue(['edge_selector_overrides', field.name, 'document_policy_key']) || ''
+                                                ).trim()
+                                                const effectiveSlotKey = currentSlotKey || defaultSelector
+                                                const slotCoverage = resolveTopologySlotCoverage(
+                                                  effectiveSlotKey,
+                                                  topologyCoverageContext
+                                                )
+                                                const currentSlotOptions = (
+                                                  currentSlotKey
+                                                  && !topologySlotOptions.some((option) => option.value === currentSlotKey)
+                                                )
+                                                  ? [
+                                                      {
+                                                        value: currentSlotKey,
+                                                        label: `${currentSlotKey} · current override`,
+                                                      },
+                                                      ...topologySlotOptions,
+                                                    ]
+                                                  : topologySlotOptions
+
+                                                return (
+                                                  <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                                                    <Form.Item
+                                                      name={[field.name, 'document_policy_key']}
+                                                      label={field.name === 0 ? 'Override selector' : ''}
+                                                      style={{ marginBottom: 0 }}
+                                                    >
+                                                      {currentSlotOptions.length > 0 ? (
+                                                        <Select
+                                                          allowClear
+                                                          showSearch
+                                                          optionFilterProp="label"
+                                                          placeholder={defaultSelector || 'Override template selector'}
+                                                          options={currentSlotOptions}
+                                                          data-testid={`pool-catalog-topology-template-edge-slot-${field.name}`}
+                                                        />
+                                                      ) : (
+                                                        <Input
+                                                          placeholder={defaultSelector || 'sale'}
+                                                          data-testid={`pool-catalog-topology-template-edge-slot-${field.name}`}
+                                                        />
+                                                      )}
+                                                    </Form.Item>
+                                                    <Space wrap size={8}>
+                                                      <Tag color={defaultSelector ? 'blue' : 'default'}>
+                                                        {defaultSelector
+                                                          ? `Template default: ${defaultSelector}`
+                                                          : 'Template default missing'}
+                                                      </Tag>
+                                                      <Tag
+                                                        color={(
+                                                          slotCoverage.status === 'resolved'
+                                                            ? 'success'
+                                                            : slotCoverage.status === 'missing_selector'
+                                                              ? 'default'
+                                                              : slotCoverage.status === 'ambiguous_context'
+                                                                || slotCoverage.status === 'ambiguous_slot'
+                                                                ? 'warning'
+                                                                : 'error'
+                                                        )}
+                                                        data-testid={`pool-catalog-topology-template-edge-slot-status-${field.name}`}
+                                                      >
+                                                        {slotCoverage.label}
+                                                      </Tag>
+                                                      <Text type="secondary">
+                                                        {slotCoverage.detail || `${parentSlotKey} -> ${childSlotKey}`}
+                                                      </Text>
+                                                    </Space>
+                                                  </Space>
+                                                )
+                                              }}
+                                            </Form.Item>
+                                          </Col>
+                                        </Row>
+                                      </Space>
+                                    )
+                                  })}
+                                </Space>
+                              )}
+                            </Form.List>
+                          </Space>
+                        ) : (
+                          <Alert
+                            type="info"
+                            showIcon
+                            style={{ marginBottom: 12 }}
+                            message="Manual topology editor remains a fallback path"
+                            description="Используйте его для нестандартных схем или remediation cases, когда reusable topology template ещё не опубликован."
+                          />
+                        )}
+
                         <Space direction="vertical" size={8} style={{ width: '100%', marginBottom: 12 }}>
                           <Space align="center" style={{ width: '100%', justifyContent: 'space-between' }}>
                             <Text strong>Topology snapshots by date</Text>
@@ -3788,8 +4377,10 @@ export function PoolCatalogPage() {
                           />
                         </Space>
 
-                        <Text strong>Nodes</Text>
-                        <Form.List name="nodes">
+                        {!isTemplateTopologyAuthoring && (
+                          <>
+                            <Text strong>Nodes</Text>
+                            <Form.List name="nodes">
                           {(fields, { add, remove, move }) => (
                             <Space direction="vertical" size="small" style={{ width: '100%' }}>
                               {fields.map((field) => (
@@ -3873,10 +4464,10 @@ export function PoolCatalogPage() {
                               </Button>
                             </Space>
                           )}
-                        </Form.List>
+                            </Form.List>
 
-                        <Text strong style={{ marginTop: 12 }}>Edges</Text>
-                        <Form.List name="edges">
+                            <Text strong style={{ marginTop: 12 }}>Edges</Text>
+                            <Form.List name="edges">
                           {(fields, { add, remove, move }) => (
                             <Space direction="vertical" size="small" style={{ width: '100%' }}>
                               {fields.map((field) => (
@@ -5133,7 +5724,9 @@ export function PoolCatalogPage() {
                               </Button>
                             </Space>
                           )}
-                        </Form.List>
+                            </Form.List>
+                          </>
+                        )}
 
                         {topologyPreflightErrors.length > 0 && (
                           <Alert

@@ -1,0 +1,33 @@
+type: object
+properties:
+  topology_template_revision_id:
+    type: string
+    description: Opaque immutable reusable topology template revision pin.
+  topology_template_id:
+    type: string
+    format: uuid
+  revision_number:
+    type: integer
+    minimum: 1
+  nodes:
+    type: array
+    items:
+      $ref: ./TopologyTemplateNode.yaml
+  edges:
+    type: array
+    items:
+      $ref: ./TopologyTemplateEdge.yaml
+  metadata:
+    type: object
+    additionalProperties: true
+  created_at:
+    type: string
+    format: date-time
+required:
+  - topology_template_revision_id
+  - topology_template_id
+  - revision_number
+  - nodes
+  - edges
+  - metadata
+  - created_at

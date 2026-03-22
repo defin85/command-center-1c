@@ -1,0 +1,44 @@
+type: object
+properties:
+  topology_template_id:
+    type: string
+    format: uuid
+  code:
+    type: string
+  name:
+    type: string
+  description:
+    type: string
+  status:
+    type: string
+    enum:
+      - active
+      - deactivated
+  metadata:
+    type: object
+    additionalProperties: true
+  latest_revision_number:
+    type: integer
+    minimum: 1
+  latest_revision:
+    $ref: ./TopologyTemplateRevision.yaml
+  revisions:
+    type: array
+    items:
+      $ref: ./TopologyTemplateRevision.yaml
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - topology_template_id
+  - code
+  - name
+  - status
+  - latest_revision_number
+  - latest_revision
+  - revisions
+  - created_at
+  - updated_at

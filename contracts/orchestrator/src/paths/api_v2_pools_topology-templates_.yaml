@@ -1,0 +1,78 @@
+get:
+  operationId: v2_pools_topology_templates_collection
+  summary: List topology templates
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  responses:
+    '200':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/TopologyTemplateListResponse.yaml
+    '400':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+    '401':
+      description: Unauthorized
+post:
+  operationId: v2_pools_topology_templates_create
+  summary: Create topology template
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/TopologyTemplateCreateRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/TopologyTemplateCreateRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/TopologyTemplateCreateRequest.yaml
+  responses:
+    '201':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/TopologyTemplateMutationResponse.yaml
+    '400':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+    '401':
+      description: Unauthorized

@@ -8,6 +8,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 
 import type {
   Organization,
+  PoolTopologyTemplate,
   PoolWorkflowBinding,
   PoolWorkflowBindingCollection,
 } from '../../../api/intercompanyPools'
@@ -22,6 +23,7 @@ const mockUpsertOrganization = vi.fn()
 const mockUpsertOrganizationPool = vi.fn()
 const mockUpsertPoolTopologySnapshot = vi.fn()
 const mockListPoolTopologySnapshots = vi.fn()
+const mockListPoolTopologyTemplates = vi.fn()
 const mockSyncOrganizationsCatalog = vi.fn()
 const mockGetPoolODataMetadataCatalog = vi.fn()
 const mockRefreshPoolODataMetadataCatalog = vi.fn()
@@ -79,6 +81,7 @@ vi.mock('../../../api/intercompanyPools', () => ({
   upsertOrganizationPool: (...args: unknown[]) => mockUpsertOrganizationPool(...args),
   upsertPoolTopologySnapshot: (...args: unknown[]) => mockUpsertPoolTopologySnapshot(...args),
   listPoolTopologySnapshots: (...args: unknown[]) => mockListPoolTopologySnapshots(...args),
+  listPoolTopologyTemplates: (...args: unknown[]) => mockListPoolTopologyTemplates(...args),
   syncOrganizationsCatalog: (...args: unknown[]) => mockSyncOrganizationsCatalog(...args),
   getPoolODataMetadataCatalog: (...args: unknown[]) => mockGetPoolODataMetadataCatalog(...args),
   refreshPoolODataMetadataCatalog: (...args: unknown[]) => mockRefreshPoolODataMetadataCatalog(...args),
@@ -260,6 +263,56 @@ function buildPoolWorkflowBindingCollection(
   }
 }
 
+function buildTopologyTemplate(overrides: Partial<PoolTopologyTemplate> = {}): PoolTopologyTemplate {
+  const latestRevision = {
+    topology_template_revision_id: 'template-revision-r2',
+    topology_template_id: 'template-1',
+    revision_number: 2,
+    nodes: [
+      {
+        slot_key: 'root',
+        label: 'Root slot',
+        is_root: true,
+        metadata: {},
+      },
+      {
+        slot_key: 'leaf',
+        label: 'Leaf slot',
+        is_root: false,
+        metadata: {},
+      },
+    ],
+    edges: [
+      {
+        parent_slot_key: 'root',
+        child_slot_key: 'leaf',
+        weight: '1',
+        min_amount: null,
+        max_amount: null,
+        document_policy_key: 'sale',
+        metadata: {},
+      },
+    ],
+    metadata: {},
+    created_at: '2026-01-02T00:00:00Z',
+  }
+
+  return {
+    topology_template_id: 'template-1',
+    code: 'top-down-template',
+    name: 'Top Down Template',
+    description: 'Reusable linear topology',
+    status: 'active',
+    metadata: {},
+    latest_revision_number: 2,
+    latest_revision: latestRevision,
+    revisions: [latestRevision],
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-02T00:00:00Z',
+    ...overrides,
+  }
+}
+
 function buildMinimalDocumentPolicy() {
   return {
     version: 'document_policy.v1',
@@ -415,6 +468,7 @@ describe('PoolCatalogPage', () => {
     mockUpsertOrganizationPool.mockReset()
     mockUpsertPoolTopologySnapshot.mockReset()
     mockListPoolTopologySnapshots.mockReset()
+    mockListPoolTopologyTemplates.mockReset()
     mockSyncOrganizationsCatalog.mockReset()
     mockGetPoolODataMetadataCatalog.mockReset()
     mockRefreshPoolODataMetadataCatalog.mockReset()
@@ -514,6 +568,7 @@ describe('PoolCatalogPage', () => {
         },
       ],
     })
+    mockListPoolTopologyTemplates.mockResolvedValue([buildTopologyTemplate()])
     mockSyncOrganizationsCatalog.mockResolvedValue({
       stats: { created: 1, updated: 0, skipped: 0 },
       total_rows: 1,
@@ -2016,6 +2071,170 @@ describe('PoolCatalogPage', () => {
         ],
       })
     )
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
+  it('submits template-based topology instantiation payload from /pools/catalog', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockListPoolWorkflowBindings.mockResolvedValue(
+      buildPoolWorkflowBindingCollection([
+        buildPoolWorkflowBinding({
+          decisions: [
+            {
+              decision_table_id: 'decision-1',
+              decision_key: 'document_policy',
+              slot_key: 'sale',
+              decision_revision: 4,
+            },
+          ],
+        }),
+      ])
+    )
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+    openSelectByTestId('pool-catalog-topology-authoring-mode')
+    await selectDropdownOption('Template-based instantiation')
+    openSelectByTestId('pool-catalog-topology-template-revision')
+    await selectDropdownOption('Top Down Template · r2')
+    openSelectByTestId('pool-catalog-topology-template-slot-org-0')
+    await selectDropdownOption(/Org One/)
+    openSelectByTestId('pool-catalog-topology-template-slot-org-1')
+    await selectDropdownOption(/Org Two/)
+    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+
+    await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
+    expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledWith(
+      '44444444-4444-4444-4444-444444444444',
+      expect.objectContaining({
+        version: 'v1:topology-initial',
+        topology_template_revision_id: 'template-revision-r2',
+        slot_assignments: [
+          {
+            slot_key: 'root',
+            organization_id: '11111111-1111-1111-1111-111111111111',
+          },
+          {
+            slot_key: 'leaf',
+            organization_id: '77777777-7777-7777-7777-777777777777',
+          },
+        ],
+        edge_selector_overrides: [],
+        nodes: [],
+        edges: [],
+      })
+    )
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
+  it('restores topology template instantiation from pool metadata without switching to manual mode', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockListPoolWorkflowBindings.mockResolvedValue(
+      buildPoolWorkflowBindingCollection([
+        buildPoolWorkflowBinding({
+          decisions: [
+            {
+              decision_table_id: 'decision-2',
+              decision_key: 'document_policy',
+              slot_key: 'receipt',
+              decision_revision: 5,
+            },
+          ],
+        }),
+      ])
+    )
+    mockListOrganizationPools.mockResolvedValue([
+      {
+        id: '44444444-4444-4444-4444-444444444444',
+        code: 'pool-1',
+        name: 'Pool One',
+        description: 'Main pool',
+        is_active: true,
+        metadata: {
+          topology_template_instantiation: {
+            topology_template_id: 'template-1',
+            topology_template_code: 'top-down-template',
+            topology_template_name: 'Top Down Template',
+            topology_template_revision_id: 'template-revision-r2',
+            topology_template_revision_number: 2,
+            slot_assignments: [
+              {
+                slot_key: 'root',
+                organization_id: '11111111-1111-1111-1111-111111111111',
+              },
+              {
+                slot_key: 'leaf',
+                organization_id: '77777777-7777-7777-7777-777777777777',
+              },
+            ],
+            edge_selector_overrides: [
+              {
+                parent_slot_key: 'root',
+                child_slot_key: 'leaf',
+                document_policy_key: 'receipt',
+              },
+            ],
+          },
+        },
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:templated-topology',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            document_policy_key: 'receipt',
+          },
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-topology-authoring-mode')).toHaveTextContent('Template-based instantiation')
+    })
+    expect(screen.getByTestId('pool-catalog-topology-template-revision')).toHaveTextContent('Top Down Template · r2')
+    expect(screen.getByTestId('pool-catalog-topology-template-slot-key-0')).toHaveValue('root')
+    expect(screen.getByTestId('pool-catalog-topology-template-slot-key-1')).toHaveValue('leaf')
+    expect(screen.getByTestId('pool-catalog-topology-template-slot-org-0')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-topology-template-slot-org-1')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-topology-template-edge-slot-status-0')).toBeInTheDocument()
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('supports edge metadata builder mode and preserves custom metadata keys with slot selector', async () => {

@@ -38,6 +38,7 @@ from .views import (
     pool_document_policy_migrations,
     intercompany_pools,
     intercompany_pools_binding_profiles,
+    intercompany_pools_topology_templates,
     intercompany_pools_master_data,
     intercompany_pools_master_data_bootstrap,
     intercompany_pools_master_data_sync,
@@ -156,6 +157,16 @@ urlpatterns = [
         'pools/binding-profiles/<uuid:binding_profile_id>/deactivate/',
         intercompany_pools_binding_profiles.deactivate_binding_profile,
         name='pools-binding-profiles-deactivate',
+    ),
+    path(
+        'pools/topology-templates/',
+        intercompany_pools_topology_templates.topology_templates_collection,
+        name='pools-topology-templates-collection',
+    ),
+    path(
+        'pools/topology-templates/<uuid:topology_template_id>/revisions/',
+        intercompany_pools_topology_templates.topology_template_revisions,
+        name='pools-topology-templates-revisions',
     ),
     path(
         'pools/workflow-bindings/',

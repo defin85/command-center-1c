@@ -5036,6 +5036,134 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetailsError'
+  /api/v2/pools/topology-templates/:
+    get:
+      operationId: v2_pools_topology_templates_collection
+      summary: List topology templates
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopologyTemplateListResponse'
+        '400':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+        '401':
+          description: Unauthorized
+    post:
+      operationId: v2_pools_topology_templates_create
+      summary: Create topology template
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopologyTemplateCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TopologyTemplateCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TopologyTemplateCreateRequest'
+      responses:
+        '201':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopologyTemplateMutationResponse'
+        '400':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+        '401':
+          description: Unauthorized
+  /api/v2/pools/topology-templates/{topology_template_id}/revisions/:
+    post:
+      operationId: v2_pools_topology_templates_revisions_create
+      summary: Create topology template revision
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: topology_template_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopologyTemplateRevisionCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TopologyTemplateRevisionCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TopologyTemplateRevisionCreateRequest'
+      responses:
+        '201':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopologyTemplateMutationResponse'
+        '400':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+        '401':
+          description: Unauthorized
+        '404':
+          description: ''
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
   /api/v2/pools/workflow-bindings/:
     get:
       operationId: v2_pools_workflow_bindings_list
@@ -17590,6 +17718,188 @@ components:
           $ref: '#/components/schemas/BindingProfileRevisionWrite'
       required:
         - revision
+    TopologyTemplateNode:
+      type: object
+      properties:
+        slot_key:
+          type: string
+        label:
+          type: string
+          nullable: true
+        is_root:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+        - slot_key
+        - is_root
+        - metadata
+    TopologyTemplateEdge:
+      type: object
+      properties:
+        parent_slot_key:
+          type: string
+        child_slot_key:
+          type: string
+        weight:
+          type: string
+        min_amount:
+          type: string
+          nullable: true
+        max_amount:
+          type: string
+          nullable: true
+        document_policy_key:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+        - parent_slot_key
+        - child_slot_key
+        - weight
+        - metadata
+    TopologyTemplateRevision:
+      type: object
+      properties:
+        topology_template_revision_id:
+          type: string
+          description: Opaque immutable reusable topology template revision pin.
+        topology_template_id:
+          type: string
+          format: uuid
+        revision_number:
+          type: integer
+          minimum: 1
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopologyTemplateNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopologyTemplateEdge'
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - topology_template_revision_id
+        - topology_template_id
+        - revision_number
+        - nodes
+        - edges
+        - metadata
+        - created_at
+    TopologyTemplate:
+      type: object
+      properties:
+        topology_template_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - deactivated
+        metadata:
+          type: object
+          additionalProperties: true
+        latest_revision_number:
+          type: integer
+          minimum: 1
+        latest_revision:
+          $ref: '#/components/schemas/TopologyTemplateRevision'
+        revisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopologyTemplateRevision'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - topology_template_id
+        - code
+        - name
+        - status
+        - latest_revision_number
+        - latest_revision
+        - revisions
+        - created_at
+        - updated_at
+    TopologyTemplateListResponse:
+      type: object
+      properties:
+        topology_templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopologyTemplate'
+        count:
+          type: integer
+      required:
+        - topology_templates
+        - count
+    TopologyTemplateRevisionWrite:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopologyTemplateNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopologyTemplateEdge'
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+        - nodes
+    TopologyTemplateCreateRequest:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        revision:
+          $ref: '#/components/schemas/TopologyTemplateRevisionWrite'
+      required:
+        - code
+        - name
+        - revision
+    TopologyTemplateMutationResponse:
+      type: object
+      properties:
+        topology_template:
+          $ref: '#/components/schemas/TopologyTemplate'
+      required:
+        - topology_template
+    TopologyTemplateRevisionCreateRequest:
+      type: object
+      properties:
+        revision:
+          $ref: '#/components/schemas/TopologyTemplateRevisionWrite'
+      required:
+        - revision
     PoolWorkflowBindingCollectionResponse:
       type: object
       properties:
@@ -19314,6 +19624,30 @@ components:
         - nodes
         - pool_id
         - version
+    PoolTopologyTemplateSlotAssignmentInput:
+      type: object
+      properties:
+        slot_key:
+          type: string
+        organization_id:
+          type: string
+          format: uuid
+      required:
+        - slot_key
+        - organization_id
+    PoolTopologyTemplateEdgeSelectorOverrideInput:
+      type: object
+      properties:
+        parent_slot_key:
+          type: string
+        child_slot_key:
+          type: string
+        document_policy_key:
+          type: string
+      required:
+        - parent_slot_key
+        - child_slot_key
+        - document_policy_key
     PoolTopologySnapshotNodeInput:
       type: object
       properties:
@@ -19372,6 +19706,16 @@ components:
           type: string
           format: date
           nullable: true
+        topology_template_revision_id:
+          type: string
+        slot_assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolTopologyTemplateSlotAssignmentInput'
+        edge_selector_overrides:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolTopologyTemplateEdgeSelectorOverrideInput'
         nodes:
           type: array
           items:
@@ -19382,7 +19726,6 @@ components:
             $ref: '#/components/schemas/PoolTopologySnapshotEdgeInput'
       required:
         - effective_from
-        - nodes
         - version
     PoolTopologySnapshotUpsertResponse:
       type: object

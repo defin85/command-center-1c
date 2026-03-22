@@ -49,6 +49,8 @@ from apps.intercompany_pools.models import (
     PoolRunMode,
     PoolSchemaTemplate,
     PoolSchemaTemplateFormat,
+    TopologyTemplate,
+    TopologyTemplateRevision,
 )
 from apps.intercompany_pools.runtime_projection_contract import POOL_RUNTIME_PROJECTION_CONTEXT_KEY
 from apps.intercompany_pools.workflow_binding_attachments_store import (
@@ -940,6 +942,29 @@ def _create_current_metadata_catalog_snapshot(
         confirmed_at=snapshot.fetched_at,
     )
     return snapshot
+
+
+def _create_topology_template_via_api(
+    authenticated_client: APIClient,
+    *,
+    code: str,
+    name: str,
+    revision: dict[str, object],
+) -> dict[str, object]:
+    response = authenticated_client.post(
+        "/api/v2/pools/topology-templates/",
+        {
+            "code": code,
+            "name": name,
+            "revision": revision,
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    payload = response.json()
+    topology_template = payload["topology_template"]
+    assert isinstance(topology_template, dict)
+    return topology_template
 
 
 @pytest.fixture
@@ -3062,6 +3087,253 @@ def test_get_pool_graph_returns_node_and_edge_metadata_including_document_policy
 
 
 @pytest.mark.django_db
+def test_topology_templates_collection_creates_revision_without_concrete_organizations(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/topology-templates/",
+        {
+            "code": "branching-topology",
+            "name": "Branching Topology",
+            "revision": {
+                "nodes": [
+                    {"slot_key": "root", "label": "Root", "is_root": True},
+                    {"slot_key": "branch_a", "label": "Branch A"},
+                    {"slot_key": "leaf_receipt", "label": "Leaf Receipt"},
+                ],
+                "edges": [
+                    {
+                        "parent_slot_key": "root",
+                        "child_slot_key": "branch_a",
+                        "document_policy_key": "realization",
+                    },
+                    {
+                        "parent_slot_key": "branch_a",
+                        "child_slot_key": "leaf_receipt",
+                        "document_policy_key": "receipt",
+                    },
+                ],
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201
+    payload = response.json()["topology_template"]
+    assert payload["code"] == "branching-topology"
+    assert payload["latest_revision_number"] == 1
+    assert payload["latest_revision"]["nodes"][0]["slot_key"] == "root"
+    assert "organization_id" not in payload["latest_revision"]["nodes"][0]
+
+    template = TopologyTemplate.objects.get(tenant=default_tenant, code="branching-topology")
+    revision = TopologyTemplateRevision.objects.get(template=template, revision_number=1)
+    assert revision.nodes[0]["slot_key"] == "root"
+    assert "organization_id" not in revision.nodes[0]
+
+
+@pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_materializes_template_revision_into_concrete_graph(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    topology_template = _create_topology_template_via_api(
+        authenticated_client,
+        code="linear-topology",
+        name="Linear Topology",
+        revision={
+            "nodes": [
+                {"slot_key": "root", "label": "Root", "is_root": True},
+                {"slot_key": "leaf", "label": "Leaf"},
+            ],
+            "edges": [
+                {
+                    "parent_slot_key": "root",
+                    "child_slot_key": "leaf",
+                    "document_policy_key": "receipt",
+                }
+            ],
+        },
+    )
+    revision = topology_template["latest_revision"]
+    root_org = Organization.objects.create(tenant=default_tenant, name="Template Root", inn="741200000001")
+    leaf_org = Organization.objects.create(tenant=default_tenant, name="Template Leaf", inn="741200000002")
+
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    assert graph_before.status_code == 200
+    current_version = graph_before.json()["version"]
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "topology_template_revision_id": revision["topology_template_revision_id"],
+            "slot_assignments": [
+                {"slot_key": "root", "organization_id": str(root_org.id)},
+                {"slot_key": "leaf", "organization_id": str(leaf_org.id)},
+            ],
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    graph_response = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-15")
+    assert graph_response.status_code == 200
+    graph_payload = graph_response.json()
+    assert [node["organization_id"] for node in graph_payload["nodes"]] == [
+        str(root_org.id),
+        str(leaf_org.id),
+    ]
+    assert graph_payload["edges"][0]["metadata"]["document_policy_key"] == "receipt"
+
+    pool.refresh_from_db()
+    instantiation = pool.metadata["topology_template_instantiation"]
+    assert instantiation["topology_template_revision_id"] == revision["topology_template_revision_id"]
+    assert instantiation["slot_assignments"] == [
+        {"slot_key": "root", "organization_id": str(root_org.id)},
+        {"slot_key": "leaf", "organization_id": str(leaf_org.id)},
+    ]
+
+
+@pytest.mark.django_db
+def test_upsert_pool_topology_snapshot_applies_edge_selector_override_for_template_edge(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    topology_template = _create_topology_template_via_api(
+        authenticated_client,
+        code="override-topology",
+        name="Override Topology",
+        revision={
+            "nodes": [
+                {"slot_key": "root", "is_root": True},
+                {"slot_key": "leaf"},
+            ],
+            "edges": [
+                {
+                    "parent_slot_key": "root",
+                    "child_slot_key": "leaf",
+                    "document_policy_key": "receipt",
+                }
+            ],
+        },
+    )
+    revision = topology_template["latest_revision"]
+    root_org = Organization.objects.create(tenant=default_tenant, name="Override Root", inn="741200000011")
+    leaf_org = Organization.objects.create(tenant=default_tenant, name="Override Leaf", inn="741200000012")
+
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    current_version = graph_before.json()["version"]
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "topology_template_revision_id": revision["topology_template_revision_id"],
+            "slot_assignments": [
+                {"slot_key": "root", "organization_id": str(root_org.id)},
+                {"slot_key": "leaf", "organization_id": str(leaf_org.id)},
+            ],
+            "edge_selector_overrides": [
+                {
+                    "parent_slot_key": "root",
+                    "child_slot_key": "leaf",
+                    "document_policy_key": "sale",
+                }
+            ],
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    graph_response = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-15")
+    assert graph_response.status_code == 200
+    graph_payload = graph_response.json()
+    assert graph_payload["edges"][0]["metadata"]["document_policy_key"] == "sale"
+
+
+@pytest.mark.django_db
+def test_new_topology_template_revision_does_not_retroactively_change_pinned_pool_graph(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    topology_template = _create_topology_template_via_api(
+        authenticated_client,
+        code="pinned-topology",
+        name="Pinned Topology",
+        revision={
+            "nodes": [
+                {"slot_key": "root", "is_root": True},
+                {"slot_key": "leaf"},
+            ],
+            "edges": [
+                {
+                    "parent_slot_key": "root",
+                    "child_slot_key": "leaf",
+                    "document_policy_key": "realization",
+                }
+            ],
+        },
+    )
+    revision_v1 = topology_template["latest_revision"]
+    root_org = Organization.objects.create(tenant=default_tenant, name="Pinned Root", inn="741200000021")
+    leaf_org = Organization.objects.create(tenant=default_tenant, name="Pinned Leaf", inn="741200000022")
+
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    current_version = graph_before.json()["version"]
+    save_response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "topology_template_revision_id": revision_v1["topology_template_revision_id"],
+            "slot_assignments": [
+                {"slot_key": "root", "organization_id": str(root_org.id)},
+                {"slot_key": "leaf", "organization_id": str(leaf_org.id)},
+            ],
+        },
+        format="json",
+    )
+    assert save_response.status_code == 200
+
+    revision_response = authenticated_client.post(
+        f"/api/v2/pools/topology-templates/{topology_template['topology_template_id']}/revisions/",
+        {
+            "revision": {
+                "nodes": [
+                    {"slot_key": "root", "is_root": True},
+                    {"slot_key": "leaf"},
+                ],
+                "edges": [
+                    {
+                        "parent_slot_key": "root",
+                        "child_slot_key": "leaf",
+                        "document_policy_key": "receipt",
+                    }
+                ],
+            }
+        },
+        format="json",
+    )
+
+    assert revision_response.status_code == 201
+    graph_response = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-15")
+    assert graph_response.status_code == 200
+    assert graph_response.json()["edges"][0]["metadata"]["document_policy_key"] == "realization"
+
+    pool.refresh_from_db()
+    assert (
+        pool.metadata["topology_template_instantiation"]["topology_template_revision_id"]
+        == revision_v1["topology_template_revision_id"]
+    )
+
+
+@pytest.mark.django_db
 def test_migrate_pool_edge_document_policy_updates_canonical_binding_runtime_path(
     authenticated_client: APIClient,
     user: User,
@@ -4681,6 +4953,85 @@ def test_preview_pool_workflow_binding_surfaces_missing_selector_in_slot_coverag
         period_start=date(2026, 1, 1),
         slot_key="",
     )
+
+    response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/preview/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": bindings[0]["binding_id"],
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["slot_coverage_summary"]["counts"]["missing_selector"] == 1
+    assert payload["slot_coverage_summary"]["items"][0]["coverage"]["code"] == (
+        POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING
+    )
+
+
+@pytest.mark.django_db
+def test_preview_pool_workflow_binding_template_instantiation_keeps_missing_selector_fail_closed(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    topology_template = _create_topology_template_via_api(
+        authenticated_client,
+        code="missing-selector-template",
+        name="Missing Selector Template",
+        revision={
+            "nodes": [
+                {"slot_key": "root", "is_root": True},
+                {"slot_key": "leaf"},
+            ],
+            "edges": [
+                {
+                    "parent_slot_key": "root",
+                    "child_slot_key": "leaf",
+                }
+            ],
+        },
+    )
+    revision = topology_template["latest_revision"]
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    bindings, target_database = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    root_org = Organization.objects.create(tenant=pool.tenant, name="Template Missing Root", inn="741200000031")
+    leaf_org = Organization.objects.get(database=target_database)
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    current_version = graph_before.json()["version"]
+    save_response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "topology_template_revision_id": revision["topology_template_revision_id"],
+            "slot_assignments": [
+                {"slot_key": "root", "organization_id": str(root_org.id)},
+                {"slot_key": "leaf", "organization_id": str(leaf_org.id)},
+            ],
+        },
+        format="json",
+    )
+    assert save_response.status_code == 200
 
     response = authenticated_client.post(
         "/api/v2/pools/workflow-bindings/preview/",

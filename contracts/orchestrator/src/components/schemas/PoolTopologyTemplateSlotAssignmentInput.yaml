@@ -1,0 +1,10 @@
+type: object
+properties:
+  slot_key:
+    type: string
+  organization_id:
+    type: string
+    format: uuid
+required:
+  - slot_key
+  - organization_id

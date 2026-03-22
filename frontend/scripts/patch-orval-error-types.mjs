@@ -4,6 +4,18 @@ import { resolve } from 'node:path'
 const targetPath = resolve(process.cwd(), 'src/api/generated/v2/v2.ts')
 const retryRequestPath = resolve(process.cwd(), 'src/api/generated/model/poolRunRetryRequest.ts')
 const poolRunPath = resolve(process.cwd(), 'src/api/generated/model/poolRun.ts')
+const topologySnapshotUpsertRequestPath = resolve(
+  process.cwd(),
+  'src/api/generated/model/poolTopologySnapshotUpsertRequest.ts'
+)
+const topologyTemplateSlotAssignmentPath = resolve(
+  process.cwd(),
+  'src/api/generated/model/poolTopologyTemplateSlotAssignmentInput.ts'
+)
+const topologyTemplateEdgeSelectorOverridePath = resolve(
+  process.cwd(),
+  'src/api/generated/model/poolTopologyTemplateEdgeSelectorOverrideInput.ts'
+)
 const metadataManagementProfilePath = resolve(
   process.cwd(),
   'src/api/generated/model/databaseMetadataManagementConfigurationProfile.ts'
@@ -94,6 +106,54 @@ retryRequestContent = retryRequestContent.replace(
   '  documents_by_database?: PoolRunRetryRequestDocumentsByDatabase;\n'
 )
 writeFileSync(retryRequestPath, retryRequestContent, 'utf8')
+
+writeFileSync(
+  topologyTemplateSlotAssignmentPath,
+  `${generatedHeader}/**
+ * Pool-local organization assignment for one topology template slot.
+ */
+export interface PoolTopologyTemplateSlotAssignmentInput {
+  slot_key: string;
+  organization_id: string;
+}
+`,
+  'utf8'
+)
+
+writeFileSync(
+  topologyTemplateEdgeSelectorOverridePath,
+  `${generatedHeader}/**
+ * Pool-local selector override for one topology template edge.
+ */
+export interface PoolTopologyTemplateEdgeSelectorOverrideInput {
+  parent_slot_key: string;
+  child_slot_key: string;
+  document_policy_key: string;
+}
+`,
+  'utf8'
+)
+
+writeFileSync(
+  topologySnapshotUpsertRequestPath,
+  `${generatedHeader}import type { PoolTopologySnapshotNodeInput } from './poolTopologySnapshotNodeInput';
+import type { PoolTopologySnapshotEdgeInput } from './poolTopologySnapshotEdgeInput';
+import type { PoolTopologyTemplateSlotAssignmentInput } from './poolTopologyTemplateSlotAssignmentInput';
+import type { PoolTopologyTemplateEdgeSelectorOverrideInput } from './poolTopologyTemplateEdgeSelectorOverrideInput';
+
+export interface PoolTopologySnapshotUpsertRequest {
+  version: string;
+  effective_from: string;
+  effective_to?: string | null;
+  topology_template_revision_id?: string;
+  slot_assignments?: PoolTopologyTemplateSlotAssignmentInput[];
+  edge_selector_overrides?: PoolTopologyTemplateEdgeSelectorOverrideInput[];
+  nodes?: PoolTopologySnapshotNodeInput[];
+  edges?: PoolTopologySnapshotEdgeInput[];
+}
+`,
+  'utf8'
+)
 
 let poolRunContent = readFileSync(poolRunPath, 'utf8')
 // orval currently drops `null` from nullable $ref fields on PoolRun.
@@ -188,6 +248,8 @@ export interface DatabaseStreamConflictResponse {
 
 let modelIndexContent = readFileSync(modelIndexPath, 'utf8')
 for (const exportLine of [
+  "export * from './poolTopologyTemplateSlotAssignmentInput';\n",
+  "export * from './poolTopologyTemplateEdgeSelectorOverrideInput';\n",
   "export * from './databaseStreamConflictDetails';\n",
   "export * from './databaseStreamConflictErrorDetail';\n",
   "export * from './databaseStreamConflictResponse';\n",

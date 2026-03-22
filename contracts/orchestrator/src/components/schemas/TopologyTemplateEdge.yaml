@@ -1,0 +1,25 @@
+type: object
+properties:
+  parent_slot_key:
+    type: string
+  child_slot_key:
+    type: string
+  weight:
+    type: string
+  min_amount:
+    type: string
+    nullable: true
+  max_amount:
+    type: string
+    nullable: true
+  document_policy_key:
+    type: string
+    nullable: true
+  metadata:
+    type: object
+    additionalProperties: true
+required:
+  - parent_slot_key
+  - child_slot_key
+  - weight
+  - metadata

@@ -1,0 +1,6 @@
+type: object
+properties:
+  revision:
+    $ref: ./TopologyTemplateRevisionWrite.yaml
+required:
+  - revision

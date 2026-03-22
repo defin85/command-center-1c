@@ -1,0 +1,17 @@
+type: object
+properties:
+  code:
+    type: string
+  name:
+    type: string
+  description:
+    type: string
+  metadata:
+    type: object
+    additionalProperties: true
+  revision:
+    $ref: ./TopologyTemplateRevisionWrite.yaml
+required:
+  - code
+  - name
+  - revision

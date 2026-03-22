@@ -17,6 +17,47 @@ export type PoolSchemaTemplate = {
   updated_at: string
 }
 
+export type PoolTopologyTemplateNode = {
+  slot_key: string
+  label?: string | null
+  is_root: boolean
+  metadata: Record<string, unknown>
+}
+
+export type PoolTopologyTemplateEdge = {
+  parent_slot_key: string
+  child_slot_key: string
+  weight: string
+  min_amount?: string | null
+  max_amount?: string | null
+  document_policy_key?: string | null
+  metadata: Record<string, unknown>
+}
+
+export type PoolTopologyTemplateRevision = {
+  topology_template_revision_id: string
+  topology_template_id: string
+  revision_number: number
+  nodes: PoolTopologyTemplateNode[]
+  edges: PoolTopologyTemplateEdge[]
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+export type PoolTopologyTemplate = {
+  topology_template_id: string
+  code: string
+  name: string
+  description: string
+  status: 'active' | 'deactivated'
+  metadata: Record<string, unknown>
+  latest_revision_number: number
+  latest_revision: PoolTopologyTemplateRevision
+  revisions: PoolTopologyTemplateRevision[]
+  created_at: string
+  updated_at: string
+}
+
 export type OrganizationPool = {
   id: string
   code: string
@@ -649,11 +690,25 @@ export type PoolTopologySnapshotEdgeInput = {
   metadata?: PoolTopologyEdgeMetadata
 }
 
+export type PoolTopologyTemplateSlotAssignmentInput = {
+  slot_key: string
+  organization_id: string
+}
+
+export type PoolTopologyTemplateEdgeSelectorOverrideInput = {
+  parent_slot_key: string
+  child_slot_key: string
+  document_policy_key: string
+}
+
 export type UpsertPoolTopologySnapshotPayload = {
   version: string
   effective_from: string
   effective_to?: string | null
-  nodes: PoolTopologySnapshotNodeInput[]
+  topology_template_revision_id?: string
+  slot_assignments?: PoolTopologyTemplateSlotAssignmentInput[]
+  edge_selector_overrides?: PoolTopologyTemplateEdgeSelectorOverrideInput[]
+  nodes?: PoolTopologySnapshotNodeInput[]
   edges?: PoolTopologySnapshotEdgeInput[]
 }
 
@@ -733,6 +788,14 @@ export async function listOrganizationPools(): Promise<OrganizationPool[]> {
     { skipGlobalError: true }
   )
   return response.data.pools ?? []
+}
+
+export async function listPoolTopologyTemplates(): Promise<PoolTopologyTemplate[]> {
+  const response = await apiClient.get<{ topology_templates: PoolTopologyTemplate[] }>(
+    '/api/v2/pools/topology-templates/',
+    { skipGlobalError: true }
+  )
+  return response.data.topology_templates ?? []
 }
 
 export async function upsertOrganizationPool(
