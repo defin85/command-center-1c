@@ -16,6 +16,26 @@ const topologyTemplateEdgeSelectorOverridePath = resolve(
   process.cwd(),
   'src/api/generated/model/poolTopologyTemplateEdgeSelectorOverrideInput.ts'
 )
+const topologyTemplateNodePath = resolve(
+  process.cwd(),
+  'src/api/generated/model/topologyTemplateNode.ts'
+)
+const topologyTemplateEdgePath = resolve(
+  process.cwd(),
+  'src/api/generated/model/topologyTemplateEdge.ts'
+)
+const topologyTemplateRevisionPath = resolve(
+  process.cwd(),
+  'src/api/generated/model/topologyTemplateRevision.ts'
+)
+const topologyTemplatePath = resolve(
+  process.cwd(),
+  'src/api/generated/model/topologyTemplate.ts'
+)
+const topologyTemplateListResponsePath = resolve(
+  process.cwd(),
+  'src/api/generated/model/topologyTemplateListResponse.ts'
+)
 const metadataManagementProfilePath = resolve(
   process.cwd(),
   'src/api/generated/model/databaseMetadataManagementConfigurationProfile.ts'
@@ -129,6 +149,99 @@ export interface PoolTopologyTemplateEdgeSelectorOverrideInput {
   parent_slot_key: string;
   child_slot_key: string;
   document_policy_key: string;
+}
+`,
+  'utf8'
+)
+
+writeFileSync(
+  topologyTemplateNodePath,
+  `${generatedHeader}/**
+ * One abstract reusable topology node identified by slot_key.
+ */
+export interface TopologyTemplateNode {
+  slot_key: string;
+  label?: string | null;
+  is_root: boolean;
+  metadata: Record<string, unknown>;
+}
+`,
+  'utf8'
+)
+
+writeFileSync(
+  topologyTemplateEdgePath,
+  `${generatedHeader}/**
+ * One abstract reusable topology edge between two slot keys.
+ */
+export interface TopologyTemplateEdge {
+  parent_slot_key: string;
+  child_slot_key: string;
+  weight: string;
+  min_amount?: string | null;
+  max_amount?: string | null;
+  document_policy_key?: string | null;
+  metadata: Record<string, unknown>;
+}
+`,
+  'utf8'
+)
+
+writeFileSync(
+  topologyTemplateRevisionPath,
+  `${generatedHeader}import type { TopologyTemplateNode } from './topologyTemplateNode';
+import type { TopologyTemplateEdge } from './topologyTemplateEdge';
+
+/**
+ * Immutable reusable topology template revision.
+ */
+export interface TopologyTemplateRevision {
+  topology_template_revision_id: string;
+  topology_template_id: string;
+  revision_number: number;
+  nodes: TopologyTemplateNode[];
+  edges: TopologyTemplateEdge[];
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+`,
+  'utf8'
+)
+
+writeFileSync(
+  topologyTemplatePath,
+  `${generatedHeader}import type { TopologyTemplateRevision } from './topologyTemplateRevision';
+
+/**
+ * Reusable tenant-scoped topology template with immutable revisions.
+ */
+export interface TopologyTemplate {
+  topology_template_id: string;
+  code: string;
+  name: string;
+  description: string;
+  status: 'active' | 'deactivated';
+  metadata: Record<string, unknown>;
+  latest_revision_number: number;
+  latest_revision: TopologyTemplateRevision;
+  revisions: TopologyTemplateRevision[];
+  created_at: string;
+  updated_at: string;
+}
+`,
+  'utf8'
+)
+
+writeFileSync(
+  topologyTemplateListResponsePath,
+  `${generatedHeader}import type { TopologyTemplate } from './topologyTemplate';
+
+/**
+ * List response for topology template catalog.
+ */
+export interface TopologyTemplateListResponse {
+  topology_templates: TopologyTemplate[];
+  count: number;
 }
 `,
   'utf8'
@@ -250,6 +363,11 @@ let modelIndexContent = readFileSync(modelIndexPath, 'utf8')
 for (const exportLine of [
   "export * from './poolTopologyTemplateSlotAssignmentInput';\n",
   "export * from './poolTopologyTemplateEdgeSelectorOverrideInput';\n",
+  "export * from './topologyTemplateNode';\n",
+  "export * from './topologyTemplateEdge';\n",
+  "export * from './topologyTemplateRevision';\n",
+  "export * from './topologyTemplate';\n",
+  "export * from './topologyTemplateListResponse';\n",
   "export * from './databaseStreamConflictDetails';\n",
   "export * from './databaseStreamConflictErrorDetail';\n",
   "export * from './databaseStreamConflictResponse';\n",

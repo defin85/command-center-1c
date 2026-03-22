@@ -2130,6 +2130,78 @@ describe('PoolCatalogPage', () => {
     )
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
+  it('defaults fresh pool topology editor to template-based instantiation when graph is empty', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-topology-authoring-mode')).toHaveTextContent(
+        'Template-based instantiation'
+      )
+    })
+    expect(screen.getByTestId('pool-catalog-topology-template-revision')).toBeInTheDocument()
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
+  it('keeps existing concrete manual pool in manual mode without auto-converting to template', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
+    mockGetPoolGraph.mockResolvedValue({
+      pool_id: '44444444-4444-4444-4444-444444444444',
+      date: '2026-01-01',
+      version: 'v1:manual-topology',
+      nodes: [
+        {
+          node_version_id: 'node-v1',
+          organization_id: '11111111-1111-1111-1111-111111111111',
+          inn: '730000000001',
+          name: 'Org One',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          node_version_id: 'node-v2',
+          organization_id: '77777777-7777-7777-7777-777777777777',
+          inn: '730000000002',
+          name: 'Org Two',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          edge_version_id: 'edge-v1',
+          parent_node_version_id: 'node-v1',
+          child_node_version_id: 'node-v2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          metadata: {
+            document_policy_key: 'sale',
+          },
+        },
+      ],
+    })
+
+    renderPage()
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-topology-authoring-mode')).toHaveTextContent(
+        'Manual snapshot editor'
+      )
+    })
+    expect(screen.queryByTestId('pool-catalog-topology-template-revision')).not.toBeInTheDocument()
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
   it('restores topology template instantiation from pool metadata without switching to manual mode', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()

@@ -22,6 +22,7 @@ type PoolsUiMockState = {
   lastRetryPayload: AnyRecord | null
   retryResponse?: AnyRecord
   lastTopologyPayload?: AnyRecord | null
+  topologyTemplates?: AnyRecord[]
   masterData?: {
     parties: AnyRecord[]
     items: AnyRecord[]
@@ -108,6 +109,7 @@ async function setupApiMocks(page: Page, state: PoolsUiMockState) {
     taxProfiles: [] as AnyRecord[],
     bindings: [] as AnyRecord[],
   }
+  const topologyTemplates = state.topologyTemplates || []
 
   const buildPoolId = () => `90000000-0000-4000-8000-${String(poolSequence++).padStart(12, '0')}`
   const buildRunId = () => `91000000-0000-4000-8000-${String(runSequence++).padStart(12, '0')}`
@@ -119,6 +121,25 @@ async function setupApiMocks(page: Page, state: PoolsUiMockState) {
     const path = url.pathname
     const method = request.method()
 
+    if (method === 'GET' && path === '/api/v2/system/bootstrap/') {
+      return fulfillJson(route, {
+        me: { id: 1, username: 'smoke-user', is_staff: false },
+        tenant_context: {
+          active_tenant_id: TENANT_ID,
+          tenants: [{ id: TENANT_ID, slug: 'default', name: 'Default', role: 'owner' }],
+        },
+        access: {
+          user: { id: 1, username: 'smoke-user' },
+          clusters: [],
+          databases: [],
+          operation_templates: [],
+        },
+        capabilities: {
+          can_manage_rbac: false,
+          can_manage_driver_catalogs: false,
+        },
+      })
+    }
     if (method === 'GET' && path === '/api/v2/system/me/') {
       return fulfillJson(route, { id: 1, username: 'smoke-user', is_staff: false })
     }
@@ -204,6 +225,12 @@ async function setupApiMocks(page: Page, state: PoolsUiMockState) {
         blocking_remediation: null,
       })
     }
+    if (method === 'GET' && path === '/api/v2/pools/topology-templates/') {
+      return fulfillJson(route, {
+        topology_templates: topologyTemplates,
+        count: topologyTemplates.length,
+      })
+    }
     if (method === 'GET' && path.startsWith('/api/v2/pools/') && path.endsWith('/graph/')) {
       const poolId = path.split('/')[4] || ''
       const graph = state.graphByPoolId[poolId] || {
@@ -239,8 +266,70 @@ async function setupApiMocks(page: Page, state: PoolsUiMockState) {
       }
 
       state.topologyUpsertCalls += 1
-      const nodesPayload = Array.isArray(payload.nodes) ? payload.nodes : []
-      const edgesPayload = Array.isArray(payload.edges) ? payload.edges : []
+      const topologyTemplateRevisionId = String(payload.topology_template_revision_id || '').trim()
+      let nodesPayload = Array.isArray(payload.nodes) ? payload.nodes : []
+      let edgesPayload = Array.isArray(payload.edges) ? payload.edges : []
+      if (topologyTemplateRevisionId) {
+        const templateRevision = topologyTemplates
+          .flatMap((item) => (Array.isArray(item.revisions) ? item.revisions : []))
+          .find(
+            (item) => String(item?.topology_template_revision_id || '').trim() === topologyTemplateRevisionId
+          )
+        if (!templateRevision) {
+          return fulfillJson(route, {
+            type: 'about:blank',
+            title: 'Topology Template Revision Not Found',
+            status: 404,
+            detail: 'Topology template revision not found in current tenant context.',
+            code: 'TOPOLOGY_TEMPLATE_REVISION_NOT_FOUND',
+          }, 404)
+        }
+
+        const slotAssignments = Array.isArray(payload.slot_assignments) ? payload.slot_assignments : []
+        const organizationIdBySlotKey = new Map<string, string>(
+          slotAssignments.map((item) => [
+            String(item?.slot_key || '').trim(),
+            String(item?.organization_id || '').trim(),
+          ])
+        )
+        const edgeSelectorOverrides = Array.isArray(payload.edge_selector_overrides)
+          ? payload.edge_selector_overrides
+          : []
+        const selectorOverrideByEdge = new Map<string, string>(
+          edgeSelectorOverrides.map((item) => [
+            `${String(item?.parent_slot_key || '').trim()}->${String(item?.child_slot_key || '').trim()}`,
+            String(item?.document_policy_key || '').trim(),
+          ])
+        )
+
+        nodesPayload = (Array.isArray(templateRevision.nodes) ? templateRevision.nodes : []).map((node: AnyRecord) => ({
+          organization_id: organizationIdBySlotKey.get(String(node.slot_key || '').trim()) || '',
+          is_root: Boolean(node.is_root),
+          metadata: node.metadata && typeof node.metadata === 'object' ? node.metadata : {},
+        }))
+        edgesPayload = (Array.isArray(templateRevision.edges) ? templateRevision.edges : []).map((edge: AnyRecord) => {
+          const parentSlotKey = String(edge.parent_slot_key || '').trim()
+          const childSlotKey = String(edge.child_slot_key || '').trim()
+          const metadata = edge.metadata && typeof edge.metadata === 'object'
+            ? { ...(edge.metadata as AnyRecord) }
+            : {}
+          const selectorOverride = selectorOverrideByEdge.get(`${parentSlotKey}->${childSlotKey}`) || ''
+          const documentPolicyKey = selectorOverride || String(edge.document_policy_key || '').trim()
+          if (documentPolicyKey) {
+            metadata.document_policy_key = documentPolicyKey
+          } else {
+            delete metadata.document_policy_key
+          }
+          return {
+            parent_organization_id: organizationIdBySlotKey.get(parentSlotKey) || '',
+            child_organization_id: organizationIdBySlotKey.get(childSlotKey) || '',
+            weight: String(edge.weight || '1'),
+            min_amount: edge.min_amount == null ? null : String(edge.min_amount),
+            max_amount: edge.max_amount == null ? null : String(edge.max_amount),
+            metadata,
+          }
+        })
+      }
       const nodeIdByOrganization = new Map<string, string>()
       const nextNodes = nodesPayload.map((node: AnyRecord, index: number) => {
         const organizationId = String(node.organization_id || '')
@@ -253,6 +342,7 @@ async function setupApiMocks(page: Page, state: PoolsUiMockState) {
           inn: organization?.inn || '',
           name: organization?.name || organizationId,
           is_root: Boolean(node.is_root),
+          metadata: node.metadata && typeof node.metadata === 'object' ? node.metadata : {},
         }
       })
       const nextEdges = edgesPayload.map((edge: AnyRecord, index: number) => {
@@ -265,6 +355,7 @@ async function setupApiMocks(page: Page, state: PoolsUiMockState) {
           weight: String(edge.weight || '1.0'),
           min_amount: edge.min_amount == null ? null : String(edge.min_amount),
           max_amount: edge.max_amount == null ? null : String(edge.max_amount),
+          metadata: edge.metadata && typeof edge.metadata === 'object' ? edge.metadata : {},
         }
       })
 
@@ -526,25 +617,28 @@ test('Pools full flow smoke: 3 org -> minimal pool -> top_down run -> confirm pu
 
   await page.goto('/pools/catalog', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Pool Catalog', exact: true })).toBeVisible()
-  await expect(page.locator('.ant-table-tbody tr', { hasText: 'Org One' }).first()).toBeVisible()
-  await expect(page.locator('.ant-table-tbody tr', { hasText: 'Org Two' }).first()).toBeVisible()
-  await expect(page.locator('.ant-table-tbody tr', { hasText: 'Org Three' }).first()).toBeVisible()
+  await expect(page.getByTestId('pool-catalog-add-pool')).toBeVisible()
 
   await page.getByRole('tab', { name: 'Pools' }).click()
   await page.getByTestId('pool-catalog-add-pool').click()
-  await page.getByLabel('Code').fill('pool-smoke')
-  await page.getByLabel('Name').fill('Smoke Pool')
-  await page.getByLabel('Description').fill('Pool for browser smoke flow')
+  const poolDrawer = page.getByTestId('pool-catalog-pool-drawer')
+  await poolDrawer.getByLabel('Code').fill('pool-smoke')
+  await poolDrawer.getByPlaceholder('Main intercompany pool').fill('Smoke Pool')
+  await poolDrawer.getByPlaceholder('Optional').fill('Pool for browser smoke flow')
   await page.getByTestId('pool-catalog-save-pool').click()
 
   await expect.poll(() => state.pools.length).toBe(1)
+  await expect(page.getByTestId('pool-catalog-context-pool')).toContainText('pool-smoke - Smoke Pool')
 
   await page.getByRole('tab', { name: 'Topology Editor' }).click()
+  await expect(page.getByText('Topology snapshots by date')).toBeVisible()
+  await page.getByTestId('pool-catalog-topology-authoring-mode').click()
+  await page.locator('.ant-select-dropdown .ant-select-item-option-content', { hasText: 'Manual snapshot editor' }).first().click()
   await page.getByTestId('pool-catalog-topology-add-node').click()
   const topologyCard = page.locator('.ant-card').filter({ hasText: 'Topology snapshot editor' })
-  await topologyCard.locator('.ant-select').first().click()
+  await topologyCard.getByLabel('Organization').click()
   await page.locator('.ant-select-dropdown .ant-select-item-option-content', { hasText: 'Org One (730000000001)' }).first().click()
-  await topologyCard.getByRole('switch').first().click()
+  await topologyCard.getByLabel('Root').click()
   await page.getByTestId('pool-catalog-topology-save').click()
 
   await expect.poll(() => state.topologyUpsertCalls).toBe(1)
@@ -560,6 +654,103 @@ test('Pools full flow smoke: 3 org -> minimal pool -> top_down run -> confirm pu
 
   await expect.poll(() => state.confirmCalls).toBe(1)
   await expect(page.getByText('approved', { exact: false })).toBeVisible()
+})
+
+test('Pools browser-flow: fresh pool defaults to template topology authoring path', async ({ page }) => {
+  const state = {
+    pools: [] as AnyRecord[],
+    graphByPoolId: {} as Record<string, AnyRecord>,
+    runs: [] as AnyRecord[],
+    createRunCalls: 0,
+    confirmCalls: 0,
+    topologyUpsertCalls: 0,
+    retryCalls: 0,
+    lastRetryPayload: null as AnyRecord | null,
+    lastTopologyPayload: null as AnyRecord | null,
+    topologyTemplates: [
+      {
+        topology_template_id: 'template-top-down',
+        code: 'top-down-template',
+        name: 'Top Down Template',
+        description: 'Browser smoke topology template',
+        status: 'active',
+        metadata: {},
+        latest_revision_number: 2,
+        latest_revision: {
+          topology_template_revision_id: 'template-revision-r2',
+          topology_template_id: 'template-top-down',
+          revision_number: 2,
+          nodes: [
+            { slot_key: 'root', label: 'Root', is_root: true, metadata: {} },
+            { slot_key: 'leaf', label: 'Leaf', is_root: false, metadata: {} },
+          ],
+          edges: [
+            {
+              parent_slot_key: 'root',
+              child_slot_key: 'leaf',
+              weight: '1',
+              min_amount: null,
+              max_amount: null,
+              document_policy_key: 'sale',
+              metadata: {},
+            },
+          ],
+          metadata: {},
+          created_at: NOW,
+        },
+        revisions: [
+          {
+            topology_template_revision_id: 'template-revision-r2',
+            topology_template_id: 'template-top-down',
+            revision_number: 2,
+            nodes: [
+              { slot_key: 'root', label: 'Root', is_root: true, metadata: {} },
+              { slot_key: 'leaf', label: 'Leaf', is_root: false, metadata: {} },
+            ],
+            edges: [
+              {
+                parent_slot_key: 'root',
+                child_slot_key: 'leaf',
+                weight: '1',
+                min_amount: null,
+                max_amount: null,
+                document_policy_key: 'sale',
+                metadata: {},
+              },
+            ],
+            metadata: {},
+            created_at: NOW,
+          },
+        ],
+        created_at: NOW,
+        updated_at: NOW,
+      },
+    ] as AnyRecord[],
+  }
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/pools/catalog', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Pool Catalog', exact: true })).toBeVisible()
+
+  await page.getByRole('tab', { name: 'Pools' }).click()
+  await page.getByTestId('pool-catalog-add-pool').click()
+  const poolDrawer = page.getByTestId('pool-catalog-pool-drawer')
+  await poolDrawer.getByLabel('Code').fill('pool-template')
+  await poolDrawer.getByPlaceholder('Main intercompany pool').fill('Template Pool')
+  await poolDrawer.getByPlaceholder('Optional').fill('Pool for template-based smoke flow')
+  await page.getByTestId('pool-catalog-save-pool').click()
+
+  await expect.poll(() => state.pools.length).toBe(1)
+  await expect(page.getByTestId('pool-catalog-context-pool')).toContainText('pool-template - Template Pool')
+
+  await page.getByRole('tab', { name: 'Topology Editor' }).click()
+  await expect(page.getByText('Topology snapshots by date')).toBeVisible()
+  await expect(page.getByTestId('pool-catalog-topology-authoring-mode')).toContainText('Template-based instantiation')
+  await expect(page.getByText('Template-based path is the preferred reuse flow')).toBeVisible()
+  await expect(page.getByTestId('pool-catalog-topology-template-revision')).toBeVisible()
+  await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 
 test('Pools retry smoke: invoice_mode=required chain keeps linkage and skips already-successful targets', async ({ page }) => {

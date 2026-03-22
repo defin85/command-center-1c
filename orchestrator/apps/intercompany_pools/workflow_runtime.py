@@ -147,6 +147,7 @@ def start_pool_run_workflow_execution(
             schema_template=schema_template,
             run=locked_run,
         )
+        _ensure_slot_coverage_fail_closed(slot_coverage_summary=bundle.get("slot_coverage_summary"))
         resolved_workflow_binding = bundle["resolved_workflow_binding"]
         workflow_binding_snapshot = bundle["workflow_binding"]
         sanitized_run_input = bundle["run_input"]
@@ -804,6 +805,34 @@ def _build_atomic_compile_document_plan_artifact(
         )
     except Exception:
         return None
+
+
+def _ensure_slot_coverage_fail_closed(*, slot_coverage_summary: Any) -> None:
+    if not isinstance(slot_coverage_summary, Mapping):
+        return
+    items = slot_coverage_summary.get("items")
+    if not isinstance(items, list):
+        return
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        coverage = item.get("coverage")
+        if not isinstance(coverage, Mapping):
+            continue
+        status = str(coverage.get("status") or "").strip()
+        if status == "resolved":
+            continue
+        code = str(coverage.get("code") or "").strip() or "POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS"
+        detail = str(coverage.get("detail") or "").strip()
+        edge_label = str(item.get("edgeLabel") or item.get("edge_label") or "").strip()
+        slot_key = str(item.get("slotKey") or item.get("slot_key") or "").strip()
+        detail_parts = [detail]
+        if edge_label:
+            detail_parts.append(f"edge={edge_label}")
+        if slot_key:
+            detail_parts.append(f"slot={slot_key}")
+        normalized_detail = "; ".join(part for part in detail_parts if part).strip()
+        raise ValueError(f"{code}: {normalized_detail or 'Resolve topology slot coverage before starting the pool run.'}")
 
 
 def _with_lineage_metadata(

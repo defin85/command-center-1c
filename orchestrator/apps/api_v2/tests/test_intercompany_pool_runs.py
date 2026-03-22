@@ -3133,6 +3133,81 @@ def test_topology_templates_collection_creates_revision_without_concrete_organiz
 
 
 @pytest.mark.django_db
+def test_topology_templates_collection_rejects_non_object_revision_metadata_without_orphan_template(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/topology-templates/",
+        {
+            "code": "invalid-metadata-template",
+            "name": "Invalid Metadata Template",
+            "revision": {
+                "nodes": [
+                    {"slot_key": "root", "label": "Root", "is_root": True},
+                ],
+                "metadata": ["invalid"],
+            },
+        },
+        format="json",
+    )
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="VALIDATION_ERROR",
+    )
+    assert "metadata must be an object" in problem["detail"]
+    assert not TopologyTemplate.objects.filter(
+        tenant=default_tenant,
+        code="invalid-metadata-template",
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_topology_template_revision_create_rejects_non_object_metadata(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    topology_template = _create_topology_template_via_api(
+        authenticated_client,
+        code="revision-invalid-metadata-template",
+        name="Revision Invalid Metadata Template",
+        revision={
+            "nodes": [
+                {"slot_key": "root", "is_root": True},
+            ],
+        },
+    )
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/topology-templates/{topology_template['topology_template_id']}/revisions/",
+        {
+            "revision": {
+                "nodes": [
+                    {"slot_key": "root", "is_root": True},
+                ],
+                "metadata": ["invalid"],
+            }
+        },
+        format="json",
+    )
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="VALIDATION_ERROR",
+    )
+    assert "metadata must be an object" in problem["detail"]
+
+    template = TopologyTemplate.objects.get(
+        tenant=default_tenant,
+        id=UUID(topology_template["topology_template_id"]),
+    )
+    assert TopologyTemplateRevision.objects.filter(template=template).count() == 1
+
+
+@pytest.mark.django_db
 def test_upsert_pool_topology_snapshot_materializes_template_revision_into_concrete_graph(
     authenticated_client: APIClient,
     default_tenant: Tenant,
@@ -5053,6 +5128,89 @@ def test_preview_pool_workflow_binding_template_instantiation_keeps_missing_sele
     assert payload["slot_coverage_summary"]["items"][0]["coverage"]["code"] == (
         POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING
     )
+
+
+@pytest.mark.django_db
+def test_create_pool_run_template_instantiation_keeps_missing_selector_fail_closed(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    topology_template = _create_topology_template_via_api(
+        authenticated_client,
+        code="missing-selector-create-run-template",
+        name="Missing Selector Create Run Template",
+        revision={
+            "nodes": [
+                {"slot_key": "root", "is_root": True},
+                {"slot_key": "leaf"},
+            ],
+            "edges": [
+                {
+                    "parent_slot_key": "root",
+                    "child_slot_key": "leaf",
+                }
+            ],
+        },
+    )
+    revision = topology_template["latest_revision"]
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    bindings, target_database = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    root_org = Organization.objects.create(
+        tenant=pool.tenant,
+        name="Template Missing Selector Root",
+        inn="741200000041",
+    )
+    leaf_org = Organization.objects.get(database=target_database)
+    graph_before = authenticated_client.get(f"/api/v2/pools/{pool.id}/graph/?date=2026-01-01")
+    current_version = graph_before.json()["version"]
+    save_response = authenticated_client.post(
+        f"/api/v2/pools/{pool.id}/topology-snapshot/upsert/",
+        {
+            "version": current_version,
+            "effective_from": "2026-01-01",
+            "topology_template_revision_id": revision["topology_template_revision_id"],
+            "slot_assignments": [
+                {"slot_key": "root", "organization_id": str(root_org.id)},
+                {"slot_key": "leaf", "organization_id": str(leaf_org.id)},
+            ],
+        },
+        format="json",
+    )
+    assert save_response.status_code == 200
+
+    response = authenticated_client.post(
+        "/api/v2/pools/runs/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": bindings[0]["binding_id"],
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code=POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING,
+    )
+    assert "metadata.document_policy_key" in problem["detail"]
 
 
 @pytest.mark.django_db

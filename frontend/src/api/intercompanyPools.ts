@@ -58,6 +58,11 @@ export type PoolTopologyTemplate = {
   updated_at: string
 }
 
+export type PoolTopologyTemplateListResponse = {
+  topology_templates: PoolTopologyTemplate[]
+  count: number
+}
+
 export type OrganizationPool = {
   id: string
   code: string
@@ -791,7 +796,7 @@ export async function listOrganizationPools(): Promise<OrganizationPool[]> {
 }
 
 export async function listPoolTopologyTemplates(): Promise<PoolTopologyTemplate[]> {
-  const response = await apiClient.get<{ topology_templates: PoolTopologyTemplate[] }>(
+  const response = await apiClient.get<PoolTopologyTemplateListResponse>(
     '/api/v2/pools/topology-templates/',
     { skipGlobalError: true }
   )

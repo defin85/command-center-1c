@@ -632,6 +632,20 @@ const readTopologyTemplateInstantiation = (
   return payload as TopologyTemplateInstantiationMetadata
 }
 
+const resolveInitialTopologyAuthoringMode = ({
+  graph,
+  topologyInstantiation,
+}: {
+  graph: PoolGraph | null
+  topologyInstantiation: TopologyTemplateInstantiationMetadata | null
+}): 'template' | 'manual' => {
+  if (topologyInstantiation) {
+    return 'template'
+  }
+  const hasConcreteGraph = Boolean(graph && (graph.nodes.length > 0 || graph.edges.length > 0))
+  return hasConcreteGraph ? 'manual' : 'template'
+}
+
 const buildDraftTopologyEdgeSelectors = (
   edges: TopologyEdgeFormValue[] | undefined,
   organizationById: Record<string, Organization>
@@ -2715,8 +2729,13 @@ export function PoolCatalogPage() {
     setTopologyPreflightErrors([])
     setTopologySubmitError(null)
     if (activeWorkspaceTab !== 'topology' || !selectedPool) return
+    const topologyInstantiation = selectedPoolTopologyInstantiation
+    const selectedPoolGraph = graph && graph.pool_id === selectedPoolId ? graph : null
     topologyForm.setFieldsValue({
-      authoring_mode: 'manual',
+      authoring_mode: resolveInitialTopologyAuthoringMode({
+        graph: selectedPoolGraph,
+        topologyInstantiation,
+      }),
       effective_from: new Date().toISOString().slice(0, 10),
       effective_to: '',
       topology_template_revision_id: undefined,
@@ -2725,10 +2744,16 @@ export function PoolCatalogPage() {
       nodes: [],
       edges: [],
     })
-  }, [activeWorkspaceTab, selectedPool, selectedPoolId, topologyForm])
+  }, [activeWorkspaceTab, graph, selectedPool, selectedPoolId, selectedPoolTopologyInstantiation, topologyForm])
 
   useEffect(() => {
-    if (activeWorkspaceTab !== 'topology' || !selectedPool || !selectedPoolId || !graph) return
+    if (
+      activeWorkspaceTab !== 'topology'
+      || !selectedPool
+      || !selectedPoolId
+      || !graph
+      || graph.pool_id !== selectedPoolId
+    ) return
     const topologyInstantiation = selectedPoolTopologyInstantiation
     const organizationByNodeVersion = new Map(
       graph.nodes.map((node) => [node.node_version_id, node.organization_id])
@@ -2769,7 +2794,10 @@ export function PoolCatalogPage() {
       }
     })
     topologyForm.setFieldsValue({
-      authoring_mode: topologyInstantiation ? 'template' : 'manual',
+      authoring_mode: resolveInitialTopologyAuthoringMode({
+        graph,
+        topologyInstantiation,
+      }),
       effective_from: String(graph.date || '').trim() || new Date().toISOString().slice(0, 10),
       effective_to: '',
       topology_template_revision_id: topologyInstantiation?.topology_template_revision_id || undefined,
@@ -3067,6 +3095,25 @@ export function PoolCatalogPage() {
         is_active: Boolean(values.is_active),
         metadata: poolDrawerMode === 'edit' ? selectedPool?.metadata ?? {} : {},
       })
+      const defaultGraphDate = graphDate.trim() || new Date().toISOString().slice(0, 10)
+      if (response.created) {
+        setGraphDate(defaultGraphDate)
+        setGraph({
+          pool_id: response.pool.id,
+          date: defaultGraphDate,
+          version: '',
+          nodes: [],
+          edges: [],
+        })
+        setTopologySnapshots([
+          {
+            effective_from: defaultGraphDate,
+            effective_to: null,
+            nodes_count: 0,
+            edges_count: 0,
+          },
+        ])
+      }
       setSelectedPoolId(response.pool.id)
       message.success(response.created ? 'Пул создан.' : 'Пул обновлён.')
       setIsPoolDrawerOpen(false)
@@ -3090,7 +3137,7 @@ export function PoolCatalogPage() {
     } finally {
       setIsPoolSaving(false)
     }
-  }, [loadGraph, loadPools, message, mutatingDisabled, poolDrawerMode, poolForm, selectedPool])
+  }, [graphDate, loadGraph, loadPools, message, mutatingDisabled, poolDrawerMode, poolForm, selectedPool])
 
   const submitPoolBindings = useCallback(async () => {
     if (mutatingDisabled || isPoolBindingsLoading || isPoolBindingsSaving || !selectedPool) return

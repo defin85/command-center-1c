@@ -71,6 +71,11 @@ class TopologyTemplateRevisionWriteSerializer(serializers.Serializer):
     edges = TopologyTemplateEdgeSerializer(many=True, required=False, default=list)
     metadata = serializers.JSONField(required=False, default=dict)
 
+    def validate_metadata(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("metadata must be an object")
+        return value
+
 
 class TopologyTemplateCreateRequestSerializer(serializers.Serializer):
     code = serializers.SlugField(max_length=128)

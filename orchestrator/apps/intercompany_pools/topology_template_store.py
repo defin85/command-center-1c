@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 from uuid import UUID, uuid4
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 
 from .models import Organization, TopologyTemplate, TopologyTemplateRevision, TopologyTemplateStatus
 from .topology_template_contract import (
@@ -53,22 +54,31 @@ def create_topology_template(
     actor_username: str = "",
 ) -> TopologyTemplate:
     nodes, edges = _normalize_revision_payload(revision=revision)
-    template = TopologyTemplate.objects.create(
-        tenant_id=tenant_id,
-        code=code,
-        name=name,
-        description=description,
-        metadata=dict(metadata or {}),
-        created_by=actor_username,
-        updated_by=actor_username,
+    template_metadata = _normalize_optional_metadata_mapping(
+        metadata,
+        field_name="metadata",
     )
-    _create_topology_template_revision(
-        template=template,
-        nodes=nodes,
-        edges=edges,
-        metadata=dict(revision.get("metadata") or {}),
-        actor_username=actor_username,
+    revision_metadata = _normalize_optional_metadata_mapping(
+        revision.get("metadata"),
+        field_name="revision.metadata",
     )
+    with transaction.atomic():
+        template = TopologyTemplate.objects.create(
+            tenant_id=tenant_id,
+            code=code,
+            name=name,
+            description=description,
+            metadata=template_metadata,
+            created_by=actor_username,
+            updated_by=actor_username,
+        )
+        _create_topology_template_revision(
+            template=template,
+            nodes=nodes,
+            edges=edges,
+            metadata=revision_metadata,
+            actor_username=actor_username,
+        )
     return template
 
 
@@ -93,7 +103,10 @@ def create_topology_template_revision(
         template=template,
         nodes=nodes,
         edges=edges,
-        metadata=dict(revision.get("metadata") or {}),
+        metadata=_normalize_optional_metadata_mapping(
+            revision.get("metadata"),
+            field_name="revision.metadata",
+        ),
         actor_username=actor_username,
     )
 
@@ -329,3 +342,18 @@ def _validation_message(exc: DjangoValidationError) -> str:
     if hasattr(exc, "messages"):
         return "; ".join(str(message) for message in exc.messages)
     return str(exc)
+
+
+def _normalize_optional_metadata_mapping(
+    value: Any,
+    *,
+    field_name: str,
+) -> dict[str, Any]:
+    if value is None or value == "":
+        return {}
+    if not isinstance(value, Mapping):
+        raise TopologyTemplateStoreError(
+            code="VALIDATION_ERROR",
+            detail=f"{field_name} must be an object.",
+        )
+    return dict(value)

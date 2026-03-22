@@ -9,6 +9,9 @@ import type {
   PoolRunSafeCommandConflict,
   PoolRunSafeCommandResponse,
   PoolSchemaTemplate,
+  PoolTopologyTemplate,
+  PoolTopologyTemplateRevision,
+  PoolTopologyTemplateListResponse,
   UpsertPoolTopologySnapshotPayload,
   PoolWorkflowBinding,
   PoolWorkflowBindingInput,
@@ -30,6 +33,9 @@ import type { PoolRunSafeCommandConflict as GeneratedPoolRunSafeCommandConflict 
 import type { PoolRunSafeCommandResponse as GeneratedPoolRunSafeCommandResponse } from './generated/model/poolRunSafeCommandResponse'
 import type { PoolSchemaTemplate as GeneratedPoolSchemaTemplate } from './generated/model/poolSchemaTemplate'
 import type { PoolTopologySnapshotUpsertRequest as GeneratedPoolTopologySnapshotUpsertRequest } from './generated/model/poolTopologySnapshotUpsertRequest'
+import type { TopologyTemplate as GeneratedPoolTopologyTemplate } from './generated/model/topologyTemplate'
+import type { TopologyTemplateListResponse as GeneratedPoolTopologyTemplateListResponse } from './generated/model/topologyTemplateListResponse'
+import type { TopologyTemplateRevision as GeneratedPoolTopologyTemplateRevision } from './generated/model/topologyTemplateRevision'
 import type { PoolWorkflowBindingInput as GeneratedPoolWorkflowBindingInput } from './generated/model/poolWorkflowBindingInput'
 import type { PoolWorkflowBindingRead as GeneratedPoolWorkflowBinding } from './generated/model/poolWorkflowBindingRead'
 import type { PoolWorkflowBindingSelector as GeneratedPoolWorkflowBindingSelector } from './generated/model/poolWorkflowBindingSelector'
@@ -44,6 +50,18 @@ export type PoolWorkflowBindingContract = AssertAssignable<PoolWorkflowBinding, 
 export type PoolWorkflowBindingInputContract = AssertAssignable<PoolWorkflowBindingInput, GeneratedPoolWorkflowBindingInput>
 export type OrganizationPoolContract = AssertAssignable<OrganizationPool, GeneratedOrganizationPool>
 export type PoolSchemaTemplateContract = AssertAssignable<PoolSchemaTemplate, GeneratedPoolSchemaTemplate>
+export type PoolTopologyTemplateRevisionContract = AssertAssignable<
+  PoolTopologyTemplateRevision,
+  GeneratedPoolTopologyTemplateRevision
+>
+export type PoolTopologyTemplateContract = AssertAssignable<
+  PoolTopologyTemplate,
+  GeneratedPoolTopologyTemplate
+>
+export type PoolTopologyTemplateListResponseContract = AssertAssignable<
+  PoolTopologyTemplateListResponse,
+  GeneratedPoolTopologyTemplateListResponse
+>
 export type PoolRunContract = AssertAssignable<PoolRun, GeneratedPoolRun>
 export type PoolRunReportContract = AssertAssignable<PoolRunReport, GeneratedPoolRunReportResponse>
 export type PoolGraphContract = AssertAssignable<PoolGraph, GeneratedPoolGraphResponse>
