@@ -413,6 +413,116 @@ const BINDING_PROFILE_DETAILS: Record<string, typeof BINDING_PROFILE_DETAIL> = {
   [LEGACY_BINDING_PROFILE_DETAIL.binding_profile_id]: LEGACY_BINDING_PROFILE_DETAIL,
 }
 
+const TOPOLOGY_TEMPLATE = {
+  topology_template_id: 'template-top-down',
+  code: 'top-down-template',
+  name: 'Top Down Template',
+  description: 'Reusable topology for top-down publication.',
+  status: 'active',
+  metadata: {},
+  latest_revision_number: 2,
+  latest_revision: {
+    topology_template_revision_id: 'template-revision-r2',
+    topology_template_id: 'template-top-down',
+    revision_number: 2,
+    nodes: [
+      {
+        slot_key: 'root',
+        label: 'Root',
+        is_root: true,
+        metadata: {},
+      },
+      {
+        slot_key: 'leaf',
+        label: 'Leaf',
+        is_root: false,
+        metadata: {},
+      },
+    ],
+    edges: [
+      {
+        parent_slot_key: 'root',
+        child_slot_key: 'leaf',
+        weight: '1',
+        min_amount: null,
+        max_amount: null,
+        document_policy_key: 'document_policy',
+        metadata: {},
+      },
+    ],
+    metadata: {},
+    created_at: NOW,
+  },
+  revisions: [
+    {
+      topology_template_revision_id: 'template-revision-r2',
+      topology_template_id: 'template-top-down',
+      revision_number: 2,
+      nodes: [
+        {
+          slot_key: 'root',
+          label: 'Root',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          slot_key: 'leaf',
+          label: 'Leaf',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          parent_slot_key: 'root',
+          child_slot_key: 'leaf',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          document_policy_key: 'document_policy',
+          metadata: {},
+        },
+      ],
+      metadata: {},
+      created_at: NOW,
+    },
+    {
+      topology_template_revision_id: 'template-revision-r1',
+      topology_template_id: 'template-top-down',
+      revision_number: 1,
+      nodes: [
+        {
+          slot_key: 'root',
+          label: 'Root',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          slot_key: 'leaf',
+          label: 'Leaf',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          parent_slot_key: 'root',
+          child_slot_key: 'leaf',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          document_policy_key: 'document_policy',
+          metadata: {},
+        },
+      ],
+      metadata: {},
+      created_at: NOW,
+    },
+  ],
+  created_at: NOW,
+  updated_at: NOW,
+}
+
 const POOL_WITH_ATTACHMENT = {
   id: 'pool-1',
   code: 'pool-main',
@@ -1136,6 +1246,9 @@ async function setupUiPlatformMocks(
     created_at: NOW,
     updated_at: NOW,
   }
+  const topologyTemplates = [
+    JSON.parse(JSON.stringify(TOPOLOGY_TEMPLATE)) as typeof TOPOLOGY_TEMPLATE,
+  ]
 
   await page.route('**/api/v2/**', async (route) => {
     const request = route.request()
@@ -1357,6 +1470,13 @@ async function setupUiPlatformMocks(
       })
     }
 
+    if (method === 'GET' && path === '/api/v2/pools/topology-templates/') {
+      return fulfillJson(route, {
+        topology_templates: topologyTemplates,
+        count: topologyTemplates.length,
+      })
+    }
+
     const bindingProfileMatch = path.match(/^\/api\/v2\/pools\/binding-profiles\/([^/]+)\/$/)
     if (method === 'GET' && bindingProfileMatch) {
       const bindingProfileId = bindingProfileMatch[1] ?? BINDING_PROFILE_DETAIL.binding_profile_id
@@ -1366,6 +1486,76 @@ async function setupUiPlatformMocks(
       return fulfillJson(route, {
         binding_profile: BINDING_PROFILE_DETAILS[bindingProfileId] ?? BINDING_PROFILE_DETAIL,
       })
+    }
+
+    if (method === 'POST' && path === '/api/v2/pools/topology-templates/') {
+      const payload = request.postDataJSON() as Record<string, unknown>
+      const revision = payload.revision && typeof payload.revision === 'object'
+        ? payload.revision as Record<string, unknown>
+        : {}
+      const topologyTemplateId = `template-${topologyTemplates.length + 1}`
+      const topologyTemplateRevisionId = `${topologyTemplateId}-revision-r1`
+      const createdTemplate = {
+        topology_template_id: topologyTemplateId,
+        code: String(payload.code || '').trim() || topologyTemplateId,
+        name: String(payload.name || '').trim() || 'New Topology Template',
+        description: String(payload.description || ''),
+        status: 'active',
+        metadata: payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {},
+        latest_revision_number: 1,
+        latest_revision: {
+          topology_template_revision_id: topologyTemplateRevisionId,
+          topology_template_id: topologyTemplateId,
+          revision_number: 1,
+          nodes: Array.isArray(revision.nodes) ? revision.nodes : [],
+          edges: Array.isArray(revision.edges) ? revision.edges : [],
+          metadata: revision.metadata && typeof revision.metadata === 'object' ? revision.metadata : {},
+          created_at: NOW,
+        },
+        revisions: [
+          {
+            topology_template_revision_id: topologyTemplateRevisionId,
+            topology_template_id: topologyTemplateId,
+            revision_number: 1,
+            nodes: Array.isArray(revision.nodes) ? revision.nodes : [],
+            edges: Array.isArray(revision.edges) ? revision.edges : [],
+            metadata: revision.metadata && typeof revision.metadata === 'object' ? revision.metadata : {},
+            created_at: NOW,
+          },
+        ],
+        created_at: NOW,
+        updated_at: NOW,
+      }
+      topologyTemplates.unshift(createdTemplate)
+      return fulfillJson(route, { topology_template: createdTemplate }, 201)
+    }
+
+    const topologyTemplateRevisionMatch = path.match(/^\/api\/v2\/pools\/topology-templates\/([^/]+)\/revisions\/$/)
+    if (method === 'POST' && topologyTemplateRevisionMatch) {
+      const topologyTemplateId = topologyTemplateRevisionMatch[1] ?? ''
+      const template = topologyTemplates.find((item) => item.topology_template_id === topologyTemplateId)
+      if (!template) {
+        return fulfillJson(route, { detail: 'Topology template not found.' }, 404)
+      }
+      const payload = request.postDataJSON() as Record<string, unknown>
+      const revision = payload.revision && typeof payload.revision === 'object'
+        ? payload.revision as Record<string, unknown>
+        : {}
+      const revisionNumber = Number(template.latest_revision_number || 0) + 1
+      const nextRevision = {
+        topology_template_revision_id: `${topologyTemplateId}-revision-r${revisionNumber}`,
+        topology_template_id: topologyTemplateId,
+        revision_number: revisionNumber,
+        nodes: Array.isArray(revision.nodes) ? revision.nodes : [],
+        edges: Array.isArray(revision.edges) ? revision.edges : [],
+        metadata: revision.metadata && typeof revision.metadata === 'object' ? revision.metadata : {},
+        created_at: NOW,
+      }
+      template.latest_revision_number = revisionNumber
+      template.latest_revision = nextRevision
+      template.revisions = [nextRevision, ...template.revisions]
+      template.updated_at = NOW
+      return fulfillJson(route, { topology_template: template })
     }
 
     if (method === 'GET' && path === '/api/v2/pools/') {
@@ -1688,6 +1878,46 @@ test('UI platform: /pools/binding-profiles keeps publication slots compact in th
   await expectVisibleWithinContainer(slotRows[2], authoringModal)
 })
 
+test('UI platform: /pools/topology-templates keeps mobile catalog readable and opens detail in a drawer', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/pools/topology-templates', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByText('Topology Templates')).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByRole('button', { name: 'Open topology template top-down-template' }).click()
+
+  const detailDrawer = page.getByRole('dialog')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByTestId('pool-topology-templates-selected-code')).toHaveText('top-down-template')
+  await expect(detailDrawer.getByRole('button', { name: 'Publish new revision' })).toBeVisible()
+  await expect(detailDrawer.getByText('Root · root')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /pools/topology-templates opens create-template authoring in a mobile-safe drawer shell', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/pools/topology-templates', { waitUntil: 'domcontentloaded' })
+
+  await page.getByRole('button', { name: 'Create template' }).click()
+
+  const authoringDrawer = page.getByRole('dialog')
+  await expect(authoringDrawer).toBeVisible()
+  await expect(authoringDrawer.getByLabel('Template code')).toBeVisible()
+  await expect(authoringDrawer.getByLabel('Template name')).toBeVisible()
+  await expect(authoringDrawer.getByRole('button', { name: 'Create template' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
 test('UI platform: /pools/catalog restores attachment workspace in a mobile-safe drawer', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
@@ -1949,6 +2179,43 @@ test('Runtime contract: /pools/binding-profiles hands off to /pools/catalog with
   await expect(counts.meReads).toBe(0)
   await expect(counts.myTenantsReads).toBe(0)
   await expect.poll(() => counts.organizationPools).toBe(1)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: /pools/catalog hands off to /pools/topology-templates and back without replaying shell reads', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/pools/catalog?pool_id=pool-1&tab=topology&date=2026-01-01', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Pool Catalog', level: 2 })).toBeVisible()
+  await expect.poll(() => counts.bootstrap).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+  await expect(page.getByTestId('pool-catalog-open-topology-template-workspace')).toBeVisible()
+
+  await page.getByTestId('pool-catalog-open-topology-template-workspace').click()
+
+  await expect(page).toHaveURL(/\/pools\/topology-templates\?compose=create&return_pool_id=pool-1&return_tab=topology&return_date=2026-01-01$/)
+  await expect(page.getByRole('heading', { name: 'Topology Templates', level: 2 })).toBeVisible()
+  await expect(page.getByRole('dialog')).toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Return to pool topology' }).click()
+
+  await expect(page).toHaveURL(/\/pools\/catalog\?pool_id=pool-1&tab=topology&date=2026-01-01$/)
+  await expect(page.getByRole('heading', { name: 'Pool Catalog', level: 2 })).toBeVisible()
+  await expect(page.getByTestId('pool-catalog-context-pool')).toHaveText('pool-main - Main Pool')
+  await expect(page.getByRole('tab', { name: 'Topology Editor' })).toHaveAttribute('aria-selected', 'true')
+
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 

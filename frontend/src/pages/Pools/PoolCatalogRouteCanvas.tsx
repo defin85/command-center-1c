@@ -99,7 +99,12 @@ import {
   summarizeTopologySlotCoverage,
   type TopologyEdgeSelector,
 } from './topologySlotCoverage'
-import { POOL_BINDING_PROFILES_ROUTE, POOL_CATALOG_ROUTE } from './routes'
+import {
+  buildPoolTopologyTemplatesRoute,
+  POOL_BINDING_PROFILES_ROUTE,
+  POOL_CATALOG_ROUTE,
+  POOL_TOPOLOGY_TEMPLATES_ROUTE,
+} from './routes'
 
 const { Text } = Typography
 const { TextArea } = Input
@@ -1958,11 +1963,30 @@ export function PoolCatalogPage() {
       (template) => template.topology_template_id === selectedTopologyTemplateRevision.topology_template_id
     ) ?? null
   }, [selectedTopologyTemplateRevision, topologyTemplates])
+  const topologyTemplateWorkspaceRoute = useMemo(() => buildPoolTopologyTemplatesRoute({
+    compose: 'create',
+    returnPoolId: selectedPoolId,
+    returnTab: 'topology',
+    returnDate: graphDate.trim() || undefined,
+  }), [graphDate, selectedPoolId])
+  const topologyTemplateReviseRoute = useMemo(() => {
+    if (!selectedTopologyTemplate) {
+      return topologyTemplateWorkspaceRoute
+    }
+    return buildPoolTopologyTemplatesRoute({
+      templateId: selectedTopologyTemplate.topology_template_id,
+      detail: true,
+      compose: 'revise',
+      returnPoolId: selectedPoolId,
+      returnTab: 'topology',
+      returnDate: graphDate.trim() || undefined,
+    })
+  }, [graphDate, selectedPoolId, selectedTopologyTemplate, topologyTemplateWorkspaceRoute])
   const topologyCoverageBindingOptions = useMemo(() => (
     loadedPoolBindings
       .filter((binding) => binding.status === 'active')
       .map((binding) => ({
-        value: binding.binding_id,
+          value: binding.binding_id,
         label: describePoolWorkflowBindingCoverage(binding),
       }))
       .sort((left, right) => left.label.localeCompare(right.label))
@@ -3554,6 +3578,7 @@ export function PoolCatalogPage() {
               ) : null}
               <Space wrap>
                 <RouteButton to={POOL_BINDING_PROFILES_ROUTE}>Open binding profiles</RouteButton>
+                <RouteButton to={POOL_TOPOLOGY_TEMPLATES_ROUTE}>Open topology templates</RouteButton>
                 <RouteButton to="/decisions">Open /decisions</RouteButton>
               </Space>
             </Space>
@@ -4114,6 +4139,23 @@ export function PoolCatalogPage() {
                           </Col>
                         </Row>
 
+                        <Space wrap style={{ marginBottom: 12 }}>
+                          <RouteButton
+                            to={topologyTemplateWorkspaceRoute}
+                            data-testid="pool-catalog-open-topology-template-workspace"
+                          >
+                            Open topology template catalog
+                          </RouteButton>
+                          {selectedTopologyTemplate ? (
+                            <RouteButton
+                              to={topologyTemplateReviseRoute}
+                              data-testid="pool-catalog-revise-topology-template"
+                            >
+                              Publish new template revision
+                            </RouteButton>
+                          ) : null}
+                        </Space>
+
                         {isTemplateTopologyAuthoring ? (
                           <Space direction="vertical" size={12} style={{ width: '100%', marginBottom: 12 }}>
                             <Alert
@@ -4138,6 +4180,14 @@ export function PoolCatalogPage() {
                                 )}
                               />
                             )}
+                            {!loadingTopologyTemplates && !topologyTemplatesLoadError && topologyTemplates.length === 0 ? (
+                              <Alert
+                                type="warning"
+                                showIcon
+                                message="Topology template catalog is empty."
+                                description="Откройте dedicated reusable topology workspace, чтобы создать первый template и вернуться сюда без повторного выбора pool."
+                              />
+                            ) : null}
                             <Row gutter={12}>
                               <Col span={12}>
                                 <Form.Item
@@ -4359,7 +4409,7 @@ export function PoolCatalogPage() {
                             showIcon
                             style={{ marginBottom: 12 }}
                             message="Manual topology editor remains a fallback path"
-                            description="Используйте его для нестандартных схем или remediation cases, когда reusable topology template ещё не опубликован."
+                            description="Используйте его для нестандартных схем или remediation cases, когда reusable topology template ещё не опубликован. Для reusable authoring переходите в dedicated topology template catalog."
                           />
                         )}
 

@@ -45,6 +45,7 @@ const PoolCatalogPage = lazy(() => import('./pages/Pools/PoolCatalogPage').then(
 const PoolBindingProfilesPage = lazy(() => import('./pages/Pools/PoolBindingProfilesPage').then((m) => ({ default: m.PoolBindingProfilesPage })))
 const PoolMasterDataPage = lazy(() => import('./pages/Pools/PoolMasterDataPage').then((m) => ({ default: m.PoolMasterDataPage })))
 const PoolSchemaTemplatesPage = lazy(() => import('./pages/Pools/PoolSchemaTemplatesPage').then((m) => ({ default: m.PoolSchemaTemplatesPage })))
+const PoolTopologyTemplatesPage = lazy(() => import('./pages/Pools/PoolTopologyTemplatesPage').then((m) => ({ default: m.PoolTopologyTemplatesPage })))
 const PoolRunsPage = lazy(() => import('./pages/Pools/PoolRunsPage').then((m) => ({ default: m.PoolRunsPage })))
 
 const Login = lazy(() => import('./pages/Login/Login').then((m) => ({ default: m.Login })))
@@ -371,6 +372,13 @@ function App() {
                     <ProtectedRoute authToken={authToken}>
                       <MainLayout>
                         <LazyBoundary><PoolCatalogPage /></LazyBoundary>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/pools/topology-templates" element={
+                    <ProtectedRoute authToken={authToken}>
+                      <MainLayout>
+                        <LazyBoundary><PoolTopologyTemplatesPage /></LazyBoundary>
                       </MainLayout>
                     </ProtectedRoute>
                   } />

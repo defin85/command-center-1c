@@ -2309,6 +2309,51 @@ describe('PoolCatalogPage', () => {
     expect(screen.getByTestId('pool-catalog-topology-template-edge-slot-status-0')).toBeInTheDocument()
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
+  it('hands off reusable topology authoring to the dedicated workspace when the template catalog is empty', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListPoolTopologyTemplates.mockResolvedValue([])
+
+    renderPage('/pools/catalog?pool_id=44444444-4444-4444-4444-444444444444&tab=topology&date=2026-01-01')
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+
+    expect(screen.getByText('Topology template catalog is empty.')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('pool-catalog-open-topology-template-workspace'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('/pools/topology-templates')
+    })
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('compose=create')
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('return_pool_id=44444444-4444-4444-4444-444444444444')
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('return_tab=topology')
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('return_date=2026-01-01')
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
+  it('hands off selected reusable topology template revision to the dedicated revise workspace with preserved context', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    renderPage('/pools/catalog?pool_id=44444444-4444-4444-4444-444444444444&tab=topology&date=2026-01-01')
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+    openSelectByTestId('pool-catalog-topology-template-revision')
+    await selectDropdownOption('Top Down Template · r2')
+
+    fireEvent.click(screen.getByTestId('pool-catalog-revise-topology-template'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('/pools/topology-templates')
+    })
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('compose=revise')
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('template=template-1')
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('detail=1')
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('return_pool_id=44444444-4444-4444-4444-444444444444')
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
   it('supports edge metadata builder mode and preserves custom metadata keys with slot selector', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     const user = userEvent.setup()

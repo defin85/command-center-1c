@@ -63,6 +63,28 @@ export type PoolTopologyTemplateListResponse = {
   count: number
 }
 
+export type PoolTopologyTemplateRevisionWritePayload = {
+  nodes: PoolTopologyTemplateNode[]
+  edges?: PoolTopologyTemplateEdge[]
+  metadata?: Record<string, unknown>
+}
+
+export type CreatePoolTopologyTemplatePayload = {
+  code: string
+  name: string
+  description?: string
+  metadata?: Record<string, unknown>
+  revision: PoolTopologyTemplateRevisionWritePayload
+}
+
+export type CreatePoolTopologyTemplateRevisionPayload = {
+  revision: PoolTopologyTemplateRevisionWritePayload
+}
+
+export type PoolTopologyTemplateMutationResponse = {
+  topology_template: PoolTopologyTemplate
+}
+
 export type OrganizationPool = {
   id: string
   code: string
@@ -801,6 +823,29 @@ export async function listPoolTopologyTemplates(): Promise<PoolTopologyTemplate[
     { skipGlobalError: true }
   )
   return response.data.topology_templates ?? []
+}
+
+export async function createPoolTopologyTemplate(
+  payload: CreatePoolTopologyTemplatePayload
+): Promise<PoolTopologyTemplateMutationResponse> {
+  const response = await apiClient.post<PoolTopologyTemplateMutationResponse>(
+    '/api/v2/pools/topology-templates/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function revisePoolTopologyTemplate(
+  topologyTemplateId: string,
+  payload: CreatePoolTopologyTemplateRevisionPayload
+): Promise<PoolTopologyTemplateMutationResponse> {
+  const response = await apiClient.post<PoolTopologyTemplateMutationResponse>(
+    `/api/v2/pools/topology-templates/${topologyTemplateId}/revisions/`,
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
 }
 
 export async function upsertOrganizationPool(
