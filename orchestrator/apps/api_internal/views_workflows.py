@@ -1177,6 +1177,164 @@ def _reconcile_pool_publication_step_state_from_persisted_attempts(*, execution)
     return True
 
 
+def _sync_pool_run_terminal_state_from_publication_projection(*, execution) -> None:
+    from apps.intercompany_pools.models import PoolRun
+
+    if str(execution.execution_consumer or "") != "pools":
+        return
+
+    execution_context = execution.input_context if isinstance(execution.input_context, dict) else {}
+    pool_run_id = str(execution_context.get("pool_run_id") or "").strip()
+    if not pool_run_id:
+        return
+
+    try:
+        pool_run_uuid = uuid.UUID(pool_run_id)
+    except ValueError:
+        return
+
+    run = PoolRun.objects.filter(id=pool_run_uuid).first()
+    if run is None:
+        return
+
+    execution_tenant_id = str(getattr(execution, "tenant_id", "") or "").strip()
+    if execution_tenant_id and str(run.tenant_id) != execution_tenant_id:
+        return
+
+    publication_summary = run.publication_summary if isinstance(run.publication_summary, dict) else {}
+    if not publication_summary:
+        return
+
+    total_targets = _parse_non_negative_int(publication_summary.get("total_targets"), default=0)
+    succeeded_targets = _parse_non_negative_int(publication_summary.get("succeeded_targets"), default=0)
+    failed_targets = _parse_non_negative_int(publication_summary.get("failed_targets"), default=0)
+
+    update_fields: set[str] = {"updated_at"}
+    if run.workflow_execution_id != execution.id:
+        run.workflow_execution_id = execution.id
+        update_fields.add("workflow_execution_id")
+    if run.execution_backend != "workflow_core":
+        run.execution_backend = "workflow_core"
+        update_fields.add("execution_backend")
+    if run.workflow_status != execution.status:
+        run.workflow_status = execution.status
+        update_fields.add("workflow_status")
+
+    approved_at = _parse_legacy_datetime(execution_context.get("approved_at"))
+    if approved_at is not None and run.publication_confirmed_at is None:
+        run.publication_confirmed_at = approved_at
+        update_fields.add("publication_confirmed_at")
+
+    target_status: str | None = None
+    failure_message = ""
+    if total_targets > 0:
+        if failed_targets > 0 and succeeded_targets <= 0:
+            target_status = PoolRun.STATUS_FAILED
+            failure_message = "Publication failed for all target databases."
+        elif failed_targets > 0:
+            target_status = PoolRun.STATUS_PARTIAL_SUCCESS
+        elif succeeded_targets > 0:
+            target_status = PoolRun.STATUS_PUBLISHED
+
+    if target_status in {
+        PoolRun.STATUS_PUBLISHED,
+        PoolRun.STATUS_PARTIAL_SUCCESS,
+        PoolRun.STATUS_FAILED,
+    }:
+        if run.status == PoolRun.STATUS_VALIDATED and run._can_start_publishing():
+            run.start_publishing()
+            update_fields.update({"status", "publishing_started_at"})
+        elif (
+            run.status in {PoolRun.STATUS_PARTIAL_SUCCESS, PoolRun.STATUS_FAILED}
+            and target_status != run.status
+            and run._can_start_publishing()
+        ):
+            run.restart_publishing()
+            update_fields.update({"status", "publishing_started_at", "completed_at", "last_error"})
+
+        if target_status == PoolRun.STATUS_PUBLISHED:
+            if run.status == PoolRun.STATUS_PUBLISHING:
+                run.mark_published(summary=publication_summary)
+                update_fields.update({"status", "completed_at", "publication_summary"})
+            elif run.status == PoolRun.STATUS_PUBLISHED:
+                run.publication_summary = publication_summary
+                update_fields.add("publication_summary")
+                if run.completed_at is None:
+                    run.completed_at = timezone.now()
+                    update_fields.add("completed_at")
+        elif target_status == PoolRun.STATUS_PARTIAL_SUCCESS:
+            if run.status == PoolRun.STATUS_PUBLISHING:
+                run.mark_partial_success(summary=publication_summary)
+                update_fields.update({"status", "completed_at", "publication_summary"})
+            elif run.status == PoolRun.STATUS_PARTIAL_SUCCESS:
+                run.publication_summary = publication_summary
+                update_fields.add("publication_summary")
+                if run.completed_at is None:
+                    run.completed_at = timezone.now()
+                    update_fields.add("completed_at")
+        elif run.status in {
+            PoolRun.STATUS_DRAFT,
+            PoolRun.STATUS_VALIDATED,
+            PoolRun.STATUS_PUBLISHING,
+        }:
+            run.mark_failed(error=failure_message, summary=publication_summary)
+            update_fields.update({"status", "completed_at", "last_error", "publication_summary"})
+        elif run.status == PoolRun.STATUS_FAILED:
+            run.publication_summary = publication_summary
+            run.last_error = failure_message
+            update_fields.update({"publication_summary", "last_error"})
+            if run.completed_at is None:
+                run.completed_at = timezone.now()
+                update_fields.add("completed_at")
+
+    if len(update_fields) > 1:
+        run.save(update_fields=sorted(update_fields))
+
+
+def _reconcile_pool_publication_projection_for_execution_update(*, execution) -> bool:
+    from apps.templates.workflow.models import WorkflowExecution
+
+    previous_input_context = (
+        dict(execution.input_context)
+        if isinstance(execution.input_context, dict)
+        else {}
+    )
+
+    publication_state_reconciled = False
+    if execution.status == WorkflowExecution.STATUS_COMPLETED:
+        current_publication_step_state = str(
+            previous_input_context.get("publication_step_state") or ""
+        ).strip().lower()
+        should_project_publication = (
+            _extract_publication_result_payload(execution.final_result or {}) is not None
+            and current_publication_step_state != PUBLICATION_STEP_STATE_COMPLETED
+        )
+        if should_project_publication:
+            _project_pool_publication_attempts_from_result(
+                execution=execution,
+                result_payload=execution.final_result or {},
+            )
+            publication_state_reconciled = True
+        else:
+            publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
+                execution=execution,
+            )
+        _sync_pool_run_terminal_state_from_publication_projection(
+            execution=execution,
+        )
+    else:
+        publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
+            execution=execution,
+        )
+
+    next_input_context = (
+        dict(execution.input_context)
+        if isinstance(execution.input_context, dict)
+        else {}
+    )
+    return publication_state_reconciled and next_input_context != previous_input_context
+
+
 def _resolve_workflow_node(*, execution, node_id: str) -> dict[str, object] | None:
     dag_structure = _model_dump(execution.workflow_template.dag_structure)
     if not isinstance(dag_structure, dict):
@@ -1351,7 +1509,7 @@ def legacy_workflow_executions_collection(request):
         )
 
     update_fields, status_changed = _apply_legacy_execution_payload(execution=execution, payload=payload)
-    publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
+    publication_state_reconciled = _reconcile_pool_publication_projection_for_execution_update(
         execution=execution,
     )
     if publication_state_reconciled:
@@ -1402,7 +1560,7 @@ def legacy_workflow_execution_detail(request, execution_id):
 
     payload = request.data if isinstance(request.data, Mapping) else {}
     update_fields, status_changed = _apply_legacy_execution_payload(execution=execution, payload=payload)
-    publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
+    publication_state_reconciled = _reconcile_pool_publication_projection_for_execution_update(
         execution=execution,
     )
     if publication_state_reconciled:
@@ -1461,7 +1619,7 @@ def legacy_workflow_transitions_collection(request):
         error_message=str(payload.get("message") or "").strip(),
         output_data=None,
     )
-    publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
+    publication_state_reconciled = _reconcile_pool_publication_projection_for_execution_update(
         execution=execution,
     )
     if publication_state_reconciled:
@@ -1848,6 +2006,10 @@ def update_workflow_execution_status(request):
                     execution=execution,
                 )
 
+            _sync_pool_run_terminal_state_from_publication_projection(
+                execution=execution,
+            )
+
             if publication_state_reconciled:
                 next_input_context = (
                     dict(execution.input_context)
@@ -1889,6 +2051,9 @@ def update_workflow_execution_status(request):
                 result_payload=result_payload,
             )
             _reconcile_pool_publication_step_state_from_persisted_attempts(
+                execution=execution,
+            )
+            _sync_pool_run_terminal_state_from_publication_projection(
                 execution=execution,
             )
 

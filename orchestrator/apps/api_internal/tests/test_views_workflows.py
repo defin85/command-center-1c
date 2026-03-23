@@ -119,6 +119,22 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
 
         return tenant, run, execution, template
 
+    @staticmethod
+    def _mark_run_validated(run: PoolRun) -> None:
+        run.mark_validated(
+            summary=run.validation_summary,
+            diagnostics=run.diagnostics,
+        )
+        run.save(
+            update_fields=[
+                "status",
+                "validated_at",
+                "validation_summary",
+                "diagnostics",
+                "updated_at",
+            ]
+        )
+
     def _build_bridge_request_payload(
         self,
         *,
@@ -602,6 +618,7 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
 
     def test_update_workflow_status_completed_projects_worker_publication_attempts_into_read_model(self):
         tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        self._mark_run_validated(run)
         db_success = Database.objects.create(
             tenant=tenant,
             name=f"projection-db-success-{uuid4().hex[:8]}",
@@ -706,9 +723,13 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
         self.assertEqual(response.data["status"], "completed")
 
         saved_execution = WorkflowExecution.objects.get(id=execution.id)
-        run.refresh_from_db(fields=["publication_summary"])
+        run = PoolRun.objects.get(id=run.id)
         self.assertEqual(saved_execution.status, WorkflowExecution.STATUS_COMPLETED)
         self.assertEqual(saved_execution.input_context.get("publication_step_state"), "completed")
+        self.assertEqual(run.status, PoolRun.STATUS_PARTIAL_SUCCESS)
+        self.assertEqual(run.workflow_status, WorkflowExecution.STATUS_COMPLETED)
+        self.assertIsNotNone(run.publishing_started_at)
+        self.assertIsNotNone(run.completed_at)
         self.assertEqual(run.publication_summary.get("total_targets"), 2)
         self.assertEqual(run.publication_summary.get("succeeded_targets"), 1)
         self.assertEqual(run.publication_summary.get("failed_targets"), 1)
@@ -738,6 +759,7 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
 
     def test_update_workflow_status_completed_is_idempotent_for_projected_publication_attempts(self):
         tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        self._mark_run_validated(run)
         database = Database.objects.create(
             tenant=tenant,
             name=f"projection-idempotent-db-{uuid4().hex[:8]}",
@@ -793,6 +815,74 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
             PoolPublicationAttempt.objects.filter(run=run, target_database=database).count(),
             1,
         )
+
+    def test_update_workflow_status_completed_syncs_safe_publication_run_state_from_execution_context(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        self._mark_run_validated(run)
+        database = Database.objects.create(
+            tenant=tenant,
+            name=f"projection-safe-db-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/safe.odata",
+            username="admin",
+            password="secret",
+        )
+        approved_at = "2026-03-23T18:41:00Z"
+        run.mode = PoolRunMode.SAFE
+        run.save(update_fields=["mode", "updated_at"])
+        execution.input_context = {
+            "pool_run_id": str(run.id),
+            "approval_required": True,
+            "approval_state": "approved",
+            "approved_at": approved_at,
+            "publication_step_state": "queued",
+        }
+        execution.save(update_fields=["input_context"])
+
+        response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "completed",
+                "result": {
+                    "node_results": {
+                        "publication_odata": {
+                            "step": "publication_odata",
+                            "pool_run_id": str(run.id),
+                            "status": "published",
+                            "entity_name": "Document_IntercompanyPoolDistribution",
+                            "documents_targets": 1,
+                            "succeeded_targets": 1,
+                            "failed_targets": 0,
+                            "max_attempts": 1,
+                            "target_databases": [str(database.id)],
+                            "documents_count_by_database": {str(database.id): 1},
+                            "attempts": [
+                                {
+                                    "target_database": str(database.id),
+                                    "attempt_number": 1,
+                                    "status": "success",
+                                    "documents_count": 1,
+                                    "posted": True,
+                                }
+                            ],
+                        }
+                    }
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        run = PoolRun.objects.get(id=run.id)
+        self.assertEqual(run.status, PoolRun.STATUS_PUBLISHED)
+        self.assertEqual(run.workflow_status, WorkflowExecution.STATUS_COMPLETED)
+        self.assertEqual(run.publication_confirmed_at.isoformat(), "2026-03-23T18:41:00+00:00")
+        self.assertIsNotNone(run.publishing_started_at)
+        self.assertIsNotNone(run.completed_at)
+        self.assertEqual(run.publication_summary.get("total_targets"), 1)
+        self.assertEqual(run.publication_summary.get("succeeded_targets"), 1)
+        self.assertEqual(run.publication_summary.get("failed_targets"), 0)
 
     def test_update_workflow_status_completed_replay_projects_publication_for_already_completed_execution(self):
         tenant, run, execution, _ = self._create_pool_runtime_fixture()
@@ -1706,6 +1796,77 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
         self.assertEqual(saved.status, WorkflowExecution.STATUS_COMPLETED)
         self.assertEqual(saved.final_result, {"step": "done"})
         self.assertEqual(saved.completed_at.isoformat(), "2026-02-23T12:05:00+00:00")
+
+    def test_legacy_workflow_execution_patch_projects_publication_into_terminal_pool_run_state(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        self._mark_run_validated(run)
+        database = Database.objects.create(
+            tenant=tenant,
+            name=f"legacy-projection-db-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/legacy-projection.odata",
+            username="admin",
+            password="secret",
+        )
+        approved_at = "2026-03-23T18:41:00Z"
+        run.mode = PoolRunMode.SAFE
+        run.save(update_fields=["mode", "updated_at"])
+
+        response = self.client.patch(
+            f"/api/v2/internal/workflow-executions/{execution.id}/",
+            {
+                "status": "completed",
+                "input_data": {
+                    "pool_run_id": str(run.id),
+                    "approval_required": True,
+                    "approval_state": "approved",
+                    "approved_at": approved_at,
+                    "publication_step_state": "queued",
+                },
+                "output_data": {
+                    "node_results": {
+                        "publication_odata": {
+                            "step": "publication_odata",
+                            "pool_run_id": str(run.id),
+                            "status": "published",
+                            "entity_name": "Document_IntercompanyPoolDistribution",
+                            "documents_targets": 1,
+                            "succeeded_targets": 1,
+                            "failed_targets": 0,
+                            "max_attempts": 1,
+                            "target_databases": [str(database.id)],
+                            "documents_count_by_database": {str(database.id): 1},
+                            "attempts": [
+                                {
+                                    "target_database": str(database.id),
+                                    "attempt_number": 1,
+                                    "status": "success",
+                                    "documents_count": 1,
+                                    "posted": True,
+                                }
+                            ],
+                        }
+                    }
+                },
+                "completed_at": "2026-03-23T18:42:00Z",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["success"])
+        self.assertTrue(response.data["persisted"])
+        self.assertEqual(response.data["status"], WorkflowExecution.STATUS_COMPLETED)
+
+        run = PoolRun.objects.get(id=run.id)
+        self.assertEqual(run.status, PoolRun.STATUS_PUBLISHED)
+        self.assertEqual(run.workflow_status, WorkflowExecution.STATUS_COMPLETED)
+        self.assertEqual(run.publication_confirmed_at.isoformat(), "2026-03-23T18:41:00+00:00")
+        self.assertIsNotNone(run.publishing_started_at)
+        self.assertIsNotNone(run.completed_at)
+        self.assertEqual(run.publication_summary.get("total_targets"), 1)
+        self.assertEqual(run.publication_summary.get("succeeded_targets"), 1)
+        self.assertEqual(run.publication_summary.get("failed_targets"), 0)
 
     def test_legacy_workflow_execution_patch_preserves_existing_node_results_for_completed_execution(self):
         _, run, execution, _ = self._create_pool_runtime_fixture()
