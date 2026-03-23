@@ -933,6 +933,30 @@ describe('PoolRunsPage', () => {
     expect(await screen.findByText('top_down starting_amount must be greater than 0.')).toBeInTheDocument()
   }, 30000)
 
+  it('shows raw validation detail when create-run VALIDATION_ERROR is not mapped to a specific field', async () => {
+    const user = userEvent.setup()
+    mockCreatePoolRun.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Validation Error',
+          status: 400,
+          detail: '“wf-top-down-execution-v1” is not a valid UUID.',
+          code: 'VALIDATION_ERROR',
+        },
+      },
+    })
+
+    renderPage()
+
+    const submitButton = await screen.findByTestId('pool-runs-create-submit')
+    await user.click(submitButton)
+
+    await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('“wf-top-down-execution-v1” is not a valid UUID.')).toBeInTheDocument()
+    expect(screen.queryByText('Проверьте корректность параметров запуска.')).not.toBeInTheDocument()
+  }, 30000)
+
   it('maps missing binding create-run error to workflow binding field and localized message', async () => {
     const user = userEvent.setup()
     mockCreatePoolRun.mockRejectedValueOnce({

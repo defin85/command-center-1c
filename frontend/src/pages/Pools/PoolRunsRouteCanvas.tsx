@@ -584,6 +584,21 @@ const resolveCreateRunProblemMessage = (
   return fallbackMessage
 }
 
+const resolveCreateRunPageLevelMessage = ({
+  problem,
+  fallbackMessage,
+  hasFieldErrors,
+}: {
+  problem: ProblemDetailsPayload
+  fallbackMessage: string
+  hasFieldErrors: boolean
+}): string => {
+  if (problem.code === 'VALIDATION_ERROR' && problem.detail && !hasFieldErrors) {
+    return problem.detail
+  }
+  return resolveCreateRunProblemMessage(problem, fallbackMessage)
+}
+
 const parseReadinessProblemBlockers = (problem: ProblemDetailsPayload | null): PoolRunReadinessBlocker[] => {
   if (!problem || !Array.isArray(problem.errors)) {
     return []
@@ -1740,6 +1755,13 @@ export function PoolRunsPage() {
           if (fieldErrors.length > 0) {
             createForm.setFields(fieldErrors)
           }
+          setError(resolveCreateRunPageLevelMessage({
+            problem,
+            fallbackMessage: 'Не удалось создать run.',
+            hasFieldErrors: fieldErrors.length > 0,
+          }))
+        } else {
+          setError(resolveCreateRunProblemMessage(problem, 'Не удалось создать run.'))
         }
         if (
           problem.code === 'POOL_WORKFLOW_BINDING_REQUIRED'
@@ -1755,7 +1777,6 @@ export function PoolRunsPage() {
             },
           ])
         }
-        setError(resolveCreateRunProblemMessage(problem, 'Не удалось создать run.'))
       } else if (err instanceof Error && err.message) {
         setError(err.message)
       } else {
@@ -1821,6 +1842,13 @@ export function PoolRunsPage() {
           if (fieldErrors.length > 0) {
             createForm.setFields(fieldErrors)
           }
+          setError(resolveCreateRunPageLevelMessage({
+            problem,
+            fallbackMessage: 'Не удалось построить binding preview.',
+            hasFieldErrors: fieldErrors.length > 0,
+          }))
+        } else {
+          setError(resolveCreateRunProblemMessage(problem, 'Не удалось построить binding preview.'))
         }
         if (
           problem.code === 'POOL_WORKFLOW_BINDING_REQUIRED'
@@ -1837,7 +1865,6 @@ export function PoolRunsPage() {
           ])
         }
         setBindingPreview(null)
-        setError(resolveCreateRunProblemMessage(problem, 'Не удалось построить binding preview.'))
       } else if (err instanceof Error && err.message) {
         setBindingPreview(null)
         setError(err.message)
