@@ -164,7 +164,7 @@ const CREATE_RUN_PROBLEM_CODE_MESSAGES: Record<string, string> = {
   TENANT_CONTEXT_REQUIRED: 'Для запуска run требуется активный tenant context.',
   POOL_NOT_FOUND: 'Пул не найден в текущем tenant context.',
   POOL_WORKFLOW_BINDING_REQUIRED: 'Перед продолжением выберите workflow binding.',
-  POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING: 'Сохранённые workflow bindings ссылаются на отсутствующий binding profile revision. Выполните destructive reset затронутых данных и пересоздайте attachment.',
+  POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING: 'Сохранённые workflow bindings ссылаются на отсутствующий execution-pack revision. Выполните destructive reset затронутых данных и пересоздайте attachment.',
   POOL_WORKFLOW_BINDING_NOT_FOUND: 'Выбранный attachment больше не найден в текущем пуле.',
   POOL_WORKFLOW_BINDING_NOT_RESOLVED: 'Выбранный attachment неактивен или не попадает в effective scope для текущего запуска.',
   POOL_WORKFLOW_BINDING_AMBIGUOUS: 'Найдено несколько подходящих workflow bindings. Нужен явный выбор binding.',
@@ -2528,10 +2528,10 @@ export function PoolRunsPage() {
                             {selectedCreateBinding.revision != null ? `r${selectedCreateBinding.revision}` : '-'}
                           </Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Binding Profile" span={1}>
+                        <Descriptions.Item label="Execution Pack" span={1}>
                           <Text data-testid="pool-runs-create-profile">{resolvePoolWorkflowBindingProfileLabel(selectedCreateBinding)}</Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Pinned Profile Revision" span={1}>
+                        <Descriptions.Item label="Pinned Pack Revision" span={1}>
                           <Text data-testid="pool-runs-create-profile-revision">
                             {selectedCreateBinding.binding_profile_revision_number != null
                               ? `r${selectedCreateBinding.binding_profile_revision_number}`
@@ -2558,7 +2558,7 @@ export function PoolRunsPage() {
                         <Descriptions.Item label="Effective Period" span={1}>
                           <Text>{formatWorkflowBindingEffectivePeriod(selectedCreateBinding)}</Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Profile Status" span={1}>
+                        <Descriptions.Item label="Pack Status" span={1}>
                           <Text>{resolvePoolWorkflowBindingProfileStatus(selectedCreateBinding) ?? '-'}</Text>
                         </Descriptions.Item>
                         <Descriptions.Item label="Pinned Revision ID" span={1}>
@@ -2657,12 +2657,12 @@ export function PoolRunsPage() {
                               : '-'}
                           </Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Binding Profile" span={1}>
+                        <Descriptions.Item label="Execution Pack" span={1}>
                           <Text data-testid="pool-runs-binding-preview-profile">
                             {resolvePoolWorkflowBindingProfileLabel(bindingPreview.workflow_binding)}
                           </Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Pinned Profile Revision" span={1}>
+                        <Descriptions.Item label="Pinned Pack Revision" span={1}>
                           <Text data-testid="pool-runs-binding-preview-profile-revision">
                             {bindingPreview.workflow_binding.binding_profile_revision_number != null
                               ? `r${bindingPreview.workflow_binding.binding_profile_revision_number}`
@@ -2689,7 +2689,7 @@ export function PoolRunsPage() {
                         <Descriptions.Item label="Binding Scope" span={1}>
                           <Text>{formatWorkflowBindingScope(bindingPreview.workflow_binding)}</Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Profile Status" span={1}>
+                        <Descriptions.Item label="Pack Status" span={1}>
                           <Text>{resolvePoolWorkflowBindingProfileStatus(bindingPreview.workflow_binding) ?? '-'}</Text>
                         </Descriptions.Item>
                         <Descriptions.Item label="Decision Snapshot" span={2}>
@@ -2840,14 +2840,14 @@ export function PoolRunsPage() {
                               {workflowBindingAttachmentRevision != null ? `r${workflowBindingAttachmentRevision}` : '-'}
                             </Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Binding Profile" span={1}>
+                          <Descriptions.Item label="Execution Pack" span={1}>
                             <Text data-testid="pool-runs-lineage-profile">
                               {resolvePoolWorkflowBindingProfileLabel(workflowBinding) !== '-'
                                 ? resolvePoolWorkflowBindingProfileLabel(workflowBinding)
                                 : (workflowBindingProfileId ?? '-')}
                             </Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Pinned Profile Revision" span={1}>
+                          <Descriptions.Item label="Pinned Pack Revision" span={1}>
                             <Text data-testid="pool-runs-lineage-profile-revision">
                               {workflowBindingProfileRevisionNumber != null ? `r${workflowBindingProfileRevisionNumber}` : '-'}
                             </Text>
@@ -2876,13 +2876,13 @@ export function PoolRunsPage() {
                           <Descriptions.Item label="Effective Period" span={1}>
                             <Text>{formatWorkflowBindingEffectivePeriod(workflowBinding)}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Profile Status" span={1}>
+                          <Descriptions.Item label="Pack Status" span={1}>
                             <Text>{workflowBindingProfileStatus ?? '-'}</Text>
                           </Descriptions.Item>
                           <Descriptions.Item label="Pinned Revision ID" span={1}>
                             <Text code>{workflowBindingProfileRevisionId ?? '-'}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Profile ID" span={1}>
+                          <Descriptions.Item label="Execution Pack ID" span={1}>
                             <Text code>{workflowBindingProfileId ?? '-'}</Text>
                           </Descriptions.Item>
                           <Descriptions.Item label="Decision Snapshot" span={2}>

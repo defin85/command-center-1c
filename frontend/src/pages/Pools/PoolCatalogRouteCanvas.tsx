@@ -101,8 +101,8 @@ import {
 } from './topologySlotCoverage'
 import {
   buildPoolTopologyTemplatesRoute,
-  POOL_BINDING_PROFILES_ROUTE,
   POOL_CATALOG_ROUTE,
+  POOL_EXECUTION_PACKS_ROUTE,
   POOL_TOPOLOGY_TEMPLATES_ROUTE,
 } from './routes'
 
@@ -2189,7 +2189,7 @@ export function PoolCatalogPage() {
       setBindingProfileDetailsError(
         validDetails.length === results.length
           ? null
-          : 'Некоторые binding profiles вернули неконсистентную историю revisions; используется latest revision из summary catalog.',
+          : 'Некоторые execution packs вернули неконсистентную историю revisions; используется latest revision из summary catalog.',
       )
     } finally {
       setBindingProfileDetailsLoading(false)
@@ -3578,7 +3578,7 @@ export function PoolCatalogPage() {
             <Space direction="vertical" size={8}>
               <Text>
                 Keep pool fields, reusable attachment logic, and topology remediation on separate task surfaces. Open
-                reusable logic in the binding profile catalog and concrete policy authoring in /decisions.
+                reusable logic in the execution-pack catalog and concrete policy authoring in /decisions.
               </Text>
               {selectedOrganization ? (
                 <Space size={4} wrap>
@@ -3587,7 +3587,7 @@ export function PoolCatalogPage() {
                 </Space>
               ) : null}
               <Space wrap>
-                <RouteButton to={POOL_BINDING_PROFILES_ROUTE}>Open binding profiles</RouteButton>
+                <RouteButton to={POOL_EXECUTION_PACKS_ROUTE}>Open execution packs</RouteButton>
                 <RouteButton to={topologyTemplateCatalogRoute}>Open topology templates</RouteButton>
                 <RouteButton to="/decisions">Open /decisions</RouteButton>
               </Space>
@@ -3877,7 +3877,7 @@ export function PoolCatalogPage() {
                       >
                         Open attachment workspace
                       </Button>
-                      <RouteButton to={POOL_BINDING_PROFILES_ROUTE}>Open binding profiles</RouteButton>
+                      <RouteButton to={POOL_EXECUTION_PACKS_ROUTE}>Open execution packs</RouteButton>
                     </Space>
 
                     {poolBindingsSubmitError && <Alert type="error" message={poolBindingsSubmitError} showIcon />}
@@ -3924,7 +3924,7 @@ export function PoolCatalogPage() {
                           type="info"
                           showIcon
                           message="Attachment editing moved to a dedicated secondary surface"
-                          description="The canonical attachment workspace now opens in a drawer so pool basics, topology authoring, and reusable profile logic do not compete on one default canvas."
+                          description="The canonical attachment workspace now opens in a drawer so pool basics, topology authoring, and reusable execution-pack logic do not compete on one default canvas."
                         />
                         <DrawerFormShell
                           open={isBindingsWorkspaceOpen}
@@ -3974,7 +3974,7 @@ export function PoolCatalogPage() {
                                 bindingProfileDetailsLoading={bindingProfileDetailsLoading}
                                 bindingProfilesLoadError={
                                   bindingProfilesQuery.isError
-                                    ? resolveApiError(bindingProfilesQuery.error, 'Не удалось загрузить binding profiles catalog.').message
+                                    ? resolveApiError(bindingProfilesQuery.error, 'Не удалось загрузить execution-pack catalog.').message
                                     : bindingProfileDetailsError
                                 }
                                 onBindingProfileRevisionSelectOpen={() => {

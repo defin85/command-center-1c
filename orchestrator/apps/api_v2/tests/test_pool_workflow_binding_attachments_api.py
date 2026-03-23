@@ -192,7 +192,11 @@ def test_pool_workflow_bindings_api_rejects_new_attach_to_deactivated_profile_re
         status_code=409,
         code="POOL_WORKFLOW_BINDING_PROFILE_LIFECYCLE_CONFLICT",
     )
-    assert "deactivated" in payload["detail"].lower()
+    assert payload["title"] == "Pool Workflow Execution Pack Lifecycle Conflict"
+    assert payload["detail"] == (
+        "Pinned execution-pack revision is deactivated and cannot be attached via the default "
+        "workflow binding path."
+    )
 
 
 @pytest.mark.django_db

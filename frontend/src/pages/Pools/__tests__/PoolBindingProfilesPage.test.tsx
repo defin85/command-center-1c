@@ -226,7 +226,7 @@ function openSelect(testId: string) {
   fireEvent.mouseDown(selector as Element)
 }
 
-function renderPage(path = '/pools/binding-profiles') {
+function renderPage(path = '/pools/execution-packs') {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -250,7 +250,7 @@ function LocationProbe() {
   return <div data-testid="location-probe">{`${location.pathname}${location.search}`}</div>
 }
 
-function renderPageWithRoutes(path = '/pools/binding-profiles') {
+function renderPageWithRoutes(path = '/pools/execution-packs') {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -263,7 +263,7 @@ function renderPageWithRoutes(path = '/pools/binding-profiles') {
       <MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}>
         <AntApp>
           <Routes>
-            <Route path="/pools/binding-profiles" element={<PoolBindingProfilesPage />} />
+            <Route path="/pools/execution-packs" element={<PoolBindingProfilesPage />} />
             <Route path="/pools/catalog" element={<LocationProbe />} />
           </Routes>
         </AntApp>
@@ -323,15 +323,15 @@ describe('PoolBindingProfilesPage', () => {
     const user = userEvent.setup()
     renderPage()
 
-    expect(await screen.findByRole('heading', { name: 'Binding Profiles' })).toBeInTheDocument()
-    expect(screen.getByText(/Reusable profile workspace for selecting a profile, checking where it is used, and publishing the next revision./i)).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Execution Packs' })).toBeInTheDocument()
+    expect(screen.getByText(/Reusable execution-pack workspace for selecting an execution pack, checking where it is used, and publishing the next revision./i)).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Open attachment workspace' })).toHaveLength(2)
     expect(screen.getAllByText('services-publication').length).toBeGreaterThan(0)
     expect(screen.getByText('legacy-archive')).toBeInTheDocument()
 
     expect(screen.getByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('services-publication')
     expect(screen.getByRole('button', { name: 'Publish new revision' })).toBeEnabled()
-    expect(screen.getByRole('heading', { name: 'Where this profile is used', level: 3 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Where this execution pack is used', level: 3 })).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Opaque pin' })).not.toBeInTheDocument()
     expect(screen.queryByText('Latest immutable revision')).not.toBeInTheDocument()
     expect(screen.queryByText('Workflow definition key')).not.toBeInTheDocument()
@@ -342,7 +342,7 @@ describe('PoolBindingProfilesPage', () => {
     expect(screen.getByRole('columnheader', { name: 'Opaque pin' })).toBeInTheDocument()
     expect(await screen.findByText('Workflow definition key')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open profile legacy-archive' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open execution pack legacy-archive' }))
 
     expect(await screen.findByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('legacy-archive')
     expect(screen.getByTestId('pool-binding-profiles-status')).toHaveTextContent('deactivated')
@@ -350,19 +350,19 @@ describe('PoolBindingProfilesPage', () => {
   }, 25000)
 
   it('restores search and selected profile from query params and labels the catalog search', async () => {
-    renderPage('/pools/binding-profiles?q=legacy&profile=bp-legacy&detail=1')
+    renderPage('/pools/execution-packs?q=legacy&profile=bp-legacy&detail=1')
 
-    expect(await screen.findByRole('heading', { name: 'Binding Profiles' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Search profiles')).toHaveValue('legacy')
+    expect(await screen.findByRole('heading', { name: 'Execution Packs' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Search execution packs')).toHaveValue('legacy')
     expect(screen.queryByText('services-publication')).not.toBeInTheDocument()
     expect(screen.getByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('legacy-archive')
   })
 
   it('keeps filtered catalog context coherent when the selected profile is outside the active search', async () => {
-    renderPage('/pools/binding-profiles?q=legacy&profile=bp-services&detail=1')
+    renderPage('/pools/execution-packs?q=legacy&profile=bp-services&detail=1')
 
-    expect(await screen.findByRole('heading', { name: 'Binding Profiles' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Search profiles')).toHaveValue('legacy')
+    expect(await screen.findByRole('heading', { name: 'Execution Packs' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Search execution packs')).toHaveValue('legacy')
     expect(screen.queryByText('services-publication')).not.toBeInTheDocument()
     expect(screen.getByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('legacy-archive')
   })
@@ -370,9 +370,9 @@ describe('PoolBindingProfilesPage', () => {
   it('provides semantic profile selection controls instead of row-click-only selection', async () => {
     renderPage()
 
-    expect(await screen.findByRole('heading', { name: 'Binding Profiles' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Execution Packs' })).toBeInTheDocument()
 
-    const secondProfileButton = screen.getByRole('button', { name: 'Open profile legacy-archive' })
+    const secondProfileButton = screen.getByRole('button', { name: 'Open execution pack legacy-archive' })
     expect(secondProfileButton.tagName).toBe('BUTTON')
     expect(secondProfileButton).toHaveStyle({ minHeight: '36px' })
 
@@ -397,7 +397,7 @@ describe('PoolBindingProfilesPage', () => {
 
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Create profile' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Create execution pack' }))
     expect(screen.getByRole('button', { name: 'Open /workflows' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open /decisions' })).toBeInTheDocument()
 
@@ -531,7 +531,7 @@ describe('PoolBindingProfilesPage', () => {
       })
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Deactivate profile' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate execution pack' }))
 
     await waitFor(() => {
       expect(deactivateMutateAsync).toHaveBeenCalledWith(activeDetail.binding_profile_id)
@@ -669,7 +669,7 @@ describe('PoolBindingProfilesPage', () => {
       error: null,
     }))
 
-    renderPageWithRoutes('/pools/binding-profiles?profile=bp-services&detail=1')
+    renderPageWithRoutes('/pools/execution-packs?profile=bp-services&detail=1')
 
     await user.click(await screen.findByRole('button', { name: 'Load attachment usage' }))
     await user.click(await screen.findByRole('button', { name: 'Open pool attachment' }))
@@ -685,7 +685,7 @@ describe('PoolBindingProfilesPage', () => {
       error: {
         response: {
           data: {
-            detail: 'Backend refused to load binding profiles.',
+            detail: 'Backend refused to load execution packs.',
           },
         },
       },
@@ -699,7 +699,7 @@ describe('PoolBindingProfilesPage', () => {
 
     renderPage()
 
-    expect(await screen.findByText('Backend refused to load binding profiles.')).toBeInTheDocument()
-    expect(screen.getByText('Select a profile from the catalog.')).toBeInTheDocument()
+    expect(await screen.findByText('Backend refused to load execution packs.')).toBeInTheDocument()
+    expect(screen.getByText('Select an execution pack from the catalog.')).toBeInTheDocument()
   })
 })

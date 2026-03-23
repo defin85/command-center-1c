@@ -161,12 +161,12 @@ export function DecisionsPage() {
         description={(
           <Space direction="vertical" size={8}>
             <Text>
-              Start with a new policy or revise the selected revision for the current database. Use workflow and binding
-              profile catalogs only when you need reusable references or rollout targets.
+              Start with a new policy or revise the selected revision for the current database. Use workflow and
+              execution-pack catalogs only when you need reusable references or rollout targets.
             </Text>
             <Space wrap>
               <RouteButton to="/workflows">Open workflow references</RouteButton>
-              <RouteButton to="/pools/binding-profiles">Open binding profiles</RouteButton>
+              <RouteButton to="/pools/execution-packs">Open execution packs</RouteButton>
             </Space>
           </Space>
         )}

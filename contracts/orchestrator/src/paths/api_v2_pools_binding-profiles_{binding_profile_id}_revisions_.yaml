@@ -1,6 +1,6 @@
 post:
   operationId: v2_pools_binding_profiles_revise
-  summary: Create a new immutable binding profile revision
+  summary: Create a new immutable execution-pack revision
   tags:
     - v2
   security:

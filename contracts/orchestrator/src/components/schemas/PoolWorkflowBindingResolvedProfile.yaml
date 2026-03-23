@@ -1,5 +1,5 @@
 type: object
-description: Read-only summary of the reusable binding profile revision pinned by a pool attachment.
+description: Read-only summary of the reusable execution-pack revision pinned by a pool attachment.
 properties:
   binding_profile_id:
     type: string

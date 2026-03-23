@@ -35,7 +35,9 @@ def test_binding_profiles_paths_are_present_in_generated_openapi_contract() -> N
     collection = paths.get("/api/v2/pools/binding-profiles/")
     assert isinstance(collection, dict)
     assert collection["get"]["operationId"] == "v2_pools_binding_profiles_list"
+    assert collection["get"]["summary"] == "List reusable execution packs"
     assert collection["post"]["operationId"] == "v2_pools_binding_profiles_create"
+    assert collection["post"]["summary"] == "Create reusable execution pack"
     assert collection["post"]["responses"]["201"]["content"]["application/json"]["schema"]["$ref"] == (
         "#/components/schemas/BindingProfileMutationResponse"
     )
@@ -43,14 +45,17 @@ def test_binding_profiles_paths_are_present_in_generated_openapi_contract() -> N
     detail = paths.get("/api/v2/pools/binding-profiles/{binding_profile_id}/")
     assert isinstance(detail, dict)
     assert detail["get"]["operationId"] == "v2_pools_binding_profiles_detail"
+    assert detail["get"]["summary"] == "Get reusable execution pack detail"
 
     revisions = paths.get("/api/v2/pools/binding-profiles/{binding_profile_id}/revisions/")
     assert isinstance(revisions, dict)
     assert revisions["post"]["operationId"] == "v2_pools_binding_profiles_revise"
+    assert revisions["post"]["summary"] == "Create a new immutable execution-pack revision"
 
     deactivate = paths.get("/api/v2/pools/binding-profiles/{binding_profile_id}/deactivate/")
     assert isinstance(deactivate, dict)
     assert deactivate["post"]["operationId"] == "v2_pools_binding_profiles_deactivate"
+    assert deactivate["post"]["summary"] == "Deactivate reusable execution pack"
 
 
 def test_binding_profile_detail_schema_covers_runtime_serializer_fields() -> None:
@@ -79,6 +84,9 @@ def test_binding_profile_revision_schema_uses_opaque_revision_identity_and_runti
     runtime_fields = set(binding_profiles_view.BindingProfileRevisionReadSerializer().fields.keys())
     assert runtime_fields.issubset(set(properties.keys()))
     assert properties["binding_profile_revision_id"]["type"] == "string"
+    assert properties["binding_profile_revision_id"]["description"] == (
+        "Opaque immutable runtime pin for a reusable execution-pack revision."
+    )
     assert properties["binding_profile_id"]["type"] == "string"
     assert properties["binding_profile_id"]["format"] == "uuid"
     assert properties["revision_number"]["minimum"] == 1

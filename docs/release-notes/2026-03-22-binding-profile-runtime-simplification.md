@@ -13,7 +13,7 @@
 
 1. Если API или UI возвращает `POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING`, не запускайте `backfill_pool_workflow_bindings`.
 2. Для этого residue canonical remediation — destructive reset затронутых `pool`, `pool_workflow_binding` и `binding_profile*` данных.
-3. После reset пересоздайте reusable binding profiles в `/pools/binding-profiles`, затем заново привяжите attachment-ы в `/pools/catalog`.
+3. После reset пересоздайте reusable execution packs в `/pools/execution-packs`, затем заново привяжите attachment-ы в `/pools/catalog`.
 4. Перед повторным запуском проверьте preview через `POST /api/v2/pools/workflow-bindings/preview/`.
 5. Run стартуйте только после успешного preview через `POST /api/v2/pools/runs/`.
 

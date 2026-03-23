@@ -25,7 +25,7 @@ Tenant-scoped live cutover evidence belongs in the `*.template.json` files in th
 - `/decisions` supports both `Rollover selected revision` and `Clone selected revision`; clone publishes an independent resource with a new `decision_table_id` and no `parent_version_id`.
   Code: `frontend/src/pages/Decisions/DecisionsPage.tsx`, `frontend/src/pages/Decisions/DecisionEditorPanel.tsx`, `frontend/src/pages/Decisions/decisionPageUtils.tsx`, `orchestrator/apps/api_v2/views/decisions.py`
   Tests: `frontend/src/pages/Decisions/__tests__/DecisionsPage.test.tsx`, `frontend/src/pages/Decisions/__tests__/decisionPageUtils.test.tsx`, `frontend/tests/browser/workflow-hardening-acceptance.spec.ts`
-- `/pools/binding-profiles` keeps a summary-first default detail path, exposes immutable pins only in explicit advanced disclosure, and stays mobile-safe via drawer-based inspect flow.
+- `/pools/execution-packs` keeps a summary-first default detail path, exposes immutable pins only in explicit advanced disclosure, and stays mobile-safe via drawer-based inspect flow.
   Code: `frontend/src/pages/Pools/PoolBindingProfilesPage.tsx`, `frontend/src/components/platform/MasterDetailShell.tsx`, `frontend/src/components/platform/EntityTable.tsx`
   Tests: `frontend/src/pages/Pools/__tests__/PoolBindingProfilesPage.test.tsx`, `frontend/tests/browser/ui-platform-contract.spec.ts`
 - Shared shell/platform status surfaces use contrast-safe operator-facing labels on the default UI path instead of raw Ant color presets.

@@ -1,6 +1,6 @@
 get:
   operationId: v2_pools_binding_profiles_list
-  summary: List reusable binding profiles
+  summary: List reusable execution packs
   tags:
     - v2
   security:
@@ -33,7 +33,7 @@ get:
       description: Unauthorized
 post:
   operationId: v2_pools_binding_profiles_create
-  summary: Create reusable binding profile
+  summary: Create reusable execution pack
   tags:
     - v2
   security:

@@ -22,20 +22,20 @@ class BindingProfileStoreError(ValueError):
 
 class BindingProfileNotFoundError(BindingProfileStoreError):
     def __init__(self, *, binding_profile_id: str) -> None:
-        super().__init__(f"Binding profile '{binding_profile_id}' was not found.")
+        super().__init__(f"Execution pack '{binding_profile_id}' was not found.")
         self.binding_profile_id = binding_profile_id
 
 
 class BindingProfileCodeConflictError(BindingProfileStoreError):
     def __init__(self, *, code: str) -> None:
-        super().__init__(f"Binding profile code conflict: code='{code}'")
+        super().__init__(f"Execution pack code conflict: code='{code}'")
         self.code = code
 
 
 class BindingProfileLifecycleConflictError(BindingProfileStoreError):
     def __init__(self, *, binding_profile_id: str, operation: str, status: str) -> None:
         super().__init__(
-            "Binding profile lifecycle conflict: "
+            "Execution pack lifecycle conflict: "
             f"binding_profile_id='{binding_profile_id}', operation='{operation}', status='{status}'"
         )
         self.binding_profile_id = binding_profile_id
@@ -246,7 +246,7 @@ def _get_prefetched_revisions(profile: BindingProfile) -> list[BindingProfileRev
     if revisions is None:
         revisions = list(profile.revisions.order_by("-revision_number"))
     if not revisions:
-        raise BindingProfileStoreError(f"Binding profile '{profile.id}' has no revisions.")
+        raise BindingProfileStoreError(f"Execution pack '{profile.id}' has no revisions.")
     return revisions
 
 

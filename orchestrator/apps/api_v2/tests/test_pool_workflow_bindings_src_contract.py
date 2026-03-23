@@ -173,7 +173,7 @@ def test_pool_workflow_binding_input_src_schema_includes_optional_revision_field
     }
     assert properties.get("binding_profile_revision_id") == {
         "type": "string",
-        "description": "Opaque pinned reusable binding profile revision identifier.",
+        "description": "Opaque pinned reusable execution-pack revision identifier.",
     }
     assert "workflow" not in properties
     assert "decisions" not in properties
@@ -200,6 +200,19 @@ def test_pool_workflow_binding_read_src_schema_requires_server_managed_fields() 
 
     properties = payload.get("properties")
     assert isinstance(properties, dict)
+    assert properties["binding_profile_id"] == {
+        "type": "string",
+        "description": "Reusable execution-pack identifier pinned by this attachment.",
+    }
+    assert properties["binding_profile_revision_id"] == {
+        "type": "string",
+        "description": "Opaque pinned reusable execution-pack revision identifier.",
+    }
+    assert properties["binding_profile_revision_number"] == {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Read-only display revision number of the pinned reusable execution-pack revision.",
+    }
     assert properties["resolved_profile"] == {
         "$ref": "./PoolWorkflowBindingResolvedProfile.yaml",
     }
@@ -207,6 +220,16 @@ def test_pool_workflow_binding_read_src_schema_requires_server_managed_fields() 
         "allOf": [{"$ref": "./PoolWorkflowBindingProfileLifecycleWarning.yaml"}],
         "nullable": True,
     }
+
+    lifecycle_warning = _load_src_schema("PoolWorkflowBindingProfileLifecycleWarning.yaml")
+    assert lifecycle_warning["description"] == (
+        "Lifecycle warning surfaced when an attachment stays pinned to a deactivated reusable execution pack."
+    )
+
+    resolved_profile = _load_src_schema("PoolWorkflowBindingResolvedProfile.yaml")
+    assert resolved_profile["description"] == (
+        "Read-only summary of the reusable execution-pack revision pinned by a pool attachment."
+    )
 
 
 def test_pool_workflow_binding_collection_response_src_schema_requires_etag_and_bindings() -> None:

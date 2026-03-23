@@ -34,7 +34,7 @@ def test_binding_profile_runtime_simplification_release_note_documents_current_o
     assert "destructive reset" in release_note
     assert "/api/v2/pools/workflow-bindings/preview/" in release_note
     assert "/api/v2/pools/runs/" in release_note
-    assert "/pools/binding-profiles" in release_note
+    assert "/pools/execution-packs" in release_note
     assert "/pools/catalog" in release_note
 
 

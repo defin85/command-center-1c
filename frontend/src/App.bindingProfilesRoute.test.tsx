@@ -45,7 +45,7 @@ vi.mock('./lib/authState', () => ({
 }))
 
 vi.mock('./pages/Pools/PoolBindingProfilesPage', () => ({
-  PoolBindingProfilesPage: () => <div data-testid="pool-binding-profiles-route-page">Binding Profiles Route</div>,
+  PoolBindingProfilesPage: () => <div data-testid="pool-binding-profiles-route-page">Execution Packs Route</div>,
 }))
 
 describe('App pools binding profiles route', () => {
@@ -78,7 +78,7 @@ describe('App pools binding profiles route', () => {
     localStorage.clear()
     localStorage.setItem('auth_token', 'token')
     localStorage.setItem('active_tenant_id', 'tenant-1')
-    window.history.pushState({}, '', '/pools/binding-profiles')
+    window.history.pushState({}, '', '/pools/execution-packs')
   })
 
   it('mounts the dedicated route and exposes it in the main navigation', async () => {
@@ -98,7 +98,7 @@ describe('App pools binding profiles route', () => {
     )
 
     expect(await screen.findByTestId('pool-binding-profiles-route-page')).toBeInTheDocument()
-    expect(screen.getByText('Pool Binding Profiles')).toBeInTheDocument()
+    expect(screen.getByText('Pool Execution Packs')).toBeInTheDocument()
   })
 
   it('labels the tenant selector when multiple tenants are available', async () => {

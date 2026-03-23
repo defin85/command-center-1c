@@ -1,6 +1,6 @@
 post:
   operationId: v2_pools_binding_profiles_deactivate
-  summary: Deactivate reusable binding profile
+  summary: Deactivate reusable execution pack
   tags:
     - v2
   security:

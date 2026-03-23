@@ -6,7 +6,7 @@ import type {
   PoolWorkflowBindingResolvedProfile,
 } from '../../api/intercompanyPools'
 import { RouteButton } from '../../components/platform'
-import { POOL_BINDING_PROFILES_ROUTE } from './routes'
+import { POOL_EXECUTION_PACKS_ROUTE } from './routes'
 import {
   createEmptyWorkflowBindingFormValue,
   getWorkflowBindingCardSummary,
@@ -169,14 +169,14 @@ export function PoolWorkflowBindingsEditor({
         type="info"
         showIcon
         message="Workflow bindings are managed as pool-scoped attachments"
-        description="Attach an existing reusable binding profile revision, edit only pool-local scope, and use /pools/binding-profiles for workflow, slot, parameter, or role-mapping authoring."
+        description="Attach an existing reusable execution-pack revision, edit only pool-local scope, and use /pools/execution-packs for workflow, slot, parameter, or role-mapping authoring."
       />
       {bindingProfilesLoadError ? (
         <Alert
           type="warning"
           showIcon
           message={bindingProfilesLoadError}
-          description="Existing pinned attachments remain visible, but attaching a new profile revision requires the reusable profile catalog."
+          description="Existing pinned attachments remain visible, but attaching a new execution-pack revision requires the reusable execution-pack catalog."
         />
       ) : null}
       <Form.List name="workflow_bindings">
@@ -222,7 +222,7 @@ export function PoolWorkflowBindingsEditor({
                     topologyEdgeSelectors,
                     buildTopologyCoverageContext({
                       bindingLabel: getWorkflowBindingCardTitle(binding, field.name + 1),
-                      detail: 'Coverage is evaluated against the resolved reusable profile revision pinned by this attachment.',
+                      detail: 'Coverage is evaluated against the resolved reusable execution-pack revision pinned by this attachment.',
                       slotRefs,
                       source: 'selected',
                     }),
@@ -300,7 +300,7 @@ export function PoolWorkflowBindingsEditor({
                                 </Space>
                               ) : null}
                               {unresolvedCoverageItems.length === 0 ? (
-                                <Text type="secondary">All topology edges are covered by the pinned profile revision.</Text>
+                                <Text type="secondary">All topology edges are covered by the pinned execution-pack revision.</Text>
                               ) : (
                                 <Space direction="vertical" size={4} style={{ width: '100%' }}>
                                   {unresolvedCoverageItems.map((item, itemIndex) => (
@@ -352,7 +352,7 @@ export function PoolWorkflowBindingsEditor({
                                 loading={bindingProfilesLoading || bindingProfileDetailsLoading}
                                 options={revisionOptions}
                                 disabled={disabled}
-                                placeholder="Select reusable profile revision"
+                                placeholder="Select reusable execution-pack revision"
                                 data-testid={`pool-catalog-workflow-binding-profile-revision-${field.name}`}
                                 onOpenChange={(open) => {
                                   if (open) {
@@ -378,11 +378,11 @@ export function PoolWorkflowBindingsEditor({
                           <Col span={6}>
                             <RouteButton
                               block
-                              to={POOL_BINDING_PROFILES_ROUTE}
+                              to={POOL_EXECUTION_PACKS_ROUTE}
                               style={{ marginTop: 30 }}
                               data-testid={`pool-catalog-workflow-binding-handoff-${field.name}`}
                             >
-                              Edit in catalog
+                              Edit in execution-pack catalog
                             </RouteButton>
                           </Col>
                         </Row>

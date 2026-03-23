@@ -37,7 +37,7 @@ import type {
 } from '../../api/poolBindingProfiles'
 import { resolveApiError } from './masterData/errorUtils'
 import { PoolBindingProfilesEditorModal } from './PoolBindingProfilesEditorModal'
-import { POOL_BINDING_PROFILES_ROUTE, POOL_CATALOG_ROUTE } from './routes'
+import { POOL_CATALOG_ROUTE, POOL_EXECUTION_PACKS_ROUTE } from './routes'
 
 const { Title, Text } = Typography
 const { useBreakpoint } = Grid
@@ -271,7 +271,7 @@ export function PoolBindingProfilesPage() {
       render: (value: string, record) => (
         <Button
           type="text"
-          aria-label={`Open profile ${record.code}`}
+          aria-label={`Open execution pack ${record.code}`}
           aria-pressed={record.binding_profile_id === selectedProfileId}
           onClick={() => handleSelectProfile(record.binding_profile_id)}
           style={{
@@ -430,16 +430,16 @@ export function PoolBindingProfilesPage() {
       setSelectedProfileId(response.binding_profile.binding_profile_id)
       setIsDetailDrawerOpen(true)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Failed to deactivate binding profile.')
+      const resolved = resolveApiError(error, 'Failed to deactivate execution pack.')
       setActionError(resolved.message)
     }
   }
 
   const listError = bindingProfilesQuery.isError
-    ? resolveApiError(bindingProfilesQuery.error, 'Failed to load binding profiles.').message
+    ? resolveApiError(bindingProfilesQuery.error, 'Failed to load execution packs.').message
     : null
   const detailError = selectedProfileQuery.isError
-    ? resolveApiError(selectedProfileQuery.error, 'Failed to load binding profile detail.').message
+    ? resolveApiError(selectedProfileQuery.error, 'Failed to load execution pack detail.').message
     : null
 
   function handleSelectProfile(profileId: string) {
@@ -461,10 +461,10 @@ export function PoolBindingProfilesPage() {
     <WorkspacePage
       header={(
         <PageHeader
-          title="Binding Profiles"
+          title="Execution Packs"
           subtitle={(
             <>
-              Reusable profile workspace for selecting a profile, checking where it is used, and publishing the next revision.
+              Reusable execution-pack workspace for selecting an execution pack, checking where it is used, and publishing the next revision.
               Pool-local attachments remain in
               {' '}
               {POOL_CATALOG_ROUTE}
@@ -473,7 +473,7 @@ export function PoolBindingProfilesPage() {
           )}
           actions={(
             <Button type="primary" onClick={() => setIsCreateOpen(true)}>
-              Create profile
+              Create execution pack
             </Button>
           )}
         />
@@ -487,16 +487,16 @@ export function PoolBindingProfilesPage() {
         description={(
           <Space direction="vertical" size={8}>
             <Text>
-              Start here when you need to inspect a reusable profile, see where it is attached, or publish the next
-              revision. Use
+              Start here when you need to inspect a reusable execution pack, see where it is attached, or publish the
+              next revision. Use
               {' '}
-              <Text code>{POOL_BINDING_PROFILES_ROUTE}</Text>
+              <Text code>{POOL_EXECUTION_PACKS_ROUTE}</Text>
               {' '}
-              for profile-level authoring and
+              for execution-pack authoring and
               {' '}
               <Text code>{POOL_CATALOG_ROUTE}</Text>
               {' '}
-              when you need to attach an existing revision to a concrete pool.
+              when you need to attach an existing execution-pack revision to a concrete pool.
             </Text>
             <Space wrap>
               <Button onClick={() => openAttachmentWorkspace()}>Open attachment workspace</Button>
@@ -518,7 +518,7 @@ export function PoolBindingProfilesPage() {
             title="Catalog"
             extra={(
               <Input
-                aria-label="Search profiles"
+                aria-label="Search execution packs"
                 allowClear
                 autoComplete="off"
                 name="profile-search"
@@ -530,7 +530,7 @@ export function PoolBindingProfilesPage() {
             )}
             error={listError}
             loading={bindingProfilesQuery.isLoading}
-            emptyDescription="No binding profiles found."
+            emptyDescription="No execution packs found."
             dataSource={filteredProfiles}
             columns={listColumns}
             rowKey="binding_profile_id"
@@ -545,11 +545,11 @@ export function PoolBindingProfilesPage() {
         )}
         detail={(
           <EntityDetails
-            title="Profile detail"
+            title="Execution Pack detail"
             error={detailError}
             loading={selectedProfileQuery.isLoading}
             empty={!selectedProfileId || (!selectedProfile && !selectedProfileQuery.isLoading)}
-            emptyDescription="Select a profile from the catalog."
+            emptyDescription="Select an execution pack from the catalog."
           >
             {selectedProfile ? (
               <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -576,7 +576,7 @@ export function PoolBindingProfilesPage() {
                     loading={deactivateBindingProfileMutation.isPending}
                     style={{ width: screens.sm ? 'auto' : '100%', whiteSpace: 'normal', height: 'auto' }}
                   >
-                    Deactivate profile
+                    Deactivate execution pack
                   </Button>
                   <Button
                     onClick={() => openAttachmentWorkspace()}
@@ -619,16 +619,16 @@ export function PoolBindingProfilesPage() {
                   <Alert
                     type="warning"
                     showIcon
-                    message="Deactivated profiles remain readable for pinned attachments, but cannot publish new revisions."
+                    message="Deactivated execution packs remain readable for pinned attachments, but cannot publish new revisions."
                   />
                 ) : null}
 
                 <Space direction="vertical" size={4} style={{ width: '100%' }}>
                   <Title level={3} style={{ margin: 0, fontSize: 18 }}>
-                    Where this profile is used
+                    Where this execution pack is used
                   </Title>
                   <Text type="secondary">
-                    Check current pool attachments before publishing a new revision or deactivating the reusable profile.
+                    Check current pool attachments before publishing a new revision or deactivating the reusable execution pack.
                   </Text>
                 </Space>
 

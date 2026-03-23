@@ -139,6 +139,9 @@ def test_binding_profiles_api_create_list_detail_revise_and_deactivate_roundtrip
         status_code=409,
         code="BINDING_PROFILE_LIFECYCLE_CONFLICT",
     )
+    lifecycle_payload = revise_after_deactivate.json()
+    assert lifecycle_payload["title"] == "Execution Pack Lifecycle Conflict"
+    assert "Execution pack lifecycle conflict" in lifecycle_payload["detail"]
 
 
 @pytest.mark.django_db
@@ -157,6 +160,9 @@ def test_binding_profiles_api_rejects_duplicate_code_with_conflict(authenticated
         status_code=409,
         code="BINDING_PROFILE_CODE_CONFLICT",
     )
+    duplicate_payload = duplicate.json()
+    assert duplicate_payload["title"] == "Execution Pack Code Conflict"
+    assert "Execution pack code conflict" in duplicate_payload["detail"]
 
 
 @pytest.mark.django_db

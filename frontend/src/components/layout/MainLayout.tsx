@@ -10,7 +10,7 @@ import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { setAuthToken } from '../../api/client'
 import { notifyAuthChanged } from '../../lib/authState'
 import { resetQueryClient } from '../../lib/queryClient'
-import { POOL_BINDING_PROFILES_ROUTE, POOL_TOPOLOGY_TEMPLATES_ROUTE } from '../../pages/Pools/routes'
+import { POOL_EXECUTION_PACKS_ROUTE, POOL_TOPOLOGY_TEMPLATES_ROUTE } from '../../pages/Pools/routes'
 
 const { Header, Content, Sider } = Layout
 const { useBreakpoint } = Grid
@@ -155,9 +155,9 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       label: 'Pool Topology Templates',
     },
     {
-      key: POOL_BINDING_PROFILES_ROUTE,
+      key: POOL_EXECUTION_PACKS_ROUTE,
       icon: <FileTextOutlined />,
-      label: 'Pool Binding Profiles',
+      label: 'Pool Execution Packs',
     },
     {
       key: '/pools/master-data',

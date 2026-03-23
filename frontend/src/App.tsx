@@ -382,7 +382,7 @@ function App() {
                       </MainLayout>
                     </ProtectedRoute>
                   } />
-                  <Route path="/pools/binding-profiles" element={
+                  <Route path="/pools/execution-packs" element={
                     <ProtectedRoute authToken={authToken}>
                       <MainLayout>
                         <LazyBoundary><PoolBindingProfilesPage /></LazyBoundary>

@@ -188,8 +188,8 @@ def test_existing_attachment_on_deactivated_profile_remains_readable_but_new_att
     assert readable["binding_profile_revision_id"] == first_revision_id
     assert readable["profile_lifecycle_warning"] == {
         "code": "BINDING_PROFILE_DEACTIVATED",
-        "title": "Binding profile is deactivated",
-        "detail": "Pinned reusable binding profile is deactivated and requires planned migration.",
+        "title": "Execution pack is deactivated",
+        "detail": "Pinned reusable execution-pack revision is deactivated and requires planned migration.",
     }
 
     profile_revision = BindingProfileRevision.objects.get(binding_profile_revision_id=second_revision_id)

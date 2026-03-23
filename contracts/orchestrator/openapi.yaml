@@ -4813,7 +4813,7 @@ paths:
   /api/v2/pools/binding-profiles/:
     get:
       operationId: v2_pools_binding_profiles_list
-      summary: List reusable binding profiles
+      summary: List reusable execution packs
       tags:
         - v2
       security:
@@ -4843,7 +4843,7 @@ paths:
           description: Unauthorized
     post:
       operationId: v2_pools_binding_profiles_create
-      summary: Create reusable binding profile
+      summary: Create reusable execution pack
       tags:
         - v2
       security:
@@ -4892,7 +4892,7 @@ paths:
   /api/v2/pools/binding-profiles/{binding_profile_id}/:
     get:
       operationId: v2_pools_binding_profiles_detail
-      summary: Get reusable binding profile detail
+      summary: Get reusable execution pack detail
       tags:
         - v2
       security:
@@ -4935,7 +4935,7 @@ paths:
   /api/v2/pools/binding-profiles/{binding_profile_id}/revisions/:
     post:
       operationId: v2_pools_binding_profiles_revise
-      summary: Create a new immutable binding profile revision
+      summary: Create a new immutable execution-pack revision
       tags:
         - v2
       security:
@@ -4996,7 +4996,7 @@ paths:
   /api/v2/pools/binding-profiles/{binding_profile_id}/deactivate/:
     post:
       operationId: v2_pools_binding_profiles_deactivate
-      summary: Deactivate reusable binding profile
+      summary: Deactivate reusable execution pack
       tags:
         - v2
       security:
@@ -17220,7 +17220,7 @@ components:
         - decision_revision
     PoolWorkflowBindingResolvedProfile:
       type: object
-      description: Read-only summary of the reusable binding profile revision pinned by a pool attachment.
+      description: Read-only summary of the reusable execution-pack revision pinned by a pool attachment.
       properties:
         binding_profile_id:
           type: string
@@ -17258,7 +17258,7 @@ components:
         - workflow
     PoolWorkflowBindingProfileLifecycleWarning:
       type: object
-      description: Lifecycle warning surfaced when an attachment stays pinned to a deactivated reusable profile.
+      description: Lifecycle warning surfaced when an attachment stays pinned to a deactivated reusable execution pack.
       properties:
         code:
           type: string
@@ -17290,14 +17290,14 @@ components:
           description: Server-managed optimistic concurrency revision for update/delete operations.
         binding_profile_id:
           type: string
-          description: Reusable binding profile identifier pinned by this attachment.
+          description: Reusable execution-pack identifier pinned by this attachment.
         binding_profile_revision_id:
           type: string
-          description: Opaque pinned reusable binding profile revision identifier.
+          description: Opaque pinned reusable execution-pack revision identifier.
         binding_profile_revision_number:
           type: integer
           minimum: 1
-          description: Read-only display revision number of the pinned reusable profile revision.
+          description: Read-only display revision number of the pinned reusable execution-pack revision.
         selector:
           $ref: '#/components/schemas/PoolWorkflowBindingSelector'
         effective_from:
@@ -17378,7 +17378,7 @@ components:
           type: string
         binding_profile_revision_id:
           type: string
-          description: Opaque immutable runtime pin for a reusable binding profile revision.
+          description: Opaque immutable runtime pin for a reusable execution-pack revision.
         binding_profile_id:
           type: string
           format: uuid
@@ -17533,7 +17533,7 @@ components:
       properties:
         contract_version:
           type: string
-          description: Binding profile revision contract version.
+          description: Execution-pack revision contract version.
         workflow:
           $ref: '#/components/schemas/WorkflowDefinitionRef'
         decisions:
@@ -17947,7 +17947,7 @@ components:
           description: Server-managed optimistic concurrency revision for update/delete operations.
         binding_profile_revision_id:
           type: string
-          description: Opaque pinned reusable binding profile revision identifier.
+          description: Opaque pinned reusable execution-pack revision identifier.
         selector:
           $ref: '#/components/schemas/PoolWorkflowBindingSelector'
         effective_from:

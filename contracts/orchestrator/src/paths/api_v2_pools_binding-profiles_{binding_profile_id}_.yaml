@@ -1,6 +1,6 @@
 get:
   operationId: v2_pools_binding_profiles_detail
-  summary: Get reusable binding profile detail
+  summary: Get reusable execution pack detail
   tags:
     - v2
   security:

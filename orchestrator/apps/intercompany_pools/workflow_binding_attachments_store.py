@@ -35,7 +35,7 @@ class PoolWorkflowBindingAttachmentLifecycleConflictError(PoolWorkflowBindingSto
         operation: str,
     ) -> None:
         super().__init__(
-            "Pool workflow binding profile lifecycle conflict: "
+            "Pool workflow execution-pack lifecycle conflict: "
             f"binding_profile_revision_id='{binding_profile_revision_id}', "
             f"profile_status='{profile_status}', operation='{operation}'"
         )
@@ -458,8 +458,8 @@ def _build_profile_lifecycle_warning(*, profile: BindingProfile) -> dict[str, st
         return None
     return {
         "code": "BINDING_PROFILE_DEACTIVATED",
-        "title": "Binding profile is deactivated",
-        "detail": "Pinned reusable binding profile is deactivated and requires planned migration.",
+        "title": "Execution pack is deactivated",
+        "detail": "Pinned reusable execution-pack revision is deactivated and requires planned migration.",
     }
 
 

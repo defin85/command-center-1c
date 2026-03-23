@@ -69,6 +69,8 @@ def test_binding_profiles_collection_src_contract_uses_get_and_post_catalog_surf
     post_op = path_item.get("post")
     assert isinstance(get_op, dict)
     assert isinstance(post_op, dict)
+    assert get_op["summary"] == "List reusable execution packs"
+    assert post_op["summary"] == "Create reusable execution pack"
 
     get_responses = get_op.get("responses")
     assert isinstance(get_responses, dict)
@@ -96,6 +98,7 @@ def test_binding_profiles_detail_and_actions_are_split_into_detail_revisions_and
     detail_path = _load_src_path_item("api_v2_pools_binding-profiles_{binding_profile_id}_.yaml")
     detail_get = detail_path.get("get")
     assert isinstance(detail_get, dict)
+    assert detail_get["summary"] == "Get reusable execution pack detail"
     assert detail_get["responses"]["200"]["content"]["application/json"]["schema"] == {
         "$ref": "../components/schemas/BindingProfileDetailResponse.yaml"
     }
@@ -103,6 +106,7 @@ def test_binding_profiles_detail_and_actions_are_split_into_detail_revisions_and
     revisions_path = _load_src_path_item("api_v2_pools_binding-profiles_{binding_profile_id}_revisions_.yaml")
     revisions_post = revisions_path.get("post")
     assert isinstance(revisions_post, dict)
+    assert revisions_post["summary"] == "Create a new immutable execution-pack revision"
     assert revisions_post["requestBody"]["content"]["application/json"]["schema"] == {
         "$ref": "../components/schemas/BindingProfileRevisionCreateRequest.yaml"
     }
@@ -113,6 +117,7 @@ def test_binding_profiles_detail_and_actions_are_split_into_detail_revisions_and
     deactivate_path = _load_src_path_item("api_v2_pools_binding-profiles_{binding_profile_id}_deactivate_.yaml")
     deactivate_post = deactivate_path.get("post")
     assert isinstance(deactivate_post, dict)
+    assert deactivate_post["summary"] == "Deactivate reusable execution pack"
     assert deactivate_post["responses"]["200"]["content"]["application/json"]["schema"] == {
         "$ref": "../components/schemas/BindingProfileMutationResponse.yaml"
     }
@@ -124,7 +129,7 @@ def test_binding_profile_revision_src_schema_requires_opaque_revision_identity()
     assert isinstance(properties, dict)
     assert properties.get("binding_profile_revision_id") == {
         "type": "string",
-        "description": "Opaque immutable runtime pin for a reusable binding profile revision.",
+        "description": "Opaque immutable runtime pin for a reusable execution-pack revision.",
     }
     assert properties.get("revision_number") == {
         "type": "integer",
@@ -132,6 +137,14 @@ def test_binding_profile_revision_src_schema_requires_opaque_revision_identity()
         "description": "Human-readable monotonic revision number within the profile.",
     }
     assert properties.get("workflow") == {"$ref": "./WorkflowDefinitionRef.yaml"}
+
+    write_payload = _load_src_schema("BindingProfileRevisionWrite.yaml")
+    write_properties = write_payload.get("properties")
+    assert isinstance(write_properties, dict)
+    assert write_properties.get("contract_version") == {
+        "type": "string",
+        "description": "Execution-pack revision contract version.",
+    }
 
     required = payload.get("required")
     assert required == [

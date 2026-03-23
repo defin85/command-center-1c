@@ -1111,7 +1111,7 @@ class BindingProfileRevision(models.Model):
 
     def clean(self) -> None:
         if self.profile_id and self.tenant_id and self.profile.tenant_id != self.tenant_id:
-            raise ValidationError({"profile": "Binding profile revision must belong to the same tenant."})
+            raise ValidationError({"profile": "Execution-pack revision must belong to the same tenant."})
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -1212,10 +1212,10 @@ class PoolWorkflowBinding(models.Model):
         if self.pool_id and self.tenant_id and self.pool.tenant_id != self.tenant_id:
             raise ValidationError({"pool": "Workflow binding pool must belong to the same tenant."})
         if self.binding_profile_id and self.binding_profile.tenant_id != self.tenant_id:
-            raise ValidationError({"binding_profile": "Workflow binding profile must belong to the same tenant."})
+            raise ValidationError({"binding_profile": "Workflow execution pack must belong to the same tenant."})
         if self.binding_profile_revision_id and self.binding_profile_revision.tenant_id != self.tenant_id:
             raise ValidationError(
-                {"binding_profile_revision": "Workflow binding profile revision must belong to the same tenant."}
+                {"binding_profile_revision": "Workflow execution-pack revision must belong to the same tenant."}
             )
         if bool(self.binding_profile_id) != bool(self.binding_profile_revision_id):
             raise ValidationError(
@@ -1231,7 +1231,7 @@ class PoolWorkflowBinding(models.Model):
             and self.binding_profile_revision.profile_id != self.binding_profile_id
         ):
             raise ValidationError(
-                {"binding_profile_revision": "Workflow binding profile revision must belong to the selected profile."}
+                {"binding_profile_revision": "Workflow execution-pack revision must belong to the selected pack."}
             )
 
     def save(self, *args, **kwargs):

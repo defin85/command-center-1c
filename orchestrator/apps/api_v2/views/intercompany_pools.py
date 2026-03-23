@@ -363,9 +363,9 @@ def _binding_profile_lifecycle_conflict_problem(
 ) -> Response:
     return _problem(
         code="POOL_WORKFLOW_BINDING_PROFILE_LIFECYCLE_CONFLICT",
-        title="Pool Workflow Binding Profile Lifecycle Conflict",
+        title="Pool Workflow Execution Pack Lifecycle Conflict",
         detail=(
-            "Pinned binding profile revision is deactivated and cannot be attached via the default "
+            "Pinned execution-pack revision is deactivated and cannot be attached via the default "
             "workflow binding path."
         ),
         status_code=http_status.HTTP_409_CONFLICT,
@@ -2222,7 +2222,7 @@ class PoolWorkflowBindingInputSerializer(serializers.Serializer):
                     {
                         key: [
                             "Attachment contract does not support local workflow logic overrides. "
-                            "Create or revise a reusable binding profile instead."
+                            "Create or revise a reusable execution pack instead."
                         ]
                         for key in forbidden_fields
                     }

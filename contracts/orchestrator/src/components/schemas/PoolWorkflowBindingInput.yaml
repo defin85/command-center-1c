@@ -17,7 +17,7 @@ properties:
     description: Server-managed optimistic concurrency revision for update/delete operations.
   binding_profile_revision_id:
     type: string
-    description: Opaque pinned reusable binding profile revision identifier.
+    description: Opaque pinned reusable execution-pack revision identifier.
   selector:
     $ref: ./PoolWorkflowBindingSelector.yaml
   effective_from:

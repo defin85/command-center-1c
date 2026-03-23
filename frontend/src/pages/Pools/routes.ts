@@ -1,4 +1,4 @@
-export const POOL_BINDING_PROFILES_ROUTE = '/pools/binding-profiles'
+export const POOL_EXECUTION_PACKS_ROUTE = '/pools/execution-packs'
 export const POOL_CATALOG_ROUTE = '/pools/catalog'
 export const POOL_RUNS_ROUTE = '/pools/runs'
 export const POOL_TOPOLOGY_TEMPLATES_ROUTE = '/pools/topology-templates'

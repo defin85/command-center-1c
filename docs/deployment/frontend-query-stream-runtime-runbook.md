@@ -52,7 +52,7 @@ Conflict behavior:
 - shell/bootstrap queries use the `bootstrap` policy
 - repeated background `429` errors must be deduplicated into one notification class
 - `/decisions` must not do `unscoped -> scoped` collection waterfalls on initial load
-- `/pools/binding-profiles` must not read `/api/v2/pools/` until usage is explicitly requested
+- `/pools/execution-packs` must not read `/api/v2/pools/` until usage is explicitly requested
 - one browser instance should keep one database stream owner path across tabs
 
 ## Validation commands

@@ -2,7 +2,7 @@ type: object
 properties:
   contract_version:
     type: string
-    description: Binding profile revision contract version.
+    description: Execution-pack revision contract version.
   workflow:
     $ref: ./WorkflowDefinitionRef.yaml
   decisions:

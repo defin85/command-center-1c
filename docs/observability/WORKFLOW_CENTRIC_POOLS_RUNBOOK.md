@@ -9,7 +9,7 @@
 - Atomic operations catalog: `/templates`
 - Runtime diagnostics: `/workflows?surface=runtime_diagnostics`
 - Reusable topology template catalog: `/pools/topology-templates`
-- Reusable binding profile catalog: `/pools/binding-profiles`
+- Reusable execution-pack catalog: `/pools/execution-packs`
 - Pool binding authoring: `/pools/catalog`
 - Pool run launch and lineage: `/pools/runs`
 
@@ -38,9 +38,9 @@ Marker влияет на phase summary и rollout communication. Он не пе�
 - `GET /api/v2/pools/workflow-bindings/?pool_id=<uuid>`
   First-class list of workflow bindings for one pool.
 - `GET /api/v2/pools/binding-profiles/`
-  First-class list of reusable binding profiles/revisions for attachment handoff.
+  First-class list of reusable execution packs/revisions for attachment handoff.
 - `POST /api/v2/pools/binding-profiles/`
-  Create reusable binding profile with immutable initial revision.
+  Create reusable execution pack with immutable initial revision.
 - `GET /api/v2/pools/topology-templates/`
   First-class catalog of tenant-scoped reusable topology templates/revisions for abstract slot graphs.
 - `POST /api/v2/pools/topology-templates/`
@@ -48,11 +48,11 @@ Marker влияет на phase summary и rollout communication. Он не пе�
 - `POST /api/v2/pools/topology-templates/<topology_template_id>/revisions/`
   Publish new immutable reusable topology template revision.
 - `GET /api/v2/pools/binding-profiles/<binding_profile_id>/`
-  Detail of one reusable profile with revisions history.
+  Detail of one reusable execution pack with revisions history.
 - `POST /api/v2/pools/binding-profiles/<binding_profile_id>/revisions/`
-  Publish new immutable reusable revision.
+  Publish new immutable reusable execution-pack revision.
 - `POST /api/v2/pools/binding-profiles/<binding_profile_id>/deactivate/`
-  Deactivate reusable profile lifecycle for new attach/re-attach.
+  Deactivate reusable execution-pack lifecycle for new attach/re-attach.
 - `POST /api/v2/pools/workflow-bindings/upsert/`
   First-class create/update path for one pool binding.
 - `GET /api/v2/pools/workflow-bindings/<binding_id>/?pool_id=<uuid>`
@@ -82,16 +82,16 @@ Marker влияет на phase summary и rollout communication. Он не пе�
 - `/pools/catalog` topology editor остаётся structural metadata surface и slot assignment workspace; preferred reuse path идёт через `topology_template_revision` + `slot_key -> organization_id`, а manual node/edge editor остаётся explicit fallback/remediation path.
 - `/pools/topology-templates` является canonical producer surface для create/revise reusable topology graph; `/pools/catalog` не author'ит reusable topology inline как primary path.
 - Template edge defaults materialize'ятся в explicit `edge.metadata.document_policy_key`; runtime и preview не должны silently угадывать selector только по graph shape.
-- `/pools/binding-profiles` default detail path остаётся summary-first: human-readable revision/workflow/usage summary и next actions показываются без opaque immutable ids как primary content; immutable pins и raw payload доступны только в explicit advanced disclosure.
-- На narrow viewport `/pools/binding-profiles` primary inspect/revise/deactivate flow обязан оставаться drawer-safe: primary actions и summary fields доступны без hidden horizontal scroll; внутренний overflow допустим только для secondary tables/diagnostics.
+- `/pools/execution-packs` default detail path остаётся summary-first: human-readable revision/workflow/usage summary и next actions показываются без opaque immutable ids как primary content; immutable pins и raw payload доступны только в explicit advanced disclosure.
+- На narrow viewport `/pools/execution-packs` primary inspect/revise/deactivate flow обязан оставаться drawer-safe: primary actions и summary fields доступны без hidden horizontal scroll; внутренний overflow допустим только для secondary tables/diagnostics.
 - В `/decisions` `Rollover selected revision` публикует новую revision того же resource, а `Clone selected revision` создаёт независимый decision resource с editable seed и без `parent_version_id`.
 - Decision builder/import и migration path используют business configuration identity provenance, а не database-local-only state. В ответах/API/UI ищи `config_name`, `config_version`, `config_generation_id`, `metadata_hash`, `observed_metadata_hash`, `publication_drift`, `is_shared_snapshot`, `provenance_database_id`.
 
-## Binding profile residue after runtime simplification
+## Execution-pack residue after runtime simplification
 
 - Если `/api/v2/pools/runs/`, `/api/v2/pools/workflow-bindings/preview/`, `/pools/runs` или `/pools/catalog` возвращают/показывают `POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING`, shipped path считается fail-closed.
 - Для residue такого типа не запускайте `backfill_pool_workflow_bindings`: этот backfill не восстанавливает canonical `binding_profile` refs для runtime simplification contract.
-- Canonical remediation для `POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING` — destructive reset затронутых `pool`, `pool_workflow_binding` и `binding_profile*` данных с последующим пересозданием pool topology и reusable binding profiles на новом контракте.
+- Canonical remediation для `POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING` — destructive reset затронутых `pool`, `pool_workflow_binding` и `binding_profile*` данных с последующим пересозданием pool topology и reusable execution packs на новом контракте.
 - Operator-facing reference note: `docs/release-notes/2026-03-22-binding-profile-runtime-simplification.md`
 
 ## Topology template rollout reset
@@ -118,7 +118,7 @@ Marker влияет на phase summary и rollout communication. Он не пе�
    - Для shipped contract одинаковая business identity `config_name + config_version` определяет reuse, а `metadata_hash`/`publication_drift` остаются diagnostics-only markers.
 4. В `/pools/catalog` открой нужный pool и во вкладке `Bindings` проверь active workflow bindings, effective period, selector scope и named publication slots.
    Default SPA path использует structured binding editor и first-class binding CRUD, а не raw JSON textarea.
-   Для правки reusable workflow/slot/parameters/role mapping не редактируй attachment inline: переходи через handoff в `/pools/binding-profiles`.
+   Для правки reusable workflow/slot/parameters/role mapping не редактируй attachment inline: переходи через handoff в `/pools/execution-packs`.
 5. Если reusable topology template ещё не существует или нужно выпустить новую reusable revision, переходи в `/pools/topology-templates`.
    Там canonical producer path:
    - `Create template` для нового reusable topology resource c initial revision;

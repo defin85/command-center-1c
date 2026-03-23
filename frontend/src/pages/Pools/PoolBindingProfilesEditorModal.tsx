@@ -151,7 +151,7 @@ export function PoolBindingProfilesEditorModal({
       onCancel()
       form.resetFields()
     } catch (error) {
-      const resolved = resolveApiError(error, 'Failed to save binding profile.')
+      const resolved = resolveApiError(error, 'Failed to save execution pack.')
       setSubmitError(resolved.message)
       form.setFields(toFormFieldErrors(resolved.fieldErrors))
     } finally {
@@ -162,10 +162,10 @@ export function PoolBindingProfilesEditorModal({
   return (
     <ModalFormShell
       open={open}
-      title={mode === 'create' ? 'Create reusable profile' : 'Publish immutable revision'}
+      title={mode === 'create' ? 'Create reusable execution pack' : 'Publish immutable revision'}
       onClose={onCancel}
       onSubmit={() => { void handleSubmit() }}
-      submitText={mode === 'create' ? 'Create profile' : 'Publish revision'}
+      submitText={mode === 'create' ? 'Create execution pack' : 'Publish revision'}
       confirmLoading={submitting}
       submitButtonTestId={buildFieldTestId(mode, 'submit')}
       width={880}
@@ -198,15 +198,15 @@ export function PoolBindingProfilesEditorModal({
           <>
             <Form.Item
               name="code"
-              label="Profile code"
-              rules={[{ required: true, message: 'Profile code is required.' }]}
+              label="Execution Pack code"
+              rules={[{ required: true, message: 'Execution Pack code is required.' }]}
             >
               <Input data-testid={buildFieldTestId(mode, 'code')} />
             </Form.Item>
             <Form.Item
               name="name"
-              label="Profile name"
-              rules={[{ required: true, message: 'Profile name is required.' }]}
+              label="Execution Pack name"
+              rules={[{ required: true, message: 'Execution Pack name is required.' }]}
             >
               <Input data-testid={buildFieldTestId(mode, 'name')} />
             </Form.Item>

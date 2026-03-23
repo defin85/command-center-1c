@@ -1825,58 +1825,58 @@ test('UI platform: /decisions opens authoring in a mobile-safe drawer with label
   await expectNoHorizontalOverflow(page)
 })
 
-test('UI platform: /pools/binding-profiles keeps mobile catalog readable and opens detail in a drawer', async ({ page }) => {
+test('UI platform: /pools/execution-packs keeps mobile catalog readable and opens detail in a drawer', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page)
   await page.setViewportSize({ width: 390, height: 844 })
 
-  await page.goto('/pools/binding-profiles', { waitUntil: 'domcontentloaded' })
+  await page.goto('/pools/execution-packs', { waitUntil: 'domcontentloaded' })
 
-  await expect(page.getByText('Binding Profiles')).toBeVisible()
+  await expect(page.getByText('Execution Packs')).toBeVisible()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expectNoHorizontalOverflow(page)
 
-  await page.getByRole('button', { name: 'Open profile services-publication' }).click()
+  await page.getByRole('button', { name: 'Open execution pack services-publication' }).click()
 
   const detailDrawer = page.getByRole('dialog')
   await expect(detailDrawer).toBeVisible()
   await expect(detailDrawer.getByTestId('pool-binding-profiles-selected-code')).toHaveText('services-publication')
-  await expect(detailDrawer.getByRole('heading', { name: 'Where this profile is used', level: 3 })).toBeVisible()
+  await expect(detailDrawer.getByRole('heading', { name: 'Where this execution pack is used', level: 3 })).toBeVisible()
   await expect(detailDrawer.getByRole('button', { name: 'Publish new revision' })).toBeVisible()
-  await expect(detailDrawer.getByRole('button', { name: 'Deactivate profile' })).toBeVisible()
+  await expect(detailDrawer.getByRole('button', { name: 'Deactivate execution pack' })).toBeVisible()
   await expect(detailDrawer.getByRole('columnheader', { name: 'Opaque pin' })).toHaveCount(0)
   await expect(detailDrawer.getByRole('button', { name: /Advanced payload and immutable pins/i })).toBeVisible()
   await expectVisibleWithinContainer(detailDrawer.getByRole('button', { name: 'Publish new revision' }), detailDrawer)
-  await expectVisibleWithinContainer(detailDrawer.getByRole('button', { name: 'Deactivate profile' }), detailDrawer)
+  await expectVisibleWithinContainer(detailDrawer.getByRole('button', { name: 'Deactivate execution pack' }), detailDrawer)
   await expectNoHorizontalOverflow(page)
 })
 
-test('UI platform: /pools/binding-profiles opens create-profile authoring in a mobile-safe modal shell', async ({ page }) => {
+test('UI platform: /pools/execution-packs opens create-execution-pack authoring in a mobile-safe modal shell', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page)
   await page.setViewportSize({ width: 390, height: 844 })
 
-  await page.goto('/pools/binding-profiles', { waitUntil: 'domcontentloaded' })
+  await page.goto('/pools/execution-packs', { waitUntil: 'domcontentloaded' })
 
-  await page.getByRole('button', { name: 'Create profile' }).click()
+  await page.getByRole('button', { name: 'Create execution pack' }).click()
 
   const authoringModal = page.getByRole('dialog')
   await expect(authoringModal).toBeVisible()
-  await expect(authoringModal.getByLabel('Profile code')).toBeVisible()
-  await expect(authoringModal.getByLabel('Profile name')).toBeVisible()
+  await expect(authoringModal.getByLabel('Execution Pack code')).toBeVisible()
+  await expect(authoringModal.getByLabel('Execution Pack name')).toBeVisible()
   await expect(authoringModal.getByTestId('pool-binding-profiles-create-workflow-revision-select')).toBeVisible()
-  await expect(authoringModal.getByRole('button', { name: 'Create profile' })).toBeVisible()
+  await expect(authoringModal.getByRole('button', { name: 'Create execution pack' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })
 
-test('UI platform: /pools/binding-profiles keeps publication slots compact in the publish revision modal', async ({ page }) => {
+test('UI platform: /pools/execution-packs keeps publication slots compact in the publish revision modal', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page)
 
-  await page.goto('/pools/binding-profiles?profile=e54257e5-c587-4467-bb7c-4eb53ee05293&detail=1', {
+  await page.goto('/pools/execution-packs?profile=e54257e5-c587-4467-bb7c-4eb53ee05293&detail=1', {
     waitUntil: 'domcontentloaded',
   })
 
@@ -2220,16 +2220,16 @@ test('Runtime contract: /decisions avoids mount-time waterfall and duplicate not
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 
-test('Runtime contract: /pools/binding-profiles keeps usage scoped without broad pool scans', async ({ page }) => {
+test('Runtime contract: /pools/execution-packs keeps usage scoped without broad pool scans', async ({ page }) => {
   const counts = createRequestCounts()
 
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page, { isStaff: true, counts })
 
-  await page.goto('/pools/binding-profiles', { waitUntil: 'domcontentloaded' })
+  await page.goto('/pools/execution-packs', { waitUntil: 'domcontentloaded' })
 
-  await expect(page.getByText('Binding Profiles')).toBeVisible()
+  await expect(page.getByText('Execution Packs')).toBeVisible()
   await expect.poll(() => counts.bindingProfileDetails).toBe(1)
   await expect.poll(() => counts.organizationPools).toBe(0)
 
@@ -2262,16 +2262,16 @@ test('Runtime contract: /pools/catalog keeps the default mount within a single i
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 
-test('Runtime contract: /pools/binding-profiles hands off to /pools/catalog without replaying shell reads', async ({ page }) => {
+test('Runtime contract: /pools/execution-packs hands off to /pools/catalog without replaying shell reads', async ({ page }) => {
   const counts = createRequestCounts()
 
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page, { isStaff: true, counts })
 
-  await page.goto('/pools/binding-profiles', { waitUntil: 'domcontentloaded' })
+  await page.goto('/pools/execution-packs', { waitUntil: 'domcontentloaded' })
 
-  await expect(page.getByText('Binding Profiles')).toBeVisible()
+  await expect(page.getByText('Execution Packs')).toBeVisible()
   await expect.poll(() => counts.bootstrap).toBe(1)
   await expect(counts.meReads).toBe(0)
   await expect(counts.myTenantsReads).toBe(0)
@@ -2677,7 +2677,7 @@ test('Runtime contract: /pools/runs ignores same-route menu re-entry and keeps i
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 
-test('Runtime contract: /decisions hands off to /pools/binding-profiles without replaying shell reads', async ({ page }) => {
+test('Runtime contract: /decisions hands off to /pools/execution-packs without replaying shell reads', async ({ page }) => {
   const counts = createRequestCounts()
 
   await setupAuth(page)
@@ -2693,11 +2693,11 @@ test('Runtime contract: /decisions hands off to /pools/binding-profiles without 
   await expect(counts.meReads).toBe(0)
   await expect(counts.myTenantsReads).toBe(0)
 
-  await page.getByRole('button', { name: 'Open binding profiles' }).click()
+  await page.getByRole('button', { name: 'Open execution packs' }).click()
 
-  await expect(page).toHaveURL(/\/pools\/binding-profiles$/)
-  await expect(page.getByRole('heading', { name: 'Binding Profiles' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Create profile' })).toBeVisible()
+  await expect(page).toHaveURL(/\/pools\/execution-packs$/)
+  await expect(page.getByRole('heading', { name: 'Execution Packs' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Create execution pack' })).toBeVisible()
 
   await expect(counts.bootstrap).toBe(1)
   await expect(counts.meReads).toBe(0)
@@ -2786,21 +2786,21 @@ test('Runtime contract: /decisions ignores same-route menu re-entry and keeps ca
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 
-test('UI platform: /pools/binding-profiles restores catalog context and keeps selection keyboard-first', async ({ page }) => {
+test('UI platform: /pools/execution-packs restores catalog context and keeps selection keyboard-first', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page)
 
-  await page.goto('/pools/binding-profiles?q=legacy&profile=bp-legacy&detail=1', { waitUntil: 'domcontentloaded' })
+  await page.goto('/pools/execution-packs?q=legacy&profile=bp-legacy&detail=1', { waitUntil: 'domcontentloaded' })
 
-  await expect(page.getByLabel('Search profiles')).toHaveValue('legacy')
+  await expect(page.getByLabel('Search execution packs')).toHaveValue('legacy')
   await expect(page.getByTestId('pool-binding-profiles-selected-code')).toHaveText('legacy-archive')
   await expect(page.getByText('legacy_archive · r1')).toBeVisible()
   await expect(page.getByText('Workflow definition key')).toHaveCount(0)
 
-  await page.goto('/pools/binding-profiles', { waitUntil: 'domcontentloaded' })
+  await page.goto('/pools/execution-packs', { waitUntil: 'domcontentloaded' })
 
-  const legacyProfileButton = page.getByRole('button', { name: 'Open profile legacy-archive' })
+  const legacyProfileButton = page.getByRole('button', { name: 'Open execution pack legacy-archive' })
   await legacyProfileButton.focus()
   await page.keyboard.press('Enter')
 
@@ -2808,17 +2808,17 @@ test('UI platform: /pools/binding-profiles restores catalog context and keeps se
   await expect(legacyProfileButton).toHaveAttribute('aria-pressed', 'true')
 })
 
-test('UI platform: /pools/binding-profiles keeps selected profile on browser back and forward', async ({ page }) => {
+test('UI platform: /pools/execution-packs keeps selected profile on browser back and forward', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page)
 
-  await page.goto(`/pools/binding-profiles?profile=${BINDING_PROFILE_DETAIL.binding_profile_id}`, {
+  await page.goto(`/pools/execution-packs?profile=${BINDING_PROFILE_DETAIL.binding_profile_id}`, {
     waitUntil: 'domcontentloaded',
   })
 
-  const servicesProfileButton = page.getByRole('button', { name: 'Open profile services-publication' })
-  const legacyProfileButton = page.getByRole('button', { name: 'Open profile legacy-archive' })
+  const servicesProfileButton = page.getByRole('button', { name: 'Open execution pack services-publication' })
+  const legacyProfileButton = page.getByRole('button', { name: 'Open execution pack legacy-archive' })
 
   await expect(page.getByTestId('pool-binding-profiles-selected-code')).toHaveText('services-publication')
   await expect(servicesProfileButton).toHaveAttribute('aria-pressed', 'true')
@@ -2842,22 +2842,22 @@ test('UI platform: /pools/binding-profiles keeps selected profile on browser bac
   await expect(legacyProfileButton).toHaveAttribute('aria-pressed', 'true')
 })
 
-test('UI platform: /pools/binding-profiles keeps shell labels accessible and primary states above contrast floor', async ({ page }) => {
+test('UI platform: /pools/execution-packs keeps shell labels accessible and primary states above contrast floor', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page, { isStaff: true })
 
-  await page.goto('/pools/binding-profiles', { waitUntil: 'domcontentloaded' })
+  await page.goto('/pools/execution-packs', { waitUntil: 'domcontentloaded' })
 
   const streamStatusButton = page.getByRole('button', { name: 'Stream: Connected' })
-  const selectedMenuItem = page.getByRole('menuitem', { name: /Pool Binding Profiles/i })
-  const subtitle = page.getByText(/Reusable profile workspace for selecting a profile/i).first()
-  const createProfileButton = page.getByRole('button', { name: 'Create profile' })
-  const deactivateProfileButton = page.getByRole('button', { name: 'Deactivate profile' })
+  const selectedMenuItem = page.getByRole('menuitem', { name: /Pool Execution Packs/i })
+  const subtitle = page.getByText(/Reusable execution-pack workspace for selecting an execution pack/i).first()
+  const createProfileButton = page.getByRole('button', { name: 'Create execution pack' })
+  const deactivateProfileButton = page.getByRole('button', { name: 'Deactivate execution pack' })
   const activeStatusBadge = page.getByTestId('pool-binding-profiles-status').locator('.ant-tag')
 
   await expect(streamStatusButton).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Where this profile is used', level: 3 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Where this execution pack is used', level: 3 })).toBeVisible()
   await expect(page.getByRole('columnheader', { name: 'Opaque pin' })).toHaveCount(0)
 
   await page.getByRole('button', { name: /Advanced payload and immutable pins/i }).click()
@@ -2873,17 +2873,17 @@ test('UI platform: /pools/binding-profiles keeps shell labels accessible and pri
   await expectContrastAtLeast(activeStatusBadge, 4.5)
 })
 
-test('UI platform: /pools/binding-profiles keeps fallback stream labels and deactivated states above contrast floor', async ({ page }) => {
+test('UI platform: /pools/execution-packs keeps fallback stream labels and deactivated states above contrast floor', async ({ page }) => {
   await setupAuth(page)
   await setupUiPlatformMocks(page, { isStaff: false })
 
-  await page.goto(`/pools/binding-profiles?profile=${LEGACY_BINDING_PROFILE_DETAIL.binding_profile_id}&detail=1`, { waitUntil: 'domcontentloaded' })
+  await page.goto(`/pools/execution-packs?profile=${LEGACY_BINDING_PROFILE_DETAIL.binding_profile_id}&detail=1`, { waitUntil: 'domcontentloaded' })
 
   const streamStatusButton = page.getByRole('button', { name: 'Stream: Fallback' })
   const deactivatedStatusBadge = page.getByTestId('pool-binding-profiles-status').locator('.ant-tag')
 
   await expect(streamStatusButton).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Where this profile is used', level: 3 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Where this execution pack is used', level: 3 })).toBeVisible()
   await expect(page.getByTestId('pool-binding-profiles-selected-code')).toHaveText('legacy-archive')
   await expect(deactivatedStatusBadge).toContainText('deactivated')
 
@@ -2908,8 +2908,8 @@ test('Runtime contract: one browser instance keeps a single database stream owne
   await setupPersistentDatabaseStream(secondPage)
   await setupUiPlatformMocks(secondPage, { isStaff: true, counts })
 
-  await secondPage.goto('/pools/binding-profiles', { waitUntil: 'domcontentloaded' })
-  await expect(secondPage.getByText('Binding Profiles')).toBeVisible()
+  await secondPage.goto('/pools/execution-packs', { waitUntil: 'domcontentloaded' })
+  await expect(secondPage.getByText('Execution Packs')).toBeVisible()
   await expect.poll(() => counts.streamTickets).toBe(1)
   await expect(firstPage.getByText('Request Error')).toHaveCount(0)
   await expect(secondPage.getByText('Request Error')).toHaveCount(0)

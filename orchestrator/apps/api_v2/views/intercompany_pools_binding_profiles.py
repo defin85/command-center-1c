@@ -136,14 +136,14 @@ def _binding_profile_store_problem(exc: BindingProfileStoreError) -> Response:
     if isinstance(exc, BindingProfileCodeConflictError):
         return _problem(
             code="BINDING_PROFILE_CODE_CONFLICT",
-            title="Binding Profile Code Conflict",
+            title="Execution Pack Code Conflict",
             detail=str(exc),
             status_code=http_status.HTTP_409_CONFLICT,
         )
     if isinstance(exc, BindingProfileLifecycleConflictError):
         return _problem(
             code="BINDING_PROFILE_LIFECYCLE_CONFLICT",
-            title="Binding Profile Lifecycle Conflict",
+            title="Execution Pack Lifecycle Conflict",
             detail=str(exc),
             status_code=http_status.HTTP_409_CONFLICT,
         )
@@ -158,7 +158,7 @@ def _binding_profile_store_problem(exc: BindingProfileStoreError) -> Response:
 @extend_schema(
     tags=["v2"],
     operation_id="v2_pools_binding_profiles_list",
-    summary="List reusable binding profiles",
+    summary="List reusable execution packs",
     responses={
         200: BindingProfileListResponseSerializer,
         (400, "application/problem+json"): ProblemDetailsErrorSerializer,
@@ -169,7 +169,7 @@ def _binding_profile_store_problem(exc: BindingProfileStoreError) -> Response:
 @extend_schema(
     tags=["v2"],
     operation_id="v2_pools_binding_profiles_create",
-    summary="Create reusable binding profile",
+    summary="Create reusable execution pack",
     request=BindingProfileCreateRequestSerializer,
     responses={
         201: BindingProfileMutationResponseSerializer,
@@ -236,7 +236,7 @@ def binding_profiles_collection(request):
 @extend_schema(
     tags=["v2"],
     operation_id="v2_pools_binding_profiles_detail",
-    summary="Get reusable binding profile detail",
+    summary="Get reusable execution pack detail",
     responses={
         200: BindingProfileDetailResponseSerializer,
         (400, "application/problem+json"): ProblemDetailsErrorSerializer,
@@ -272,8 +272,8 @@ def binding_profile_detail(request, binding_profile_id: UUID):
     except BindingProfileNotFoundError:
         return _problem(
             code="BINDING_PROFILE_NOT_FOUND",
-            title="Binding Profile Not Found",
-            detail="Binding profile not found in current tenant context.",
+            title="Execution Pack Not Found",
+            detail="Execution pack not found in current tenant context.",
             status_code=http_status.HTTP_404_NOT_FOUND,
         )
     except BindingProfileStoreError as exc:
@@ -285,7 +285,7 @@ def binding_profile_detail(request, binding_profile_id: UUID):
 @extend_schema(
     tags=["v2"],
     operation_id="v2_pools_binding_profiles_revise",
-    summary="Create a new immutable binding profile revision",
+    summary="Create a new immutable execution-pack revision",
     request=BindingProfileRevisionCreateRequestSerializer,
     responses={
         201: BindingProfileMutationResponseSerializer,
@@ -334,8 +334,8 @@ def binding_profile_revisions(request, binding_profile_id: UUID):
     except BindingProfileNotFoundError:
         return _problem(
             code="BINDING_PROFILE_NOT_FOUND",
-            title="Binding Profile Not Found",
-            detail="Binding profile not found in current tenant context.",
+            title="Execution Pack Not Found",
+            detail="Execution pack not found in current tenant context.",
             status_code=http_status.HTTP_404_NOT_FOUND,
         )
     except BindingProfileStoreError as exc:
@@ -347,7 +347,7 @@ def binding_profile_revisions(request, binding_profile_id: UUID):
 @extend_schema(
     tags=["v2"],
     operation_id="v2_pools_binding_profiles_deactivate",
-    summary="Deactivate reusable binding profile",
+    summary="Deactivate reusable execution pack",
     request=None,
     responses={
         200: BindingProfileMutationResponseSerializer,
@@ -385,8 +385,8 @@ def deactivate_binding_profile(request, binding_profile_id: UUID):
     except BindingProfileNotFoundError:
         return _problem(
             code="BINDING_PROFILE_NOT_FOUND",
-            title="Binding Profile Not Found",
-            detail="Binding profile not found in current tenant context.",
+            title="Execution Pack Not Found",
+            detail="Execution pack not found in current tenant context.",
             status_code=http_status.HTTP_404_NOT_FOUND,
         )
     except BindingProfileStoreError as exc:
