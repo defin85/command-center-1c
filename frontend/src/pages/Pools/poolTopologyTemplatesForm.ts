@@ -274,7 +274,10 @@ export const buildRevisePoolTopologyTemplateRequest = (
 ): BuildRequestResult<CreatePoolTopologyTemplateRevisionPayload> => {
   const revision = validateRevisionPayload(values)
   if (!revision.request) {
-    return revision
+    return {
+      request: null,
+      errors: revision.errors,
+    }
   }
 
   return {

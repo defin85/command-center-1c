@@ -1681,6 +1681,35 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(hasOverflow).toBe(false)
 }
 
+async function fillTopologyTemplateCreateForm(page: Page) {
+  await page.getByTestId('pool-topology-templates-create-code').fill('new-template')
+  await page.getByTestId('pool-topology-templates-create-name').fill('New Template')
+  await page.getByTestId('pool-topology-templates-create-description').fill('Reusable topology authoring surface')
+  await page.getByTestId('pool-topology-templates-create-node-slot-key-0').fill('root')
+  await page.getByTestId('pool-topology-templates-create-node-label-0').fill('Root')
+  await page.getByTestId('pool-topology-templates-create-node-root-0').click()
+  await page.getByTestId('pool-topology-templates-create-add-node').click()
+  await page.getByTestId('pool-topology-templates-create-node-slot-key-1').fill('leaf')
+  await page.getByTestId('pool-topology-templates-create-node-label-1').fill('Leaf')
+  await page.getByTestId('pool-topology-templates-create-add-edge').click()
+  await page.getByTestId('pool-topology-templates-create-edge-parent-slot-key-0').fill('root')
+  await page.getByTestId('pool-topology-templates-create-edge-child-slot-key-0').fill('leaf')
+  await page.getByTestId('pool-topology-templates-create-edge-weight-0').fill('1')
+  await page.getByTestId('pool-topology-templates-create-edge-document-policy-key-0').fill('sale')
+}
+
+async function fillTopologyTemplateReviseForm(page: Page) {
+  await page.getByTestId('pool-topology-templates-revise-node-label-0').fill('Updated Root')
+  await page.getByTestId('pool-topology-templates-revise-edge-document-policy-key-0').fill('receipt')
+}
+
+async function selectVisibleAntdOption(page: Page, label: string) {
+  await page
+    .locator('.ant-select-dropdown:visible .ant-select-item-option-content', { hasText: label })
+    .first()
+    .click()
+}
+
 async function expectVisibleWithinContainer(
   locator: ReturnType<Page['locator']>,
   container: ReturnType<Page['locator']>,
@@ -1915,6 +1944,86 @@ test('UI platform: /pools/topology-templates opens create-template authoring in 
   await expect(authoringDrawer.getByLabel('Template code')).toBeVisible()
   await expect(authoringDrawer.getByLabel('Template name')).toBeVisible()
   await expect(authoringDrawer.getByRole('button', { name: 'Create template' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /pools/topology-templates opens revise-template authoring in a mobile-safe drawer shell', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/pools/topology-templates?template=template-top-down&detail=1', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await page.getByRole('button', { name: 'Publish new revision' }).click()
+
+  const reviseDrawer = page.getByTestId('pool-topology-templates-revise-drawer')
+  await expect(reviseDrawer).toBeVisible()
+  await expect(reviseDrawer.getByTestId('pool-topology-templates-revise-node-label-0')).toBeVisible()
+  await expect(reviseDrawer.getByRole('button', { name: 'Publish revision' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /pools/topology-templates submits create-template authoring and surfaces the created template in the detail drawer', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+
+  await page.goto('/pools/topology-templates', { waitUntil: 'domcontentloaded' })
+
+  await page.getByRole('button', { name: 'Create template' }).click()
+  await fillTopologyTemplateCreateForm(page)
+
+  const createRequestPromise = page.waitForRequest((request) => (
+    request.method() === 'POST'
+    && request.url().endsWith('/api/v2/pools/topology-templates/')
+  ))
+  await page.getByTestId('pool-topology-templates-create-submit').click()
+
+  const createRequest = await createRequestPromise
+  const createPayload = createRequest.postDataJSON() as Record<string, unknown>
+
+  expect(createPayload.code).toBe('new-template')
+  expect(createPayload.name).toBe('New Template')
+  expect(createPayload.description).toBe('Reusable topology authoring surface')
+  await expect(page.getByTestId('pool-topology-templates-selected-code')).toHaveText('new-template')
+  await expect(page).toHaveURL(/\/pools\/topology-templates\?template=template-\d+&detail=1$/)
+  await expect(page.getByRole('button', { name: 'Publish new revision' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /pools/topology-templates submits revise-template authoring and refreshes the selected revision evidence', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+
+  await page.goto('/pools/topology-templates?template=template-top-down&detail=1', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await page.getByRole('button', { name: 'Publish new revision' }).click()
+  await fillTopologyTemplateReviseForm(page)
+
+  const reviseRequestPromise = page.waitForRequest((request) => (
+    request.method() === 'POST'
+    && request.url().endsWith('/api/v2/pools/topology-templates/template-top-down/revisions/')
+  ))
+  await page.getByTestId('pool-topology-templates-revise-submit').click()
+
+  const reviseRequest = await reviseRequestPromise
+  const revisePayload = reviseRequest.postDataJSON() as Record<string, unknown>
+  const revision = revisePayload.revision as Record<string, unknown>
+
+  expect(Array.isArray(revision.nodes)).toBe(true)
+  expect(Array.isArray(revision.edges)).toBe(true)
+  await expect(page).toHaveURL(/\/pools\/topology-templates\?template=template-top-down&detail=1$/)
+  await expect(page.getByTestId('pool-topology-templates-selected-code')).toHaveText('top-down-template')
+  await expect(page.getByText('Updated Root')).toBeVisible()
+  await expect(
+    page.locator('table:has(th:has-text("Created at")) tbody tr:not(.ant-table-measure-row)').first()
+  ).toContainText('r3')
   await expectNoHorizontalOverflow(page)
 })
 
@@ -2182,7 +2291,7 @@ test('Runtime contract: /pools/binding-profiles hands off to /pools/catalog with
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 
-test('Runtime contract: /pools/catalog hands off to /pools/topology-templates and back without replaying shell reads', async ({ page }) => {
+test('Runtime contract: /pools/catalog creates a reusable topology template through handoff and restores the same topology task without replaying shell reads', async ({ page }) => {
   const counts = createRequestCounts()
 
   await setupAuth(page)
@@ -2203,8 +2312,17 @@ test('Runtime contract: /pools/catalog hands off to /pools/topology-templates an
   await expect(page.getByRole('heading', { name: 'Topology Templates', level: 2 })).toBeVisible()
   await expect(page.getByRole('dialog')).toBeVisible()
 
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('dialog')).toHaveCount(0)
+  const createRequestPromise = page.waitForRequest((request) => (
+    request.method() === 'POST'
+    && request.url().endsWith('/api/v2/pools/topology-templates/')
+  ))
+  await fillTopologyTemplateCreateForm(page)
+  await page.getByTestId('pool-topology-templates-create-submit').click()
+  const createRequest = await createRequestPromise
+  const createPayload = createRequest.postDataJSON() as Record<string, unknown>
+
+  expect(createPayload.code).toBe('new-template')
+  await expect(page.getByTestId('pool-topology-templates-selected-code')).toHaveText('new-template')
 
   await page.getByRole('button', { name: 'Return to pool topology' }).click()
 
@@ -2212,6 +2330,92 @@ test('Runtime contract: /pools/catalog hands off to /pools/topology-templates an
   await expect(page.getByRole('heading', { name: 'Pool Catalog', level: 2 })).toBeVisible()
   await expect(page.getByTestId('pool-catalog-context-pool')).toHaveText('pool-main - Main Pool')
   await expect(page.getByRole('tab', { name: 'Topology Editor' })).toHaveAttribute('aria-selected', 'true')
+  await page.getByTestId('pool-catalog-topology-authoring-mode').click()
+  await selectVisibleAntdOption(page, 'Template-based instantiation')
+  await expect(page.getByTestId('pool-catalog-topology-authoring-mode')).toContainText('Template-based instantiation')
+  await expect(page.getByText('Template-based path is the preferred reuse flow')).toBeVisible()
+  await expect(page.getByTestId('pool-catalog-topology-template-revision')).toBeVisible()
+  await page.getByTestId('pool-catalog-topology-template-revision').click()
+  await expect(
+    page.locator('.ant-select-dropdown:visible .ant-select-item-option-content', { hasText: 'New Template · r1' }).first()
+  ).toBeVisible()
+
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: /pools/catalog generic Open topology templates CTA preserves topology return context', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/pools/catalog?pool_id=pool-1&tab=topology&date=2026-01-01', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Pool Catalog', level: 2 })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open topology templates' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Open topology templates' }).click()
+
+  await expect(page).toHaveURL(/\/pools\/topology-templates\?return_pool_id=pool-1&return_tab=topology&return_date=2026-01-01$/)
+  await expect(page.getByRole('heading', { name: 'Topology Templates', level: 2 })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Return to pool topology' })).toBeVisible()
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+})
+
+test('Runtime contract: /pools/catalog publishes a topology template revision through handoff and exposes it in consumer selection', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/pools/catalog?pool_id=pool-1&tab=topology&date=2026-01-01', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Pool Catalog', level: 2 })).toBeVisible()
+  await page.getByTestId('pool-catalog-topology-authoring-mode').click()
+  await selectVisibleAntdOption(page, 'Template-based instantiation')
+  await expect(page.getByTestId('pool-catalog-topology-authoring-mode')).toContainText('Template-based instantiation')
+  await page.getByTestId('pool-catalog-topology-template-revision').click()
+  await selectVisibleAntdOption(page, 'Top Down Template · r2')
+  await page.getByTestId('pool-catalog-revise-topology-template').click()
+
+  await expect(page).toHaveURL(/\/pools\/topology-templates\?template=template-top-down&detail=1&compose=revise&return_pool_id=pool-1&return_tab=topology&return_date=2026-01-01$/)
+  await expect(page.getByTestId('pool-topology-templates-revise-drawer')).toBeVisible()
+
+  const reviseRequestPromise = page.waitForRequest((request) => (
+    request.method() === 'POST'
+    && request.url().endsWith('/api/v2/pools/topology-templates/template-top-down/revisions/')
+  ))
+  await fillTopologyTemplateReviseForm(page)
+  await page.getByTestId('pool-topology-templates-revise-submit').click()
+  const reviseRequest = await reviseRequestPromise
+  const revisePayload = reviseRequest.postDataJSON() as Record<string, unknown>
+
+  expect(Array.isArray((revisePayload.revision as Record<string, unknown>).nodes)).toBe(true)
+  await expect(
+    page.locator('table:has(th:has-text("Created at")) tbody tr:not(.ant-table-measure-row)').first()
+  ).toContainText('r3')
+
+  await page.getByRole('button', { name: 'Return to pool topology' }).click()
+
+  await expect(page).toHaveURL(/\/pools\/catalog\?pool_id=pool-1&tab=topology&date=2026-01-01$/)
+  await expect(page.getByRole('tab', { name: 'Topology Editor' })).toHaveAttribute('aria-selected', 'true')
+  await page.getByTestId('pool-catalog-topology-authoring-mode').click()
+  await selectVisibleAntdOption(page, 'Template-based instantiation')
+  await expect(page.getByTestId('pool-catalog-topology-authoring-mode')).toContainText('Template-based instantiation')
+  await expect(page.getByText('Template-based path is the preferred reuse flow')).toBeVisible()
+  await expect(page.getByTestId('pool-catalog-topology-template-revision')).toBeVisible()
+  await page.getByTestId('pool-catalog-topology-template-revision').click()
+  await expect(
+    page.locator('.ant-select-dropdown:visible .ant-select-item-option-content', { hasText: 'Top Down Template · r3' }).first()
+  ).toBeVisible()
 
   await expect(counts.bootstrap).toBe(1)
   await expect(counts.meReads).toBe(0)

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -177,6 +177,15 @@ describe('PoolTopologyTemplatesPage', () => {
     expect(screen.getByTestId('pool-topology-templates-status')).toHaveTextContent('active')
     expect(screen.getByRole('button', { name: 'Publish new revision' })).toBeEnabled()
     expect(screen.getByText('Branching Template')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Revision' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Nodes' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Edges' })).toBeInTheDocument()
+    const revisionsTable = screen.getAllByRole('table').find((table) => (
+      within(table).queryByRole('columnheader', { name: 'Created at' }) !== null
+    ))
+    expect(revisionsTable).toBeDefined()
+    expect(within(revisionsTable as HTMLElement).getByRole('cell', { name: 'r2' })).toBeInTheDocument()
+    expect(within(revisionsTable as HTMLElement).getByRole('cell', { name: 'r1' })).toBeInTheDocument()
   })
 
   it('creates a reusable topology template from the dedicated catalog drawer', async () => {
@@ -273,6 +282,44 @@ describe('PoolTopologyTemplatesPage', () => {
     })
   })
 
+  it('shows empty-state guidance when no topology templates are available', async () => {
+    mockUsePoolTopologyTemplates.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('No topology templates found.')).toBeInTheDocument()
+    expect(screen.getByText('Select a reusable topology template from the catalog.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create template' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Return to pool topology' })).not.toBeInTheDocument()
+  })
+
+  it('surfaces catalog load errors on the dedicated page without collapsing into an empty state', async () => {
+    mockUsePoolTopologyTemplates.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: true,
+      error: {
+        response: {
+          data: {
+            detail: 'Topology catalog unavailable.',
+          },
+        },
+      },
+    })
+
+    renderPage()
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Topology catalog unavailable.').length).toBeGreaterThanOrEqual(2)
+    })
+    expect(screen.queryByText('No topology templates found.')).not.toBeInTheDocument()
+  })
+
   it('publishes a new immutable revision for the selected topology template', async () => {
     const mutateAsync = vi.fn().mockResolvedValue({
       topology_template: buildTopologyTemplate(),
@@ -329,6 +376,35 @@ describe('PoolTopologyTemplatesPage', () => {
         },
       })
     })
+  })
+
+  it('keeps the revise drawer open and surfaces mutation errors when publishing a revision fails', async () => {
+    const mutateAsync = vi.fn().mockRejectedValue({
+      response: {
+        data: {
+          detail: 'Topology revision failed.',
+        },
+      },
+    })
+    mockUseRevisePoolTopologyTemplate.mockReturnValue({
+      isPending: false,
+      mutateAsync,
+    })
+
+    renderPage('/pools/topology-templates?template=template-1&detail=1')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish new revision' }))
+    fireEvent.change(screen.getByTestId('pool-topology-templates-revise-node-label-0'), {
+      target: { value: 'Updated Root' },
+    })
+    fireEvent.click(screen.getByTestId('pool-topology-templates-revise-submit'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Topology revision failed.')).toBeInTheDocument()
+    })
+
+    expect(screen.getByTestId('pool-topology-templates-revise-node-label-0')).toHaveValue('Updated Root')
+    expect(mutateAsync).toHaveBeenCalledTimes(1)
   })
 
   it('returns to the originating pool topology context without losing the selected pool', async () => {

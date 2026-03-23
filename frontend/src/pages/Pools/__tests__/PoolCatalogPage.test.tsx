@@ -1828,6 +1828,8 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
     await openWorkspaceTab(user, 'Topology Editor')
+    openSelectByTestId('pool-catalog-topology-authoring-mode')
+    await selectDropdownOption('Manual snapshot editor')
     await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
     await user.click(screen.getByTestId('pool-catalog-topology-save'))
 
@@ -1844,6 +1846,8 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
     await openWorkspaceTab(user, 'Topology Editor')
+    openSelectByTestId('pool-catalog-topology-authoring-mode')
+    await selectDropdownOption('Manual snapshot editor')
 
     await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
     expect(screen.getByTestId('pool-catalog-topology-node-move-up-0')).toBeDisabled()
@@ -2352,6 +2356,27 @@ describe('PoolCatalogPage', () => {
     expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('template=template-1')
     expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('detail=1')
     expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('return_pool_id=44444444-4444-4444-4444-444444444444')
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('return_tab=topology')
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('return_date=2026-01-01')
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
+  it('hands off the generic Open topology templates CTA with preserved topology return context', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    renderPage('/pools/catalog?pool_id=44444444-4444-4444-4444-444444444444&tab=topology&date=2026-01-01')
+    expect(await screen.findByText('Org One')).toBeInTheDocument()
+
+    await openWorkspaceTab(user, 'Topology Editor')
+    await user.click(screen.getByRole('button', { name: 'Open topology templates' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('/pools/topology-templates')
+    })
+    expect(screen.getByTestId('pool-catalog-location')).not.toHaveTextContent('compose=')
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('return_pool_id=44444444-4444-4444-4444-444444444444')
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('return_tab=topology')
+    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('return_date=2026-01-01')
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('supports edge metadata builder mode and preserves custom metadata keys with slot selector', async () => {
@@ -2775,6 +2800,8 @@ describe('PoolCatalogPage', () => {
     expect(await screen.findByText('Org One')).toBeInTheDocument()
 
     await openWorkspaceTab(user, 'Topology Editor')
+    openSelectByTestId('pool-catalog-topology-authoring-mode')
+    await selectDropdownOption('Manual snapshot editor')
     await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
 
     const topologyCard = screen.getByText('Topology snapshot editor').closest('.ant-card')

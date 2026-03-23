@@ -1969,6 +1969,16 @@ export function PoolCatalogPage() {
     returnTab: 'topology',
     returnDate: graphDate.trim() || undefined,
   }), [graphDate, selectedPoolId])
+  const topologyTemplateCatalogRoute = useMemo(() => {
+    if (activeWorkspaceTab !== 'topology' || !selectedPoolId) {
+      return POOL_TOPOLOGY_TEMPLATES_ROUTE
+    }
+    return buildPoolTopologyTemplatesRoute({
+      returnPoolId: selectedPoolId,
+      returnTab: 'topology',
+      returnDate: graphDate.trim() || undefined,
+    })
+  }, [activeWorkspaceTab, graphDate, selectedPoolId])
   const topologyTemplateReviseRoute = useMemo(() => {
     if (!selectedTopologyTemplate) {
       return topologyTemplateWorkspaceRoute
@@ -3578,7 +3588,7 @@ export function PoolCatalogPage() {
               ) : null}
               <Space wrap>
                 <RouteButton to={POOL_BINDING_PROFILES_ROUTE}>Open binding profiles</RouteButton>
-                <RouteButton to={POOL_TOPOLOGY_TEMPLATES_ROUTE}>Open topology templates</RouteButton>
+                <RouteButton to={topologyTemplateCatalogRoute}>Open topology templates</RouteButton>
                 <RouteButton to="/decisions">Open /decisions</RouteButton>
               </Space>
             </Space>

@@ -30,7 +30,7 @@ describe('frontend UI-platform delivery path', () => {
     const packageJson = await readJson<PackageJson>('../../package.json')
     const readme = await readText('../../../README.md')
     const runbook = await readText('../../../docs/deployment/frontend-ui-platform-validation-runbook.md')
-    const design = await readText('../../../openspec/changes/refactor-ui-platform-on-ant/design.md')
+    const design = await readText('../../../openspec/changes/archive/2026-03-20-refactor-ui-platform-on-ant/design.md')
 
     expect(packageJson.dependencies.antd).toBe('^5.29.3')
     expect(packageJson.dependencies['@ant-design/pro-components']).toBe('^2.8.10')
