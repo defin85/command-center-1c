@@ -485,8 +485,8 @@ func TestODataPublicationTransport_ExecutePublicationOData_AppliesChainMappingAn
 	require.NotNil(t, out)
 	assert.Equal(t, "published", out["status"])
 	require.Len(t, service.createPayloads, 2)
-	assert.Equal(t, "100.00", service.createPayloads[0]["Amount"])
-	assert.Equal(t, "100.00", service.createPayloads[1]["Amount"])
+	assert.InDelta(t, 100.0, service.createPayloads[0]["Amount"], 0.001)
+	assert.InDelta(t, 100.0, service.createPayloads[1]["Amount"], 0.001)
 	assert.Equal(t, "sale-ref-1", service.createPayloads[1]["BaseDocument"])
 
 	attempts, ok := out["attempts"].([]map[string]interface{})
@@ -497,6 +497,75 @@ func TestODataPublicationTransport_ExecutePublicationOData_AppliesChainMappingAn
 	successfulRefsRaw, ok := responseSummary["successful_document_refs"].(map[string]interface{})
 	require.True(t, ok)
 	assert.NotEmpty(t, successfulRefsRaw)
+}
+
+func TestODataPublicationTransport_ExecutePublicationOData_ResolvesDerivedTablePartValues(t *testing.T) {
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockPublicationODataService{}
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	_, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationType:   "pool.publication_odata",
+		PoolRunID:       "run-derived-table-part",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthActorForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"document_chains_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{
+							"chain_id": "receipt",
+							"allocation": map[string]interface{}{
+								"amount": "100.00",
+							},
+							"documents": []interface{}{
+								map[string]interface{}{
+									"document_id": "purchase",
+									"entity_name": "Document_Purchase",
+									"payload":     map[string]interface{}{},
+									"table_parts_mapping": map[string]interface{}{
+										"АгентскиеУслуги": []interface{}{
+											map[string]interface{}{
+												"LineNumber": "1",
+												"Цена":       "allocation.amount",
+												"Сумма":      "allocation.amount",
+												"СуммаНДС": map[string]interface{}{
+													"$derive": map[string]interface{}{
+														"op":    "div",
+														"args":  []interface{}{"allocation.amount", 6},
+														"scale": 2,
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, service.createPayloads, 1)
+	rows, ok := service.createPayloads[0]["АгентскиеУслуги"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, rows, 1)
+	row, ok := rows[0].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "1", row["LineNumber"])
+	assert.InDelta(t, 100.0, row["Цена"], 0.001)
+	assert.InDelta(t, 100.0, row["Сумма"], 0.001)
+	assert.InDelta(t, 16.67, row["СуммаНДС"], 0.001)
 }
 
 func TestODataPublicationTransport_ExecutePublicationOData_RejectsRequiredInvoiceWithUnresolvedLink(t *testing.T) {

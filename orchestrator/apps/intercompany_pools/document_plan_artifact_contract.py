@@ -535,11 +535,15 @@ def build_publication_payload_from_document_plan_artifact(
                 continue
             allocation_raw = chain_raw.get("allocation")
             allocation = allocation_raw if isinstance(allocation_raw, Mapping) else {}
-            amount = str(allocation.get("amount") or "").strip()
-            if not amount:
+            amount_text = str(allocation.get("amount") or "").strip()
+            if not amount_text:
                 continue
 
-            documents_by_database.setdefault(database_id, []).append({"Amount": amount})
+            documents_by_database.setdefault(database_id, []).append({"Amount": amount_text})
+            allocation_payload = dict(allocation)
+            parsed_amount = _parse_decimal(amount_text)
+            if parsed_amount is not None:
+                allocation_payload["amount"] = _decimal_to_json_number(parsed_amount)
 
             documents_raw = chain_raw.get("documents")
             if not isinstance(documents_raw, list):
@@ -557,8 +561,8 @@ def build_publication_payload_from_document_plan_artifact(
                 link_rules = _as_object(document.get("link_rules"))
                 resolved_link_refs = _as_object(document.get("resolved_link_refs"))
                 document_payload = _build_document_payload_from_mapping(
-                    amount=amount,
-                    allocation=allocation,
+                    amount=amount_text,
+                    allocation=allocation_payload,
                     field_mapping=field_mapping,
                     table_parts_mapping=table_parts_mapping,
                     resolved_link_refs=resolved_link_refs,
@@ -592,7 +596,7 @@ def build_publication_payload_from_document_plan_artifact(
                 "policy_source": str(chain_raw.get("policy_source") or "").strip(),
                 "policy_version": str(chain_raw.get("policy_version") or "").strip(),
                 "allocation": {
-                    "amount": amount,
+                    "amount": amount_text,
                 },
                 "documents": compiled_documents,
             }
@@ -962,7 +966,7 @@ def _resolve_derived_mapping_value(
             rounding=ROUND_HALF_UP,
         )
 
-    return _decimal_to_string(result), True
+    return _decimal_to_json_number(result), True
 
 
 def _resolve_dotted_path(payload: Mapping[str, Any], path: str) -> tuple[Any, bool]:
@@ -991,3 +995,10 @@ def _parse_decimal(value: Any) -> Decimal | None:
 
 def _decimal_to_string(value: Decimal) -> str:
     return format(value, "f")
+
+
+def _decimal_to_json_number(value: Decimal) -> int | float:
+    integral = value.to_integral_value()
+    if value == integral:
+        return int(integral)
+    return float(value)

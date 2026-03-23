@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +33,7 @@ const (
 	invoiceModeRequired                = "required"
 	atomicPublicationNodeIDPrefix      = "publication_odata__"
 	atomicPublicationActionToken       = "publish_odata"
+	derivedMappingKey                  = "$derive"
 )
 
 var atomicPublicationNodeTokenRe = regexp.MustCompile(`[^a-zA-Z0-9]+`)
@@ -1259,22 +1262,26 @@ func resolveDocumentPayloadForPublication(
 		return nil, err
 	}
 	resolvedPayload := cloneMap(payload)
-	applyFieldMappings(
+	if err := applyFieldMappings(
 		resolvedPayload,
 		document.FieldMapping,
 		document.Allocation,
 		createdDocumentRefs,
 		document.ResolvedLinkRefs,
 		document.ResolvedMasterDataRefs,
-	)
-	applyTablePartsMappings(
+	); err != nil {
+		return nil, err
+	}
+	if err := applyTablePartsMappings(
 		resolvedPayload,
 		document.TablePartsMapping,
 		document.Allocation,
 		createdDocumentRefs,
 		document.ResolvedLinkRefs,
 		document.ResolvedMasterDataRefs,
-	)
+	); err != nil {
+		return nil, err
+	}
 	if err := validateDocumentLinkage(
 		document,
 		resolvedPayload,
@@ -1292,24 +1299,28 @@ func applyFieldMappings(
 	createdDocumentRefs map[string]string,
 	resolvedLinkRefs map[string]string,
 	resolvedMasterDataRefs map[string]string,
-) {
+) error {
 	for rawFieldName, mappingValue := range fieldMapping {
 		fieldName := strings.TrimSpace(rawFieldName)
 		if fieldName == "" {
 			continue
 		}
-		resolvedValue, ok := resolveMappingValue(
+		resolvedValue, ok, err := resolveMappingValue(
 			mappingValue,
 			allocation,
 			createdDocumentRefs,
 			resolvedLinkRefs,
 			resolvedMasterDataRefs,
 		)
+		if err != nil {
+			return err
+		}
 		if !ok {
 			continue
 		}
 		payload[fieldName] = resolvedValue
 	}
+	return nil
 }
 
 func applyTablePartsMappings(
@@ -1319,7 +1330,7 @@ func applyTablePartsMappings(
 	createdDocumentRefs map[string]string,
 	resolvedLinkRefs map[string]string,
 	resolvedMasterDataRefs map[string]string,
-) {
+) error {
 	for rawTableName, rawRows := range tablePartsMapping {
 		tableName := strings.TrimSpace(rawTableName)
 		if tableName == "" {
@@ -1341,13 +1352,16 @@ func applyTablePartsMappings(
 				if columnName == "" {
 					continue
 				}
-				resolvedValue, resolved := resolveMappingValue(
+				resolvedValue, resolved, err := resolveMappingValue(
 					mappingValue,
 					allocation,
 					createdDocumentRefs,
 					resolvedLinkRefs,
 					resolvedMasterDataRefs,
 				)
+				if err != nil {
+					return err
+				}
 				if resolved {
 					compiledRow[columnName] = resolvedValue
 				}
@@ -1360,6 +1374,7 @@ func applyTablePartsMappings(
 			payload[tableName] = compiledRows
 		}
 	}
+	return nil
 }
 
 func resolveMappingValue(
@@ -1368,79 +1383,294 @@ func resolveMappingValue(
 	createdDocumentRefs map[string]string,
 	resolvedLinkRefs map[string]string,
 	resolvedMasterDataRefs map[string]string,
-) (interface{}, bool) {
+) (interface{}, bool, error) {
 	switch value := mappingValue.(type) {
 	case string:
 		token := strings.TrimSpace(value)
 		if token == "" {
-			return nil, false
+			return nil, false, nil
 		}
 		if strings.HasPrefix(token, "allocation.") {
 			path := strings.TrimSpace(strings.TrimPrefix(token, "allocation."))
 			if path == "" {
-				return nil, false
+				return nil, false, nil
 			}
-			return resolveDottedPath(allocation, path)
+			resolvedValue, ok := resolveDottedPath(allocation, path)
+			if !ok {
+				return nil, false, nil
+			}
+			if decimalValue, isDecimal := parseDecimalRat(resolvedValue); isDecimal {
+				return ratToJSONNumber(decimalValue), true, nil
+			}
+			return resolvedValue, true, nil
 		}
 		if strings.HasSuffix(token, ".ref") {
 			if strings.HasPrefix(token, "master_data.") {
 				if ref := strings.TrimSpace(resolvedMasterDataRefs[token]); ref != "" {
-					return ref, true
+					return ref, true, nil
 				}
-				return nil, false
+				return nil, false, nil
 			}
 			documentID := strings.TrimSpace(strings.TrimSuffix(token, ".ref"))
 			if documentID == "" {
-				return nil, false
+				return nil, false, nil
 			}
 			if ref := strings.TrimSpace(createdDocumentRefs[documentID]); ref != "" {
-				return ref, true
+				return ref, true, nil
 			}
 			if ref := strings.TrimSpace(resolvedLinkRefs[documentID]); ref != "" {
-				return ref, true
+				return ref, true, nil
 			}
-			return nil, false
+			return nil, false, nil
 		}
-		return token, true
+		return token, true, nil
 	case map[string]interface{}:
+		if _, hasDerivedExpression := value[derivedMappingKey]; hasDerivedExpression {
+			return resolveDerivedMappingValue(
+				value,
+				allocation,
+				createdDocumentRefs,
+				resolvedLinkRefs,
+				resolvedMasterDataRefs,
+			)
+		}
 		resolvedMap := map[string]interface{}{}
 		for rawKey, nested := range value {
 			key := strings.TrimSpace(rawKey)
 			if key == "" {
 				continue
 			}
-			resolvedValue, ok := resolveMappingValue(
+			resolvedValue, ok, err := resolveMappingValue(
 				nested,
 				allocation,
 				createdDocumentRefs,
 				resolvedLinkRefs,
 				resolvedMasterDataRefs,
 			)
+			if err != nil {
+				return nil, false, err
+			}
 			if ok {
 				resolvedMap[key] = resolvedValue
 			}
 		}
-		return resolvedMap, len(resolvedMap) > 0
+		return resolvedMap, len(resolvedMap) > 0, nil
 	case []interface{}:
 		items := make([]interface{}, 0, len(value))
 		for _, nested := range value {
-			resolvedValue, ok := resolveMappingValue(
+			resolvedValue, ok, err := resolveMappingValue(
 				nested,
 				allocation,
 				createdDocumentRefs,
 				resolvedLinkRefs,
 				resolvedMasterDataRefs,
 			)
+			if err != nil {
+				return nil, false, err
+			}
 			if ok {
 				items = append(items, resolvedValue)
 			}
 		}
-		return items, len(items) > 0
+		return items, len(items) > 0, nil
+	case nil:
+		return nil, false, nil
+	default:
+		return value, true, nil
+	}
+}
+
+func resolveDerivedMappingValue(
+	mappingValue map[string]interface{},
+	allocation map[string]interface{},
+	createdDocumentRefs map[string]string,
+	resolvedLinkRefs map[string]string,
+	resolvedMasterDataRefs map[string]string,
+) (interface{}, bool, error) {
+	if len(mappingValue) != 1 {
+		return nil, false, fmt.Errorf(
+			"%s: derived expression must not include sibling keys",
+			ErrorCodePoolRuntimePublicationPayloadInvalid,
+		)
+	}
+	expression, ok := mappingValue[derivedMappingKey].(map[string]interface{})
+	if !ok {
+		return nil, false, fmt.Errorf(
+			"%s: $derive must be an object",
+			ErrorCodePoolRuntimePublicationPayloadInvalid,
+		)
+	}
+	op := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", expression["op"])))
+	switch op {
+	case "add", "sub", "mul", "div":
+	default:
+		return nil, false, fmt.Errorf(
+			"%s: derived expression op must be one of add, div, mul, sub",
+			ErrorCodePoolRuntimePublicationPayloadInvalid,
+		)
+	}
+	args, ok := expression["args"].([]interface{})
+	if !ok {
+		return nil, false, fmt.Errorf(
+			"%s: derived expression args must be an array",
+			ErrorCodePoolRuntimePublicationPayloadInvalid,
+		)
+	}
+	if (op == "add" || op == "mul") && len(args) < 2 {
+		return nil, false, fmt.Errorf(
+			"%s: derived expression args must contain at least 2 items",
+			ErrorCodePoolRuntimePublicationPayloadInvalid,
+		)
+	}
+	if (op == "sub" || op == "div") && len(args) != 2 {
+		return nil, false, fmt.Errorf(
+			"%s: derived expression args must contain exactly 2 items",
+			ErrorCodePoolRuntimePublicationPayloadInvalid,
+		)
+	}
+
+	resolvedArgs := make([]*big.Rat, 0, len(args))
+	for idx, rawArg := range args {
+		resolvedValue, isResolved, err := resolveMappingValue(
+			rawArg,
+			allocation,
+			createdDocumentRefs,
+			resolvedLinkRefs,
+			resolvedMasterDataRefs,
+		)
+		if err != nil {
+			return nil, false, err
+		}
+		if !isResolved {
+			return nil, false, fmt.Errorf(
+				"%s: derived expression argument %d could not be resolved",
+				ErrorCodePoolRuntimePublicationPayloadInvalid,
+				idx,
+			)
+		}
+		decimalValue, ok := parseDecimalRat(resolvedValue)
+		if !ok {
+			return nil, false, fmt.Errorf(
+				"%s: derived expression argument %d must resolve to decimal",
+				ErrorCodePoolRuntimePublicationPayloadInvalid,
+				idx,
+			)
+		}
+		resolvedArgs = append(resolvedArgs, decimalValue)
+	}
+
+	var result *big.Rat
+	switch op {
+	case "add":
+		result = new(big.Rat)
+		for _, item := range resolvedArgs {
+			result.Add(result, item)
+		}
+	case "sub":
+		result = new(big.Rat).Sub(resolvedArgs[0], resolvedArgs[1])
+	case "mul":
+		result = new(big.Rat).SetInt64(1)
+		for _, item := range resolvedArgs {
+			result.Mul(result, item)
+		}
+	case "div":
+		if resolvedArgs[1].Sign() == 0 {
+			return nil, false, fmt.Errorf(
+				"%s: derived expression division by zero",
+				ErrorCodePoolRuntimePublicationPayloadInvalid,
+			)
+		}
+		result = new(big.Rat).Quo(resolvedArgs[0], resolvedArgs[1])
+	}
+
+	if scaleValue, hasScale := expression["scale"]; hasScale {
+		scale, ok := readInt(scaleValue)
+		if !ok || scale < 0 {
+			return nil, false, fmt.Errorf(
+				"%s: derived expression scale must be a non-negative integer",
+				ErrorCodePoolRuntimePublicationPayloadInvalid,
+			)
+		}
+		result = roundRatHalfUp(result, scale)
+	}
+
+	return ratToJSONNumber(result), true, nil
+}
+
+func parseDecimalRat(value interface{}) (*big.Rat, bool) {
+	text := ""
+	switch v := value.(type) {
 	case nil:
 		return nil, false
+	case json.Number:
+		text = strings.TrimSpace(v.String())
+	case string:
+		text = strings.TrimSpace(v)
+	case int:
+		return new(big.Rat).SetInt64(int64(v)), true
+	case int8:
+		return new(big.Rat).SetInt64(int64(v)), true
+	case int16:
+		return new(big.Rat).SetInt64(int64(v)), true
+	case int32:
+		return new(big.Rat).SetInt64(int64(v)), true
+	case int64:
+		return new(big.Rat).SetInt64(v), true
+	case float32:
+		text = strconv.FormatFloat(float64(v), 'f', -1, 32)
+	case float64:
+		text = strconv.FormatFloat(v, 'f', -1, 64)
 	default:
-		return value, true
+		text = strings.TrimSpace(fmt.Sprintf("%v", value))
 	}
+	if text == "" {
+		return nil, false
+	}
+	result := new(big.Rat)
+	if _, ok := result.SetString(text); !ok {
+		return nil, false
+	}
+	return result, true
+}
+
+func roundRatHalfUp(value *big.Rat, scale int) *big.Rat {
+	if value == nil {
+		return nil
+	}
+	factor := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(scale)), nil)
+	scaled := new(big.Rat).Mul(value, new(big.Rat).SetInt(factor))
+	num := new(big.Int).Set(scaled.Num())
+	den := new(big.Int).Set(scaled.Denom())
+	sign := num.Sign()
+	if sign < 0 {
+		num.Abs(num)
+	}
+	quotient := new(big.Int)
+	remainder := new(big.Int)
+	quotient.QuoRem(num, den, remainder)
+	twiceRemainder := new(big.Int).Lsh(remainder, 1)
+	if twiceRemainder.Cmp(den) >= 0 {
+		quotient.Add(quotient, big.NewInt(1))
+	}
+	if sign < 0 {
+		quotient.Neg(quotient)
+	}
+	return new(big.Rat).SetFrac(quotient, factor)
+}
+
+func ratToJSONNumber(value *big.Rat) interface{} {
+	if value == nil {
+		return nil
+	}
+	if value.IsInt() && value.Num().IsInt64() {
+		intValue := value.Num().Int64()
+		if int64(int(intValue)) == intValue {
+			return int(intValue)
+		}
+		return intValue
+	}
+	floatValue, _ := value.Float64()
+	return floatValue
 }
 
 func validateMasterDataMappingResolution(

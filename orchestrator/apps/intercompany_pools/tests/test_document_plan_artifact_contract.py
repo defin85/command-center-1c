@@ -308,9 +308,12 @@ def test_build_publication_payload_from_document_plan_artifact_materializes_mapp
     sale_payload = chain["documents"][0]["payload"]
     invoice_payload = chain["documents"][1]["payload"]
 
-    assert sale_payload["Amount"] == "100.00"
-    assert sale_payload["Goods"] == [{"Qty": "100.00"}]
-    assert invoice_payload["Amount"] == "100.00"
+    assert sale_payload["Amount"] == pytest.approx(100.0)
+    assert isinstance(sale_payload["Amount"], (int, float))
+    assert sale_payload["Goods"] == [{"Qty": pytest.approx(100.0)}]
+    assert isinstance(sale_payload["Goods"][0]["Qty"], (int, float))
+    assert invoice_payload["Amount"] == pytest.approx(100.0)
+    assert isinstance(invoice_payload["Amount"], (int, float))
     assert invoice_payload["BaseDocument"] == "sale-ref-123"
 
 
@@ -347,8 +350,11 @@ def test_build_publication_payload_from_document_plan_artifact_does_not_inject_g
 
     assert "Amount" not in sale_payload
     assert sale_payload["ВидОперации"] == "Услуги"
-    assert sale_payload["СуммаДокумента"] == "100.00"
-    assert sale_payload["Услуги"] == [{"Количество": 1, "Цена": "100.00", "Сумма": "100.00"}]
+    assert sale_payload["СуммаДокумента"] == pytest.approx(100.0)
+    assert isinstance(sale_payload["СуммаДокумента"], (int, float))
+    assert sale_payload["Услуги"] == [{"Количество": 1, "Цена": pytest.approx(100.0), "Сумма": pytest.approx(100.0)}]
+    assert isinstance(sale_payload["Услуги"][0]["Цена"], (int, float))
+    assert isinstance(sale_payload["Услуги"][0]["Сумма"], (int, float))
 
 
 def test_build_publication_payload_from_document_plan_artifact_preserves_explicit_empty_string_literals() -> None:
@@ -382,7 +388,8 @@ def test_build_publication_payload_from_document_plan_artifact_preserves_explici
     ]
 
     assert sale_payload["АдресДоставки"] == ""
-    assert sale_payload["Услуги"] == [{"Содержание": "", "Сумма": "100.00"}]
+    assert sale_payload["Услуги"] == [{"Содержание": "", "Сумма": pytest.approx(100.0)}]
+    assert isinstance(sale_payload["Услуги"][0]["Сумма"], (int, float))
 
 
 def test_build_publication_payload_from_document_plan_artifact_resolves_derived_decimal_values() -> None:
@@ -427,9 +434,13 @@ def test_build_publication_payload_from_document_plan_artifact_resolves_derived_
         "payload"
     ]
 
-    assert sale_payload["СуммаДокумента"] == "100.00"
-    assert sale_payload["СуммаНДСДокумента"] == "16.67"
-    assert sale_payload["Услуги"] == [{"Сумма": "100.00", "СуммаНДС": "16.67"}]
+    assert sale_payload["СуммаДокумента"] == pytest.approx(100.0)
+    assert isinstance(sale_payload["СуммаДокумента"], (int, float))
+    assert sale_payload["СуммаНДСДокумента"] == pytest.approx(16.67)
+    assert isinstance(sale_payload["СуммаНДСДокумента"], (int, float))
+    assert sale_payload["Услуги"] == [{"Сумма": pytest.approx(100.0), "СуммаНДС": pytest.approx(16.67)}]
+    assert isinstance(sale_payload["Услуги"][0]["Сумма"], (int, float))
+    assert isinstance(sale_payload["Услуги"][0]["СуммаНДС"], (int, float))
 
 
 @pytest.mark.django_db
