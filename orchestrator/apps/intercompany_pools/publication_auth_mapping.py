@@ -181,13 +181,22 @@ def build_publication_auth_fail_closed_error(
             f"{coverage.invalid_context}. {remediation}",
         )
     if coverage.ambiguous_database_ids:
-        return (
-            ERROR_CODE_ODATA_MAPPING_AMBIGUOUS,
-            (
-                "Ambiguous infobase mapping for publication auth context: "
+        if coverage.strategy == PUBLICATION_AUTH_STRATEGY_ACTOR and coverage.actor_username:
+            detail = (
+                "Actor infobase mapping is ambiguous for publication auth context: "
+                f"actor_username={coverage.actor_username}; "
                 f"target_database_ids={_format_database_ids(coverage.ambiguous_database_ids)}. "
                 f"{remediation}"
-            ),
+            )
+        else:
+            detail = (
+                "Service infobase mapping is ambiguous for publication auth context: "
+                f"target_database_ids={_format_database_ids(coverage.ambiguous_database_ids)}. "
+                f"{remediation}"
+            )
+        return (
+            ERROR_CODE_ODATA_MAPPING_AMBIGUOUS,
+            detail,
         )
     missing_like = tuple(
         sorted(
@@ -195,13 +204,22 @@ def build_publication_auth_fail_closed_error(
         )
     )
     if missing_like:
-        return (
-            ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
-            (
-                "Infobase mapping is not configured for publication auth context: "
+        if coverage.strategy == PUBLICATION_AUTH_STRATEGY_ACTOR and coverage.actor_username:
+            detail = (
+                "Actor infobase mapping is not configured for publication auth context: "
+                f"actor_username={coverage.actor_username}; "
                 f"target_database_ids={_format_database_ids(missing_like)}. "
                 f"{remediation}"
-            ),
+            )
+        else:
+            detail = (
+                "Service infobase mapping is not configured for publication auth context: "
+                f"target_database_ids={_format_database_ids(missing_like)}. "
+                f"{remediation}"
+            )
+        return (
+            ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
+            detail,
         )
     return "", ""
 

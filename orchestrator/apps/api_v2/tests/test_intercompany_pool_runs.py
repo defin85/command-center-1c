@@ -4877,10 +4877,11 @@ def test_create_pool_run_returns_problem_details_for_pool_runtime_fail_closed_er
 @pytest.mark.django_db
 def test_create_pool_run_returns_problem_details_for_missing_actor_mapping(
     authenticated_client: APIClient,
+    user: User,
     default_tenant: Tenant,
     pool: OrganizationPool,
 ) -> None:
-    bindings, _ = _prepare_pool_runtime_bindings(
+    bindings, target_database = _prepare_pool_runtime_bindings(
         tenant=default_tenant,
         pool=pool,
         bindings=[
@@ -4913,6 +4914,8 @@ def test_create_pool_run_returns_problem_details_for_missing_actor_mapping(
         code="ODATA_MAPPING_NOT_CONFIGURED",
     )
     assert problem["title"] == "Pool Runtime Configuration Error"
+    assert f"actor_username={user.username}" in problem["detail"]
+    assert f"target_database_ids={target_database.id}" in problem["detail"]
     assert "/rbac" in problem["detail"]
 
 

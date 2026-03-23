@@ -1022,6 +1022,36 @@ describe('PoolRunsPage', () => {
     15000
   )
 
+  it('renders explicit actor mapping remediation when backend detail includes actor_username and target database ids', async () => {
+    const user = userEvent.setup()
+    mockCreatePoolRun.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Pool Runtime Configuration Error',
+          status: 400,
+          detail: (
+            'Actor infobase mapping is not configured for publication auth context: '
+            + 'actor_username=admin; target_database_ids=db-1. Configure Infobase Users in /rbac.'
+          ),
+          code: 'ODATA_MAPPING_NOT_CONFIGURED',
+        },
+      },
+    })
+
+    renderPage()
+
+    const submitButton = await screen.findByTestId('pool-runs-create-submit')
+    await user.click(submitButton)
+
+    await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
+    expect(
+      await screen.findByText(
+        'Для пользователя admin не настроен actor OData Infobase User для target database db-1. Проверьте /rbac → Infobase Users.'
+      )
+    ).toBeInTheDocument()
+  })
+
   it('sends abort-publication with generated idempotency key', async () => {
     const user = userEvent.setup()
     renderPage()

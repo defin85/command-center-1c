@@ -504,10 +504,73 @@ const parseProblemDetails = (error: unknown): ProblemDetailsPayload | null => {
   }
 }
 
+type PublicationMappingDiagnostic = {
+  actorUsername: string | null
+  targetDatabaseIds: string[]
+}
+
+const parsePublicationMappingDiagnostic = (detail: string | null): PublicationMappingDiagnostic => {
+  const normalizedDetail = String(detail || '').trim()
+  if (!normalizedDetail) {
+    return { actorUsername: null, targetDatabaseIds: [] }
+  }
+
+  const actorUsernameMatch = normalizedDetail.match(/actor_username=([^;]+)(?:;|$)/i)
+  const targetDatabaseIdsMatch = normalizedDetail.match(/target_database_ids=([A-Za-z0-9,-]+)/i)
+
+  const actorUsername = actorUsernameMatch?.[1]?.trim() || null
+  const targetDatabaseIds = (targetDatabaseIdsMatch?.[1] || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+
+  return { actorUsername, targetDatabaseIds }
+}
+
+const formatTargetDatabaseLabel = (targetDatabaseIds: string[]): string | null => {
+  if (targetDatabaseIds.length === 0) {
+    return null
+  }
+  if (targetDatabaseIds.length === 1) {
+    return `target database ${targetDatabaseIds[0]}`
+  }
+  return `target databases ${targetDatabaseIds.join(', ')}`
+}
+
+const resolvePublicationMappingProblemMessage = (
+  problem: ProblemDetailsPayload
+): string | null => {
+  if (!problem.code || !PUBLICATION_MAPPING_ERROR_CODES.has(problem.code)) {
+    return null
+  }
+
+  const { actorUsername, targetDatabaseIds } = parsePublicationMappingDiagnostic(problem.detail)
+  const targetLabel = formatTargetDatabaseLabel(targetDatabaseIds)
+
+  if (problem.code === 'ODATA_MAPPING_NOT_CONFIGURED') {
+    if (actorUsername && targetLabel) {
+      return (
+        `Для пользователя ${actorUsername} не настроен actor OData Infobase User `
+        + `для ${targetLabel}. Проверьте /rbac → Infobase Users.`
+      )
+    }
+    if (targetLabel) {
+      return `Для ${targetLabel} не настроены OData Infobase Users. Проверьте /rbac → Infobase Users.`
+    }
+  }
+
+  const codeMessage = CREATE_RUN_PROBLEM_CODE_MESSAGES[problem.code]
+  return codeMessage ?? null
+}
+
 const resolveCreateRunProblemMessage = (
   problem: ProblemDetailsPayload,
   fallbackMessage: string
 ): string => {
+  const publicationMappingMessage = resolvePublicationMappingProblemMessage(problem)
+  if (publicationMappingMessage) {
+    return publicationMappingMessage
+  }
   const codeMessage = problem.code ? CREATE_RUN_PROBLEM_CODE_MESSAGES[problem.code] : undefined
   if (codeMessage) {
     return codeMessage
