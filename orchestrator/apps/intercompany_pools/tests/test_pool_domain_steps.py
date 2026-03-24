@@ -22,8 +22,6 @@ from apps.intercompany_pools.master_data_artifact_contract import (
 )
 from apps.intercompany_pools.document_policy_contract import (
     DOCUMENT_POLICY_METADATA_KEY,
-    DOCUMENT_POLICY_RESOLUTION_SOURCE_EDGE,
-    DOCUMENT_POLICY_RESOLUTION_SOURCE_POOL_DEFAULT,
     POOL_DOCUMENT_POLICY_CHAIN_INVALID,
     POOL_DOCUMENT_POLICY_MAPPING_INVALID,
 )
@@ -33,8 +31,10 @@ from apps.intercompany_pools.models import (
     OrganizationPool,
     PoolEdgeVersion,
     PoolMasterContract,
+    PoolMasterItem,
     PoolNodeVersion,
     PoolMasterParty,
+    PoolMasterTaxProfile,
     PoolRun,
     PoolRunDirection,
     PoolRunMode,
@@ -607,7 +607,7 @@ def test_reconciliation_fails_closed_when_only_compatibility_compiled_document_p
     )
     edge_policy = _build_document_policy(chain_id="edge_chain")
     compiled_policy = _build_document_policy(chain_id="compiled_chain")
-    topology = _attach_active_topology(
+    _attach_active_topology(
         run=run,
         left_edge_metadata={DOCUMENT_POLICY_METADATA_KEY: edge_policy},
     )
@@ -652,7 +652,7 @@ def test_reconciliation_rejects_legacy_payload_even_with_compiled_document_polic
             "entity_name": "Document_IntercompanyPoolDistribution",
         },
     )
-    topology = _attach_active_topology(
+    _attach_active_topology(
         run=run,
         left_edge_metadata={
             DOCUMENT_POLICY_METADATA_KEY: _build_document_policy(chain_id="edge_chain"),
@@ -1788,6 +1788,199 @@ def test_master_data_gate_fails_closed_when_target_organization_binding_is_missi
 
 
 @pytest.mark.django_db
+def test_reconciliation_fail_closed_on_missing_parent_binding_for_topology_alias() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={"starting_amount": "100.00"},
+    )
+    topology = _attach_active_topology(
+        run=run,
+        left_edge_metadata={"document_policy_key": "document_policy"},
+        right_edge_metadata={"document_policy_key": "document_policy"},
+    )
+    root_node = PoolNodeVersion.objects.get(pool=run.pool, is_root=True)
+    policy = {
+        "version": "document_policy.v1",
+        "chains": [
+            {
+                "chain_id": "realization_chain",
+                "documents": [
+                    {
+                        "document_id": "sale",
+                        "entity_name": "Document_Sales",
+                        "document_role": "sale",
+                        "field_mapping": {
+                            "Организация": "master_data.party.edge.parent.organization.ref"
+                        },
+                        "table_parts_mapping": {},
+                        "link_rules": {},
+                        "invoice_mode": "optional",
+                    }
+                ],
+            }
+        ],
+    }
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+            POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY: _build_slot_snapshot(
+                policy=policy
+            ),
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: {
+                "binding_mode": "pool_workflow_binding",
+                "binding_id": str(uuid4()),
+            },
+        },
+    )
+
+    execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    with pytest.raises(ValueError, match="MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING"):
+        execute_pool_runtime_step(
+            operation_type="pool.reconciliation_report",
+            rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
+
+    execution.refresh_from_db(fields=["input_context"])
+    blockers = execution.input_context.get(POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY)
+    assert isinstance(blockers, list)
+    assert len(blockers) == 1
+    blocker = blockers[0]
+    assert blocker["code"] == "MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING"
+    assert blocker["organization_id"] == str(root_node.organization_id)
+    assert blocker["database_id"] == ""
+    assert blocker["participant_side"] == "parent"
+    assert blocker["required_role"] == "organization"
+    assert blocker["edge_ref"]["parent_node_id"] == str(root_node.id)
+    assert blocker["edge_ref"]["child_node_id"] in {
+        topology["left_node_id"],
+        topology["right_node_id"],
+    }
+
+
+@pytest.mark.django_db
+def test_reconciliation_fail_closed_on_missing_child_counterparty_role_for_topology_alias() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={"starting_amount": "100.00"},
+    )
+    topology = _attach_active_topology(
+        run=run,
+        left_edge_metadata={"document_policy_key": "document_policy"},
+        right_edge_metadata={"document_policy_key": "document_policy"},
+    )
+    root_node = PoolNodeVersion.objects.get(pool=run.pool, is_root=True)
+    root_party = PoolMasterParty.objects.create(
+        tenant=run.tenant,
+        canonical_id="root-party",
+        name="Root Party",
+        inn=root_node.organization.inn,
+        is_our_organization=True,
+        is_counterparty=True,
+    )
+    root_node.organization.master_party = root_party
+    root_node.organization.save(update_fields=["master_party", "updated_at"])
+
+    child_orgs = [
+        Organization.objects.get(tenant=run.tenant, inn=topology["left_inn"]),
+        Organization.objects.get(tenant=run.tenant, inn=topology["right_inn"]),
+    ]
+    for index, organization in enumerate(child_orgs, start=1):
+        child_party = PoolMasterParty.objects.create(
+            tenant=run.tenant,
+            canonical_id=f"child-party-{index}",
+            name=f"Child Party {index}",
+            inn=organization.inn,
+            is_our_organization=True,
+            is_counterparty=False,
+        )
+        organization.master_party = child_party
+        organization.save(update_fields=["master_party", "updated_at"])
+
+    policy = {
+        "version": "document_policy.v1",
+        "chains": [
+            {
+                "chain_id": "receipt_chain",
+                "documents": [
+                    {
+                        "document_id": "receipt",
+                        "entity_name": "Document_Receipt",
+                        "document_role": "receipt",
+                        "field_mapping": {
+                            "Контрагент": "master_data.party.edge.child.counterparty.ref"
+                        },
+                        "table_parts_mapping": {},
+                        "link_rules": {},
+                        "invoice_mode": "optional",
+                    }
+                ],
+            }
+        ],
+    }
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+            POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY: _build_slot_snapshot(
+                policy=policy
+            ),
+            POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY: {
+                "binding_mode": "pool_workflow_binding",
+                "binding_id": str(uuid4()),
+            },
+        },
+    )
+
+    execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    with pytest.raises(ValueError, match="MASTER_DATA_PARTY_ROLE_MISSING"):
+        execute_pool_runtime_step(
+            operation_type="pool.reconciliation_report",
+            rendered_data={"pool_runtime": {"step_id": "reconciliation_report"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
+
+    execution.refresh_from_db(fields=["input_context"])
+    blockers = execution.input_context.get(POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY)
+    assert isinstance(blockers, list)
+    assert len(blockers) == 1
+    blocker = blockers[0]
+    assert blocker["code"] == "MASTER_DATA_PARTY_ROLE_MISSING"
+    assert blocker["participant_side"] == "child"
+    assert blocker["required_role"] == "counterparty"
+    assert blocker["organization_id"] in {str(org.id) for org in child_orgs}
+    assert blocker["database_id"] in {str(org.database_id) for org in child_orgs}
+    assert blocker["edge_ref"]["parent_node_id"] == str(root_node.id)
+    assert blocker["edge_ref"]["child_node_id"] in {
+        topology["left_node_id"],
+        topology["right_node_id"],
+    }
+
+
+@pytest.mark.django_db
 def test_master_data_gate_collects_generic_master_data_readiness_blockers_before_resolution() -> None:
     run = _create_pool_run(mode=PoolRunMode.UNSAFE)
     left_database = _create_database(tenant=run.tenant, suffix="gate-readiness-left")
@@ -1886,6 +2079,88 @@ def test_master_data_gate_collects_generic_master_data_readiness_blockers_before
             },
         },
     ]
+
+
+@pytest.mark.django_db
+def test_master_data_gate_resolves_static_item_and_tax_profile_tokens() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    database = _create_database(tenant=run.tenant, suffix="gate-item-tax")
+    PoolMasterItem.objects.create(
+        tenant=run.tenant,
+        canonical_id="packing-service",
+        name="Packing Service",
+        metadata={
+            "ib_ref_keys": {
+                str(database.id): "ref-item-001",
+            }
+        },
+    )
+    PoolMasterTaxProfile.objects.create(
+        tenant=run.tenant,
+        canonical_id="vat20",
+        vat_rate=Decimal("20.00"),
+        vat_included=True,
+        vat_code="VAT20",
+        metadata={
+            "ib_ref_keys": {
+                str(database.id): "ref-tax-001",
+            }
+        },
+    )
+
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "master_data_snapshot_ref": "master_data_snapshot.v1:test",
+            "master_data_binding_artifact_ref": "master_data_binding_artifact.v1:test",
+            "pool_runtime_publication_payload": {
+                "pool_runtime": {
+                    "document_chains_by_database": {
+                        str(database.id): [
+                            {
+                                "chain_id": "sale-chain",
+                                "documents": [
+                                    {
+                                        "document_id": "sale",
+                                        "field_mapping": {
+                                            "Номенклатура": "master_data.item.packing-service.ref",
+                                            "СтавкаНДС": "master_data.tax_profile.vat20.ref",
+                                        },
+                                        "table_parts_mapping": {},
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.pool_domain_steps.is_pool_master_data_gate_enabled",
+        return_value=True,
+    ):
+        output = execute_pool_runtime_step(
+            operation_type="pool.master_data_gate",
+            rendered_data={"pool_runtime": {"step_id": "master_data_gate"}},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
+
+    assert output["step"] == "master_data_gate"
+    assert output["summary"]["status"] == "completed"
+
+    execution.refresh_from_db(fields=["input_context"])
+    publication_payload = execution.input_context["pool_runtime_publication_payload"]["pool_runtime"]
+    resolved_master_data_refs = publication_payload["document_chains_by_database"][str(database.id)][0]["documents"][0][
+        "resolved_master_data_refs"
+    ]
+    assert resolved_master_data_refs == {
+        "master_data.item.packing-service.ref": "ref-item-001",
+        "master_data.tax_profile.vat20.ref": "ref-tax-001",
+    }
 
 
 @pytest.mark.django_db

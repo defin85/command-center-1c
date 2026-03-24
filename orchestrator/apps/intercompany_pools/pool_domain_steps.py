@@ -16,6 +16,12 @@ from .document_plan_artifact_contract import (
     validate_compiled_document_policy_slots_snapshot,
     validate_document_plan_artifact_v1,
 )
+from .document_policy_topology_aliases import (
+    MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING,
+    MASTER_DATA_PARTY_ROLE_MISSING,
+    POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID,
+    TopologyAwareMasterDataAliasError,
+)
 from .distribution_artifact_contract import (
     POOL_DISTRIBUTION_ARTIFACT_INVALID,
     POOL_RUNTIME_DISTRIBUTION_ARTIFACT_CONTEXT_KEY,
@@ -77,7 +83,6 @@ POOL_RUNTIME_RETRY_PAYLOAD_INVALID = "POOL_RUNTIME_RETRY_PAYLOAD_INVALID"
 POOL_DISTRIBUTION_BALANCE_MISMATCH = "POOL_DISTRIBUTION_BALANCE_MISMATCH"
 POOL_DISTRIBUTION_COVERAGE_GAP = "POOL_DISTRIBUTION_COVERAGE_GAP"
 POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_REQUIRED = "POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_REQUIRED"
-MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING = "MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING"
 POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY = "pool_runtime_readiness_blockers"
 
 
@@ -836,6 +841,8 @@ def _build_readiness_blocker_from_master_data_error(exc: MasterDataResolveError)
 def _sort_readiness_blockers(blockers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     code_priority = {
         MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING: 0,
+        MASTER_DATA_PARTY_ROLE_MISSING: 5,
+        POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID: 8,
         MASTER_DATA_BINDING_CONFLICT: 10,
         MASTER_DATA_BINDING_AMBIGUOUS: 20,
         MASTER_DATA_ENTITY_NOT_FOUND: 30,
@@ -886,6 +893,9 @@ def _resolve_locked_retry_publication_payload(
 
 
 def _build_readiness_blocker_from_error(exc: ValueError) -> dict[str, Any] | None:
+    if isinstance(exc, TopologyAwareMasterDataAliasError):
+        return exc.to_blocker()
+
     message = str(exc).strip()
     if ":" not in message:
         return None

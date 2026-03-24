@@ -15,6 +15,7 @@ from .document_policy_contract import (
     DOCUMENT_POLICY_METADATA_KEY,
     validate_document_policy_v1,
 )
+from .document_policy_topology_aliases import rewrite_document_policy_mappings_for_edge
 from .models import PoolEdgeVersion, PoolNodeVersion, PoolRun
 
 
@@ -118,8 +119,13 @@ def compile_document_plan_artifact_v1(
 
         edge_key = (parent_node_id, child_node_id)
         edge_model = edge_models_raw.get(edge_key)
+        parent_node = node_models_raw.get(parent_node_id)
         child_node = node_models_raw.get(child_node_id)
-        if not isinstance(edge_model, PoolEdgeVersion) or not isinstance(child_node, PoolNodeVersion):
+        if (
+            not isinstance(edge_model, PoolEdgeVersion)
+            or not isinstance(parent_node, PoolNodeVersion)
+            or not isinstance(child_node, PoolNodeVersion)
+        ):
             continue
 
         database_id = (
@@ -173,6 +179,8 @@ def compile_document_plan_artifact_v1(
             run=run,
             policy=policy,
             edge_ref=edge_ref,
+            parent_node=parent_node,
+            child_node=child_node,
             source=source,
             database_id=database_id,
             amount_text=amount_text,
@@ -622,6 +630,8 @@ def _compile_chains_for_edge(
     run: PoolRun,
     policy: Mapping[str, Any],
     edge_ref: Mapping[str, str],
+    parent_node: PoolNodeVersion,
+    child_node: PoolNodeVersion,
     source: str,
     database_id: str,
     amount_text: str,
@@ -648,16 +658,29 @@ def _compile_chains_for_edge(
             document_id = str(document.get("document_id") or "").strip()
             if not document_id:
                 continue
+            field_mapping, table_parts_mapping = rewrite_document_policy_mappings_for_edge(
+                field_mapping=_as_object(document.get("field_mapping")),
+                table_parts_mapping=_as_object(document.get("table_parts_mapping")),
+                edge_ref=edge_ref,
+                parent_node=parent_node,
+                child_node=child_node,
+                field_mapping_path=(
+                    f"document_policy.chains[{chain_index}].documents[{document_index}].field_mapping"
+                ),
+                table_parts_mapping_path=(
+                    f"document_policy.chains[{chain_index}].documents[{document_index}].table_parts_mapping"
+                ),
+            )
             field_mapping = _materialize_document_field_mapping(
                 run=run,
-                field_mapping=_as_object(document.get("field_mapping")),
+                field_mapping=field_mapping,
             )
             compiled_document = {
                 "document_id": document_id,
                 "entity_name": str(document.get("entity_name") or "").strip(),
                 "document_role": str(document.get("document_role") or "").strip(),
                 "field_mapping": field_mapping,
-                "table_parts_mapping": _as_object(document.get("table_parts_mapping")),
+                "table_parts_mapping": table_parts_mapping,
                 "link_rules": _as_object(document.get("link_rules")),
                 "invoice_mode": str(document.get("invoice_mode") or "").strip(),
                 "idempotency_key": _build_document_idempotency_key(

@@ -22,6 +22,7 @@ from apps.intercompany_pools.models import (
     Organization,
     OrganizationPool,
     PoolEdgeVersion,
+    PoolMasterParty,
     PoolNodeVersion,
     PoolRun,
     PoolRunDirection,
@@ -536,6 +537,145 @@ def test_compile_document_plan_artifact_v1_uses_run_period_start_for_document_da
 
     assert document_payload["Date"] == "2026-01-01T00:00:00"
     assert document_payload["СуммаДокумента"] == pytest.approx(50.0)
+
+
+@pytest.mark.django_db
+def test_compile_document_plan_artifact_v1_rewrites_topology_aliases_per_edge_and_preserves_static_tokens() -> None:
+    fixture = _create_compile_fixture(slot_keys=["receipt_leaf", "receipt_leaf"])
+    node_models = fixture["topology"]["node_models"]
+    root_node = next(
+        node
+        for node in node_models.values()
+        if isinstance(node, PoolNodeVersion) and node.is_root
+    )
+    child_nodes = sorted(
+        (
+            node
+            for node in node_models.values()
+            if isinstance(node, PoolNodeVersion) and not node.is_root
+        ),
+        key=lambda node: str(node.id),
+    )
+
+    root_party = PoolMasterParty.objects.create(
+        tenant=fixture["run"].tenant,
+        canonical_id="root-party",
+        name="Root Party",
+        is_our_organization=True,
+        is_counterparty=True,
+    )
+    root_node.organization.master_party = root_party
+    root_node.organization.save(update_fields=["master_party", "updated_at"])
+
+    child_canonical_ids: list[str] = []
+    for index, child_node in enumerate(child_nodes, start=1):
+        canonical_id = f"child-party-{index}"
+        child_canonical_ids.append(canonical_id)
+        child_party = PoolMasterParty.objects.create(
+            tenant=fixture["run"].tenant,
+            canonical_id=canonical_id,
+            name=f"Child Party {index}",
+            is_our_organization=True,
+            is_counterparty=True,
+        )
+        child_node.organization.master_party = child_party
+        child_node.organization.save(update_fields=["master_party", "updated_at"])
+
+    policy = _build_document_policy(
+        chain_id="receipt_chain",
+        document_id="receipt",
+        entity_name="Document_ПоступлениеТоваровУслуг",
+        field_mapping={
+            "Организация_Key": "master_data.party.edge.child.organization.ref",
+            "Контрагент_Key": "master_data.party.edge.parent.counterparty.ref",
+            "ДоговорКонтрагента_Key": "master_data.contract.osnovnoy.edge.child.ref",
+            "Номенклатура_Key": "master_data.item.packing-service.ref",
+            "СтавкаНДС_Key": "master_data.tax_profile.vat20.ref",
+        },
+    )
+    policy["chains"][0]["documents"][0]["table_parts_mapping"] = {
+        "Услуги": [
+            {
+                "Номенклатура_Key": "master_data.item.packing-service.ref",
+                "СтавкаНДС_Key": "master_data.tax_profile.vat20.ref",
+            }
+        ]
+    }
+
+    artifact = compile_document_plan_artifact_v1(
+        run=fixture["run"],
+        distribution_artifact=fixture["distribution_artifact"],
+        topology=fixture["topology"],
+        compiled_document_policy_slots={
+            "receipt_leaf": _build_compiled_slot_entry(
+                slot_key="receipt_leaf",
+                decision_table_id="receipt-slot",
+                decision_revision=9,
+                document_policy=policy,
+            )
+        },
+    )
+
+    assert artifact is not None
+    serialized_artifact = str(artifact)
+    assert "master_data.party.edge." not in serialized_artifact
+    assert ".edge.parent.ref" not in serialized_artifact
+    assert ".edge.child.ref" not in serialized_artifact
+
+    documents = [target["chains"][0]["documents"][0] for target in artifact["targets"]]
+    assert {
+        document["field_mapping"]["Организация_Key"]
+        for document in documents
+    } == {
+        f"master_data.party.{canonical_id}.organization.ref"
+        for canonical_id in child_canonical_ids
+    }
+    assert {
+        document["field_mapping"]["ДоговорКонтрагента_Key"]
+        for document in documents
+    } == {
+        f"master_data.contract.osnovnoy.{canonical_id}.ref"
+        for canonical_id in child_canonical_ids
+    }
+    for document in documents:
+        assert document["field_mapping"]["Контрагент_Key"] == "master_data.party.root-party.counterparty.ref"
+        assert document["field_mapping"]["Номенклатура_Key"] == "master_data.item.packing-service.ref"
+        assert document["field_mapping"]["СтавкаНДС_Key"] == "master_data.tax_profile.vat20.ref"
+        assert document["table_parts_mapping"] == {
+            "Услуги": [
+                {
+                    "Номенклатура_Key": "master_data.item.packing-service.ref",
+                    "СтавкаНДС_Key": "master_data.tax_profile.vat20.ref",
+                }
+            ]
+        }
+
+
+@pytest.mark.django_db
+def test_compile_document_plan_artifact_v1_fails_closed_on_malformed_topology_alias() -> None:
+    fixture = _create_compile_fixture(slot_keys=["sale"])
+
+    with pytest.raises(ValueError, match="POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID"):
+        compile_document_plan_artifact_v1(
+            run=fixture["run"],
+            distribution_artifact=fixture["distribution_artifact"],
+            topology=fixture["topology"],
+            compiled_document_policy_slots={
+                "sale": _build_compiled_slot_entry(
+                    slot_key="sale",
+                    decision_table_id="sale-slot",
+                    decision_revision=5,
+                    document_policy=_build_document_policy(
+                        chain_id="sale_chain",
+                        document_id="sale",
+                        entity_name="Document_Sales",
+                        field_mapping={
+                            "Контрагент_Key": "master_data.party.edge.middle.counterparty.ref"
+                        },
+                    ),
+                )
+            },
+        )
 
 
 @pytest.mark.django_db
