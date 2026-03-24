@@ -145,22 +145,27 @@ curl --noproxy '*' -k -sS \
 ```
 
 Что реально увидел:
-- `POST /api/v2/pools/runs/` создал run `5b696ed1-359a-4187-afa9-752437c15d21`
+- `POST /api/v2/pools/runs/` создал run `2c27dcf6-e2d9-4fbf-a9f0-9c9de92b33ff`
 - `confirm-publication` вернул `202 Accepted`
-- `GET /api/v2/pools/runs/5b696ed1-359a-4187-afa9-752437c15d21/report/` в финале показал:
+- `GET /api/v2/pools/runs/2c27dcf6-e2d9-4fbf-a9f0-9c9de92b33ff/report/` в финале показал:
   - `status = published`
   - `workflow_status = completed`
   - `approval_state = approved`
   - `publication_step_state = completed`
 - worker log подтвердил реальные side effects:
   - `POST /dom_lesa_7726446503/odata/standard.odata//Document_ПоступлениеТоваровУслуг -> 201`
-  - `PATCH /dom_lesa_7726446503/odata/standard.odata//Document_ПоступлениеТоваровУслуг(guid'f005e12c-274b-11f1-9d20-000c29b79fe4') -> 200`
+  - `PATCH /dom_lesa_7726446503/odata/standard.odata//Document_ПоступлениеТоваровУслуг(guid'b0a52b52-274e-11f1-9d20-000c29b79fe4') -> 200`
 - OData single-entity GET подтвердил:
-  - `Ref_Key = f005e12c-274b-11f1-9d20-000c29b79fe4`
-  - `Number = 0000-000040`
-  - `Date = 2023-10-03T12:00:00`
+  - `Ref_Key = b0a52b52-274e-11f1-9d20-000c29b79fe4`
+  - `Number = 0000-000001`
+  - `Date = 2026-03-24T00:00:00`
   - `Posted = true`
-  - `СуммаДокумента = 88888.88`
+  - `СуммаДокумента = 77777.77`
+
+После фикса:
+- `Date` в published document теперь берётся из `PoolRun.period_start` и сериализуется как `YYYY-MM-DDT00:00:00`.
+- `compiled_document_policy_slots` в runtime projection по-прежнему показывают исходный policy snapshot; подмена делается на этапе materialization document plan artifact.
+- `ДатаВходящегоДокумента` пока остаётся из policy sample и не привязана к `period_start`.
 
 Нюанс:
 - сразу после `confirm-publication` report может кратковременно показывать неактуальную промежуточную проекцию; верифицированный способ — поллить report и, при разборе инцидента, сверять `PoolPublicationAttempt`/worker log.

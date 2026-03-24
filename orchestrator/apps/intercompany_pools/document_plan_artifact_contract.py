@@ -648,11 +648,15 @@ def _compile_chains_for_edge(
             document_id = str(document.get("document_id") or "").strip()
             if not document_id:
                 continue
+            field_mapping = _materialize_document_field_mapping(
+                run=run,
+                field_mapping=_as_object(document.get("field_mapping")),
+            )
             compiled_document = {
                 "document_id": document_id,
                 "entity_name": str(document.get("entity_name") or "").strip(),
                 "document_role": str(document.get("document_role") or "").strip(),
-                "field_mapping": _as_object(document.get("field_mapping")),
+                "field_mapping": field_mapping,
                 "table_parts_mapping": _as_object(document.get("table_parts_mapping")),
                 "link_rules": _as_object(document.get("link_rules")),
                 "invoice_mode": str(document.get("invoice_mode") or "").strip(),
@@ -771,6 +775,21 @@ def _as_object(value: Any) -> dict[str, Any]:
     if isinstance(value, Mapping):
         return dict(value)
     return {}
+
+
+def _materialize_document_field_mapping(
+    *,
+    run: PoolRun,
+    field_mapping: Mapping[str, Any],
+) -> dict[str, Any]:
+    materialized_mapping = dict(field_mapping)
+    if "Date" in materialized_mapping:
+        materialized_mapping["Date"] = _serialize_odata_date_value(run.period_start)
+    return materialized_mapping
+
+
+def _serialize_odata_date_value(value) -> str:
+    return f"{value.isoformat()}T00:00:00"
 
 
 def _build_document_payload_from_mapping(

@@ -89,7 +89,13 @@ def _build_artifact() -> dict[str, object]:
     }
 
 
-def _build_document_policy(*, chain_id: str, document_id: str, entity_name: str) -> dict[str, object]:
+def _build_document_policy(
+    *,
+    chain_id: str,
+    document_id: str,
+    entity_name: str,
+    field_mapping: dict[str, object] | None = None,
+) -> dict[str, object]:
     return {
         "version": DOCUMENT_POLICY_VERSION,
         "chains": [
@@ -100,7 +106,11 @@ def _build_document_policy(*, chain_id: str, document_id: str, entity_name: str)
                         "document_id": document_id,
                         "entity_name": entity_name,
                         "document_role": "base",
-                        "field_mapping": {"Amount": "allocation.amount"},
+                        "field_mapping": (
+                            dict(field_mapping)
+                            if isinstance(field_mapping, dict)
+                            else {"Amount": "allocation.amount"}
+                        ),
                         "table_parts_mapping": {},
                         "link_rules": {},
                         "invoice_mode": "optional",
@@ -490,6 +500,42 @@ def test_compile_document_plan_artifact_v1_resolves_slot_based_policy_per_edge()
         fixture["database_ids"][0]: ["sale_chain"],
         fixture["database_ids"][1]: ["purchase_chain"],
     }
+
+
+@pytest.mark.django_db
+def test_compile_document_plan_artifact_v1_uses_run_period_start_for_document_date() -> None:
+    fixture = _create_compile_fixture(slot_keys=["receipt"])
+
+    artifact = compile_document_plan_artifact_v1(
+        run=fixture["run"],
+        distribution_artifact=fixture["distribution_artifact"],
+        topology=fixture["topology"],
+        compiled_document_policy_slots={
+            "receipt": _build_compiled_slot_entry(
+                slot_key="receipt",
+                decision_table_id="receipt-slot",
+                decision_revision=7,
+                document_policy=_build_document_policy(
+                    chain_id="receipt_chain",
+                    document_id="receipt",
+                    entity_name="Document_ПоступлениеТоваровУслуг",
+                    field_mapping={
+                        "Date": "2023-10-03T12:00:00",
+                        "СуммаДокумента": "allocation.amount",
+                    },
+                ),
+            )
+        },
+    )
+
+    assert artifact is not None
+    payload = build_publication_payload_from_document_plan_artifact(artifact=artifact)
+    document_payload = payload["pool_runtime"]["document_chains_by_database"][fixture["database_ids"][0]][0][
+        "documents"
+    ][0]["payload"]
+
+    assert document_payload["Date"] == "2026-01-01T00:00:00"
+    assert document_payload["СуммаДокумента"] == pytest.approx(50.0)
 
 
 @pytest.mark.django_db
