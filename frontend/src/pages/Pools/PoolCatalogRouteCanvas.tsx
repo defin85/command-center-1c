@@ -135,6 +135,10 @@ const API_ERROR_MESSAGE_MAP: Record<string, string> = {
   POOL_WORKFLOW_BINDING_COLLECTION_CONFLICT: 'Набор workflow bindings уже был изменён другим оператором. Обновите bindings и повторите сохранение.',
 }
 
+const formatOrganizationOptionLabel = (organization: Pick<Organization, 'name' | 'inn'>): string => (
+  `${organization.name} (${organization.inn})`
+)
+
 const METADATA_HANDOFF_ERROR_CODES = new Set([
   'ODATA_MAPPING_NOT_CONFIGURED',
   'ODATA_MAPPING_AMBIGUOUS',
@@ -715,6 +719,74 @@ const buildTemplateDraftTopologyEdgeSelectors = (
       slotKey,
     }
   })
+}
+
+const materializeTemplateSlotAssignments = (
+  revision: PoolTopologyTemplateRevision | null | undefined,
+  assignments: TopologyTemplateSlotAssignmentFormValue[] | undefined
+): TopologyTemplateSlotAssignmentFormValue[] => {
+  if (!revision) {
+    return Array.isArray(assignments) ? assignments : []
+  }
+  const assignmentBySlotKey = new Map<string, string>()
+  ;(Array.isArray(assignments) ? assignments : []).forEach((assignment) => {
+    const slotKey = String(assignment?.slot_key || '').trim()
+    const organizationId = String(assignment?.organization_id || '').trim()
+    if (slotKey) {
+      assignmentBySlotKey.set(slotKey, organizationId)
+    }
+  })
+  return revision.nodes.map((node) => {
+    const slotKey = String(node.slot_key || '').trim()
+    return {
+      slot_key: slotKey,
+      organization_id: assignmentBySlotKey.get(slotKey) || '',
+    }
+  })
+}
+
+const materializeTemplateEdgeSelectorOverrides = (
+  revision: PoolTopologyTemplateRevision | null | undefined,
+  overrides: TopologyTemplateEdgeSelectorOverrideFormValue[] | undefined
+): TopologyTemplateEdgeSelectorOverrideFormValue[] => {
+  if (!revision) {
+    return Array.isArray(overrides) ? overrides : []
+  }
+  const overrideByEdge = new Map<string, string>()
+  ;(Array.isArray(overrides) ? overrides : []).forEach((override) => {
+    const parentSlotKey = String(override?.parent_slot_key || '').trim()
+    const childSlotKey = String(override?.child_slot_key || '').trim()
+    const documentPolicyKey = String(override?.document_policy_key || '').trim()
+    if (parentSlotKey && childSlotKey) {
+      overrideByEdge.set(`${parentSlotKey}:${childSlotKey}`, documentPolicyKey)
+    }
+  })
+  return revision.edges.map((edge) => {
+    const parentSlotKey = String(edge.parent_slot_key || '').trim()
+    const childSlotKey = String(edge.child_slot_key || '').trim()
+    return {
+      parent_slot_key: parentSlotKey,
+      child_slot_key: childSlotKey,
+      document_policy_key: overrideByEdge.get(`${parentSlotKey}:${childSlotKey}`) || '',
+    }
+  })
+}
+
+const findTopologyTemplateRevisionById = (
+  templates: PoolTopologyTemplate[],
+  revisionId: string | null | undefined
+): PoolTopologyTemplateRevision | null => {
+  const normalizedRevisionId = String(revisionId || '').trim()
+  if (!normalizedRevisionId) {
+    return null
+  }
+  for (const template of templates) {
+    const revision = template.revisions.find((item) => item.topology_template_revision_id === normalizedRevisionId)
+    if (revision) {
+      return revision
+    }
+  }
+  return null
 }
 
 const buildBindingSlotRefsFromForm = (
@@ -1943,18 +2015,15 @@ export function PoolCatalogPage() {
     ))
   ), [topologyTemplates])
   const selectedTopologyTemplateRevision = useMemo(() => {
-    const revisionId = String(watchedTopologyTemplateRevisionId || '').trim()
-    if (!revisionId) {
-      return null
-    }
-    for (const template of topologyTemplates) {
-      const revision = template.revisions.find((item) => item.topology_template_revision_id === revisionId)
-      if (revision) {
-        return revision
-      }
-    }
-    return null
+    return findTopologyTemplateRevisionById(topologyTemplates, watchedTopologyTemplateRevisionId)
   }, [topologyTemplates, watchedTopologyTemplateRevisionId])
+  const hydratedTopologyTemplateRevision = useMemo(
+    () => findTopologyTemplateRevisionById(
+      topologyTemplates,
+      selectedPoolTopologyInstantiation?.topology_template_revision_id,
+    ),
+    [selectedPoolTopologyInstantiation, topologyTemplates]
+  )
   const selectedTopologyTemplate = useMemo(() => {
     if (!selectedTopologyTemplateRevision) {
       return null
@@ -2336,7 +2405,7 @@ export function PoolCatalogPage() {
     () => organizations
       .map((item) => ({
         value: item.id,
-        label: `${item.name} (${item.inn})`,
+        label: formatOrganizationOptionLabel(item),
       }))
       .sort((left, right) => left.label.localeCompare(right.label)),
     [organizations]
@@ -2819,12 +2888,14 @@ export function PoolCatalogPage() {
         || new Date().toISOString().slice(0, 10),
       effective_to: '',
       topology_template_revision_id: topologyInstantiation?.topology_template_revision_id || undefined,
-      slot_assignments: Array.isArray(topologyInstantiation?.slot_assignments)
-        ? topologyInstantiation?.slot_assignments
-        : [],
-      edge_selector_overrides: Array.isArray(topologyInstantiation?.edge_selector_overrides)
-        ? topologyInstantiation?.edge_selector_overrides
-        : [],
+      slot_assignments: materializeTemplateSlotAssignments(
+        hydratedTopologyTemplateRevision,
+        topologyInstantiation?.slot_assignments,
+      ),
+      edge_selector_overrides: materializeTemplateEdgeSelectorOverrides(
+        hydratedTopologyTemplateRevision,
+        topologyInstantiation?.edge_selector_overrides,
+      ),
       nodes,
       edges,
     })
@@ -2832,6 +2903,7 @@ export function PoolCatalogPage() {
     activeWorkspaceTab,
     graph,
     graphDate,
+    hydratedTopologyTemplateRevision,
     selectedPool,
     selectedPoolId,
     selectedPoolTopologyInstantiation,
@@ -2863,6 +2935,16 @@ export function PoolCatalogPage() {
         assignmentBySlotKey.set(slotKey, organizationId)
       }
     })
+    ;(Array.isArray(selectedPoolTopologyInstantiation?.slot_assignments)
+      ? selectedPoolTopologyInstantiation.slot_assignments
+      : []
+    ).forEach((assignment) => {
+      const slotKey = String(assignment?.slot_key || '').trim()
+      const organizationId = String(assignment?.organization_id || '').trim()
+      if (slotKey && organizationId && !assignmentBySlotKey.get(slotKey)) {
+        assignmentBySlotKey.set(slotKey, organizationId)
+      }
+    })
 
     const overrideByEdge = new Map<string, string>()
     const currentOverrides = topologyForm.getFieldValue('edge_selector_overrides')
@@ -2874,27 +2956,43 @@ export function PoolCatalogPage() {
         overrideByEdge.set(`${parentSlotKey}:${childSlotKey}`, documentPolicyKey)
       }
     })
+    ;(Array.isArray(selectedPoolTopologyInstantiation?.edge_selector_overrides)
+      ? selectedPoolTopologyInstantiation.edge_selector_overrides
+      : []
+    ).forEach((override) => {
+      const parentSlotKey = String(override?.parent_slot_key || '').trim()
+      const childSlotKey = String(override?.child_slot_key || '').trim()
+      const documentPolicyKey = String(override?.document_policy_key || '').trim()
+      if (parentSlotKey && childSlotKey && documentPolicyKey && !overrideByEdge.has(`${parentSlotKey}:${childSlotKey}`)) {
+        overrideByEdge.set(`${parentSlotKey}:${childSlotKey}`, documentPolicyKey)
+      }
+    })
 
     topologyForm.setFieldsValue({
-      slot_assignments: selectedTopologyTemplateRevision.nodes.map((node) => {
-        const slotKey = String(node.slot_key || '').trim()
-        return {
-          slot_key: slotKey,
-          organization_id: assignmentBySlotKey.get(slotKey) || '',
-        }
-      }),
-      edge_selector_overrides: selectedTopologyTemplateRevision.edges.map((edge) => {
-        const parentSlotKey = String(edge.parent_slot_key || '').trim()
-        const childSlotKey = String(edge.child_slot_key || '').trim()
-        return {
-          parent_slot_key: parentSlotKey,
-          child_slot_key: childSlotKey,
-          document_policy_key: overrideByEdge.get(`${parentSlotKey}:${childSlotKey}`) || '',
-        }
-      }),
+      slot_assignments: materializeTemplateSlotAssignments(
+        selectedTopologyTemplateRevision,
+        Array.from(assignmentBySlotKey.entries()).map(([slot_key, organization_id]) => ({
+          slot_key,
+          organization_id,
+        })),
+      ),
+      edge_selector_overrides: materializeTemplateEdgeSelectorOverrides(
+        selectedTopologyTemplateRevision,
+        Array.from(overrideByEdge.entries()).map(([edgeKey, document_policy_key]) => {
+          const [parent_slot_key, child_slot_key] = edgeKey.split(':')
+          return {
+            parent_slot_key,
+            child_slot_key,
+            document_policy_key,
+          }
+        }),
+      ),
     })
   }, [
+    graph,
     isTemplateTopologyAuthoring,
+    organizations,
+    selectedPoolTopologyInstantiation,
     selectedTopologyTemplateRevision,
     topologyForm,
     watchedTopologyTemplateRevisionId,
@@ -4254,17 +4352,58 @@ export function PoolCatalogPage() {
                                       </Col>
                                       <Col span={16}>
                                         <Form.Item
-                                          name={[field.name, 'organization_id']}
                                           label={field.name === 0 ? 'Organization' : ''}
                                           style={{ marginBottom: 0 }}
                                         >
-                                          <Select
-                                            showSearch
-                                            optionFilterProp="label"
-                                            placeholder="Assign organization to slot"
-                                            options={organizationOptions}
-                                            data-testid={`pool-catalog-topology-template-slot-org-${field.name}`}
-                                          />
+                                          <Form.Item noStyle shouldUpdate>
+                                            {({ getFieldValue }) => {
+                                              const currentOrganizationId = String(
+                                                getFieldValue(['slot_assignments', field.name, 'organization_id']) || ''
+                                              ).trim()
+                                              const currentOrganization = currentOrganizationId
+                                                ? organizationById[currentOrganizationId]
+                                                : undefined
+                                              const currentOrganizationOption = currentOrganization
+                                                ? {
+                                                    value: currentOrganization.id,
+                                                    label: formatOrganizationOptionLabel(currentOrganization),
+                                                  }
+                                                : null
+                                              const currentOrganizationOptions = (
+                                                currentOrganizationOption
+                                                && !organizationOptions.some((option) => (
+                                                  option.value === currentOrganizationOption.value
+                                                ))
+                                              )
+                                                ? [currentOrganizationOption, ...organizationOptions]
+                                                : organizationOptions
+
+                                              return (
+                                                <Select
+                                                  showSearch
+                                                  labelInValue
+                                                  optionFilterProp="label"
+                                                  placeholder="Assign organization to slot"
+                                                  options={currentOrganizationOptions}
+                                                  value={
+                                                    currentOrganizationId
+                                                      ? {
+                                                          value: currentOrganizationId,
+                                                          label: currentOrganizationOption?.label,
+                                                        }
+                                                      : undefined
+                                                  }
+                                                  onChange={(nextValue) => {
+                                                    topologyForm.setFieldValue(
+                                                      ['slot_assignments', field.name, 'organization_id'],
+                                                      nextValue?.value ?? ''
+                                                    )
+                                                  }}
+                                                  data-testid={`pool-catalog-topology-template-slot-org-${field.name}`}
+                                                />
+                                              )
+                                            }}
+                                          </Form.Item>
                                         </Form.Item>
                                       </Col>
                                     </Row>
