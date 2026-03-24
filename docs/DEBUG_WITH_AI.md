@@ -1,5 +1,8 @@
 # AI-Powered Debugging with MCP DAP Server
 
+> Статус: legacy/non-authoritative agent debugging guide.
+> Для текущего agent-facing onboarding и runtime guidance используйте [docs/agent/INDEX.md](./agent/INDEX.md) и [../DEBUG.md](../DEBUG.md).
+
 > Автоматическая отладка Go сервисов с помощью AI через Model Context Protocol и Debug Adapter Protocol
 
 ---

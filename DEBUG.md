@@ -1,5 +1,8 @@
 # Debug Toolkit (autonomous-feedback-loop)
 
+Статус: supplemental runtime toolkit.
+Canonical agent-facing onboarding surface: `docs/agent/INDEX.md`.
+
 Этот файл описывает локальную debug-инфраструктуру для быстрого цикла:
 `проверка -> гипотеза -> runtime-eval -> фикс -> повторная проверка`.
 

@@ -1,5 +1,8 @@
 # 📚 Документация проекта task_00006: Централизованная платформа управления данными
 
+> Статус: legacy/non-authoritative onboarding document.
+> Для текущего agent-facing onboarding используйте [docs/agent/INDEX.md](./agent/INDEX.md).
+
 > **Навигация по всей документации проекта**
 
 ---

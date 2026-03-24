@@ -1,5 +1,8 @@
 # 🚀 START HERE: task_00006 Roadmap
 
+> Статус: legacy/non-authoritative onboarding document.
+> Для текущего agent-facing onboarding используйте [docs/agent/INDEX.md](./agent/INDEX.md).
+
 > **Быстрый старт по документации проекта - 2 минуты на прочтение**
 
 ---

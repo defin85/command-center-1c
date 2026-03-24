@@ -1,0 +1,67 @@
+name: Agent Docs Validation
+
+on:
+  pull_request:
+    paths:
+      - 'AGENTS.md'
+      - 'frontend/AGENTS.md'
+      - 'orchestrator/AGENTS.md'
+      - 'go-services/AGENTS.md'
+      - 'docs/agent/**'
+      - 'openspec/project.md'
+      - 'DEBUG.md'
+      - 'README.md'
+      - 'scripts/dev/README.md'
+      - 'docs/START_HERE.md'
+      - 'docs/INDEX.md'
+      - 'docs/DEBUG_WITH_AI.md'
+      - '.claude/README.md'
+      - '.claude/rules/quick-start.md'
+      - '.agents/skills/**'
+      - '.codex/config.toml'
+      - '.tool-versions'
+      - 'debug/runtime-inventory.sh'
+      - 'frontend/package.json'
+      - 'scripts/dev/check-agent-doc-freshness.py'
+      - 'scripts/dev/check-agent-doc-freshness.sh'
+  push:
+    branches:
+      - master
+    paths:
+      - 'AGENTS.md'
+      - 'frontend/AGENTS.md'
+      - 'orchestrator/AGENTS.md'
+      - 'go-services/AGENTS.md'
+      - 'docs/agent/**'
+      - 'openspec/project.md'
+      - 'DEBUG.md'
+      - 'README.md'
+      - 'scripts/dev/README.md'
+      - 'docs/START_HERE.md'
+      - 'docs/INDEX.md'
+      - 'docs/DEBUG_WITH_AI.md'
+      - '.claude/README.md'
+      - '.claude/rules/quick-start.md'
+      - '.agents/skills/**'
+      - '.codex/config.toml'
+      - '.tool-versions'
+      - 'debug/runtime-inventory.sh'
+      - 'frontend/package.json'
+      - 'scripts/dev/check-agent-doc-freshness.py'
+      - 'scripts/dev/check-agent-doc-freshness.sh'
+
+jobs:
+  agent-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Validate authoritative agent docs
+        run: ./scripts/dev/check-agent-doc-freshness.sh

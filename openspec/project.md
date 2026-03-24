@@ -15,7 +15,10 @@ CommandCenter1C is a microservices control plane for centralized management and 
 
 ### Code Style
 - Single source of truth for tool versions: `.tool-versions` (asdf/mise)
-- Documentation is mostly in Russian; key entry points: `README.md`, `docs/START_HERE.md`, `docs/ROADMAP.md`, `.claude/rules/*`
+- Documentation is mostly in Russian; canonical agent-facing entry point: `docs/agent/INDEX.md`
+- Additional authoritative agent guidance: `AGENTS.md`, `frontend/AGENTS.md`, `orchestrator/AGENTS.md`, `go-services/AGENTS.md`
+- Supplemental human-readable context: `README.md`, `DEBUG.md`, `scripts/dev/README.md`
+- Legacy/non-authoritative onboarding layers: `docs/START_HERE.md`, `docs/INDEX.md`, `docs/DEBUG_WITH_AI.md`, `.claude/README.md`, `.claude/rules/quick-start.md`
 - Go:
   - Formatting: `gofmt` (see `make format-go`)
   - Checks: `go vet` / `golangci-lint` (see `Makefile`, `scripts/dev/lint.sh`)

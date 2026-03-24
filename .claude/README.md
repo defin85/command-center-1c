@@ -1,5 +1,8 @@
 # Command Center 1C - Claude Code Configuration
 
+> Статус: legacy/non-authoritative Claude-specific guidance.
+> Для текущего agent-facing onboarding используйте [docs/agent/INDEX.md](../docs/agent/INDEX.md).
+
 Конфигурация Claude Code для проекта `command-center-1c`.
 
 ## Структура

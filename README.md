@@ -1,5 +1,8 @@
 # 🎯 CommandCenter1C
 
+> Статус для агентов: supplemental human-readable overview.
+> Canonical agent-facing onboarding surface: [docs/agent/INDEX.md](docs/agent/INDEX.md).
+
 > Централизованная платформа управления данными для 700+ баз 1С:Бухгалтерия 3.0
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)

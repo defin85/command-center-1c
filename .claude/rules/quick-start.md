@@ -1,5 +1,8 @@
 # Quick Start & Commands
 
+> Статус: legacy/non-authoritative quick-start.
+> Для текущего agent-facing onboarding используйте [docs/agent/INDEX.md](../../docs/agent/INDEX.md).
+
 > Запуск и управление проектом.
 
 ## Project Launch

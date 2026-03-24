@@ -1,5 +1,8 @@
 # CommandCenter1C - Development Scripts
 
+> Статус: supplemental operational reference.
+> Для canonical agent-facing onboarding используйте [docs/agent/INDEX.md](../../docs/agent/INDEX.md).
+
 > Коллекция скриптов для локальной разработки и управления сервисами
 
 ---
