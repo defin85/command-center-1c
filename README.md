@@ -259,11 +259,14 @@ make clean
 
 ## 📖 Документация
 
-### Roadmap и Планирование
-- **[START HERE](docs/START_HERE.md)** - Быстрый старт по документации roadmap (2 мин)
-- **[Executive Summary](docs/EXECUTIVE_SUMMARY.md)** - Для принятия решений (5-10 мин)
+### Agent-facing onboarding
+- **[docs/agent/INDEX.md](docs/agent/INDEX.md)** - Canonical onboarding surface для нового агента
+- **[docs/agent/ARCHITECTURE_MAP.md](docs/agent/ARCHITECTURE_MAP.md)** - Короткая карта подсистем и entry points
+- **[docs/agent/RUNBOOK.md](docs/agent/RUNBOOK.md)** - Canonical run/debug route
+- **[docs/agent/VERIFY.md](docs/agent/VERIFY.md)** - Canonical validation route
+
+### Roadmap и продуктовый контекст
 - **[Roadmap](docs/ROADMAP.md)** - Детальный план разработки (60-90 мин)
-- **[Index](docs/INDEX.md)** - Полная навигация по документации (10 мин)
 
 ### Практические гайды ← NEW
 - **[1C Administration Guide](docs/1C_ADMINISTRATION_GUIDE.md)** - RAS/RAC, gRPC, endpoint management
@@ -271,10 +274,9 @@ make clean
 
 ### Техническая документация
 - [Architecture Overview](docs/architecture/README.md)
-- [API Documentation](docs/api/README.md)
+- [API Contracts](contracts/README.md)
 - [Deployment Guide](docs/deployment/README.md) - Нативный деплой через GitHub Actions (без Docker)
-- [Development Guide](docs/development/README.md)
-- [CLAUDE.md](CLAUDE.md) - Инструкции для AI агентов
+- [Development Guide](docs/LOCAL_DEVELOPMENT_GUIDE.md)
 - [Contributing](CONTRIBUTING.md)
 
 ---

@@ -3,6 +3,8 @@
 > Статус: legacy/non-authoritative Claude-specific guidance.
 > Для текущего agent-facing onboarding используйте [docs/agent/INDEX.md](../docs/agent/INDEX.md).
 
+Если вы открыли этот файл по старой ссылке, вернитесь к `docs/agent/INDEX.md`. Этот каталог сохранён только как исторический Claude-specific слой и не является источником истины для текущего agent workflow.
+
 Конфигурация Claude Code для проекта `command-center-1c`.
 
 ## Структура
@@ -194,12 +196,12 @@ docker-compose exec frontend npm test
 
 ## Documentation
 
-### Key Documents
+### Canonical Documents
 
-- **CLAUDE.md** - Архитектура проекта и правила разработки (ОБЯЗАТЕЛЬНО READ)
-- **docs/ROADMAP.md** - Дорожная карта Balanced approach
-- **docs/START_HERE.md** - Быстрый старт
-- **docs/architecture/** - Детальная архитектура (когда будет создано)
+- **docs/agent/INDEX.md** - Canonical onboarding surface
+- **docs/agent/RUNBOOK.md** - Canonical runtime/debug route
+- **docs/agent/VERIFY.md** - Canonical validation route
+- **openspec/project.md** - Project context for OpenSpec workflows
 
 ### API Documentation
 
@@ -280,7 +282,7 @@ docs(readme): update setup instructions
 ## Ссылки
 
 **Project Documentation:**
-- `CLAUDE.md` - Архитектура и требования
+- `docs/agent/INDEX.md` - Canonical onboarding surface
 - `docs/ROADMAP.md` - Дорожная карта
 - `README.md` - Main project README
 

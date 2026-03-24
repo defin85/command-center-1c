@@ -1,5 +1,8 @@
 # Development Rules
 
+> Статус: legacy/non-authoritative Claude rule.
+> Для текущего agent-facing onboarding используйте [../../docs/agent/INDEX.md](../../docs/agent/INDEX.md).
+
 > Правила разработки для всего проекта.
 
 ## Core Principles

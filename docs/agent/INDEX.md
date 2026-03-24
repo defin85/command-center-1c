@@ -53,8 +53,9 @@
 - `docs/START_HERE.md`
 - `docs/INDEX.md`
 - `docs/DEBUG_WITH_AI.md`
+- `CLAUDE.md`
 - `.claude/README.md`
-- `.claude/rules/quick-start.md`
+- `.claude/rules/**`
 
 Legacy documents могут сохранять полезный исторический контекст, но не являются canonical onboarding path. Если они конфликтуют с этой поверхностью, источником истины считается `docs/agent/*` и root `AGENTS.md`.
 

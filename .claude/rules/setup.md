@@ -1,5 +1,8 @@
 # Setup & Troubleshooting
 
+> Статус: legacy/non-authoritative Claude rule.
+> Для текущего agent-facing onboarding используйте [../../docs/agent/INDEX.md](../../docs/agent/INDEX.md).
+
 > Первоначальная настройка и решение проблем.
 
 ## Prerequisites

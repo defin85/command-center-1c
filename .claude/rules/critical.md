@@ -1,5 +1,8 @@
 # Critical Information
 
+> Статус: legacy/non-authoritative Claude rule.
+> Для текущего agent-facing onboarding используйте [../../docs/agent/INDEX.md](../../docs/agent/INDEX.md).
+
 > Загружается ВСЕГДА. Критичная информация для любой задачи.
 
 ## Project Status

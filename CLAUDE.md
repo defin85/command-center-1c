@@ -1,5 +1,10 @@
 # CommandCenter1C - AI Agent Instructions
 
+> Статус: legacy/non-authoritative Claude-specific guidance.
+> Для текущего agent-facing onboarding используйте [docs/agent/INDEX.md](docs/agent/INDEX.md).
+
+Если вы открыли этот файл по старой ссылке, вернитесь к `docs/agent/INDEX.md`. Этот документ сохранён только как исторический слой совместимости.
+
 > Микросервисная платформа для централизованного управления 700+ базами 1С
 
 ---

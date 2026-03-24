@@ -1,5 +1,8 @@
 # Testing & Linting
 
+> Статус: legacy/non-authoritative Claude rule.
+> Для текущего agent-facing onboarding используйте [../../docs/agent/INDEX.md](../../docs/agent/INDEX.md).
+
 > Требования к тестированию и качеству кода.
 
 ## Linting (All Components)

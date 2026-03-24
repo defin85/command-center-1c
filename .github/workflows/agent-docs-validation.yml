@@ -15,13 +15,15 @@ on:
       - 'docs/START_HERE.md'
       - 'docs/INDEX.md'
       - 'docs/DEBUG_WITH_AI.md'
+      - 'CLAUDE.md'
       - '.claude/README.md'
-      - '.claude/rules/quick-start.md'
+      - '.claude/rules/**'
       - '.agents/skills/**'
       - '.codex/config.toml'
       - '.tool-versions'
-      - 'debug/runtime-inventory.sh'
+      - 'debug/**'
       - 'frontend/package.json'
+      - 'scripts/dev/**'
       - 'scripts/dev/check-agent-doc-freshness.py'
       - 'scripts/dev/check-agent-doc-freshness.sh'
   push:
@@ -40,13 +42,15 @@ on:
       - 'docs/START_HERE.md'
       - 'docs/INDEX.md'
       - 'docs/DEBUG_WITH_AI.md'
+      - 'CLAUDE.md'
       - '.claude/README.md'
-      - '.claude/rules/quick-start.md'
+      - '.claude/rules/**'
       - '.agents/skills/**'
       - '.codex/config.toml'
       - '.tool-versions'
-      - 'debug/runtime-inventory.sh'
+      - 'debug/**'
       - 'frontend/package.json'
+      - 'scripts/dev/**'
       - 'scripts/dev/check-agent-doc-freshness.py'
       - 'scripts/dev/check-agent-doc-freshness.sh'
 
@@ -63,5 +67,13 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Validate authoritative agent docs
         run: ./scripts/dev/check-agent-doc-freshness.sh
+
+      - name: Validate OpenSpec metadata
+        run: npx -y openspec validate add-codex-agent-productivity-foundation --strict --no-interactive

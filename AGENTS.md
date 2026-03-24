@@ -43,8 +43,9 @@ Keep this managed block so 'openspec update' can refresh the instructions.
   - `docs/START_HERE.md`
   - `docs/INDEX.md`
   - `docs/DEBUG_WITH_AI.md`
+  - `CLAUDE.md`
   - `.claude/README.md`
-  - `.claude/rules/quick-start.md`
+  - `.claude/rules/**`
 
 ## Repo Snapshot
 

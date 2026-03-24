@@ -18,7 +18,7 @@ CommandCenter1C is a microservices control plane for centralized management and 
 - Documentation is mostly in Russian; canonical agent-facing entry point: `docs/agent/INDEX.md`
 - Additional authoritative agent guidance: `AGENTS.md`, `frontend/AGENTS.md`, `orchestrator/AGENTS.md`, `go-services/AGENTS.md`
 - Supplemental human-readable context: `README.md`, `DEBUG.md`, `scripts/dev/README.md`
-- Legacy/non-authoritative onboarding layers: `docs/START_HERE.md`, `docs/INDEX.md`, `docs/DEBUG_WITH_AI.md`, `.claude/README.md`, `.claude/rules/quick-start.md`
+- Legacy/non-authoritative onboarding layers: `docs/START_HERE.md`, `docs/INDEX.md`, `docs/DEBUG_WITH_AI.md`, `CLAUDE.md`, `.claude/README.md`, `.claude/rules/**`
 - Go:
   - Formatting: `gofmt` (see `make format-go`)
   - Checks: `go vet` / `golangci-lint` (see `Makefile`, `scripts/dev/lint.sh`)
@@ -46,7 +46,7 @@ CommandCenter1C is a microservices control plane for centralized management and 
 - Local development defaults to "hybrid" mode:
   - Infrastructure in Docker (`docker-compose.local.yml`)
   - App services on host via `scripts/dev/start-all.sh`
-  - Mode is driven by `USE_DOCKER` in `.env.local` (see `.claude/rules/setup.md`)
+  - Mode is driven by `USE_DOCKER` in `.env.local`; canonical operational path lives in `docs/agent/RUNBOOK.md`
 - Event-driven pieces use Redis (Pub/Sub/Streams) and Watermill (Go libraries)
 
 ### Testing Strategy
@@ -57,7 +57,7 @@ CommandCenter1C is a microservices control plane for centralized management and 
   - Django: `pytest` (tests under `orchestrator/apps/**/tests/`)
   - Go: `go test ./...` per service (`go-services/<service>/`)
   - Frontend: `vitest` (`npm test`, `npm run test:coverage`) and Playwright (`npm run test:browser`)
-- Coverage targets (project rules): Django/Go > 70%, React > 60% (see `.claude/rules/testing.md`)
+- Coverage targets (project rules): Django/Go > 70%, React > 60%; canonical validation entry points live in `docs/agent/VERIFY.md`
 
 ### Git Workflow
 - Workflow: single branch `master` (changes are committed directly to `master`)
@@ -77,7 +77,7 @@ CommandCenter1C is a microservices control plane for centralized management and 
 - 1C transaction time must stay under ~15 seconds; split long operations into multiple short transactions
 - Limit concurrent connections per infobase (typical: 3-5)
 - Prefer OData `$batch` in the 100-500 records range per batch
-- Default rate limiting is enforced at the gateway (see `.claude/rules/critical.md`; typical: 100 req/min per user)
+- Default rate limiting is enforced at the gateway (typical: 100 req/min per user)
 - Dev ports are chosen to avoid Windows reserved ranges; common ports in hybrid dev:
   - 15173 (frontend), 8180 (api-gateway), 8200 (orchestrator), 5432 (postgres), 6379 (redis)
 

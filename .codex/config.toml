@@ -1,6 +1,6 @@
 [mcp_servers.claude-context]
 command = "bash"
-args = ["-lc", 'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; export OLLAMA_HOST="http://$(awk "/nameserver/{print \$2; exit}" /etc/resolv.conf):11434"; [ -f "/home/egor/code/claude-context/packages/mcp/dist/index.js" ] || { echo "Local MCP build not found: /home/egor/code/claude-context/packages/mcp/dist/index.js" >&2; echo "Run: /home/egor/code/claude-context/scripts/build-local-mcp.sh" >&2; exit 1; }; nvm exec --silent 22 -- node /home/egor/code/claude-context/packages/mcp/dist/index.js']
+args = ["-lc", 'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; export OLLAMA_HOST="http://$(awk "/nameserver/{print \$2; exit}" /etc/resolv.conf):11434"; MCP_DIST="$HOME/code/claude-context/packages/mcp/dist/index.js"; MCP_BUILD="$HOME/code/claude-context/scripts/build-local-mcp.sh"; [ -f "$MCP_DIST" ] || { echo "Local MCP build not found: $MCP_DIST" >&2; echo "Run: $MCP_BUILD" >&2; exit 1; }; nvm exec --silent 20 -- node "$MCP_DIST"']
 startup_timeout_sec = 60.0
 
 [mcp_servers.claude-context.env]
@@ -8,7 +8,7 @@ EMBEDDING_MODEL = "nomic-embed-text-v2-moe"
 EMBEDDING_PROVIDER = "Ollama"
 MILVUS_ADDRESS = "127.0.0.1:20530"
 CUSTOM_EXTENSIONS = ".bsl"
-CUSTOM_IGNORE_PATTERNS = ".git/**,.venv/**,.beads/**,.agent-browser/**,.ruff_cache/**,frontend/node_modules/**,frontend/dist/**,frontend/test-results/**,orchestrator/.pytest_cache/**,orchestrator/__pycache__/**,orchestrator/htmlcov/**,logs/**,pids/**,bin/**,openspec/changes/**,docs/archive/**,frontend/src/api/generated/**,generated/**,com._1c.v8.ibis.admin-1.6.7/**"
+CUSTOM_IGNORE_PATTERNS = ".git/**,.venv/**,.beads/**,.agent-browser/**,.ruff_cache/**,frontend/node_modules/**,frontend/dist/**,frontend/test-results/**,orchestrator/.pytest_cache/**,orchestrator/__pycache__/**,orchestrator/htmlcov/**,logs/**,pids/**,bin/**,docs/archive/**,frontend/src/api/generated/**,generated/**,com._1c.v8.ibis.admin-1.6.7/**"
 
 [mcp_servers.chrome-devtools]
 command = "npx"

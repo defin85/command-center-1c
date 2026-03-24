@@ -1,5 +1,8 @@
 # Claude Rules Directory
 
+> Статус: legacy/non-authoritative Claude rules index.
+> Для текущего agent-facing onboarding используйте [../../docs/agent/INDEX.md](../../docs/agent/INDEX.md).
+
 > Модульные правила для AI-агентов. Автоматически загружаются Claude Code.
 
 ## Structure

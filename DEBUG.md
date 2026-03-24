@@ -75,7 +75,7 @@ systemctl --user status beads-dolt.service --no-pager
 Инварианты:
 - база проекта живёт как реальный каталог `~/.local/share/beads/dolt-server/<database>`;
 - `metadata.json` должен содержать `dolt_mode: "server"`;
-- при первой миграции legacy `.beads/dolt` архивируется в `~/.local/share/beads/dolt-backups/`;
+- при первой миграции legacy Beads Dolt working state из `.beads/` архивируется в `~/.local/share/beads/dolt-backups/`;
 - пароль не хранится в репозитории, используется `BEADS_DOLT_PASSWORD`.
 
 ## Проверенный live-цикл: `pool run -> dom_lesa`

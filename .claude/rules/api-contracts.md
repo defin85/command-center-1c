@@ -4,6 +4,9 @@ paths: contracts/**/*.yaml
 
 # OpenAPI Contracts (Contract-First Development)
 
+> Статус: legacy/non-authoritative Claude rule.
+> Для текущего agent-facing onboarding используйте [../../docs/agent/INDEX.md](../../docs/agent/INDEX.md).
+
 > Single source of truth for REST API contracts.
 
 ## Structure

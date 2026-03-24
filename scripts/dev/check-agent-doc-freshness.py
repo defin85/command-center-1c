@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+CLAUDE_RULE_DOCS = sorted((ROOT / ".claude/rules").glob("*.md"))
 
 AUTHORITATIVE_DOCS = [
     ROOT / "AGENTS.md",
@@ -26,11 +27,12 @@ AUTHORITATIVE_DOCS = [
 ]
 
 LEGACY_DOCS = [
+    ROOT / "CLAUDE.md",
     ROOT / "docs/START_HERE.md",
     ROOT / "docs/INDEX.md",
     ROOT / "docs/DEBUG_WITH_AI.md",
     ROOT / ".claude/README.md",
-    ROOT / ".claude/rules/quick-start.md",
+    *CLAUDE_RULE_DOCS,
 ]
 
 SUPPLEMENTAL_DOCS = [
@@ -47,11 +49,29 @@ PACKAGE_SCRIPTS_REQUIRED = [
     "validate:ui-platform",
 ]
 
+SHARED_SKILLS = [
+    ROOT / ".agents/skills/runtime-debug/SKILL.md",
+    ROOT / ".agents/skills/pool-run-verification/SKILL.md",
+    ROOT / ".agents/skills/openspec-change-delivery/SKILL.md",
+]
+
+SKILL_REQUIRED_SECTIONS = [
+    "## What This Skill Does",
+    "## When To Use",
+    "## Inputs",
+    "## Outputs",
+    "## Workflow",
+    "## Success Criteria",
+    "## Practical Job",
+]
+
 REPO_PREFIXES = (
     "AGENTS.md",
+    "CLAUDE.md",
     "README.md",
     "DEBUG.md",
     ".tool-versions",
+    ".beads/",
     ".codex/",
     ".agents/",
     ".claude/",
@@ -112,9 +132,11 @@ def normalize_local_path(raw: str, base_dir: Path, *, dot_relative_to_root: bool
     if "#" in candidate:
         candidate = candidate.split("#", 1)[0]
     candidate = candidate.strip()
+    if " " in candidate:
+        leading = candidate.split(maxsplit=1)[0]
+        if leading.startswith(("./", "../")) or leading.startswith(REPO_PREFIXES):
+            candidate = leading
     if not candidate or "*" in candidate or "<" in candidate or ">" in candidate:
-        return None
-    if " " in candidate and not candidate.startswith("docs/agent/"):
         return None
     if "->" in candidate:
         return None
@@ -155,7 +177,7 @@ def require_not_contains(errors: list[str], text: str, needle: str, path: Path) 
 def main() -> int:
     errors: list[str] = []
 
-    for path in AUTHORITATIVE_DOCS + LEGACY_DOCS + SUPPLEMENTAL_DOCS:
+    for path in AUTHORITATIVE_DOCS + LEGACY_DOCS + SUPPLEMENTAL_DOCS + SHARED_SKILLS:
         if not path.exists():
             errors.append(f"Missing required doc: {path.relative_to(ROOT)}")
 
@@ -164,10 +186,11 @@ def main() -> int:
             print(f"ERROR: {error}")
         return 1
 
-    texts = {path: read(path) for path in AUTHORITATIVE_DOCS + LEGACY_DOCS + SUPPLEMENTAL_DOCS}
+    texts = {path: read(path) for path in AUTHORITATIVE_DOCS + LEGACY_DOCS + SUPPLEMENTAL_DOCS + SHARED_SKILLS}
     versions = parse_tool_versions()
     inventory = load_inventory()
     package_scripts = load_package_scripts()
+    codex_config = read(ROOT / ".codex/config.toml")
 
     root_agents = texts[ROOT / "AGENTS.md"]
     require_contains(errors, root_agents, "docs/agent/INDEX.md", ROOT / "AGENTS.md")
@@ -178,19 +201,33 @@ def main() -> int:
 
     project_context = texts[ROOT / "openspec/project.md"]
     require_contains(errors, project_context, "docs/agent/INDEX.md", ROOT / "openspec/project.md")
+    require_not_contains(errors, project_context, ".claude/rules/setup.md", ROOT / "openspec/project.md")
+    require_not_contains(errors, project_context, ".claude/rules/testing.md", ROOT / "openspec/project.md")
+    require_not_contains(errors, project_context, ".claude/rules/critical.md", ROOT / "openspec/project.md")
     runbook = texts[ROOT / "docs/agent/RUNBOOK.md"]
     arch_map = texts[ROOT / "docs/agent/ARCHITECTURE_MAP.md"]
     verify = texts[ROOT / "docs/agent/VERIFY.md"]
     index_doc = texts[ROOT / "docs/agent/INDEX.md"]
+    readme = texts[ROOT / "README.md"]
+    claude_readme = texts[ROOT / ".claude/README.md"]
+    frontend_agents = texts[ROOT / "frontend/AGENTS.md"]
+    orchestrator_agents = texts[ROOT / "orchestrator/AGENTS.md"]
+    go_agents = texts[ROOT / "go-services/AGENTS.md"]
 
     require_contains(errors, index_doc, ".agents/skills/runtime-debug/SKILL.md", ROOT / "docs/agent/INDEX.md")
     require_contains(errors, index_doc, ".agents/skills/pool-run-verification/SKILL.md", ROOT / "docs/agent/INDEX.md")
     require_contains(errors, index_doc, ".agents/skills/openspec-change-delivery/SKILL.md", ROOT / "docs/agent/INDEX.md")
+    require_contains(errors, index_doc, ".beads/", ROOT / "docs/agent/INDEX.md")
+    require_not_contains(errors, readme, "[CLAUDE.md]", ROOT / "README.md")
+    require_not_contains(errors, claude_readme, "CLAUDE.md", ROOT / ".claude/README.md")
 
     require_contains(errors, runbook, f"Go {versions['go']}", ROOT / "docs/agent/RUNBOOK.md")
     require_contains(errors, runbook, f"Python {versions['python']}", ROOT / "docs/agent/RUNBOOK.md")
     require_contains(errors, runbook, f"Node.js {versions['nodejs']}", ROOT / "docs/agent/RUNBOOK.md")
     require_contains(errors, runbook, f"Java {versions['java']}", ROOT / "docs/agent/RUNBOOK.md")
+    require_contains(errors, codex_config, f'nvm exec --silent {versions["nodejs"]}', ROOT / ".codex/config.toml")
+    require_not_contains(errors, codex_config, "openspec/changes/**", ROOT / ".codex/config.toml")
+    require_not_contains(errors, codex_config, "/home/egor/", ROOT / ".codex/config.toml")
 
     for runtime in inventory:
         require_contains(errors, arch_map, runtime["entrypoint"], ROOT / "docs/agent/ARCHITECTURE_MAP.md")
@@ -208,6 +245,16 @@ def main() -> int:
             ROOT / "docs/agent/VERIFY.md",
         )
 
+    require_contains(errors, frontend_agents, "npm run lint", ROOT / "frontend/AGENTS.md")
+    require_contains(errors, frontend_agents, "npm run test:run", ROOT / "frontend/AGENTS.md")
+    require_contains(errors, frontend_agents, "npm run test:browser:ui-platform", ROOT / "frontend/AGENTS.md")
+    require_contains(errors, frontend_agents, "npm run validate:ui-platform", ROOT / "frontend/AGENTS.md")
+    require_contains(errors, orchestrator_agents, "./scripts/dev/lint.sh --python", ROOT / "orchestrator/AGENTS.md")
+    require_contains(errors, orchestrator_agents, "./scripts/dev/pytest.sh -q <path>", ROOT / "orchestrator/AGENTS.md")
+    require_contains(errors, go_agents, "./scripts/dev/lint.sh --go", ROOT / "go-services/AGENTS.md")
+    require_contains(errors, go_agents, "cd go-services/api-gateway && go test ./...", ROOT / "go-services/AGENTS.md")
+    require_contains(errors, go_agents, "cd go-services/worker && go test ./...", ROOT / "go-services/AGENTS.md")
+
     for path in LEGACY_DOCS:
         text = texts[path]
         if "legacy/non-authoritative" not in text:
@@ -222,7 +269,12 @@ def main() -> int:
         if "docs/agent/INDEX.md" not in text:
             errors.append(f"{path.relative_to(ROOT)} must point to docs/agent/INDEX.md")
 
-    for path in AUTHORITATIVE_DOCS:
+    for path in SHARED_SKILLS:
+        text = texts[path]
+        for section in SKILL_REQUIRED_SECTIONS:
+            require_contains(errors, text, section, path)
+
+    for path in AUTHORITATIVE_DOCS + SUPPLEMENTAL_DOCS + SHARED_SKILLS:
         for referenced in collect_path_like_tokens(path, texts[path]):
             if referenced == path:
                 continue
