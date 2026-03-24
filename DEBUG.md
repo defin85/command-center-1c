@@ -75,6 +75,96 @@ systemctl --user status beads-dolt.service --no-pager
 - при первой миграции legacy `.beads/dolt` архивируется в `~/.local/share/beads/dolt-backups/`;
 - пароль не хранится в репозитории, используется `BEADS_DOLT_PASSWORD`.
 
+## Проверенный live-цикл: `pool run -> dom_lesa`
+
+Проверено `2026-03-24` на живом контуре:
+- pool: `top-down-pool`
+- pool_id: `fc2588b5-18d7-47a5-bb4c-25fdd280fbe8`
+- binding_id: `c011e46a-a109-45b9-a10d-20ca40832c0f`
+- target database: `dom_lesa_7726446503`
+- tenant_id: `4d29aa0d-3fcc-41b2-878a-28f84f6f75ec`
+
+Подтвержденный путь:
+
+```bash
+export CC1C_BASE_URL=http://localhost:15173
+export CC1C_TENANT_ID=4d29aa0d-3fcc-41b2-878a-28f84f6f75ec
+export CC1C_POOL_ID=fc2588b5-18d7-47a5-bb4c-25fdd280fbe8
+export CC1C_BINDING_ID=c011e46a-a109-45b9-a10d-20ca40832c0f
+export CC1C_PERIOD_START=2026-03-24
+export CC1C_AMOUNT=88888.88
+export CC1C_UI_USER=admin
+export CC1C_UI_PASSWORD='...'
+export CC1C_ODATA_USER=odata.user
+export CC1C_ODATA_PASSWORD='...'
+```
+
+1. Получить JWT:
+
+```bash
+curl --noproxy '*' -sS -H 'Content-Type: application/json' \
+  -d "{\"username\":\"$CC1C_UI_USER\",\"password\":\"$CC1C_UI_PASSWORD\"}" \
+  "$CC1C_BASE_URL/api/token"
+```
+
+2. Создать `safe` run:
+
+```bash
+curl --noproxy '*' -sS -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "X-CC1C-Tenant-ID: $CC1C_TENANT_ID" \
+  -H 'Content-Type: application/json' \
+  -d "{\"pool_id\":\"$CC1C_POOL_ID\",\"pool_workflow_binding_id\":\"$CC1C_BINDING_ID\",\"direction\":\"top_down\",\"period_start\":\"$CC1C_PERIOD_START\",\"run_input\":{\"starting_amount\":\"$CC1C_AMOUNT\"},\"mode\":\"safe\"}" \
+  "$CC1C_BASE_URL/api/v2/pools/runs/"
+```
+
+3. Подтвердить публикацию. `Idempotency-Key` обязателен:
+
+```bash
+curl --noproxy '*' -sS -X POST \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "X-CC1C-Tenant-ID: $CC1C_TENANT_ID" \
+  -H "Idempotency-Key: debug-confirm-$(date +%s)" \
+  "$CC1C_BASE_URL/api/v2/pools/runs/$RUN_ID/confirm-publication/"
+```
+
+4. Поллить report до terminal state:
+
+```bash
+curl --noproxy '*' -sS \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "X-CC1C-Tenant-ID: $CC1C_TENANT_ID" \
+  "$CC1C_BASE_URL/api/v2/pools/runs/$RUN_ID/report/"
+```
+
+5. Проверить созданный документ через OData по `Ref_Key`:
+
+```bash
+curl --noproxy '*' -k -sS \
+  -u "$CC1C_ODATA_USER:$CC1C_ODATA_PASSWORD" \
+  "https://192.168.32.143/dom_lesa_7726446503/odata/standard.odata/Document_%D0%9F%D0%BE%D1%81%D1%82%D1%83%D0%BF%D0%BB%D0%B5%D0%BD%D0%B8%D0%B5%D0%A2%D0%BE%D0%B2%D0%B0%D1%80%D0%BE%D0%B2%D0%A3%D1%81%D0%BB%D1%83%D0%B3(guid%27$DOC_REF_KEY%27)?$format=json"
+```
+
+Что реально увидел:
+- `POST /api/v2/pools/runs/` создал run `5b696ed1-359a-4187-afa9-752437c15d21`
+- `confirm-publication` вернул `202 Accepted`
+- `GET /api/v2/pools/runs/5b696ed1-359a-4187-afa9-752437c15d21/report/` в финале показал:
+  - `status = published`
+  - `workflow_status = completed`
+  - `approval_state = approved`
+  - `publication_step_state = completed`
+- worker log подтвердил реальные side effects:
+  - `POST /dom_lesa_7726446503/odata/standard.odata//Document_ПоступлениеТоваровУслуг -> 201`
+  - `PATCH /dom_lesa_7726446503/odata/standard.odata//Document_ПоступлениеТоваровУслуг(guid'f005e12c-274b-11f1-9d20-000c29b79fe4') -> 200`
+- OData single-entity GET подтвердил:
+  - `Ref_Key = f005e12c-274b-11f1-9d20-000c29b79fe4`
+  - `Number = 0000-000040`
+  - `Date = 2023-10-03T12:00:00`
+  - `Posted = true`
+  - `СуммаДокумента = 88888.88`
+
+Нюанс:
+- сразу после `confirm-publication` report может кратковременно показывать неактуальную промежуточную проекцию; верифицированный способ — поллить report и, при разборе инцидента, сверять `PoolPublicationAttempt`/worker log.
+
 ## Важные замечания
 
 1. Для `eval-django.sh` обязателен `orchestrator/venv` с установленным Django.
