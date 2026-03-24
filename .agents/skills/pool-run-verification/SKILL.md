@@ -1,3 +1,8 @@
+---
+name: pool-run-verification
+description: Use when verifying the full pool run flow on a live contour, including publication, terminal report status, and OData document confirmation with number and date.
+---
+
 # Pool Run Verification
 
 ## What This Skill Does
@@ -48,4 +53,3 @@
 ## Practical Job
 
 Пример: "Прогони новый `safe` run для top-down pool и скажи номер и дату созданного документа."
-

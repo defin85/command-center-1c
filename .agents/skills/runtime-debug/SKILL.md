@@ -1,3 +1,8 @@
+---
+name: runtime-debug
+description: Use when checking local runtimes, probing health, restarting frontend or backend services, and confirming recovery with targeted evals and probes.
+---
+
 # Runtime Debug
 
 ## What This Skill Does
@@ -44,4 +49,3 @@
 ## Practical Job
 
 Пример: "Проверь, почему frontend не отвечает на `http://localhost:15173`, и если нужно, перезапусти его и подтверди health."
-

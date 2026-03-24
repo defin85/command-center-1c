@@ -1,3 +1,8 @@
+---
+name: openspec-change-delivery
+description: Use when implementing an approved OpenSpec change end-to-end through execution matrix, Beads tracking, targeted verification, and final Requirement -> Code -> Test handoff.
+---
+
 # OpenSpec Change Delivery
 
 ## What This Skill Does
@@ -44,4 +49,3 @@
 ## Practical Job
 
 Пример: "Реализуй approved OpenSpec change end-to-end, веди работу через Beads и отдай финальный `Requirement -> Code -> Test` отчёт."
-
