@@ -168,28 +168,23 @@ Default collection read contract ДОЛЖЕН (SHALL) быть `GET /api/v2/pool
 - **AND** этот `collection_etag` используется в следующем default workspace-save
 
 ### Requirement: Pool workflow binding decisions MUST выступать именованными publication slots
-Система ДОЛЖНА (SHALL) хранить в `pool_workflow_binding.decisions[]`:
-- `decision_key` как identity reusable decision revision/resource;
-- `slot_key` как canonical binding slot name для policy-bearing decisions внутри binding.
+Система ДОЛЖНА (SHALL) валидировать reusable execution-pack coverage относительно structural slot contract выбранного pool topology.
 
-Binding МОЖЕТ (MAY) pin-ить несколько publication slot decisions одновременно.
+Execution pack МОЖЕТ (MAY) реализовывать named slots через decision refs, но НЕ ДОЛЖЕН (SHALL NOT) silently расширять или переопределять structural slot namespace, пришедший из topology-template layer или concrete topology contract.
 
-`slot_key` ДОЛЖЕН (SHALL) быть уникальным в пределах одного binding для policy-bearing decisions.
+#### Scenario: Attachment блокируется при несовместимом execution pack coverage
+- **GIVEN** structural topology contract требует slots `sale` и `receipt`
+- **AND** выбранная execution-pack revision реализует только `sale`
+- **WHEN** оператор attach'ит или preview'ит этот binding
+- **THEN** система возвращает missing coverage diagnostics
+- **AND** несовместимость не маскируется fallback логикой
 
-Topology edge selector `edge.metadata.document_policy_key` ДОЛЖЕН (SHALL) резолвиться только против `slot_key`, pinned в выбранном binding.
-
-#### Scenario: Один binding pin-ит несколько publication slots
-- **GIVEN** binding содержит policy decisions с `decision_key=document_policy`
-- **AND** эти refs имеют `slot_key=sale` и `slot_key=purchase`
-- **WHEN** оператор открывает binding preview
-- **THEN** preview показывает оба slot'а как часть effective projection
-- **AND** runtime может использовать их независимо на разных topology edges
-
-#### Scenario: Duplicate slot_key отклоняется fail-closed
-- **GIVEN** оператор или backend пытается сохранить binding, где два policy-bearing decision refs имеют одинаковый `slot_key`
-- **WHEN** выполняется validation binding contract
-- **THEN** запрос отклоняется fail-closed
-- **AND** canonical binding store не сохраняет ambiguous slot mapping
+#### Scenario: Extra execution slot не становится structural slot автоматически
+- **GIVEN** execution-pack revision реализует `sale`, `receipt` и `internal_override`
+- **AND** structural topology contract не содержит `internal_override`
+- **WHEN** система оценивает compatibility attachment-а
+- **THEN** extra slot не materialize'ится как новый structural topology slot
+- **AND** оператор получает явный compatibility outcome
 
 ### Requirement: Binding workspace UI MUST быть analyst-friendly slot-oriented surface
 Система ДОЛЖНА (SHALL) предоставлять binding workspace как analyst-friendly surface для управления named publication slots, а не как low-level editor raw decision refs.
@@ -222,33 +217,69 @@ Raw identifiers (`decision_table_id`, внутренние ids) МОГУТ (MAY)
 - **AND** не смешивает его с missing `slot_key` внутри выбранного binding
 
 ### Requirement: Pool attachment MUST оставаться pool-local activation layer без local logic overrides в MVP
-Система ДОЛЖНА (SHALL) трактовать `pool_workflow_binding` как pool-local activation layer.
+Система ДОЛЖНА (SHALL) трактовать `pool_workflow_binding` как versioned attachment между конкретным `pool` и pinned reusable execution-pack revision.
 
-В MVP attachment МОЖЕТ (MAY) редактировать только:
-- `status`;
-- selector scope;
-- `effective_from/effective_to`;
-- reference на `binding_profile_revision`;
-- optional display/provenance metadata, не влияющую на runtime logic.
+Operator-facing и shipped attachment semantics ДОЛЖНЫ (SHALL) описывать attached execution pack и pinned execution-pack revision без обязательного compatibility path для historical `binding_profile*` data.
 
-Attachment НЕ ДОЛЖЕН (SHALL NOT) локально переопределять:
-- workflow revision;
-- publication slot map;
-- parameters;
-- role mapping.
+Attachment НЕ ДОЛЖЕН (SHALL NOT) трактоваться как owner reusable execution logic; он остаётся pool-local activation layer.
 
-Для pool-specific вариации reusable схемы система ДОЛЖНА (SHALL) требовать новую `binding_profile_revision` или отдельный `binding_profile`.
+#### Scenario: Attachment summary показывает attached execution pack
+- **GIVEN** оператор открывает pool binding inspect/preview surface
+- **WHEN** UI рендерит reusable execution logic summary
+- **THEN** экран показывает attached execution pack и его pinned revision
+- **AND** не описывает эту reusable сущность так, будто она владеет structural topology
 
-#### Scenario: Оператор не может quietly изменить slot map только для одного pool attachment
-- **GIVEN** attachment pinned на reusable profile revision
-- **WHEN** оператор пытается изменить workflow/slot logic только внутри attachment-а
-- **THEN** система отклоняет такой mutate path или направляет к созданию новой profile revision
-- **AND** существующая reusable profile revision остаётся неизменной
+#### Scenario: Runtime lineage не зависит от legacy binding-profile aliases
+- **GIVEN** operator-facing semantics уже используют термин `Execution Pack`
+- **WHEN** runtime сохраняет provenance или выполняет preview/create-run
+- **THEN** immutable opaque revision id остаётся authoritative pin
+- **AND** shipped contract не требует compatibility alias для pre-existing `binding_profile*` attachment refs
 
-#### Scenario: Attachment на deactivated profile revision остаётся читаемым, но не переиспользуется для нового attach
-- **GIVEN** attachment уже pinned на `binding_profile_revision_id`
-- **AND** source profile позже деактивирован в catalog
-- **WHEN** оператор читает attachment collection или inspect lineage
-- **THEN** attachment остаётся видимым и читаемым с profile lifecycle warning
-- **AND** новый attach/re-attach на этот deactivated profile через default path недоступен
+### Requirement: Attachment read model MUST оставаться derived projection pinned profile revision
+Система ДОЛЖНА (SHALL) трактовать `binding_profile_revision_id` вместе с pool-local activation fields как единственный authoritative mutable state attachment-а в shipped path.
+
+Operator-facing или runtime read-model МОЖЕТ (MAY) возвращать `resolved_profile` или эквивалентный convenience payload, но такая проекция:
+- ДОЛЖНА (SHALL) выводиться из pinned `binding_profile_revision_id`;
+- НЕ ДОЛЖНА (SHALL NOT) становиться второй primary mutable payload surface attachment-а;
+- НЕ ДОЛЖНА (SHALL NOT) требовать повторной отправки reusable `workflow`, `decisions`, `parameters` или `role_mapping`, когда оператор меняет только pool-local activation fields.
+
+Default mutate path для attachment-а ДОЛЖЕН (SHALL) принимать только pool-local activation fields и explicit repin на другой `binding_profile_revision_id`, если оператор осознанно меняет reusable схему.
+
+#### Scenario: Pool-local mutate не требует повторной отправки reusable logic
+- **GIVEN** attachment pinned на reusable `binding_profile_revision_id`
+- **WHEN** оператор меняет только `status`, selector scope или effective period
+- **THEN** shipped mutate contract принимает только pool-local fields и pinned profile reference
+- **AND** authoritative `workflow`, `decisions`, `parameters` и `role_mapping` продолжают резолвиться из pinned profile revision
+
+#### Scenario: Read model показывает derived resolved profile без второй mutable payload surface
+- **GIVEN** attachment pinned на reusable `binding_profile_revision_id`
+- **WHEN** оператор или runtime path читает attachment detail, collection или preview
+- **THEN** response МОЖЕТ (MAY) включать `resolved_profile` как convenience summary
+- **AND** этот payload derived из pinned profile revision, а не из отдельного attachment-local mutable source-of-truth
+
+### Requirement: Default attachment reads MUST быть side-effect-free и не включать remediation/backfill compatibility path
+Система ДОЛЖНА (SHALL) обеспечивать, что default shipped list/detail/preview/runtime path для attachment-ов не меняет canonical binding/profile state как implicit remediation.
+
+Default shipped path НЕ ДОЛЖЕН (SHALL NOT):
+- создавать generated `binding_profile` или `binding_profile_revision`;
+- дописывать missing profile refs в canonical attachment row;
+- silently чинить legacy residue как побочный эффект operator read или runtime resolution.
+
+Если canonical attachment row не может быть корректно прочитан из-за отсутствующих или неразрешимых profile refs, shipped path ДОЛЖЕН (SHALL):
+- fail-closed;
+- вернуть blocking remediation state или machine-readable diagnostic.
+
+Этот refactor НЕ ДОЛЖЕН (SHALL NOT) требовать shipped remediation/backfill compatibility flow для rows без resolvable profile refs; rollout допускает предварительное удаление или пересоздание затронутых historical данных вместо in-place repair.
+
+#### Scenario: Missing profile refs не materialize'ятся молча на read path
+- **GIVEN** canonical `pool_workflow_binding` существует, но не содержит корректных profile refs
+- **WHEN** оператор открывает binding workspace, attachment detail или preview в shipped path
+- **THEN** система возвращает blocking remediation или fail-closed diagnostic
+- **AND** generated profile/revision не создаётся как побочный эффект этого чтения
+
+#### Scenario: Legacy residue без profile refs остаётся fail-closed после rollout
+- **GIVEN** historical `pool_workflow_binding` сохранился без resolvable profile refs после destructive rollout
+- **WHEN** оператор или runtime path читает attachment detail, collection или preview
+- **THEN** система возвращает blocking diagnostic
+- **AND** не пытается materialize'ить generated profile/revision или repair canonical row
 

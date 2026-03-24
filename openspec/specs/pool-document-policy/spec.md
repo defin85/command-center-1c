@@ -194,17 +194,25 @@ Migration path ДОЛЖЕН (SHALL):
 Система ДОЛЖНА (SHALL) предоставлять frontend surface на отдельном route `/decisions` для net-new `document_policy.v1` authoring через decision resources, а не через direct topology-edge editing как primary path.
 
 Decision-resource authoring surface ДОЛЖЕН (SHALL):
-- предоставлять lifecycle `list/detail/create/revise/archive-deactivate` для policy-bearing decision resources;
+- предоставлять lifecycle `list/detail/create/clone/revise/archive-deactivate` для policy-bearing decision resources;
 - предоставлять structured builder для chain/documents/field_mapping/table_parts_mapping/link_rules;
 - поддерживать optional raw JSON fallback без потери валидного `document_policy.v1`;
 - использовать shared configuration-scoped metadata snapshots для metadata-aware validation и preview до pin в binding;
 - выдавать versioned decision revision, пригодный для first-class selection в workflow/binding editor.
 
-#### Scenario: Новый document policy authorится без topology edge editor
-- **GIVEN** аналитик создаёт новую workflow-centric схему
-- **WHEN** он настраивает document rules для публикации через `/decisions`
-- **THEN** policy authorится в decision-resource surface
-- **AND** resulting decision revision pin-ится в workflow/binding без direct edge authoring как primary path
+#### Scenario: Аналитик создаёт независимую копию существующего document policy
+- **GIVEN** в `/decisions` уже существует `document_policy` revision, пригодная как seed
+- **WHEN** аналитик запускает clone flow
+- **THEN** editor открывается с копией source policy
+- **AND** resulting publish создаёт новый decision resource с новым `decision_table_id`
+- **AND** source revision не становится parent revision cloned resource
+
+#### Scenario: Clone flow сохраняет metadata-aware validation как у net-new create
+- **GIVEN** аналитик открыл clone flow для существующей revision
+- **AND** в `/decisions` выбрана target database
+- **WHEN** он публикует cloned policy
+- **THEN** backend валидирует cloned policy против resolved metadata snapshot выбранной ИБ
+- **AND** clone не обходит fail-closed metadata validation только потому, что source revision уже была опубликована
 
 ### Requirement: Document policy authoring MUST использовать configuration-scoped metadata snapshots
 Система ДОЛЖНА (SHALL) валидировать и preview'ить новый `document_policy` против canonical metadata snapshot, резолвимого для target business configuration identity выбранной ИБ.
@@ -249,4 +257,27 @@ Guided rollover flow, создающий новую revision из существ
 - **WHEN** аналитик пытается опубликовать новую revision под выбранную ИБ
 - **THEN** publish отклоняется fail-closed с metadata validation error
 - **AND** ни source revision, ни existing pinned consumers не изменяются
+
+### Requirement: Template-instantiated topology MUST materialize explicit document policy selectors
+Если topology создаётся или обновляется через `topology_template_revision`, система ДОЛЖНА (SHALL) materialize'ить template edge defaults в explicit concrete `edge.metadata.document_policy_key`.
+
+`edge.metadata.document_policy_key` ДОЛЖЕН (SHALL) оставаться canonical selector для downstream binding/runtime resolution и после template-based authoring.
+
+#### Scenario: Template edge default превращается в canonical concrete selector
+- **GIVEN** template edge содержит default `document_policy_key=receipt`
+- **WHEN** pool instantiation materialize'ит concrete topology
+- **THEN** resulting concrete edge содержит `edge.metadata.document_policy_key=receipt`
+- **AND** document plan/runtime compile используют его как обычный explicit topology selector
+
+### Requirement: Document policy resolution MUST оставаться fail-closed без graph-position fallback
+При template-based topology authoring система НЕ ДОЛЖНА (SHALL NOT) silently выводить `document_policy_key` только из положения edge или узла в графе, если explicit selector отсутствует после materialization.
+
+Отсутствие explicit selector ДОЛЖНО (SHALL) приводить к existing missing-slot или missing-selector diagnostics, а не к автоматическому выбору `multi`, `receipt`, `realization` или другой policy slot.
+
+#### Scenario: Leaf edge без explicit selector не получает auto-generated receipt
+- **GIVEN** template-based topology содержит edge до leaf узла
+- **AND** после materialization у concrete edge отсутствует `document_policy_key`
+- **WHEN** preview или create-run path пытается собрать document plan
+- **THEN** система не назначает `receipt` автоматически только потому, что edge ведёт в leaf
+- **AND** shipped path завершается fail-closed с явной диагностикой отсутствующего selector
 

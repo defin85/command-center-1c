@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Reusable execution packs MUST быть tenant-scoped reusable versioned resources
+### Requirement: Binding profiles MUST быть tenant-scoped reusable versioned resources
 Система ДОЛЖНА (SHALL) предоставлять reusable execution-pack catalog как tenant-scoped versioned resource для reusable execution logic.
 
 Primary operator/domain термином для этой capability ДОЛЖЕН (SHALL) быть `Execution Pack`.
@@ -28,7 +28,7 @@ Immutable opaque revision id ДОЛЖЕН (SHALL) оставаться authorita
 - **THEN** основная operator-facing терминология использует `Execution Pack`
 - **AND** shipped contract не зависит от обязательного legacy alias `Binding Profile`
 
-### Requirement: Execution pack catalog MUST использовать dedicated catalog surface и primary execution-pack route
+### Requirement: Binding profile authoring MUST использовать dedicated catalog surface
 Система ДОЛЖНА (SHALL) предоставлять dedicated catalog surface для list/detail/create/revise/deactivate reusable execution packs.
 
 Primary operator-facing route для этого catalog ДОЛЖЕН (SHALL) быть `/pools/execution-packs`.
@@ -45,6 +45,8 @@ Shipped contract НЕ ДОЛЖЕН (SHALL NOT) требовать legacy route `
 - **WHEN** оператор использует primary navigation и handoff links
 - **THEN** они указывают на `/pools/execution-packs`
 - **AND** shipped path не требует `/pools/binding-profiles` для корректной работы catalog surface
+
+## ADDED Requirements
 
 ### Requirement: Execution pack authoring MUST реализовывать external structural slots, а не определять их
 Execution-pack authoring ДОЛЖЕН (SHALL) использовать `slot_key` как ключ executable implementation для external structural slot contract.

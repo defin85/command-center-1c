@@ -4,60 +4,50 @@
 TBD - created by archiving change add-binding-profiles-and-pool-attachments. Update Purpose after archive.
 ## Requirements
 ### Requirement: Binding profiles MUST быть tenant-scoped reusable versioned resources
-Система ДОЛЖНА (SHALL) поддерживать tenant-scoped reusable сущности `binding_profile` и immutable `binding_profile_revision`, не привязанные к конкретному `pool`.
+Система ДОЛЖНА (SHALL) предоставлять reusable execution-pack catalog как tenant-scoped versioned resource для reusable execution logic.
 
-`binding_profile_revision` ДОЛЖЕН (SHALL) хранить reusable схему:
+Primary operator/domain термином для этой capability ДОЛЖЕН (SHALL) быть `Execution Pack`.
+
+Execution-pack revision ДОЛЖНА (SHALL) хранить reusable executable contract:
 - pinned workflow revision;
-- publication slot decision refs;
+- decision refs, реализующие named slot implementations;
 - default parameters;
 - role mapping;
 - revision metadata/provenance.
 
-Каждая immutable revision ДОЛЖНА (SHALL) иметь opaque `binding_profile_revision_id`, который используется как единственный runtime pin и lineage reference.
+Execution-pack revision НЕ ДОЛЖНА (SHALL NOT) считаться owner-ом topology shape или structural slot namespace.
 
-`revision_number` или эквивалентный human-readable номер revision МОЖЕТ (MAY) существовать для operator-facing read-model, но НЕ ДОЛЖЕН (SHALL NOT) подменять `binding_profile_revision_id` как authoritative immutable identity.
+Immutable opaque revision id ДОЛЖЕН (SHALL) оставаться authoritative runtime pin в execution-pack semantics.
 
-Одна и та же `binding_profile_revision` МОЖЕТ (MAY) использоваться несколькими pool attachment-ами в разных пулах.
+#### Scenario: Один execution pack используется несколькими pool attachment-ами
+- **GIVEN** аналитик создал reusable execution pack revision
+- **WHEN** оператор attach'ит эту revision к нескольким pool
+- **THEN** все attachment-ы используют одну и ту же reusable execution-pack revision
+- **AND** pool-local activation state остаётся независимым
 
-Публикация новой revision НЕ ДОЛЖНА (SHALL NOT) retroactively менять уже существующие attachment-ы, pinned на предыдущую revision.
-
-#### Scenario: Одна profile revision используется двумя пулами
-- **GIVEN** аналитик создал `binding_profile` с revision `r3`
-- **WHEN** оператор attach'ит `r3` к `pool-A` и `pool-B`
-- **THEN** оба пула используют одну и ту же reusable revision
-- **AND** pool-local activation rules остаются независимыми
-
-#### Scenario: Новая revision не переписывает существующие attachment-ы
-- **GIVEN** `pool-A` и `pool-B` pinned на `binding_profile_revision r3`
-- **WHEN** аналитик публикует `binding_profile_revision r4`
-- **THEN** existing attachment-ы продолжают ссылаться на `r3`
-- **AND** rollout `r4` требует явного обновления attachment-а
-
-#### Scenario: Runtime pin использует opaque revision id, а не display number
-- **GIVEN** reusable profile имеет operator-facing `revision_number=4`
-- **WHEN** attachment сохраняет ссылку на immutable revision
-- **THEN** runtime и lineage используют `binding_profile_revision_id`
-- **AND** display number остаётся только человекочитаемым summary
+#### Scenario: Operator-facing catalog использует термин Execution Pack
+- **GIVEN** аналитик или оператор открывает reusable catalog surface
+- **WHEN** UI рендерит list/detail/create/revise flows
+- **THEN** основная operator-facing терминология использует `Execution Pack`
+- **AND** shipped contract не зависит от обязательного legacy alias `Binding Profile`
 
 ### Requirement: Binding profile authoring MUST использовать dedicated catalog surface
-Система ДОЛЖНА (SHALL) предоставлять dedicated catalog surface для list/detail/create/revise/deactivate reusable binding profiles.
+Система ДОЛЖНА (SHALL) предоставлять dedicated catalog surface для list/detail/create/revise/deactivate reusable execution packs.
 
-Default operator-facing UI route для этого catalog ДОЛЖЕН (SHALL) быть отдельной страницей `/pools/binding-profiles`, а НЕ встроенным inline authoring surface внутри `/pools/catalog`.
+Primary operator-facing route для этого catalog ДОЛЖЕН (SHALL) быть `/pools/execution-packs`.
 
-Pool-local binding workspace МОЖЕТ (MAY) attach'ить существующую profile revision, но НЕ ДОЛЖЕН (SHALL NOT) оставаться primary full authoring surface для reusable workflow/slot logic.
+Shipped contract НЕ ДОЛЖЕН (SHALL NOT) требовать legacy route `/pools/binding-profiles` как обязательный redirect или compatibility alias после rollout этого change.
 
-#### Scenario: Аналитик создаёт reusable profile один раз и затем attach'ит её к пулу
-- **GIVEN** аналитик открыл binding profile catalog
-- **WHEN** он создаёт profile revision с workflow revision и slot map
-- **THEN** resulting profile revision становится доступной для выбора в pool attachment workspace
-- **AND** оператор может attach'ить её к конкретному пулу без повторного ручного ввода всей схемы
+#### Scenario: Оператор открывает reusable execution logic catalog по новому route
+- **WHEN** пользователь открывает `/pools/execution-packs`
+- **THEN** UI показывает catalog reusable execution packs
+- **AND** create/revise/deactivate flows доступны на этом route как primary path
 
-#### Scenario: Pool workspace направляет в profile catalog для правки reusable схемы
-- **GIVEN** оператор открыл attachment в `/pools/catalog`
-- **AND** attachment pinned на profile revision
-- **WHEN** оператору нужна правка workflow/slot logic
-- **THEN** UI направляет его в dedicated profile catalog
-- **AND** pool workspace не редактирует reusable logic inline как primary path
+#### Scenario: Primary navigation больше не зависит от binding-profiles route
+- **GIVEN** rollout execution-pack catalog завершён после hard reset данных
+- **WHEN** оператор использует primary navigation и handoff links
+- **THEN** они указывают на `/pools/execution-packs`
+- **AND** shipped path не требует `/pools/binding-profiles` для корректной работы catalog surface
 
 ### Requirement: Profile deactivation MUST сохранять reproducible runtime для уже pinned attachments
 Система ДОЛЖНА (SHALL) трактовать `deactivate` как reusable catalog lifecycle action, а не как retroactive runtime kill switch.
@@ -198,4 +188,47 @@ Default route path ДОЛЖЕН (SHALL):
 - **WHEN** он переходит по списку reusable profiles
 - **THEN** UI предоставляет semantic selection trigger и явное selected state
 - **AND** row click, если остаётся, работает только как дополнительное удобство
+
+### Requirement: Binding profile usage summary MUST использовать dedicated scoped read model
+Система ДОЛЖНА (SHALL) предоставлять для `/pools/binding-profiles` dedicated backend read-model, scoped к выбранному `binding_profile_id`, чтобы operator-facing usage summary не зависел от broad tenant-wide pool catalog hydration.
+
+Scoped usage projection ДОЛЖНА (SHALL):
+- возвращать только attachment-ы, pinned на выбранный reusable profile;
+- возвращать attachment count и summary по revision-ам, которые сейчас используются;
+- включать достаточно pool/binding context для явного handoff в `/pools/catalog`;
+- не требовать от shipped frontend path загрузки полного списка pools и client-side фильтрации нерелевантных attachment-ов.
+
+UI МОЖЕТ (MAY) lazy-load usage по требованию оператора, но default shipped path НЕ ДОЛЖЕН (SHALL NOT) вычислять usage summary через broad organization pool list scan.
+
+#### Scenario: Profile detail получает scoped usage без tenant-wide pool scan
+- **GIVEN** оператор открыл detail reusable profile на `/pools/binding-profiles`
+- **WHEN** detail pane загружает usage summary
+- **THEN** backend возвращает только attachment-ы, pinned на выбранный profile, вместе с counts и revision summary
+- **AND** UI может открыть соответствующий pool attachment workspace без отдельной broad pool catalog hydration
+
+#### Scenario: Нерелевантные pools не участвуют в profile usage response
+- **GIVEN** tenant содержит множество pools, не использующих выбранный reusable profile
+- **WHEN** оператор открывает usage summary для этого profile
+- **THEN** shipped path остаётся scoped к выбранному `binding_profile_id`
+- **AND** нерелевантные pools не загружаются только ради client-side aggregation usage summary
+
+### Requirement: Execution pack authoring MUST реализовывать external structural slots, а не определять их
+Execution-pack authoring ДОЛЖЕН (SHALL) использовать `slot_key` как ключ executable implementation для external structural slot contract.
+
+Structural slot namespace ДОЛЖЕН (SHALL) считаться внешним по отношению к execution pack catalog и приходить из topology-template layer или materialized concrete topology contract.
+
+Execution pack НЕ ДОЛЖЕН (SHALL NOT) быть доменным owner-ом structural slot namespace.
+
+#### Scenario: Execution pack реализует topology-defined slots
+- **GIVEN** topology-template contract определяет structural slots `sale`, `multi`, `receipt`
+- **WHEN** аналитик author'ит execution pack
+- **THEN** он pin-ит decision revisions для этих `slot_key`
+- **AND** resulting execution pack описывает executable implementations, а не topology shape
+
+#### Scenario: Execution pack не вводит новый structural slot молча
+- **GIVEN** execution pack содержит implementation для slot `custom_slot`
+- **AND** selected topology contract не содержит такого structural slot
+- **WHEN** система выполняет compatibility validation
+- **THEN** execution pack не считается автоматически совместимым
+- **AND** требуется явная remediation или другая topology/template contract
 
