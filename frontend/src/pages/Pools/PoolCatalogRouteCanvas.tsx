@@ -2760,44 +2760,25 @@ export function PoolCatalogPage() {
   ])
 
   useEffect(() => {
-    setTopologyPreflightErrors([])
-    setTopologySubmitError(null)
-    if (activeWorkspaceTab !== 'topology' || !selectedPool) return
-    const topologyInstantiation = selectedPoolTopologyInstantiation
-    const selectedPoolGraph = graph && graph.pool_id === selectedPoolId ? graph : null
-    topologyForm.setFieldsValue({
-      authoring_mode: resolveInitialTopologyAuthoringMode({
-        graph: selectedPoolGraph,
-        topologyInstantiation,
-      }),
-      effective_from: new Date().toISOString().slice(0, 10),
-      effective_to: '',
-      topology_template_revision_id: undefined,
-      slot_assignments: [],
-      edge_selector_overrides: [],
-      nodes: [],
-      edges: [],
-    })
-  }, [activeWorkspaceTab, graph, selectedPool, selectedPoolId, selectedPoolTopologyInstantiation, topologyForm])
-
-  useEffect(() => {
     if (
       activeWorkspaceTab !== 'topology'
       || !selectedPool
       || !selectedPoolId
-      || !graph
-      || graph.pool_id !== selectedPoolId
     ) return
+    setTopologyPreflightErrors([])
+    setTopologySubmitError(null)
+
     const topologyInstantiation = selectedPoolTopologyInstantiation
+    const selectedPoolGraph = graph && graph.pool_id === selectedPoolId ? graph : null
     const organizationByNodeVersion = new Map(
-      graph.nodes.map((node) => [node.node_version_id, node.organization_id])
+      (selectedPoolGraph?.nodes ?? []).map((node) => [node.node_version_id, node.organization_id])
     )
-    const nodes = graph.nodes.map<TopologyNodeFormValue>((node) => ({
+    const nodes = (selectedPoolGraph?.nodes ?? []).map<TopologyNodeFormValue>((node) => ({
       organization_id: node.organization_id,
       is_root: Boolean(node.is_root),
       metadata_json: stringifyMetadataForForm(node.metadata),
     }))
-    const edges = graph.edges.map<TopologyEdgeFormValue>((edge) => {
+    const edges = (selectedPoolGraph?.edges ?? []).map<TopologyEdgeFormValue>((edge) => {
       const metadata = normalizeMetadataObject(edge.metadata)
       const rawPolicy = metadata.document_policy
       const policy =
@@ -2829,10 +2810,13 @@ export function PoolCatalogPage() {
     })
     topologyForm.setFieldsValue({
       authoring_mode: resolveInitialTopologyAuthoringMode({
-        graph,
+        graph: selectedPoolGraph,
         topologyInstantiation,
       }),
-      effective_from: String(graph.date || '').trim() || new Date().toISOString().slice(0, 10),
+      effective_from:
+        String(selectedPoolGraph?.date || '').trim()
+        || graphDate.trim()
+        || new Date().toISOString().slice(0, 10),
       effective_to: '',
       topology_template_revision_id: topologyInstantiation?.topology_template_revision_id || undefined,
       slot_assignments: Array.isArray(topologyInstantiation?.slot_assignments)
@@ -2844,7 +2828,15 @@ export function PoolCatalogPage() {
       nodes,
       edges,
     })
-  }, [activeWorkspaceTab, graph, selectedPool, selectedPoolId, selectedPoolTopologyInstantiation, topologyForm])
+  }, [
+    activeWorkspaceTab,
+    graph,
+    graphDate,
+    selectedPool,
+    selectedPoolId,
+    selectedPoolTopologyInstantiation,
+    topologyForm,
+  ])
 
   useEffect(() => {
     if (!isTemplateTopologyAuthoring) {

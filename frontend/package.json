@@ -16,6 +16,7 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
+    "test:run:pools-catalog": "vitest run src/pages/Pools/__tests__/PoolCatalogPage.core.test.tsx src/pages/Pools/__tests__/PoolCatalogPage.bindings.test.tsx src/pages/Pools/__tests__/PoolCatalogPage.topology.test.tsx src/pages/Pools/__tests__/PoolCatalogPage.errors-sync.test.tsx --maxWorkers 4",
     "test:coverage": "vitest run --coverage",
     "test:browser": "playwright test",
     "test:browser:action-catalog": "playwright test tests/browser/action-catalog-ui.spec.ts",
