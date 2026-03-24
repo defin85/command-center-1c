@@ -1576,6 +1576,22 @@ describe('PoolRunsPage', () => {
     expect(payload).not.toHaveProperty('source_hash')
   }, 30000)
 
+  it('preserves a user-entered starting amount in top_down create-run payload', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await openRunsStage(user, 'Create')
+    const startingAmountInput = await screen.findByRole('spinbutton', { name: /starting amount/i })
+    await user.clear(startingAmountInput)
+    await user.type(startingAmountInput, '55555.55')
+
+    await user.click(screen.getByTestId('pool-runs-create-submit'))
+
+    await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
+    const payload = mockCreatePoolRun.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.run_input).toEqual({ starting_amount: '55555.55' })
+  }, 30000)
+
   it('previews effective workflow binding before run start', async () => {
     const user = userEvent.setup()
     mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph())

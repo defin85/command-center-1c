@@ -99,6 +99,10 @@ export CC1C_ODATA_USER=odata.user
 export CC1C_ODATA_PASSWORD='...'
 ```
 
+UI automation note:
+- Для `Pool Runs -> Create -> Starting amount` в `antd` `InputNumber` не использовать `chrome_devtools.fill()`: он дописывает строку поверх formatted value и искажает сумму.
+- Надёжный путь для агентного UI-прогона: сфокусировать поле, `Ctrl+A`, затем печатать сумму с клавиатуры и уводить фокус (`Tab`).
+
 1. Получить JWT:
 
 ```bash
