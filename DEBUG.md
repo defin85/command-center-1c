@@ -81,8 +81,21 @@ systemctl --user status beads-dolt.service --no-pager
 - pool: `top-down-pool`
 - pool_id: `fc2588b5-18d7-47a5-bb4c-25fdd280fbe8`
 - binding_id: `c011e46a-a109-45b9-a10d-20ca40832c0f`
+- topology template: `top-down-template r3`
+- execution pack: `top-down-execution-pack r3`
 - target database: `dom_lesa_7726446503`
 - tenant_id: `4d29aa0d-3fcc-41b2-878a-28f84f6f75ec`
+
+Текущий structural slot contract:
+- `root -> organization_1` = `sale`
+- `organization_1 -> organization_2` = `receipt_internal`
+- `organization_2 -> organization_3` = `receipt_leaf`
+- `organization_2 -> organization_4` = `receipt_leaf`
+
+Текущий execution-pack mapping:
+- `sale -> realization r1`
+- `receipt_internal -> receipt r1`
+- `receipt_leaf -> receipt r1`
 
 Подтвержденный путь:
 

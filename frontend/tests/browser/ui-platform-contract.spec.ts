@@ -420,11 +420,11 @@ const TOPOLOGY_TEMPLATE = {
   description: 'Reusable topology for top-down publication.',
   status: 'active',
   metadata: {},
-  latest_revision_number: 2,
+  latest_revision_number: 3,
   latest_revision: {
-    topology_template_revision_id: 'template-revision-r2',
+    topology_template_revision_id: 'template-revision-r3',
     topology_template_id: 'template-top-down',
-    revision_number: 2,
+    revision_number: 3,
     nodes: [
       {
         slot_key: 'root',
@@ -433,8 +433,26 @@ const TOPOLOGY_TEMPLATE = {
         metadata: {},
       },
       {
-        slot_key: 'leaf',
-        label: 'Leaf',
+        slot_key: 'organization_1',
+        label: 'Organization 1',
+        is_root: false,
+        metadata: {},
+      },
+      {
+        slot_key: 'organization_2',
+        label: 'Organization 2',
+        is_root: false,
+        metadata: {},
+      },
+      {
+        slot_key: 'organization_3',
+        label: 'Organization 3',
+        is_root: false,
+        metadata: {},
+      },
+      {
+        slot_key: 'organization_4',
+        label: 'Organization 4',
         is_root: false,
         metadata: {},
       },
@@ -442,11 +460,38 @@ const TOPOLOGY_TEMPLATE = {
     edges: [
       {
         parent_slot_key: 'root',
-        child_slot_key: 'leaf',
+        child_slot_key: 'organization_1',
         weight: '1',
         min_amount: null,
         max_amount: null,
-        document_policy_key: 'document_policy',
+        document_policy_key: 'sale',
+        metadata: {},
+      },
+      {
+        parent_slot_key: 'organization_1',
+        child_slot_key: 'organization_2',
+        weight: '1',
+        min_amount: null,
+        max_amount: null,
+        document_policy_key: 'receipt_internal',
+        metadata: {},
+      },
+      {
+        parent_slot_key: 'organization_2',
+        child_slot_key: 'organization_3',
+        weight: '1',
+        min_amount: null,
+        max_amount: null,
+        document_policy_key: 'receipt_leaf',
+        metadata: {},
+      },
+      {
+        parent_slot_key: 'organization_2',
+        child_slot_key: 'organization_4',
+        weight: '1',
+        min_amount: null,
+        max_amount: null,
+        document_policy_key: 'receipt_leaf',
         metadata: {},
       },
     ],
@@ -454,6 +499,83 @@ const TOPOLOGY_TEMPLATE = {
     created_at: NOW,
   },
   revisions: [
+    {
+      topology_template_revision_id: 'template-revision-r3',
+      topology_template_id: 'template-top-down',
+      revision_number: 3,
+      nodes: [
+        {
+          slot_key: 'root',
+          label: 'Root',
+          is_root: true,
+          metadata: {},
+        },
+        {
+          slot_key: 'organization_1',
+          label: 'Organization 1',
+          is_root: false,
+          metadata: {},
+        },
+        {
+          slot_key: 'organization_2',
+          label: 'Organization 2',
+          is_root: false,
+          metadata: {},
+        },
+        {
+          slot_key: 'organization_3',
+          label: 'Organization 3',
+          is_root: false,
+          metadata: {},
+        },
+        {
+          slot_key: 'organization_4',
+          label: 'Organization 4',
+          is_root: false,
+          metadata: {},
+        },
+      ],
+      edges: [
+        {
+          parent_slot_key: 'root',
+          child_slot_key: 'organization_1',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          document_policy_key: 'sale',
+          metadata: {},
+        },
+        {
+          parent_slot_key: 'organization_1',
+          child_slot_key: 'organization_2',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          document_policy_key: 'receipt_internal',
+          metadata: {},
+        },
+        {
+          parent_slot_key: 'organization_2',
+          child_slot_key: 'organization_3',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          document_policy_key: 'receipt_leaf',
+          metadata: {},
+        },
+        {
+          parent_slot_key: 'organization_2',
+          child_slot_key: 'organization_4',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          document_policy_key: 'receipt_leaf',
+          metadata: {},
+        },
+      ],
+      metadata: {},
+      created_at: NOW,
+    },
     {
       topology_template_revision_id: 'template-revision-r2',
       topology_template_id: 'template-top-down',
@@ -466,8 +588,26 @@ const TOPOLOGY_TEMPLATE = {
           metadata: {},
         },
         {
-          slot_key: 'leaf',
-          label: 'Leaf',
+          slot_key: 'organization_1',
+          label: 'Organization 1',
+          is_root: false,
+          metadata: {},
+        },
+        {
+          slot_key: 'organization_2',
+          label: 'Organization 2',
+          is_root: false,
+          metadata: {},
+        },
+        {
+          slot_key: 'organization_3',
+          label: 'Organization 3',
+          is_root: false,
+          metadata: {},
+        },
+        {
+          slot_key: 'organization_4',
+          label: 'Organization 4',
           is_root: false,
           metadata: {},
         },
@@ -475,43 +615,38 @@ const TOPOLOGY_TEMPLATE = {
       edges: [
         {
           parent_slot_key: 'root',
-          child_slot_key: 'leaf',
+          child_slot_key: 'organization_1',
           weight: '1',
           min_amount: null,
           max_amount: null,
-          document_policy_key: 'document_policy',
-          metadata: {},
-        },
-      ],
-      metadata: {},
-      created_at: NOW,
-    },
-    {
-      topology_template_revision_id: 'template-revision-r1',
-      topology_template_id: 'template-top-down',
-      revision_number: 1,
-      nodes: [
-        {
-          slot_key: 'root',
-          label: 'Root',
-          is_root: true,
+          document_policy_key: 'receipt',
           metadata: {},
         },
         {
-          slot_key: 'leaf',
-          label: 'Leaf',
-          is_root: false,
-          metadata: {},
-        },
-      ],
-      edges: [
-        {
-          parent_slot_key: 'root',
-          child_slot_key: 'leaf',
+          parent_slot_key: 'organization_1',
+          child_slot_key: 'organization_2',
           weight: '1',
           min_amount: null,
           max_amount: null,
-          document_policy_key: 'document_policy',
+          document_policy_key: 'receipt',
+          metadata: {},
+        },
+        {
+          parent_slot_key: 'organization_2',
+          child_slot_key: 'organization_3',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          document_policy_key: 'receipt',
+          metadata: {},
+        },
+        {
+          parent_slot_key: 'organization_2',
+          child_slot_key: 'organization_4',
+          weight: '1',
+          min_amount: null,
+          max_amount: null,
+          document_policy_key: 'receipt',
           metadata: {},
         },
       ],
@@ -2023,7 +2158,7 @@ test('UI platform: /pools/topology-templates submits revise-template authoring a
   await expect(page.getByText('Updated Root')).toBeVisible()
   await expect(
     page.locator('table:has(th:has-text("Created at")) tbody tr:not(.ant-table-measure-row)').first()
-  ).toContainText('r3')
+  ).toContainText('r4')
   await expectNoHorizontalOverflow(page)
 })
 
@@ -2383,7 +2518,7 @@ test('Runtime contract: /pools/catalog publishes a topology template revision th
   await selectVisibleAntdOption(page, 'Template-based instantiation')
   await expect(page.getByTestId('pool-catalog-topology-authoring-mode')).toContainText('Template-based instantiation')
   await page.getByTestId('pool-catalog-topology-template-revision').click()
-  await selectVisibleAntdOption(page, 'Top Down Template · r2')
+  await selectVisibleAntdOption(page, 'Top Down Template · r3')
   await page.getByTestId('pool-catalog-revise-topology-template').click()
 
   await expect(page).toHaveURL(/\/pools\/topology-templates\?template=template-top-down&detail=1&compose=revise&return_pool_id=pool-1&return_tab=topology&return_date=2026-01-01$/)
@@ -2401,7 +2536,7 @@ test('Runtime contract: /pools/catalog publishes a topology template revision th
   expect(Array.isArray((revisePayload.revision as Record<string, unknown>).nodes)).toBe(true)
   await expect(
     page.locator('table:has(th:has-text("Created at")) tbody tr:not(.ant-table-measure-row)').first()
-  ).toContainText('r3')
+  ).toContainText('r4')
 
   await page.getByRole('button', { name: 'Return to pool topology' }).click()
 
@@ -2414,7 +2549,7 @@ test('Runtime contract: /pools/catalog publishes a topology template revision th
   await expect(page.getByTestId('pool-catalog-topology-template-revision')).toBeVisible()
   await page.getByTestId('pool-catalog-topology-template-revision').click()
   await expect(
-    page.locator('.ant-select-dropdown:visible .ant-select-item-option-content', { hasText: 'Top Down Template · r3' }).first()
+    page.locator('.ant-select-dropdown:visible .ant-select-item-option-content', { hasText: 'Top Down Template · r4' }).first()
   ).toBeVisible()
 
   await expect(counts.bootstrap).toBe(1)

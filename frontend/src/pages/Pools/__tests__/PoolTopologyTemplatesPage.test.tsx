@@ -25,9 +25,9 @@ const ROUTER_FUTURE = {
 
 function buildTopologyTemplate(overrides: Partial<PoolTopologyTemplate> = {}): PoolTopologyTemplate {
   const latestRevision = {
-    topology_template_revision_id: 'template-revision-r2',
+    topology_template_revision_id: 'template-revision-r3',
     topology_template_id: 'template-1',
-    revision_number: 2,
+    revision_number: 3,
     nodes: [
       {
         slot_key: 'root',
@@ -36,8 +36,26 @@ function buildTopologyTemplate(overrides: Partial<PoolTopologyTemplate> = {}): P
         metadata: {},
       },
       {
-        slot_key: 'leaf',
-        label: 'Leaf',
+        slot_key: 'organization_1',
+        label: 'Organization 1',
+        is_root: false,
+        metadata: {},
+      },
+      {
+        slot_key: 'organization_2',
+        label: 'Organization 2',
+        is_root: false,
+        metadata: {},
+      },
+      {
+        slot_key: 'organization_3',
+        label: 'Organization 3',
+        is_root: false,
+        metadata: {},
+      },
+      {
+        slot_key: 'organization_4',
+        label: 'Organization 4',
         is_root: false,
         metadata: {},
       },
@@ -45,11 +63,38 @@ function buildTopologyTemplate(overrides: Partial<PoolTopologyTemplate> = {}): P
     edges: [
       {
         parent_slot_key: 'root',
-        child_slot_key: 'leaf',
+        child_slot_key: 'organization_1',
         weight: '1',
         min_amount: null,
         max_amount: null,
         document_policy_key: 'sale',
+        metadata: {},
+      },
+      {
+        parent_slot_key: 'organization_1',
+        child_slot_key: 'organization_2',
+        weight: '1',
+        min_amount: null,
+        max_amount: null,
+        document_policy_key: 'receipt_internal',
+        metadata: {},
+      },
+      {
+        parent_slot_key: 'organization_2',
+        child_slot_key: 'organization_3',
+        weight: '1',
+        min_amount: null,
+        max_amount: null,
+        document_policy_key: 'receipt_leaf',
+        metadata: {},
+      },
+      {
+        parent_slot_key: 'organization_2',
+        child_slot_key: 'organization_4',
+        weight: '1',
+        min_amount: null,
+        max_amount: null,
+        document_policy_key: 'receipt_leaf',
         metadata: {},
       },
     ],
@@ -64,14 +109,18 @@ function buildTopologyTemplate(overrides: Partial<PoolTopologyTemplate> = {}): P
     description: 'Reusable topology for top-down flows.',
     status: 'active',
     metadata: {},
-    latest_revision_number: 2,
+    latest_revision_number: 3,
     latest_revision: latestRevision,
     revisions: [
       latestRevision,
       {
         ...latestRevision,
-        topology_template_revision_id: 'template-revision-r1',
-        revision_number: 1,
+        topology_template_revision_id: 'template-revision-r2',
+        revision_number: 2,
+        edges: latestRevision.edges.map((edge) => ({
+          ...edge,
+          document_policy_key: 'receipt',
+        })),
         created_at: '2026-03-22T10:00:00Z',
       },
     ],
@@ -184,8 +233,8 @@ describe('PoolTopologyTemplatesPage', () => {
       within(table).queryByRole('columnheader', { name: 'Created at' }) !== null
     ))
     expect(revisionsTable).toBeDefined()
+    expect(within(revisionsTable as HTMLElement).getByRole('cell', { name: 'r3' })).toBeInTheDocument()
     expect(within(revisionsTable as HTMLElement).getByRole('cell', { name: 'r2' })).toBeInTheDocument()
-    expect(within(revisionsTable as HTMLElement).getByRole('cell', { name: 'r1' })).toBeInTheDocument()
   })
 
   it('creates a reusable topology template from the dedicated catalog drawer', async () => {
@@ -332,6 +381,7 @@ describe('PoolTopologyTemplatesPage', () => {
     renderPage('/pools/topology-templates?template=template-1&detail=1')
 
     fireEvent.click(await screen.findByRole('button', { name: 'Publish new revision' }))
+    const latestRevision = buildTopologyTemplate().latest_revision
     fireEvent.change(screen.getByTestId('pool-topology-templates-revise-node-label-0'), {
       target: { value: 'Updated Root' },
     })
@@ -346,31 +396,22 @@ describe('PoolTopologyTemplatesPage', () => {
         topologyTemplateId: 'template-1',
         request: {
           revision: {
-            nodes: [
-              {
-                slot_key: 'root',
-                label: 'Updated Root',
-                is_root: true,
-                metadata: {},
-              },
-              {
-                slot_key: 'leaf',
-                label: 'Leaf',
-                is_root: false,
-                metadata: {},
-              },
-            ],
-            edges: [
-              {
-                parent_slot_key: 'root',
-                child_slot_key: 'leaf',
-                weight: '1',
-                min_amount: null,
-                max_amount: null,
-                document_policy_key: 'receipt',
-                metadata: {},
-              },
-            ],
+            nodes: latestRevision.nodes.map((node) => (
+              node.slot_key === 'root'
+                ? {
+                  ...node,
+                  label: 'Updated Root',
+                }
+                : node
+            )),
+            edges: latestRevision.edges.map((edge, index) => (
+              index === 0
+                ? {
+                  ...edge,
+                  document_policy_key: 'receipt',
+                }
+                : edge
+            )),
             metadata: {},
           },
         },
