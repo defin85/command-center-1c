@@ -20,8 +20,10 @@ AUTHORITATIVE_DOCS = [
     ROOT / "go-services/AGENTS.md",
     ROOT / "docs/agent/INDEX.md",
     ROOT / "docs/agent/ARCHITECTURE_MAP.md",
+    ROOT / "docs/agent/DOMAIN_MAP.md",
     ROOT / "docs/agent/RUNBOOK.md",
     ROOT / "docs/agent/VERIFY.md",
+    ROOT / "docs/agent/TASK_ROUTING.md",
     ROOT / "docs/agent/PLANS.md",
     ROOT / "docs/agent/code_review.md",
 ]
@@ -47,6 +49,13 @@ PACKAGE_SCRIPTS_REQUIRED = [
     "test:run",
     "test:browser:ui-platform",
     "validate:ui-platform",
+]
+
+FRONTEND_SMOKE_SCRIPTS = [
+    "generate:api",
+    "lint",
+    "test:run",
+    "test:browser:ui-platform",
 ]
 
 SHARED_SKILLS = [
@@ -112,6 +121,13 @@ def load_inventory() -> list[dict[str, str]]:
     return json.loads(output)
 
 
+def get_runtime(inventory: list[dict[str, str]], runtime_name: str) -> dict[str, str]:
+    for runtime in inventory:
+        if runtime["runtime"] == runtime_name:
+            return runtime
+    raise KeyError(f"Runtime not found in inventory: {runtime_name}")
+
+
 def load_package_scripts() -> dict[str, str]:
     package_json = json.loads(read(ROOT / "frontend/package.json"))
     return package_json["scripts"]
@@ -174,6 +190,29 @@ def require_not_contains(errors: list[str], text: str, needle: str, path: Path) 
         errors.append(f"{path.relative_to(ROOT)} must not contain: {needle}")
 
 
+def require_command_success(
+    errors: list[str],
+    description: str,
+    command: list[str],
+    *,
+    cwd: Path | None = None,
+) -> None:
+    result = subprocess.run(
+        command,
+        cwd=cwd or ROOT,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        return
+
+    stderr = result.stderr.strip()
+    stdout = result.stdout.strip()
+    detail = stderr or stdout or f"exit code {result.returncode}"
+    first_line = detail.splitlines()[0]
+    errors.append(f"{description} failed: {first_line}")
+
+
 def main() -> int:
     errors: list[str] = []
 
@@ -193,33 +232,61 @@ def main() -> int:
     codex_config = read(ROOT / ".codex/config.toml")
 
     root_agents = texts[ROOT / "AGENTS.md"]
-    require_contains(errors, root_agents, "docs/agent/INDEX.md", ROOT / "AGENTS.md")
-    require_contains(errors, root_agents, "docs/agent/RUNBOOK.md", ROOT / "AGENTS.md")
-    require_contains(errors, root_agents, "docs/agent/VERIFY.md", ROOT / "AGENTS.md")
-    require_contains(errors, root_agents, ".codex/config.toml", ROOT / "AGENTS.md")
-    require_contains(errors, root_agents, "./debug/runtime-inventory.sh --json", ROOT / "AGENTS.md")
-
     project_context = texts[ROOT / "openspec/project.md"]
-    require_contains(errors, project_context, "docs/agent/INDEX.md", ROOT / "openspec/project.md")
-    require_not_contains(errors, project_context, ".claude/rules/setup.md", ROOT / "openspec/project.md")
-    require_not_contains(errors, project_context, ".claude/rules/testing.md", ROOT / "openspec/project.md")
-    require_not_contains(errors, project_context, ".claude/rules/critical.md", ROOT / "openspec/project.md")
-    runbook = texts[ROOT / "docs/agent/RUNBOOK.md"]
-    arch_map = texts[ROOT / "docs/agent/ARCHITECTURE_MAP.md"]
-    verify = texts[ROOT / "docs/agent/VERIFY.md"]
     index_doc = texts[ROOT / "docs/agent/INDEX.md"]
+    arch_map = texts[ROOT / "docs/agent/ARCHITECTURE_MAP.md"]
+    domain_map = texts[ROOT / "docs/agent/DOMAIN_MAP.md"]
+    runbook = texts[ROOT / "docs/agent/RUNBOOK.md"]
+    verify = texts[ROOT / "docs/agent/VERIFY.md"]
+    task_routing = texts[ROOT / "docs/agent/TASK_ROUTING.md"]
     readme = texts[ROOT / "README.md"]
     claude_readme = texts[ROOT / ".claude/README.md"]
     frontend_agents = texts[ROOT / "frontend/AGENTS.md"]
     orchestrator_agents = texts[ROOT / "orchestrator/AGENTS.md"]
     go_agents = texts[ROOT / "go-services/AGENTS.md"]
 
+    require_contains(errors, root_agents, "docs/agent/INDEX.md", ROOT / "AGENTS.md")
+    require_contains(errors, root_agents, "docs/agent/DOMAIN_MAP.md", ROOT / "AGENTS.md")
+    require_contains(errors, root_agents, "docs/agent/RUNBOOK.md", ROOT / "AGENTS.md")
+    require_contains(errors, root_agents, "docs/agent/VERIFY.md", ROOT / "AGENTS.md")
+    require_contains(errors, root_agents, "docs/agent/TASK_ROUTING.md", ROOT / "AGENTS.md")
+    require_contains(errors, root_agents, ".codex/config.toml", ROOT / "AGENTS.md")
+    require_contains(errors, root_agents, "./debug/runtime-inventory.sh --json", ROOT / "AGENTS.md")
+
+    require_contains(errors, project_context, "docs/agent/INDEX.md", ROOT / "openspec/project.md")
+    require_not_contains(errors, project_context, ".claude/rules/setup.md", ROOT / "openspec/project.md")
+    require_not_contains(errors, project_context, ".claude/rules/testing.md", ROOT / "openspec/project.md")
+    require_not_contains(errors, project_context, ".claude/rules/critical.md", ROOT / "openspec/project.md")
+
     require_contains(errors, index_doc, ".agents/skills/runtime-debug/SKILL.md", ROOT / "docs/agent/INDEX.md")
     require_contains(errors, index_doc, ".agents/skills/pool-run-verification/SKILL.md", ROOT / "docs/agent/INDEX.md")
     require_contains(errors, index_doc, ".agents/skills/openspec-change-delivery/SKILL.md", ROOT / "docs/agent/INDEX.md")
     require_contains(errors, index_doc, ".beads/", ROOT / "docs/agent/INDEX.md")
+    require_contains(errors, index_doc, "DOMAIN_MAP.md", ROOT / "docs/agent/INDEX.md")
+    require_contains(errors, index_doc, "TASK_ROUTING.md", ROOT / "docs/agent/INDEX.md")
     require_not_contains(errors, readme, "[CLAUDE.md]", ROOT / "README.md")
     require_not_contains(errors, claude_readme, "CLAUDE.md", ROOT / ".claude/README.md")
+
+    require_contains(errors, domain_map, "frontend/src/App.tsx", ROOT / "docs/agent/DOMAIN_MAP.md")
+    require_contains(errors, domain_map, "/operations", ROOT / "docs/agent/DOMAIN_MAP.md")
+    require_contains(errors, domain_map, "/workflows", ROOT / "docs/agent/DOMAIN_MAP.md")
+    require_contains(errors, domain_map, "/decisions", ROOT / "docs/agent/DOMAIN_MAP.md")
+    require_contains(errors, domain_map, "/pools/catalog", ROOT / "docs/agent/DOMAIN_MAP.md")
+    require_contains(errors, domain_map, "/pools/execution-packs", ROOT / "docs/agent/DOMAIN_MAP.md")
+    require_contains(errors, domain_map, "openspec list", ROOT / "docs/agent/DOMAIN_MAP.md")
+    require_contains(errors, domain_map, "openspec/changes/archive/", ROOT / "docs/agent/DOMAIN_MAP.md")
+
+    require_contains(errors, task_routing, "## Вопросы про продукт и домен", ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, "## Frontend work", ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, "## Orchestrator work", ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, "## Go services work", ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, "## Contracts и OpenSpec work", ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, "## Runtime-debug и live verification", ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, "## Agent docs и guidance work", ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, "frontend/package.json", ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, "./debug/runtime-inventory.sh --json", ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, "./scripts/dev/check-agent-doc-freshness.sh", ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, "bd ready", ROOT / "docs/agent/TASK_ROUTING.md")
 
     require_contains(errors, runbook, f"Go {versions['go']}", ROOT / "docs/agent/RUNBOOK.md")
     require_contains(errors, runbook, f"Python {versions['python']}", ROOT / "docs/agent/RUNBOOK.md")
@@ -249,11 +316,28 @@ def main() -> int:
     require_contains(errors, frontend_agents, "npm run test:run", ROOT / "frontend/AGENTS.md")
     require_contains(errors, frontend_agents, "npm run test:browser:ui-platform", ROOT / "frontend/AGENTS.md")
     require_contains(errors, frontend_agents, "npm run validate:ui-platform", ROOT / "frontend/AGENTS.md")
+    require_contains(errors, frontend_agents, "docs/agent/TASK_ROUTING.md", ROOT / "frontend/AGENTS.md")
     require_contains(errors, orchestrator_agents, "./scripts/dev/lint.sh --python", ROOT / "orchestrator/AGENTS.md")
     require_contains(errors, orchestrator_agents, "./scripts/dev/pytest.sh -q <path>", ROOT / "orchestrator/AGENTS.md")
+    require_contains(errors, orchestrator_agents, "docs/agent/TASK_ROUTING.md", ROOT / "orchestrator/AGENTS.md")
     require_contains(errors, go_agents, "./scripts/dev/lint.sh --go", ROOT / "go-services/AGENTS.md")
     require_contains(errors, go_agents, "cd go-services/api-gateway && go test ./...", ROOT / "go-services/AGENTS.md")
     require_contains(errors, go_agents, "cd go-services/worker && go test ./...", ROOT / "go-services/AGENTS.md")
+    require_contains(errors, go_agents, "docs/agent/TASK_ROUTING.md", ROOT / "go-services/AGENTS.md")
+
+    frontend_inventory = get_runtime(inventory, "frontend")
+    orchestrator_inventory = get_runtime(inventory, "orchestrator")
+    api_gateway_inventory = get_runtime(inventory, "api-gateway")
+    worker_inventory = get_runtime(inventory, "worker")
+
+    require_contains(errors, task_routing, frontend_inventory["entrypoint"], ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, frontend_inventory["tests"], ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, orchestrator_inventory["entrypoint"], ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, orchestrator_inventory["tests"], ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, api_gateway_inventory["entrypoint"], ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, api_gateway_inventory["tests"], ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, worker_inventory["entrypoint"], ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, worker_inventory["tests"], ROOT / "docs/agent/TASK_ROUTING.md")
 
     for path in LEGACY_DOCS:
         text = texts[path]
@@ -282,6 +366,50 @@ def main() -> int:
                 errors.append(
                     f"{path.relative_to(ROOT)} references missing local path: {referenced.relative_to(ROOT)}"
                 )
+
+    require_command_success(
+        errors,
+        "bash syntax check for debug/runtime-inventory.sh",
+        ["bash", "-n", str(ROOT / "debug/runtime-inventory.sh")],
+    )
+    require_command_success(
+        errors,
+        "bash syntax check for scripts/dev/check-agent-doc-freshness.sh",
+        ["bash", "-n", str(ROOT / "scripts/dev/check-agent-doc-freshness.sh")],
+    )
+    require_command_success(
+        errors,
+        "python syntax check for scripts/dev/check-agent-doc-freshness.py",
+        ["python3", "-m", "py_compile", str(ROOT / "scripts/dev/check-agent-doc-freshness.py")],
+    )
+    require_command_success(
+        errors,
+        "runtime inventory JSON smoke check",
+        [str(ROOT / "debug/runtime-inventory.sh"), "--json"],
+    )
+    require_command_success(
+        errors,
+        "openspec list smoke check",
+        ["openspec", "list"],
+    )
+    require_command_success(
+        errors,
+        "openspec list --specs smoke check",
+        ["openspec", "list", "--specs"],
+    )
+    require_command_success(
+        errors,
+        "bd ready smoke check",
+        ["bd", "ready"],
+    )
+
+    if (ROOT / "frontend/node_modules").exists():
+        for script_name in FRONTEND_SMOKE_SCRIPTS:
+            require_command_success(
+                errors,
+                f"frontend {script_name} help smoke check",
+                ["npm", "--prefix", str(ROOT / "frontend"), "run", script_name, "--", "--help"],
+            )
 
     if errors:
         print("Agent doc freshness check failed:")

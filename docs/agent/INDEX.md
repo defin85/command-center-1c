@@ -7,15 +7,19 @@
 ## Что читать первым
 
 1. [ARCHITECTURE_MAP.md](./ARCHITECTURE_MAP.md)
-2. [RUNBOOK.md](./RUNBOOK.md)
-3. [VERIFY.md](./VERIFY.md)
-4. [PLANS.md](./PLANS.md)
-5. [code_review.md](./code_review.md)
+2. [DOMAIN_MAP.md](./DOMAIN_MAP.md)
+3. [RUNBOOK.md](./RUNBOOK.md)
+4. [VERIFY.md](./VERIFY.md)
+5. [TASK_ROUTING.md](./TASK_ROUTING.md)
+6. [PLANS.md](./PLANS.md)
+7. [code_review.md](./code_review.md)
 
 ## Вопросы первых 10 минут
 
 - Что это за проект:
   - control plane для массовых операций по 1С-базам через `frontend -> api-gateway -> orchestrator -> worker -> 1C`
+- Где product/domain context:
+  - см. [DOMAIN_MAP.md](./DOMAIN_MAP.md)
 - Где entry points:
   - `frontend/src/main.tsx`
   - `go-services/api-gateway/cmd/main.go`
@@ -24,6 +28,8 @@
 - Как запускать и проверять:
   - см. [RUNBOOK.md](./RUNBOOK.md)
   - см. [VERIFY.md](./VERIFY.md)
+- Как выбрать первый рабочий маршрут для задачи:
+  - см. [TASK_ROUTING.md](./TASK_ROUTING.md)
 - Где workflow intent:
   - `openspec/`
   - `openspec/project.md`
@@ -74,6 +80,8 @@ Legacy documents могут сохранять полезный историче
 - `go-services/AGENTS.md`
 
 ## Shared Team Skills
+
+Открывай конкретный `SKILL.md` только когда routed task совпадает с его workflow.
 
 - `runtime-debug` — `.agents/skills/runtime-debug/SKILL.md`
 - `pool-run-verification` — `.agents/skills/pool-run-verification/SKILL.md`

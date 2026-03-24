@@ -2,6 +2,8 @@
 
 - Scope: `orchestrator/` contains the Django Orchestrator, domain apps and Channels/DRF integration.
 - First read:
+  - `docs/agent/TASK_ROUTING.md`
+  - `docs/agent/DOMAIN_MAP.md`
   - `docs/agent/VERIFY.md`
   - `docs/agent/RUNBOOK.md`
   - `openspec/project.md`
@@ -16,4 +18,3 @@
 - Canonical validation commands:
   - `./scripts/dev/lint.sh --python`
   - `./scripts/dev/pytest.sh -q <path>`
-

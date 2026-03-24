@@ -60,11 +60,13 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 Open these docs for the first 10 minutes of a task:
 - `docs/agent/ARCHITECTURE_MAP.md`
+- `docs/agent/DOMAIN_MAP.md`
 - `docs/agent/RUNBOOK.md`
 - `docs/agent/VERIFY.md`
+- `docs/agent/TASK_ROUTING.md`
 - `docs/agent/PLANS.md`
 - `docs/agent/code_review.md`
-- `.agents/skills/*/SKILL.md`
+- `.agents/skills/<relevant>/SKILL.md` when the routed workflow matches
 
 ## UI Platform Contract
 

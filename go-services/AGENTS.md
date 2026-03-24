@@ -2,6 +2,8 @@
 
 - Scope: `go-services/` contains the Go API Gateway and Worker binaries plus shared packages.
 - First read:
+  - `docs/agent/TASK_ROUTING.md`
+  - `docs/agent/DOMAIN_MAP.md`
   - `docs/agent/VERIFY.md`
   - `docs/agent/RUNBOOK.md`
   - `openspec/project.md`
@@ -17,4 +19,3 @@
   - `./scripts/dev/lint.sh --go`
   - `cd go-services/api-gateway && go test ./...`
   - `cd go-services/worker && go test ./...`
-

@@ -2,6 +2,8 @@
 
 - Scope: `frontend/` contains the React/Vite application and platform-owned page composition layer.
 - First read:
+  - `docs/agent/TASK_ROUTING.md`
+  - `docs/agent/DOMAIN_MAP.md`
   - `docs/agent/VERIFY.md`
   - `docs/agent/RUNBOOK.md`
   - `frontend/package.json`
@@ -18,4 +20,3 @@
   - `cd frontend && npm run test:run -- <path>`
   - `cd frontend && npm run test:browser:ui-platform`
   - `cd frontend && npm run validate:ui-platform`
-
