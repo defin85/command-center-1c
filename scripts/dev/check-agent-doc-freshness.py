@@ -56,7 +56,18 @@ FRONTEND_SMOKE_SCRIPTS = [
     "lint",
     "test:run",
     "test:browser:ui-platform",
+    "validate:ui-platform",
 ]
+
+FRONTEND_COMPOSITE_SMOKE_COMPONENTS = {
+    "validate:ui-platform": (
+        "generate:api",
+        "lint",
+        "test:run",
+        "test:browser:ui-platform",
+        "build:assets",
+    ),
+}
 
 SHARED_SKILLS = [
     ROOT / ".agents/skills/runtime-debug/SKILL.md",
@@ -206,6 +217,33 @@ def require_line_with_tokens(
     )
 
 
+def require_section_contains(
+    errors: list[str],
+    section_text: str,
+    path: Path,
+    section_name: str,
+    needle: str,
+) -> None:
+    if needle not in section_text:
+        errors.append(
+            f"{path.relative_to(ROOT)} section {section_name} must contain: {needle}"
+        )
+
+
+def extract_markdown_section(text: str, heading: str) -> str:
+    marker = f"## {heading}"
+    start = text.find(marker)
+    if start == -1:
+        return ""
+
+    start += len(marker)
+    remainder = text[start:]
+    next_heading = remainder.find("\n## ")
+    if next_heading == -1:
+        return remainder
+    return remainder[:next_heading]
+
+
 def require_command_success(
     errors: list[str],
     description: str,
@@ -227,6 +265,52 @@ def require_command_success(
     detail = stderr or stdout or f"exit code {result.returncode}"
     first_line = detail.splitlines()[0]
     errors.append(f"{description} failed: {first_line}")
+
+
+def build_frontend_smoke_command(script_name: str) -> list[str]:
+    package_path = ROOT / "frontend/package.json"
+    composite_scripts = FRONTEND_COMPOSITE_SMOKE_COMPONENTS.get(script_name)
+    if composite_scripts is None:
+        return [
+            "npm",
+            "--prefix",
+            str(ROOT / "frontend"),
+            "run",
+            script_name,
+            "--",
+            "--help",
+        ]
+
+    python_program = """
+import json
+import sys
+from pathlib import Path
+
+package = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+script_name = sys.argv[2]
+expected = sys.argv[3:]
+script = package["scripts"][script_name]
+parts = [part.strip() for part in script.split("&&")]
+index = 0
+
+for required in expected:
+    target = f"npm run {required}"
+    while index < len(parts) and parts[index] != target:
+        index += 1
+    if index == len(parts):
+        raise SystemExit(
+            f"missing {target} in composite frontend script {script_name}: {script}"
+        )
+    index += 1
+""".strip()
+    return [
+        sys.executable,
+        "-c",
+        python_program,
+        str(package_path),
+        script_name,
+        *composite_scripts,
+    ]
 
 
 def check_runtime_doc_semantics(
@@ -265,6 +349,64 @@ def check_runtime_doc_semantics(
             f"verify runtime row for {runtime['runtime']}",
             (runtime_token, runtime["tests"]),
         )
+
+
+def check_task_routing_semantics(
+    errors: list[str],
+    inventory: list[dict[str, str]],
+    *,
+    task_routing: str,
+) -> None:
+    task_routing_path = ROOT / "docs/agent/TASK_ROUTING.md"
+    frontend_section = extract_markdown_section(task_routing, "Frontend work")
+    orchestrator_section = extract_markdown_section(task_routing, "Orchestrator work")
+    go_section = extract_markdown_section(task_routing, "Go services work")
+    contracts_section = extract_markdown_section(task_routing, "Contracts и OpenSpec work")
+    runtime_debug_section = extract_markdown_section(task_routing, "Runtime-debug и live verification")
+    docs_section = extract_markdown_section(task_routing, "Agent docs и guidance work")
+
+    frontend_runtime = get_runtime(inventory, "frontend")
+    orchestrator_runtime = get_runtime(inventory, "orchestrator")
+    api_gateway_runtime = get_runtime(inventory, "api-gateway")
+    worker_runtime = get_runtime(inventory, "worker")
+
+    require_section_contains(errors, frontend_section, task_routing_path, "Frontend work", frontend_runtime["entrypoint"])
+    require_section_contains(errors, frontend_section, task_routing_path, "Frontend work", "frontend/src/App.tsx")
+    require_section_contains(errors, frontend_section, task_routing_path, "Frontend work", "cd frontend && npm run generate:api")
+    require_section_contains(errors, frontend_section, task_routing_path, "Frontend work", "cd frontend && npm run lint")
+    require_section_contains(errors, frontend_section, task_routing_path, "Frontend work", frontend_runtime["tests"])
+    require_section_contains(errors, frontend_section, task_routing_path, "Frontend work", "cd frontend && npm run test:browser:ui-platform")
+    require_section_contains(errors, frontend_section, task_routing_path, "Frontend work", "frontend/package.json")
+    require_section_contains(errors, frontend_section, task_routing_path, "Frontend work", "./debug/runtime-inventory.sh --json")
+
+    require_section_contains(errors, orchestrator_section, task_routing_path, "Orchestrator work", orchestrator_runtime["entrypoint"])
+    require_section_contains(errors, orchestrator_section, task_routing_path, "Orchestrator work", "./scripts/dev/lint.sh --python")
+    require_section_contains(errors, orchestrator_section, task_routing_path, "Orchestrator work", orchestrator_runtime["tests"])
+    require_section_contains(errors, orchestrator_section, task_routing_path, "Orchestrator work", "./debug/runtime-inventory.sh --json")
+
+    require_section_contains(errors, go_section, task_routing_path, "Go services work", api_gateway_runtime["entrypoint"])
+    require_section_contains(errors, go_section, task_routing_path, "Go services work", api_gateway_runtime["tests"])
+    require_section_contains(errors, go_section, task_routing_path, "Go services work", worker_runtime["entrypoint"])
+    require_section_contains(errors, go_section, task_routing_path, "Go services work", worker_runtime["tests"])
+    require_section_contains(errors, go_section, task_routing_path, "Go services work", "./scripts/dev/lint.sh --go")
+    require_section_contains(errors, go_section, task_routing_path, "Go services work", "./debug/runtime-inventory.sh --json")
+
+    require_section_contains(errors, contracts_section, task_routing_path, "Contracts и OpenSpec work", "openspec validate <change-id> --strict --no-interactive")
+    require_section_contains(errors, contracts_section, task_routing_path, "Contracts и OpenSpec work", "./scripts/dev/check-agent-doc-freshness.sh")
+    require_section_contains(errors, contracts_section, task_routing_path, "Contracts и OpenSpec work", "openspec list")
+    require_section_contains(errors, contracts_section, task_routing_path, "Contracts и OpenSpec work", "openspec list --specs")
+    require_section_contains(errors, contracts_section, task_routing_path, "Contracts и OpenSpec work", "bd ready")
+
+    require_section_contains(errors, runtime_debug_section, task_routing_path, "Runtime-debug и live verification", "./debug/runtime-inventory.sh --json")
+    require_section_contains(errors, runtime_debug_section, task_routing_path, "Runtime-debug и live verification", "./scripts/dev/health-check.sh")
+    require_section_contains(errors, runtime_debug_section, task_routing_path, "Runtime-debug и live verification", "./debug/probe.sh all")
+    require_section_contains(errors, runtime_debug_section, task_routing_path, "Runtime-debug и live verification", "./debug/restart-runtime.sh <runtime>")
+
+    require_section_contains(errors, docs_section, task_routing_path, "Agent docs и guidance work", "./scripts/dev/check-agent-doc-freshness.sh")
+    require_section_contains(errors, docs_section, task_routing_path, "Agent docs и guidance work", "openspec validate <change-id> --strict --no-interactive")
+    require_section_contains(errors, docs_section, task_routing_path, "Agent docs и guidance work", "frontend/package.json")
+    require_section_contains(errors, docs_section, task_routing_path, "Agent docs и guidance work", "./debug/runtime-inventory.sh --json")
+    require_section_contains(errors, docs_section, task_routing_path, "Agent docs и guidance work", ".codex/config.toml")
 
 
 def main() -> int:
@@ -357,6 +499,11 @@ def main() -> int:
         runbook=runbook,
         verify=verify,
     )
+    check_task_routing_semantics(
+        errors,
+        inventory,
+        task_routing=task_routing,
+    )
 
     for script_name in PACKAGE_SCRIPTS_REQUIRED:
         if script_name not in package_scripts:
@@ -383,20 +530,6 @@ def main() -> int:
     require_contains(errors, go_agents, "cd go-services/api-gateway && go test ./...", ROOT / "go-services/AGENTS.md")
     require_contains(errors, go_agents, "cd go-services/worker && go test ./...", ROOT / "go-services/AGENTS.md")
     require_contains(errors, go_agents, "docs/agent/TASK_ROUTING.md", ROOT / "go-services/AGENTS.md")
-
-    frontend_inventory = get_runtime(inventory, "frontend")
-    orchestrator_inventory = get_runtime(inventory, "orchestrator")
-    api_gateway_inventory = get_runtime(inventory, "api-gateway")
-    worker_inventory = get_runtime(inventory, "worker")
-
-    require_contains(errors, task_routing, frontend_inventory["entrypoint"], ROOT / "docs/agent/TASK_ROUTING.md")
-    require_contains(errors, task_routing, frontend_inventory["tests"], ROOT / "docs/agent/TASK_ROUTING.md")
-    require_contains(errors, task_routing, orchestrator_inventory["entrypoint"], ROOT / "docs/agent/TASK_ROUTING.md")
-    require_contains(errors, task_routing, orchestrator_inventory["tests"], ROOT / "docs/agent/TASK_ROUTING.md")
-    require_contains(errors, task_routing, api_gateway_inventory["entrypoint"], ROOT / "docs/agent/TASK_ROUTING.md")
-    require_contains(errors, task_routing, api_gateway_inventory["tests"], ROOT / "docs/agent/TASK_ROUTING.md")
-    require_contains(errors, task_routing, worker_inventory["entrypoint"], ROOT / "docs/agent/TASK_ROUTING.md")
-    require_contains(errors, task_routing, worker_inventory["tests"], ROOT / "docs/agent/TASK_ROUTING.md")
 
     for path in LEGACY_DOCS:
         text = texts[path]
@@ -477,7 +610,7 @@ def main() -> int:
             require_command_success(
                 errors,
                 f"frontend {script_name} help smoke check",
-                ["npm", "--prefix", str(ROOT / "frontend"), "run", script_name, "--", "--help"],
+                build_frontend_smoke_command(script_name),
             )
 
     if errors:
