@@ -90,3 +90,6 @@ def test_binding_profile_revision_schema_uses_opaque_revision_identity_and_runti
     assert properties["binding_profile_id"]["type"] == "string"
     assert properties["binding_profile_id"]["format"] == "uuid"
     assert properties["revision_number"]["minimum"] == 1
+    assert properties["topology_template_compatibility"] == {
+        "$ref": "#/components/schemas/ExecutionPackTopologyCompatibilitySummary"
+    }

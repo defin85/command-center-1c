@@ -2,16 +2,25 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from typing import Any, Iterable
 from uuid import uuid4
 
 from django.db import transaction
 
+from apps.intercompany_pools.binding_profile_topology_compatibility import (
+    EXECUTION_PACK_TEMPLATE_INCOMPATIBLE,
+    build_execution_pack_template_incompatibility_problem,
+    get_execution_pack_topology_compatibility_summary,
+)
 from apps.intercompany_pools.models import (
     BindingProfile,
     BindingProfileRevision,
     OrganizationPool,
     PoolWorkflowBinding,
+)
+from apps.intercompany_pools.topology_template_contract import (
+    POOL_TOPOLOGY_TEMPLATE_INSTANTIATION_METADATA_KEY,
 )
 from apps.intercompany_pools.workflow_binding_attachments_contract import (
     POOL_WORKFLOW_BINDING_ATTACHMENT_CONTRACT_VERSION,
@@ -45,6 +54,19 @@ class PoolWorkflowBindingAttachmentLifecycleConflictError(PoolWorkflowBindingSto
 
 
 POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING = "POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING"
+
+
+class PoolWorkflowBindingTemplateCompatibilityError(PoolWorkflowBindingStoreError):
+    def __init__(
+        self,
+        *,
+        detail: str,
+        errors: list[dict[str, Any]],
+    ) -> None:
+        super().__init__(f"{EXECUTION_PACK_TEMPLATE_INCOMPATIBLE}: {detail}")
+        self.code = EXECUTION_PACK_TEMPLATE_INCOMPATIBLE
+        self.detail = detail
+        self.errors = errors
 
 
 def list_pool_workflow_binding_attachments(*, pool: OrganizationPool) -> list[dict[str, Any]]:
@@ -100,6 +122,10 @@ def upsert_pool_workflow_binding_attachment(
             binding_profile_revision_id=contract.binding_profile_revision_id,
             existing=existing,
             operation="update" if existing is not None else "create",
+        )
+        _ensure_template_pool_profile_revision_compatible(
+            pool=pool,
+            profile_revision=profile_revision,
         )
 
         if existing is None:
@@ -266,6 +292,10 @@ def replace_pool_workflow_binding_attachments_collection(
                 existing=existing,
                 operation="replace",
             )
+            _ensure_template_pool_profile_revision_compatible(
+                pool=pool,
+                profile_revision=profile_revision,
+            )
 
             if existing is None:
                 PoolWorkflowBinding.objects.create(
@@ -389,6 +419,26 @@ def _resolve_profile_revision_for_attachment(
     return profile_revision
 
 
+def _ensure_template_pool_profile_revision_compatible(
+    *,
+    pool: OrganizationPool,
+    profile_revision: BindingProfileRevision,
+) -> None:
+    if not _pool_uses_template_topology(pool):
+        return
+    summary = get_execution_pack_topology_compatibility_summary(
+        decisions=list(profile_revision.decisions) if isinstance(profile_revision.decisions, list) else [],
+        metadata=dict(profile_revision.metadata) if isinstance(profile_revision.metadata, dict) else {},
+    )
+    if bool(summary.get("topology_aware_ready")):
+        return
+    detail, errors = build_execution_pack_template_incompatibility_problem(
+        profile_code=str(profile_revision.profile.code or "").strip(),
+        summary=summary,
+    )
+    raise PoolWorkflowBindingTemplateCompatibilityError(detail=detail, errors=errors)
+
+
 def _record_matches_attachment_contract(
     *,
     existing: PoolWorkflowBinding,
@@ -416,6 +466,10 @@ def _serialize_attachment_record(record: PoolWorkflowBinding) -> dict[str, Any]:
             f"{POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING}: "
             f"Workflow binding '{record.binding_id}' is missing binding_profile references."
         )
+    topology_template_compatibility = get_execution_pack_topology_compatibility_summary(
+        decisions=list(profile_revision.decisions) if isinstance(profile_revision.decisions, list) else [],
+        metadata=dict(profile_revision.metadata) if isinstance(profile_revision.metadata, dict) else {},
+    )
     return {
         "contract_version": record.contract_version or POOL_WORKFLOW_BINDING_ATTACHMENT_CONTRACT_VERSION,
         "binding_id": record.binding_id,
@@ -448,6 +502,7 @@ def _serialize_attachment_record(record: PoolWorkflowBinding) -> dict[str, Any]:
             "decisions": list(profile_revision.decisions) if isinstance(profile_revision.decisions, list) else [],
             "parameters": dict(profile_revision.parameters) if isinstance(profile_revision.parameters, dict) else {},
             "role_mapping": dict(profile_revision.role_mapping) if isinstance(profile_revision.role_mapping, dict) else {},
+            "topology_template_compatibility": topology_template_compatibility,
         },
         "profile_lifecycle_warning": _build_profile_lifecycle_warning(profile=profile),
     }
@@ -473,6 +528,34 @@ def _serialize_attachment_collection(
         "workflow_bindings": bindings,
         "collection_etag": _calculate_collection_etag(bindings),
     }
+    if _pool_uses_template_topology(pool):
+        incompatible = next(
+            (
+                binding
+                for binding in bindings
+                if not bool(
+                    (
+                        binding.get("resolved_profile") or {}
+                    ).get("topology_template_compatibility", {})
+                    .get("topology_aware_ready")
+                )
+            ),
+            None,
+        )
+        if incompatible is not None:
+            resolved_profile = incompatible.get("resolved_profile") or {}
+            summary = resolved_profile.get("topology_template_compatibility") or {}
+            detail, errors = build_execution_pack_template_incompatibility_problem(
+                profile_code=str(resolved_profile.get("code") or resolved_profile.get("binding_profile_id") or "").strip(),
+                summary=summary if isinstance(summary, Mapping) else {},
+            )
+            response["blocking_remediation"] = {
+                "code": EXECUTION_PACK_TEMPLATE_INCOMPATIBLE,
+                "title": "Execution pack remediation required",
+                "detail": detail,
+                "errors": errors,
+            }
+            return response
     if not bindings and extract_pool_workflow_bindings(pool.metadata):
         response["blocking_remediation"] = {
             "code": "LEGACY_METADATA_WORKFLOW_BINDINGS_PRESENT",
@@ -483,6 +566,12 @@ def _serialize_attachment_collection(
             ),
         }
     return response
+
+
+def _pool_uses_template_topology(pool: OrganizationPool) -> bool:
+    metadata = pool.metadata if isinstance(pool.metadata, Mapping) else {}
+    instantiation = metadata.get(POOL_TOPOLOGY_TEMPLATE_INSTANTIATION_METADATA_KEY)
+    return isinstance(instantiation, Mapping)
 
 
 def _calculate_collection_etag(bindings: list[dict[str, Any]]) -> str:
@@ -516,6 +605,7 @@ def _normalize_requested_revision(
 __all__ = [
     "POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING",
     "PoolWorkflowBindingAttachmentLifecycleConflictError",
+    "PoolWorkflowBindingTemplateCompatibilityError",
     "delete_pool_workflow_binding_attachment",
     "get_pool_workflow_binding_attachment",
     "get_pool_workflow_binding_attachments_collection",

@@ -9,11 +9,15 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.api_v2.serializers.common import ProblemDetailsErrorSerializer
+from apps.intercompany_pools.binding_profile_topology_compatibility import (
+    EXECUTION_PACK_TOPOLOGY_ALIAS_REQUIRED,
+)
 from apps.intercompany_pools.binding_profiles_store import (
     BindingProfileCodeConflictError,
     BindingProfileLifecycleConflictError,
     BindingProfileNotFoundError,
     BindingProfileStoreError,
+    BindingProfileTopologyCompatibilityError,
     create_canonical_binding_profile,
     deactivate_canonical_binding_profile,
     get_canonical_binding_profile,
@@ -22,7 +26,11 @@ from apps.intercompany_pools.binding_profiles_store import (
 )
 from apps.tenancy.models import Tenant
 
-from .intercompany_pools import _problem, _resolve_tenant_id
+from .intercompany_pools import (
+    ExecutionPackTopologyCompatibilitySummarySerializer,
+    _problem,
+    _resolve_tenant_id,
+)
 
 
 class BindingProfileWorkflowDefinitionRefSerializer(serializers.Serializer):
@@ -53,6 +61,7 @@ class BindingProfileRevisionReadSerializer(BindingProfileRevisionWriteSerializer
     binding_profile_revision_id = serializers.CharField(required=True, allow_blank=False)
     binding_profile_id = serializers.UUIDField(required=True)
     revision_number = serializers.IntegerField(min_value=1, required=True)
+    topology_template_compatibility = ExecutionPackTopologyCompatibilitySummarySerializer(required=True)
     created_by = serializers.CharField(required=False, allow_blank=True)
     created_at = serializers.DateTimeField(required=True)
 
@@ -146,6 +155,17 @@ def _binding_profile_store_problem(exc: BindingProfileStoreError) -> Response:
             title="Execution Pack Lifecycle Conflict",
             detail=str(exc),
             status_code=http_status.HTTP_409_CONFLICT,
+        )
+    if isinstance(exc, BindingProfileTopologyCompatibilityError):
+        return _problem(
+            code=EXECUTION_PACK_TOPOLOGY_ALIAS_REQUIRED,
+            title="Execution Pack Topology Alias Required",
+            detail=(
+                "Execution pack revision is not reusable for template-based topology authoring. "
+                "Publish topology-aware decision revisions in /decisions before saving /pools/execution-packs."
+            ),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=exc.errors,
         )
     return _problem(
         code="VALIDATION_ERROR",

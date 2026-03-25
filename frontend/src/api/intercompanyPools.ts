@@ -142,6 +142,22 @@ export type PoolWorkflowBindingProfileLifecycleWarning = {
   detail: string
 }
 
+export type ExecutionPackTopologyCompatibilityDiagnostic = {
+  code: string
+  slot_key?: string
+  decision_table_id?: string
+  decision_revision?: number
+  field_or_table_path?: string
+  detail: string
+}
+
+export type ExecutionPackTopologyCompatibilitySummary = {
+  status: 'compatible' | 'incompatible'
+  topology_aware_ready: boolean
+  covered_slot_keys: string[]
+  diagnostics: ExecutionPackTopologyCompatibilityDiagnostic[]
+}
+
 export type PoolWorkflowBindingResolvedProfile = {
   binding_profile_id: string
   code: string
@@ -153,6 +169,7 @@ export type PoolWorkflowBindingResolvedProfile = {
   decisions?: PoolWorkflowBindingDecisionRef[]
   parameters?: Record<string, unknown>
   role_mapping?: Record<string, string>
+  topology_template_compatibility?: ExecutionPackTopologyCompatibilitySummary | null
 }
 
 export type PoolWorkflowBinding = PoolWorkflowBindingBase & {
@@ -183,6 +200,7 @@ export type PoolWorkflowBindingBlockingRemediation = {
   code: string
   title: string
   detail: string
+  errors?: ExecutionPackTopologyCompatibilityDiagnostic[]
 }
 
 export type PoolWorkflowBindingCollection = {
@@ -244,9 +262,9 @@ export type PoolRunReadinessBlocker = {
   database_id?: string | null
   organization_id?: string | null
   edge_ref?: {
-    parent_node_id?: string | null
-    child_node_id?: string | null
-  } | null
+    parent_node_id: string
+    child_node_id: string
+  }
   participant_side?: string | null
   required_role?: string | null
   diagnostic?: Record<string, unknown> | null

@@ -71,6 +71,9 @@ from apps.intercompany_pools.document_policy_topology_aliases import (
     MASTER_DATA_PARTY_ROLE_MISSING,
     POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID,
 )
+from apps.intercompany_pools.binding_profile_topology_compatibility import (
+    EXECUTION_PACK_TEMPLATE_INCOMPATIBLE,
+)
 from apps.intercompany_pools.topology_template_contract import (
     POOL_TOPOLOGY_TEMPLATE_INSTANTIATION_METADATA_KEY,
 )
@@ -111,6 +114,7 @@ from apps.intercompany_pools.workflow_binding_resolution import (
 )
 from apps.intercompany_pools.workflow_binding_attachments_store import (
     PoolWorkflowBindingAttachmentLifecycleConflictError,
+    PoolWorkflowBindingTemplateCompatibilityError,
     delete_pool_workflow_binding_attachment as delete_attached_pool_workflow_binding,
     get_pool_workflow_binding_attachment as get_attached_pool_workflow_binding,
     get_pool_workflow_binding_attachments_collection as get_attached_pool_workflow_binding_collection,
@@ -188,12 +192,14 @@ _POOL_RUNTIME_START_FAIL_CLOSED_CODES = {
     "ODATA_PUBLICATION_AUTH_CONTEXT_INVALID",
     MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING,
     MASTER_DATA_PARTY_ROLE_MISSING,
+    EXECUTION_PACK_TEMPLATE_INCOMPATIBLE,
 }
 _POOL_WORKFLOW_BINDING_VALIDATION_CODES = {
     "POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
     "POOL_DOCUMENT_POLICY_SLOT_REQUIRED",
     "POOL_WORKFLOW_BINDING_PROFILE_REVISION_NOT_FOUND",
     "POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING",
+    EXECUTION_PACK_TEMPLATE_INCOMPATIBLE,
 }
 POOL_PROJECTION_HARDENING_CUTOFF_KEY = "pools.projection.publication_hardening_cutoff_utc"
 POOL_PUBLICATION_STEP_INCOMPLETE_CODE = "POOL_PUBLICATION_STEP_INCOMPLETE"
@@ -377,6 +383,18 @@ def _binding_profile_lifecycle_conflict_problem(
                 "operation": exc.operation,
             }
         ],
+    )
+
+
+def _binding_template_compatibility_problem(
+    exc: PoolWorkflowBindingTemplateCompatibilityError,
+) -> Response:
+    return _problem(
+        code=EXECUTION_PACK_TEMPLATE_INCOMPATIBLE,
+        title="Execution Pack Template Incompatible",
+        detail=exc.detail,
+        status_code=http_status.HTTP_400_BAD_REQUEST,
+        errors=exc.errors,
     )
 
 
@@ -2214,6 +2232,22 @@ class PoolWorkflowBindingProfileLifecycleWarningSerializer(serializers.Serialize
     detail = serializers.CharField()
 
 
+class ExecutionPackTopologyCompatibilityDiagnosticSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    slot_key = serializers.CharField(required=False, allow_blank=True)
+    decision_table_id = serializers.CharField(required=False, allow_blank=True)
+    decision_revision = serializers.IntegerField(required=False, min_value=1)
+    field_or_table_path = serializers.CharField(required=False, allow_blank=True)
+    detail = serializers.CharField()
+
+
+class ExecutionPackTopologyCompatibilitySummarySerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=["compatible", "incompatible"])
+    topology_aware_ready = serializers.BooleanField()
+    covered_slot_keys = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    diagnostics = ExecutionPackTopologyCompatibilityDiagnosticSerializer(many=True, required=False, default=list)
+
+
 class PoolWorkflowBindingResolvedProfileSerializer(serializers.Serializer):
     binding_profile_id = serializers.CharField()
     code = serializers.CharField()
@@ -2228,6 +2262,9 @@ class PoolWorkflowBindingResolvedProfileSerializer(serializers.Serializer):
         child=serializers.CharField(),
         required=False,
         default=dict,
+    )
+    topology_template_compatibility = ExecutionPackTopologyCompatibilitySummarySerializer(
+        required=False,
     )
 
 
@@ -2652,6 +2689,7 @@ class PoolWorkflowBindingBlockingRemediationSerializer(serializers.Serializer):
     code = serializers.CharField()
     title = serializers.CharField()
     detail = serializers.CharField()
+    errors = ExecutionPackTopologyCompatibilityDiagnosticSerializer(many=True, required=False)
 
 
 class PoolWorkflowBindingCollectionResponseSerializer(serializers.Serializer):
@@ -3377,6 +3415,8 @@ def list_pool_workflow_bindings(request):
         return _binding_collection_conflict_problem(exc)
     except PoolWorkflowBindingAttachmentLifecycleConflictError as exc:
         return _binding_profile_lifecycle_conflict_problem(exc)
+    except PoolWorkflowBindingTemplateCompatibilityError as exc:
+        return _binding_template_compatibility_problem(exc)
     except PoolWorkflowBindingStoreError as exc:
         error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
         return _problem(
@@ -3456,6 +3496,8 @@ def upsert_pool_workflow_binding(request):
         return _binding_revision_conflict_problem(exc)
     except PoolWorkflowBindingAttachmentLifecycleConflictError as exc:
         return _binding_profile_lifecycle_conflict_problem(exc)
+    except PoolWorkflowBindingTemplateCompatibilityError as exc:
+        return _binding_template_compatibility_problem(exc)
     except PoolWorkflowBindingStoreError as exc:
         error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
         return _problem(

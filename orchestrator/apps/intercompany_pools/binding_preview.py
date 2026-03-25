@@ -9,6 +9,10 @@ from apps.templates.workflow.decision_tables import (
     resolve_pinned_decision_table,
 )
 
+from .binding_profile_topology_compatibility import (
+    build_execution_pack_template_incompatibility_problem,
+    get_execution_pack_topology_compatibility_summary,
+)
 from .document_plan_artifact_contract import (
     POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND,
     POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING,
@@ -19,11 +23,12 @@ from .document_policy_contract import (
     validate_document_policy_v1,
 )
 from .distribution_artifact_contract import validate_distribution_artifact_v1
-from .models import OrganizationPool, PoolRun, PoolSchemaTemplate
+from .models import BindingProfileRevision, OrganizationPool, PoolRun, PoolSchemaTemplate
 from .run_input_sanitizer import sanitize_run_input_for_runtime_contract
 from .runtime_distribution import compute_distribution_runtime_state, load_runtime_topology_for_period
 from .runtime_projection_contract import build_pool_runtime_projection_v1
 from .runtime_template_registry import sync_pool_runtime_template_registry
+from .topology_template_contract import POOL_TOPOLOGY_TEMPLATE_INSTANTIATION_METADATA_KEY
 from .workflow_authoring_contract import (
     POOL_DOCUMENT_POLICY_SLOT_DUPLICATE,
     POOL_DOCUMENT_POLICY_SLOT_REQUIRED,
@@ -175,6 +180,10 @@ def build_pool_workflow_binding_runtime_bundle(
         mode=mode,
         period_start=period_start,
     )
+    _ensure_template_pool_execution_pack_compatible(
+        pool=pool,
+        binding=resolved_binding,
+    )
     resolved_binding_payload = resolved_binding.model_dump(mode="json", exclude_none=True)
     workflow_binding_read_model = build_pool_workflow_binding_read_model(binding=resolved_binding)
 
@@ -258,6 +267,41 @@ def build_pool_workflow_binding_runtime_bundle(
         "runtime_projection": runtime_projection,
         "run_input": sanitized_run_input,
     }
+
+
+def _ensure_template_pool_execution_pack_compatible(
+    *,
+    pool: OrganizationPool,
+    binding: PoolWorkflowBindingContract,
+) -> None:
+    metadata = pool.metadata if isinstance(pool.metadata, Mapping) else {}
+    instantiation = metadata.get(POOL_TOPOLOGY_TEMPLATE_INSTANTIATION_METADATA_KEY)
+    if not isinstance(instantiation, Mapping):
+        return
+    binding_profile_revision_id = str(binding.binding_profile_revision_id or "").strip()
+    if not binding_profile_revision_id:
+        return
+    profile_revision = (
+        BindingProfileRevision.objects.select_related("profile")
+        .filter(
+            tenant=pool.tenant,
+            binding_profile_revision_id=binding_profile_revision_id,
+        )
+        .first()
+    )
+    if profile_revision is None:
+        return
+    summary = get_execution_pack_topology_compatibility_summary(
+        decisions=list(profile_revision.decisions) if isinstance(profile_revision.decisions, list) else [],
+        metadata=dict(profile_revision.metadata) if isinstance(profile_revision.metadata, dict) else {},
+    )
+    if bool(summary.get("topology_aware_ready")):
+        return
+    detail, _errors = build_execution_pack_template_incompatibility_problem(
+        profile_code=str(profile_revision.profile.code or "").strip(),
+        summary=summary,
+    )
+    raise ValueError(f"EXECUTION_PACK_TEMPLATE_INCOMPATIBLE: {detail}")
 
 
 def build_pool_workflow_binding_preview(

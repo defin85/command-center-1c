@@ -99,6 +99,7 @@ import {
   summarizeTopologySlotCoverage,
   type TopologyEdgeSelector,
 } from './topologySlotCoverage'
+import { formatExecutionPackTopologyDiagnostic } from './executionPackTopologyCompatibility'
 import {
   buildPoolTopologyTemplatesRoute,
   POOL_CATALOG_ROUTE,
@@ -133,6 +134,7 @@ const API_ERROR_MESSAGE_MAP: Record<string, string> = {
   POOL_METADATA_REFRESH_IN_PROGRESS: 'Metadata refresh уже выполняется для этой базы.',
   POOL_WORKFLOW_BINDING_REVISION_CONFLICT: 'Workflow binding уже был изменён другим оператором. Обновите bindings и повторите сохранение.',
   POOL_WORKFLOW_BINDING_COLLECTION_CONFLICT: 'Набор workflow bindings уже был изменён другим оператором. Обновите bindings и повторите сохранение.',
+  EXECUTION_PACK_TEMPLATE_INCOMPATIBLE: 'Выбранный execution pack не подходит для template-based topology path и должен использовать topology-aware aliases.',
 }
 
 const formatOrganizationOptionLabel = (organization: Pick<Organization, 'name' | 'inn'>): string => (
@@ -149,6 +151,25 @@ const METADATA_HANDOFF_ERROR_CODES = new Set([
   'POOL_METADATA_FETCH_FAILED',
   'POOL_METADATA_PARSE_FAILED',
 ])
+
+const renderBlockingRemediationDescription = (remediation: PoolWorkflowBindingBlockingRemediation) => {
+  const diagnostics = Array.isArray(remediation.errors)
+    ? remediation.errors.map(formatExecutionPackTopologyDiagnostic).filter(Boolean)
+    : []
+  if (diagnostics.length === 0) {
+    return remediation.detail
+  }
+  return (
+    <Space direction="vertical" size={4} style={{ width: '100%' }}>
+      <Text>{remediation.detail}</Text>
+      {diagnostics.map((diagnostic, index) => (
+        <Text key={`${remediation.code}:${index}`} type="secondary">
+          {diagnostic}
+        </Text>
+      ))}
+    </Space>
+  )
+}
 
 type PoolCatalogWorkspaceTab = 'organizations' | 'pools' | 'bindings' | 'topology' | 'graph'
 
@@ -3977,13 +3998,19 @@ export function PoolCatalogPage() {
                         key={remediation.code}
                         type="warning"
                         message={remediation.title}
-                        description={remediation.detail}
+                        description={renderBlockingRemediationDescription(remediation)}
                         showIcon
                         action={(
                           <Space size={8}>
-                            <Button size="small" onClick={() => { handleSelectWorkspaceTab('topology') }}>
-                              Open Topology Editor
-                            </Button>
+                            {remediation.code === 'EXECUTION_PACK_TEMPLATE_INCOMPATIBLE' ? (
+                              <Button size="small" onClick={() => { navigate(POOL_EXECUTION_PACKS_ROUTE) }}>
+                                Open execution packs
+                              </Button>
+                            ) : (
+                              <Button size="small" onClick={() => { handleSelectWorkspaceTab('topology') }}>
+                                Open Topology Editor
+                              </Button>
+                            )}
                             <Button size="small" onClick={() => { navigate('/decisions') }}>
                               Open /decisions
                             </Button>

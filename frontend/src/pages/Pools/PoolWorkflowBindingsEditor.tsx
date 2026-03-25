@@ -26,6 +26,7 @@ import {
   resolvePoolWorkflowBindingProfileStatus,
   resolvePoolWorkflowBindingWorkflow,
 } from './poolWorkflowBindingPresentation'
+import { describeExecutionPackTopologyCompatibility } from './executionPackTopologyCompatibility'
 
 const { Text } = Typography
 
@@ -126,6 +127,7 @@ const buildRevisionOptions = (
           decisions: revision.decisions,
           parameters: revision.parameters,
           role_mapping: revision.role_mapping as Record<string, string>,
+          topology_template_compatibility: revision.topology_template_compatibility,
         },
         profileLifecycleWarning: null,
       }))
@@ -229,6 +231,12 @@ export function PoolWorkflowBindingsEditor({
                   )
                   const unresolvedCoverageItems = coverageSummary.items.filter((item) => item.coverage.status !== 'resolved')
                   const lifecycleWarning = resolvePoolWorkflowBindingLifecycleWarning(syntheticBinding)
+                  const topologyCompatibility = describeExecutionPackTopologyCompatibility(
+                    syntheticBinding?.resolved_profile?.topology_template_compatibility,
+                  )
+                  const showTopologyCompatibility = Boolean(
+                    syntheticBinding?.binding_profile_revision_id || syntheticBinding?.resolved_profile,
+                  )
 
                   return (
                     <Card
@@ -413,6 +421,36 @@ export function PoolWorkflowBindingsEditor({
                             </Text>
                           </Space>
                         </Card>
+
+                        {showTopologyCompatibility ? (
+                          <Alert
+                            type={topologyCompatibility.alertType}
+                            showIcon
+                            message={topologyCompatibility.message}
+                            description={(
+                              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                                <Text data-testid={`pool-catalog-workflow-binding-topology-status-${field.name}`}>
+                                  Status: {topologyCompatibility.statusText}
+                                </Text>
+                                <Text
+                                  type="secondary"
+                                  data-testid={`pool-catalog-workflow-binding-topology-covered-slots-${field.name}`}
+                                >
+                                  Covered slots: {topologyCompatibility.coveredSlotsText}
+                                </Text>
+                                {topologyCompatibility.diagnostics.map((diagnostic, diagnosticIndex) => (
+                                  <Text
+                                    key={`${field.key}:topology:${diagnosticIndex}`}
+                                    type="secondary"
+                                    data-testid={`pool-catalog-workflow-binding-topology-diagnostic-${field.name}-${diagnosticIndex}`}
+                                  >
+                                    {diagnostic}
+                                  </Text>
+                                ))}
+                              </Space>
+                            )}
+                          />
+                        ) : null}
 
                         <Row gutter={12}>
                           <Col span={12}>

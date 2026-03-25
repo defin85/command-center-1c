@@ -1,0 +1,17 @@
+type: object
+description: Blocking remediation surfaced before workflow-binding save for template-based pools.
+properties:
+  code:
+    type: string
+  title:
+    type: string
+  detail:
+    type: string
+  errors:
+    type: array
+    items:
+      $ref: ./ExecutionPackTopologyCompatibilityDiagnostic.yaml
+required:
+  - code
+  - title
+  - detail

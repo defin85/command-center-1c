@@ -6,8 +6,10 @@ import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
+from apps.intercompany_pools.document_policy_contract import DOCUMENT_POLICY_VERSION
 from apps.intercompany_pools.models import OrganizationPool
 from apps.intercompany_pools.workflow_binding_attachments_store import upsert_pool_workflow_binding_attachment
+from apps.templates.workflow.decision_tables import create_decision_table_revision
 from apps.tenancy.models import Tenant, TenantMember
 
 
@@ -19,7 +21,64 @@ def _assert_problem_details_response(response, *, status_code: int, code: str) -
     return payload
 
 
-def _build_revision_payload(*, workflow_revision: int = 3) -> dict[str, object]:
+def _create_document_policy_decision(*, token: str) -> tuple[str, int]:
+    decision_table_id = f"document-policy-{uuid4().hex[:8]}"
+    first_revision = create_decision_table_revision(
+        contract={
+            "decision_table_id": decision_table_id,
+            "decision_key": "document_policy",
+            "name": "Document Policy",
+            "inputs": [],
+            "outputs": [{"name": "document_policy", "value_type": "json", "required": True}],
+            "rules": [
+                {
+                    "rule_id": "default",
+                    "priority": 0,
+                    "conditions": {},
+                    "outputs": {
+                        "document_policy": {
+                            "version": DOCUMENT_POLICY_VERSION,
+                            "chains": [
+                                {
+                                    "chain_id": "sale_chain",
+                                    "documents": [
+                                        {
+                                            "document_id": "sale",
+                                            "entity_name": "Document_Sales",
+                                            "document_role": "base",
+                                            "field_mapping": {"Контрагент_Key": token},
+                                            "table_parts_mapping": {},
+                                            "link_rules": {},
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    },
+                }
+            ],
+        },
+    )
+    latest_revision = create_decision_table_revision(
+        contract={
+            "decision_table_id": decision_table_id,
+            "decision_key": "document_policy",
+            "name": "Document Policy",
+            "inputs": [],
+            "outputs": [{"name": "document_policy", "value_type": "json", "required": True}],
+            "rules": list(first_revision.rules or []),
+        },
+        parent_version=first_revision,
+    )
+    return decision_table_id, latest_revision.version_number
+
+
+def _build_revision_payload(
+    *,
+    workflow_revision: int = 3,
+    token: str = "master_data.party.edge.child.counterparty.ref",
+) -> dict[str, object]:
+    decision_table_id, decision_revision = _create_document_policy_decision(token=token)
     return {
         "workflow": {
             "workflow_definition_key": "services-publication",
@@ -29,10 +88,10 @@ def _build_revision_payload(*, workflow_revision: int = 3) -> dict[str, object]:
         },
         "decisions": [
             {
-                "decision_table_id": "document-policy",
+                "decision_table_id": decision_table_id,
                 "decision_key": "document_policy",
                 "slot_key": "document_policy",
-                "decision_revision": 2,
+                "decision_revision": decision_revision,
             }
         ],
         "parameters": {
@@ -252,3 +311,42 @@ def test_binding_profile_detail_includes_scoped_attachment_usage_summary(
         "mode": "safe",
         "tags": ["baseline"],
     }
+
+
+@pytest.mark.django_db
+def test_binding_profiles_api_rejects_concrete_participant_refs_with_machine_readable_diagnostics(
+    authenticated_client: APIClient,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/binding-profiles/",
+        {
+            "code": "services-publication-default",
+            "name": "Services Publication",
+            "description": "Reusable publication scheme",
+            "revision": _build_revision_payload(
+                token="master_data.party.party_001.counterparty.ref",
+            ),
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="EXECUTION_PACK_TOPOLOGY_ALIAS_REQUIRED",
+    )
+    assert payload["title"] == "Execution Pack Topology Alias Required"
+    assert "/decisions" in payload["detail"]
+    assert payload["errors"] == [
+        {
+            "code": "EXECUTION_PACK_TOPOLOGY_ALIAS_REQUIRED",
+            "slot_key": "document_policy",
+            "decision_table_id": payload["errors"][0]["decision_table_id"],
+            "decision_revision": 2,
+            "field_or_table_path": "document_policy.chains[0].documents[0].field_mapping.Контрагент_Key",
+            "detail": (
+                "Reusable execution-pack participant refs must use topology-aware aliases "
+                "instead of concrete master_data.party/master_data.contract refs."
+            ),
+        }
+    ]

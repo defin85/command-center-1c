@@ -625,6 +625,11 @@ const parseReadinessProblemBlockers = (problem: ProblemDetailsPayload | null): P
       continue
     }
     const raw = candidate as Record<string, unknown>
+    const rawEdgeRef = raw.edge_ref && typeof raw.edge_ref === 'object' && !Array.isArray(raw.edge_ref)
+      ? raw.edge_ref as Record<string, unknown>
+      : null
+    const parentNodeId = typeof rawEdgeRef?.parent_node_id === 'string' ? rawEdgeRef.parent_node_id : null
+    const childNodeId = typeof rawEdgeRef?.child_node_id === 'string' ? rawEdgeRef.child_node_id : null
     blockers.push({
       code: typeof raw.code === 'string' ? raw.code : null,
       detail: typeof raw.detail === 'string' ? raw.detail : null,
@@ -633,16 +638,12 @@ const parseReadinessProblemBlockers = (problem: ProblemDetailsPayload | null): P
       field_or_table_path: typeof raw.field_or_table_path === 'string' ? raw.field_or_table_path : null,
       database_id: typeof raw.database_id === 'string' ? raw.database_id : null,
       organization_id: typeof raw.organization_id === 'string' ? raw.organization_id : null,
-      edge_ref: raw.edge_ref && typeof raw.edge_ref === 'object' && !Array.isArray(raw.edge_ref)
+      edge_ref: parentNodeId && childNodeId
         ? {
-          parent_node_id: typeof (raw.edge_ref as Record<string, unknown>).parent_node_id === 'string'
-            ? (raw.edge_ref as Record<string, unknown>).parent_node_id as string
-            : null,
-          child_node_id: typeof (raw.edge_ref as Record<string, unknown>).child_node_id === 'string'
-            ? (raw.edge_ref as Record<string, unknown>).child_node_id as string
-            : null,
+          parent_node_id: parentNodeId,
+          child_node_id: childNodeId,
         }
-        : null,
+        : undefined,
       participant_side: typeof raw.participant_side === 'string' ? raw.participant_side : null,
       required_role: typeof raw.required_role === 'string' ? raw.required_role : null,
       diagnostic: raw.diagnostic && typeof raw.diagnostic === 'object' && !Array.isArray(raw.diagnostic)

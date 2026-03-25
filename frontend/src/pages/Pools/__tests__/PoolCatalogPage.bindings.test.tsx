@@ -196,6 +196,12 @@ function buildPoolWorkflowBinding(overrides: Partial<PoolWorkflowBinding> = {}):
       decisions,
       parameters,
       role_mapping: roleMapping,
+      topology_template_compatibility: {
+        status: 'compatible',
+        topology_aware_ready: true,
+        covered_slot_keys: ['document_policy'],
+        diagnostics: [],
+      },
     },
     profile_lifecycle_warning: null,
     selector: {
@@ -246,6 +252,12 @@ function buildBindingProfileSummary(overrides: Record<string, unknown> = {}) {
       },
       metadata: {
         source: 'manual',
+      },
+      topology_template_compatibility: {
+        status: 'compatible',
+        topology_aware_ready: true,
+        covered_slot_keys: ['document_policy'],
+        diagnostics: [],
       },
       created_at: '2026-01-01T00:00:00Z',
     },
@@ -1140,6 +1152,12 @@ describe('PoolCatalogPage', () => {
                 parameters: {},
                 role_mapping: {},
                 metadata: { source: 'manual' },
+                topology_template_compatibility: {
+                  status: 'compatible',
+                  topology_aware_ready: true,
+                  covered_slot_keys: ['document_policy'],
+                  diagnostics: [],
+                },
                 created_at: '2026-01-01T00:00:00Z',
               },
             }),
@@ -1510,6 +1528,41 @@ describe('PoolCatalogPage', () => {
     expect(
       screen.getByText('Canonical binding collection is empty while legacy metadata payload is still present.')
     ).toBeInTheDocument()
+    expect(screen.getByTestId('pool-catalog-save-bindings')).toBeDisabled()
+  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+
+  it('surfaces execution-pack topology remediation with diagnostics and canonical handoff', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockListPoolWorkflowBindings.mockResolvedValueOnce(buildPoolWorkflowBindingCollection([], {
+      collection_etag: 'sha256:template-remediation',
+      blocking_remediation: {
+        code: 'EXECUTION_PACK_TEMPLATE_INCOMPATIBLE',
+        title: 'Execution pack remediation required',
+        detail: 'Pinned execution pack still uses concrete participant refs.',
+        errors: [
+          {
+            code: 'EXECUTION_PACK_TEMPLATE_INCOMPATIBLE',
+            slot_key: 'document_policy',
+            decision_table_id: 'decision-1',
+            decision_revision: 4,
+            field_or_table_path: 'documents[0].field_mappings.counterparty',
+            detail: 'Use topology-aware aliases instead of concrete refs.',
+          },
+        ],
+      },
+    }))
+
+    renderPage()
+    await initialCatalogLoadPromise
+
+    await openWorkspaceTab(user, 'Bindings')
+
+    expect(await screen.findByText('Execution pack remediation required')).toBeInTheDocument()
+    expect(screen.getByText('Pinned execution pack still uses concrete participant refs.')).toBeInTheDocument()
+    expect(screen.getByText(/slot document_policy/)).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Open execution packs' }).length).toBeGreaterThan(0)
     expect(screen.getByTestId('pool-catalog-save-bindings')).toBeDisabled()
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 

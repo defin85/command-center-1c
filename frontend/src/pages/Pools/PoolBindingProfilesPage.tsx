@@ -37,6 +37,7 @@ import type {
 } from '../../api/poolBindingProfiles'
 import { resolveApiError } from './masterData/errorUtils'
 import { PoolBindingProfilesEditorModal } from './PoolBindingProfilesEditorModal'
+import { describeExecutionPackTopologyCompatibility } from './executionPackTopologyCompatibility'
 import { POOL_CATALOG_ROUTE, POOL_EXECUTION_PACKS_ROUTE } from './routes'
 
 const { Title, Text } = Typography
@@ -250,6 +251,10 @@ export function PoolBindingProfilesPage() {
   }, [selectedProfile])
   const selectedProfileUsageRevisionCount = useMemo(
     () => selectedProfile?.usage_summary?.revision_summary.length ?? 0,
+    [selectedProfile]
+  )
+  const selectedProfileTopologyCompatibility = useMemo(
+    () => describeExecutionPackTopologyCompatibility(selectedProfile?.latest_revision.topology_template_compatibility),
     [selectedProfile]
   )
   const visibleProfileUsage = isUsageRequested ? selectedProfileUsage : []
@@ -607,6 +612,11 @@ export function PoolBindingProfilesPage() {
                   <Descriptions.Item label="Workflow">
                     {`${selectedProfile.latest_revision.workflow.workflow_name} · r${selectedProfile.latest_revision.workflow.workflow_revision}`}
                   </Descriptions.Item>
+                  <Descriptions.Item label="Template compatibility">
+                    <Text data-testid="pool-binding-profiles-topology-compatibility-status">
+                      {selectedProfileTopologyCompatibility.statusText}
+                    </Text>
+                  </Descriptions.Item>
                   <Descriptions.Item label="Updated at">
                     {formatDateTime(selectedProfile.updated_at)}
                   </Descriptions.Item>
@@ -622,6 +632,34 @@ export function PoolBindingProfilesPage() {
                     message="Deactivated execution packs remain readable for pinned attachments, but cannot publish new revisions."
                   />
                 ) : null}
+
+                <Alert
+                  type={selectedProfileTopologyCompatibility.alertType}
+                  showIcon
+                  message={selectedProfileTopologyCompatibility.message}
+                  description={(
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                      <Text data-testid="pool-binding-profiles-topology-covered-slots">
+                        Covered slots: {selectedProfileTopologyCompatibility.coveredSlotsText}
+                      </Text>
+                      {selectedProfileTopologyCompatibility.diagnostics.map((diagnostic, diagnosticIndex) => (
+                        <Text
+                          key={`profile-topology-diagnostic:${diagnosticIndex}`}
+                          type="secondary"
+                          data-testid={`pool-binding-profiles-topology-diagnostic-${diagnosticIndex}`}
+                        >
+                          {diagnostic}
+                        </Text>
+                      ))}
+                      {selectedProfileTopologyCompatibility.alertType === 'warning' ? (
+                        <Space wrap>
+                          <Button onClick={() => navigate('/decisions')}>Open /decisions</Button>
+                          <Button onClick={() => openAttachmentWorkspace()}>Open attachment workspace</Button>
+                        </Space>
+                      ) : null}
+                    </Space>
+                  )}
+                />
 
                 <Space direction="vertical" size={4} style={{ width: '100%' }}>
                   <Title level={3} style={{ margin: 0, fontSize: 18 }}>

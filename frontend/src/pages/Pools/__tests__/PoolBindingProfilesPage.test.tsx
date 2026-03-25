@@ -64,6 +64,12 @@ function buildRevision(overrides: Partial<BindingProfileRevision> = {}): Binding
     metadata: {
       source: 'manual',
     },
+    topology_template_compatibility: {
+      status: 'compatible',
+      topology_aware_ready: true,
+      covered_slot_keys: ['document_policy'],
+      diagnostics: [],
+    },
     created_by: 'analyst',
     created_at: '2026-03-16T12:00:00Z',
     ...overrides,
@@ -675,6 +681,46 @@ describe('PoolBindingProfilesPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Open pool attachment' }))
 
     expect(await screen.findByTestId('location-probe')).toHaveTextContent('/pools/catalog?pool_id=pool-1&tab=bindings')
+  })
+
+  it('surfaces topology compatibility diagnostics for incompatible execution packs', async () => {
+    mockUseBindingProfileDetail.mockImplementation((bindingProfileId?: string) => ({
+      data: bindingProfileId ? {
+        binding_profile: {
+          ...profileDetails[bindingProfileId],
+          latest_revision: buildRevision({
+            topology_template_compatibility: {
+              status: 'incompatible',
+              topology_aware_ready: false,
+              covered_slot_keys: ['document_policy'],
+              diagnostics: [
+                {
+                  code: 'EXECUTION_PACK_TOPOLOGY_ALIAS_REQUIRED',
+                  slot_key: 'document_policy',
+                  decision_table_id: 'decision-1',
+                  decision_revision: 3,
+                  field_or_table_path: 'documents[0].field_mappings.counterparty',
+                  detail: 'Concrete participant refs are not reusable for topology templates.',
+                },
+              ],
+            },
+          }),
+        },
+      } : undefined,
+      isLoading: false,
+      isError: false,
+      error: null,
+    }))
+
+    renderPage('/pools/execution-packs?profile=bp-services&detail=1')
+
+    expect(await screen.findByTestId('pool-binding-profiles-topology-compatibility-status')).toHaveTextContent(
+      'incompatible',
+    )
+    expect(screen.getByTestId('pool-binding-profiles-topology-diagnostic-0')).toHaveTextContent(
+      'slot document_policy',
+    )
+    expect(screen.getByText('Open /decisions')).toBeInTheDocument()
   })
 
   it('fails closed on primary catalog load errors without triggering usage reads', async () => {

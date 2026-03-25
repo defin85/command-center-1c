@@ -14,8 +14,8 @@ properties:
   errors:
     description: >-
       Optional structured error details. For validation failures this is a
-      field-errors map; for metadata referential validation this is an array of
-      items with code/path/detail.
+      field-errors map; for referential or topology compatibility validation
+      this is an array of machine-readable diagnostic items.
     oneOf:
       - $ref: ./ProblemDetailsFieldErrors.yaml
       - type: array

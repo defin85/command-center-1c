@@ -1,0 +1,23 @@
+type: object
+description: Derived topology-template compatibility summary for an immutable execution-pack revision.
+properties:
+  status:
+    type: string
+    enum:
+      - compatible
+      - incompatible
+  topology_aware_ready:
+    type: boolean
+  covered_slot_keys:
+    type: array
+    items:
+      type: string
+  diagnostics:
+    type: array
+    items:
+      $ref: ./ExecutionPackTopologyCompatibilityDiagnostic.yaml
+required:
+  - status
+  - topology_aware_ready
+  - covered_slot_keys
+  - diagnostics

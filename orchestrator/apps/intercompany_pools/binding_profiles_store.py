@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 from uuid import uuid4
 
@@ -7,6 +8,14 @@ from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.utils import timezone
 
+from apps.intercompany_pools.binding_profile_topology_compatibility import (
+    EXECUTION_PACK_TOPOLOGY_ALIAS_REQUIRED,
+    ExecutionPackTopologyCompatibilityError,
+    attach_execution_pack_topology_compatibility_summary,
+    get_execution_pack_topology_compatibility_summary,
+    strip_execution_pack_topology_compatibility_metadata,
+    validate_execution_pack_topology_authoring,
+)
 from apps.intercompany_pools.binding_profiles_contract import (
     BindingProfileCreateContract,
     BindingProfileRevisionContract,
@@ -41,6 +50,15 @@ class BindingProfileLifecycleConflictError(BindingProfileStoreError):
         self.binding_profile_id = binding_profile_id
         self.operation = operation
         self.status = status
+
+
+class BindingProfileTopologyCompatibilityError(BindingProfileStoreError):
+    def __init__(self, *, errors: list[dict[str, Any]]) -> None:
+        super().__init__(
+            "Execution pack revision is not reusable for template-based topology authoring."
+        )
+        self.code = EXECUTION_PACK_TOPOLOGY_ALIAS_REQUIRED
+        self.errors = errors
 
 
 def list_canonical_binding_profiles(*, tenant: Tenant) -> list[dict[str, Any]]:
@@ -91,6 +109,13 @@ def create_canonical_binding_profile(
     except Exception as exc:
         raise BindingProfileStoreError(str(exc)) from exc
 
+    try:
+        topology_summary = validate_execution_pack_topology_authoring(
+            decisions=_serialize_decision_refs(contract.revision.decisions)
+        )
+    except ExecutionPackTopologyCompatibilityError as exc:
+        raise BindingProfileTopologyCompatibilityError(errors=exc.errors) from exc
+
     actor = str(actor_username or "").strip()
     try:
         with transaction.atomic():
@@ -107,6 +132,7 @@ def create_canonical_binding_profile(
                 contract=contract.revision,
                 revision_number=1,
                 actor_username=actor,
+                topology_summary=topology_summary,
             )
     except IntegrityError as exc:
         raise BindingProfileCodeConflictError(code=contract.code) from exc
@@ -125,6 +151,13 @@ def revise_canonical_binding_profile(
         revision_contract = BindingProfileRevisionContract(**dict(revision))
     except Exception as exc:
         raise BindingProfileStoreError(str(exc)) from exc
+
+    try:
+        topology_summary = validate_execution_pack_topology_authoring(
+            decisions=_serialize_decision_refs(revision_contract.decisions)
+        )
+    except ExecutionPackTopologyCompatibilityError as exc:
+        raise BindingProfileTopologyCompatibilityError(errors=exc.errors) from exc
 
     actor = str(actor_username or "").strip()
     with transaction.atomic():
@@ -153,6 +186,7 @@ def revise_canonical_binding_profile(
             contract=revision_contract,
             revision_number=next_revision_number,
             actor_username=actor,
+            topology_summary=topology_summary,
         )
         profile.updated_by = actor
         profile.save(update_fields=["updated_by", "updated_at"])
@@ -191,6 +225,7 @@ def _create_revision_record(
     contract: BindingProfileRevisionContract,
     revision_number: int,
     actor_username: str,
+    topology_summary: Mapping[str, Any],
 ) -> BindingProfileRevision:
     return BindingProfileRevision.objects.create(
         binding_profile_revision_id=_build_binding_profile_revision_id(),
@@ -205,7 +240,10 @@ def _create_revision_record(
         decisions=_serialize_decision_refs(contract.decisions),
         parameters=dict(contract.parameters),
         role_mapping=dict(contract.role_mapping),
-        metadata=dict(contract.metadata),
+        metadata=attach_execution_pack_topology_compatibility_summary(
+            metadata=dict(contract.metadata),
+            summary=topology_summary,
+        ),
         created_by=actor_username,
     )
 
@@ -251,6 +289,16 @@ def _get_prefetched_revisions(profile: BindingProfile) -> list[BindingProfileRev
 
 
 def _serialize_revision(revision: BindingProfileRevision) -> dict[str, Any]:
+    decisions = list(revision.decisions) if isinstance(revision.decisions, list) else []
+    metadata = (
+        dict(revision.metadata)
+        if isinstance(revision.metadata, dict)
+        else {}
+    )
+    topology_summary = get_execution_pack_topology_compatibility_summary(
+        decisions=decisions,
+        metadata=metadata,
+    )
     return {
         "contract_version": revision.contract_version,
         "binding_profile_revision_id": revision.binding_profile_revision_id,
@@ -262,10 +310,11 @@ def _serialize_revision(revision: BindingProfileRevision) -> dict[str, Any]:
             "workflow_revision": revision.workflow_revision,
             "workflow_name": revision.workflow_name,
         },
-        "decisions": list(revision.decisions) if isinstance(revision.decisions, list) else [],
+        "decisions": decisions,
         "parameters": dict(revision.parameters) if isinstance(revision.parameters, dict) else {},
         "role_mapping": dict(revision.role_mapping) if isinstance(revision.role_mapping, dict) else {},
-        "metadata": dict(revision.metadata) if isinstance(revision.metadata, dict) else {},
+        "metadata": strip_execution_pack_topology_compatibility_metadata(metadata),
+        "topology_template_compatibility": topology_summary,
         "created_by": revision.created_by,
         "created_at": _serialize_datetime(revision.created_at),
     }
@@ -291,6 +340,7 @@ __all__ = [
     "BindingProfileLifecycleConflictError",
     "BindingProfileNotFoundError",
     "BindingProfileStoreError",
+    "BindingProfileTopologyCompatibilityError",
     "create_canonical_binding_profile",
     "deactivate_canonical_binding_profile",
     "get_canonical_binding_profile",

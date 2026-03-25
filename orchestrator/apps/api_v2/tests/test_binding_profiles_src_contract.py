@@ -137,6 +137,9 @@ def test_binding_profile_revision_src_schema_requires_opaque_revision_identity()
         "description": "Human-readable monotonic revision number within the profile.",
     }
     assert properties.get("workflow") == {"$ref": "./WorkflowDefinitionRef.yaml"}
+    assert properties.get("topology_template_compatibility") == {
+        "$ref": "./ExecutionPackTopologyCompatibilitySummary.yaml"
+    }
 
     write_payload = _load_src_schema("BindingProfileRevisionWrite.yaml")
     write_properties = write_payload.get("properties")
@@ -156,6 +159,7 @@ def test_binding_profile_revision_src_schema_requires_opaque_revision_identity()
         "parameters",
         "role_mapping",
         "metadata",
+        "topology_template_compatibility",
         "created_at",
     ]
 
@@ -188,3 +192,31 @@ def test_binding_profile_read_src_schema_exposes_latest_revision_and_revisions()
         "created_at",
         "updated_at",
     ]
+
+
+def test_execution_pack_topology_compatibility_src_schema_tracks_machine_readable_diagnostics() -> None:
+    summary = _load_src_schema("ExecutionPackTopologyCompatibilitySummary.yaml")
+    summary_properties = summary.get("properties")
+    assert isinstance(summary_properties, dict)
+    assert summary_properties["status"] == {
+        "type": "string",
+        "enum": ["compatible", "incompatible"],
+    }
+    assert summary_properties["topology_aware_ready"] == {"type": "boolean"}
+    assert summary_properties["covered_slot_keys"] == {
+        "type": "array",
+        "items": {"type": "string"},
+    }
+    assert summary_properties["diagnostics"] == {
+        "type": "array",
+        "items": {"$ref": "./ExecutionPackTopologyCompatibilityDiagnostic.yaml"},
+    }
+
+    diagnostic = _load_src_schema("ExecutionPackTopologyCompatibilityDiagnostic.yaml")
+    diagnostic_properties = diagnostic.get("properties")
+    assert isinstance(diagnostic_properties, dict)
+    assert diagnostic_properties["decision_revision"] == {
+        "type": "integer",
+        "minimum": 1,
+    }
+    assert diagnostic_properties["field_or_table_path"] == {"type": "string"}

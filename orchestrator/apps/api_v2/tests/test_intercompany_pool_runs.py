@@ -36,6 +36,9 @@ from apps.intercompany_pools.document_policy_topology_aliases import (
 )
 from apps.intercompany_pools.document_policy_contract import resolve_document_policy_from_edge_metadata
 from apps.intercompany_pools.binding_profiles_store import create_canonical_binding_profile
+from apps.intercompany_pools.topology_template_contract import (
+    POOL_TOPOLOGY_TEMPLATE_INSTANTIATION_METADATA_KEY,
+)
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationStatus,
@@ -463,6 +466,38 @@ def _build_document_policy_decision_payload(*, decision_table_id: str) -> dict[s
             }
         ],
     }
+
+
+def _build_participant_bound_document_policy_decision_payload(
+    *,
+    decision_table_id: str,
+    token: str,
+) -> dict[str, object]:
+    payload = _build_document_policy_decision_payload(decision_table_id=decision_table_id)
+    rules = list(payload.get("rules") or [])
+    if not rules:
+        return payload
+    outputs = dict(rules[0].get("outputs") or {})
+    policy = dict(outputs.get("document_policy") or {})
+    chains = list(policy.get("chains") or [])
+    if not chains:
+        return payload
+    chain = dict(chains[0] or {})
+    documents = list(chain.get("documents") or [])
+    if not documents:
+        return payload
+    base_document = dict(documents[0] or {})
+    field_mapping = dict(base_document.get("field_mapping") or {})
+    field_mapping["Контрагент_Key"] = token
+    base_document["field_mapping"] = field_mapping
+    documents[0] = base_document
+    chain["documents"] = documents
+    chains[0] = chain
+    policy["chains"] = chains
+    outputs["document_policy"] = policy
+    rules[0] = {**rules[0], "outputs": outputs}
+    payload["rules"] = rules
+    return payload
 
 
 def _build_pool_workflow_binding_payload(
@@ -5237,6 +5272,143 @@ def test_preview_pool_workflow_binding_returns_topology_alias_invalid_problem_co
     )
     assert problem["title"] == "Pool Workflow Binding Preview Failed"
     assert "middle" in problem["detail"]
+
+
+@pytest.mark.django_db
+def test_preview_pool_workflow_binding_rejects_template_pool_execution_pack_with_concrete_participant_refs(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    bindings, _ = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    pool.metadata = {
+        **(dict(pool.metadata) if isinstance(pool.metadata, dict) else {}),
+        POOL_TOPOLOGY_TEMPLATE_INSTANTIATION_METADATA_KEY: {
+            "topology_template_revision_id": "template-r1",
+        },
+    }
+    pool.save(update_fields=["metadata", "updated_at"])
+    incompatible_decision = create_decision_table_revision(
+        contract=_build_participant_bound_document_policy_decision_payload(
+            decision_table_id=f"pool-api-doc-policy-incompatible-{uuid4().hex[:8]}",
+            token="master_data.party.party_001.counterparty.ref",
+        )
+    )
+    attachment = PoolWorkflowBinding.objects.get(binding_id=bindings[0]["binding_id"])
+    attachment.binding_profile_revision.decisions = [
+        {
+            "decision_table_id": incompatible_decision.decision_table_id,
+            "decision_key": incompatible_decision.decision_key,
+            "slot_key": "document_policy",
+            "decision_revision": incompatible_decision.version_number,
+        }
+    ]
+    attachment.binding_profile_revision.metadata = {"source": "test"}
+    attachment.binding_profile_revision.save(update_fields=["decisions", "metadata"])
+
+    response = authenticated_client.post(
+        "/api/v2/pools/workflow-bindings/preview/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": bindings[0]["binding_id"],
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="EXECUTION_PACK_TEMPLATE_INCOMPATIBLE",
+    )
+    assert problem["title"] == "Pool Workflow Binding Preview Failed"
+    assert "/pools/execution-packs" in problem["detail"]
+    assert "/decisions" in problem["detail"]
+
+
+@pytest.mark.django_db
+def test_create_pool_run_rejects_template_pool_execution_pack_with_concrete_participant_refs(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    bindings, _ = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    pool.metadata = {
+        **(dict(pool.metadata) if isinstance(pool.metadata, dict) else {}),
+        POOL_TOPOLOGY_TEMPLATE_INSTANTIATION_METADATA_KEY: {
+            "topology_template_revision_id": "template-r1",
+        },
+    }
+    pool.save(update_fields=["metadata", "updated_at"])
+    incompatible_decision = create_decision_table_revision(
+        contract=_build_participant_bound_document_policy_decision_payload(
+            decision_table_id=f"pool-api-run-incompatible-{uuid4().hex[:8]}",
+            token="master_data.party.party_001.counterparty.ref",
+        )
+    )
+    attachment = PoolWorkflowBinding.objects.get(binding_id=bindings[0]["binding_id"])
+    attachment.binding_profile_revision.decisions = [
+        {
+            "decision_table_id": incompatible_decision.decision_table_id,
+            "decision_key": incompatible_decision.decision_key,
+            "slot_key": "document_policy",
+            "decision_revision": incompatible_decision.version_number,
+        }
+    ]
+    attachment.binding_profile_revision.metadata = {"source": "test"}
+    attachment.binding_profile_revision.save(update_fields=["decisions", "metadata"])
+
+    response = authenticated_client.post(
+        "/api/v2/pools/runs/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": bindings[0]["binding_id"],
+            "direction": PoolRunDirection.BOTTOM_UP,
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code="EXECUTION_PACK_TEMPLATE_INCOMPATIBLE",
+    )
+    assert problem["title"] == "Pool Runtime Configuration Error"
+    assert "/pools/execution-packs" in problem["detail"]
 
 
 @pytest.mark.django_db

@@ -1,11 +1,7 @@
 type: object
-description: Structured problem-details diagnostic item for referential or topology compatibility validation.
+description: Machine-readable diagnostic for execution-pack topology compatibility validation.
 properties:
   code:
-    type: string
-  path:
-    type: string
-  detail:
     type: string
   slot_key:
     type: string
@@ -15,6 +11,8 @@ properties:
     type: integer
     minimum: 1
   field_or_table_path:
+    type: string
+  detail:
     type: string
 required:
   - code

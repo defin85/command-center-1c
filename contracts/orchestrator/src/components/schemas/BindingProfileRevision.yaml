@@ -28,6 +28,8 @@ properties:
   metadata:
     type: object
     additionalProperties: true
+  topology_template_compatibility:
+    $ref: ./ExecutionPackTopologyCompatibilitySummary.yaml
   created_by:
     type: string
   created_at:
@@ -42,4 +44,5 @@ required:
   - parameters
   - role_mapping
   - metadata
+  - topology_template_compatibility
   - created_at

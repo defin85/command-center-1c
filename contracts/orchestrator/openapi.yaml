@@ -17218,6 +17218,50 @@ components:
         - decision_table_id
         - decision_key
         - decision_revision
+    ExecutionPackTopologyCompatibilityDiagnostic:
+      type: object
+      description: Machine-readable diagnostic for execution-pack topology compatibility validation.
+      properties:
+        code:
+          type: string
+        slot_key:
+          type: string
+        decision_table_id:
+          type: string
+        decision_revision:
+          type: integer
+          minimum: 1
+        field_or_table_path:
+          type: string
+        detail:
+          type: string
+      required:
+        - code
+        - detail
+    ExecutionPackTopologyCompatibilitySummary:
+      type: object
+      description: Derived topology-template compatibility summary for an immutable execution-pack revision.
+      properties:
+        status:
+          type: string
+          enum:
+            - compatible
+            - incompatible
+        topology_aware_ready:
+          type: boolean
+        covered_slot_keys:
+          type: array
+          items:
+            type: string
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExecutionPackTopologyCompatibilityDiagnostic'
+      required:
+        - status
+        - topology_aware_ready
+        - covered_slot_keys
+        - diagnostics
     PoolWorkflowBindingResolvedProfile:
       type: object
       description: Read-only summary of the reusable execution-pack revision pinned by a pool attachment.
@@ -17248,6 +17292,10 @@ components:
           type: object
           additionalProperties:
             type: string
+        topology_template_compatibility:
+          allOf:
+            - $ref: '#/components/schemas/ExecutionPackTopologyCompatibilitySummary'
+          nullable: true
       required:
         - binding_profile_id
         - code
@@ -17402,6 +17450,8 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        topology_template_compatibility:
+          $ref: '#/components/schemas/ExecutionPackTopologyCompatibilitySummary'
         created_by:
           type: string
         created_at:
@@ -17416,6 +17466,7 @@ components:
         - parameters
         - role_mapping
         - metadata
+        - topology_template_compatibility
         - created_at
     BindingProfileSummary:
       type: object
@@ -17489,7 +17540,7 @@ components:
             additionalProperties: {}
     ProblemDetailsReferentialError:
       type: object
-      description: Metadata referential validation error item.
+      description: Structured problem-details diagnostic item for referential or topology compatibility validation.
       properties:
         code:
           type: string
@@ -17497,10 +17548,18 @@ components:
           type: string
         detail:
           type: string
+        slot_key:
+          type: string
+        decision_table_id:
+          type: string
+        decision_revision:
+          type: integer
+          minimum: 1
+        field_or_table_path:
+          type: string
       required:
         - code
         - detail
-        - path
     ProblemDetailsError:
       type: object
       properties:
@@ -17516,7 +17575,7 @@ components:
         code:
           type: string
         errors:
-          description: Optional structured error details. For validation failures this is a field-errors map; for metadata referential validation this is an array of items with code/path/detail.
+          description: Optional structured error details. For validation failures this is a field-errors map; for referential or topology compatibility validation this is an array of machine-readable diagnostic items.
           oneOf:
             - $ref: '#/components/schemas/ProblemDetailsFieldErrors'
             - type: array
@@ -17900,6 +17959,24 @@ components:
           $ref: '#/components/schemas/TopologyTemplateRevisionWrite'
       required:
         - revision
+    PoolWorkflowBindingBlockingRemediation:
+      type: object
+      description: Blocking remediation surfaced before workflow-binding save for template-based pools.
+      properties:
+        code:
+          type: string
+        title:
+          type: string
+        detail:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExecutionPackTopologyCompatibilityDiagnostic'
+      required:
+        - code
+        - title
+        - detail
     PoolWorkflowBindingCollectionResponse:
       type: object
       properties:
@@ -17914,15 +17991,9 @@ components:
           type: string
           description: Opaque optimistic concurrency token for the entire binding collection.
         blocking_remediation:
-          type: object
+          allOf:
+            - $ref: '#/components/schemas/PoolWorkflowBindingBlockingRemediation'
           nullable: true
-          properties:
-            code:
-              type: string
-            title:
-              type: string
-            detail:
-              type: string
       required:
         - pool_id
         - workflow_bindings

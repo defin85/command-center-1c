@@ -230,6 +230,12 @@ def test_pool_workflow_binding_read_src_schema_requires_server_managed_fields() 
     assert resolved_profile["description"] == (
         "Read-only summary of the reusable execution-pack revision pinned by a pool attachment."
     )
+    resolved_properties = resolved_profile.get("properties")
+    assert isinstance(resolved_properties, dict)
+    assert resolved_properties["topology_template_compatibility"] == {
+        "allOf": [{"$ref": "./ExecutionPackTopologyCompatibilitySummary.yaml"}],
+        "nullable": True,
+    }
 
 
 def test_pool_workflow_binding_collection_response_src_schema_requires_etag_and_bindings() -> None:
@@ -240,6 +246,20 @@ def test_pool_workflow_binding_collection_response_src_schema_requires_etag_and_
     assert properties.get("workflow_bindings") == {
         "type": "array",
         "items": {"$ref": "./PoolWorkflowBindingRead.yaml"},
+    }
+    assert properties.get("blocking_remediation") == {
+        "allOf": [{"$ref": "./PoolWorkflowBindingBlockingRemediation.yaml"}],
+        "nullable": True,
+    }
+
+
+def test_pool_workflow_binding_blocking_remediation_src_schema_carries_topology_diagnostics() -> None:
+    payload = _load_src_schema("PoolWorkflowBindingBlockingRemediation.yaml")
+    properties = payload.get("properties")
+    assert isinstance(properties, dict)
+    assert properties["errors"] == {
+        "type": "array",
+        "items": {"$ref": "./ExecutionPackTopologyCompatibilityDiagnostic.yaml"},
     }
 
 

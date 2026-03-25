@@ -27,6 +27,10 @@ properties:
     type: object
     additionalProperties:
       type: string
+  topology_template_compatibility:
+    allOf:
+      - $ref: ./ExecutionPackTopologyCompatibilitySummary.yaml
+    nullable: true
 required:
   - binding_profile_id
   - code
