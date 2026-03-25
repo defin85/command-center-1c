@@ -8026,6 +8026,9 @@ def test_confirm_publication_returns_noop_200_for_already_approved_run(
     assert payload["replayed"] is False
     assert payload["run"]["approval_state"] == "approved"
     assert payload["run"]["status_reason"] == "queued"
+    assert payload["run"]["publication_confirmed_at"]
+    run = PoolRun.objects.get(id=run.id)
+    assert run.publication_confirmed_at is not None
     assert PoolRunCommandOutbox.objects.filter(run=run).count() == 0
 
 
@@ -8322,11 +8325,18 @@ def test_confirm_publication_returns_accepted_and_deterministic_replay(
     first_payload = first.json()
     assert first_payload["result"] == "accepted"
     assert first_payload["replayed"] is False
+    assert first_payload["run"]["approval_state"] == "approved"
+    assert first_payload["run"]["publication_step_state"] == "queued"
+    assert first_payload["run"]["publication_confirmed_at"]
 
     assert replay.status_code == 202
     replay_payload = replay.json()
     assert replay_payload["result"] == "accepted"
     assert replay_payload["replayed"] is True
+
+    run = PoolRun.objects.get(id=run.id)
+    assert run.publication_confirmed_at is not None
+    assert run.publication_confirmed_by == user
 
     execution = WorkflowExecution.objects.get(id=run.workflow_execution_id)
     assert execution.input_context.get("publication_auth") == {

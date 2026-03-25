@@ -169,6 +169,21 @@ def process_pool_run_safe_command(
             execution.input_context = input_context
             execution.save(update_fields=["input_context"])
 
+        approval_state = _resolve_approval_state(run=run, execution=execution)
+        if (
+            command_type == PoolRunCommandType.CONFIRM_PUBLICATION
+            and approval_state == APPROVAL_STATE_APPROVED
+            and run.publication_confirmed_at is None
+        ):
+            run.confirm_publication(confirmed_by=requested_by)
+            run.save(
+                update_fields=[
+                    "publication_confirmed_at",
+                    "publication_confirmed_by",
+                    "updated_at",
+                ]
+            )
+
         response_snapshot = _build_response_snapshot(
             run=run,
             execution=execution,

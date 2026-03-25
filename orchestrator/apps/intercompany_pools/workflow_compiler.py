@@ -113,6 +113,7 @@ class PoolWorkflowCompiler:
             steps, dag_structure, workflow_type, workflow_config = self._build_authored_workflow_projection(
                 workflow_template=authored_workflow,
                 run_context=run_context,
+                tenant_id=str(schema_template.tenant_id),
             )
         else:
             steps = self._build_steps(
@@ -243,6 +244,7 @@ class PoolWorkflowCompiler:
         *,
         workflow_template: WorkflowTemplate,
         run_context: PoolWorkflowRunContext,
+        tenant_id: str | None,
     ) -> tuple[list[PoolExecutionPlanStep], dict[str, Any], str, dict[str, Any]]:
         source_dag = (
             workflow_template.dag_structure
@@ -250,12 +252,22 @@ class PoolWorkflowCompiler:
             else DAGStructure(**workflow_template.dag_structure)
         )
         atomic_publication_steps = self._build_atomic_publication_steps(run_context=run_context)
+        requires_master_data_gate = self._requires_master_data_gate(
+            run_context=run_context,
+            tenant_id=tenant_id,
+        )
         publication_nodes = [
             node
             for node in source_dag.nodes
             if node.type == "operation"
             and self._resolve_operation_alias_from_node(node=node) == _OP_PUBLICATION
         ]
+        has_master_data_gate_node = any(
+            node.type == "operation"
+            and self._resolve_operation_alias_from_node(node=node) == _OP_MASTER_DATA_GATE
+            for node in source_dag.nodes
+        )
+        inject_master_data_gate = requires_master_data_gate and not has_master_data_gate_node
         if atomic_publication_steps and len(publication_nodes) > 1:
             raise ValueError(
                 "POOL_RUNTIME_PUBLICATION_NODE_AMBIGUOUS: "
@@ -274,43 +286,47 @@ class PoolWorkflowCompiler:
 
             operation_alias = self._resolve_operation_alias_from_node(node=node)
             if operation_alias == _OP_PUBLICATION and atomic_publication_steps:
-                expansion_by_node_id[node.id] = [step.node_id for step in atomic_publication_steps]
-                for step in atomic_publication_steps:
-                    expanded_nodes.append(
-                        {
-                            "id": step.node_id,
-                            "name": step.name,
-                            "type": "operation",
-                            "template_id": step.operation_alias,
-                            "operation_ref": {
-                                "alias": step.operation_alias,
-                                "binding_mode": "pinned_exposure",
-                                "template_exposure_id": step.template_exposure_id,
-                                "template_exposure_revision": step.template_exposure_revision,
-                            },
-                            "io": {
-                                "mode": "implicit_legacy",
-                                "input_mapping": {},
-                                "output_mapping": {},
-                            },
-                            "config": {
-                                "timeout_seconds": step.timeout_seconds,
-                                "max_retries": step.max_retries,
-                            },
-                        }
+                expanded_node_ids: list[str] = []
+                if inject_master_data_gate:
+                    gate_step = self._make_step(
+                        node_id=self._build_authored_master_data_gate_node_id(
+                            publication_node_id=str(node.id),
+                            single_publication_node=len(publication_nodes) == 1,
+                        ),
+                        name="Master Data Gate",
+                        operation_alias=_OP_MASTER_DATA_GATE,
+                        timeout_seconds=900,
+                        max_retries=0,
                     )
+                    expanded_node_ids.append(gate_step.node_id)
+                    steps.append(gate_step)
+                    expanded_nodes.append(self._build_pinned_step_node_payload(step=gate_step))
+                expanded_node_ids.extend(step.node_id for step in atomic_publication_steps)
+                expansion_by_node_id[node.id] = expanded_node_ids
+                for step in atomic_publication_steps:
+                    expanded_nodes.append(self._build_pinned_step_node_payload(step=step))
                 steps.extend(atomic_publication_steps)
                 continue
 
             step = self._build_step_from_workflow_node(node=node)
-            steps.append(step)
-            expansion_by_node_id[node.id] = [step.node_id]
-            expanded_nodes.append(
-                self._build_pinned_operation_node_payload(
-                    node=node,
-                    step=step,
+            expanded_node_ids = [step.node_id]
+            if operation_alias == _OP_PUBLICATION and inject_master_data_gate:
+                gate_step = self._make_step(
+                    node_id=self._build_authored_master_data_gate_node_id(
+                        publication_node_id=str(node.id),
+                        single_publication_node=len(publication_nodes) == 1,
+                    ),
+                    name="Master Data Gate",
+                    operation_alias=_OP_MASTER_DATA_GATE,
+                    timeout_seconds=900,
+                    max_retries=0,
                 )
-            )
+                steps.append(gate_step)
+                expanded_nodes.append(self._build_pinned_step_node_payload(step=gate_step))
+                expanded_node_ids.insert(0, gate_step.node_id)
+            steps.append(step)
+            expansion_by_node_id[node.id] = expanded_node_ids
+            expanded_nodes.append(self._build_pinned_operation_node_payload(node=node, step=step))
 
         for edge in source_dag.edges:
             from_candidates = expansion_by_node_id.get(edge.from_node, [edge.from_node])
@@ -394,12 +410,9 @@ class PoolWorkflowCompiler:
                 )
             )
 
-        gate_flag_resolution = resolve_pool_master_data_gate_flag(tenant_id=tenant_id)
-        requires_master_data_gate = (
-            gate_flag_resolution.value is not False
-            or self._document_plan_requires_master_data_gate(
-                artifact=run_context.document_plan_artifact
-            )
+        requires_master_data_gate = self._requires_master_data_gate(
+            run_context=run_context,
+            tenant_id=tenant_id,
         )
         # Invalid gate config must still execute gate-step path and fail-closed at runtime.
         if requires_master_data_gate:
@@ -681,6 +694,57 @@ class PoolWorkflowCompiler:
         )
 
     @staticmethod
+    def _build_pinned_step_node_payload(*, step: PoolExecutionPlanStep) -> dict[str, Any]:
+        return {
+            "id": step.node_id,
+            "name": step.name,
+            "type": "operation",
+            "template_id": step.operation_alias,
+            "operation_ref": {
+                "alias": step.operation_alias,
+                "binding_mode": "pinned_exposure",
+                "template_exposure_id": step.template_exposure_id,
+                "template_exposure_revision": step.template_exposure_revision,
+            },
+            "io": {
+                "mode": "implicit_legacy",
+                "input_mapping": {},
+                "output_mapping": {},
+            },
+            "config": {
+                "timeout_seconds": step.timeout_seconds,
+                "max_retries": step.max_retries,
+            },
+        }
+
+    def _requires_master_data_gate(
+        self,
+        *,
+        run_context: PoolWorkflowRunContext,
+        tenant_id: str | None,
+    ) -> bool:
+        gate_flag_resolution = resolve_pool_master_data_gate_flag(tenant_id=tenant_id)
+        return (
+            gate_flag_resolution.value is not False
+            or self._document_plan_requires_master_data_gate(
+                artifact=run_context.document_plan_artifact
+            )
+        )
+
+    @classmethod
+    def _build_authored_master_data_gate_node_id(
+        cls,
+        *,
+        publication_node_id: str,
+        single_publication_node: bool,
+    ) -> str:
+        if single_publication_node:
+            return "master_data_gate"
+        normalized_id = cls._normalize_node_token(publication_node_id)
+        digest = cls._sha256(publication_node_id)[:8]
+        return f"master_data_gate__{normalized_id}__{digest}"
+
+    @staticmethod
     def _resolve_operation_alias_from_node(*, node) -> str:
         operation_ref = getattr(node, "operation_ref", None)
         alias = str(getattr(operation_ref, "alias", "") or "").strip()
@@ -720,13 +784,7 @@ class PoolWorkflowCompiler:
         step: PoolExecutionPlanStep,
     ) -> dict[str, Any]:
         payload = node.model_dump(mode="json", by_alias=True)
-        payload["template_id"] = step.operation_alias
-        payload["operation_ref"] = {
-            "alias": step.operation_alias,
-            "binding_mode": "pinned_exposure",
-            "template_exposure_id": step.template_exposure_id,
-            "template_exposure_revision": step.template_exposure_revision,
-        }
+        payload.update(PoolWorkflowCompiler._build_pinned_step_node_payload(step=step))
         return payload
 
     def _resolve_pinned_template_binding(self, *, alias: str) -> tuple[str, int]:
@@ -772,29 +830,7 @@ class PoolWorkflowCompiler:
         edges: list[dict[str, Any]] = []
 
         for idx, step in enumerate(steps):
-            nodes.append(
-                {
-                    "id": step.node_id,
-                    "name": step.name,
-                    "type": "operation",
-                    "template_id": step.operation_alias,
-                    "operation_ref": {
-                        "alias": step.operation_alias,
-                        "binding_mode": "pinned_exposure",
-                        "template_exposure_id": step.template_exposure_id,
-                        "template_exposure_revision": step.template_exposure_revision,
-                    },
-                    "io": {
-                        "mode": "implicit_legacy",
-                        "input_mapping": {},
-                        "output_mapping": {},
-                    },
-                    "config": {
-                        "timeout_seconds": step.timeout_seconds,
-                        "max_retries": step.max_retries,
-                    },
-                }
-            )
+            nodes.append(PoolWorkflowCompiler._build_pinned_step_node_payload(step=step))
             if idx > 0:
                 edge: dict[str, Any] = {
                     "from": steps[idx - 1].node_id,

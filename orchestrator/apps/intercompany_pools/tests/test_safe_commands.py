@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from apps.intercompany_pools.models import (
     OrganizationPool,
@@ -123,6 +124,10 @@ def test_safe_commands_confirm_then_abort_keeps_single_winner_outbox() -> None:
     assert confirm.response_status_code == 202
     assert confirm.result_class == PoolRunCommandResultClass.ACCEPTED
     assert confirm.outbox_entry_id is not None
+
+    run = PoolRun.objects.get(id=run.id)
+    assert run.publication_confirmed_at is not None
+    assert run.publication_confirmed_by == operator
 
     assert abort.response_status_code == 409
     assert abort.result_class == PoolRunCommandResultClass.CONFLICT
@@ -310,10 +315,40 @@ def test_safe_commands_readiness_blocked_conflict_replay_preserves_same_snapshot
 
 
 @pytest.mark.django_db
+def test_safe_commands_confirm_noop_backfills_pool_run_confirmation_for_approved_execution() -> None:
+    operator = User.objects.create_user(
+        username=f"safe-approved-{uuid4().hex[:8]}",
+        email=f"safe-approved-{uuid4().hex[:8]}@example.test",
+    )
+    run = _create_safe_run_with_awaiting_approval_execution(
+        input_context_overrides={
+            "approval_state": "approved",
+            "approved_at": timezone.now().isoformat(),
+            "publication_step_state": "queued",
+        }
+    )
+
+    outcome = process_pool_run_safe_command(
+        run_id=run.id,
+        command_type=PoolRunCommandType.CONFIRM_PUBLICATION,
+        idempotency_key="confirm-approved-backfill-1",
+        requested_by=operator,
+    )
+
+    assert outcome.response_status_code == 200
+    assert outcome.result_class == PoolRunCommandResultClass.NOOP
+    run = PoolRun.objects.get(id=run.id)
+    assert run.publication_confirmed_at is not None
+    assert run.publication_confirmed_by == operator
+    assert PoolRunCommandOutbox.objects.filter(run=run).count() == 0
+
+
+@pytest.mark.django_db
 def test_safe_commands_variant_a_atomicity_rolls_back_command_log_when_outbox_write_fails() -> None:
     run = _create_safe_run_with_awaiting_approval_execution()
     execution = WorkflowExecution.objects.get(id=run.workflow_execution_id)
     before_context = dict(execution.input_context)
+    assert run.publication_confirmed_at is None
 
     with patch(
         "apps.intercompany_pools.safe_commands.enqueue_pool_run_command_outbox_intent",
@@ -328,5 +363,7 @@ def test_safe_commands_variant_a_atomicity_rolls_back_command_log_when_outbox_wr
 
     refreshed_context = WorkflowExecution.objects.values_list("input_context", flat=True).get(id=execution.id)
     assert refreshed_context == before_context
+    run = PoolRun.objects.get(id=run.id)
+    assert run.publication_confirmed_at is None
     assert PoolRunCommandLog.objects.filter(run=run).count() == 0
     assert PoolRunCommandOutbox.objects.filter(run=run).count() == 0

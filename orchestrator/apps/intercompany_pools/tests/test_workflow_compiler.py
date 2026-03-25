@@ -879,3 +879,90 @@ def test_compile_pool_execution_plan_uses_authored_workflow_revision_from_bindin
         "workflow_revision_id": str(subworkflow.id),
         "workflow_revision": 1,
     }
+
+
+@pytest.mark.django_db
+def test_compile_pool_execution_plan_injects_master_data_gate_for_authored_workflow_with_master_data_tokens() -> None:
+    tenant = Tenant.objects.create(
+        slug=f"pool-authored-master-data-{uuid4().hex[:8]}",
+        name="Pool Authored Master Data",
+    )
+    schema_template = _create_schema_template(tenant=tenant, code="authored-master-data-template")
+    _sync_runtime_templates()
+
+    subworkflow = WorkflowTemplate.objects.create(
+        name=f"approval-gate-{uuid4().hex[:6]}",
+        description="Pinned approval subworkflow",
+        workflow_type=WorkflowType.SEQUENTIAL,
+        dag_structure=DAGStructure(
+            nodes=[
+                {
+                    "id": "approve",
+                    "name": "Approve",
+                    "type": "operation",
+                    "template_id": "pool.approval_gate",
+                }
+            ],
+            edges=[],
+        ),
+        config={},
+        is_valid=True,
+        is_active=True,
+        version_number=1,
+    )
+    root, revision = _create_authored_workflow_revision(
+        name=f"services-publication-{uuid4().hex[:6]}",
+        subworkflow=subworkflow,
+    )
+    binding = PoolWorkflowBindingContract(
+        binding_id=str(uuid4()),
+        pool_id=str(uuid4()),
+        workflow={
+            "workflow_definition_key": str(root.id),
+            "workflow_revision_id": str(revision.id),
+            "workflow_revision": revision.version_number,
+            "workflow_name": revision.name,
+        },
+        decisions=[],
+        selector={"direction": "bottom_up", "mode": "safe", "tags": []},
+        effective_from=date(2026, 1, 1),
+        status="active",
+    )
+    artifact = _build_document_plan_artifact()
+    artifact["targets"][0]["chains"][0]["documents"][0]["field_mapping"] = {
+        "Контрагент_Key": "master_data.party.party-001.counterparty.ref",
+    }
+
+    with patch(
+        "apps.intercompany_pools.workflow_compiler.resolve_pool_master_data_gate_flag",
+        return_value=PoolMasterDataGateResolution(
+            source="tenant_override",
+            raw_value=False,
+            value=False,
+        ),
+    ):
+        plan = compile_pool_execution_plan(
+            schema_template=schema_template,
+            run_context=_create_context(
+                workflow_binding=binding.model_dump(mode="json"),
+                document_plan_artifact=artifact,
+            ),
+        )
+
+    node_ids = [node["id"] for node in plan.dag_structure["nodes"]]
+    publication_node_ids = [
+        node_id
+        for node_id in node_ids
+        if node_id.startswith("publication_odata__")
+    ]
+
+    assert "master_data_gate" in node_ids
+    assert publication_node_ids
+    assert {
+        "from": "approval_call",
+        "to": "master_data_gate",
+    } in plan.dag_structure["edges"]
+    assert {
+        "from": "master_data_gate",
+        "to": publication_node_ids[0],
+    } in plan.dag_structure["edges"]
