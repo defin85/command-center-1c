@@ -1,7 +1,9 @@
 # Orchestrator Guidance
 
 - Scope: `orchestrator/` contains the Django Orchestrator, domain apps and Channels/DRF integration.
+- If you entered the repo from this subtree, start with `docs/agent/INDEX.md`, then return here for the orchestrator-specific path.
 - First read:
+  - `docs/agent/INDEX.md`
   - `docs/agent/TASK_ROUTING.md`
   - `docs/agent/DOMAIN_MAP.md`
   - `docs/agent/VERIFY.md`

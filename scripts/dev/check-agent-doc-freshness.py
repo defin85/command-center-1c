@@ -190,6 +190,22 @@ def require_not_contains(errors: list[str], text: str, needle: str, path: Path) 
         errors.append(f"{path.relative_to(ROOT)} must not contain: {needle}")
 
 
+def require_line_with_tokens(
+    errors: list[str],
+    text: str,
+    path: Path,
+    description: str,
+    tokens: tuple[str, ...],
+) -> None:
+    if any(all(token in line for token in tokens) for line in text.splitlines()):
+        return
+
+    joined = ", ".join(tokens)
+    errors.append(
+        f"{path.relative_to(ROOT)} missing semantic reference for {description}: {joined}"
+    )
+
+
 def require_command_success(
     errors: list[str],
     description: str,
@@ -211,6 +227,44 @@ def require_command_success(
     detail = stderr or stdout or f"exit code {result.returncode}"
     first_line = detail.splitlines()[0]
     errors.append(f"{description} failed: {first_line}")
+
+
+def check_runtime_doc_semantics(
+    errors: list[str],
+    inventory: list[dict[str, str]],
+    *,
+    arch_map: str,
+    runbook: str,
+    verify: str,
+) -> None:
+    arch_map_path = ROOT / "docs/agent/ARCHITECTURE_MAP.md"
+    runbook_path = ROOT / "docs/agent/RUNBOOK.md"
+    verify_path = ROOT / "docs/agent/VERIFY.md"
+
+    for runtime in inventory:
+        runtime_token = f"`{runtime['runtime']}`"
+        require_line_with_tokens(
+            errors,
+            arch_map,
+            arch_map_path,
+            f"architecture runtime row for {runtime['runtime']}",
+            (runtime_token, runtime["stack"], runtime["entrypoint"]),
+        )
+        require_contains(errors, arch_map, runtime["health"], arch_map_path)
+        require_line_with_tokens(
+            errors,
+            runbook,
+            runbook_path,
+            f"runbook runtime row for {runtime['runtime']}",
+            (runtime_token, runtime["start"], runtime["health"]),
+        )
+        require_line_with_tokens(
+            errors,
+            verify,
+            verify_path,
+            f"verify runtime row for {runtime['runtime']}",
+            (runtime_token, runtime["tests"]),
+        )
 
 
 def main() -> int:
@@ -296,11 +350,13 @@ def main() -> int:
     require_not_contains(errors, codex_config, "openspec/changes/**", ROOT / ".codex/config.toml")
     require_not_contains(errors, codex_config, "/home/egor/", ROOT / ".codex/config.toml")
 
-    for runtime in inventory:
-        require_contains(errors, arch_map, runtime["entrypoint"], ROOT / "docs/agent/ARCHITECTURE_MAP.md")
-        require_contains(errors, runbook, runtime["start"], ROOT / "docs/agent/RUNBOOK.md")
-        require_contains(errors, runbook, runtime["health"], ROOT / "docs/agent/RUNBOOK.md")
-        require_contains(errors, verify, runtime["tests"], ROOT / "docs/agent/VERIFY.md")
+    check_runtime_doc_semantics(
+        errors,
+        inventory,
+        arch_map=arch_map,
+        runbook=runbook,
+        verify=verify,
+    )
 
     for script_name in PACKAGE_SCRIPTS_REQUIRED:
         if script_name not in package_scripts:
@@ -316,10 +372,13 @@ def main() -> int:
     require_contains(errors, frontend_agents, "npm run test:run", ROOT / "frontend/AGENTS.md")
     require_contains(errors, frontend_agents, "npm run test:browser:ui-platform", ROOT / "frontend/AGENTS.md")
     require_contains(errors, frontend_agents, "npm run validate:ui-platform", ROOT / "frontend/AGENTS.md")
+    require_contains(errors, frontend_agents, "docs/agent/INDEX.md", ROOT / "frontend/AGENTS.md")
     require_contains(errors, frontend_agents, "docs/agent/TASK_ROUTING.md", ROOT / "frontend/AGENTS.md")
+    require_contains(errors, orchestrator_agents, "docs/agent/INDEX.md", ROOT / "orchestrator/AGENTS.md")
     require_contains(errors, orchestrator_agents, "./scripts/dev/lint.sh --python", ROOT / "orchestrator/AGENTS.md")
     require_contains(errors, orchestrator_agents, "./scripts/dev/pytest.sh -q <path>", ROOT / "orchestrator/AGENTS.md")
     require_contains(errors, orchestrator_agents, "docs/agent/TASK_ROUTING.md", ROOT / "orchestrator/AGENTS.md")
+    require_contains(errors, go_agents, "docs/agent/INDEX.md", ROOT / "go-services/AGENTS.md")
     require_contains(errors, go_agents, "./scripts/dev/lint.sh --go", ROOT / "go-services/AGENTS.md")
     require_contains(errors, go_agents, "cd go-services/api-gateway && go test ./...", ROOT / "go-services/AGENTS.md")
     require_contains(errors, go_agents, "cd go-services/worker && go test ./...", ROOT / "go-services/AGENTS.md")
@@ -389,6 +448,11 @@ def main() -> int:
     )
     require_command_success(
         errors,
+        "runtime inventory text smoke check",
+        [str(ROOT / "debug/runtime-inventory.sh")],
+    )
+    require_command_success(
+        errors,
         "openspec list smoke check",
         ["openspec", "list"],
     )
@@ -396,6 +460,11 @@ def main() -> int:
         errors,
         "openspec list --specs smoke check",
         ["openspec", "list", "--specs"],
+    )
+    require_command_success(
+        errors,
+        "openspec validate help smoke check",
+        ["openspec", "validate", "--help"],
     )
     require_command_success(
         errors,

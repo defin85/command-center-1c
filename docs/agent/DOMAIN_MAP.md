@@ -23,6 +23,12 @@ Canonical execution path:
 - Аналитик: моделирует `workflow definition`, `decision resource`, `template` и reusable execution logic.
 - Staff/platform: поддерживает runtime settings, driver catalogs, RBAC, DLQ и системную диагностику.
 
+## Канонические operator workflows
+
+- Массовые операции по базам: оператор идёт в `/operations`, следит за прогрессом в `/artifacts` и разбирает runtime health через `/system-status` и `/service-mesh`.
+- Управление pool execution: оператор собирает topology и binding surfaces через `/pools/catalog`, `/pools/topology-templates`, `/pools/execution-packs`, `/pools/master-data`, затем запускает и анализирует `/pools/runs`.
+- Инфраструктурное сопровождение: staff и operator используют `/databases`, `/clusters`, `/extensions` и `/settings/runtime`, когда задача упирается в состояние контуров, driver catalog или runtime configuration.
+
 ## Основные доменные сущности
 
 - `database`: конкретная 1С-база, с которой работают operator- и metadata-aware flows.

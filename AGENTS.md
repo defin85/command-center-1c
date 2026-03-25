@@ -60,10 +60,10 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 Open these docs for the first 10 minutes of a task:
 - `docs/agent/ARCHITECTURE_MAP.md`
-- `docs/agent/DOMAIN_MAP.md`
+- `docs/agent/DOMAIN_MAP.md` — product purpose, domain entities и distinction between shipped, active-change and historical surfaces
 - `docs/agent/RUNBOOK.md`
 - `docs/agent/VERIFY.md`
-- `docs/agent/TASK_ROUTING.md`
+- `docs/agent/TASK_ROUTING.md` — bounded first route to docs, code entry points and validation paths
 - `docs/agent/PLANS.md`
 - `docs/agent/code_review.md`
 - `.agents/skills/<relevant>/SKILL.md` when the routed workflow matches

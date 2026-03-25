@@ -6,13 +6,13 @@
 
 ## Что читать первым
 
-1. [ARCHITECTURE_MAP.md](./ARCHITECTURE_MAP.md)
-2. [DOMAIN_MAP.md](./DOMAIN_MAP.md)
-3. [RUNBOOK.md](./RUNBOOK.md)
-4. [VERIFY.md](./VERIFY.md)
-5. [TASK_ROUTING.md](./TASK_ROUTING.md)
-6. [PLANS.md](./PLANS.md)
-7. [code_review.md](./code_review.md)
+1. [ARCHITECTURE_MAP.md](./ARCHITECTURE_MAP.md) — runtime topology, entry points и allowed call graph
+2. [DOMAIN_MAP.md](./DOMAIN_MAP.md) — product purpose, operator outcomes, ключевые сущности и shipped/active/historical surfaces
+3. [RUNBOOK.md](./RUNBOOK.md) — canonical start/restart/eval flows
+4. [VERIFY.md](./VERIFY.md) — minimal validation paths по типам задач
+5. [TASK_ROUTING.md](./TASK_ROUTING.md) — bounded matrix для быстрого выбора first docs/code/test route
+6. [PLANS.md](./PLANS.md) — template для multi-step execution plans
+7. [code_review.md](./code_review.md) — acceptance/self-review checklist
 
 ## Вопросы первых 10 минут
 

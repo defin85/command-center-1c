@@ -1,7 +1,9 @@
 # Go Services Guidance
 
 - Scope: `go-services/` contains the Go API Gateway and Worker binaries plus shared packages.
+- If you entered the repo from this subtree, start with `docs/agent/INDEX.md`, then return here for the Go-service-specific path.
 - First read:
+  - `docs/agent/INDEX.md`
   - `docs/agent/TASK_ROUTING.md`
   - `docs/agent/DOMAIN_MAP.md`
   - `docs/agent/VERIFY.md`

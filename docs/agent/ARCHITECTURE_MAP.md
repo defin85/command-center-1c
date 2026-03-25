@@ -45,6 +45,8 @@ Canonical allowed flow:
   - health: `http://localhost:8180/health`
 - `orchestrator`
   - health: `http://localhost:8200/health`
+- `event-subscriber`
+  - health: `process-only (pids/event-subscriber.pid)`
 - `worker`
   - health: `http://localhost:9191/health`
 - `worker-workflows`
@@ -57,4 +59,3 @@ Canonical allowed flow:
 - OpenAPI contracts: `contracts/**`
 - Runtime inventory: `./debug/runtime-inventory.sh --json`
 - Frontend validation source: `frontend/package.json`
-

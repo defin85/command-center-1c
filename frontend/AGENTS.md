@@ -1,7 +1,9 @@
 # Frontend Guidance
 
 - Scope: `frontend/` contains the React/Vite application and platform-owned page composition layer.
+- If you entered the repo from this subtree, start with `docs/agent/INDEX.md`, then return here for the frontend-specific path.
 - First read:
+  - `docs/agent/INDEX.md`
   - `docs/agent/TASK_ROUTING.md`
   - `docs/agent/DOMAIN_MAP.md`
   - `docs/agent/VERIFY.md`
