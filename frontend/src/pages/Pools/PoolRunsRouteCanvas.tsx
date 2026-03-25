@@ -164,6 +164,15 @@ const CREATE_RUN_PROBLEM_CODE_MESSAGES: Record<string, string> = {
   TENANT_CONTEXT_REQUIRED: 'Для запуска run требуется активный tenant context.',
   POOL_NOT_FOUND: 'Пул не найден в текущем tenant context.',
   POOL_WORKFLOW_BINDING_REQUIRED: 'Перед продолжением выберите workflow binding.',
+  POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID: (
+    'Исправьте topology-aware alias в document policy: malformed alias блокирует compile до публикации.'
+  ),
+  MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING: (
+    'Создайте Organization->Party binding для topology participant и повторите запуск.'
+  ),
+  MASTER_DATA_PARTY_ROLE_MISSING: (
+    'Проверьте Organization->Party binding и требуемую роль topology participant перед повторным запуском.'
+  ),
   POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING: 'Сохранённые workflow bindings ссылаются на отсутствующий execution-pack revision. Выполните destructive reset затронутых данных и пересоздайте attachment.',
   POOL_WORKFLOW_BINDING_NOT_FOUND: 'Выбранный attachment больше не найден в текущем пуле.',
   POOL_WORKFLOW_BINDING_NOT_RESOLVED: 'Выбранный attachment неактивен или не попадает в effective scope для текущего запуска.',
@@ -253,6 +262,9 @@ const MASTER_DATA_GATE_REMEDIATION_HINTS: Record<string, string> = {
   MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING: (
     'Выполните backfill Organization->Party и закройте remediation-list перед повторным запуском run.'
   ),
+  MASTER_DATA_PARTY_ROLE_MISSING: (
+    'Проверьте роль master_party для выбранного topology participant и обновите Organization->Party binding.'
+  ),
   MASTER_DATA_ENTITY_NOT_FOUND: (
     'Создайте/исправьте canonical сущность в /pools/master-data и повторите run.'
   ),
@@ -261,6 +273,9 @@ const MASTER_DATA_GATE_REMEDIATION_HINTS: Record<string, string> = {
   ),
   MASTER_DATA_BINDING_CONFLICT: (
     'Проверьте token scope, owner qualifier и ib_ref_key для target database.'
+  ),
+  POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID: (
+    'Исправьте topology-aware alias в document policy: допустимы только parent/child participant aliases.'
   ),
   POOL_DOCUMENT_POLICY_MAPPING_INVALID: (
     'Дополните document policy: обязательные поля и табличные части должны присутствовать в completeness profile и mapping.'
@@ -618,6 +633,18 @@ const parseReadinessProblemBlockers = (problem: ProblemDetailsPayload | null): P
       field_or_table_path: typeof raw.field_or_table_path === 'string' ? raw.field_or_table_path : null,
       database_id: typeof raw.database_id === 'string' ? raw.database_id : null,
       organization_id: typeof raw.organization_id === 'string' ? raw.organization_id : null,
+      edge_ref: raw.edge_ref && typeof raw.edge_ref === 'object' && !Array.isArray(raw.edge_ref)
+        ? {
+          parent_node_id: typeof (raw.edge_ref as Record<string, unknown>).parent_node_id === 'string'
+            ? (raw.edge_ref as Record<string, unknown>).parent_node_id as string
+            : null,
+          child_node_id: typeof (raw.edge_ref as Record<string, unknown>).child_node_id === 'string'
+            ? (raw.edge_ref as Record<string, unknown>).child_node_id as string
+            : null,
+        }
+        : null,
+      participant_side: typeof raw.participant_side === 'string' ? raw.participant_side : null,
+      required_role: typeof raw.required_role === 'string' ? raw.required_role : null,
       diagnostic: raw.diagnostic && typeof raw.diagnostic === 'object' && !Array.isArray(raw.diagnostic)
         ? raw.diagnostic as Record<string, unknown>
         : null,
@@ -656,9 +683,11 @@ const matchesReadinessCheck = (
   }
   if (checkCode === 'organization_party_bindings') {
     return code === 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING'
+      || code === 'MASTER_DATA_PARTY_ROLE_MISSING'
   }
   if (checkCode === 'policy_completeness') {
     return code === 'POOL_DOCUMENT_POLICY_MAPPING_INVALID'
+      || code === 'POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID'
   }
   if (checkCode === 'odata_verify_readiness') {
     return code === 'ODATA_MAPPING_NOT_CONFIGURED'
@@ -667,7 +696,9 @@ const matchesReadinessCheck = (
       || code.startsWith('ODATA_')
   }
   if (checkCode === 'master_data_coverage') {
-    return code.startsWith('MASTER_DATA_') && code !== 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING'
+    return code.startsWith('MASTER_DATA_')
+      && code !== 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING'
+      && code !== 'MASTER_DATA_PARTY_ROLE_MISSING'
   }
   return false
 }
@@ -781,9 +812,11 @@ const normalizeMasterDataBindingEntityType = (entityType: string): string => {
 const resolveMasterDataRemediationTarget = ({
   code,
   diagnostic,
+  requiredRole,
 }: {
   code: string | null
   diagnostic: unknown
+  requiredRole?: string | null
 }): MasterDataRemediationTarget | null => {
   if (!code || !diagnostic || typeof diagnostic !== 'object' || Array.isArray(diagnostic)) {
     return null
@@ -793,15 +826,15 @@ const resolveMasterDataRemediationTarget = ({
   const canonicalId = typeof payload.canonical_id === 'string' ? payload.canonical_id.trim() : ''
   const databaseId = typeof payload.target_database_id === 'string' ? payload.target_database_id.trim() : ''
 
-  if (code === 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING') {
+  if (code === 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING' || code === 'MASTER_DATA_PARTY_ROLE_MISSING') {
     return {
       label: 'Open Bindings workspace',
       href: buildMasterDataWorkspaceHref({
         tab: 'bindings',
-        entityType: 'party',
+        entityType: normalizeMasterDataBindingEntityType(entityType || 'party'),
         canonicalId,
         databaseId,
-        role: 'organization',
+        role: requiredRole || (code === 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING' ? 'organization' : undefined),
       }),
     }
   }
@@ -900,6 +933,19 @@ const resolveReadinessBlockerHint = (blocker: PoolRunReadinessBlocker): string |
 const buildReadinessBlockerContextLines = (blocker: PoolRunReadinessBlocker): string[] => {
   const lines: string[] = []
 
+  if (blocker.edge_ref && typeof blocker.edge_ref === 'object' && !Array.isArray(blocker.edge_ref)) {
+    const parentNodeId = typeof blocker.edge_ref.parent_node_id === 'string' ? blocker.edge_ref.parent_node_id : '-'
+    const childNodeId = typeof blocker.edge_ref.child_node_id === 'string' ? blocker.edge_ref.child_node_id : '-'
+    if (parentNodeId !== '-' || childNodeId !== '-') {
+      lines.push(`edge_ref=parent_node_id=${parentNodeId} child_node_id=${childNodeId}`)
+    }
+  }
+  if (blocker.participant_side) {
+    lines.push(`participant_side=${blocker.participant_side}`)
+  }
+  if (blocker.required_role) {
+    lines.push(`required_role=${blocker.required_role}`)
+  }
   if (blocker.entity_name || blocker.field_or_table_path) {
     lines.push(`entity=${blocker.entity_name || '-'} path=${blocker.field_or_table_path || '-'}`)
   }
@@ -3213,6 +3259,7 @@ export function PoolRunsPage() {
                                       const remediationTarget = resolveMasterDataRemediationTarget({
                                         code: typeof blocker.code === 'string' ? blocker.code : null,
                                         diagnostic: blocker.diagnostic,
+                                        requiredRole: blocker.required_role ?? null,
                                       })
                                       const title = blocker.code || blocker.kind || `${check.code}_${index + 1}`
 

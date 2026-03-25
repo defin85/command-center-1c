@@ -42,15 +42,12 @@ from apps.intercompany_pools.models import (
     PoolSchemaTemplateFormat,
 )
 from apps.intercompany_pools.metadata_catalog import (
-    ERROR_CODE_POOL_METADATA_REFERENCE_INVALID,
     ERROR_CODE_POOL_METADATA_SNAPSHOT_UNAVAILABLE,
     MetadataCatalogError,
     build_metadata_catalog_api_payload,
     describe_metadata_catalog_snapshot_resolution,
     get_current_snapshot_for_database_scope,
-    normalize_catalog_payload,
     read_existing_metadata_catalog_snapshot,
-    read_metadata_catalog_snapshot,
     refresh_metadata_catalog_snapshot,
     validate_document_policy_references,
 )
@@ -64,15 +61,15 @@ from apps.intercompany_pools.command_log import (
 )
 from apps.intercompany_pools.document_plan_artifact_contract import (
     POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED,
-    POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS,
-    POOL_DOCUMENT_POLICY_SLOT_DUPLICATE,
-    POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND,
-    POOL_DOCUMENT_POLICY_SLOT_OUTPUT_INVALID,
-    POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING,
 )
 from apps.intercompany_pools.document_policy_contract import (
     DOCUMENT_POLICY_METADATA_KEY,
     resolve_document_policy_from_edge_metadata,
+)
+from apps.intercompany_pools.document_policy_topology_aliases import (
+    MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING,
+    MASTER_DATA_PARTY_ROLE_MISSING,
+    POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID,
 )
 from apps.intercompany_pools.topology_template_contract import (
     POOL_TOPOLOGY_TEMPLATE_INSTANTIATION_METADATA_KEY,
@@ -105,7 +102,6 @@ from apps.intercompany_pools.workflow_runtime import (
     start_pool_run_workflow_execution,
 )
 from apps.intercompany_pools.workflow_authoring_contract import (
-    POOL_DOCUMENT_POLICY_SLOT_REQUIRED,
     PoolWorkflowBindingContract,
     build_pool_workflow_binding_read_model,
 )
@@ -184,11 +180,14 @@ _POOL_RUNTIME_START_FAIL_CLOSED_CODES = {
     "POOL_DOCUMENT_POLICY_SLOT_OUTPUT_INVALID",
     "POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS",
     "POOL_DOCUMENT_POLICY_LEGACY_SOURCE_REJECTED",
+    POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID,
     "POOL_WORKFLOW_BINDING_REQUIRED",
     "POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING",
     "ODATA_MAPPING_NOT_CONFIGURED",
     "ODATA_MAPPING_AMBIGUOUS",
     "ODATA_PUBLICATION_AUTH_CONTEXT_INVALID",
+    MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING,
+    MASTER_DATA_PARTY_ROLE_MISSING,
 }
 _POOL_WORKFLOW_BINDING_VALIDATION_CODES = {
     "POOL_DOCUMENT_POLICY_SLOT_DUPLICATE",
@@ -216,7 +215,9 @@ READINESS_CHECK_CODES = (
     READINESS_CHECK_CODE_POLICY_COMPLETENESS,
     READINESS_CHECK_CODE_ODATA_VERIFY_READINESS,
 )
-READINESS_BLOCKER_CODE_ORGANIZATION_PARTY_BINDING_MISSING = "MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING"
+READINESS_BLOCKER_CODE_ORGANIZATION_PARTY_BINDING_MISSING = MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING
+READINESS_BLOCKER_CODE_PARTY_ROLE_MISSING = MASTER_DATA_PARTY_ROLE_MISSING
+READINESS_BLOCKER_CODE_TOPOLOGY_ALIAS_INVALID = POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID
 READINESS_BLOCKER_CODE_POLICY_MAPPING_INVALID = "POOL_DOCUMENT_POLICY_MAPPING_INVALID"
 READINESS_ODATA_BLOCKER_CODES = {
     "ODATA_MAPPING_NOT_CONFIGURED",
@@ -1197,9 +1198,24 @@ def _normalize_readiness_blocker(raw_blocker: Mapping[str, Any]) -> dict[str, An
     }
     for field_name in ("kind", "entity_name", "field_or_table_path", "database_id", "organization_id"):
         blocker[field_name] = _normalize_optional_text(raw_blocker.get(field_name))
+    blocker["edge_ref"] = _normalize_readiness_blocker_edge_ref(raw_blocker.get("edge_ref"))
+    blocker["participant_side"] = _normalize_optional_text(raw_blocker.get("participant_side"))
+    blocker["required_role"] = _normalize_optional_text(raw_blocker.get("required_role"))
     diagnostic_raw = raw_blocker.get("diagnostic")
     blocker["diagnostic"] = dict(diagnostic_raw) if isinstance(diagnostic_raw, Mapping) else None
     return blocker
+
+
+def _normalize_readiness_blocker_edge_ref(raw_edge_ref: object) -> dict[str, str] | None:
+    if not isinstance(raw_edge_ref, Mapping):
+        return None
+    edge_ref = {
+        "parent_node_id": _normalize_optional_text(raw_edge_ref.get("parent_node_id")),
+        "child_node_id": _normalize_optional_text(raw_edge_ref.get("child_node_id")),
+    }
+    if edge_ref["parent_node_id"] is None and edge_ref["child_node_id"] is None:
+        return None
+    return edge_ref
 
 
 def _resolve_readiness_checklist_read_model(
@@ -1309,15 +1325,27 @@ def _readiness_blocker_matches_check(*, check_code: str, blocker: Mapping[str, A
     if not code:
         return False
     if check_code == READINESS_CHECK_CODE_ORGANIZATION_PARTY_BINDINGS:
-        return code == READINESS_BLOCKER_CODE_ORGANIZATION_PARTY_BINDING_MISSING
+        return code in {
+            READINESS_BLOCKER_CODE_ORGANIZATION_PARTY_BINDING_MISSING,
+            READINESS_BLOCKER_CODE_PARTY_ROLE_MISSING,
+        }
     if check_code == READINESS_CHECK_CODE_POLICY_COMPLETENESS:
-        return code == READINESS_BLOCKER_CODE_POLICY_MAPPING_INVALID
+        return code in {
+            READINESS_BLOCKER_CODE_POLICY_MAPPING_INVALID,
+            READINESS_BLOCKER_CODE_TOPOLOGY_ALIAS_INVALID,
+        }
     if check_code == READINESS_CHECK_CODE_ODATA_VERIFY_READINESS:
         return code in READINESS_ODATA_BLOCKER_CODES or code.startswith("ODATA_")
     if check_code == READINESS_CHECK_CODE_MASTER_DATA_COVERAGE:
-        if code == READINESS_BLOCKER_CODE_ORGANIZATION_PARTY_BINDING_MISSING:
+        if code in {
+            READINESS_BLOCKER_CODE_ORGANIZATION_PARTY_BINDING_MISSING,
+            READINESS_BLOCKER_CODE_PARTY_ROLE_MISSING,
+        }:
             return False
-        if code == READINESS_BLOCKER_CODE_POLICY_MAPPING_INVALID:
+        if code in {
+            READINESS_BLOCKER_CODE_POLICY_MAPPING_INVALID,
+            READINESS_BLOCKER_CODE_TOPOLOGY_ALIAS_INVALID,
+        }:
             return False
         if code in READINESS_ODATA_BLOCKER_CODES or code.startswith("ODATA_"):
             return False
@@ -2104,6 +2132,11 @@ class PoolRunMasterDataGateSerializer(serializers.Serializer):
     diagnostic = serializers.JSONField(required=False, allow_null=True)
 
 
+class PoolRunReadinessBlockerEdgeRefSerializer(serializers.Serializer):
+    parent_node_id = serializers.UUIDField(required=False, allow_null=True)
+    child_node_id = serializers.UUIDField(required=False, allow_null=True)
+
+
 class PoolRunReadinessBlockerSerializer(serializers.Serializer):
     code = serializers.CharField(required=False, allow_null=True)
     detail = serializers.CharField(required=False, allow_null=True)
@@ -2112,6 +2145,9 @@ class PoolRunReadinessBlockerSerializer(serializers.Serializer):
     field_or_table_path = serializers.CharField(required=False, allow_null=True)
     database_id = serializers.UUIDField(required=False, allow_null=True)
     organization_id = serializers.UUIDField(required=False, allow_null=True)
+    edge_ref = PoolRunReadinessBlockerEdgeRefSerializer(required=False, allow_null=True)
+    participant_side = serializers.CharField(required=False, allow_null=True)
+    required_role = serializers.CharField(required=False, allow_null=True)
     diagnostic = serializers.JSONField(required=False, allow_null=True)
 
 

@@ -933,6 +933,33 @@ describe('PoolRunsPage', () => {
     expect(await screen.findByText('top_down starting_amount must be greater than 0.')).toBeInTheDocument()
   }, 30000)
 
+  it('maps create-run topology alias errors to a localized message', async () => {
+    const user = userEvent.setup()
+    mockCreatePoolRun.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Pool Runtime Configuration Error',
+          status: 400,
+          detail: 'Malformed topology-aware alias in document policy.',
+          code: 'POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID',
+        },
+      },
+    })
+
+    renderPage()
+
+    const submitButton = await screen.findByTestId('pool-runs-create-submit')
+    await user.click(submitButton)
+
+    await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
+    expect(
+      await screen.findByText(
+        'Исправьте topology-aware alias в document policy: malformed alias блокирует compile до публикации.'
+      )
+    ).toBeInTheDocument()
+  }, 30000)
+
   it('shows raw validation detail when create-run VALIDATION_ERROR is not mapped to a specific field', async () => {
     const user = userEvent.setup()
     mockCreatePoolRun.mockRejectedValueOnce({
@@ -1365,6 +1392,65 @@ describe('PoolRunsPage', () => {
       expect(screen.getByTestId('pool-runs-location')).toHaveTextContent(
         '/pools/master-data?tab=bindings&entityType=party&canonicalId=party-1&databaseId=db-1&role=organization'
       )
+    })
+  }, 30000)
+
+  it('renders topology-aware readiness blockers with edge context and remediation routing', async () => {
+    const user = userEvent.setup()
+    const roleMissingBlocker = {
+      code: 'MASTER_DATA_PARTY_ROLE_MISSING',
+      detail: 'Bound master party is missing the required counterparty role.',
+      edge_ref: {
+        parent_node_id: 'parent-node',
+        child_node_id: 'child-node',
+      },
+      participant_side: 'child',
+      required_role: 'counterparty',
+      diagnostic: {
+        entity_type: 'party',
+        canonical_id: 'party-child',
+        target_database_id: 'db-1',
+      },
+    } as PoolRunReadinessBlocker
+    const topologyAliasBlocker = {
+      code: 'POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID',
+      detail: 'Malformed topology-aware alias in document policy.',
+      edge_ref: {
+        parent_node_id: 'parent-node',
+        child_node_id: 'child-node',
+      },
+      participant_side: 'parent',
+      required_role: 'organization',
+      field_or_table_path: 'field_mapping.party',
+    } as PoolRunReadinessBlocker
+    const run = buildRun({
+      readiness_blockers: [roleMissingBlocker, topologyAliasBlocker],
+      readiness_checklist: undefined,
+    })
+    mockListPoolRuns.mockResolvedValue([run])
+    mockGetPoolRunReport.mockResolvedValue(buildReport(run))
+
+    renderPage()
+
+    await openRunsStage(user, 'Inspect')
+    expect(await screen.findByText('Organization->Party bindings')).toBeInTheDocument()
+    expect(screen.getByText('Policy completeness')).toBeInTheDocument()
+    expect(screen.getByText('MASTER_DATA_PARTY_ROLE_MISSING')).toBeInTheDocument()
+    expect(screen.getByText('POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID')).toBeInTheDocument()
+    expect(
+      screen.getAllByText('edge_ref=parent_node_id=parent-node child_node_id=child-node')
+    ).toHaveLength(2)
+    expect(screen.getByText('participant_side=child')).toBeInTheDocument()
+    expect(screen.getByText('required_role=counterparty')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Исправьте topology-aware alias в document policy: допустимы только parent/child participant aliases.'
+      )
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Open Bindings workspace' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-runs-location')).toHaveTextContent('role=counterparty')
     })
   }, 30000)
 

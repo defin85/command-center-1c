@@ -100,6 +100,12 @@ systemctl --user status beads-dolt.service --no-pager
 - `receipt_internal -> receipt r1`
 - `receipt_leaf -> receipt r1`
 
+Операционный rollout для topology-aware alias revisions:
+- management command: `python manage.py adopt_top_down_execution_pack_aliases --actor <username> --tenant-slug <tenant-slug>`
+- command создает alias-aware ревизии для `sale` и reusable `receipt` и repin-ит все привязки execution pack;
+- повторный запуск идемпотентен: если текущая ревизия уже alias-aware, command возвращает `profile_revision_reused: true`.
+- дополнительные опции: `--binding-profile-code` и `--contract-canonical-id`; по умолчанию используются `top-down-execution-pack` и `osnovnoy`.
+
 Подтвержденный путь:
 
 ```bash

@@ -243,6 +243,12 @@ export type PoolRunReadinessBlocker = {
   field_or_table_path?: string | null
   database_id?: string | null
   organization_id?: string | null
+  edge_ref?: {
+    parent_node_id?: string | null
+    child_node_id?: string | null
+  } | null
+  participant_side?: string | null
+  required_role?: string | null
   diagnostic?: Record<string, unknown> | null
 }
 

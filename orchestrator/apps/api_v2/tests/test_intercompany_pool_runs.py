@@ -25,6 +25,11 @@ from apps.intercompany_pools.document_plan_artifact_contract import (
     POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_CONTEXT_KEY,
     POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY,
 )
+from apps.intercompany_pools.document_policy_topology_aliases import (
+    MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING,
+    MASTER_DATA_PARTY_ROLE_MISSING,
+    POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID,
+)
 from apps.intercompany_pools.document_policy_contract import resolve_document_policy_from_edge_metadata
 from apps.intercompany_pools.binding_profiles_store import create_canonical_binding_profile
 from apps.intercompany_pools.models import (
@@ -4875,6 +4880,110 @@ def test_create_pool_run_returns_problem_details_for_pool_runtime_fail_closed_er
 
 
 @pytest.mark.django_db
+def test_create_pool_run_returns_problem_details_for_missing_topology_party_role(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    bindings, _ = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[
+            _build_pool_workflow_binding_payload(
+                pool=pool,
+                workflow_definition_key="services-publication",
+                workflow_revision=3,
+                direction=PoolRunDirection.BOTTOM_UP,
+                mode=PoolRunMode.SAFE,
+            )
+        ],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    binding = bindings[0]
+
+    with patch(
+        "apps.api_v2.views.intercompany_pools.start_pool_run_workflow_execution",
+        side_effect=ValueError(
+            f"{MASTER_DATA_PARTY_ROLE_MISSING}: child organization is not marked as counterparty"
+        ),
+    ):
+        response = authenticated_client.post(
+            "/api/v2/pools/runs/",
+            {
+                "pool_id": str(pool.id),
+                "pool_workflow_binding_id": binding["binding_id"],
+                "direction": PoolRunDirection.BOTTOM_UP,
+                "period_start": "2026-01-01",
+                "period_end": "2026-01-31",
+                "run_input": {"source_payload": [{"inn": "730000000001", "amount": "50.00"}]},
+                "mode": PoolRunMode.SAFE,
+            },
+            format="json",
+        )
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code=MASTER_DATA_PARTY_ROLE_MISSING,
+    )
+    assert problem["title"] == "Pool Runtime Configuration Error"
+    assert "counterparty" in problem["detail"]
+
+
+@pytest.mark.django_db
+def test_create_pool_run_returns_problem_details_for_missing_topology_party_binding(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    bindings, _ = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[
+            _build_pool_workflow_binding_payload(
+                pool=pool,
+                workflow_definition_key="services-publication",
+                workflow_revision=3,
+                direction=PoolRunDirection.BOTTOM_UP,
+                mode=PoolRunMode.SAFE,
+            )
+        ],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+    binding = bindings[0]
+
+    with patch(
+        "apps.api_v2.views.intercompany_pools.start_pool_run_workflow_execution",
+        side_effect=ValueError(
+            f"{MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING}: parent organization has no bound master party"
+        ),
+    ):
+        response = authenticated_client.post(
+            "/api/v2/pools/runs/",
+            {
+                "pool_id": str(pool.id),
+                "pool_workflow_binding_id": binding["binding_id"],
+                "direction": PoolRunDirection.BOTTOM_UP,
+                "period_start": "2026-01-01",
+                "period_end": "2026-01-31",
+                "run_input": {"source_payload": [{"inn": "730000000001", "amount": "50.00"}]},
+                "mode": PoolRunMode.SAFE,
+            },
+            format="json",
+        )
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code=MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING,
+    )
+    assert problem["title"] == "Pool Runtime Configuration Error"
+    assert "master party" in problem["detail"]
+
+
+@pytest.mark.django_db
 def test_create_pool_run_returns_problem_details_for_missing_actor_mapping(
     authenticated_client: APIClient,
     user: User,
@@ -5052,6 +5161,56 @@ def test_preview_pool_workflow_binding_surfaces_missing_selector_in_slot_coverag
     assert payload["slot_coverage_summary"]["items"][0]["coverage"]["code"] == (
         POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING
     )
+
+
+@pytest.mark.django_db
+def test_preview_pool_workflow_binding_returns_topology_alias_invalid_problem_code_on_default_path(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.BOTTOM_UP,
+        mode=PoolRunMode.SAFE,
+    )
+    bindings, _ = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )
+
+    with patch(
+        "apps.api_v2.views.intercompany_pools.build_pool_workflow_binding_preview",
+        side_effect=ValueError(
+            f"{POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID}: unsupported participant side 'middle'"
+        ),
+    ):
+        response = authenticated_client.post(
+            "/api/v2/pools/workflow-bindings/preview/",
+            {
+                "pool_id": str(pool.id),
+                "pool_workflow_binding_id": bindings[0]["binding_id"],
+                "direction": PoolRunDirection.BOTTOM_UP,
+                "period_start": "2026-01-01",
+                "period_end": "2026-01-31",
+                "run_input": {"source_payload": [{"inn": "730000000001", "amount": "100.00"}]},
+                "mode": PoolRunMode.SAFE,
+            },
+            format="json",
+        )
+
+    problem = _assert_problem_details_response(
+        response,
+        status_code=400,
+        code=POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID,
+    )
+    assert problem["title"] == "Pool Workflow Binding Preview Failed"
+    assert "middle" in problem["detail"]
 
 
 @pytest.mark.django_db
@@ -6357,6 +6516,9 @@ def test_get_pool_run_and_report_include_readiness_and_verification_read_model(
             "field_or_table_path": "Goods",
             "database_id": None,
             "organization_id": None,
+            "edge_ref": None,
+            "participant_side": None,
+            "required_role": None,
             "diagnostic": None,
         }
     ]
@@ -6388,6 +6550,9 @@ def test_get_pool_run_and_report_include_readiness_and_verification_read_model(
                         "field_or_table_path": "Goods",
                         "database_id": None,
                         "organization_id": None,
+                        "edge_ref": None,
+                        "participant_side": None,
+                        "required_role": None,
                         "diagnostic": None,
                     }
                 ],
@@ -6423,6 +6588,149 @@ def test_get_pool_run_and_report_include_readiness_and_verification_read_model(
     assert report_payload["run"]["readiness_checklist"] == details_payload["run"]["readiness_checklist"]
     assert report_payload["run"]["verification_status"] == "failed"
     assert report_payload["run"]["verification_summary"] == details_payload["run"]["verification_summary"]
+
+
+@pytest.mark.django_db
+def test_get_pool_run_and_report_include_topology_readiness_blocker_context(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    run = _create_validated_run(tenant=default_tenant, pool=pool)
+    organization_id = str(uuid4())
+    database_id = str(uuid4())
+    parent_node_id = str(uuid4())
+    child_node_id = str(uuid4())
+    _attach_workflow_execution_to_run(
+        run=run,
+        status=WorkflowExecution.STATUS_COMPLETED,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_required": False,
+            "approval_state": "not_required",
+            "publication_step_state": "completed",
+            "pool_runtime_readiness_blockers": [
+                {
+                    "code": MASTER_DATA_PARTY_ROLE_MISSING,
+                    "detail": "Child organization is bound to a party without counterparty role.",
+                    "organization_id": organization_id,
+                    "database_id": database_id,
+                    "edge_ref": {
+                        "parent_node_id": parent_node_id,
+                        "child_node_id": child_node_id,
+                    },
+                    "participant_side": "child",
+                    "required_role": "counterparty",
+                },
+                {
+                    "code": POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID,
+                    "detail": "Unsupported participant side in document_policy alias.",
+                    "field_or_table_path": "chains[0].documents[0].field_mapping.Контрагент",
+                },
+            ],
+        },
+    )
+
+    details_response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/")
+    assert details_response.status_code == 200
+    details_payload = details_response.json()
+    assert details_payload["run"]["readiness_blockers"] == [
+        {
+            "code": MASTER_DATA_PARTY_ROLE_MISSING,
+            "detail": "Child organization is bound to a party without counterparty role.",
+            "kind": None,
+            "entity_name": None,
+            "field_or_table_path": None,
+            "database_id": database_id,
+            "organization_id": organization_id,
+            "edge_ref": {
+                "parent_node_id": parent_node_id,
+                "child_node_id": child_node_id,
+            },
+            "participant_side": "child",
+            "required_role": "counterparty",
+            "diagnostic": None,
+        },
+        {
+            "code": POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID,
+            "detail": "Unsupported participant side in document_policy alias.",
+            "kind": None,
+            "entity_name": None,
+            "field_or_table_path": "chains[0].documents[0].field_mapping.Контрагент",
+            "database_id": None,
+            "organization_id": None,
+            "edge_ref": None,
+            "participant_side": None,
+            "required_role": None,
+            "diagnostic": None,
+        },
+    ]
+    assert details_payload["run"]["readiness_checklist"] == {
+        "status": "not_ready",
+        "checks": [
+            {
+                "code": "master_data_coverage",
+                "status": "ready",
+                "blocker_codes": [],
+                "blockers": [],
+            },
+            {
+                "code": "organization_party_bindings",
+                "status": "not_ready",
+                "blocker_codes": [MASTER_DATA_PARTY_ROLE_MISSING],
+                "blockers": [
+                    {
+                        "code": MASTER_DATA_PARTY_ROLE_MISSING,
+                        "detail": "Child organization is bound to a party without counterparty role.",
+                        "kind": None,
+                        "entity_name": None,
+                        "field_or_table_path": None,
+                        "database_id": database_id,
+                        "organization_id": organization_id,
+                        "edge_ref": {
+                            "parent_node_id": parent_node_id,
+                            "child_node_id": child_node_id,
+                        },
+                        "participant_side": "child",
+                        "required_role": "counterparty",
+                        "diagnostic": None,
+                    }
+                ],
+            },
+            {
+                "code": "policy_completeness",
+                "status": "not_ready",
+                "blocker_codes": [POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID],
+                "blockers": [
+                    {
+                        "code": POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID,
+                        "detail": "Unsupported participant side in document_policy alias.",
+                        "kind": None,
+                        "entity_name": None,
+                        "field_or_table_path": "chains[0].documents[0].field_mapping.Контрагент",
+                        "database_id": None,
+                        "organization_id": None,
+                        "edge_ref": None,
+                        "participant_side": None,
+                        "required_role": None,
+                        "diagnostic": None,
+                    }
+                ],
+            },
+            {
+                "code": "odata_verify_readiness",
+                "status": "ready",
+                "blocker_codes": [],
+                "blockers": [],
+            },
+        ],
+    }
+
+    report_response = authenticated_client.get(f"/api/v2/pools/runs/{run.id}/report/")
+    assert report_response.status_code == 200
+    report_payload = report_response.json()
+    assert report_payload["run"]["readiness_blockers"] == details_payload["run"]["readiness_blockers"]
+    assert report_payload["run"]["readiness_checklist"] == details_payload["run"]["readiness_checklist"]
 
 
 @pytest.mark.django_db
@@ -7630,6 +7938,76 @@ def test_confirm_publication_with_readiness_blockers_returns_problem_details(
             "field_or_table_path": "Goods",
             "database_id": None,
             "organization_id": None,
+            "edge_ref": None,
+            "participant_side": None,
+            "required_role": None,
+            "diagnostic": None,
+        }
+    ]
+    assert PoolRunCommandOutbox.objects.filter(run=run).count() == 0
+
+
+@pytest.mark.django_db
+def test_confirm_publication_with_topology_readiness_blockers_returns_problem_details(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    pool: OrganizationPool,
+) -> None:
+    organization_id = str(uuid4())
+    database_id = str(uuid4())
+    parent_node_id = str(uuid4())
+    child_node_id = str(uuid4())
+    run = _create_run_with_execution_state(
+        tenant=default_tenant,
+        pool=pool,
+        approval_required=True,
+        approval_state="awaiting_approval",
+        publication_step_state="not_enqueued",
+        input_context_overrides={
+            "pool_runtime_readiness_blockers": [
+                {
+                    "code": MASTER_DATA_PARTY_ROLE_MISSING,
+                    "detail": "Child organization is bound to a party without counterparty role.",
+                    "organization_id": organization_id,
+                    "database_id": database_id,
+                    "edge_ref": {
+                        "parent_node_id": parent_node_id,
+                        "child_node_id": child_node_id,
+                    },
+                    "participant_side": "child",
+                    "required_role": "counterparty",
+                }
+            ]
+        },
+    )
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/runs/{run.id}/confirm-publication/",
+        {},
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="confirm-topology-readiness-problem-1",
+    )
+
+    payload = _assert_problem_details_response(
+        response,
+        status_code=409,
+        code="POOL_RUN_READINESS_BLOCKED",
+    )
+    assert payload["errors"] == [
+        {
+            "code": MASTER_DATA_PARTY_ROLE_MISSING,
+            "detail": "Child organization is bound to a party without counterparty role.",
+            "kind": None,
+            "entity_name": None,
+            "field_or_table_path": None,
+            "database_id": database_id,
+            "organization_id": organization_id,
+            "edge_ref": {
+                "parent_node_id": parent_node_id,
+                "child_node_id": child_node_id,
+            },
+            "participant_side": "child",
+            "required_role": "counterparty",
             "diagnostic": None,
         }
     ]
