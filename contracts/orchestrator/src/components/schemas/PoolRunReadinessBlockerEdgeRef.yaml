@@ -1,0 +1,9 @@
+type: object
+properties:
+  parent_node_id:
+    type: string
+  child_node_id:
+    type: string
+required:
+  - parent_node_id
+  - child_node_id

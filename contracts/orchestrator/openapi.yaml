@@ -20130,6 +20130,8 @@ components:
         field_or_table_path:
           type: string
           nullable: true
+        edge_ref:
+          $ref: '#/components/schemas/PoolRunReadinessBlockerEdgeRef'
         database_id:
           type: string
           format: uuid
@@ -20138,7 +20140,23 @@ components:
           type: string
           format: uuid
           nullable: true
+        participant_side:
+          type: string
+          nullable: true
+        required_role:
+          type: string
+          nullable: true
         diagnostic: {}
+    PoolRunReadinessBlockerEdgeRef:
+      type: object
+      properties:
+        parent_node_id:
+          type: string
+        child_node_id:
+          type: string
+      required:
+        - parent_node_id
+        - child_node_id
     PoolRunReadinessCheck:
       type: object
       properties:

@@ -90,6 +90,35 @@ def test_generated_models_cover_contract_pool_runs_schemas() -> None:
         )
 
 
+def test_generated_pool_run_readiness_blocker_exposes_topology_alias_context_fields() -> None:
+    content = (
+        _repo_root()
+        / "frontend"
+        / "src"
+        / "api"
+        / "generated"
+        / "model"
+        / "poolRunReadinessBlocker.ts"
+    ).read_text(encoding="utf-8")
+
+    assert "import type { PoolRunReadinessBlockerEdgeRef } from './poolRunReadinessBlockerEdgeRef';" in content
+    assert re.search(r"edge_ref\?: PoolRunReadinessBlockerEdgeRef \| null;", content)
+    assert re.search(r"participant_side\?: string \| null;", content)
+    assert re.search(r"required_role\?: string \| null;", content)
+
+    edge_ref_content = (
+        _repo_root()
+        / "frontend"
+        / "src"
+        / "api"
+        / "generated"
+        / "model"
+        / "poolRunReadinessBlockerEdgeRef.ts"
+    ).read_text(encoding="utf-8")
+    assert re.search(r"parent_node_id: string;", edge_ref_content)
+    assert re.search(r"child_node_id: string;", edge_ref_content)
+
+
 def test_generated_pool_run_create_request_requires_binding_field() -> None:
     model_path = _repo_root() / "frontend" / "src" / "api" / "generated" / "model" / "poolRunCreateRequest.ts"
     content = model_path.read_text(encoding="utf-8")

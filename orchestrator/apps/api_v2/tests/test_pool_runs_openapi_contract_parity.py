@@ -692,3 +692,29 @@ def test_confirm_publication_readiness_problem_details_schema_matches_runtime_se
     assert isinstance(errors_schema, dict)
     assert errors_schema.get("type") == "array"
     assert errors_schema.get("items") == {"$ref": "#/components/schemas/PoolRunReadinessBlocker"}
+
+
+def test_pool_run_readiness_blocker_schema_includes_topology_alias_context_fields() -> None:
+    contract = _load_openapi_contract()
+    schema = _schema(contract, "PoolRunReadinessBlocker")
+    properties = schema.get("properties")
+    assert isinstance(properties, dict)
+
+    assert {"edge_ref", "participant_side", "required_role"}.issubset(set(properties.keys()))
+
+    edge_ref_schema = properties.get("edge_ref")
+    assert isinstance(edge_ref_schema, dict)
+    assert edge_ref_schema == {"$ref": "#/components/schemas/PoolRunReadinessBlockerEdgeRef"}
+
+    edge_ref_component = _schema(contract, "PoolRunReadinessBlockerEdgeRef")
+    edge_ref_properties = edge_ref_component.get("properties")
+    assert isinstance(edge_ref_properties, dict)
+    assert {"parent_node_id", "child_node_id"}.issubset(set(edge_ref_properties.keys()))
+
+    participant_side_schema = properties.get("participant_side")
+    assert isinstance(participant_side_schema, dict)
+    assert participant_side_schema.get("type") == "string"
+
+    required_role_schema = properties.get("required_role")
+    assert isinstance(required_role_schema, dict)
+    assert required_role_schema.get("type") == "string"
