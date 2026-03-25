@@ -20112,6 +20112,16 @@ components:
         - mode
         - status
         - targets_count
+    PoolRunReadinessBlockerEdgeRef:
+      type: object
+      properties:
+        parent_node_id:
+          type: string
+        child_node_id:
+          type: string
+      required:
+        - parent_node_id
+        - child_node_id
     PoolRunReadinessBlocker:
       type: object
       properties:
@@ -20147,16 +20157,6 @@ components:
           type: string
           nullable: true
         diagnostic: {}
-    PoolRunReadinessBlockerEdgeRef:
-      type: object
-      properties:
-        parent_node_id:
-          type: string
-        child_node_id:
-          type: string
-      required:
-        - parent_node_id
-        - child_node_id
     PoolRunReadinessCheck:
       type: object
       properties:

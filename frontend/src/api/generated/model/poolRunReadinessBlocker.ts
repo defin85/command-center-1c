@@ -18,7 +18,7 @@ export interface PoolRunReadinessBlocker {
   entity_name?: string | null;
   /** @nullable */
   field_or_table_path?: string | null;
-  edge_ref?: PoolRunReadinessBlockerEdgeRef | null;
+  edge_ref?: PoolRunReadinessBlockerEdgeRef;
   /** @nullable */
   database_id?: string | null;
   /** @nullable */
