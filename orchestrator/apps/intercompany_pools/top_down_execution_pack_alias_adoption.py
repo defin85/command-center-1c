@@ -161,6 +161,36 @@ def adopt_top_down_execution_pack_aliases(
     }
 
 
+def adopt_top_down_execution_pack_aliases_for_all_tenants(
+    *,
+    actor_username: str,
+    binding_profile_code: str = TOP_DOWN_EXECUTION_PACK_CODE,
+    contract_canonical_id: str = DEFAULT_TOP_DOWN_CONTRACT_CANONICAL_ID,
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    tenant_slugs = tuple(
+        Tenant.objects.filter(binding_profiles__code=binding_profile_code)
+        .order_by("slug")
+        .values_list("slug", flat=True)
+        .distinct()
+    )
+    for tenant_slug in tenant_slugs:
+        try:
+            result = adopt_top_down_execution_pack_aliases(
+                actor_username=actor_username,
+                tenant_slug=tenant_slug,
+                binding_profile_code=binding_profile_code,
+                contract_canonical_id=contract_canonical_id,
+            )
+        except Exception as exc:
+            raise ValueError(
+                "Top-down execution-pack alias adoption failed for "
+                f"tenant '{tenant_slug}': {exc}"
+            ) from exc
+        results.append({"tenant_slug": tenant_slug, **result})
+    return results
+
+
 def build_top_down_realization_alias_policy(
     *,
     policy: Mapping[str, Any],
@@ -402,6 +432,7 @@ __all__ = [
     "DEFAULT_TOP_DOWN_CONTRACT_CANONICAL_ID",
     "TOP_DOWN_EXECUTION_PACK_CODE",
     "adopt_top_down_execution_pack_aliases",
+    "adopt_top_down_execution_pack_aliases_for_all_tenants",
     "build_top_down_realization_alias_policy",
     "build_top_down_receipt_alias_policy",
 ]

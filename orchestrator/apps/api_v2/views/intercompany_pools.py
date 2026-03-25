@@ -1213,7 +1213,7 @@ def _normalize_readiness_blocker_edge_ref(raw_edge_ref: object) -> dict[str, str
         "parent_node_id": _normalize_optional_text(raw_edge_ref.get("parent_node_id")),
         "child_node_id": _normalize_optional_text(raw_edge_ref.get("child_node_id")),
     }
-    if edge_ref["parent_node_id"] is None and edge_ref["child_node_id"] is None:
+    if edge_ref["parent_node_id"] is None or edge_ref["child_node_id"] is None:
         return None
     return edge_ref
 
@@ -2133,8 +2133,8 @@ class PoolRunMasterDataGateSerializer(serializers.Serializer):
 
 
 class PoolRunReadinessBlockerEdgeRefSerializer(serializers.Serializer):
-    parent_node_id = serializers.UUIDField(required=False, allow_null=True)
-    child_node_id = serializers.UUIDField(required=False, allow_null=True)
+    parent_node_id = serializers.UUIDField()
+    child_node_id = serializers.UUIDField()
 
 
 class PoolRunReadinessBlockerSerializer(serializers.Serializer):

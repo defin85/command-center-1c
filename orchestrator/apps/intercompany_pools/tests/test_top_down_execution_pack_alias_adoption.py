@@ -11,7 +11,10 @@ from django.core.management import call_command
 
 from apps.intercompany_pools.binding_profiles_store import create_canonical_binding_profile
 from apps.intercompany_pools.models import OrganizationPool, PoolWorkflowBinding
-from apps.intercompany_pools.top_down_execution_pack_alias_adoption import TOP_DOWN_EXECUTION_PACK_CODE
+from apps.intercompany_pools.top_down_execution_pack_alias_adoption import (
+    TOP_DOWN_EXECUTION_PACK_CODE,
+    adopt_top_down_execution_pack_aliases_for_all_tenants,
+)
 from apps.intercompany_pools.workflow_binding_attachments_store import upsert_pool_workflow_binding_attachment
 from apps.templates.workflow.decision_tables import create_decision_table_revision
 from apps.templates.workflow.models import DecisionTable
@@ -133,7 +136,11 @@ def _build_decision_contract(
     }
 
 
-def _build_binding_profile_revision() -> dict[str, object]:
+def _build_binding_profile_revision(
+    *,
+    sale_decision_table_id: str = "sale-policy",
+    receipt_decision_table_id: str = "receipt-policy",
+) -> dict[str, object]:
     return {
         "workflow": {
             "workflow_definition_key": "top-down-template",
@@ -143,19 +150,19 @@ def _build_binding_profile_revision() -> dict[str, object]:
         },
         "decisions": [
             {
-                "decision_table_id": "sale-policy",
+                "decision_table_id": sale_decision_table_id,
                 "decision_key": "document_policy",
                 "slot_key": "sale",
                 "decision_revision": 1,
             },
             {
-                "decision_table_id": "receipt-policy",
+                "decision_table_id": receipt_decision_table_id,
                 "decision_key": "document_policy",
                 "slot_key": "receipt_internal",
                 "decision_revision": 1,
             },
             {
-                "decision_table_id": "receipt-policy",
+                "decision_table_id": receipt_decision_table_id,
                 "decision_key": "document_policy",
                 "slot_key": "receipt_leaf",
                 "decision_revision": 1,
@@ -164,6 +171,76 @@ def _build_binding_profile_revision() -> dict[str, object]:
         "parameters": {},
         "role_mapping": {},
         "metadata": {},
+    }
+
+
+def _seed_top_down_execution_pack(
+    *,
+    tenant: Tenant,
+    actor,
+) -> dict[str, object]:
+    suffix = uuid4().hex[:8]
+    sale_decision_table_id = f"sale-policy-{suffix}"
+    receipt_decision_table_id = f"receipt-policy-{suffix}"
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code=f"{TOP_DOWN_EXECUTION_PACK_CODE}-{suffix}",
+        name="Top Down Execution Pack",
+    )
+
+    sale_decision = create_decision_table_revision(
+        contract=_build_decision_contract(
+            decision_table_id=sale_decision_table_id,
+            chain_id="sale_chain",
+            organization_ref="legacy.sale.organization",
+            counterparty_ref="legacy.sale.counterparty",
+            contract_ref="legacy.sale.contract",
+        ),
+        created_by=actor,
+    )
+    receipt_decision = create_decision_table_revision(
+        contract=_build_decision_contract(
+            decision_table_id=receipt_decision_table_id,
+            chain_id="receipt_chain",
+            organization_ref="legacy.receipt.organization",
+            counterparty_ref="legacy.receipt.counterparty",
+            contract_ref="legacy.receipt.contract",
+        ),
+        created_by=actor,
+    )
+
+    created_profile = create_canonical_binding_profile(
+        tenant=tenant,
+        binding_profile={
+            "code": TOP_DOWN_EXECUTION_PACK_CODE,
+            "name": "Top Down Execution Pack",
+            "revision": _build_binding_profile_revision(
+                sale_decision_table_id=sale_decision_table_id,
+                receipt_decision_table_id=receipt_decision_table_id,
+            ),
+        },
+        actor_username=actor.username,
+    )
+    saved_binding, created = upsert_pool_workflow_binding_attachment(
+        pool=pool,
+        workflow_binding={
+            "binding_profile_revision_id": created_profile["latest_revision"]["binding_profile_revision_id"],
+            "selector": {"direction": "top_down", "mode": "safe", "tags": ["baseline"]},
+            "effective_from": date(2026, 1, 1).isoformat(),
+            "status": "active",
+        },
+        actor_username=actor.username,
+    )
+
+    assert created is True
+    return {
+        "tenant": tenant,
+        "pool": pool,
+        "sale_decision": sale_decision,
+        "receipt_decision": receipt_decision,
+        "binding_profile_id": created_profile["binding_profile_id"],
+        "binding_profile_revision_id": created_profile["latest_revision"]["binding_profile_revision_id"],
+        "binding": saved_binding,
     }
 
 
@@ -285,6 +362,59 @@ def test_adopt_top_down_execution_pack_aliases_command_rewrites_policies_and_rep
     binding = PoolWorkflowBinding.objects.get(binding_id=saved_binding["binding_id"])
     assert binding.binding_profile_revision_id == output["binding_profile_revision_id"]
     assert binding.binding_profile_revision.revision_number == 2
+
+
+@pytest.mark.django_db
+def test_adopt_top_down_execution_pack_aliases_for_all_tenants_rewrites_each_matching_profile() -> None:
+    actor = get_user_model().objects.create_user(
+        username=f"top-down-global-actor-{uuid4().hex[:8]}",
+        password="testpass123",
+    )
+    first = _seed_top_down_execution_pack(
+        tenant=Tenant.objects.create(slug=f"top-down-a-{uuid4().hex[:8]}", name="Top Down A"),
+        actor=actor,
+    )
+    second = _seed_top_down_execution_pack(
+        tenant=Tenant.objects.create(slug=f"top-down-b-{uuid4().hex[:8]}", name="Top Down B"),
+        actor=actor,
+    )
+    _ = create_canonical_binding_profile(
+        tenant=Tenant.objects.create(slug=f"top-down-c-{uuid4().hex[:8]}", name="Top Down C"),
+        binding_profile={
+            "code": "other-execution-pack",
+            "name": "Other Execution Pack",
+            "revision": _build_binding_profile_revision(),
+        },
+        actor_username=actor.username,
+    )
+
+    results = adopt_top_down_execution_pack_aliases_for_all_tenants(actor_username=actor.username)
+
+    assert [result["tenant_slug"] for result in results] == sorted(
+        [first["tenant"].slug, second["tenant"].slug]
+    )
+    results_by_tenant = {result["tenant_slug"]: result for result in results}
+    expected = {first["tenant"].slug: first, second["tenant"].slug: second}
+    for tenant_slug, seeded in expected.items():
+        result = results_by_tenant[tenant_slug]
+        assert result["binding_profile_code"] == TOP_DOWN_EXECUTION_PACK_CODE
+        assert result["binding_profile_id"] == seeded["binding_profile_id"]
+        assert result["profile_revision_reused"] is False
+        assert result["updated_binding_ids"] == [seeded["binding"]["binding_id"]]
+        assert result["reused_binding_ids"] == []
+        assert result["binding_profile_revision_number"] == 2
+
+        binding = PoolWorkflowBinding.objects.get(binding_id=seeded["binding"]["binding_id"])
+        assert binding.binding_profile_revision_id == result["binding_profile_revision_id"]
+        assert binding.binding_profile_revision.revision_number == 2
+
+    second_results = adopt_top_down_execution_pack_aliases_for_all_tenants(actor_username=actor.username)
+    second_results_by_tenant = {result["tenant_slug"]: result for result in second_results}
+    for tenant_slug, seeded in expected.items():
+        result = second_results_by_tenant[tenant_slug]
+        assert result["profile_revision_reused"] is True
+        assert result["updated_binding_ids"] == []
+        assert result["reused_binding_ids"] == [seeded["binding"]["binding_id"]]
 
 
 def test_build_top_down_realization_alias_policy_rewrites_header_and_line_item_participants() -> None:

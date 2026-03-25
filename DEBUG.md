@@ -80,7 +80,7 @@ systemctl --user status beads-dolt.service --no-pager
 
 ## Проверенный live-цикл: `pool run -> dom_lesa`
 
-Проверено `2026-03-24` на живом контуре:
+Проверено `2026-03-24` на живом контуре до automatic alias adoption:
 - pool: `top-down-pool`
 - pool_id: `fc2588b5-18d7-47a5-bb4c-25fdd280fbe8`
 - binding_id: `c011e46a-a109-45b9-a10d-20ca40832c0f`
@@ -95,16 +95,17 @@ systemctl --user status beads-dolt.service --no-pager
 - `organization_2 -> organization_3` = `receipt_leaf`
 - `organization_2 -> organization_4` = `receipt_leaf`
 
-Текущий execution-pack mapping:
+Исторический execution-pack mapping на момент live-прогона:
 - `sale -> realization r1`
 - `receipt_internal -> receipt r1`
 - `receipt_leaf -> receipt r1`
 
-Операционный rollout для topology-aware alias revisions:
-- management command: `python manage.py adopt_top_down_execution_pack_aliases --actor <username> --tenant-slug <tenant-slug>`
-- command создает alias-aware ревизии для `sale` и reusable `receipt` и repin-ит все привязки execution pack;
-- повторный запуск идемпотентен: если текущая ревизия уже alias-aware, command возвращает `profile_revision_reused: true`.
-- дополнительные опции: `--binding-profile-code` и `--contract-canonical-id`; по умолчанию используются `top-down-execution-pack` и `osnovnoy`.
+Shipped rollout для topology-aware alias revisions:
+- deploy-time default path: `python manage.py migrate` выполняет data migration `0030_adopt_top_down_execution_pack_aliases` и идемпотентно обновляет все tenant-профили `top-down-execution-pack`;
+- migration создает alias-aware ревизии для `sale` и reusable `receipt`, затем repin-ит все `PoolWorkflowBinding` на latest execution-pack revision;
+- manual remediation path: `python manage.py adopt_top_down_execution_pack_aliases --actor <username> --tenant-slug <tenant-slug>`;
+- manual command оставлен для backfill/retry в контурах, где migration не была применена или нужен явный rerun;
+- дополнительные опции command: `--binding-profile-code` и `--contract-canonical-id`; по умолчанию используются `top-down-execution-pack` и `osnovnoy`.
 
 Подтвержденный путь:
 

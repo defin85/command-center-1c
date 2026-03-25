@@ -12,6 +12,10 @@ from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from apps.api_v2.views.intercompany_pools import (
+    PoolRunReadinessBlockerSerializer,
+    _normalize_readiness_blocker_edge_ref,
+)
 from apps.databases.models import Database, DatabasePermission, InfobaseUserMapping, PermissionLevel
 from apps.intercompany_pools.metadata_catalog import (
     ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS,
@@ -69,6 +73,28 @@ from apps.runtime_settings.models import RuntimeSetting
 from apps.templates.workflow.decision_tables import create_decision_table_revision
 from apps.templates.workflow.models import DecisionTable, WorkflowExecution, WorkflowTemplate, WorkflowType
 from apps.tenancy.models import Tenant, TenantMember
+
+
+def test_readiness_blocker_edge_ref_requires_complete_parent_child_pair() -> None:
+    assert _normalize_readiness_blocker_edge_ref({"parent_node_id": "node-parent"}) is None
+    assert _normalize_readiness_blocker_edge_ref({"child_node_id": "node-child"}) is None
+    assert _normalize_readiness_blocker_edge_ref(
+        {"parent_node_id": "node-parent", "child_node_id": "node-child"}
+    ) == {
+        "parent_node_id": "node-parent",
+        "child_node_id": "node-child",
+    }
+
+    serializer = PoolRunReadinessBlockerSerializer(
+        data={
+            "code": "MASTER_DATA_PARTY_ROLE_MISSING",
+            "detail": "role missing",
+            "edge_ref": {"parent_node_id": "00000000-0000-0000-0000-000000000001"},
+        }
+    )
+
+    assert serializer.is_valid() is False
+    assert serializer.errors == {"edge_ref": {"child_node_id": ["This field is required."]}}
 
 
 def _create_validated_run(*, tenant: Tenant, pool: OrganizationPool) -> PoolRun:
