@@ -1,0 +1,88 @@
+## ADDED Requirements
+
+### Requirement: Factual balance projection MUST использовать реальные документы и регистры ИБ как source of truth
+Система ДОЛЖНА (SHALL) строить factual balance projection по реальным документам и регистрам ИБ, а не по ожидаемым суммам из runtime distribution artifacts.
+
+Projection ДОЛЖЕН (SHALL) хранить как минимум три денежные меры:
+
+- `amount_with_vat`
+- `amount_without_vat`
+- `vat_amount`
+
+Projection ДОЛЖЕН (SHALL) учитывать как документы, созданные Command Center, так и ручные документы пользователя, если они влияют на фактический баланс и доступны для чтения из ИБ.
+
+#### Scenario: Ручная правка в 1С меняет factual projection
+- **GIVEN** после публикации run пользователь вручную создаёт или изменяет документ в 1С
+- **WHEN** worker sync повторно читает документы и регистры ИБ
+- **THEN** centralized projection отражает новое фактическое состояние
+- **AND** не сохраняет устаревшее "ожидаемое" значение только из distribution artifact
+
+### Requirement: Factual balance projection MUST материализовать баланс по пулу, ребру, организации, кварталу и batch
+Система ДОЛЖНА (SHALL) поддерживать materialized read model не менее чем по измерениям:
+
+- `pool`
+- `organization`
+- `edge`
+- `quarter`
+- `batch`
+
+Projection ДОЛЖЕН (SHALL) хранить derived показатели:
+
+- `incoming_amount`
+- `outgoing_amount`
+- `open_balance`
+
+Для operator-facing semantics система ДОЛЖНА (SHALL) вычислять отдельный batch settlement status, независимый от `PoolRun.status`, включая как минимум:
+
+- `ingested`
+- `distributed`
+- `partially_closed`
+- `closed`
+- `carried_forward`
+- `attention_required`
+
+#### Scenario: Published run остаётся execution-success, но batch имеет незакрытый остаток
+- **GIVEN** связанный `PoolRun` завершился в `published`
+- **AND** на leaf-узлах остался ненулевой factual balance
+- **WHEN** projection пересчитывает batch settlement
+- **THEN** execution status run остаётся `published`
+- **AND** batch settlement status отображается как `partially_closed` или `attention_required`
+
+### Requirement: Monitoring MUST предоставлять near-real-time summary и drill-down по factual balance
+Система ДОЛЖНА (SHALL) предоставлять операторский summary/drill-down по factual balance, достаточный для ответа на вопросы:
+
+- сколько вошло в пул;
+- сколько прошло по каждому ребру;
+- где сумма застряла;
+- сколько уже закрыто фактическими реализациями;
+- какой остаток переносится в следующий квартал.
+
+Для reachable ИБ система ДОЛЖНА (SHALL) стремиться поддерживать freshness projection не хуже 2 минут. При недоступности ИБ, maintenance window или блокировке внешних сеансов система ДОЛЖНА (SHALL) показывать staleness/freshness metadata вместо silent freeze.
+
+#### Scenario: Бухгалтер видит, где сумма застряла, без открытия каждой ИБ
+- **GIVEN** несколько узлов и рёбер пула имеют ненулевой `open_balance`
+- **WHEN** бухгалтер открывает centralized balance dashboard
+- **THEN** summary показывает проблемные pool/org/edge с их остатками
+- **AND** drill-down раскрывает batch и квартальный контекст без перехода в каждую ИБ вручную
+
+### Requirement: Незакрытый остаток MUST переноситься на тот же узел следующего квартала
+Система ДОЛЖНА (SHALL) переносить незакрытый factual balance на тот же узел в следующий квартал, пока он не будет закрыт фактической реализацией.
+
+Система НЕ ДОЛЖНА (SHALL NOT) автоматически возвращать такой остаток вверх по topology без отдельной закрывающей операции, признанной доменной моделью.
+
+#### Scenario: Ненулевой остаток на leaf-узле переносится в новый квартал
+- **GIVEN** на конец квартала у leaf-узла есть ненулевой `open_balance`
+- **WHEN** начинается следующий квартал и projection выполняет carry-forward
+- **THEN** остаток появляется как входящий баланс того же узла в новом квартале
+- **AND** исторический остаток предыдущего квартала остаётся прослеживаемым
+
+### Requirement: Документы без traceability MUST учитываться как unattributed и требовать явной разметки
+Система ДОЛЖНА (SHALL) собирать документы, влияющие на factual balance, но не несущие явной traceability к `pool_run_id`/batch, в отдельную `unattributed` operator-facing очередь.
+
+Такие документы ДОЛЖНЫ (SHALL) влиять на factual totals организации/квартала, но НЕ ДОЛЖНЫ (SHALL NOT) silently привязываться к конкретному pool edge или batch до явной пользовательской разметки.
+
+#### Scenario: Ручная реализация без `pool_run_id` видна в projection и review queue
+- **GIVEN** пользователь вручную создаёт реализацию в 1С без traceability marker
+- **WHEN** worker sync читает ИБ
+- **THEN** сумма попадает в factual totals организации/квартала
+- **AND** документ отображается в `unattributed` queue для последующей разметки
