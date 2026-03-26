@@ -12,6 +12,9 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+from apps.intercompany_pools.document_plan_artifact_contract import (
+    POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
+)
 from apps.intercompany_pools.publication_verification import (
     POOL_RUNTIME_VERIFICATION_CONTEXT_KEY,
     verify_published_documents,
@@ -626,6 +629,7 @@ def _normalize_publication_attempt_rows(
     entity_name: str,
     documents_count_by_database: dict[str, int],
     projection_key: str,
+    document_entities_by_database: Mapping[str, Mapping[str, str]] | None = None,
 ) -> list[dict[str, object]]:
     if not isinstance(raw_attempts, list):
         return []
@@ -658,6 +662,14 @@ def _normalize_publication_attempt_rows(
         if not isinstance(response_summary, Mapping):
             response_summary = {"posted": status_value == "success"}
 
+        resolved_entity_name = _resolve_publication_attempt_entity_name(
+            raw_attempt=raw_attempt,
+            request_summary=request_summary,
+            response_summary=response_summary,
+            target_database=target_database,
+            fallback_entity_name=entity_name,
+            document_entities_by_database=document_entities_by_database,
+        )
         posted = bool(
             raw_attempt.get("posted")
             if "posted" in raw_attempt
@@ -677,7 +689,7 @@ def _normalize_publication_attempt_rows(
                 "target_database": target_database,
                 "attempt_number": local_attempt_number,
                 "status": status_value,
-                "entity_name": str(raw_attempt.get("entity_name") or "").strip() or entity_name,
+                "entity_name": resolved_entity_name,
                 "documents_count": documents_count,
                 "posted": posted,
                 "error_code": error_code,
@@ -690,6 +702,115 @@ def _normalize_publication_attempt_rows(
             }
         )
     return normalized
+
+
+def _resolve_publication_attempt_entity_name(
+    *,
+    raw_attempt: Mapping[str, object],
+    request_summary: Mapping[str, object],
+    response_summary: Mapping[str, object],
+    target_database: str,
+    fallback_entity_name: str,
+    document_entities_by_database: Mapping[str, Mapping[str, str]] | None,
+) -> str:
+    explicit_entity_name = str(raw_attempt.get("entity_name") or "").strip()
+    inferred_entity_name = ""
+    if target_database and isinstance(document_entities_by_database, Mapping):
+        entities_by_key = document_entities_by_database.get(target_database)
+        if isinstance(entities_by_key, Mapping):
+            inferred_entity_name = _infer_attempt_entity_name_from_document_keys(
+                request_summary=request_summary,
+                response_summary=response_summary,
+                entities_by_key=entities_by_key,
+            )
+    if inferred_entity_name:
+        return inferred_entity_name
+    if explicit_entity_name:
+        return explicit_entity_name
+
+    return fallback_entity_name
+
+
+def _infer_attempt_entity_name_from_document_keys(
+    *,
+    request_summary: Mapping[str, object],
+    response_summary: Mapping[str, object],
+    entities_by_key: Mapping[str, str],
+) -> str:
+    candidate_keys = _collect_attempt_document_idempotency_keys(
+        request_summary=request_summary,
+        response_summary=response_summary,
+    )
+    if not candidate_keys:
+        return ""
+
+    matched_entity_names = {
+        str(entities_by_key.get(document_key) or "").strip()
+        for document_key in candidate_keys
+        if str(entities_by_key.get(document_key) or "").strip()
+    }
+    if len(matched_entity_names) == 1:
+        return next(iter(matched_entity_names))
+    return ""
+
+
+def _collect_attempt_document_idempotency_keys(
+    *,
+    request_summary: Mapping[str, object],
+    response_summary: Mapping[str, object],
+) -> list[str]:
+    keys: list[str] = []
+    for raw_value in (
+        request_summary.get("document_idempotency_keys"),
+        response_summary.get("successful_document_idempotency_keys"),
+    ):
+        if not isinstance(raw_value, list):
+            continue
+        for raw_key in raw_value:
+            normalized_key = str(raw_key or "").strip()
+            if normalized_key and normalized_key not in keys:
+                keys.append(normalized_key)
+    return keys
+
+
+def _collect_document_entities_by_database(
+    *,
+    input_context: Mapping[str, object] | None,
+) -> dict[str, dict[str, str]]:
+    if not isinstance(input_context, Mapping):
+        return {}
+    artifact = input_context.get(POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY)
+    if not isinstance(artifact, Mapping):
+        return {}
+    raw_targets = artifact.get("targets")
+    if not isinstance(raw_targets, list):
+        return {}
+
+    entities_by_database: dict[str, dict[str, str]] = {}
+    for target_raw in raw_targets:
+        if not isinstance(target_raw, Mapping):
+            continue
+        database_id = str(target_raw.get("database_id") or "").strip()
+        if not database_id:
+            continue
+        raw_chains = target_raw.get("chains")
+        if not isinstance(raw_chains, list):
+            continue
+        entities_by_key = entities_by_database.setdefault(database_id, {})
+        for chain_raw in raw_chains:
+            if not isinstance(chain_raw, Mapping):
+                continue
+            raw_documents = chain_raw.get("documents")
+            if not isinstance(raw_documents, list):
+                continue
+            for document_raw in raw_documents:
+                if not isinstance(document_raw, Mapping):
+                    continue
+                document_key = str(document_raw.get("idempotency_key") or "").strip()
+                entity_name = str(document_raw.get("entity_name") or "").strip()
+                if document_key and entity_name:
+                    entities_by_key[document_key] = entity_name
+    return {database_id: entities for database_id, entities in entities_by_database.items() if entities}
 
 
 def _synthesize_publication_attempt_rows(
@@ -837,6 +958,9 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
     attempt_rows: list[dict[str, object]] = []
     entity_name = "Document_РеализацияТоваровУслуг"
     max_attempts = 1
+    document_entities_by_database = _collect_document_entities_by_database(
+        input_context=execution.input_context if isinstance(execution.input_context, Mapping) else None,
+    )
 
     publication_results = sorted(
         publication_results,
@@ -898,6 +1022,7 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
             entity_name=entity_name,
             documents_count_by_database=documents_count_by_database,
             projection_key=projection_key,
+            document_entities_by_database=document_entities_by_database,
         )
         if not normalized_attempt_rows and target_databases:
             normalized_attempt_rows = _synthesize_publication_attempt_rows(

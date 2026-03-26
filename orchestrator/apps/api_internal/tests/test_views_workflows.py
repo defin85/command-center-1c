@@ -13,6 +13,9 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.databases.models import Database
+from apps.intercompany_pools.document_plan_artifact_contract import (
+    POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
+)
 from apps.intercompany_pools.models import (
     OrganizationPool,
     PoolPublicationAttempt,
@@ -1169,6 +1172,130 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
         )
         self.assertTrue(
             all(item.identity_strategy == "workflow_projection" for item in projected_attempts)
+        )
+
+    def test_update_workflow_status_completed_infers_attempt_entity_name_from_document_plan_artifact(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        database = Database.objects.create(
+            tenant=tenant,
+            name=f"projection-atomic-infer-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/atomic-infer.odata",
+            username="admin",
+            password="secret",
+        )
+        execution.input_context = {
+            **(execution.input_context or {}),
+            POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY: {
+                "version": "document_plan_artifact.v1",
+                "targets": [
+                    {
+                        "database_id": str(database.id),
+                        "chains": [
+                            {
+                                "chain_id": "receipt_realization",
+                                "documents": [
+                                    {
+                                        "document_id": "purchase",
+                                        "entity_name": "Document_ПоступлениеТоваровУслуг",
+                                        "idempotency_key": "doc-plan:purchase-key",
+                                    },
+                                    {
+                                        "document_id": "sale",
+                                        "entity_name": "Document_РеализацияТоваровУслуг",
+                                        "idempotency_key": "doc-plan:sale-key",
+                                    },
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+        }
+        execution.save(update_fields=["input_context"])
+
+        payload = {
+            "execution_id": str(execution.id),
+            "status": "completed",
+            "result": {
+                "node_results": {
+                    "publication_odata__receipt_realization": {
+                        "step": "publication_odata",
+                        "pool_run_id": str(run.id),
+                        "status": "published",
+                        "entity_name": "Document_ПоступлениеТоваровУслуг",
+                        "documents_targets": 1,
+                        "succeeded_targets": 1,
+                        "failed_targets": 0,
+                        "max_attempts": 1,
+                        "target_databases": [str(database.id)],
+                        "documents_count_by_database": {str(database.id): 2},
+                        "attempts": [
+                            {
+                                "target_database": str(database.id),
+                                "attempt_number": 1,
+                                "status": "success",
+                                "entity_name": "Document_ПоступлениеТоваровУслуг",
+                                "documents_count": 1,
+                                "posted": True,
+                                "request_summary": {
+                                    "documents_count": 1,
+                                    "document_idempotency_keys": ["doc-plan:purchase-key"],
+                                },
+                                "response_summary": {
+                                    "posted": True,
+                                    "successful_document_idempotency_keys": ["doc-plan:purchase-key"],
+                                    "successful_document_refs": {
+                                        "doc-plan:purchase-key": "purchase-doc-ref"
+                                    },
+                                },
+                            },
+                            {
+                                "target_database": str(database.id),
+                                "attempt_number": 1,
+                                "status": "success",
+                                "documents_count": 1,
+                                "posted": True,
+                                "request_summary": {
+                                    "documents_count": 1,
+                                    "document_idempotency_keys": ["doc-plan:sale-key"],
+                                },
+                                "response_summary": {
+                                    "posted": True,
+                                    "successful_document_idempotency_keys": ["doc-plan:sale-key"],
+                                    "successful_document_refs": {
+                                        "doc-plan:sale-key": "sale-doc-ref"
+                                    },
+                                },
+                            },
+                        ],
+                    }
+                }
+            },
+        }
+
+        response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        projected_attempts = list(
+            PoolPublicationAttempt.objects.filter(run=run, target_database=database).order_by("attempt_number")
+        )
+        self.assertEqual([item.attempt_number for item in projected_attempts], [1, 2])
+        self.assertEqual(
+            [item.entity_name for item in projected_attempts],
+            ["Document_ПоступлениеТоваровУслуг", "Document_РеализацияТоваровУслуг"],
+        )
+        self.assertEqual(
+            [
+                item.request_summary.get("document_idempotency_keys", [None])[0]
+                for item in projected_attempts
+            ],
+            ["doc-plan:purchase-key", "doc-plan:sale-key"],
         )
 
     def test_update_workflow_status_completed_keeps_historical_attempts_when_atomic_nodes_share_database(self):
