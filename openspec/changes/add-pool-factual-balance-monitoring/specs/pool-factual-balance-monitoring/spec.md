@@ -3,6 +3,8 @@
 ### Requirement: Factual balance projection MUST использовать реальные документы и регистры ИБ как source of truth
 Система ДОЛЖНА (SHALL) строить factual balance projection по реальным документам и регистрам ИБ, а не по ожидаемым суммам из runtime distribution artifacts.
 
+В первой итерации бухгалтерским эталоном ДОЛЖЕН (SHALL) считаться отчёт `Продажи`, построенный на bounded чтении `РегистрБухгалтерии.Хозрасчетный.Обороты(...)`, `РегистрСведений.ДанныеПервичныхДокументов` и связанных документов `РеализацияТоваровУслуг`, `ВозвратТоваровОтПокупателя`, `КорректировкаРеализации`.
+
 Projection ДОЛЖЕН (SHALL) хранить как минимум три денежные меры:
 
 - `amount_with_vat`
@@ -11,11 +13,22 @@ Projection ДОЛЖЕН (SHALL) хранить как минимум три де
 
 Projection ДОЛЖЕН (SHALL) учитывать как документы, созданные Command Center, так и ручные документы пользователя, если они влияют на фактический баланс и доступны для чтения из ИБ.
 
+Primary sync path НЕ ДОЛЖЕН (SHALL NOT) выполнять unbounded full scan всего бухгалтерского регистра; worker sync ДОЛЖЕН (SHALL) ограничивать чтение организациями пула, кварталом и счетами/типами движений, используемыми отчётом `Продажи`.
+
+Primary production read path ДОЛЖЕН (SHALL) использовать только поддерживаемые published integration surfaces 1С: standard OData entities/functions/virtual tables или явный published HTTP service contract. Система НЕ ДОЛЖНА (SHALL NOT) использовать прямой доступ к таблицам БД ИБ как основной путь factual sync в production.
+
 #### Scenario: Ручная правка в 1С меняет factual projection
 - **GIVEN** после публикации run пользователь вручную создаёт или изменяет документ в 1С
 - **WHEN** worker sync повторно читает документы и регистры ИБ
 - **THEN** centralized projection отражает новое фактическое состояние
 - **AND** не сохраняет устаревшее "ожидаемое" значение только из distribution artifact
+
+#### Scenario: Worker sync читает bounded slice бухгалтерских данных
+- **GIVEN** для пула известны организации, квартал и счета отчёта `Продажи`
+- **WHEN** `read worker` обновляет factual projection
+- **THEN** он читает только bounded slice бухгалтерских источников, необходимых для этого пула/квартала
+- **AND** не требует отдельного extension/change-log в первой итерации
+- **AND** использует поддерживаемую published integration surface 1С, а не прямой доступ к таблицам БД ИБ
 
 ### Requirement: Factual balance projection MUST материализовать баланс по пулу, ребру, организации, кварталу и batch
 Система ДОЛЖНА (SHALL) поддерживать materialized read model не менее чем по измерениям:
@@ -65,6 +78,33 @@ Projection ДОЛЖЕН (SHALL) хранить derived показатели:
 - **THEN** summary показывает проблемные pool/org/edge с их остатками
 - **AND** drill-down раскрывает batch и квартальный контекст без перехода в каждую ИБ вручную
 
+### Requirement: Command Center documents MUST писать machine-readable traceability marker в комментарий
+Система ДОЛЖНА (SHALL) для документов, создаваемых Command Center, записывать в начало комментария machine-readable marker формата:
+
+`CCPOOL:v=1;pool=<uuid>;run=<uuid|->;batch=<uuid|->;org=<uuid>;q=<YYYYQn>;kind=<receipt|sale|carry|manual>||<optional human text>`
+
+Система ДОЛЖНА (SHALL):
+
+- использовать фиксированный порядок ключей и ASCII-формат marker-блока;
+- трактовать `pool` как обязательный ключ для attribution, в том числе когда одна организация участвует в нескольких пулах одного квартала;
+- записывать marker как prefix comment field до публикации документа и сохранять human-readable хвост после `||`, если он был передан в policy/template/operator input;
+- сохранять machine-readable блок стабильным для retry/update того же логического документа;
+- считать всё, что расположено правее `||`, human-readable хвостом и игнорировать при парсинге.
+
+Документ без валидного marker-блока НЕ ДОЛЖЕН (SHALL NOT) автоматически привязываться к конкретному pool/batch.
+
+#### Scenario: Документ Command Center публикуется с machine-readable marker
+- **GIVEN** Command Center создаёт документ по batch-backed run или closing sale
+- **WHEN** документ записывается в ИБ
+- **THEN** комментарий документа начинается с валидного `CCPOOL:v=1;...` marker-блока
+- **AND** marker содержит `pool`, достаточный для различения нескольких пулов одной организации в одном квартале
+
+#### Scenario: Retry публикации не меняет machine-readable часть marker
+- **GIVEN** документ Command Center уже был сформирован с валидным `CCPOOL:v=1;...` marker-блоком
+- **WHEN** runtime выполняет retry или update того же логического документа
+- **THEN** machine-readable часть marker остаётся семантически той же
+- **AND** human-readable хвост после `||` не теряется silently
+
 ### Requirement: Незакрытый остаток MUST переноситься на тот же узел следующего квартала
 Система ДОЛЖНА (SHALL) переносить незакрытый factual balance на тот же узел в следующий квартал, пока он не будет закрыт фактической реализацией.
 
@@ -77,12 +117,30 @@ Projection ДОЛЖЕН (SHALL) хранить derived показатели:
 - **AND** исторический остаток предыдущего квартала остаётся прослеживаемым
 
 ### Requirement: Документы без traceability MUST учитываться как unattributed и требовать явной разметки
-Система ДОЛЖНА (SHALL) собирать документы, влияющие на factual balance, но не несущие явной traceability к `pool_run_id`/batch, в отдельную `unattributed` operator-facing очередь.
+Система ДОЛЖНА (SHALL) собирать документы, влияющие на factual balance, но не несущие валидной traceability через machine-readable comment marker, в отдельную `unattributed` operator-facing очередь.
 
 Такие документы ДОЛЖНЫ (SHALL) влиять на factual totals организации/квартала, но НЕ ДОЛЖНЫ (SHALL NOT) silently привязываться к конкретному pool edge или batch до явной пользовательской разметки.
 
-#### Scenario: Ручная реализация без `pool_run_id` видна в projection и review queue
+#### Scenario: Ручная реализация без валидного marker видна в projection и review queue
 - **GIVEN** пользователь вручную создаёт реализацию в 1С без traceability marker
 - **WHEN** worker sync читает ИБ
 - **THEN** сумма попадает в factual totals организации/квартала
 - **AND** документ отображается в `unattributed` queue для последующей разметки
+
+### Requirement: Поздние корректировки после фиксации квартала MUST требовать manual reconcile
+Система ДОЛЖНА (SHALL) считать квартал `frozen` после расчёта и фиксации carry-forward по `pool + quarter`.
+
+Если после фиксации появляется документ или изменение, влияющее на factual balance закрытого квартала, система ДОЛЖНА (SHALL):
+
+- поднять `attention_required` сигнал;
+- показать operator-facing запись для manual reconcile;
+- сохранить delta как late correction.
+
+Система НЕ ДОЛЖНА (SHALL NOT) silently пересчитывать исторический квартал и carry-forward следующего квартала.
+
+#### Scenario: Поздняя корректировка не переписывает зафиксированный carry-forward
+- **GIVEN** по пулу и кварталу уже зафиксирован carry-forward
+- **AND** позже в ИБ появляется документ, влияющий на этот квартал
+- **WHEN** `read worker` обнаруживает изменение
+- **THEN** projection помечает late correction как `attention_required`
+- **AND** historical quarter и следующий carry-forward не меняются автоматически

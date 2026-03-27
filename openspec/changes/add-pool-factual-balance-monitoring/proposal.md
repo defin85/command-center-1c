@@ -26,7 +26,7 @@
   - `contracts/**`
 - Affected integrations:
   - 1C document/register polling
-  - traceability marker via `pool_run_id` и/или отдельный регистр расширения
+  - machine-readable traceability marker в комментарии документа с возможным расширением до отдельного регистра в follow-up
 
 ## Non-Goals For This Change
 - Автоматическая подача декларации из 1С.

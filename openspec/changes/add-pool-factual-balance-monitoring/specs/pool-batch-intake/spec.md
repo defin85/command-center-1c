@@ -34,6 +34,10 @@
 
 Оператор ДОЛЖЕН (SHALL) явно выбирать стартовую организацию (`start_organization`) из активной topology пула на период batch/run. Период batch-backed run ДОЛЖЕН (SHALL) совпадать с `period_start` / `period_end` run и использоваться как canonical accounting period batch.
 
+Batch-backed create-run contract ДОЛЖЕН (SHALL) передавать явные `batch_id` и `start_organization_id` как часть direction-specific input. Existing manual `top_down` path с прямым `starting_amount` НЕ ДОЛЖЕН (SHALL NOT) silently заменяться batch contract.
+
+Idempotency fingerprint для batch-backed create-run ДОЛЖЕН (SHALL) включать как минимум identity batch и выбранную стартовую организацию, чтобы повторный submit того же batch-backed запроса reuse'ил тот же `PoolRun`, а не создавал дубликат.
+
 Система НЕ ДОЛЖНА (SHALL NOT) fan-out'ить один batch в несколько `PoolRun` без явного создания нового batch.
 
 #### Scenario: Один реестр поступлений создаёт один top-down run
@@ -41,6 +45,12 @@
 - **WHEN** intake завершается успешно
 - **THEN** система создаёт ровно один связанный `PoolRun`
 - **AND** batch/run lineage доступен в operator-facing read model
+
+#### Scenario: Повторный submit того же `receipt` batch не создаёт дубликат run
+- **GIVEN** для `receipt` batch уже существует run с тем же `batch_id`, `start_organization_id`, периодом и explicit binding reference
+- **WHEN** оператор повторно отправляет тот же batch-backed create-run запрос
+- **THEN** система возвращает существующий `PoolRun`
+- **AND** не создаёт второй run для того же batch
 
 ### Requirement: Sale batch MUST создавать closing documents без обязательного line-level pairing с receipt rows
 Система ДОЛЖНА (SHALL) поддерживать `sale` batch для создания фактических closing documents на active leaf-узлах topology выбранного периода.
