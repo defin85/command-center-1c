@@ -24,8 +24,27 @@
 - Не требуем в первой итерации точной line-level связи между реализацией и исходной строкой прихода.
 - Не требуем backfill для исторических batch/run до включения change.
 - Не вводим в первой итерации отдельный extension register/change-log для read path; если bounded direct reads из бухгалтерских источников не выдержат rollout budget, это будет follow-up change.
+- Не вводим отдельный factual microservice, новый primary runtime или отдельное frontend-приложение для factual monitoring в рамках этого change.
+
+## Chosen Architecture Variant
+Целевой вариант для этого change — `B`: расширение существующих runtime boundaries без выделения нового top-level сервиса.
+
+- `orchestrator` владеет доменными контрактами `PoolBatch`, batch settlement lifecycle, factual projection, review queue и public API/read-model surface;
+- `worker` остаётся текущим execution runtime family, но получает отдельные operational роли `write` и `read/reconcile` без появления нового primary runtime;
+- `frontend` остаётся существующим SPA; factual monitoring открывается как отдельный route/workspace внутри него, а не как новый frontend app;
+- canonical call graph не меняется: `frontend -> api-gateway -> orchestrator -> worker -> 1C`;
+- execution snapshots (`runtime_projection_snapshot`, `publication_summary`, `PoolPublicationAttempt`) остаются execution lineage/diagnostics и не становятся factual source-of-truth.
 
 ## Decisions
+
+### Decision: Вариант B фиксируется как обязательная архитектурная граница change
+Этот change НЕ ДОЛЖЕН (SHALL NOT) разрастаться в отдельный factual service или второй primary runtime. Все новые batch/projection/review surfaces реализуются внутри текущих `orchestrator + worker` boundaries.
+
+Это решение выбрано, потому что:
+
+- текущий execution path уже проходит через `orchestrator -> worker -> 1C`;
+- `orchestrator` уже владеет tenant-aware domain persistence и public contract boundary;
+- отдельный service в первой итерации добавил бы лишний consistency, rollout и observability overhead без обязательной продуктовой выгоды.
 
 ### Decision: Разделить batch settlement и run execution
 `PoolRun` остаётся execution сущностью с текущим FSM (`draft -> validated -> publishing -> partial_success|published|failed`). Для бизнес-статуса баланса вводится отдельная batch/projection сущность со status/read-model уровня:
@@ -39,7 +58,7 @@
 
 Это позволяет не ломать существующий facade contract и одновременно показать пользователю реальную степень закрытия суммы.
 
-Batch/projection слой остаётся внутри pool-domain change и может использовать те же orchestrator/worker runtime boundaries, что и execution path, но его хранение, API и operator-facing read model отделяются от execution read model `PoolRun`. Первая итерация не требует отдельного сервиса или отдельного binary, но требует жёсткого разделения доменных сущностей и public contract boundary.
+Batch/projection слой остаётся внутри pool-domain change и использует вариант `B`: хранение, API и operator-facing read model живут в `orchestrator`-owned boundary, а factual sync/reconcile использует отдельный `read` lane текущего worker runtime family. Execution read model `PoolRun` и factual read model не смешиваются.
 
 ### Decision: Source of truth для factual balance это реальные документы и регистры ИБ
 Баланс не должен считаться по ожидаемым суммам из distribution artifact. Projection строится по фактическим данным ИБ:
@@ -69,6 +88,8 @@ Bounded direct read path в первой итерации фиксируется
 - читается только квартал пула, а для закрытых кварталов используется отдельный reconcile job;
 - используются только счета и типы движений, которые участвуют в отчёте `Продажи`;
 - unbounded full scan всего регистра как primary sync path не допускается.
+
+Materialized projection хранится в `orchestrator`-owned persistence boundary. Existing execution snapshots и run-local diagnostics не используются как фактический aggregate store.
 
 ### Decision: Factual sync использует только поддерживаемые published 1C integration surfaces
 В первой итерации `read worker` читает factual slice только через поддерживаемые published integration surfaces 1С:
@@ -139,13 +160,15 @@ Manual review queue для `unattributed` и `late correction` живёт отд
 ### Decision: Operator-facing factual context отделяется от run-local execution canvas
 `/pools/runs` сохраняет execution-centric UX: create, inspect, safe actions, retry и run-local report. Factual monitoring и manual review должны открываться как отдельный factual context surface, связанный с run/batch lineage, а не как ещё один тяжёлый primary pane внутри того же execution canvas.
 
-Первая итерация не требует отдельного frontend приложения или отдельного backend сервиса, но требует operator-facing separation: execution controls и factual settlement/review не должны конкурировать как единое primary content.
+Первая итерация использует вариант `B`: отдельный factual route/workspace внутри существующего frontend приложения без отдельного frontend app или backend service. Execution controls и factual settlement/review не должны конкурировать как единое primary content.
 
 ### Decision: Rollout envelope для 700 ИБ фиксируется отдельными read/write workers и жёсткими лимитами
 Первая итерация разделяет operational роли:
 
 - `write workers` публикуют документы в ИБ;
 - `read workers` только читают бухгалтерские источники и обновляют projection.
+
+Под `write workers` и `read workers` здесь понимаются отдельные process roles / lanes внутри текущего worker runtime family, а не новый standalone microservice.
 
 Стартовый rollout envelope:
 
@@ -169,6 +192,9 @@ Manual review queue для `unattributed` и `late correction` живёт отд
 ### Вводить extension register/change-log сразу в первой итерации
 Отклонено. Для v1 выбран bounded direct read из бухгалтерских источников, на которых построен отчёт `Продажи`, чтобы не расширять rollout surface до стабилизации нагрузки.
 
+### Выделить отдельный factual microservice
+Отклонено. Для v1 это создаёт новый runtime boundary, усложняет consistency между execution и factual слоями и не даёт обязательного выигрыша по продукту или operability по сравнению с вариантом `B`.
+
 ## Risks / Trade-offs
 - Bounded direct read из бухгалтерских источников всё ещё создаёт риск по throughput и freshness на 700 ИБ; rollout зависит от жёстких caps, sharding и backpressure.
 - Комментарий как traceability surface уязвим к ручной порче формата; это увеличит объём `unattributed`, но лучше, чем silently искажать pool/batch attribution.
@@ -180,8 +206,8 @@ Manual review queue для `unattributed` и `late correction` живёт отд
 1. Ввести новые batch/projection contracts и read-model surfaces без изменения существующего `PoolRun` lifecycle.
 2. Уточнить batch-backed create-run contract и idempotency fingerprint для `batch_id + start_organization_id`.
 3. Добавить machine-readable comment marker для новых документов, создаваемых Command Center.
-4. Включить factual polling через bounded direct reads из бухгалтерских источников только для новых batch/run после rollout.
-5. Подключить separate factual context и manual operator review flow для `unattributed` и `late correction` случаев.
+4. Включить factual polling через bounded direct reads из бухгалтерских источников только для новых batch/run после rollout, используя `read` lane текущего worker runtime family.
+5. Подключить separate factual context и manual operator review flow для `unattributed` и `late correction` случаев внутри существующего frontend приложения.
 6. Если rollout telemetry покажет, что bounded direct reads не укладываются в budget, вынести отдельным change dedicated change-log/outbox surface.
 
 ## Open Questions
