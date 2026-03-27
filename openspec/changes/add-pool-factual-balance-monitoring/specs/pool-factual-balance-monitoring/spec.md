@@ -1,5 +1,27 @@
 ## ADDED Requirements
 
+### Requirement: Variant B architecture MUST разделять factual monitoring на три изолированные подсистемы внутри текущих runtime boundaries
+Система ДОЛЖНА (SHALL) реализовывать этот change внутри текущих `frontend -> api-gateway -> orchestrator -> worker -> 1C` boundaries без нового top-level service, нового primary runtime или отдельного frontend app.
+
+Внутри этих границ система ДОЛЖНА (SHALL) иметь три изолированные подсистемы:
+
+- `intake subsystem` для canonical `PoolBatch`, schema-driven normalization, provenance и batch-backed run kickoff;
+- `factual read/projection subsystem` для bounded чтения published 1C surfaces, freshness tracking и materialized projection / batch settlement;
+- `reconcile/review subsystem` для `unattributed`, `late correction` и operator actions поверх factual read model.
+
+Система НЕ ДОЛЖНА (SHALL NOT):
+
+- использовать `/pools/runs` как primary workspace factual monitoring и manual review;
+- смешивать execution snapshots/read-models с factual aggregate store;
+- отключать `intake subsystem` автоматически только из-за backlog/staleness в `factual read/projection` или `reconcile/review`.
+
+#### Scenario: Backlog factual sync не блокирует batch intake
+- **GIVEN** `factual read/projection subsystem` отстаёт по freshness и подняла backlog/staleness сигнал
+- **WHEN** оператор загружает новый `receipt` batch
+- **THEN** `intake subsystem` остаётся доступной в рамках своего контракта
+- **AND** система явно показывает staleness/backlog в factual context
+- **AND** run execution contract не подменяется состоянием factual sync
+
 ### Requirement: Factual balance projection MUST использовать реальные документы и регистры ИБ как source of truth
 Система ДОЛЖНА (SHALL) строить factual balance projection по реальным документам и регистрам ИБ, а не по ожидаемым суммам из runtime distribution artifacts.
 

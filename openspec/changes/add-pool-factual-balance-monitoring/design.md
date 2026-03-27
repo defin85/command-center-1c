@@ -34,6 +34,7 @@
 - `frontend` остаётся существующим SPA; factual monitoring открывается как отдельный route/workspace внутри него, а не как новый frontend app;
 - canonical call graph не меняется: `frontend -> api-gateway -> orchestrator -> worker -> 1C`;
 - execution snapshots (`runtime_projection_snapshot`, `publication_summary`, `PoolPublicationAttempt`) остаются execution lineage/diagnostics и не становятся factual source-of-truth.
+- change декомпозируется на три изолированные подсистемы внутри этих же runtime boundaries: `intake`, `factual read/projection`, `reconcile/review`.
 
 ## Decisions
 
@@ -45,6 +46,30 @@
 - текущий execution path уже проходит через `orchestrator -> worker -> 1C`;
 - `orchestrator` уже владеет tenant-aware domain persistence и public contract boundary;
 - отдельный service в первой итерации добавил бы лишний consistency, rollout и observability overhead без обязательной продуктовой выгоды.
+
+### Decision: Вариант B реализуется тремя изолированными подсистемами
+Внутри текущих `orchestrator + worker + frontend` boundaries change ДОЛЖЕН (SHALL) быть разложен на три подсистемы с явным ownership и минимальными пересечениями ответственности.
+
+`Intake subsystem`
+- отвечает за canonical `PoolBatch`, schema-driven нормализацию, provenance, fail-closed validation и batch-backed create-run kickoff;
+- использует существующий execution path для запуска `PoolRun`, но не владеет factual totals, settlement summary и review queue;
+- публикует только batch/run lineage и marker-ready provenance, достаточные для downstream attribution.
+
+`Factual read/projection subsystem`
+- отвечает за bounded чтение published 1C surfaces, freshness/staleness tracking и materialization factual projection / batch settlement read model;
+- использует отдельный `read` lane worker runtime family и не выполняет create-run, schema normalization или operator review actions;
+- пишет только в `orchestrator`-owned projection/checkpoint/store boundary и не переиспользует execution snapshots как aggregate store.
+
+`Reconcile/review subsystem`
+- отвечает за `unattributed`, `late correction`, operator actions `attribute`, `reconcile`, `resolve_without_change` и audit trail урегулирования;
+- не запускает distribution run, не пересчитывает silently историю и не подменяет worker read sync;
+- использует отдельный factual workspace внутри существующего SPA и не конкурирует с `/pools/runs` как primary execution canvas.
+
+Граничные правила между подсистемами:
+- деградация `factual read/projection` или `reconcile/review` ДОЛЖНА (SHALL) проявляться через staleness/backlog/attention signals, а не через скрытое отключение `intake`;
+- `intake` не пишет factual balances напрямую;
+- `reconcile/review` не обходит factual projection и не меняет `PoolRun.status`;
+- отдельный top-level service, отдельный frontend app или вторая primary queue topology для этих подсистем в рамках change не вводятся.
 
 ### Decision: Разделить batch settlement и run execution
 `PoolRun` остаётся execution сущностью с текущим FSM (`draft -> validated -> publishing -> partial_success|published|failed`). Для бизнес-статуса баланса вводится отдельная batch/projection сущность со status/read-model уровня:
@@ -203,12 +228,12 @@ Manual review queue для `unattributed` и `late correction` живёт отд
 - Если production read path будет реализован через прямой доступ к таблицам БД ИБ вместо published 1C integration surfaces, change потеряет upgrade-safety и operability; такой путь не считается допустимым primary architecture choice для v1.
 
 ## Migration Plan
-1. Ввести новые batch/projection contracts и read-model surfaces без изменения существующего `PoolRun` lifecycle.
-2. Уточнить batch-backed create-run contract и idempotency fingerprint для `batch_id + start_organization_id`.
-3. Добавить machine-readable comment marker для новых документов, создаваемых Command Center.
-4. Включить factual polling через bounded direct reads из бухгалтерских источников только для новых batch/run после rollout, используя `read` lane текущего worker runtime family.
-5. Подключить separate factual context и manual operator review flow для `unattributed` и `late correction` случаев внутри существующего frontend приложения.
-6. Если rollout telemetry покажет, что bounded direct reads не укладываются в budget, вынести отдельным change dedicated change-log/outbox surface.
+1. Сначала ввести `intake subsystem` contracts: canonical `PoolBatch`, batch-backed create-run contract, idempotency fingerprint и marker-ready provenance без изменения существующего `PoolRun` lifecycle.
+2. Затем ввести `factual read/projection subsystem`: checkpoints, materialized projection, batch settlement read model и bounded direct reads через `read` lane текущего worker runtime family.
+3. После этого подключить `reconcile/review subsystem`: separate factual context, `unattributed`/`late correction` queue и operator actions внутри существующего frontend приложения.
+4. Добавить machine-readable comment marker для новых документов, создаваемых Command Center, и связать его с downstream attribution/review policy.
+5. Включить rollout caps/telemetry для независимого контроля `write` и `read/reconcile` lanes.
+6. Если rollout telemetry покажет, что bounded direct reads не укладываются в budget, вынести отдельным change dedicated change-log/outbox surface, не ломая границы трёх подсистем.
 
 ## Open Questions
 Блокирующих открытых вопросов на уровне change не осталось. Допускается только operational tuning лимитов polling/read workers внутри зафиксированного rollout envelope.

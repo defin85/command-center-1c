@@ -12,6 +12,8 @@
 
 Система ДОЛЖНА (SHALL) поддерживать произвольный внешний формат через `Pool Schema Templates` и future integration adapters, а не через жёстко прошитый формат одного реестра.
 
+`PoolBatch` intake в рамках варианта `B` ДОЛЖЕН (SHALL) оставаться отдельной подсистемой, отвечающей только за нормализацию, provenance и запуск связанного run. Intake НЕ ДОЛЖЕН (SHALL NOT) напрямую материализовывать factual balance projection или manual review state.
+
 #### Scenario: Бухгалтер загружает произвольный реестр поступлений через schema template
 - **GIVEN** оператор выбрал `pool` и подходящий `Pool Schema Template`
 - **WHEN** оператор загружает внешний файл реестра поступлений

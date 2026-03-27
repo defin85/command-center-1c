@@ -9,7 +9,8 @@
 - Добавить pool-scoped batch intake для внешних реестров поступлений и реализаций с произвольным форматом через `Pool Schema Templates` и будущие integration adapters.
 - Расширить top-down run contract: запуск от явной стартовой организации, `one batch = one pool_run`, batch/run provenance и отделение batch settlement status от существующего `PoolRun.status`.
 - Добавить централизованную factual balance projection по `pool + organization + edge + quarter + batch` на основе фактических документов и регистров ИБ.
-- Зафиксировать целевой архитектурный вариант `B`: расширение текущих `orchestrator + worker` границ без отдельного factual microservice или нового primary runtime; `orchestrator` владеет batch/projection/review contracts, а `worker` получает отдельный factual read/reconcile lane внутри текущего runtime family.
+- Зафиксировать целевой архитектурный вариант `B`: расширение текущих `orchestrator + worker` границ без отдельного factual microservice или нового primary runtime; внутри этих границ change раскладывается на три изолированные подсистемы: `intake`, `factual read/projection`, `reconcile/review`.
+- Зафиксировать ownership подсистем варианта `B`: `orchestrator` владеет batch/projection/review contracts и materialized read model, а `worker` получает отдельные operational lanes `write` и `read/reconcile` внутри текущего runtime family.
 - Добавить operator-facing summary/drill-down в отдельном factual workspace внутри существующего frontend приложения, который показывает `вошло`, `вышло`, `остаток`, разбивку `с НДС / без НДС / НДС`, а также где сумма застряла.
 - Добавить quarter carry-forward для незакрытого остатка на том же узле и explicit review queue для документов без traceability, которые нельзя автоматически привязать к конкретному pool/batch.
 - Уточнить, что существующий run report остаётся runtime/local отчётом по расчёту и публикации и не подменяет factual balance dashboard.
@@ -30,6 +31,7 @@
   - machine-readable traceability marker в комментарии документа с возможным расширением до отдельного регистра в follow-up
 - Runtime / deployment:
   - используются существующие `orchestrator`, `worker`, `frontend`
+  - `intake`, `factual read/projection`, `reconcile/review` остаются внутренними подсистемами этих runtime, а не новыми top-level сервисами
   - новый top-level service или отдельный frontend app не вводятся
 
 ## Non-Goals For This Change
