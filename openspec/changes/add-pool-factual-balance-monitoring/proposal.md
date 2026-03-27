@@ -15,6 +15,18 @@
 - Добавить quarter carry-forward для незакрытого остатка на том же узле и explicit review queue для документов без traceability, которые нельзя автоматически привязать к конкретному pool/batch.
 - Уточнить, что существующий run report остаётся runtime/local отчётом по расчёту и публикации и не подменяет factual balance dashboard.
 
+## Implementation Readiness
+Audit verdict: `Ready with conditions`.
+
+Change может переходить в implementation phase только при следующих условиях:
+- сохраняется вариант `B` внутри текущих `orchestrator + worker + frontend` boundaries;
+- public/domain contracts для `PoolBatch`, batch-backed `top_down`, factual API/read-model surface и `CCPOOL:v=1;...` фиксируются до начала кодинга runtime и UI;
+- factual projection, batch settlement и review queue остаются отдельным `orchestrator`-owned boundary и не встраиваются в existing execution store `PoolRun`;
+- pilot/preflight cohort ИБ подтверждает published 1C integration surfaces для bounded factual sync без direct DB access как primary production path;
+- factual monitoring и manual review выходят отдельным workspace, а `/pools/runs` остаётся execution-centric surface.
+
+При нарушении этих условий change должен считаться `Not ready` до обновления OpenSpec или отдельного архитектурного решения.
+
 ## Impact
 - Affected specs:
   - `pool-distribution-runs` (modified)

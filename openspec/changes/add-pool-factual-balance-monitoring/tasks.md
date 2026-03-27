@@ -1,3 +1,11 @@
+## 0. Implementation Readiness Gate
+- [ ] 0.1 Зафиксировать implementation verdict `Ready with conditions` и подтвердить, что coding phase стартует только при сохранении варианта `B` внутри текущих `orchestrator + worker + frontend` boundaries.
+- [ ] 0.2 Заморозить public/domain contracts для `PoolBatch`, batch-backed `top_down`, factual read-model/API surface и grammar `CCPOOL:v=1;...` до старта runtime/UI реализации.
+- [ ] 0.3 Подтвердить на pilot/preflight cohort ИБ доступность published 1C integration surfaces для bounded factual sync без direct DB access как primary production path.
+- [ ] 0.4 Зафиксировать, что factual projection, batch settlement, checkpoints и review queue реализуются как отдельный `orchestrator`-owned boundary и не подменяют existing execution store `PoolRun`.
+- [ ] 0.5 Зафиксировать reuse existing worker scheduling/fairness primitives и rollout envelope для `read/reconcile` lanes вместо нового primary runtime path.
+- [ ] 0.6 Зафиксировать, что `/pools/runs` остаётся execution-centric surface, а factual monitoring/manual review выходят отдельным workspace с explicit linkage из run report.
+
 ## 1. Domain Contracts
 - [ ] 1.1 Спроектировать canonical `PoolBatch` contract для `receipt` и `sale` intake, включая provenance, batch kind, source metadata, schema/integration references и правило `one batch = one pool_run`.
 - [ ] 1.2 Зафиксировать архитектурную границу варианта `B`: `orchestrator` владеет `PoolBatch`, batch settlement lifecycle, factual projection и review queue; новый top-level service или новый primary runtime не вводятся.

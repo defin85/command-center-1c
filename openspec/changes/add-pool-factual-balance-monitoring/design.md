@@ -36,6 +36,19 @@
 - execution snapshots (`runtime_projection_snapshot`, `publication_summary`, `PoolPublicationAttempt`) остаются execution lineage/diagnostics и не становятся factual source-of-truth.
 - change декомпозируется на три изолированные подсистемы внутри этих же runtime boundaries: `intake`, `factual read/projection`, `reconcile/review`.
 
+## Implementation Readiness
+Audit verdict: `Ready with conditions`.
+
+Change готов к implementation phase при соблюдении следующих обязательных условий:
+
+- public/domain contracts для `PoolBatch`, batch-backed `top_down`, factual read-model/API surface и grammar `CCPOOL:v=1;...` фиксируются до начала кодинга runtime и UI;
+- factual read model, batch settlement lifecycle, checkpoints и review queue реализуются как отдельный `orchestrator`-owned persistence/API boundary и не встраиваются в existing execution store `PoolRun`;
+- pilot/prefight cohort ИБ подтверждает доступность published 1C integration surfaces, достаточных для bounded factual sync, без прямого DB access как primary production path;
+- factual `read/reconcile` jobs переиспользуют existing worker scheduling/fairness primitives (`role`, `priority`, `server_affinity`) и rollout envelope этого change, а не вводят новый primary runtime path;
+- `/pools/runs` остаётся execution-centric surface; factual monitoring и manual review открываются как отдельный workspace с явной ссылкой из run-local отчёта.
+
+Если хотя бы одно из этих условий нарушается, change должен считаться `Not ready` для implementation до отдельного архитектурного решения или обновления OpenSpec.
+
 ## Decisions
 
 ### Decision: Вариант B фиксируется как обязательная архитектурная граница change
