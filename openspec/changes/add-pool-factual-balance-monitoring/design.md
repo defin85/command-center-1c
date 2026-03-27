@@ -200,6 +200,13 @@ Manual review queue для `unattributed` и `late correction` живёт отд
 
 Первая итерация использует вариант `B`: отдельный factual route/workspace внутри существующего frontend приложения без отдельного frontend app или backend service. Execution controls и factual settlement/review не должны конкурировать как единое primary content.
 
+Factual workspace должен собираться через project UI platform layer. Если для него выбирается `MasterDetail` или иная catalog/detail композиция:
+
+- master pane остаётся compact selection surface и не превращается в wide table-first workspace;
+- wide tables, плотные diagnostics и bulk-heavy operational density живут в detail pane, dedicated secondary surface или explicit full-width workspace, если это оправдано операторским сценарием;
+- на narrow viewport detail/review открывается через `Drawer`, off-canvas panel или route/state fallback без page-wide horizontal overflow;
+- route входит в UI governance perimeter и проходит lint/browser invariants того же класса, что и другие governed `MasterDetail` surfaces.
+
 ### Decision: Rollout envelope для 700 ИБ фиксируется отдельными read/write workers и жёсткими лимитами
 Первая итерация разделяет operational роли:
 

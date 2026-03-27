@@ -100,6 +100,29 @@ Projection ДОЛЖЕН (SHALL) хранить derived показатели:
 - **THEN** summary показывает проблемные pool/org/edge с их остатками
 - **AND** drill-down раскрывает batch и квартальный контекст без перехода в каждую ИБ вручную
 
+### Requirement: Factual monitoring workspace MUST следовать UI platform governance и не превращаться в table-first master pane
+Система ДОЛЖНА (SHALL) реализовывать operator-facing factual workspace через project UI platform layer, а не через raw page-level vendor composition как primary path.
+
+Если factual workspace использует `MasterDetail` или иной catalog/detail shell, система ДОЛЖНА (SHALL):
+
+- держать master pane как compact selection surface;
+- НЕ ДОЛЖНА (SHALL NOT) использовать wide data grid или table toolkit как default primary composition path в master pane;
+- выносить wide tables, плотные diagnostics и bulk-heavy operational density в detail pane, dedicated secondary surface или explicit full-width workspace, если это оправдано операторским сценарием;
+- обеспечивать mobile-safe fallback для detail/review через `Drawer`, off-canvas panel или route/state fallback;
+- НЕ ДОЛЖНА (SHALL NOT) делать page-wide или pane-wide horizontal overflow штатным режимом работы.
+
+#### Scenario: Desktop factual workspace сохраняет compact selection/detail split
+- **GIVEN** оператор открывает factual monitoring route на desktop viewport
+- **WHEN** route использует catalog/detail композицию
+- **THEN** primary selection context остаётся scan-friendly и компактным
+- **AND** route не помещает wide table с horizontal overflow в master pane как default primary path
+
+#### Scenario: Narrow viewport открывает factual detail без горизонтального скролла
+- **GIVEN** оператор открывает factual monitoring route на narrow viewport
+- **WHEN** он выбирает batch, edge или review item для просмотра detail
+- **THEN** detail/review открывается через mobile-safe fallback (`Drawer`, off-canvas panel или route/state fallback)
+- **AND** страница не требует horizontal overflow как основной режим взаимодействия
+
 ### Requirement: Command Center documents MUST писать machine-readable traceability marker в комментарий
 Система ДОЛЖНА (SHALL) для документов, создаваемых Command Center, записывать в начало комментария machine-readable marker формата:
 

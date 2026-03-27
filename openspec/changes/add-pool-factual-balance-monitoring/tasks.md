@@ -5,6 +5,7 @@
 - [ ] 0.4 Зафиксировать, что factual projection, batch settlement, checkpoints и review queue реализуются как отдельный `orchestrator`-owned boundary и не подменяют existing execution store `PoolRun`.
 - [ ] 0.5 Зафиксировать reuse existing worker scheduling/fairness primitives и rollout envelope для `read/reconcile` lanes вместо нового primary runtime path.
 - [ ] 0.6 Зафиксировать, что `/pools/runs` остаётся execution-centric surface, а factual monitoring/manual review выходят отдельным workspace с explicit linkage из run report.
+- [ ] 0.7 Зафиксировать, что новый factual workspace входит в UI governance perimeter и использует project UI platform layer; если route использует `MasterDetail`, он обязан соблюдать compact master-pane contract и mobile-safe fallback.
 
 ## 1. Domain Contracts
 - [ ] 1.1 Спроектировать canonical `PoolBatch` contract для `receipt` и `sale` intake, включая provenance, batch kind, source metadata, schema/integration references и правило `one batch = one pool_run`.
@@ -36,11 +37,15 @@
 - [ ] 4.3 Спроектировать operator-facing boundary так, чтобы run-local execution canvas не смешивал primary controls factual monitoring и manual review.
 - [ ] 4.4 Спроектировать операторскую очередь manual review для `unattributed` документов и поздних корректировок, включая lifecycle review item и допустимые operator actions `attribute`, `reconcile`, `resolve_without_change`.
 - [ ] 4.5 Зафиксировать, что `reconcile/review subsystem` изолирован от `intake` и `run execution`: деградация review queue не должна менять `PoolRun.status` или batch intake contract.
+- [ ] 4.6 Собрать factual workspace через project UI platform layer; если route использует `MasterDetail`/catalog-detail shell, master pane должен оставаться compact selection surface без table-first composition и horizontal overflow как primary path.
+- [ ] 4.7 Спроектировать mobile-safe fallback для detail/review (`Drawer`, off-canvas panel или route/state fallback) без page-wide horizontal overflow.
 
 ## 5. Verification
 - [ ] 5.1 Добавить backend tests на batch intake, batch/run provenance, batch-backed idempotency, projection aggregation, carry-forward, parsing `CCPOOL` comment marker и `unattributed` / `late correction` queue.
 - [ ] 5.2 Добавить frontend tests на batch-backed create-run UX, factual summary/drill-down и batch settlement statuses.
 - [ ] 5.3 Подготовить live/dev verification сценарий `receipt batch -> distribution -> factual projection -> sale batch/manual sale capture -> refreshed summary -> manual reconcile late correction`.
+- [ ] 5.4 Добавить browser-level coverage для нового factual route на UI governance invariants: compact selection/detail split, отсутствие pane/page horizontal overflow и mobile fallback detail/review.
+- [ ] 5.5 Прогнать `cd frontend && npm run lint`, `cd frontend && npm run test:browser:ui-platform`, `cd frontend && npm run validate:ui-platform` как blocking UI validation gate для этого change.
 
 ## 6. Rollout / Operations
 - [ ] 6.1 Зафиксировать source profile factual sync по данным отчёта `Продажи`: bounded reads из `РегистрБухгалтерии.Хозрасчетный.Обороты`, `РегистрСведений.ДанныеПервичныхДокументов` и связанных документов через published 1C integration surfaces.
