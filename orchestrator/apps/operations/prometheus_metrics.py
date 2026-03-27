@@ -355,6 +355,50 @@ pool_master_data_sync_reconcile_window_latency_seconds = Histogram(
 )
 
 # =============================================================================
+# Pool Factual Rollout Telemetry
+# =============================================================================
+
+pool_factual_read_freshness_lag_seconds = Gauge(
+    "cc1c_orchestrator_pool_factual_read_freshness_lag_seconds",
+    "Current max freshness lag in seconds across factual read checkpoints",
+)
+
+pool_factual_read_backlog_total = Gauge(
+    "cc1c_orchestrator_pool_factual_read_backlog_total",
+    "Current overdue or stale factual read checkpoints",
+)
+
+pool_factual_read_source_state_total = Gauge(
+    "cc1c_orchestrator_pool_factual_read_source_state_total",
+    "Current factual read checkpoints grouped by source availability state",
+    ["source_state"],
+)
+
+pool_factual_review_pending_total = Gauge(
+    "cc1c_orchestrator_pool_factual_review_pending_total",
+    "Current pending factual review items grouped by reason",
+    ["reason"],
+)
+
+pool_factual_review_pending_amount_with_vat = Gauge(
+    "cc1c_orchestrator_pool_factual_review_pending_amount_with_vat",
+    "Current pending factual review amount with VAT grouped by reason",
+    ["reason"],
+)
+
+pool_factual_review_attention_required_total = Gauge(
+    "cc1c_orchestrator_pool_factual_review_attention_required_total",
+    "Current factual review items requiring operator attention grouped by reason",
+    ["reason"],
+)
+
+pool_factual_actionable_alert_state = Gauge(
+    "cc1c_orchestrator_pool_factual_actionable_alert_state",
+    "Current actionable factual rollout alerts grouped by alert code and severity",
+    ["alert_code", "severity"],
+)
+
+# =============================================================================
 # Event Subscriber (Redis Streams) Metrics
 # =============================================================================
 
@@ -880,6 +924,67 @@ def record_pool_master_data_sync_reconcile_window_metrics(
         pool_master_data_sync_reconcile_window_deadline_miss_total.inc()
     if normalized_outcome == "partial":
         pool_master_data_sync_reconcile_window_partial_total.inc()
+
+
+def set_pool_factual_read_metrics(
+    *,
+    freshness_lag_seconds: float,
+    backlog_total: int,
+    source_state_totals: dict[str, int],
+) -> None:
+    """Set factual read freshness/backlog gauges for rollout telemetry."""
+    pool_factual_read_freshness_lag_seconds.set(max(0.0, float(freshness_lag_seconds or 0.0)))
+    pool_factual_read_backlog_total.set(max(0, int(backlog_total or 0)))
+    pool_factual_read_source_state_total.clear()
+    for raw_state, raw_total in dict(source_state_totals or {}).items():
+        source_state = str(raw_state or "unknown").strip().lower() or "unknown"
+        total = max(0, int(raw_total or 0))
+        pool_factual_read_source_state_total.labels(source_state=source_state).set(total)
+
+
+def set_pool_factual_review_metrics(
+    *,
+    pending_totals: dict[str, int],
+    pending_amounts_with_vat: dict[str, float],
+    attention_required_totals: dict[str, int],
+) -> None:
+    """Set factual review queue gauges for rollout telemetry."""
+    pool_factual_review_pending_total.clear()
+    pool_factual_review_pending_amount_with_vat.clear()
+    pool_factual_review_attention_required_total.clear()
+
+    reasons = sorted(
+        {
+            *(str(reason or "").strip().lower() for reason in dict(pending_totals or {}).keys()),
+            *(str(reason or "").strip().lower() for reason in dict(pending_amounts_with_vat or {}).keys()),
+            *(str(reason or "").strip().lower() for reason in dict(attention_required_totals or {}).keys()),
+        }
+    )
+    for reason in reasons:
+        normalized_reason = reason or "unknown"
+        pool_factual_review_pending_total.labels(reason=normalized_reason).set(
+            max(0, int(dict(pending_totals or {}).get(reason, 0) or 0))
+        )
+        pool_factual_review_pending_amount_with_vat.labels(reason=normalized_reason).set(
+            max(0.0, float(dict(pending_amounts_with_vat or {}).get(reason, 0.0) or 0.0))
+        )
+        pool_factual_review_attention_required_total.labels(reason=normalized_reason).set(
+            max(0, int(dict(attention_required_totals or {}).get(reason, 0) or 0))
+        )
+
+
+def set_pool_factual_actionable_alerts(*, alerts: list[dict[str, object]]) -> None:
+    """Set current actionable factual rollout alerts as 0/1 gauges."""
+    pool_factual_actionable_alert_state.clear()
+    for alert in list(alerts or []):
+        if not isinstance(alert, dict):
+            continue
+        alert_code = str(alert.get("code") or "unknown").strip().lower() or "unknown"
+        severity = str(alert.get("severity") or "warning").strip().lower() or "warning"
+        pool_factual_actionable_alert_state.labels(
+            alert_code=alert_code,
+            severity=severity,
+        ).set(1)
 
 
 def record_api_v2_duration(endpoint: str, status: str, duration: float) -> None:

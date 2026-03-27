@@ -1,5 +1,6 @@
 export const POOL_EXECUTION_PACKS_ROUTE = '/pools/execution-packs'
 export const POOL_CATALOG_ROUTE = '/pools/catalog'
+export const POOL_FACTUAL_ROUTE = '/pools/factual'
 export const POOL_RUNS_ROUTE = '/pools/runs'
 export const POOL_TOPOLOGY_TEMPLATES_ROUTE = '/pools/topology-templates'
 
@@ -17,6 +18,21 @@ type PoolTopologyTemplatesRouteParams = {
   returnPoolId?: string | null
   returnTab?: string | null
   returnDate?: string | null
+}
+
+type PoolRunsRouteParams = {
+  poolId?: string | null
+  runId?: string | null
+  stage?: 'create' | 'inspect' | 'safe' | 'retry' | null
+  date?: string | null
+  detail?: boolean
+}
+
+type PoolFactualRouteParams = {
+  poolId?: string | null
+  runId?: string | null
+  focus?: 'summary' | 'settlement' | 'drilldown' | 'review' | null
+  detail?: boolean
 }
 
 const appendRouteParam = (params: URLSearchParams, key: string, value?: string | null) => {
@@ -60,4 +76,40 @@ export const buildPoolTopologyTemplatesRoute = ({
   appendRouteParam(params, 'return_date', returnDate)
   const query = params.toString()
   return query ? `${POOL_TOPOLOGY_TEMPLATES_ROUTE}?${query}` : POOL_TOPOLOGY_TEMPLATES_ROUTE
+}
+
+export const buildPoolRunsRoute = ({
+  poolId,
+  runId,
+  stage,
+  date,
+  detail = false,
+}: PoolRunsRouteParams = {}) => {
+  const params = new URLSearchParams()
+  appendRouteParam(params, 'pool', poolId)
+  appendRouteParam(params, 'run', runId)
+  appendRouteParam(params, 'stage', stage)
+  appendRouteParam(params, 'date', date)
+  if (detail) {
+    params.set('detail', '1')
+  }
+  const query = params.toString()
+  return query ? `${POOL_RUNS_ROUTE}?${query}` : POOL_RUNS_ROUTE
+}
+
+export const buildPoolFactualRoute = ({
+  poolId,
+  runId,
+  focus,
+  detail = false,
+}: PoolFactualRouteParams = {}) => {
+  const params = new URLSearchParams()
+  appendRouteParam(params, 'pool', poolId)
+  appendRouteParam(params, 'run', runId)
+  appendRouteParam(params, 'focus', focus)
+  if (detail) {
+    params.set('detail', '1')
+  }
+  const query = params.toString()
+  return query ? `${POOL_FACTUAL_ROUTE}?${query}` : POOL_FACTUAL_ROUTE
 }

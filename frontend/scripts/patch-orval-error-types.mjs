@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 
 const targetPath = resolve(process.cwd(), 'src/api/generated/v2/v2.ts')
 const retryRequestPath = resolve(process.cwd(), 'src/api/generated/model/poolRunRetryRequest.ts')
+const poolRunInputTopDownPath = resolve(process.cwd(), 'src/api/generated/model/poolRunInputTopDown.ts')
 const poolRunPath = resolve(process.cwd(), 'src/api/generated/model/poolRun.ts')
 const topologySnapshotUpsertRequestPath = resolve(
   process.cwd(),
@@ -126,6 +127,21 @@ retryRequestContent = retryRequestContent.replace(
   '  documents_by_database?: PoolRunRetryRequestDocumentsByDatabase;\n'
 )
 writeFileSync(retryRequestPath, retryRequestContent, 'utf8')
+
+writeFileSync(
+  poolRunInputTopDownPath,
+  `${generatedHeader}/**
+ * top_down run input supports either manual starting amount or batch-backed kickoff.
+ */
+export type PoolRunInputTopDown = {
+  starting_amount: string;
+} | {
+  batch_id: string;
+  start_organization_id: string;
+};
+`,
+  'utf8'
+)
 
 writeFileSync(
   topologyTemplateSlotAssignmentPath,

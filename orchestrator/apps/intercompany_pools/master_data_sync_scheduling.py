@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone as dt_timezone
-import re
-from typing import Any
 
 from django.utils import timezone
 
 from .models import PoolMasterDataSyncDirection, PoolMasterDataSyncJob, PoolMasterDataSyncPolicy
+from .scheduling_primitives import (
+    SERVER_AFFINITY_UNRESOLVED,
+    SchedulingAffinityResolution,
+    resolve_database_server_affinity,
+)
 
 
 @dataclass(frozen=True)
@@ -18,13 +21,7 @@ class MasterDataSyncSchedulingProfile:
     deadline_seconds: int
 
 
-SERVER_AFFINITY_UNRESOLVED = "SERVER_AFFINITY_UNRESOLVED"
-
-
-@dataclass(frozen=True)
-class MasterDataSyncAffinityResolution:
-    server_affinity: str
-    source: str
+MasterDataSyncAffinityResolution = SchedulingAffinityResolution
 
 
 _PROFILE_MATRIX: dict[tuple[str, str], MasterDataSyncSchedulingProfile] = {
@@ -95,85 +92,19 @@ def _format_rfc3339_utc(value: datetime) -> str:
     return value.astimezone(dt_timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def _normalize_affinity_token(value: Any) -> str:
-    token = str(value or "").strip().lower()
-    if not token:
-        return ""
-    if "://" in token:
-        token = token.split("://", 1)[1]
-    token = token.strip().strip("/")
-    token = re.sub(r"[^a-z0-9._:-]+", "-", token)
-    token = token.strip("-")
-    return token
-
-
-def _resolve_affinity_override(metadata: Any) -> str:
-    if not isinstance(metadata, dict):
-        return ""
-
-    nested = metadata.get("pool_master_data_sync")
-    if isinstance(nested, dict):
-        value = _normalize_affinity_token(nested.get("server_affinity"))
-        if value:
-            return value
-
-    for key in (
-        "pool_master_data_sync_server_affinity",
-        "sync_server_affinity",
-        "server_affinity",
-    ):
-        value = _normalize_affinity_token(metadata.get(key))
-        if value:
-            return value
-    return ""
-
-
-def _resolve_database_endpoint(sync_job: PoolMasterDataSyncJob) -> str:
-    database = sync_job.database
-    cluster = getattr(database, "cluster", None)
-    if cluster is not None:
-        ras_server = _normalize_affinity_token(getattr(cluster, "ras_server", ""))
-        if ras_server:
-            return ras_server
-        ras_host = _normalize_affinity_token(getattr(cluster, "ras_host", ""))
-        ras_port = int(getattr(cluster, "ras_port", 0) or 0)
-        if ras_host:
-            return f"{ras_host}:{ras_port}" if ras_port > 0 else ras_host
-
-    server_address = _normalize_affinity_token(getattr(database, "server_address", ""))
-    server_port = int(getattr(database, "server_port", 0) or 0)
-    if server_address:
-        return f"{server_address}:{server_port}" if server_port > 0 else server_address
-
-    host = _normalize_affinity_token(getattr(database, "host", ""))
-    port = int(getattr(database, "port", 0) or 0)
-    if host:
-        return f"{host}:{port}" if port > 0 else host
-    return ""
-
-
 def resolve_master_data_sync_server_affinity(
     *,
     sync_job: PoolMasterDataSyncJob,
 ) -> MasterDataSyncAffinityResolution:
-    database = sync_job.database
-    cluster = getattr(database, "cluster", None)
-
-    database_override = _resolve_affinity_override(getattr(database, "metadata", None))
-    if database_override:
-        return MasterDataSyncAffinityResolution(server_affinity=database_override, source="database_override")
-
-    cluster_override = _resolve_affinity_override(getattr(cluster, "metadata", None))
-    if cluster_override:
-        return MasterDataSyncAffinityResolution(server_affinity=cluster_override, source="cluster_mapping")
-
-    endpoint = _resolve_database_endpoint(sync_job)
-    if endpoint:
-        return MasterDataSyncAffinityResolution(server_affinity=f"srv:{endpoint}", source="derived_endpoint")
-
-    raise ValueError(
-        f"{SERVER_AFFINITY_UNRESOLVED}: unable to resolve server affinity for sync_job '{sync_job.id}'"
-    )
+    try:
+        return resolve_database_server_affinity(
+            database=sync_job.database,
+            metadata_namespace="pool_master_data_sync",
+        )
+    except ValueError as exc:
+        raise ValueError(
+            f"{SERVER_AFFINITY_UNRESOLVED}: unable to resolve server affinity for sync_job '{sync_job.id}'"
+        ) from exc
 
 
 def resolve_master_data_sync_scheduling_profile(

@@ -86,7 +86,7 @@ import {
   RouteButton,
   WorkspacePage,
 } from '../../components/platform'
-import { POOL_RUNS_ROUTE } from './routes'
+import { buildPoolFactualRoute, POOL_RUNS_ROUTE } from './routes'
 
 const { Text } = Typography
 const { TextArea } = Input
@@ -98,7 +98,10 @@ type CreateRunFormValues = {
   direction: 'top_down' | 'bottom_up'
   mode: 'safe' | 'unsafe'
   pool_workflow_binding_id?: string
+  top_down_input_mode?: 'manual' | 'batch_backed'
   starting_amount?: number
+  batch_id?: string
+  start_organization_id?: string
   schema_template_id?: string
   source_payload_json?: string
   source_artifact_id?: string
@@ -146,7 +149,10 @@ const CREATE_RUN_FORM_INITIAL_VALUES: CreateRunFormValues = {
   direction: 'top_down',
   mode: 'safe',
   pool_workflow_binding_id: undefined,
+  top_down_input_mode: 'manual',
   starting_amount: 100,
+  batch_id: '',
+  start_organization_id: undefined,
   schema_template_id: undefined,
   source_payload_json: DEFAULT_BOTTOM_UP_SOURCE_PAYLOAD_JSON,
   source_artifact_id: '',
@@ -438,33 +444,64 @@ const buildCreateRunPayload = ({
   poolId: string
   values: CreateRunFormValues
 }): CreatePoolRunPayload => {
-  const runInput: Record<string, unknown> = {}
   const workflowBindingId = values.pool_workflow_binding_id?.trim() || ''
-  let schemaTemplateId: string | null | undefined = undefined
 
   if (!workflowBindingId) {
     throw new Error('Выберите workflow binding для запуска run.')
   }
 
   if (values.direction === 'top_down') {
+    if (values.top_down_input_mode === 'batch_backed') {
+      const batchId = values.batch_id?.trim() || ''
+      const startOrganizationId = values.start_organization_id?.trim() || ''
+      if (!batchId) {
+        throw new Error('top_down: укажите canonical receipt batch ID.')
+      }
+      if (!startOrganizationId) {
+        throw new Error('top_down: выберите start organization из активной topology.')
+      }
+      return {
+        pool_id: poolId,
+        pool_workflow_binding_id: workflowBindingId,
+        direction: values.direction,
+        period_start: values.period_start,
+        period_end: values.period_end?.trim() || null,
+        run_input: {
+          batch_id: batchId,
+          start_organization_id: startOrganizationId,
+        },
+        mode: values.mode,
+      }
+    }
+
     const startingAmount = Number(values.starting_amount)
     if (!Number.isFinite(startingAmount) || startingAmount <= 0) {
       throw new Error('top_down: starting amount должен быть положительным числом.')
     }
-    runInput.starting_amount = startingAmount.toFixed(2)
-  } else {
-    const artifactId = values.source_artifact_id?.trim()
-    const sourcePayloadRaw = values.source_payload_json?.trim() || ''
-    if (sourcePayloadRaw.length > 0) {
-      runInput.source_payload = parseBottomUpSourcePayload(sourcePayloadRaw)
+    return {
+      pool_id: poolId,
+      pool_workflow_binding_id: workflowBindingId,
+      direction: values.direction,
+      period_start: values.period_start,
+      period_end: values.period_end?.trim() || null,
+      run_input: {
+        starting_amount: startingAmount.toFixed(2),
+      },
+      mode: values.mode,
     }
-    if (artifactId) {
-      runInput.source_artifact_id = artifactId
-    }
-    if (!Object.prototype.hasOwnProperty.call(runInput, 'source_payload') && !artifactId) {
-      throw new Error('bottom_up: укажите source payload JSON или source artifact ID.')
-    }
-    schemaTemplateId = values.schema_template_id?.trim() || null
+  }
+
+  const runInput: Extract<CreatePoolRunPayload, { direction: 'bottom_up' }>['run_input'] = {}
+  const artifactId = values.source_artifact_id?.trim()
+  const sourcePayloadRaw = values.source_payload_json?.trim() || ''
+  if (sourcePayloadRaw.length > 0) {
+    runInput.source_payload = parseBottomUpSourcePayload(sourcePayloadRaw)
+  }
+  if (artifactId) {
+    runInput.source_artifact_id = artifactId
+  }
+  if (!Object.prototype.hasOwnProperty.call(runInput, 'source_payload') && !artifactId) {
+    throw new Error('bottom_up: укажите source payload JSON или source artifact ID.')
   }
 
   return {
@@ -475,8 +512,49 @@ const buildCreateRunPayload = ({
     period_end: values.period_end?.trim() || null,
     run_input: runInput,
     mode: values.mode,
-    schema_template_id: schemaTemplateId,
+    schema_template_id: values.schema_template_id?.trim() || null,
   }
+}
+
+const resolveCreateRunFieldErrors = ({
+  direction,
+  detail,
+}: {
+  direction: CreateRunFormValues['direction']
+  detail: string
+}): Array<{ name: keyof CreateRunFormValues; errors: string[] }> => {
+  const normalizedDetail = detail.toLowerCase()
+  const fieldErrors: Array<{ name: keyof CreateRunFormValues; errors: string[] }> = []
+
+  if (direction === 'top_down') {
+    if (normalizedDetail.includes('starting_amount')) {
+      fieldErrors.push({ name: 'starting_amount', errors: [detail] })
+    }
+    if (normalizedDetail.includes('batch_id')) {
+      fieldErrors.push({ name: 'batch_id', errors: [detail] })
+    }
+    if (normalizedDetail.includes('start_organization_id')) {
+      fieldErrors.push({ name: 'start_organization_id', errors: [detail] })
+    }
+  }
+  if (
+    direction === 'bottom_up'
+    && (
+      normalizedDetail.includes('source_payload')
+      || normalizedDetail.includes('source_artifact_id')
+      || normalizedDetail.includes('bottom_up run_input')
+    )
+  ) {
+    fieldErrors.push({ name: 'source_payload_json', errors: [detail] })
+    fieldErrors.push({ name: 'source_artifact_id', errors: [detail] })
+  }
+  if (normalizedDetail.includes('schema_template')) {
+    fieldErrors.push({ name: 'schema_template_id', errors: [detail] })
+  }
+  if (normalizedDetail.includes('pool_workflow_binding')) {
+    fieldErrors.push({ name: 'pool_workflow_binding_id', errors: [detail] })
+  }
+  return fieldErrors
 }
 
 type ProblemDetailsPayload = {
@@ -1381,7 +1459,10 @@ export function PoolRunsPage() {
   const createMode = Form.useWatch('mode', createForm) ?? 'safe'
   const createPeriodStart = Form.useWatch('period_start', createForm) ?? new Date().toISOString().slice(0, 10)
   const createBindingId = Form.useWatch('pool_workflow_binding_id', createForm)
+  const createTopDownInputMode = Form.useWatch('top_down_input_mode', createForm) ?? 'manual'
   const createStartingAmount = Form.useWatch('starting_amount', createForm)
+  const createBatchId = Form.useWatch('batch_id', createForm)
+  const createStartOrganizationId = Form.useWatch('start_organization_id', createForm)
   const createSchemaTemplateId = Form.useWatch('schema_template_id', createForm)
   const createSourcePayloadJson = Form.useWatch('source_payload_json', createForm)
   const createSourceArtifactId = Form.useWatch('source_artifact_id', createForm)
@@ -1413,6 +1494,18 @@ export function PoolRunsPage() {
     () => resolvePoolWorkflowBindingWorkflow(selectedCreateBinding),
     [selectedCreateBinding]
   )
+  const activeTopologyOrganizations = useMemo(() => {
+    const deduped = new Map<string, { value: string; label: string }>()
+    for (const node of graph?.nodes ?? []) {
+      if (!deduped.has(node.organization_id)) {
+        deduped.set(node.organization_id, {
+          value: node.organization_id,
+          label: node.name,
+        })
+      }
+    }
+    return Array.from(deduped.values())
+  }, [graph])
   const selectedCreateBindingLifecycleWarning = useMemo(
     () => resolvePoolWorkflowBindingLifecycleWarning(selectedCreateBinding),
     [selectedCreateBinding]
@@ -1739,6 +1832,9 @@ export function PoolRunsPage() {
     createDirection,
     createMode,
     createPeriodStart,
+    createTopDownInputMode,
+    createBatchId,
+    createStartOrganizationId,
     createSchemaTemplateId,
     createSourceArtifactId,
     createSourcePayloadJson,
@@ -1775,29 +1871,10 @@ export function PoolRunsPage() {
       const problem = parseProblemDetails(err)
       if (problem) {
         if (problem.code === 'VALIDATION_ERROR' && problem.detail) {
-          const normalizedDetail = problem.detail.toLowerCase()
-          const fieldErrors: Array<{ name: keyof CreateRunFormValues; errors: string[] }> = []
-
-          if (direction === 'top_down' && normalizedDetail.includes('starting_amount')) {
-            fieldErrors.push({ name: 'starting_amount', errors: [problem.detail] })
-          }
-          if (
-            direction === 'bottom_up'
-            && (
-              normalizedDetail.includes('source_payload')
-              || normalizedDetail.includes('source_artifact_id')
-              || normalizedDetail.includes('bottom_up run_input')
-            )
-          ) {
-            fieldErrors.push({ name: 'source_payload_json', errors: [problem.detail] })
-            fieldErrors.push({ name: 'source_artifact_id', errors: [problem.detail] })
-          }
-          if (normalizedDetail.includes('schema_template')) {
-            fieldErrors.push({ name: 'schema_template_id', errors: [problem.detail] })
-          }
-          if (normalizedDetail.includes('pool_workflow_binding')) {
-            fieldErrors.push({ name: 'pool_workflow_binding_id', errors: [problem.detail] })
-          }
+          const fieldErrors = resolveCreateRunFieldErrors({
+            direction,
+            detail: problem.detail,
+          })
 
           if (fieldErrors.length > 0) {
             createForm.setFields(fieldErrors)
@@ -1862,29 +1939,10 @@ export function PoolRunsPage() {
       const problem = parseProblemDetails(err)
       if (problem) {
         if (problem.code === 'VALIDATION_ERROR' && problem.detail) {
-          const normalizedDetail = problem.detail.toLowerCase()
-          const fieldErrors: Array<{ name: keyof CreateRunFormValues; errors: string[] }> = []
-
-          if (direction === 'top_down' && normalizedDetail.includes('starting_amount')) {
-            fieldErrors.push({ name: 'starting_amount', errors: [problem.detail] })
-          }
-          if (
-            direction === 'bottom_up'
-            && (
-              normalizedDetail.includes('source_payload')
-              || normalizedDetail.includes('source_artifact_id')
-              || normalizedDetail.includes('bottom_up run_input')
-            )
-          ) {
-            fieldErrors.push({ name: 'source_payload_json', errors: [problem.detail] })
-            fieldErrors.push({ name: 'source_artifact_id', errors: [problem.detail] })
-          }
-          if (normalizedDetail.includes('schema_template')) {
-            fieldErrors.push({ name: 'schema_template_id', errors: [problem.detail] })
-          }
-          if (normalizedDetail.includes('pool_workflow_binding')) {
-            fieldErrors.push({ name: 'pool_workflow_binding_id', errors: [problem.detail] })
-          }
+          const fieldErrors = resolveCreateRunFieldErrors({
+            direction,
+            detail: problem.detail,
+          })
 
           if (fieldErrors.length > 0) {
             createForm.setFields(fieldErrors)
@@ -2401,6 +2459,12 @@ export function PoolRunsPage() {
   const readinessChecklist = runDetails?.readiness_checklist ?? buildLegacyReadinessChecklist(readinessBlockers)
   const verificationStatus = runDetails?.verification_status ?? 'not_verified'
   const verificationSummary = runDetails?.verification_summary ?? null
+  const factualWorkspaceHref = buildPoolFactualRoute({
+    poolId: selectedPoolId,
+    runId: selectedRunId,
+    focus: 'settlement',
+    detail: true,
+  })
 
   const isSafeRun = runDetails?.mode === 'safe'
   const isPublishedOrPartial = runDetails?.status === 'published' || runDetails?.status === 'partial_success'
@@ -2572,21 +2636,15 @@ export function PoolRunsPage() {
                     </Col>
                     <Col span={6}>
                       {createDirection === 'top_down' ? (
-                        <Form.Item
-                          name="starting_amount"
-                          label="Starting amount"
-                          rules={[
-                            { required: true, message: 'starting_amount required' },
-                            {
-                              validator: async (_rule, value) => {
-                                if (value == null || Number(value) <= 0) {
-                                  throw new Error('starting_amount must be > 0')
-                                }
-                              },
-                            },
-                          ]}
-                        >
-                          <InputNumber data-testid="pool-runs-create-starting-amount" min={0.01} step={0.01} style={{ width: '100%' }} />
+                        <Form.Item name="top_down_input_mode" label="Top-down source" rules={[{ required: true }]}>
+                          <Radio.Group
+                            data-testid="pool-runs-create-top-down-input-mode"
+                            optionType="button"
+                            buttonStyle="solid"
+                          >
+                            <Radio.Button value="manual">manual amount</Radio.Button>
+                            <Radio.Button value="batch_backed">receipt batch</Radio.Button>
+                          </Radio.Group>
                         </Form.Item>
                       ) : (
                         <Form.Item name="schema_template_id" label="Schema template">
@@ -2604,6 +2662,73 @@ export function PoolRunsPage() {
                       )}
                     </Col>
                   </Row>
+                  {createDirection === 'top_down' ? (
+                    <Row gutter={12}>
+                      {createTopDownInputMode === 'batch_backed' ? (
+                        <>
+                          <Col span={8}>
+                            <Form.Item
+                              name="batch_id"
+                              label="Receipt batch ID"
+                              rules={[
+                                { required: true, message: 'batch_id required' },
+                                {
+                                  validator: async (_rule, value) => {
+                                    const normalized = String(value || '').trim()
+                                    if (!normalized) {
+                                      throw new Error('batch_id required')
+                                    }
+                                  },
+                                },
+                              ]}
+                            >
+                              <Input
+                                data-testid="pool-runs-create-batch-id"
+                                placeholder="Canonical receipt batch UUID"
+                              />
+                            </Form.Item>
+                          </Col>
+                          <Col span={8}>
+                            <Form.Item
+                              name="start_organization_id"
+                              label="Start organization"
+                              rules={[{ required: true, message: 'start_organization_id required' }]}
+                              extra={
+                                activeTopologyOrganizations.length === 0
+                                  ? 'Сначала загрузите активную topology для выбранного периода.'
+                                  : 'Выберите организацию из активной topology пула на period_start.'
+                              }
+                            >
+                              <Select
+                                data-testid="pool-runs-create-start-organization"
+                                placeholder="Select start organization"
+                                options={activeTopologyOrganizations}
+                              />
+                            </Form.Item>
+                          </Col>
+                        </>
+                      ) : (
+                        <Col span={8}>
+                          <Form.Item
+                            name="starting_amount"
+                            label="Starting amount"
+                            rules={[
+                              { required: true, message: 'starting_amount required' },
+                              {
+                                validator: async (_rule, value) => {
+                                  if (value == null || Number(value) <= 0) {
+                                    throw new Error('starting_amount must be > 0')
+                                  }
+                                },
+                              },
+                            ]}
+                          >
+                            <InputNumber data-testid="pool-runs-create-starting-amount" min={0.01} step={0.01} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                      )}
+                    </Row>
+                  ) : null}
 
                   <Row gutter={12}>
                     <Col span={12}>
@@ -2960,6 +3085,18 @@ export function PoolRunsPage() {
                         showIcon
                         message="Run Lineage is the primary operator context"
                         description="Pool, selected binding, pinned workflow revision and compiled runtime projection stay on this screen. Generic workflow execution remains a secondary diagnostics surface."
+                      />
+
+                      <Alert
+                        type="success"
+                        showIcon
+                        message="Factual monitoring lives in a separate workspace"
+                        description="Keep create-run, safe actions, retry, lineage, and execution diagnostics on this screen. Use the factual workspace for settlement, factual balance monitoring, and manual review."
+                        action={(
+                          <RouteButton type="primary" size="small" to={factualWorkspaceHref} disabled={!selectedPoolId}>
+                            Open factual workspace
+                          </RouteButton>
+                        )}
                       />
 
                       <Card size="small" title="Run Lineage">

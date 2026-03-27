@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from datetime import date, datetime, timezone as dt_timezone
+from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
@@ -43,6 +44,9 @@ from apps.intercompany_pools.models import (
     Organization,
     OrganizationStatus,
     OrganizationPool,
+    PoolBatch,
+    PoolBatchKind,
+    PoolBatchSourceType,
     PoolWorkflowBinding,
     PoolMasterParty,
     PoolEdgeVersion,
@@ -198,6 +202,52 @@ def _attach_workflow_execution_to_run(
         run.workflow_template_name = template.name
         run.save(update_fields=update_fields)
     return execution
+
+
+def _create_batch_backed_top_down_scope(
+    *,
+    tenant: Tenant,
+    pool: OrganizationPool,
+) -> tuple[Organization, Organization, PoolBatch]:
+    start_organization = Organization.objects.create(
+        tenant=tenant,
+        name=f"Batch Start {uuid4().hex[:8]}",
+        inn=f"73{uuid4().int % 10**10:010d}",
+    )
+    leaf_organization = Organization.objects.create(
+        tenant=tenant,
+        name=f"Batch Leaf {uuid4().hex[:8]}",
+        inn=f"74{uuid4().int % 10**10:010d}",
+    )
+    start_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=start_organization,
+        effective_from=date(2026, 1, 1),
+        is_root=True,
+    )
+    leaf_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=leaf_organization,
+        effective_from=date(2026, 1, 1),
+        is_root=False,
+    )
+    PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=start_node,
+        child_node=leaf_node,
+        effective_from=date(2026, 1, 1),
+        metadata={},
+    )
+    batch = PoolBatch.objects.create(
+        tenant=tenant,
+        pool=pool,
+        batch_kind=PoolBatchKind.RECEIPT,
+        source_type=PoolBatchSourceType.MANUAL,
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 1, 31),
+        source_reference=f"receipt-{uuid4().hex[:8]}",
+    )
+    return start_organization, leaf_organization, batch
 
 
 def _create_database(
@@ -4232,6 +4282,64 @@ def test_preview_pool_workflow_binding_returns_not_found_for_unknown_attachment_
 
 
 @pytest.mark.django_db
+def test_preview_pool_workflow_binding_accepts_batch_backed_top_down_input(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+    )
+    binding = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )[0][0]
+    start_organization, _, batch = _create_batch_backed_top_down_scope(
+        tenant=pool.tenant,
+        pool=pool,
+    )
+
+    with patch(
+        "apps.api_v2.views.intercompany_pools.build_pool_workflow_binding_preview",
+        return_value={
+            "workflow_binding": binding,
+            "compiled_document_policy_slots": {},
+            "slot_coverage_summary": {"counts": {}, "items": []},
+            "runtime_projection": {},
+        },
+    ) as preview_mock:
+        response = authenticated_client.post(
+            "/api/v2/pools/workflow-bindings/preview/",
+            {
+                "pool_id": str(pool.id),
+                "pool_workflow_binding_id": binding["binding_id"],
+                "direction": PoolRunDirection.TOP_DOWN,
+                "period_start": "2026-01-01",
+                "period_end": "2026-01-31",
+                "run_input": {
+                    "batch_id": str(batch.id),
+                    "start_organization_id": str(start_organization.id),
+                },
+                "mode": PoolRunMode.SAFE,
+            },
+            format="json",
+        )
+
+    assert response.status_code == 200
+    assert preview_mock.call_args.kwargs["run_input"] == {
+        "batch_id": str(batch.id),
+        "start_organization_id": str(start_organization.id),
+    }
+
+
+@pytest.mark.django_db
 def test_create_pool_run_does_not_fallback_to_legacy_metadata_workflow_bindings(
     authenticated_client: APIClient,
     pool: OrganizationPool,
@@ -4478,6 +4586,165 @@ def test_create_pool_run_rejects_top_down_without_starting_amount(
     )
     payload = _assert_problem_details_response(response, status_code=400, code="VALIDATION_ERROR")
     assert "run_input" in payload["detail"]
+
+
+@pytest.mark.django_db
+def test_create_pool_run_accepts_batch_backed_top_down_and_links_batch(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+    )
+    binding = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )[0][0]
+    start_organization, _, batch = _create_batch_backed_top_down_scope(
+        tenant=pool.tenant,
+        pool=pool,
+    )
+
+    with patch(
+        "apps.api_v2.views.intercompany_pools.start_pool_run_workflow_execution",
+        side_effect=lambda *args, **kwargs: SimpleNamespace(run=kwargs["run"]),
+    ):
+        response = authenticated_client.post(
+            "/api/v2/pools/runs/",
+            {
+                "pool_id": str(pool.id),
+                "pool_workflow_binding_id": binding["binding_id"],
+                "direction": PoolRunDirection.TOP_DOWN,
+                "period_start": "2026-01-01",
+                "period_end": "2026-01-31",
+                "run_input": {
+                    "batch_id": str(batch.id),
+                    "start_organization_id": str(start_organization.id),
+                },
+                "mode": PoolRunMode.SAFE,
+            },
+            format="json",
+        )
+
+    assert response.status_code == 201
+    run = PoolRun.objects.get(id=response.json()["run"]["id"])
+    batch.refresh_from_db()
+
+    assert run.direction == PoolRunDirection.TOP_DOWN
+    assert run.run_input == {
+        "batch_id": str(batch.id),
+        "start_organization_id": str(start_organization.id),
+    }
+    assert batch.run_id == run.id
+    assert batch.start_organization_id == start_organization.id
+
+
+@pytest.mark.django_db
+def test_create_pool_run_rejects_mixed_top_down_manual_and_batch_modes(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+    )
+    binding = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )[0][0]
+    start_organization, _, batch = _create_batch_backed_top_down_scope(
+        tenant=pool.tenant,
+        pool=pool,
+    )
+
+    response = authenticated_client.post(
+        "/api/v2/pools/runs/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": binding["binding_id"],
+            "direction": PoolRunDirection.TOP_DOWN,
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "run_input": {
+                "starting_amount": "100.00",
+                "batch_id": str(batch.id),
+                "start_organization_id": str(start_organization.id),
+            },
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(response, status_code=400, code="VALIDATION_ERROR")
+    assert "starting_amount" in payload["detail"]
+    assert "batch_id" in payload["detail"]
+    assert "start_organization_id" in payload["detail"]
+
+
+@pytest.mark.django_db
+def test_create_pool_run_rejects_batch_backed_top_down_start_organization_outside_active_topology(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+    )
+    binding = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )[0][0]
+    _, _, batch = _create_batch_backed_top_down_scope(
+        tenant=pool.tenant,
+        pool=pool,
+    )
+    outsider = Organization.objects.create(
+        tenant=pool.tenant,
+        name=f"Outside Topology {uuid4().hex[:8]}",
+        inn=f"75{uuid4().int % 10**10:010d}",
+    )
+
+    response = authenticated_client.post(
+        "/api/v2/pools/runs/",
+        {
+            "pool_id": str(pool.id),
+            "pool_workflow_binding_id": binding["binding_id"],
+            "direction": PoolRunDirection.TOP_DOWN,
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "run_input": {
+                "batch_id": str(batch.id),
+                "start_organization_id": str(outsider.id),
+            },
+            "mode": PoolRunMode.SAFE,
+        },
+        format="json",
+    )
+
+    payload = _assert_problem_details_response(response, status_code=400, code="VALIDATION_ERROR")
+    assert "start_organization_id" in payload["detail"]
 
 
 @pytest.mark.django_db

@@ -1,10 +1,15 @@
+import hashlib
 from datetime import date
 
 import pytest
 from django_fsm import TransitionNotAllowed
 
 from apps.intercompany_pools.models import (
+    Organization,
     OrganizationPool,
+    PoolBatch,
+    PoolBatchKind,
+    PoolBatchSourceType,
     PoolRun,
     PoolRunAuditEvent,
     PoolRunDirection,
@@ -24,6 +29,37 @@ def run_fixture() -> PoolRun:
         direction=PoolRunDirection.BOTTOM_UP,
         period_start=date(2026, 1, 1),
     )
+
+
+def _build_numeric_inn(seed: str) -> str:
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    digits = "".join(str(int(char, 16) % 10) for char in digest)
+    return digits[:12]
+
+
+def _create_batch_backed_scope(*, slug: str) -> tuple[Tenant, OrganizationPool, Organization, Organization, PoolBatch]:
+    tenant = Tenant.objects.create(slug=slug, name=slug)
+    pool = OrganizationPool.objects.create(tenant=tenant, code=f"{slug}-pool", name=f"{slug} Pool")
+    start_organization = Organization.objects.create(
+        tenant=tenant,
+        name=f"{slug} Start",
+        inn=_build_numeric_inn(f"{slug}:start"),
+    )
+    alternate_organization = Organization.objects.create(
+        tenant=tenant,
+        name=f"{slug} Alternate",
+        inn=_build_numeric_inn(f"{slug}:alternate"),
+    )
+    batch = PoolBatch.objects.create(
+        tenant=tenant,
+        pool=pool,
+        batch_kind=PoolBatchKind.RECEIPT,
+        source_type=PoolBatchSourceType.MANUAL,
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 1, 31),
+        source_reference=f"{slug}-receipt",
+    )
+    return tenant, pool, start_organization, alternate_organization, batch
 
 
 @pytest.mark.django_db
@@ -208,6 +244,46 @@ def test_build_pool_run_idempotency_key_changes_with_profile_revision_pin() -> N
 
 
 @pytest.mark.django_db
+def test_build_pool_run_idempotency_key_for_batch_backed_top_down_uses_batch_and_start_organization() -> None:
+    tenant, pool, start_organization, alternate_organization, batch = _create_batch_backed_scope(
+        slug="pool-run-batch-idem"
+    )
+
+    base_kwargs = {
+        "pool_id": str(pool.id),
+        "period_start": batch.period_start,
+        "period_end": batch.period_end,
+        "direction": PoolRunDirection.TOP_DOWN,
+        "workflow_binding_id": "binding-a",
+        "workflow_binding_revision": 3,
+        "binding_profile_revision_id": "profile-revision-a",
+    }
+
+    first = build_pool_run_idempotency_key(
+        run_input={"starting_amount": "100.00", "unexpected": "ignored"},
+        batch_id=str(batch.id),
+        start_organization_id=str(start_organization.id),
+        **base_kwargs,
+    )
+    second = build_pool_run_idempotency_key(
+        run_input={"starting_amount": "999.00"},
+        batch_id=str(batch.id),
+        start_organization_id=str(start_organization.id),
+        **base_kwargs,
+    )
+    third = build_pool_run_idempotency_key(
+        run_input={"starting_amount": "100.00"},
+        batch_id=str(batch.id),
+        start_organization_id=str(alternate_organization.id),
+        **base_kwargs,
+    )
+
+    assert tenant.id
+    assert first == second
+    assert first != third
+
+
+@pytest.mark.django_db
 def test_upsert_pool_run_reuses_existing_run(run_fixture: PoolRun) -> None:
     run = run_fixture
     first = upsert_pool_run(
@@ -243,6 +319,91 @@ def test_upsert_pool_run_reuses_existing_run(run_fixture: PoolRun) -> None:
     )
     assert "run.created" in event_types
     assert "run.upserted" in event_types
+
+
+@pytest.mark.django_db
+def test_upsert_pool_run_reuses_batch_backed_run_and_links_batch() -> None:
+    tenant, pool, start_organization, _, batch = _create_batch_backed_scope(slug="pool-run-batch-upsert")
+
+    first = upsert_pool_run(
+        tenant=tenant,
+        pool=pool,
+        direction=PoolRunDirection.TOP_DOWN,
+        period_start=batch.period_start,
+        period_end=batch.period_end,
+        workflow_binding_id="binding-a",
+        workflow_binding_revision=3,
+        binding_profile_revision_id="profile-revision-a",
+        run_input={"batch_id": str(batch.id), "start_organization_id": str(start_organization.id)},
+        source_batch=batch,
+        start_organization=start_organization,
+        mode=PoolRunMode.SAFE,
+    )
+    second = upsert_pool_run(
+        tenant=tenant,
+        pool=pool,
+        direction=PoolRunDirection.TOP_DOWN,
+        period_start=batch.period_start,
+        period_end=batch.period_end,
+        workflow_binding_id="binding-a",
+        workflow_binding_revision=3,
+        binding_profile_revision_id="profile-revision-a",
+        run_input={
+            "batch_id": str(batch.id),
+            "start_organization_id": str(start_organization.id),
+            "unexpected": "ignored",
+        },
+        source_batch=batch,
+        start_organization=start_organization,
+        mode=PoolRunMode.UNSAFE,
+        validation_summary={"rows": 5},
+    )
+
+    assert first.created is True
+    assert second.created is False
+    assert first.run.id == second.run.id
+
+    batch.refresh_from_db()
+    assert batch.run_id == first.run.id
+    assert batch.start_organization_id == start_organization.id
+
+
+@pytest.mark.django_db
+def test_upsert_pool_run_rejects_second_run_for_same_receipt_batch() -> None:
+    tenant, pool, start_organization, _, batch = _create_batch_backed_scope(
+        slug="pool-run-batch-conflict"
+    )
+
+    upsert_pool_run(
+        tenant=tenant,
+        pool=pool,
+        direction=PoolRunDirection.TOP_DOWN,
+        period_start=batch.period_start,
+        period_end=batch.period_end,
+        workflow_binding_id="binding-a",
+        workflow_binding_revision=3,
+        binding_profile_revision_id="profile-revision-a",
+        run_input={"batch_id": str(batch.id), "start_organization_id": str(start_organization.id)},
+        source_batch=batch,
+        start_organization=start_organization,
+        mode=PoolRunMode.SAFE,
+    )
+
+    with pytest.raises(ValueError, match="Receipt batch already linked to another pool run."):
+        upsert_pool_run(
+            tenant=tenant,
+            pool=pool,
+            direction=PoolRunDirection.TOP_DOWN,
+            period_start=batch.period_start,
+            period_end=batch.period_end,
+            workflow_binding_id="binding-b",
+            workflow_binding_revision=4,
+            binding_profile_revision_id="profile-revision-b",
+            run_input={"batch_id": str(batch.id), "start_organization_id": str(start_organization.id)},
+            source_batch=batch,
+            start_organization=start_organization,
+            mode=PoolRunMode.SAFE,
+        )
 
 
 @pytest.mark.django_db

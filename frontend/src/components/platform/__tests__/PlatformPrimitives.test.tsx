@@ -9,6 +9,7 @@ import {
   DashboardPage,
   DrawerFormShell,
   EntityList,
+  MasterDetailShell,
   ModalFormShell,
   PageHeader,
   RouteButton,
@@ -139,6 +140,36 @@ describe('platform primitives', () => {
 
     expect(screen.getByRole('button', { name: 'Header action' })).toBeInTheDocument()
     expect(screen.getByText('Drawer body')).toBeInTheDocument()
+  })
+
+  it('degrades MasterDetailShell into list plus Drawer on narrow viewport', async () => {
+    const originalInnerWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 480,
+    })
+
+    try {
+      render(
+        <AntApp>
+          <MasterDetailShell
+            list={<div>Compact list</div>}
+            detail={<div>Review detail</div>}
+            detailOpen
+            detailDrawerTitle="Factual review detail"
+          />
+        </AntApp>,
+      )
+
+      expect(screen.getByText('Compact list')).toBeInTheDocument()
+      expect(await screen.findByText('Factual review detail')).toBeInTheDocument()
+      expect(screen.getByText('Review detail')).toBeInTheDocument()
+    } finally {
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        value: originalInnerWidth,
+      })
+    }
   })
 
   it('renders DashboardPage as the canonical dashboard shell', () => {

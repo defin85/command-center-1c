@@ -703,19 +703,43 @@ export type ListOrganizationsParams = {
   limit?: number
 }
 
-export type CreatePoolRunPayload = {
+type CreatePoolRunTopDownManualInput = {
+  starting_amount: string
+}
+
+type CreatePoolRunTopDownBatchInput = {
+  batch_id: string
+  start_organization_id: string
+}
+
+type CreatePoolRunBottomUpInput = {
+  source_payload?: Record<string, unknown> | Array<Record<string, unknown>>
+  source_artifact_id?: string
+}
+
+type CreatePoolRunPayloadBase = {
   pool_id: string
   pool_workflow_binding_id: string
-  direction: 'top_down' | 'bottom_up'
   period_start: string
   period_end?: string | null
-  run_input: Record<string, unknown>
   mode?: 'safe' | 'unsafe'
   schema_template_id?: string | null
   seed?: number | null
   validation_summary?: Record<string, unknown>
   diagnostics?: unknown[]
 }
+
+export type CreatePoolRunPayload = (
+  CreatePoolRunPayloadBase & {
+    direction: 'top_down'
+    run_input: CreatePoolRunTopDownManualInput | CreatePoolRunTopDownBatchInput
+  }
+) | (
+  CreatePoolRunPayloadBase & {
+    direction: 'bottom_up'
+    run_input: CreatePoolRunBottomUpInput
+  }
+)
 
 export type UpsertOrganizationPoolPayload = {
   pool_id?: string

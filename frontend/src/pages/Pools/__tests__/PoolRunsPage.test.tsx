@@ -891,6 +891,17 @@ describe('PoolRunsPage', () => {
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
   }, 30000)
 
+  it('keeps factual monitoring controls out of the run-local execution canvas', async () => {
+    renderPage('/pools/runs?pool=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb&run=11111111-1111-1111-1111-111111111111&stage=inspect&detail=1')
+
+    await screen.findByText('Factual monitoring lives in a separate workspace')
+
+    expect(screen.getByRole('button', { name: 'Open factual workspace' })).toBeInTheDocument()
+    expect(screen.queryByText('Quarter summary')).not.toBeInTheDocument()
+    expect(screen.queryByText('Batch settlement')).not.toBeInTheDocument()
+    expect(screen.queryByText('Manual review queue')).not.toBeInTheDocument()
+  }, 30000)
+
   it('sends confirm-publication with generated idempotency key', async () => {
     const user = userEvent.setup()
     renderPage()
@@ -1676,6 +1687,69 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     const payload = mockCreatePoolRun.mock.calls[0][0] as Record<string, unknown>
     expect(payload.run_input).toEqual({ starting_amount: '55555.55' })
+  }, 30000)
+
+  it('submits batch-backed top_down create-run payload with explicit batch and start organization', async () => {
+    const user = userEvent.setup()
+    mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph())
+    renderPage()
+
+    await openRunsStage(user, 'Create')
+    fireEvent.click(await screen.findByText('receipt batch'))
+
+    const batchIdInput = await screen.findByTestId('pool-runs-create-batch-id')
+    await user.clear(batchIdInput)
+    await user.type(batchIdInput, '99999999-9999-9999-9999-999999999999')
+
+    const startOrganizationSelect = await screen.findByTestId('pool-runs-create-start-organization')
+    const selector = startOrganizationSelect.querySelector('.ant-select-selector')
+    expect(selector).toBeTruthy()
+    fireEvent.mouseDown(selector as Element)
+    fireEvent.click(await screen.findByText('Root Org'))
+
+    await user.click(screen.getByTestId('pool-runs-create-submit'))
+
+    await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
+    const payload = mockCreatePoolRun.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.direction).toBe('top_down')
+    expect(payload.pool_workflow_binding_id).toBe('binding-top-down')
+    expect(payload.run_input).toEqual({
+      batch_id: '99999999-9999-9999-9999-999999999999',
+      start_organization_id: '11111111-1111-1111-1111-111111111111',
+    })
+  }, 30000)
+
+  it('maps batch-backed top_down validation errors to batch and start organization fields', async () => {
+    const user = userEvent.setup()
+    mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph())
+    mockCreatePoolRun.mockRejectedValueOnce({
+      response: {
+        data: {
+          type: 'about:blank',
+          title: 'Validation Error',
+          status: 400,
+          detail: 'top_down batch_id must reference an existing receipt batch in the selected pool.',
+          code: 'VALIDATION_ERROR',
+        },
+      },
+    })
+    renderPage()
+
+    await openRunsStage(user, 'Create')
+    fireEvent.click(await screen.findByText('receipt batch'))
+    await user.type(await screen.findByTestId('pool-runs-create-batch-id'), '99999999-9999-9999-9999-999999999999')
+
+    const startOrganizationSelect = await screen.findByTestId('pool-runs-create-start-organization')
+    const selector = startOrganizationSelect.querySelector('.ant-select-selector')
+    expect(selector).toBeTruthy()
+    fireEvent.mouseDown(selector as Element)
+    fireEvent.click(await screen.findByText('Root Org'))
+
+    await user.click(screen.getByTestId('pool-runs-create-submit'))
+
+    await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('Проверьте корректность параметров запуска.')).toBeInTheDocument()
+    expect(await screen.findByText('top_down batch_id must reference an existing receipt batch in the selected pool.')).toBeInTheDocument()
   }, 30000)
 
   it('previews effective workflow binding before run start', async () => {

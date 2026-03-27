@@ -7,6 +7,10 @@ from typing import Any, Mapping
 
 from django.utils import timezone
 
+from .ccpool_traceability import (
+    build_ccpool_document_traceability,
+    inject_ccpool_traceability_comment,
+)
 from .document_completeness import (
     ensure_document_mapping_completeness,
     resolve_document_completeness_requirements,
@@ -16,7 +20,7 @@ from .document_policy_contract import (
     validate_document_policy_v1,
 )
 from .document_policy_topology_aliases import rewrite_document_policy_mappings_for_edge
-from .models import PoolEdgeVersion, PoolNodeVersion, PoolRun
+from .models import PoolBatch, PoolEdgeVersion, PoolNodeVersion, PoolRun
 
 
 DOCUMENT_PLAN_ARTIFACT_VERSION = "document_plan_artifact.v1"
@@ -93,6 +97,7 @@ def compile_document_plan_artifact_v1(
     compiled_edges = 0
     chains_count = 0
     documents_count = 0
+    source_batch = _resolve_source_batch_for_run(run=run)
 
     allocations = sorted(
         (
@@ -184,6 +189,7 @@ def compile_document_plan_artifact_v1(
             source=source,
             database_id=database_id,
             amount_text=amount_text,
+            source_batch=source_batch,
         )
         if not chain_payloads:
             continue
@@ -492,6 +498,30 @@ def validate_document_plan_artifact_v1(*, artifact: Any) -> dict[str, Any]:
                         f"[{target_index}].chains[{chain_index}].documents[{document_index}].link_rules"
                     ),
                 )
+                traceability_raw = document.get("traceability")
+                if traceability_raw is not None:
+                    traceability = _require_object(
+                        traceability_raw,
+                        field_name=(
+                            "document_plan_artifact.targets"
+                            f"[{target_index}].chains[{chain_index}].documents[{document_index}].traceability"
+                        ),
+                    )
+                    for field_name in (
+                        "pool_id",
+                        "run_id",
+                        "batch_id",
+                        "organization_id",
+                        "quarter",
+                        "kind",
+                    ):
+                        _require_string(
+                            traceability.get(field_name),
+                            field_name=(
+                                "document_plan_artifact.targets"
+                                f"[{target_index}].chains[{chain_index}].documents[{document_index}].traceability.{field_name}"
+                            ),
+                        )
 
     compile_summary = _require_object(
         payload.get("compile_summary"),
@@ -568,6 +598,7 @@ def build_publication_payload_from_document_plan_artifact(
                 table_parts_mapping = _as_object(document.get("table_parts_mapping"))
                 link_rules = _as_object(document.get("link_rules"))
                 resolved_link_refs = _as_object(document.get("resolved_link_refs"))
+                traceability = _as_object(document.get("traceability"))
                 document_payload = _build_document_payload_from_mapping(
                     amount=amount_text,
                     allocation=allocation_payload,
@@ -575,6 +606,11 @@ def build_publication_payload_from_document_plan_artifact(
                     table_parts_mapping=table_parts_mapping,
                     resolved_link_refs=resolved_link_refs,
                 )
+                if traceability:
+                    document_payload = inject_ccpool_traceability_comment(
+                        payload=document_payload,
+                        traceability=traceability,
+                    )
                 compiled_document: dict[str, Any] = {
                     "document_id": str(document.get("document_id") or "").strip(),
                     "entity_name": entity_name,
@@ -586,6 +622,8 @@ def build_publication_payload_from_document_plan_artifact(
                     "link_rules": link_rules,
                     "payload": document_payload,
                 }
+                if traceability:
+                    compiled_document["traceability"] = traceability
                 link_to = str(document.get("link_to") or "").strip()
                 if link_to:
                     compiled_document["link_to"] = link_to
@@ -635,6 +673,7 @@ def _compile_chains_for_edge(
     source: str,
     database_id: str,
     amount_text: str,
+    source_batch: PoolBatch | None,
 ) -> list[dict[str, Any]]:
     chains_raw = policy.get("chains")
     if not isinstance(chains_raw, list):
@@ -692,6 +731,22 @@ def _compile_chains_for_edge(
                     amount_text=amount_text,
                 ),
             }
+            traceability = build_ccpool_document_traceability(
+                pool_id=str(run.pool_id),
+                run_id=str(run.id),
+                batch_id=str(source_batch.id) if source_batch is not None else None,
+                organization_id=(
+                    str(source_batch.start_organization_id)
+                    if source_batch is not None and source_batch.start_organization_id
+                    else None
+                ),
+                period_start=run.period_start,
+                document_role=compiled_document["document_role"],
+                direction=run.direction,
+                batch_kind=source_batch.batch_kind if source_batch is not None else None,
+            )
+            if traceability is not None:
+                compiled_document["traceability"] = traceability
             link_to = str(document.get("link_to") or "").strip()
             if link_to:
                 compiled_document["link_to"] = link_to
@@ -758,6 +813,14 @@ def _require_object(value: Any, *, field_name: str) -> dict[str, Any]:
             f"{POOL_DOCUMENT_PLAN_ARTIFACT_INVALID}: {field_name} must be an object"
         )
     return dict(value)
+
+
+def _resolve_source_batch_for_run(*, run: PoolRun) -> PoolBatch | None:
+    return (
+        PoolBatch.objects.select_related("start_organization")
+        .filter(run_id=run.id)
+        .first()
+    )
 
 
 def _require_array(

@@ -10,7 +10,7 @@ import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { setAuthToken } from '../../api/client'
 import { notifyAuthChanged } from '../../lib/authState'
 import { resetQueryClient } from '../../lib/queryClient'
-import { POOL_EXECUTION_PACKS_ROUTE, POOL_TOPOLOGY_TEMPLATES_ROUTE } from '../../pages/Pools/routes'
+import { POOL_EXECUTION_PACKS_ROUTE, POOL_FACTUAL_ROUTE, POOL_TOPOLOGY_TEMPLATES_ROUTE } from '../../pages/Pools/routes'
 
 const { Header, Content, Sider } = Layout
 const { useBreakpoint } = Grid
@@ -168,6 +168,11 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       key: '/pools/runs',
       icon: <FileTextOutlined />,
       label: 'Pool Runs',
+    },
+    {
+      key: POOL_FACTUAL_ROUTE,
+      icon: <FileTextOutlined />,
+      label: 'Pool Factual',
     },
     {
       key: '/pools/templates',

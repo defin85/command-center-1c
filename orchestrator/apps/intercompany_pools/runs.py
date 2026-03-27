@@ -11,7 +11,16 @@ from django.db import transaction
 
 from apps.tenancy.models import Tenant
 
-from .models import OrganizationPool, PoolRun, PoolRunDirection, PoolRunMode, PoolSchemaTemplate
+from .models import (
+    Organization,
+    OrganizationPool,
+    PoolBatch,
+    PoolBatchKind,
+    PoolRun,
+    PoolRunDirection,
+    PoolRunMode,
+    PoolSchemaTemplate,
+)
 
 
 @dataclass(frozen=True)
@@ -30,8 +39,14 @@ def build_pool_run_idempotency_key(
     workflow_binding_revision: int | None = None,
     binding_profile_revision_id: str | None = None,
     run_input: dict[str, Any] | None,
+    batch_id: str | None = None,
+    start_organization_id: str | None = None,
 ) -> str:
-    normalized_run_input = _canonicalize_run_input(run_input)
+    normalized_run_input = _canonicalize_run_input(
+        run_input,
+        batch_id=batch_id,
+        start_organization_id=start_organization_id,
+    )
     period_signature = period_start.isoformat()
     if period_end is not None:
         period_signature = f"{period_signature}:{period_end.isoformat()}"
@@ -49,7 +64,29 @@ def build_pool_run_idempotency_key(
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _canonicalize_run_input(run_input: dict[str, Any] | None) -> str:
+def _canonicalize_run_input(
+    run_input: dict[str, Any] | None,
+    *,
+    batch_id: str | None = None,
+    start_organization_id: str | None = None,
+) -> str:
+    if batch_id is not None or start_organization_id is not None:
+        normalized_batch_id = str(batch_id or "").strip()
+        normalized_start_organization_id = str(start_organization_id or "").strip()
+        if not normalized_batch_id or not normalized_start_organization_id:
+            raise ValueError(
+                "Batch-backed pool run idempotency requires both batch_id and start_organization_id."
+            )
+        return json.dumps(
+            {
+                "batch_id": normalized_batch_id,
+                "start_organization_id": normalized_start_organization_id,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+
     payload = run_input if isinstance(run_input, dict) else {}
     normalized = _normalize_for_idempotency(payload)
     return json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -109,6 +146,8 @@ def upsert_pool_run(
     workflow_binding_revision: int | None = None,
     binding_profile_revision_id: str | None = None,
     run_input: dict[str, Any] | None,
+    source_batch: PoolBatch | None = None,
+    start_organization: Organization | None = None,
     mode: str = PoolRunMode.SAFE,
     schema_template: PoolSchemaTemplate | None = None,
     seed: int | None = None,
@@ -120,6 +159,11 @@ def upsert_pool_run(
         raise ValueError(f"Unsupported direction '{direction}'")
     if mode not in PoolRunMode.values:
         raise ValueError(f"Unsupported mode '{mode}'")
+    if source_batch is not None or start_organization is not None:
+        if direction != PoolRunDirection.TOP_DOWN:
+            raise ValueError("Batch-backed pool run idempotency is only supported for top_down direction.")
+        if source_batch is None or start_organization is None:
+            raise ValueError("Batch-backed pool run requires both source_batch and start_organization.")
 
     idempotency_key = build_pool_run_idempotency_key(
         pool_id=str(pool.id),
@@ -130,9 +174,32 @@ def upsert_pool_run(
         workflow_binding_revision=workflow_binding_revision,
         binding_profile_revision_id=binding_profile_revision_id,
         run_input=run_input,
+        batch_id=str(source_batch.id) if source_batch is not None else None,
+        start_organization_id=str(start_organization.id) if start_organization is not None else None,
     )
 
     with transaction.atomic():
+        locked_batch: PoolBatch | None = None
+        if source_batch is not None and start_organization is not None:
+            locked_batch = PoolBatch.objects.select_for_update().get(id=source_batch.id)
+            if locked_batch.tenant_id != tenant.id:
+                raise ValueError("Batch-backed pool run requires a batch from the same tenant.")
+            if locked_batch.pool_id != pool.id:
+                raise ValueError("Batch-backed pool run requires a batch from the selected pool.")
+            if locked_batch.batch_kind != PoolBatchKind.RECEIPT:
+                raise ValueError("Only receipt batches can launch batch-backed top_down runs.")
+            if locked_batch.period_start != period_start or locked_batch.period_end != period_end:
+                raise ValueError("Batch-backed pool run period must match the canonical batch period.")
+            if locked_batch.start_organization_id and locked_batch.start_organization_id != start_organization.id:
+                raise ValueError("Receipt batch already pinned to a different start organization.")
+            existing_batch_run = (
+                PoolRun.objects.select_for_update().filter(id=locked_batch.run_id).first()
+                if locked_batch.run_id
+                else None
+            )
+            if existing_batch_run is not None and existing_batch_run.idempotency_key != idempotency_key:
+                raise ValueError("Receipt batch already linked to another pool run.")
+
         run = (
             PoolRun.objects.select_for_update()
             .filter(tenant=tenant, idempotency_key=idempotency_key)
@@ -170,6 +237,10 @@ def upsert_pool_run(
                     ),
                 },
             )
+            if locked_batch is not None:
+                locked_batch.start_organization = start_organization
+                locked_batch.run = run
+                locked_batch.save(update_fields=["start_organization", "run", "updated_at"])
             return PoolRunUpsertResult(run=run, created=True)
 
         update_fields = {
@@ -209,5 +280,16 @@ def upsert_pool_run(
                     ),
                 },
             )
+
+        if locked_batch is not None:
+            batch_changed_fields: list[str] = []
+            if locked_batch.start_organization_id != start_organization.id:
+                locked_batch.start_organization = start_organization
+                batch_changed_fields.append("start_organization")
+            if locked_batch.run_id != run.id:
+                locked_batch.run = run
+                batch_changed_fields.append("run")
+            if batch_changed_fields:
+                locked_batch.save(update_fields=[*batch_changed_fields, "updated_at"])
 
         return PoolRunUpsertResult(run=run, created=False)

@@ -1,7 +1,23 @@
-type: object
-properties:
-  starting_amount:
-    type: string
-    format: decimal
-required:
-  - starting_amount
+oneOf:
+  - type: object
+    additionalProperties: false
+    properties:
+      starting_amount:
+        type: string
+        format: decimal
+    required:
+      - starting_amount
+    description: Manual top_down input with explicit starting amount.
+  - type: object
+    additionalProperties: false
+    properties:
+      batch_id:
+        type: string
+        format: uuid
+      start_organization_id:
+        type: string
+        format: uuid
+    required:
+      - batch_id
+      - start_organization_id
+    description: Batch-backed top_down input with canonical receipt batch and explicit start organization.

@@ -6,6 +6,10 @@ from uuid import uuid4
 import pytest
 
 from apps.databases.models import Database
+from apps.intercompany_pools.ccpool_traceability import (
+    inject_ccpool_traceability_comment,
+    parse_ccpool_traceability_marker,
+)
 from apps.intercompany_pools.document_plan_artifact_contract import (
     DOCUMENT_PLAN_ARTIFACT_VERSION,
     POOL_DOCUMENT_PLAN_ARTIFACT_INVALID,
@@ -21,6 +25,9 @@ from apps.intercompany_pools.document_policy_contract import (
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationPool,
+    PoolBatch,
+    PoolBatchKind,
+    PoolBatchSourceType,
     PoolEdgeVersion,
     PoolMasterParty,
     PoolNodeVersion,
@@ -139,7 +146,11 @@ def _build_compiled_slot_entry(
     }
 
 
-def _create_compile_fixture(*, slot_keys: list[str | None]) -> dict[str, object]:
+def _create_compile_fixture(
+    *,
+    slot_keys: list[str | None],
+    batch_kind: str | None = None,
+) -> dict[str, object]:
     tenant = Tenant.objects.create(slug=f"doc-plan-{uuid4().hex[:8]}", name="Doc Plan")
     pool = OrganizationPool.objects.create(
         tenant=tenant,
@@ -166,6 +177,19 @@ def _create_compile_fixture(*, slot_keys: list[str | None]) -> dict[str, object]
         period_end=date(2026, 1, 31),
         run_input={"starting_amount": "100.00"},
     )
+    batch = None
+    if batch_kind is not None:
+        batch = PoolBatch.objects.create(
+            tenant=tenant,
+            pool=pool,
+            batch_kind=batch_kind,
+            source_type=PoolBatchSourceType.MANUAL,
+            start_organization=root_org,
+            run=run,
+            period_start=run.period_start,
+            period_end=run.period_end,
+            source_reference=f"batch-{uuid4().hex[:8]}",
+        )
 
     node_models = {str(root_node.id): root_node}
     edge_models: dict[tuple[str, str], PoolEdgeVersion] = {}
@@ -225,6 +249,8 @@ def _create_compile_fixture(*, slot_keys: list[str | None]) -> dict[str, object]
             "edge_models": edge_models,
         },
         "database_ids": database_ids,
+        "root_org": root_org,
+        "batch": batch,
     }
 
 
@@ -454,6 +480,43 @@ def test_build_publication_payload_from_document_plan_artifact_resolves_derived_
     assert isinstance(sale_payload["Услуги"][0]["СуммаНДС"], (int, float))
 
 
+def test_inject_ccpool_traceability_comment_preserves_existing_human_tail() -> None:
+    traceability = {
+        "pool_id": "11111111-1111-1111-1111-111111111111",
+        "run_id": "22222222-2222-2222-2222-222222222222",
+        "batch_id": "33333333-3333-3333-3333-333333333333",
+        "organization_id": "44444444-4444-4444-4444-444444444444",
+        "quarter": "2026Q1",
+        "kind": "sale",
+    }
+
+    payload = inject_ccpool_traceability_comment(
+        payload={
+            "Comment": (
+                "CCPOOL:v=1;pool=stale;run=-;batch=-;org=44444444-4444-4444-4444-444444444444;"
+                "q=2025Q4;kind=receipt||Operator note"
+            )
+        },
+        traceability=traceability,
+    )
+
+    assert payload["Comment"] == (
+        "CCPOOL:v=1;pool=11111111-1111-1111-1111-111111111111;"
+        "run=22222222-2222-2222-2222-222222222222;"
+        "batch=33333333-3333-3333-3333-333333333333;"
+        "org=44444444-4444-4444-4444-444444444444;q=2026Q1;kind=sale||Operator note"
+    )
+
+
+def test_parse_ccpool_traceability_marker_returns_none_for_missing_pool() -> None:
+    assert (
+        parse_ccpool_traceability_marker(
+            "CCPOOL:v=1;run=-;batch=-;org=44444444-4444-4444-4444-444444444444;q=2026Q1;kind=sale"
+        )
+        is None
+    )
+
+
 @pytest.mark.django_db
 def test_compile_document_plan_artifact_v1_resolves_slot_based_policy_per_edge() -> None:
     fixture = _create_compile_fixture(slot_keys=["sale", "purchase"])
@@ -537,6 +600,57 @@ def test_compile_document_plan_artifact_v1_uses_run_period_start_for_document_da
 
     assert document_payload["Date"] == "2026-01-01T00:00:00"
     assert document_payload["СуммаДокумента"] == pytest.approx(50.0)
+
+
+@pytest.mark.django_db
+def test_compile_document_plan_artifact_v1_embeds_ccpool_traceability_for_batch_backed_run() -> None:
+    fixture = _create_compile_fixture(
+        slot_keys=["sale"],
+        batch_kind=PoolBatchKind.RECEIPT,
+    )
+
+    artifact = compile_document_plan_artifact_v1(
+        run=fixture["run"],
+        distribution_artifact=fixture["distribution_artifact"],
+        topology=fixture["topology"],
+        compiled_document_policy_slots={
+            "sale": _build_compiled_slot_entry(
+                slot_key="sale",
+                decision_table_id="sale-slot",
+                decision_revision=8,
+                document_policy=_build_document_policy(
+                    chain_id="sale_chain",
+                    document_id="sale",
+                    entity_name="Document_РеализацияТоваровУслуг",
+                    field_mapping={
+                        "Comment": "Operator note",
+                        "СуммаДокумента": "allocation.amount",
+                    },
+                ),
+            )
+        },
+    )
+
+    assert artifact is not None
+    document = artifact["targets"][0]["chains"][0]["documents"][0]
+    assert document["traceability"] == {
+        "pool_id": str(fixture["run"].pool_id),
+        "run_id": str(fixture["run"].id),
+        "batch_id": str(fixture["batch"].id),
+        "organization_id": str(fixture["root_org"].id),
+        "quarter": "2026Q1",
+        "kind": "sale",
+    }
+
+    payload = build_publication_payload_from_document_plan_artifact(artifact=artifact)
+    document_payload = payload["pool_runtime"]["document_chains_by_database"][fixture["database_ids"][0]][0][
+        "documents"
+    ][0]["payload"]
+
+    assert document_payload["Comment"] == (
+        f"CCPOOL:v=1;pool={fixture['run'].pool_id};run={fixture['run'].id};"
+        f"batch={fixture['batch'].id};org={fixture['root_org'].id};q=2026Q1;kind=sale||Operator note"
+    )
 
 
 @pytest.mark.django_db

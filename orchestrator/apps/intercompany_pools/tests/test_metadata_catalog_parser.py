@@ -125,3 +125,76 @@ def test_normalize_catalog_payload_populates_table_part_row_fields_from_companio
     table_parts_by_name = {item["name"]: item for item in sales_document["table_parts"]}
     items_row_fields = [field["name"] for field in table_parts_by_name["Items"]["row_fields"]]
     assert items_row_fields == ["LineNumber", "Qty"]
+
+
+def test_parse_csdl_metadata_collects_published_registers_and_bound_functions() -> None:
+    xml_payload = """<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="StandardODATA">
+      <EntityType Name="AccountingRegister_Хозрасчетный">
+        <Property Name="Recorder" Type="Edm.String" Nullable="false" />
+      </EntityType>
+      <EntityType Name="InformationRegister_ДанныеПервичныхДокументов">
+        <Property Name="Документ" Type="Edm.String" Nullable="false" />
+        <Property Name="Номер" Type="Edm.String" Nullable="true" />
+      </EntityType>
+      <EntityContainer Name="DefaultContainer">
+        <EntitySet
+          Name="AccountingRegister_Хозрасчетный"
+          EntityType="StandardODATA.AccountingRegister_Хозрасчетный"
+        />
+        <EntitySet
+          Name="InformationRegister_ДанныеПервичныхДокументов"
+          EntityType="StandardODATA.InformationRegister_ДанныеПервичныхДокументов"
+        />
+        <FunctionImport
+          Name="Balance"
+          IsBindable="true"
+          ReturnType="Collection(StandardODATA.AccountingRegister_Хозрасчетный_Balance)"
+        >
+          <Parameter
+            Name="bindingParameter"
+            Type="StandardODATA.AccountingRegister_Хозрасчетный"
+          />
+          <Parameter Name="Period" Type="Edm.DateTime" />
+        </FunctionImport>
+        <FunctionImport
+          Name="Turnovers"
+          IsBindable="true"
+          ReturnType="Collection(StandardODATA.AccountingRegister_Хозрасчетный_Turnover)"
+        >
+          <Parameter
+            Name="bindingParameter"
+            Type="StandardODATA.AccountingRegister_Хозрасчетный"
+          />
+          <Parameter Name="StartPeriod" Type="Edm.DateTime" />
+          <Parameter Name="EndPeriod" Type="Edm.DateTime" />
+        </FunctionImport>
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>
+"""
+
+    payload = _parse_csdl_metadata(xml_payload)
+
+    accounting_registers = payload.get("accounting_registers")
+    assert isinstance(accounting_registers, list)
+    accounting_register = next(
+        item for item in accounting_registers if item["entity_name"] == "AccountingRegister_Хозрасчетный"
+    )
+    assert [field["name"] for field in accounting_register["fields"]] == ["Recorder"]
+    assert [item["name"] for item in accounting_register["functions"]] == ["Balance", "Turnovers"]
+    assert accounting_register["functions"][0]["parameters"] == [
+        {"name": "Period", "type": "Edm.DateTime"}
+    ]
+
+    information_registers = payload.get("information_registers")
+    assert isinstance(information_registers, list)
+    information_register = next(
+        item
+        for item in information_registers
+        if item["entity_name"] == "InformationRegister_ДанныеПервичныхДокументов"
+    )
+    assert [field["name"] for field in information_register["fields"]] == ["Документ", "Номер"]

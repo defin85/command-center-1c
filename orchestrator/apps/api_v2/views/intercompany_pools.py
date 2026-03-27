@@ -25,6 +25,8 @@ from apps.intercompany_pools.models import (
     Organization,
     OrganizationStatus,
     OrganizationPool,
+    PoolBatch,
+    PoolBatchKind,
     PoolMasterParty,
     PoolODataMetadataCatalogSnapshot,
     PoolPublicationAttempt,
@@ -623,6 +625,137 @@ def _load_pool_graph_state(
         active_edges_qs.order_by("created_at", "id")
     )
     return active_nodes, active_edges
+
+
+_TOP_DOWN_MANUAL_INPUT_FIELDS = frozenset({"starting_amount"})
+_TOP_DOWN_BATCH_INPUT_FIELDS = frozenset({"batch_id", "start_organization_id"})
+_TOP_DOWN_ALLOWED_INPUT_FIELDS = _TOP_DOWN_MANUAL_INPUT_FIELDS | _TOP_DOWN_BATCH_INPUT_FIELDS
+
+
+def _normalize_optional_run_input_token(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _validate_top_down_run_input_payload(run_input: dict[str, Any]) -> dict[str, Any]:
+    unsupported_fields = sorted(str(key) for key in run_input.keys() if str(key) not in _TOP_DOWN_ALLOWED_INPUT_FIELDS)
+    if unsupported_fields:
+        raise serializers.ValidationError(
+            {
+                "run_input": (
+                    "top_down run_input contains unsupported field(s): "
+                    f"{', '.join(unsupported_fields)}."
+                )
+            }
+        )
+
+    normalized_run_input = dict(run_input)
+    raw_starting_amount = normalized_run_input.get("starting_amount")
+    has_starting_amount = raw_starting_amount not in {None, ""}
+    has_batch_input = any(field in normalized_run_input for field in _TOP_DOWN_BATCH_INPUT_FIELDS)
+    batch_id = _normalize_optional_run_input_token(normalized_run_input.get("batch_id"))
+    start_organization_id = _normalize_optional_run_input_token(normalized_run_input.get("start_organization_id"))
+
+    if has_starting_amount and has_batch_input:
+        raise serializers.ValidationError(
+            {
+                "run_input": (
+                    "top_down run_input must choose either 'starting_amount' or "
+                    "('batch_id' + 'start_organization_id'), but not both."
+                )
+            }
+        )
+
+    if has_batch_input:
+        if not batch_id or not start_organization_id:
+            raise serializers.ValidationError(
+                {
+                    "run_input": (
+                        "top_down batch mode requires both 'batch_id' and 'start_organization_id'."
+                    )
+                }
+            )
+        try:
+            UUID(batch_id)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError(
+                {"run_input": "top_down batch_id must be a valid UUID."}
+            ) from None
+        try:
+            UUID(start_organization_id)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError(
+                {"run_input": "top_down start_organization_id must be a valid UUID."}
+            ) from None
+        normalized_run_input["batch_id"] = batch_id
+        normalized_run_input["start_organization_id"] = start_organization_id
+        normalized_run_input.pop("starting_amount", None)
+        return normalized_run_input
+
+    if not has_starting_amount:
+        raise serializers.ValidationError(
+            {"run_input": "top_down run_input must contain required field 'starting_amount'."}
+        )
+    try:
+        starting_amount = Decimal(str(raw_starting_amount))
+    except (InvalidOperation, TypeError, ValueError):
+        raise serializers.ValidationError(
+            {"run_input": "top_down starting_amount must be a valid decimal value."}
+        ) from None
+    if starting_amount <= 0:
+        raise serializers.ValidationError(
+            {"run_input": "top_down starting_amount must be greater than 0."}
+        )
+    normalized_run_input["starting_amount"] = format(starting_amount, "f")
+    normalized_run_input.pop("batch_id", None)
+    normalized_run_input.pop("start_organization_id", None)
+    return normalized_run_input
+
+
+def _resolve_batch_backed_top_down_scope(
+    *,
+    tenant_id,
+    pool: OrganizationPool,
+    period_start: date,
+    period_end: date | None,
+    run_input: dict[str, Any] | None,
+) -> tuple[PoolBatch | None, Organization | None]:
+    if not isinstance(run_input, dict):
+        return None, None
+
+    batch_id = _normalize_optional_run_input_token(run_input.get("batch_id"))
+    start_organization_id = _normalize_optional_run_input_token(run_input.get("start_organization_id"))
+    if not batch_id and not start_organization_id:
+        return None, None
+
+    source_batch = PoolBatch.objects.filter(
+        id=batch_id,
+        tenant_id=tenant_id,
+        pool=pool,
+    ).first()
+    if source_batch is None:
+        raise ValueError("top_down batch_id must reference an existing receipt batch in the selected pool.")
+    if source_batch.batch_kind != PoolBatchKind.RECEIPT:
+        raise ValueError("top_down batch_id must reference a receipt batch.")
+    if source_batch.period_start != period_start or source_batch.period_end != period_end:
+        raise ValueError("top_down batch_id period must match period_start and period_end.")
+
+    start_organization = Organization.objects.filter(
+        id=start_organization_id,
+        tenant_id=tenant_id,
+    ).first()
+    if start_organization is None:
+        raise ValueError(
+            "top_down start_organization_id must reference an existing organization in current tenant context."
+        )
+
+    active_nodes, _ = _load_pool_graph_state(pool=pool, target_date=period_start)
+    active_organization_ids = {str(node.organization_id) for node in active_nodes}
+    if start_organization_id not in active_organization_ids:
+        raise ValueError(
+            "top_down start_organization_id must reference an active topology organization for period_start."
+        )
+
+    return source_batch, start_organization
 
 
 def _serialize_metadata_catalog_snapshot(
@@ -2437,21 +2570,7 @@ class PoolRunCreateRequestSerializer(serializers.Serializer):
             raise serializers.ValidationError({"run_input": "run_input must be an object."})
 
         if direction == PoolRunDirection.TOP_DOWN:
-            raw_starting_amount = run_input.get("starting_amount")
-            if raw_starting_amount in {None, ""}:
-                raise serializers.ValidationError(
-                    {"run_input": "top_down run_input must contain required field 'starting_amount'."}
-                )
-            try:
-                starting_amount = Decimal(str(raw_starting_amount))
-            except (InvalidOperation, TypeError, ValueError):
-                raise serializers.ValidationError(
-                    {"run_input": "top_down starting_amount must be a valid decimal value."}
-                ) from None
-            if starting_amount <= 0:
-                raise serializers.ValidationError(
-                    {"run_input": "top_down starting_amount must be greater than 0."}
-                )
+            attrs["run_input"] = _validate_top_down_run_input_payload(run_input)
 
         if direction == PoolRunDirection.BOTTOM_UP:
             source_payload = run_input.get("source_payload")
@@ -3049,6 +3168,22 @@ def create_pool_run(request):
         )
 
     try:
+        source_batch, start_organization = _resolve_batch_backed_top_down_scope(
+            tenant_id=tenant_id,
+            pool=pool,
+            period_start=data["period_start"],
+            period_end=data.get("period_end"),
+            run_input=data.get("run_input"),
+        )
+    except ValueError as exc:
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
         resolved_workflow_binding = resolve_pool_workflow_binding_for_run(
             raw_bindings=list_attached_pool_workflow_bindings(pool=pool),
             requested_binding_id=str(data.get("pool_workflow_binding_id") or "").strip() or None,
@@ -3123,6 +3258,8 @@ def create_pool_run(request):
                 else None
             ),
             run_input=data.get("run_input"),
+            source_batch=source_batch,
+            start_organization=start_organization,
             mode=data.get("mode", PoolRunMode.SAFE),
             schema_template=schema_template,
             seed=data.get("seed"),
@@ -3230,6 +3367,22 @@ def preview_pool_workflow_binding(request):
             title="Pool Not Found",
             detail="Organization pool not found in current tenant context.",
             status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        _resolve_batch_backed_top_down_scope(
+            tenant_id=tenant_id,
+            pool=pool,
+            period_start=data["period_start"],
+            period_end=data.get("period_end"),
+            run_input=data.get("run_input"),
+        )
+    except ValueError as exc:
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
     schema_template_id = data.get("schema_template_id")

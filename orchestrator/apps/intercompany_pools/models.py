@@ -2000,3 +2000,18 @@ class PoolEdgeVersion(models.Model):
             f"{self.pool_id}:{self.parent_node_id}->{self.child_node_id} "
             f"[{self.effective_from}..{self.effective_to or 'open'}]"
         )
+
+
+from . import factual_models as _factual_models  # noqa: E402
+
+PoolBatch = _factual_models.PoolBatch
+PoolBatchKind = _factual_models.PoolBatchKind
+PoolBatchSettlement = _factual_models.PoolBatchSettlement
+PoolBatchSettlementStatus = _factual_models.PoolBatchSettlementStatus
+PoolBatchSourceType = _factual_models.PoolBatchSourceType
+PoolFactualBalanceSnapshot = _factual_models.PoolFactualBalanceSnapshot
+PoolFactualLane = _factual_models.PoolFactualLane
+PoolFactualReviewItem = _factual_models.PoolFactualReviewItem
+PoolFactualReviewReason = _factual_models.PoolFactualReviewReason
+PoolFactualReviewStatus = _factual_models.PoolFactualReviewStatus
+PoolFactualSyncCheckpoint = _factual_models.PoolFactualSyncCheckpoint

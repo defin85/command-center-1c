@@ -689,7 +689,7 @@ def validate_document_policy_references(
 def normalize_catalog_payload(*, payload: dict[str, Any]) -> dict[str, Any]:
     documents_raw = payload.get("documents")
     if not isinstance(documents_raw, list):
-        return {"documents": []}
+        documents_raw = []
 
     normalized_documents: list[dict[str, Any]] = []
     for raw_document in documents_raw:
@@ -734,7 +734,11 @@ def normalize_catalog_payload(*, payload: dict[str, Any]) -> dict[str, Any]:
                 table_part["row_fields"] = companion_fields
 
     normalized_documents.sort(key=lambda item: str(item.get("entity_name") or ""))
-    return {"documents": normalized_documents}
+    return {
+        "documents": normalized_documents,
+        "information_registers": _normalize_catalog_entities(payload.get("information_registers")),
+        "accounting_registers": _normalize_register_entities(payload.get("accounting_registers")),
+    }
 
 
 def _shared_scope_filters(scope: MetadataCatalogScope) -> dict[str, str]:
@@ -1151,6 +1155,8 @@ def _parse_csdl_metadata(xml_payload: str) -> dict[str, Any]:
     row_types: dict[str, list[dict[str, Any]]] = {}
     document_table_parts: dict[str, dict[str, str]] = {}
     entity_definitions: dict[str, dict[str, Any]] = {}
+    published_entity_sets: dict[str, str] = {}
+    bound_functions_by_entity: dict[str, list[dict[str, Any]]] = {}
 
     # Accept both OData v4 and legacy v3 CSDL namespaces.
     for entity_type in root.findall(".//{*}EntityType"):
@@ -1221,9 +1227,50 @@ def _parse_csdl_metadata(xml_payload: str) -> dict[str, Any]:
         elif entity_name.startswith("Document_"):
             document_table_parts[entity_name] = table_parts
 
+    for entity_set in root.findall(".//{*}EntitySet"):
+        entity_set_name = str(entity_set.get("Name") or "").strip()
+        entity_type_name = _extract_entity_name_from_type(str(entity_set.get("EntityType") or "").strip())
+        if entity_set_name and entity_type_name:
+            published_entity_sets[entity_set_name] = entity_type_name
+
+    for function_import in root.findall(".//{*}FunctionImport"):
+        function_name = str(function_import.get("Name") or "").strip()
+        if not function_name:
+            continue
+        parameters: list[dict[str, str]] = []
+        binding_entity_name = ""
+        for parameter in function_import.findall("{*}Parameter"):
+            parameter_name = str(parameter.get("Name") or "").strip()
+            parameter_type = str(parameter.get("Type") or "").strip()
+            if not parameter_name or not parameter_type:
+                continue
+            if parameter_name == "bindingParameter":
+                binding_entity_name = _extract_entity_name_from_type(parameter_type)
+                continue
+            parameters.append(
+                {
+                    "name": parameter_name,
+                    "type": parameter_type,
+                }
+            )
+        if not binding_entity_name:
+            continue
+        bound_functions_by_entity.setdefault(binding_entity_name, []).append(
+            {
+                "name": function_name,
+                "return_type": str(function_import.get("ReturnType") or "").strip(),
+                "parameters": parameters,
+            }
+        )
+
     documents: list[dict[str, Any]] = []
-    for entity_name, document_model in entity_models.items():
-        if not entity_name.startswith("Document_") or entity_name.endswith("_RowType"):
+    for entity_name in _resolve_catalog_entity_names(
+        entity_models=entity_models,
+        published_entity_sets=published_entity_sets,
+        prefix="Document_",
+    ):
+        document_model = entity_models.get(entity_name)
+        if not isinstance(document_model, Mapping):
             continue
         table_parts: list[dict[str, Any]] = []
 
@@ -1266,7 +1313,22 @@ def _parse_csdl_metadata(xml_payload: str) -> dict[str, Any]:
         )
 
     documents.sort(key=lambda item: str(item.get("entity_name") or ""))
-    return {"documents": documents}
+    information_registers = _build_catalog_entities(
+        entity_models=entity_models,
+        published_entity_sets=published_entity_sets,
+        prefix="InformationRegister_",
+    )
+    accounting_registers = _build_register_entities(
+        entity_models=entity_models,
+        published_entity_sets=published_entity_sets,
+        prefix="AccountingRegister_",
+        functions_by_entity=bound_functions_by_entity,
+    )
+    return {
+        "documents": documents,
+        "information_registers": information_registers,
+        "accounting_registers": accounting_registers,
+    }
 
 
 def _resolve_entity_members(
@@ -1377,6 +1439,186 @@ def _normalize_table_parts(raw_table_parts: object) -> list[dict[str, Any]]:
         )
     normalized_items.sort(key=lambda item: item["name"])
     return normalized_items
+
+
+def _normalize_catalog_entities(raw_entities: object) -> list[dict[str, Any]]:
+    if not isinstance(raw_entities, list):
+        return []
+    normalized_items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw_item in raw_entities:
+        if not isinstance(raw_item, Mapping):
+            continue
+        entity_name = str(raw_item.get("entity_name") or "").strip()
+        if not entity_name or entity_name in seen:
+            continue
+        seen.add(entity_name)
+        normalized_items.append(
+            {
+                "entity_name": entity_name,
+                "display_name": str(raw_item.get("display_name") or entity_name).strip() or entity_name,
+                "fields": _normalize_field_items(raw_item.get("fields")),
+            }
+        )
+    normalized_items.sort(key=lambda item: item["entity_name"])
+    return normalized_items
+
+
+def _normalize_register_entities(raw_entities: object) -> list[dict[str, Any]]:
+    if not isinstance(raw_entities, list):
+        return []
+    normalized_items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw_item in raw_entities:
+        if not isinstance(raw_item, Mapping):
+            continue
+        entity_name = str(raw_item.get("entity_name") or "").strip()
+        if not entity_name or entity_name in seen:
+            continue
+        seen.add(entity_name)
+        normalized_items.append(
+            {
+                "entity_name": entity_name,
+                "display_name": str(raw_item.get("display_name") or entity_name).strip() or entity_name,
+                "fields": _normalize_field_items(raw_item.get("fields")),
+                "functions": _normalize_function_items(raw_item.get("functions")),
+            }
+        )
+    normalized_items.sort(key=lambda item: item["entity_name"])
+    return normalized_items
+
+
+def _normalize_function_items(raw_functions: object) -> list[dict[str, Any]]:
+    if not isinstance(raw_functions, list):
+        return []
+    normalized_items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw_item in raw_functions:
+        if not isinstance(raw_item, Mapping):
+            continue
+        name = str(raw_item.get("name") or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        normalized_items.append(
+            {
+                "name": name,
+                "return_type": str(raw_item.get("return_type") or "").strip(),
+                "parameters": _normalize_function_parameters(raw_item.get("parameters")),
+            }
+        )
+    normalized_items.sort(key=lambda item: item["name"])
+    return normalized_items
+
+
+def _normalize_function_parameters(raw_parameters: object) -> list[dict[str, str]]:
+    if not isinstance(raw_parameters, list):
+        return []
+    normalized_items: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for raw_item in raw_parameters:
+        if not isinstance(raw_item, Mapping):
+            continue
+        name = str(raw_item.get("name") or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        normalized_items.append(
+            {
+                "name": name,
+                "type": str(raw_item.get("type") or "").strip(),
+            }
+        )
+    normalized_items.sort(key=lambda item: item["name"])
+    return normalized_items
+
+
+def _build_catalog_entities(
+    *,
+    entity_models: Mapping[str, Mapping[str, Any]],
+    published_entity_sets: Mapping[str, str],
+    prefix: str,
+) -> list[dict[str, Any]]:
+    entities: list[dict[str, Any]] = []
+    for entity_name in _resolve_catalog_entity_names(
+        entity_models=entity_models,
+        published_entity_sets=published_entity_sets,
+        prefix=prefix,
+    ):
+        entity_model = entity_models.get(entity_name)
+        if not isinstance(entity_model, Mapping):
+            continue
+        entities.append(
+            {
+                "entity_name": entity_name,
+                "display_name": str(entity_model.get("display_name") or entity_name),
+                "fields": entity_model.get("fields") or [],
+            }
+        )
+    entities.sort(key=lambda item: str(item.get("entity_name") or ""))
+    return entities
+
+
+def _build_register_entities(
+    *,
+    entity_models: Mapping[str, Mapping[str, Any]],
+    published_entity_sets: Mapping[str, str],
+    prefix: str,
+    functions_by_entity: Mapping[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    entities: list[dict[str, Any]] = []
+    for entity_name in _resolve_catalog_entity_names(
+        entity_models=entity_models,
+        published_entity_sets=published_entity_sets,
+        prefix=prefix,
+    ):
+        entity_model = entity_models.get(entity_name)
+        if not isinstance(entity_model, Mapping):
+            continue
+        entities.append(
+            {
+                "entity_name": entity_name,
+                "display_name": str(entity_model.get("display_name") or entity_name),
+                "fields": entity_model.get("fields") or [],
+                "functions": functions_by_entity.get(entity_name) or [],
+            }
+        )
+    entities.sort(key=lambda item: str(item.get("entity_name") or ""))
+    return entities
+
+
+def _resolve_catalog_entity_names(
+    *,
+    entity_models: Mapping[str, Mapping[str, Any]],
+    published_entity_sets: Mapping[str, str],
+    prefix: str,
+) -> list[str]:
+    resolved_names = sorted(
+        entity_name
+        for entity_name in published_entity_sets.values()
+        if entity_name.startswith(prefix)
+    )
+    if resolved_names:
+        return resolved_names
+    return sorted(
+        entity_name
+        for entity_name in entity_models.keys()
+        if entity_name.startswith(prefix) and not _is_derived_catalog_entity_name(entity_name=entity_name)
+    )
+
+
+def _is_derived_catalog_entity_name(*, entity_name: str) -> bool:
+    return entity_name.endswith(
+        (
+            "_RowType",
+            "_Balance",
+            "_Turnover",
+            "_BalanceAndTurnover",
+            "_ExtDimensions",
+            "_RecordsWithExtDimensions",
+            "_DrCrTurnover",
+        )
+    )
 
 
 def _canonical_json_bytes(payload: object) -> bytes:

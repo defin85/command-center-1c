@@ -197,6 +197,122 @@ curl --noproxy '*' -k -sS \
 Нюанс:
 - сразу после `confirm-publication` report может кратковременно показывать неактуальную промежуточную проекцию; верифицированный способ — поллить report и, при разборе инцидента, сверять `PoolPublicationAttempt`/worker log.
 
+## Подготовленный live/dev-цикл: `batch-backed run -> factual workspace`
+
+Статус на `2026-03-27`:
+- live-часть готова для `receipt batch -> distribution/publication -> run report`;
+- operator route `/pools/factual` уже доступен и отделён от `/pools/runs`;
+- public factual refresh/review API пока не опубликован, поэтому шаги `refreshed summary` и `manual reconcile late correction` остаются `dev-bridge` через `./debug/eval-django.sh`, а сам factual workspace пока показывает contract-driven preview вместо backend-fed summary.
+
+Минимальные env vars:
+
+```bash
+export CC1C_BASE_URL=http://localhost:15173
+export CC1C_TENANT_ID=<tenant-uuid>
+export CC1C_POOL_ID=<pool-uuid>
+export CC1C_BINDING_ID=<workflow-binding-uuid>
+export CC1C_BATCH_ID=<receipt-batch-uuid>
+export CC1C_START_ORGANIZATION_ID=<organization-uuid>
+export CC1C_EDGE_ID=<pool-edge-version-uuid>
+export CC1C_PERIOD_START=2026-01-01
+export CC1C_UI_USER=admin
+export CC1C_UI_PASSWORD='...'
+```
+
+Как быстро подобрать `batch/start organization/edge` для пилотного пула:
+
+```bash
+./debug/eval-django.sh "from apps.intercompany_pools.models import PoolBatch, PoolEdgeVersion; print(list(PoolBatch.objects.filter(pool_id='$CC1C_POOL_ID').order_by('-created_at').values('id','period_start','start_organization_id','source_reference')[:5])); print(list(PoolEdgeVersion.objects.filter(pool_id='$CC1C_POOL_ID').order_by('effective_from').values('id','parent_node__organization__name','child_node__organization__name')[:10]))"
+```
+
+1. Получить JWT:
+
+```bash
+ACCESS_TOKEN=$(curl --noproxy '*' -sS -H 'Content-Type: application/json' \
+  -d "{\"username\":\"$CC1C_UI_USER\",\"password\":\"$CC1C_UI_PASSWORD\"}" \
+  "$CC1C_BASE_URL/api/token" | python -c "import json,sys; print(json.load(sys.stdin)['access'])")
+```
+
+2. Создать `safe` batch-backed `top_down` run:
+
+```bash
+RUN_ID=$(curl --noproxy '*' -sS -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "X-CC1C-Tenant-ID: $CC1C_TENANT_ID" \
+  -H 'Content-Type: application/json' \
+  -d "{\"pool_id\":\"$CC1C_POOL_ID\",\"pool_workflow_binding_id\":\"$CC1C_BINDING_ID\",\"direction\":\"top_down\",\"period_start\":\"$CC1C_PERIOD_START\",\"run_input\":{\"batch_id\":\"$CC1C_BATCH_ID\",\"start_organization_id\":\"$CC1C_START_ORGANIZATION_ID\"},\"mode\":\"safe\"}" \
+  "$CC1C_BASE_URL/api/v2/pools/runs/" | python -c "import json,sys; print(json.load(sys.stdin)['run']['id'])")
+```
+
+3. Подтвердить публикацию и дополлить report до terminal execution state:
+
+```bash
+curl --noproxy '*' -sS -X POST \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "X-CC1C-Tenant-ID: $CC1C_TENANT_ID" \
+  -H "Idempotency-Key: factual-confirm-$(date +%s)" \
+  "$CC1C_BASE_URL/api/v2/pools/runs/$RUN_ID/confirm-publication/"
+```
+
+```bash
+curl --noproxy '*' -sS \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "X-CC1C-Tenant-ID: $CC1C_TENANT_ID" \
+  "$CC1C_BASE_URL/api/v2/pools/runs/$RUN_ID/report/"
+```
+
+4. Открыть operator-facing factual route из run context:
+
+```bash
+printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus=settlement&detail=1"
+printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus=review&detail=1"
+```
+
+5. `Dev-bridge` до public factual API: материализовать минимальный settlement/projection slice для batch:
+
+```bash
+./debug/eval-django.sh "from datetime import date; from apps.intercompany_pools.models import PoolBatch, PoolBatchSettlement, PoolBatchSettlementStatus, PoolFactualBalanceSnapshot; batch = PoolBatch.objects.get(id='$CC1C_BATCH_ID'); settlement, _ = PoolBatchSettlement.objects.update_or_create(batch=batch, defaults={'tenant_id': batch.tenant_id, 'status': PoolBatchSettlementStatus.DISTRIBUTED, 'incoming_amount': '120.00', 'outgoing_amount': '0.00', 'open_balance': '120.00', 'summary': {'verification_scenario': 'factual-dev-bridge', 'run_id': '$RUN_ID'}}); snapshot, _ = PoolFactualBalanceSnapshot.objects.update_or_create(tenant_id=batch.tenant_id, pool_id=batch.pool_id, batch_id=batch.id, edge_id='$CC1C_EDGE_ID', organization_id='$CC1C_START_ORGANIZATION_ID', quarter_start=batch.period_start, quarter_end=batch.period_end, defaults={'amount_with_vat': '120.00', 'amount_without_vat': '100.00', 'vat_amount': '20.00', 'incoming_amount': '120.00', 'outgoing_amount': '0.00', 'open_balance': '120.00', 'metadata': {'verification_scenario': 'factual-dev-bridge'}}); print({'settlement_id': str(settlement.id), 'snapshot_id': str(snapshot.id)})"
+```
+
+6. `Dev-bridge`: смоделировать `manual sale capture` и `late correction` через domain objects:
+
+```bash
+./debug/eval-django.sh "from apps.intercompany_pools.models import PoolBatch, PoolFactualReviewItem, PoolFactualReviewReason; batch = PoolBatch.objects.get(id='$CC1C_BATCH_ID'); review_item, _ = PoolFactualReviewItem.objects.update_or_create(tenant_id=batch.tenant_id, pool_id=batch.pool_id, source_document_ref='Document_КорректировкаРеализации(guid''debug-late-correction'')', defaults={'quarter_start': batch.period_start, 'quarter_end': batch.period_end, 'reason': PoolFactualReviewReason.LATE_CORRECTION, 'organization_id': '$CC1C_START_ORGANIZATION_ID', 'metadata': {'verification_scenario': 'factual-dev-bridge', 'delta_payload': {'amount_with_vat': '15.00'}}}); print({'review_item_id': str(review_item.id), 'reason': review_item.reason})"
+```
+
+7. `Dev-bridge`: выполнить manual reconcile через backend contract:
+
+```bash
+./debug/eval-django.sh "from django.contrib.auth import get_user_model; from apps.intercompany_pools.factual_review_queue import FACTUAL_REVIEW_ACTION_RECONCILE, apply_pool_factual_review_action; User = get_user_model(); actor = User.objects.get(username='$CC1C_UI_USER'); print(apply_pool_factual_review_action(review_item_id='<review-item-uuid>', tenant_id='$CC1C_TENANT_ID', actor_id=str(actor.id), action=FACTUAL_REVIEW_ACTION_RECONCILE, note='debug factual reconcile').status)"
+```
+
+Rollout telemetry и actionable alerts, которые должны быть зелёными перед расширением cohort:
+- `cc1c_orchestrator_pool_factual_read_freshness_lag_seconds`: целевой budget `<= 120s`; `warning` при превышении budget, `critical` при `>= 600s` или если есть `blocked_external_sessions` / `unavailable`.
+- `cc1c_orchestrator_pool_factual_read_backlog_total`: считает overdue/stale checkpoints read lane; `critical`, если backlog достигает rollout `global_read_cap=8`, иначе `warning`.
+- `cc1c_orchestrator_pool_factual_review_pending_total{reason="unattributed"}` и `cc1c_orchestrator_pool_factual_review_pending_amount_with_vat{reason="unattributed"}`: любой ненулевой объём означает operator action `attribute` до расширения cohort.
+- `cc1c_orchestrator_pool_factual_review_pending_total{reason="late_correction"}` и `cc1c_orchestrator_pool_factual_review_attention_required_total{reason="late_correction"}`: любой pending late correction считается `critical` и требует manual reconcile до period close / rollout widening.
+- `cc1c_orchestrator_pool_factual_actionable_alert_state{alert_code,severity}`: агрегированный сигнал для four mandatory rollout alerts `freshness_lag`, `read_backlog`, `unattributed_volume`, `late_correction_queue`.
+
+Что делать по сигналам:
+- `freshness_lag`: проверить published 1C availability, `sessions_deny`, maintenance window и состояние read checkpoints; intake автоматически не выключать.
+- `read_backlog`: сначала дренировать overdue checkpoints или уменьшить rollout cohort; не лечить backlog отключением batch intake по умолчанию.
+- `unattributed_volume`: открыть `/pools/factual?...focus=review`, разметить документы и только после этого расширять rollout.
+- `late_correction_queue`: выполнить manual reconcile и явно зафиксировать решение оператора до period close и следующего cohort step.
+
+Failure-isolation policy:
+- backlog/staleness/attention signals в `read/projection` и `reconcile/review` переводят эти подсистемы в degraded state, но сами по себе НЕ выключают `intake`;
+- `intake` может перейти в `paused_by_operator` только после явного решения оператора; автоматический stop из telemetry/alerts не допускается;
+- при degraded factual/read или review контуре default action: поднять alerts, удержать `intake` доступным и отдельно решить, нужен ли ручной pause для rollout cohort.
+
+Что считать успехом на текущем этапе:
+- `create run` и `confirm-publication` проходят по batch-backed пути без manual amount payload;
+- report доходит до execution-terminal state;
+- `/pools/factual?...focus=settlement` и `/pools/factual?...focus=review` открываются как отдельный workspace из того же pool/run context;
+- domain-level dev bridge создаёт `PoolBatchSettlement`, `PoolFactualBalanceSnapshot` и `PoolFactualReviewItem` без мутации `PoolRun.status`;
+- `apply_pool_factual_review_action(...)` переводит review item в terminal review status.
+
+Текущий blocker до полного live E2E:
+- factual summary/drill-down и review queue ещё не питаются от public backend API, поэтому шаги `refreshed summary` и `manual reconcile late correction` в UI пока можно подготовить и проверить только через `dev-bridge`, а не через полноценно опубликованный runtime path.
+
 ## Важные замечания
 
 1. Для `eval-django.sh` обязателен `orchestrator/venv` с установленным Django.

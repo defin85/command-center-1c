@@ -2279,6 +2279,43 @@ test('UI platform: /pools/runs opens inspect detail in a mobile-safe drawer with
   await expectNoHorizontalOverflow(page)
 })
 
+test('UI platform: /pools/factual restores compact selection and detail workspace from a deep-link', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+
+  await page.goto(`/pools/factual?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&focus=settlement&detail=1`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Pool Factual Monitoring', level: 2 })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open factual workspace for Main Pool' })).toBeVisible()
+  await expect(page.getByText('Factual operator workspace')).toBeVisible()
+  await expect(page.getByText('Quarter summary')).toBeVisible()
+  await expect(page.getByText('Manual review queue')).toBeVisible()
+  await expect(page.getByText('focus=settlement')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /pools/factual opens review detail in a mobile-safe drawer without page-wide overflow', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto(`/pools/factual?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&focus=review&detail=1`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const detailDrawer = page.getByRole('dialog')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByText('Factual operator workspace')).toBeVisible()
+  await expect(detailDrawer.getByText('Manual review queue')).toBeVisible()
+  await expect(detailDrawer.getByText('review focus')).toBeVisible()
+  await expect(detailDrawer.getByRole('button', { name: 'Attribute review item unattributed-pool-main' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
 test('UI platform: /operations restores selected operation and inspect context from a deep-link', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)

@@ -174,6 +174,70 @@ def test_pool_run_create_request_requires_binding_matches_runtime_serializer() -
     assert runtime_field.allow_blank is False
 
 
+def test_pool_run_top_down_input_schema_supports_manual_and_batch_backed_modes() -> None:
+    contract = _load_openapi_contract()
+    top_down_schema = _schema(contract, "PoolRunInputTopDown")
+    variants = top_down_schema.get("oneOf")
+    assert isinstance(variants, list)
+    assert len(variants) == 2
+
+    manual_variant = next(
+        candidate
+        for candidate in variants
+        if isinstance(candidate.get("properties"), dict) and "starting_amount" in candidate["properties"]
+    )
+    batch_variant = next(
+        candidate
+        for candidate in variants
+        if isinstance(candidate.get("properties"), dict) and "batch_id" in candidate["properties"]
+    )
+
+    assert manual_variant.get("required") == ["starting_amount"]
+    assert manual_variant.get("additionalProperties") is False
+    assert batch_variant.get("required") == ["batch_id", "start_organization_id"]
+    assert batch_variant.get("additionalProperties") is False
+
+    manual_payload = pools_view.PoolRunCreateRequestSerializer(
+        data={
+            "pool_id": "11111111-1111-1111-1111-111111111111",
+            "pool_workflow_binding_id": "binding-top-down",
+            "direction": "top_down",
+            "period_start": "2026-01-01",
+            "run_input": {"starting_amount": "100.00"},
+        }
+    )
+    assert manual_payload.is_valid(), manual_payload.errors
+
+    batch_payload = pools_view.PoolRunCreateRequestSerializer(
+        data={
+            "pool_id": "11111111-1111-1111-1111-111111111111",
+            "pool_workflow_binding_id": "binding-top-down",
+            "direction": "top_down",
+            "period_start": "2026-01-01",
+            "run_input": {
+                "batch_id": "22222222-2222-2222-2222-222222222222",
+                "start_organization_id": "33333333-3333-3333-3333-333333333333",
+            },
+        }
+    )
+    assert batch_payload.is_valid(), batch_payload.errors
+
+    mixed_payload = pools_view.PoolRunCreateRequestSerializer(
+        data={
+            "pool_id": "11111111-1111-1111-1111-111111111111",
+            "pool_workflow_binding_id": "binding-top-down",
+            "direction": "top_down",
+            "period_start": "2026-01-01",
+            "run_input": {
+                "starting_amount": "100.00",
+                "batch_id": "22222222-2222-2222-2222-222222222222",
+                "start_organization_id": "33333333-3333-3333-3333-333333333333",
+            },
+        }
+    )
+    assert mixed_payload.is_valid() is False
+
+
 def test_pool_workflow_binding_write_schema_keeps_server_managed_fields_optional_for_create_requests() -> None:
     contract = _load_openapi_contract()
     binding_schema = _schema(contract, "PoolWorkflowBindingInput")
